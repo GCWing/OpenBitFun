@@ -1,5 +1,4 @@
 import { requireSessionOwningWorkspaceId } from '../../utils/sessionOrdering';
-import { requireSessionWorkspaceId } from '../../utils/sessionWorkspace';
 /**
  * Session management module
  * Handles session creation, switching, deletion, and other operations
@@ -55,6 +54,7 @@ import {
   requireSessionProjectWorkspacePath,
 } from '../../utils/sessionWorkspace';
 import { driverForCreation, driverForSession } from '../../session-drivers/registry';
+import { materializeSessionDraft } from '../sessionDraftService';
 import {
   isProjectedFirstRuntimeTurn,
   isProjectedSessionEmpty,
@@ -420,7 +420,8 @@ export { getModelMaxTokens } from '../../utils/modelResolution';
 export async function createChatSession(
   context: FlowChatContext,
   config: SessionConfig,
-  mode?: string
+  mode?: string,
+  draft = false,
 ): Promise<string> {
   const surfaceScope = getActiveSurfaceScope();
   try {
@@ -445,10 +446,12 @@ export async function createChatSession(
     const agentType = await resolveAgentTypeForSessionCreation(mode, workspace);
     surfaceScope.assertCurrent('resolve session creation mode');
     const workspaceCreationKey = workspace.id;
+    const draftId = draft ? crypto.randomUUID() : undefined;
     const creationKey = surfaceScope.key(
       'session-create',
       surfaceScope.epoch,
       workspaceCreationKey,
+      draft ? 'draft' : 'session',
       agentType,
       JSON.stringify(config.executionTargetRequest ?? { kind: 'local' }),
       JSON.stringify(config.dispatchTargetRequest ?? { kind: 'local' }),
@@ -469,6 +472,7 @@ export async function createChatSession(
       const sessionName = titleDescriptor.text;
 
       const sessionId = await driverForCreation(config).createSession(context, {
+        draftId,
         surfaceScope,
         config,
         agentType,
@@ -534,7 +538,7 @@ export async function switchChatSession(
     });
 
     const touchActiveSessionInBackground = () => {
-      if (driverForSession(sessionId, session).id === 'dispatch') {
+      if (session?.draft || driverForSession(sessionId, session).id === 'dispatch') {
         return;
       }
       scheduleSessionActivityTouch(surfaceScope, () => {
@@ -844,13 +848,20 @@ export async function ensureBackendSession(
     return;
   }
 
+  if (session.draft) {
+    await materializeSessionDraft(context, sessionId);
+    return;
+  }
+
   if (session.isHistorical) {
     await hydrateHistoricalSession(context, sessionId, false);
     surfaceScope.assertCurrent('hydrate session before backend readiness');
   }
 
   const latestSession = context.flowChatStore.getState().sessions.get(sessionId) ?? session;
-  const workspaceId = requireSessionWorkspaceId(latestSession);
+  // Coordinator state belongs to the project; a managed worktree's execution
+  // record need not be in the opened/recent workspace catalog after first send.
+  const workspaceId = requireSessionOwningWorkspaceId(latestSession);
   const workspace = resolveSessionWorkspace({ workspaceId });
   const workspacePath = workspace.rootPath;
   const projectWorkspacePath = requireSessionProjectWorkspacePath(latestSession, sessionId);
@@ -984,7 +995,7 @@ export async function ensureBackendSession(
               worktreeId: latestSession.config.executionTarget.worktreeId,
             }
           : { kind: 'local' },
-      workspaceId: latestSession.workspaceId,
+      workspaceId,
       remoteConnectionId: effectiveConnectionId,
       remoteSshHost: effectiveSshHost,
       relationship: buildCreateSessionRelationship(latestSession),
@@ -1036,7 +1047,7 @@ export async function retryCreateBackendSession(
             worktreeId: session.config.executionTarget.worktreeId,
           }
         : { kind: 'local' },
-    workspaceId: session.workspaceId,
+    workspaceId: requireSessionOwningWorkspaceId(session),
     remoteConnectionId: session.remoteConnectionId,
     remoteSshHost: session.remoteSshHost,
     relationship: buildCreateSessionRelationship(session),

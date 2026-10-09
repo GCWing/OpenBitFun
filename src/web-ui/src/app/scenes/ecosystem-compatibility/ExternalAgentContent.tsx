@@ -9,7 +9,7 @@ import { presentEcosystemContent } from './ecosystemContentPresentation';
 import { ecosystemDiscoveryCache, rememberEcosystemHooks, rememberEcosystemSkills } from './ecosystemDiscoveryCache';
 import { importErrorMessage } from './ecosystemSkillImport';
 import { applyEcosystemBatchUndo, type BatchUndoEntry, type BatchUndoResult } from './ecosystemBatchUndo';
-import { CircleUserRound, FileText, Package, PawPrint, Server, Webhook, Wrench } from 'lucide-react';
+import { CircleUserRound, FileText, PawPrint, Server, Webhook, Wrench } from 'lucide-react';
 import { useSceneStore } from '@/app/stores/sceneStore';
 import { useSettingsStore } from '@/app/scenes/settings/settingsStore';
 import { useI18n } from '@/infrastructure/i18n';
@@ -43,7 +43,7 @@ const CONTENT_ICONS: Record<EcosystemImportItemKind, IconSource> = {
   command: { name: 'command-mac' },
   tool: { glyph: Wrench },
   subagent: { name: 'user' },
-  skill: { glyph: Package },
+  skill: { name: 'book-open' },
   mcp: { glyph: Server },
   hook: { glyph: Webhook },
   instruction: { glyph: FileText },

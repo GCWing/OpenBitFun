@@ -1,6 +1,6 @@
 //! # OpenBitFun tool-call JSON repair
 //!
-//! A local MIT-licensed fork of `jsonrepair-rs` 0.2.1 for streamed tool
+//! A local MIT-licensed fork of `jsonrepair-rs` 0.2.5 for streamed tool
 //! arguments. The tool-call profile preserves Markdown-like `#` content rather
 //! than treating it as a configuration-file comment.
 //!
@@ -304,6 +304,21 @@ where
     serde_json::from_str(&repaired).map_err(JsonRepairParseError::from)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::repair_tool_call_json;
+
+    #[test]
+    fn tool_call_profile_preserves_hash_prefixed_unquoted_string_values() {
+        let repaired = repair_tool_call_json(r##"{"plan": # Markdown heading"}"##)
+            .expect("repair should succeed");
+        let value: serde_json::Value =
+            serde_json::from_str(&repaired).expect("repaired output should be JSON");
+
+        assert_eq!(value["plan"], "# Markdown heading");
+    }
+}
+
 fn reject_if_changed(input: &str, repaired: &str) -> Result<(), JsonRepairError> {
     if input == repaired {
         return Ok(());
@@ -346,19 +361,4 @@ fn line_column(input: &str, position: usize) -> (usize, usize) {
     }
 
     (line, column)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::repair_tool_call_json;
-
-    #[test]
-    fn tool_call_profile_preserves_hash_prefixed_unquoted_string_values() {
-        let repaired = repair_tool_call_json(r##"{"plan": # Markdown heading"}"##)
-            .expect("repair should succeed");
-        let value: serde_json::Value =
-            serde_json::from_str(&repaired).expect("repaired output should be JSON");
-
-        assert_eq!(value["plan"], "# Markdown heading");
-    }
 }

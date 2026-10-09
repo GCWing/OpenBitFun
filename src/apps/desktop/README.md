@@ -3,6 +3,19 @@
 For development commands, see [AGENTS.md](AGENTS.md) and the repository
 [contribution guide](../../../CONTRIBUTING.md).
 
+## Session storage directories
+
+The workspace and session action menus include **Open session storage directory**.
+The workspace action opens its managed sessions root; the session action opens
+that session's subdirectory. Empty workspaces create the sessions root on demand.
+Remote SSH/Docker workspaces open their locally stored session mirror, not the
+remote project directory. These actions are unavailable in Peer Device Mode,
+browser clients, and for detached sessions owned by another host.
+
+For manual recovery, exit every OpenBitFun instance using the session and back
+up its complete directory before editing or moving files. Moving a directory
+does not update the workspace bindings in its metadata or saved configuration.
+
 ## Computer Use control
 
 Computer Use opens a visible control session. Its status card shows the current

@@ -8,18 +8,29 @@ import { watchSourcePlugin } from "../../tooling/vite/watch-source.mjs";
 const labDirectory = path.dirname(fileURLToPath(import.meta.url));
 const designSystemDirectory = path.resolve(labDirectory, "../..");
 const uiSourceDirectory = path.join(designSystemDirectory, "packages/ui/src");
+const flowChatPresentationDirectory = path.resolve(designSystemDirectory, "../packages/flow-chat-presentation");
+const brandExportsDirectory = path.resolve(designSystemDirectory, "../assets/brand/exports");
+const brandWordmarkFile = path.resolve(designSystemDirectory, "../png/openbitfun-wordmark.png");
+const subagentIdentityDirectory = path.resolve(designSystemDirectory, "../src/web-ui/src/flow_chat/subagent-identity");
+const subagentArtworkDirectory = path.resolve(designSystemDirectory, "../src/web-ui/src/flow_chat/assets/subagent-avatars");
 
 export default defineConfig(({ command }) => ({
   plugins: [
     react(),
     watchSourcePlugin(uiSourceDirectory),
+    watchSourcePlugin(flowChatPresentationDirectory),
+    watchSourcePlugin(subagentArtworkDirectory),
     createTokenAuthoringPlugin({ designSystemDirectory }),
   ],
   resolve: {
-    dedupe: ["react", "react-dom"],
+    dedupe: ["react", "react-dom", "lucide-react"],
     alias:
       command === "serve"
         ? [
+            {
+              find: /^@openbitfun\/ui\/brand$/,
+              replacement: path.join(uiSourceDirectory, "brand.ts"),
+            },
             {
               find: /^@openbitfun\/ui\/flow-chat$/,
               replacement: path.join(uiSourceDirectory, "flow-chat.ts"),
@@ -48,7 +59,7 @@ export default defineConfig(({ command }) => ({
   },
   server: {
     fs: {
-      allow: [designSystemDirectory],
+      allow: [brandExportsDirectory, brandWordmarkFile, designSystemDirectory, subagentIdentityDirectory, subagentArtworkDirectory, flowChatPresentationDirectory],
     },
     host: "127.0.0.1",
     port: 4178,

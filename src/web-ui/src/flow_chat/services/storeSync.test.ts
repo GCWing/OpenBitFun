@@ -187,6 +187,26 @@ describe('storeSync history session state', () => {
     expect(syncMocks.modernState.setActiveSession).not.toHaveBeenCalled();
   });
 
+  it('projects a draft directory change before any message or canonical workspace change', () => {
+    const session = createSession({
+      isHistorical: false, historyState: 'new', workspaceId: 'original',
+      draft: { workspaceId: 'original', phase: 'editing', turnId: 'first' },
+    });
+    syncMocks.flowState.sessions.set(session.sessionId, session);
+    syncMocks.flowState.activeSessionId = session.sessionId;
+    const stop = startAutoSync();
+    const selected = { ...session, draft: { ...session.draft!, workspaceId: 'destination' } };
+    syncMocks.flowState.sessions.set(session.sessionId, selected);
+    syncMocks.listeners.forEach(listener => listener(syncMocks.flowState));
+    stop();
+
+    expect(syncMocks.modernState.activeSession).toBe(selected);
+    expect(syncMocks.modernState.activeSession?.draft?.workspaceId).toBe('destination');
+    expect(syncMocks.modernState.activeSession?.workspaceId).toBe('original');
+    expect(syncMocks.flowState.activeSessionId).toBe(session.sessionId);
+    expect(syncMocks.modernState.setActiveSession).toHaveBeenCalledTimes(2);
+  });
+
   it('shares a subscription until the final host leaves and avoids duplicate projection work', () => {
     const session = createSession();
     syncMocks.flowState.sessions.set(session.sessionId, session);

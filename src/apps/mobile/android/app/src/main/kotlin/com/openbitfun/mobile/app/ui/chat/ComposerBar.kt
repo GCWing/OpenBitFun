@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -59,6 +60,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -80,6 +82,7 @@ import com.openbitfun.mobile.core.feature.session.ChatComposerPolicy
 import com.openbitfun.mobile.core.feature.session.ComposerImage
 import com.openbitfun.mobile.core.feature.session.ComposerPrimaryAction
 import com.openbitfun.mobile.core.feature.session.ModelOption
+import com.openbitfun.mobile.core.feature.session.ModelRole
 
 internal const val COMPOSER_TEST_TAG: String = "composer"
 internal const val COMPOSER_INPUT_TEST_TAG: String = "composer-input"
@@ -287,9 +290,6 @@ internal fun ComposerBar(
                         enter = compactControlEnter,
                         exit = compactControlExit,
                     ) {
-                        if (capabilities.showVoiceInput && !busy && (draft.isNotBlank() || images.isNotEmpty())) {
-                            PrimaryActionButton(action = ComposerPrimaryAction.VOICE, onVoice = onVoice, onSend = onSend, onStop = onStop, testTag = "composer-voice")
-                        }
                         PrimaryActionButton(
                             action = action,
                             stopEnabled = ChatComposerPolicy.canStop(streaming, capabilities.requiresRemoteConnection, phase),
@@ -338,8 +338,8 @@ internal fun ComposerBar(
                             )
                         }
                         Box(modifier = Modifier.weight(1f))
-                        if (capabilities.showVoiceInput && !busy && (draft.isNotBlank() || images.isNotEmpty())) {
-                            PrimaryActionButton(action = ComposerPrimaryAction.VOICE, onVoice = onVoice, onSend = onSend, onStop = onStop, testTag = "composer-voice")
+                        if (capabilities.showVoiceInput && (draft.isNotBlank() || images.isNotEmpty())) {
+                            PrimaryActionButton(action = if (busy) ComposerPrimaryAction.VOICE_BLOCKED else ComposerPrimaryAction.VOICE, onVoice = onVoice, onSend = onSend, onStop = onStop, testTag = "composer-voice")
                         }
                         PrimaryActionButton(
                             action = action,
@@ -402,7 +402,17 @@ private fun ComposerField(
                         color = colors.onSurfaceVariant,
                     )
                 }
-                field()
+                // Focus expands the same editor. At rest, render a one-line
+                // preview so overflow cannot scroll sideways or lose the draft.
+                Box(Modifier.alpha(if (!expanded && draft.isNotEmpty()) 0f else 1f)) { field() }
+                if (!expanded && draft.isNotEmpty()) Text(
+                    draft,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = colors.onSurface,
+                    modifier = Modifier.fillMaxWidth().clearAndSetSemantics {},
+                )
             }
         },
     )
@@ -446,7 +456,7 @@ private fun ModelControl(
 ) {
     val label = stringResource(R.string.models_title)
     val displayModel = model ?: modelOptions.firstOrNull { it.selected }
-    val displayLabel = displayModel?.primaryLabel ?: label
+    val displayLabel = displayModel?.let { modelOptionTitle(it) } ?: label
     val wide = composerIsWide(LocalConfiguration.current.screenWidthDp)
     Box {
         Row(
@@ -530,7 +540,9 @@ private fun ModelSelectorContent(
     onDismiss: () -> Unit,
 ) {
     val selectorOptions = remember(options) {
-        options.filter(ModelOption::selected) + options.filterNot(ModelOption::selected)
+        options.filter { it.role != null } +
+            options.filter { it.role == null && it.selected } +
+            options.filter { it.role == null && !it.selected }
     }
     val visibleRows = selectorOptions.size.coerceAtMost(7)
     val listHeight = if (visibleRows == 0) {
@@ -597,7 +609,12 @@ private fun ModelSelectorContent(
                     .height(listHeight)
                     .verticalScroll(rememberScrollState()),
             ) {
-                selectorOptions.forEach { option ->
+                selectorOptions.forEachIndexed { index, option ->
+                    if (index > 0 && option.role == null && selectorOptions[index - 1].role != null) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                    val title = modelOptionTitle(option)
+                    val subtitle = modelOptionSubtitle(option)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -616,7 +633,7 @@ private fun ModelSelectorContent(
                             .clickable { onSelect(option.id) }
                             .semantics {
                                 contentDescription =
-                                    "${option.primaryLabel} · ${option.secondaryLabel}"
+                                    "$title · $subtitle"
                                 role = Role.Button
                                 selected = option.selected
                             }
@@ -641,15 +658,24 @@ private fun ModelSelectorContent(
                             modifier = Modifier.weight(1f),
                         ) {
                             Text(
-                                option.primaryLabel,
+                                title,
                                 fontSize = MaterialTheme.typography.labelLarge.fontSize,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
-                                option.secondaryLabel,
+                                subtitle,
                                 fontSize = MaterialTheme.typography.bodySmall.fontSize,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        option.roles.forEach { role ->
+                            Text(
+                                stringResource(if (role == ModelRole.PRIMARY) R.string.model_role_primary else R.string.model_role_fast),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 1.dp),
                             )
                         }
                     }
@@ -658,6 +684,17 @@ private fun ModelSelectorContent(
         }
     }
 }
+
+@Composable
+internal fun modelOptionTitle(option: ModelOption): String = when (option.role) {
+    ModelRole.PRIMARY -> stringResource(R.string.model_primary)
+    ModelRole.FAST -> stringResource(R.string.model_fast)
+    null -> option.primaryLabel
+}
+
+@Composable
+internal fun modelOptionSubtitle(option: ModelOption): String =
+    if (option.fallsBackToPrimary) stringResource(R.string.model_fast_fallback) else option.secondaryLabel
 
 /** What a control that is offered but not usable right now looks like. */
 private const val DimmedAlpha: Float = 0.38f

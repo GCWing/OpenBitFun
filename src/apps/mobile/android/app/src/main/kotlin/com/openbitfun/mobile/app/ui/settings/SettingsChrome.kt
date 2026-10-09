@@ -3,14 +3,10 @@ package com.openbitfun.mobile.app.ui.settings
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,7 +27,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
-import com.openbitfun.mobile.app.R
 import com.openbitfun.mobile.app.ui.theme.generated.MobileDesignGeometry
 
 /**
@@ -47,10 +42,8 @@ import com.openbitfun.mobile.app.ui.theme.generated.MobileDesignGeometry
 /**
  * The 18sp Bold MUTED heading the source puts above every card.
  *
- * Indented by the card's own horizontal padding rather than sitting on the page
- * margin, as every `padding({ left: 18 })` on those headers does: the heading and
- * the first line of the card below it then share one left edge, and the page
- * reads as a column of labelled blocks instead of a ragged left rule.
+ * Indented 12dp, the same inset as every other section title on the settings
+ * page, so the page's headings share one left edge.
  */
 @Composable
 internal fun SettingsSectionHeader(text: String, modifier: Modifier) {
@@ -58,7 +51,7 @@ internal fun SettingsSectionHeader(text: String, modifier: Modifier) {
         text,
         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier.padding(start = 18.dp),
+        modifier = modifier.padding(start = 12.dp),
     )
 }
 
@@ -89,62 +82,7 @@ internal fun SettingsCard(
     )
 }
 
-/**
- * A row that leads somewhere.
- *
- * The chevron is the whole contract: the source uses one for the profile entry
- * and for the QR-connect entry, and nowhere else — a row without one changes
- * something in place rather than opening a page.
- */
-@Composable
-internal fun SettingsEntryRow(
-    title: String,
-    subtitle: String,
-    @DrawableRes icon: Int,
-    minHeight: Int,
-    onClick: () -> Unit,
-    modifier: Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .defaultMinSize(minHeight = minHeight.dp)
-            .padding(horizontal = 18.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        SettingsAvatar(icon = icon, diameter = 34)
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (subtitle.isNotBlank()) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        Icon(
-            painterResource(R.drawable.ic_symbol_chevron_right),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(16.dp),
-        )
-    }
-}
-
-/** The soft round glyph slot the source draws in front of an entry row. */
+/** The soft round glyph slot the source draws in front of a row. */
 @Composable
 internal fun SettingsAvatar(@DrawableRes icon: Int, diameter: Int) {
     Box(

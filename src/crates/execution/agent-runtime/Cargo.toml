@@ -18,9 +18,11 @@ required-features = ["agent-runtime"]
 [features]
 default = []
 definition-contracts = [
+    "native-hook-settings",
     "dep:openbitfun-core-types",
     "dep:regex",
     "dep:serde",
+    "dep:serde_json",
     "dep:serde_yaml",
     "dep:thiserror",
 ]
@@ -37,6 +39,7 @@ native-hook-runtime = [
     "tokio/macros",
     "tokio/process",
     "tokio/rt",
+    "tokio/sync",
     "tokio/time",
 ]
 agent-runtime = [

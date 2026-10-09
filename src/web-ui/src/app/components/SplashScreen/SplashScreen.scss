@@ -29,10 +29,6 @@
 
   &--exiting {
     animation: splash-bg-exit 0.5s ease-in-out both;
-
-    .splash-screen__logo-wrap {
-      animation: none; // Stop idle pulse; let container opacity drive the fade
-    }
   }
 }
 
@@ -52,30 +48,20 @@
   position: relative;
   width: 120px;
   height: 120px;
-  animation: splash-logo-idle 3.2s ease-in-out infinite;
-  // WebKit prefix for Linux WebKitGTK compatibility
-  -webkit-animation: splash-logo-idle 3.2s ease-in-out infinite;
-  will-change: transform;
 }
 
 .splash-screen__logo {
   display: block;
-  position: absolute;
-  top: 50%;
-  left: 50%;
   width: 120px;
   height: 120px;
-  background-color: var(--openbitfun-color-content-on-light);
-  transform: translate(-50%, -50%);
-  -webkit-mask: url('/brand/openbitfun-mark.svg') center / contain no-repeat;
-  mask: url('/brand/openbitfun-mark.svg') center / contain no-repeat;
+  color: var(--openbitfun-color-content-on-light);
   user-select: none;
   // Ensure proper rendering on Linux
   -webkit-user-select: none;
 }
 
 [data-color-scheme='dark'] .splash-screen__logo {
-  background-color: var(--openbitfun-color-content-on-dark);
+  color: var(--openbitfun-color-content-on-dark);
 }
 
 .splash-screen__message {
@@ -123,18 +109,6 @@
   }
 }
 
-// Idle logo: keep the requested tone stable and use only a slight breathing scale
-@keyframes splash-logo-idle {
-  0%,
-  100% {
-    transform: scale(0.99);
-  }
-
-  50% {
-    transform: scale(1);
-  }
-}
-
 // Exit: whole container fades to transparent
 @keyframes splash-bg-exit {
   0%   { opacity: 1; }
@@ -144,10 +118,6 @@
 // ── Reduced motion ────────────────────────────────────────────────────────────
 
 @media (prefers-reduced-motion: reduce) {
-  .splash-screen__logo-wrap {
-    animation: none;
-  }
-
   .splash-screen__message {
     animation: none;
     transition: none;

@@ -15,7 +15,6 @@ import {
 } from '../../services/RemoteSessionIdentity';
 import { RemoteUiState } from '../../services/RemoteUiState';
 import { AppRootHostPort } from '../host/AppRootHostAdapter';
-import { CONNECT_INTENT_SCAN } from '../state/AppShellState';
 import {
   AppNavigationBackAction,
   AppRoute,
@@ -42,6 +41,10 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
   }
 
   async aboutToAppear(onAccountRestored?: (signedIn: boolean) => void): Promise<void> {
+    // Account login can be tapped while the rest of the cold-start work is
+    // still running. Initialize its secure store first so the login path never
+    // races the asynchronous cache and onboarding setup below.
+    await this.settingsController.initializeCloudAccount(this.host.context());
     await this.localeController.initialize(this.host.context());
     if (this.host.offerTaskNotifications) {
       await this.taskCompletionNotificationPort.offerOnboarding(
@@ -52,7 +55,6 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
     await this.remoteChatCache.init(this.host.context());
     await this.remoteSessionListCache.init(this.host.context());
     await this.restoreCachedRemoteSessions();
-    await this.settingsController.initializeCloudAccount(this.host.context());
     if (onAccountRestored) onAccountRestored(this.settingsController.hasCloudAccountSession());
     if (this.settingsController.hasCloudAccountSession()) {
       try {
@@ -75,7 +77,7 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
    * mints the watch's credential itself in that case, so waiting for a live
    * connection would keep the listener down exactly when it is not needed.
    */
-  private async startWatchProvisioning(): Promise<void> {
+  protected async startWatchProvisioning(): Promise<void> {
     if (!this.settingsController.hasCloudAccountSession() && !this.hasRemoteBindingForResume()) {
       return;
     }
@@ -84,6 +86,7 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
 
   onPageShow(): void {
     RemoteLogger.info(`page show state=${(this.remotePageState.connectionState as ConnectionState)} route=${this.appShellViewModel.currentRoute()}`);
+    this.settingsController.setAuthorizationForeground(true);
     this.taskCompletionNotificationController.onForeground();
     this.remoteActivityViewModel.resume();
     // Idempotent: covers the pairing that happened after the last cold start.
@@ -94,6 +97,7 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
 
   onPageHide(): void {
     RemoteLogger.info(`page hide state=${(this.remotePageState.connectionState as ConnectionState)} route=${this.appShellViewModel.currentRoute()}`);
+    this.settingsController.setAuthorizationForeground(false);
     this.settingsController.stopPresencePolling();
     const activeRemoteTurn = this.remotePageState.activeTurnMessage;
     if (this.isRemoteConversationContext(this.remotePageState.activeSession.sessionId)) {
@@ -464,25 +468,6 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
     if (revealSidebar) {
       this.openAppSidebar();
     }
-  }
-
-  openRemoteControlSettings(): void {
-    setTimeout(() => {
-      this.appShellState.openSettings('remote');
-    }, 180);
-  }
-
-  /**
-   * From the settings row that says 「扫描二维码连接」, and so straight to the
-   * camera: this is the one entry that names what it opens, and it is also the
-   * only way a signed-in phone can reach the scanner at all — every other path
-   * stops at the account's device list.
-   */
-  openAddConnectionFromSettings(): void {
-    this.appShellState.setSettingsVisible(false);
-    setTimeout(() => {
-      this.openConnectSheet(CONNECT_INTENT_SCAN);
-    }, 220);
   }
 
   /**

@@ -2963,6 +2963,7 @@ fn remote_connect_model_catalog_builder_preserves_config_shape() {
                         value: "high".to_string(),
                     }],
                     source: ReasoningPresetSource::ModelsDev,
+                    effective_effort: None,
                     execution_provider: None,
                     execution_model: None,
                 }],
@@ -3271,6 +3272,7 @@ fn remote_connect_tracker_keeps_subagent_items_out_of_parent_accumulators() {
         agent_type: None,
         model_id: None,
         focused_review_display_label: None,
+        continuation_policy: None,
     });
     tracker.handle_agentic_event(&AgenticEvent::TextChunk {
         session_id: "child-session".to_string(),

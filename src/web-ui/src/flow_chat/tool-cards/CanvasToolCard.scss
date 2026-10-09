@@ -28,7 +28,7 @@
 .canvas-tool-card__diagnostics {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--openbitfun-space-1);
   color: var(--openbitfun-color-status-warning-content);
   font-size: var(--openbitfun-type-flow-control-font-size);
 }
@@ -40,7 +40,6 @@
 .canvas-tool-card__body {
   display: grid;
   gap: var(--openbitfun-space-2);
-  padding: var(--openbitfun-control-flow-chat-card-expanded-padding-block) var(--openbitfun-control-flow-chat-card-expanded-padding-inline);
 }
 
 .canvas-tool-card__source-preview {
@@ -49,8 +48,7 @@
 }
 
 .canvas-tool-card__meta {
-  overflow: hidden;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .canvas-tool-card__diagnostic-list {

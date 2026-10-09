@@ -6,10 +6,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import { VoiceCallPanel, VoiceParticleLogo, VoiceCallIdentity, VoiceCallTranscript } from "../dist/index.js";
 
-const motionSource = await readFile(new URL("../src/components/VoiceParticleLogo/voiceParticleDynamics.ts", import.meta.url), "utf8");
+const motionSource = await readFile(new URL("../src/brand/VoiceParticleLogo/voiceParticleDynamics.ts", import.meta.url), "utf8");
 const motionModule = ts.transpileModule(motionSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const { VoiceParticleAudioState, particleForce, SILENT_VOICE_AUDIO } = await import(`data:text/javascript;base64,${Buffer.from(motionModule).toString("base64")}`);
-const formationSource = await readFile(new URL("../src/components/VoiceParticleLogo/voiceParticleFormation.ts", import.meta.url), "utf8");
+const formationSource = await readFile(new URL("../src/brand/VoiceParticleLogo/voiceParticleFormation.ts", import.meta.url), "utf8");
 const formationModule = ts.transpileModule(formationSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const { VoiceParticleFormation } = await import(`data:text/javascript;base64,${Buffer.from(formationModule).toString("base64")}`);
 

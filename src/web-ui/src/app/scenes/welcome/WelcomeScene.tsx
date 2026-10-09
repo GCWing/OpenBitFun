@@ -6,6 +6,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import { isReducedMotionPreferred } from '@/shared/utils/motionPreference';
+import { OpenBitFunMark } from '@openbitfun/ui/brand';
 import './WelcomeScene.scss';
 
 const TYPE_MS = 100;
@@ -116,7 +117,9 @@ const WelcomeScene: React.FC = () => {
               data-openbitfun-scene="welcome"
               data-openbitfun-part="logo"
               aria-hidden="true"
-            />
+            >
+              <OpenBitFunMark style={{ width: '100%', height: '100%' }} />
+            </span>
             <span className="welcome-scene__brand-name">
               OpenBitFun{t('welcomeScene.space.separator')}
             </span>

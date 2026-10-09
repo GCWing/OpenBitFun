@@ -162,6 +162,11 @@
   "core": {
     "initializationFailed": "Core system initialization failed"
   },
+  "moduleLoad": {
+    "title": "This view could not be loaded",
+    "description": "Try again, or reload the application if the problem persists. Save any unsaved work before reloading.",
+    "retry": "Try again"
+  },
   "boundary": {
     "title": "Application Error",
     "reload": "Reload",

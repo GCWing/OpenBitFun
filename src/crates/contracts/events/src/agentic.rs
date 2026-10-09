@@ -1,6 +1,8 @@
 //! Agentic Events Definition
 pub use openbitfun_core_types::errors::{AiErrorDetail, ErrorCategory};
-use openbitfun_core_types::{ReasoningContentKind, SessionExecutionTarget, ToolImageAttachment};
+use openbitfun_core_types::{
+    ReasoningContentKind, SessionContinuationPolicy, SessionExecutionTarget, ToolImageAttachment,
+};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::time::SystemTime;
 
@@ -180,6 +182,9 @@ pub enum AgenticEvent {
         /// Runtime-admitted public label for a focused Review child.
         #[serde(skip_serializing_if = "Option::is_none")]
         focused_review_display_label: Option<String>,
+        /// Runtime-owned admission policy for subsequent child turns.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        continuation_policy: Option<SessionContinuationPolicy>,
     },
 
     DialogTurnCompleted {
@@ -1110,6 +1115,7 @@ mod tests {
             agent_type: Some("GeneralPurpose".to_string()),
             model_id: Some("fast".to_string()),
             focused_review_display_label: Some("Authentication boundary".to_string()),
+            continuation_policy: Some(SessionContinuationPolicy::FreshOnly),
         };
 
         assert_eq!(event.session_id(), Some("child-session"));
@@ -1124,10 +1130,31 @@ mod tests {
         assert_eq!(serialized["parent_tool_call_id"], "tool-1");
         assert_eq!(serialized["agent_type"], "GeneralPurpose");
         assert_eq!(serialized["model_id"], "fast");
+        assert_eq!(serialized["continuation_policy"], "fresh_only");
         assert_eq!(
             serialized["focused_review_display_label"],
             "Authentication boundary"
         );
+    }
+
+    #[test]
+    fn subagent_session_linked_accepts_legacy_payload_without_continuation_policy() {
+        let event: AgenticEvent = serde_json::from_value(json!({
+            "type": "SubagentSessionLinked",
+            "session_id": "child",
+            "subagent_dialog_turn_id": "turn",
+            "parent_session_id": "parent",
+            "parent_dialog_turn_id": "parent-turn",
+            "parent_tool_call_id": "tool"
+        }))
+        .expect("legacy linked event");
+        assert!(matches!(
+            event,
+            AgenticEvent::SubagentSessionLinked {
+                continuation_policy: None,
+                ..
+            }
+        ));
     }
 
     #[test]

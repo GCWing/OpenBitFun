@@ -26,16 +26,16 @@ use openbitfun_core::agentic::coordination::{
 use openbitfun_core::agentic::core::{MessageContent, MessageRole, Session, SessionConfig};
 use openbitfun_core::miniapp::agent_bridge::{
     agent_run_id_from_request, build_agent_submission_plan, extract_agent_turn_text,
-    plan_agent_workspace, require_agent_prompt, require_enabled_agent_permissions,
-    validate_reused_session, MiniAppAgentRateLimiter, MiniAppAgentRunRecord,
-    MiniAppAgentRunRegistry, MiniAppAgentSubmissionPlan, MiniAppAgentTurnMessage,
-    MiniAppAgentTurnMessageRole, MINIAPP_AGENT_KIND, UNKNOWN_AGENT_RUN_MESSAGE,
-    UNKNOWN_AGENT_SESSION_MESSAGE,
+    require_agent_prompt, require_enabled_agent_permissions, validate_reused_session,
+    MiniAppAgentRateLimiter, MiniAppAgentRunRecord, MiniAppAgentRunRegistry,
+    MiniAppAgentSubmissionPlan, MiniAppAgentTurnMessage, MiniAppAgentTurnMessageRole,
+    MINIAPP_AGENT_KIND, UNKNOWN_AGENT_RUN_MESSAGE, UNKNOWN_AGENT_SESSION_MESSAGE,
 };
 use openbitfun_core::miniapp::agent_context::{
     remove_agent_context_snapshot, reserve_agent_context_snapshot, MiniAppAgentContextInput,
     MiniAppAgentContextSnapshot,
 };
+use openbitfun_core::miniapp::agent_workspace::prepare_agent_workspace;
 use openbitfun_core::OpenBitFunError;
 
 // ============== Run registry ==============
@@ -393,15 +393,13 @@ pub async fn miniapp_agent_ensure_session(
         .miniapp_manager
         .path_manager()
         .miniapp_dir(&request.app_id);
-    let workspace_plan = plan_agent_workspace(
+    let workspace_plan = prepare_agent_workspace(
+        &state.workspace_service,
         None,
         Some(request.app_data_workspace.as_str()),
         &app_data_dir,
-    )?;
-    if workspace_plan.create_if_missing {
-        std::fs::create_dir_all(&workspace_plan.path)
-            .map_err(|e| format!("Failed to create MiniApp agent workspace: {}", e))?;
-    }
+    )
+    .await?;
 
     let run_sequence = AGENT_RUN_COUNTER.fetch_add(1, Ordering::Relaxed);
     let run_id = agent_run_id_from_request(&request.app_id, None, run_sequence);
@@ -504,15 +502,13 @@ pub async fn miniapp_agent_run(
         .miniapp_manager
         .path_manager()
         .miniapp_dir(&request.app_id);
-    let workspace_plan = plan_agent_workspace(
+    let workspace_plan = prepare_agent_workspace(
+        &state.workspace_service,
         request.workspace_path.as_deref(),
         request.app_data_workspace.as_deref(),
         &app_data_dir,
-    )?;
-    if workspace_plan.create_if_missing {
-        std::fs::create_dir_all(&workspace_plan.path)
-            .map_err(|e| format!("Failed to create MiniApp agent workspace: {}", e))?;
-    }
+    )
+    .await?;
     let workspace_path = workspace_plan.workspace_path.clone();
     let run_sequence = if request
         .run_id

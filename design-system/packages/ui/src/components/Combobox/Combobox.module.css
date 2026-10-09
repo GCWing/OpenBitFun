@@ -305,7 +305,7 @@
   }
 
   .popover:focus-within {
-    border-color: var(--openbitfun-color-field-border-focus);
+    border-color: var(--openbitfun-color-border-default);
   }
 
   .popover[data-invalid="true"] {

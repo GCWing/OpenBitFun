@@ -141,6 +141,7 @@ const ExportContent: React.FC<ExportContentProps> = ({ dialogTurn, expandThinkin
                         thinkingItem={{
                           ...thinkingItem,
                           isStreaming: false,
+                          status: 'completed',
                         }}
                         isLastItem={false}
                         forceExpanded={expandThinking}

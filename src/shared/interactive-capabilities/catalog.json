@@ -171,6 +171,11 @@
   },
   "agentToolExclusions": [
     {
+      "tool": "Task",
+      "reasonZh": "兼容性委派原语，仅为显式配置的旧版智能体保留，不是独立的用户功能。",
+      "reasonEn": "Compatibility delegation primitive retained for explicitly configured legacy agents; it is not a standalone user feature."
+    },
+    {
       "tool": "GetToolSpec",
       "reasonZh": "延迟工具的契约发现原语，只负责按需加载另一个工具的输入说明，不是独立的用户功能。",
       "reasonEn": "Framework discovery primitive for loading another deferred tool's input contract; it is not a standalone user feature."
@@ -436,6 +441,7 @@
           "control": {
             "kind": "delegate",
             "tools": [
+              "ListWorkspaces",
               "SessionControl",
               "SessionHistory",
               "Read",
@@ -462,21 +468,36 @@
           ]
         },
         {
+          "id": "session-storage-directory",
+          "titleZh": "从工作区或会话菜单打开会话存储目录，用于备份与手动排障",
+          "titleEn": "Open session storage from workspace or session menus for backups and manual troubleshooting",
+          "control": {
+            "kind": "open",
+            "reasonCode": "visualSelection",
+            "reasonZh": "需要用户选择工作区或会话，并在本机桌面文件管理器中操作；远程工作区打开本机保存的会话镜像，对端设备和 Detached Dispatch 会话不支持此操作。打开目录不会修改会话归属。",
+            "reasonEn": "The user selects a workspace or session and works in the local desktop file manager; remote workspaces reveal their locally stored session mirror, while peer and detached-dispatch sessions are unsupported. Opening storage does not change session ownership."
+          },
+          "evidence": [
+            "command:reveal_session_storage_directory"
+          ]
+        },
+        {
           "id": "agent-session-coordination",
           "titleZh": "让智能体创建、列出、取消、删除会话或向另一会话发送消息",
           "titleEn": "Let an agent create, list, cancel, or delete sessions and send messages to another session",
           "control": {
             "kind": "delegate",
             "tools": [
+              "ListWorkspaces",
               "SessionControl",
               "SessionMessage"
             ],
             "workflowZh": [
-              "用 SessionControl 在明确工作区内创建或列出会话；取消只终止当前运行轮次，删除是独立动作",
+              "用 ListWorkspaces 获取运行主机登记的 workspace_id，再传给 SessionControl.workspace 创建或列出本地或远程会话；绝对路径仅在调用者执行环境中解析；取消只终止当前轮次，删除是独立动作",
               "需要让另一持久会话接手工作时用 SessionMessage，并保留异步返回；跨远程边界时沿用目标会话绑定，不得复用控制器路径"
             ],
             "workflowEn": [
-              "Use SessionControl to create or list sessions in an explicit workspace; cancel affects only the active turn and delete is separate",
+              "Use ListWorkspaces to discover runtime-host workspace IDs, then pass one as SessionControl.workspace to create or list local or remote sessions; absolute paths resolve in the caller environment; cancel affects only the active turn and delete is separate",
               "Use SessionMessage when another persisted session should take over work and retain its asynchronous result; preserve the target session binding across remote boundaries"
             ]
           },
@@ -811,20 +832,18 @@
           "control": {
             "kind": "delegate",
             "tools": [
-              "Task",
               "AgentSpawn",
               "AgentWait",
               "AgentSendInput",
-              "AgentInterrupt",
-              "AgentList",
-              "AgentDelete"
+              "AgentControl",
+              "AgentList"
             ],
             "workflowZh": [
-              "按任务形态使用 Task 或 AgentSpawn 启动有边界的子任务，并保留返回的 agent_id",
+              "使用 AgentSpawn 启动有边界的子任务，并保留返回的 agent_id",
               "用 AgentList/AgentWait 查看进度；需要调整时用 AgentSendInput，必要时再中断或删除，最终综合子智能体结果"
             ],
             "workflowEn": [
-              "Start a bounded subtask with Task or AgentSpawn and retain the returned agent_id",
+              "Start a bounded subtask with AgentSpawn and retain the returned agent_id",
               "Use AgentList or AgentWait for progress, AgentSendInput for corrections, and interrupt or delete only when necessary before synthesizing the results"
             ]
           },
@@ -911,7 +930,25 @@
           },
           "evidence": [
             "command:create_assistant_workspace",
+            "command:get_assistant_workspaces",
             "source:src/web-ui/src/app/scenes/profile/views/NurseryGallery.tsx#NurseryGallery"
+          ]
+        },
+        {
+          "id": "assistant-open-close",
+          "titleZh": "关闭侧栏中的助理并取消正在运行的会话，保留配置和历史，之后从助理空间重新打开",
+          "titleEn": "Close sidebar assistants and cancel running sessions, preserve configuration and history, and reopen them from the assistant gallery",
+          "control": {
+            "kind": "open",
+            "reasonCode": "visualSelection",
+            "reasonZh": "关闭操作依赖用户选择的助理；助理空间保留完整目录，并提供重新打开入口。",
+            "reasonEn": "Closing depends on the assistant selected by the user; the gallery retains the complete catalog and provides a reopen action."
+          },
+          "evidence": [
+            "command:close_workspace",
+            "command:open_workspace",
+            "source:src/web-ui/src/app/components/NavPanel/sections/workspaces/WorkspaceItem.tsx#handleCloseWorkspace",
+            "source:src/web-ui/src/app/scenes/profile/views/NurseryGallery.tsx#handleOpenAssistant"
           ]
         },
         {
@@ -5813,11 +5850,14 @@
       "id": "setting.application.input",
       "kind": "setting",
       "categoryId": "application",
-      "titleZh": "语音",
-      "titleEn": "Voice",
-      "summaryZh": "配置语音输入、麦克风、识别语言、本地模型与实时语音通话。",
-      "summaryEn": "Configure voice input, microphones, recognition language, local models, and realtime voice calls.",
+      "titleZh": "输入与交互",
+      "titleEn": "Input & interaction",
+      "summaryZh": "配置对话文本选择操作、语音输入、麦克风、识别语言与本地模型。",
+      "summaryEn": "Configure conversation text selection actions, voice input, microphones, recognition language, and local models.",
       "keywordsZh": [
+        "选中文字",
+        "批注",
+        "侧边提问",
         "语音设置",
         "语音",
         "麦克风",
@@ -5825,6 +5865,9 @@
         "语音识别"
       ],
       "keywordsEn": [
+        "text selection",
+        "annotation",
+        "selection toolbar",
         "voice settings",
         "voice",
         "microphone",
@@ -5832,16 +5875,37 @@
         "speech recognition"
       ],
       "highlightsZh": [
+        "选中文字操作栏的自动显示开关",
         "语音输入与本地模型",
         "识别语言和最长录音时间",
         "实时语音通话"
       ],
       "highlightsEn": [
+        "Automatic text selection toolbar preference",
         "Voice input and local models",
         "Recognition language and maximum recording time",
         "Realtime voice calls"
       ],
       "items": [
+        {
+          "id": "auto-show-selection-toolbar",
+          "titleZh": "开启或关闭选中对话文本后的自动操作栏",
+          "titleEn": "Enable or disable automatic actions after selecting conversation text",
+          "destination": {
+            "kind": "settings",
+            "pageId": "application.voice",
+            "sectionId": "text-selection"
+          },
+          "control": {
+            "kind": "direct",
+            "operations": [],
+            "options": [{ "id": "auto-show-selection-toolbar" }]
+          },
+          "evidence": [
+            "source:src/web-ui/src/app/scenes/settings/pages/application/TextSelectionSettingsSection.tsx#AUTO_SHOW_SELECTION_TOOLBAR_CONFIG_PATH",
+            "source:src/web-ui/src/locales/zh-CN/settings/application.json#textSelection.autoShowToolbar"
+          ]
+        },
         {
           "id": "voice-enabled",
           "titleZh": "在聊天输入框启用或停用语音输入",
@@ -5948,11 +6012,11 @@
       ],
       "stepsZh": [
         "打开设置",
-        "进入“应用与界面 > 语音”"
+        "进入“应用与界面 > 输入与交互”"
       ],
       "stepsEn": [
         "Open Settings",
-        "Go to App & Interface > Voice"
+        "Go to App & Interface > Input & Interaction"
       ],
       "agentExamplesZh": [
         "打开语音输入设置",
@@ -5968,6 +6032,13 @@
       },
       "operations": [],
       "options": [
+        {
+          "id": "auto-show-selection-toolbar",
+          "titleZh": "自动显示选中文字操作栏",
+          "titleEn": "Automatically show text selection actions",
+          "descriptionZh": "选中对话文本后自动显示批注和提问操作；关闭后仍可使用右键菜单和提问快捷键。",
+          "descriptionEn": "Automatically show annotation and question actions after selecting conversation text; right-click actions and the question shortcut remain available when disabled."
+        },
         {
           "id": "voice-enabled",
           "titleZh": "启用语音输入",
@@ -6037,7 +6108,7 @@
             "reasonEn": "“Search and browse all app, scene, editor, and terminal shortcuts” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
           },
           "evidence": [
-            "source:src/web-ui/src/app/scenes/settings/components/KeyboardShortcutsTab.tsx#lists every known shortcut"
+            "source:src/web-ui/src/app/scenes/settings/pages/application/KeyboardShortcutsSection.tsx#lists every known shortcut"
           ]
         },
         {
@@ -6055,8 +6126,8 @@
             "reasonEn": "“Record new shortcuts, detect conflicts, revert one binding, or reset all custom bindings” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
           },
           "evidence": [
-            "source:src/web-ui/src/app/scenes/settings/components/KeyboardShortcutsTab.tsx#buildFinalConflictMap",
-            "source:src/web-ui/src/app/scenes/settings/components/KeyboardShortcutsTab.tsx#buildStoredKeybindings({})"
+            "source:src/web-ui/src/app/scenes/settings/pages/application/KeyboardShortcutsSection.tsx#buildFinalConflictMap",
+            "source:src/web-ui/src/app/scenes/settings/pages/application/KeyboardShortcutsSection.tsx#buildStoredKeybindings({})"
           ]
         }
       ],
@@ -6666,9 +6737,9 @@
             "reasonEn": "Custom headers and request bodies may contain tokens or other secrets, so they must be edited in the protected model configuration flow and cannot enter Agent-readable discovery data."
           },
           "evidence": [
-            "source:src/web-ui/src/infrastructure/config/components/ModelSettingsPage.tsx#custom_headers",
-            "source:src/web-ui/src/infrastructure/config/components/ModelSettingsPage.tsx#custom_request_body",
-            "source:src/web-ui/src/infrastructure/config/components/ModelSettingsPage.tsx#skip_ssl_verify"
+            "source:src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.tsx#custom_headers",
+            "source:src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.tsx#custom_request_body",
+            "source:src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.tsx#skip_ssl_verify"
           ]
         },
         {
@@ -7076,7 +7147,7 @@
             "reasonEn": "“Make regular new sessions follow the last ChatInput selection or use a fixed Harness” is managed by related controls on the session settings page and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the selection visible to the user."
           },
           "evidence": [
-            "source:src/web-ui/src/infrastructure/config/components/DefaultHarnessConfig.tsx#DefaultHarnessConfig",
+            "source:src/web-ui/src/app/scenes/settings/pages/ai/DefaultHarnessSection.tsx#DefaultHarnessSection",
             "source:src/web-ui/src/locales/zh-CN/settings/runtime.json#defaultHarness.title"
           ]
         },
@@ -9450,6 +9521,9 @@
       "capabilityId": "setting.application.general"
     },
     "session": {
+      "capabilityId": "feature.ai-assistant"
+    },
+    "session_storage_directory": {
       "capabilityId": "feature.ai-assistant"
     },
     "dispatch": {

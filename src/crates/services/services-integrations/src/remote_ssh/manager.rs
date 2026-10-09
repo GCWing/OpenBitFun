@@ -269,6 +269,27 @@ impl ContainerFileReader {
     }
 }
 
+/// Byte source for one streamed container upload.
+///
+/// Both arms feed the same staging command; only the local reader differs, so a
+/// local file never has to be buffered in memory first.
+enum ContainerUploadSource<'a> {
+    Memory(&'a [u8]),
+    LocalFile(std::path::PathBuf),
+}
+
+/// Stop a container upload process and wait for its target-aware cleanup while
+/// preserving the caller's error as the operation result.
+async fn abort_container_upload(
+    control: &crate::remote_ssh::WorkspaceProcessControl,
+    completion: crate::remote_ssh::WorkspaceProcessCompletion,
+    error: anyhow::Error,
+) -> anyhow::Error {
+    let _ = control.kill().await;
+    let _ = completion.wait().await;
+    error
+}
+
 impl AsyncRead for ContainerFileReader {
     fn poll_read(
         self: std::pin::Pin<&mut Self>,
@@ -714,6 +735,22 @@ impl std::error::Error for StagedError {
 /// Per-handle ceiling for the goodbye packet. Generous for a local channel
 /// send, short enough that a chain of dead hops cannot stall shutdown.
 const SSH_DISCONNECT_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// Per-request SFTP response timeout.
+///
+/// russh-sftp defaults to 10 s, which the 256 KiB chunk this client sends turns
+/// into a ~25 KiB/s throughput floor: on a healthy but slow link every request
+/// would time out instead of transferring slowly. A single stalled request is
+/// still bounded here, and the SSH transport independently drops a connection
+/// that stops answering.
+const SFTP_REQUEST_TIMEOUT_SECS: u64 = 60;
+
+fn sftp_client_config() -> russh_sftp::client::Config {
+    russh_sftp::client::Config {
+        request_timeout_secs: SFTP_REQUEST_TIMEOUT_SECS,
+        ..Default::default()
+    }
+}
 
 fn tag_failed_stage(stage: &str, error: anyhow::Error) -> anyhow::Error {
     anyhow::Error::new(StagedError {
@@ -5343,6 +5380,64 @@ impl SSHConnectionManager {
         content: &[u8],
         on_progress: &mut impl FnMut(u64, u64) -> bool,
     ) -> anyhow::Result<()> {
+        self.container_stream_write(
+            connection_id,
+            path,
+            content.len() as u64,
+            ContainerUploadSource::Memory(content),
+            on_progress,
+        )
+        .await
+    }
+
+    /// Stream one local regular file into the container upload command without
+    /// buffering it in memory.
+    ///
+    /// The destination is replaced only after the staged bytes passed the
+    /// command's size check, so a cancelled or failed upload leaves the previous
+    /// destination untouched.
+    pub async fn container_write_file_from_path_with_progress(
+        &self,
+        connection_id: &str,
+        path: &str,
+        local_path: &std::path::Path,
+        on_progress: &mut impl FnMut(u64, u64) -> bool,
+    ) -> anyhow::Result<u64> {
+        let local_metadata = tokio::fs::symlink_metadata(local_path)
+            .await
+            .map_err(|error| {
+                anyhow!(
+                    "Failed to inspect local upload file '{}': {}",
+                    local_path.display(),
+                    error
+                )
+            })?;
+        if local_metadata.file_type().is_symlink() || !local_metadata.is_file() {
+            return Err(anyhow!(
+                "Local upload source is not a regular file: {}",
+                local_path.display()
+            ));
+        }
+        let expected_size = local_metadata.len();
+        self.container_stream_write(
+            connection_id,
+            path,
+            expected_size,
+            ContainerUploadSource::LocalFile(local_path.to_path_buf()),
+            on_progress,
+        )
+        .await?;
+        Ok(expected_size)
+    }
+
+    async fn container_stream_write(
+        &self,
+        connection_id: &str,
+        path: &str,
+        expected_size: u64,
+        source: ContainerUploadSource<'_>,
+        on_progress: &mut impl FnMut(u64, u64) -> bool,
+    ) -> anyhow::Result<()> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         let path = self.resolve_sftp_path(connection_id, path).await?;
@@ -5359,7 +5454,6 @@ impl SSHConnectionManager {
         let quoted_temporary = crate::remote_ssh::shell::quote_arg(&temporary);
         let quoted_path = crate::remote_ssh::shell::quote_arg(&path);
         let quoted_parent = crate::remote_ssh::shell::quote_arg(parent);
-        let expected_size = content.len();
         let sweep = stale_upload_sweep(&quoted_parent);
         let command = format!(
             "{sweep} \
@@ -5388,31 +5482,131 @@ impl SSHConnectionManager {
             let _ = stderr.read_to_end(&mut bytes).await;
             bytes
         });
-        let total = content.len() as u64;
+        let total = expected_size;
         if !on_progress(0, total) {
-            let _ = control.kill().await;
-            let _ = completion.wait().await;
-            anyhow::bail!("Transfer cancelled");
+            return Err(abort_container_upload(
+                &control,
+                completion,
+                anyhow!("Transfer cancelled"),
+            )
+            .await);
         }
 
         let mut written = 0u64;
-        for chunk in content.chunks(256 * 1024) {
-            if let Err(error) = stdin.write_all(chunk).await {
-                let _ = control.kill().await;
-                let _ = completion.wait().await;
-                anyhow::bail!("Failed to stream container file '{}': {}", path, error);
+        match source {
+            ContainerUploadSource::Memory(content) => {
+                for chunk in content.chunks(256 * 1024) {
+                    if let Err(error) = stdin.write_all(chunk).await {
+                        return Err(abort_container_upload(
+                            &control,
+                            completion,
+                            anyhow!("Failed to stream container file '{}': {}", path, error),
+                        )
+                        .await);
+                    }
+                    written += chunk.len() as u64;
+                    if !on_progress(written, total) {
+                        return Err(abort_container_upload(
+                            &control,
+                            completion,
+                            anyhow!("Transfer cancelled"),
+                        )
+                        .await);
+                    }
+                }
             }
-            written += chunk.len() as u64;
-            if !on_progress(written, total) {
-                let _ = control.kill().await;
-                let _ = completion.wait().await;
-                anyhow::bail!("Transfer cancelled");
+            ContainerUploadSource::LocalFile(local_path) => {
+                let mut local = match tokio::fs::File::open(&local_path).await {
+                    Ok(local) => local,
+                    Err(error) => {
+                        return Err(abort_container_upload(
+                            &control,
+                            completion,
+                            anyhow!(
+                                "Failed to open local upload file '{}': {}",
+                                local_path.display(),
+                                error
+                            ),
+                        )
+                        .await);
+                    }
+                };
+                let mut buffer = vec![0u8; 256 * 1024];
+                loop {
+                    let read = match local.read(&mut buffer).await {
+                        Ok(read) => read,
+                        Err(error) => {
+                            return Err(abort_container_upload(
+                                &control,
+                                completion,
+                                anyhow!(
+                                    "Failed to read local upload file '{}': {}",
+                                    local_path.display(),
+                                    error
+                                ),
+                            )
+                            .await);
+                        }
+                    };
+                    if read == 0 {
+                        break;
+                    }
+                    if let Err(error) = stdin.write_all(&buffer[..read]).await {
+                        return Err(abort_container_upload(
+                            &control,
+                            completion,
+                            anyhow!("Failed to stream container file '{}': {}", path, error),
+                        )
+                        .await);
+                    }
+                    written = written.saturating_add(read as u64);
+                    if written > expected_size {
+                        return Err(abort_container_upload(
+                            &control,
+                            completion,
+                            anyhow!("Local upload file changed while it was being sent"),
+                        )
+                        .await);
+                    }
+                    if !on_progress(written, total) {
+                        return Err(abort_container_upload(
+                            &control,
+                            completion,
+                            anyhow!("Transfer cancelled"),
+                        )
+                        .await);
+                    }
+                }
+                if written != expected_size {
+                    return Err(abort_container_upload(
+                        &control,
+                        completion,
+                        anyhow!("Local upload file changed while it was being sent"),
+                    )
+                    .await);
+                }
             }
         }
-        stdin
-            .shutdown()
-            .await
-            .with_context(|| format!("Failed to finish container file upload '{}'", path))?;
+        if !on_progress(written, total) {
+            return Err(abort_container_upload(
+                &control,
+                completion,
+                anyhow!("Transfer cancelled"),
+            )
+            .await);
+        }
+        if let Err(error) = stdin.shutdown().await {
+            return Err(abort_container_upload(
+                &control,
+                completion,
+                anyhow!(
+                    "Failed to finish container file upload '{}': {}",
+                    path,
+                    error
+                ),
+            )
+            .await);
+        }
         let exit = completion.wait().await;
         let _stdout = stdout_task.await.unwrap_or_default();
         let stderr = stderr_task.await.unwrap_or_default();
@@ -5768,7 +5962,7 @@ impl SSHConnectionManager {
             .await
             .map_err(|e| anyhow!("Failed to request SFTP subsystem: {}", e))?;
 
-        let sftp = SftpSession::new(channel.into_stream())
+        let sftp = SftpSession::new_with_config(channel.into_stream(), sftp_client_config())
             .await
             .map_err(|e| anyhow!("Failed to create SFTP session: {}", e))?;
 
@@ -5838,7 +6032,7 @@ impl SSHConnectionManager {
             .request_subsystem(true, "sftp")
             .await
             .map_err(|error| anyhow!("Failed to request SFTP subsystem: {}", error))?;
-        let session = RawSftpSession::new(channel.into_stream());
+        let session = RawSftpSession::new_with_config(channel.into_stream(), sftp_client_config());
         session
             .init()
             .await
@@ -5974,6 +6168,34 @@ impl SSHConnectionManager {
         local_path: &std::path::Path,
         max_bytes: u64,
     ) -> anyhow::Result<u64> {
+        self.sftp_write_from_file_with_progress(
+            connection_id,
+            path,
+            local_path,
+            max_bytes,
+            &mut |_, _| true,
+        )
+        .await
+    }
+
+    /// Stream one local regular file to a remote SFTP path without buffering
+    /// the complete file in memory, reporting `(bytes_written, total_bytes)`
+    /// after every chunk. Returning `false` from `on_progress` stops the
+    /// transfer at the next chunk boundary.
+    ///
+    /// The destination is created before the first chunk, so a cancelled or
+    /// failed transfer can leave partial bytes behind. Callers that must keep
+    /// the previous destination intact stage the upload and publish it only
+    /// after this returns successfully; see
+    /// `RemoteFileService::write_file_from_local_path_with_progress`.
+    pub async fn sftp_write_from_file_with_progress(
+        &self,
+        connection_id: &str,
+        path: &str,
+        local_path: &std::path::Path,
+        max_bytes: u64,
+        on_progress: &mut impl FnMut(u64, u64) -> bool,
+    ) -> anyhow::Result<u64> {
         let local_metadata = tokio::fs::symlink_metadata(local_path)
             .await
             .map_err(|error| {
@@ -6012,6 +6234,7 @@ impl SSHConnectionManager {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let mut buffer = vec![0_u8; 256 * 1024];
         let mut written = 0_u64;
+        let total = local_metadata.len();
         loop {
             let read = local.read(&mut buffer).await.map_err(|error| {
                 anyhow!(
@@ -6031,6 +6254,9 @@ impl SSHConnectionManager {
                 .write_all(&buffer[..read])
                 .await
                 .map_err(|error| anyhow!("Failed to write remote file '{}': {}", path, error))?;
+            if !on_progress(written, total) {
+                return Err(anyhow!("Transfer cancelled"));
+            }
         }
         if written != local_metadata.len() {
             return Err(anyhow!("Local upload file changed while it was being sent"));
@@ -6572,6 +6798,17 @@ mod tests {
     use super::*;
 
     mod workspace_sftp;
+
+    #[test]
+    fn sftp_requests_tolerate_a_slow_but_healthy_link() {
+        let crate_default = russh_sftp::client::Config::default().request_timeout_secs;
+        let configured = sftp_client_config().request_timeout_secs;
+        assert_eq!(configured, SFTP_REQUEST_TIMEOUT_SECS);
+        assert!(
+            configured > crate_default,
+            "the {crate_default}s dependency default is a throughput floor for one 256 KiB chunk"
+        );
+    }
 
     struct UnpublishedSessionTestServer {
         opens: usize,
@@ -7692,6 +7929,57 @@ mod tests {
         assert!(diagnostics.contains("incomplete"));
         assert_eq!(std::fs::read(&target).unwrap(), b"preserved");
         assert!(!staged.exists());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn workspace_container_streams_a_local_file_and_keeps_the_destination_on_cancel() {
+        let temp = tempfile::tempdir().unwrap();
+        let (manager, _provider) = shell_workspace_provider_fixture(temp.path()).await;
+        let source = temp.path().join("source file.bin");
+        let target = temp.path().join("target.bin");
+        let payload = vec![7_u8; 700_000];
+        std::fs::write(&source, &payload).unwrap();
+        std::fs::write(&target, b"preserved").unwrap();
+
+        let mut progress = Vec::new();
+        let written = manager
+            .container_write_file_from_path_with_progress(
+                "workspace-shell-fixture",
+                target.to_str().unwrap(),
+                &source,
+                &mut |written, total| {
+                    progress.push((written, total));
+                    true
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(written, payload.len() as u64);
+        assert_eq!(
+            std::fs::read(&target).unwrap(),
+            payload,
+            "a completed stream must replace the destination with the local file"
+        );
+        assert_eq!(progress.first(), Some(&(0, payload.len() as u64)));
+        assert_eq!(
+            progress.last(),
+            Some(&(payload.len() as u64, payload.len() as u64))
+        );
+        assert!(progress.windows(2).all(|pair| pair[0].0 <= pair[1].0));
+
+        // The staging command publishes through a rename, so a cancelled
+        // stream must leave the previously committed destination untouched.
+        let cancelled = manager
+            .container_write_file_from_path_with_progress(
+                "workspace-shell-fixture",
+                target.to_str().unwrap(),
+                &source,
+                &mut |written, _| written < 262_144,
+            )
+            .await;
+        assert!(cancelled.is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), payload);
     }
 
     #[cfg(unix)]

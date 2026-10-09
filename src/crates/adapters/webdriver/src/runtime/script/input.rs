@@ -72,8 +72,11 @@ pub(super) fn script() -> &'static str {
       if (!element) {
         return;
       }
+      if ("value" in element || element.isContentEditable) {
+        scrollElementIntoView(element);
+        focusWithoutScroll(element);
+      }
       if ("value" in element) {
-        element.focus();
         if (!dispatchBeforeInputEvent(element, "deleteContentBackward", null)) {
           return;
         }
@@ -82,7 +85,6 @@ pub(super) fn script() -> &'static str {
         return;
       }
       if (element.isContentEditable) {
-        element.focus();
         element.textContent = "";
         emitInputEvents(element, "deleteContentBackward", null);
       }
@@ -112,7 +114,7 @@ pub(super) fn script() -> &'static str {
           return;
         }
         const selection = ownerWindow.getSelection();
-        element.focus();
+        focusWithoutScroll(element);
         if (selection && selection.rangeCount > 0) {
           selection.deleteFromDocument();
           selection.getRangeAt(0).insertNode(element.ownerDocument.createTextNode(text));

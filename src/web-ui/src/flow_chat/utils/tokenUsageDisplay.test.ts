@@ -188,6 +188,16 @@ describe('tokenUsageDisplay', () => {
     ]);
   });
 
+  it('omits missing or invalid completion metadata and preserves reported zero duration', () => {
+    const formatTime = () => '12:00:00';
+    expect(buildModelRoundCompletionMeta({ formatTime, t })).toEqual([]);
+    expect(buildModelRoundCompletionMeta({ completedAt: NaN, durationMs: Infinity, formatTime, t })).toEqual([]);
+    expect(buildModelRoundCompletionMeta({ durationMs: -1, formatTime, t })).toEqual([]);
+    expect(buildModelRoundCompletionMeta({ durationMs: 0, formatTime, t })).toEqual([
+      { key: 'duration', label: 'Duration', value: '0ms' },
+    ]);
+  });
+
   it('keeps compact token formatting stable for tooltip strings', () => {
     expect(formatCompactTokenCount(950)).toBe('950');
     expect(formatCompactTokenCount(1234)).toBe('1.23K');

@@ -135,7 +135,7 @@ describe('AppearancePackageConfigSection', () => {
 
   it('keeps cards borderless and the default package copy beside its theme selector', () => {
     const styles = readFileSync(
-      resolve(process.cwd(), 'src', 'infrastructure', 'config', 'components', 'AppearanceSettingsPage.scss'),
+      resolve(process.cwd(), 'src', 'app', 'scenes', 'settings', 'pages', 'application', 'AppearanceSettingsPage.scss'),
       'utf8',
     );
     const galleryRule = styles.match(/&__gallery \{([\s\S]*?)\n  \}/)?.[1] ?? '';

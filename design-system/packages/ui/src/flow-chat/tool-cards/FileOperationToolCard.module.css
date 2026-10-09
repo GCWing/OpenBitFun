@@ -30,7 +30,7 @@
     flex: 0 1 auto;
     min-inline-size: 0;
     overflow: hidden;
-    padding-block: var(--openbitfun-space-1);
+    padding-block: 0;
     padding-inline: var(--openbitfun-space-2);
     border-radius: var(--openbitfun-radius-sm);
     color: var(--openbitfun-color-content-muted);
@@ -47,7 +47,6 @@
     overflow: hidden;
     inline-size: 100%;
     min-inline-size: 0;
-    border-radius: var(--openbitfun-radius-sm);
   }
 
   .preview > * {
@@ -74,7 +73,7 @@
     font-weight: var(--openbitfun-type-label-selected-font-weight);
   }
 
-  .errorTitle > :where(svg, img) {
+  .errorTitle > :where(svg, img, [data-openbitfun-component="icon"]) {
     flex: 0 0 auto;
     inline-size: var(--openbitfun-font-size-xl);
     block-size: var(--openbitfun-font-size-xl);

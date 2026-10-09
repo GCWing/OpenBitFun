@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { VoiceParticleLogo, type VoiceParticleAudioReader } from "../VoiceParticleLogo";
+import { VoiceParticleLogo, type VoiceParticleAudioReader } from "../../brand/VoiceParticleLogo";
 import { OverflowText } from "../../primitives/OverflowText";
 import { Button } from "../Button";
 import styles from "./VoiceCallIdentity.module.css";

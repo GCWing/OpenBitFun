@@ -211,6 +211,14 @@ export const PANEL_CONTENT_CONFIGS: Record<PanelContentType, PanelContentConfig>
     supportsDownload: false,
     showHeader: false
   },
+  'thinking-detail': {
+    type: 'thinking-detail',
+    displayName: 'Thinking',
+    icon: { name: 'thinking' },
+    supportsCopy: false,
+    supportsDownload: false,
+    showHeader: false
+  },
   'session-usage': {
     type: 'session-usage',
     displayName: 'Session Usage',

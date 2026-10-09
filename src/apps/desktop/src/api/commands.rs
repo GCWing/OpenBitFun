@@ -40,6 +40,7 @@ struct WorkspaceStateSnapshot {
     current_workspace: Option<WorkspaceInfoDto>,
     recent_workspaces: Vec<WorkspaceInfoDto>,
     opened_workspaces: Vec<WorkspaceInfoDto>,
+    assistant_workspaces: Vec<WorkspaceInfoDto>,
     primary_assistant_workspace_id: Option<String>,
     legacy_remote_workspace: Option<crate::api::RemoteWorkspace>,
 }
@@ -51,6 +52,7 @@ pub struct WorkspaceStartupStateSnapshotDto {
     pub current_workspace: Option<WorkspaceInfoDto>,
     pub recent_workspaces: Vec<WorkspaceInfoDto>,
     pub opened_workspaces: Vec<WorkspaceInfoDto>,
+    pub assistant_workspaces: Vec<WorkspaceInfoDto>,
     pub primary_assistant_workspace_id: Option<String>,
     pub legacy_remote_workspace: Option<crate::api::RemoteWorkspace>,
 }
@@ -1979,6 +1981,12 @@ async fn collect_workspace_state_snapshot(state: &State<'_, AppState>) -> Worksp
         current_workspace,
         recent_workspaces,
         opened_workspaces,
+        assistant_workspaces: workspace_service
+            .get_assistant_workspaces()
+            .await
+            .iter()
+            .map(WorkspaceInfoDto::from_workspace_info)
+            .collect(),
         primary_assistant_workspace_id,
         legacy_remote_workspace,
     }
@@ -2096,6 +2104,7 @@ async fn initialize_workspace_startup_state_impl(
         current_workspace: snapshot.current_workspace,
         recent_workspaces: snapshot.recent_workspaces,
         opened_workspaces: snapshot.opened_workspaces,
+        assistant_workspaces: snapshot.assistant_workspaces,
         primary_assistant_workspace_id: snapshot.primary_assistant_workspace_id,
         legacy_remote_workspace: snapshot.legacy_remote_workspace,
     })
@@ -2167,6 +2176,19 @@ async fn cleanup_invalid_workspaces_impl(
             Err(format!("Failed to cleanup invalid workspaces: {}", e))
         }
     }
+}
+
+#[tauri::command]
+pub async fn get_assistant_workspaces(
+    state: State<'_, AppState>,
+) -> Result<Vec<WorkspaceInfoDto>, String> {
+    Ok(state
+        .workspace_service
+        .get_assistant_workspaces()
+        .await
+        .iter()
+        .map(WorkspaceInfoDto::from_workspace_info)
+        .collect())
 }
 
 #[tauri::command]

@@ -267,8 +267,8 @@ const createCanvasStoreHook = () => create<CanvasStore>()(
           // for callers that already use it, but never hide terminals for reuse.
           const forceRemove = options?.forceRemove === true || tab.content.type === 'terminal';
           
-          // Skip history for terminal tabs: a closed PTY cannot be restored.
-          if (!(tab.content.type === 'terminal' && forceRemove)) {
+          // Closed processes and temporary side conversations cannot be restored.
+          if (!(tab.content.type === 'terminal' && forceRemove) && !tab.content.metadata?.discardSessionOnClose) {
             // Record in close history
             draft.closedTabs.unshift({
               tab: { ...tab },
@@ -1205,9 +1205,56 @@ function rememberAgentSnapshot(key: string, snapshot: CanvasStoreState): void {
   if (idx >= 0) agentSnapshotLruOrder.splice(idx, 1);
   agentSnapshotLruOrder.push(key);
   while (agentScopeSnapshots.size > AGENT_CANVAS_SNAPSHOT_MAX) {
-    const evict = agentSnapshotLruOrder.shift();
+    // An open temporary conversation has no sidebar/history recovery path.
+    // Retain its small tab snapshot until the user explicitly closes it.
+    const evictIndex = agentSnapshotLruOrder.findIndex(scope => {
+      const state = agentScopeSnapshots.get(scope);
+      return !state || ![state.primaryGroup, state.secondaryGroup, state.tertiaryGroup]
+        .some(group => group.tabs.some(tab => tab.content.metadata?.discardSessionOnClose));
+    });
+    if (evictIndex < 0) break;
+    const [evict] = agentSnapshotLruOrder.splice(evictIndex, 1);
     if (!evict) break;
     agentScopeSnapshots.delete(evict);
+  }
+}
+
+/** Discard all views of an explicitly closed side conversation, including suspended canvases. */
+export function removeBtwSessionFromAgentCanvas(sessionId: string): void {
+  const ownsSession = (tab: CanvasTab) =>
+    tab.content.type === 'btw-session' && tab.content.data?.childSessionId === sessionId;
+  const live = useAgentCanvasStore.getState();
+  const tabIds = [live.primaryGroup, live.secondaryGroup, live.tertiaryGroup]
+    .flatMap(group => group.tabs.filter(ownsSession).map(tab => tab.id));
+  for (const tabId of tabIds) {
+    const state = useAgentCanvasStore.getState();
+    const owner = (['primary', 'secondary', 'tertiary'] as const)
+      .find(id => state[`${id}Group`].tabs.some(tab => tab.id === tabId));
+    if (owner) {
+      const tab = state[`${owner}Group`].tabs.find(tab => tab.id === tabId)!;
+      // Legacy tab metadata may predate the explicit discard contract.
+      state.updateTabContent(tabId, owner, {
+        ...tab.content, metadata: { ...tab.content.metadata, discardSessionOnClose: true },
+      });
+      state.closeTab(tabId, owner, { forceRemove: true });
+    }
+  }
+  useAgentCanvasStore.setState(state => ({
+    closedTabs: state.closedTabs.filter(record => !ownsSession(record.tab)),
+  }));
+  for (const [scope, snapshot] of agentScopeSnapshots) {
+    const groups = [snapshot.primaryGroup, snapshot.secondaryGroup, snapshot.tertiaryGroup];
+    if (!groups.some(group => group.tabs.some(ownsSession)) && !snapshot.closedTabs.some(record => ownsSession(record.tab))) continue;
+    // Restoring a scope can freeze shared groups through Immer; revise a copy.
+    const next = structuredClone(snapshot);
+    for (const group of [next.primaryGroup, next.secondaryGroup, next.tertiaryGroup]) {
+      group.tabs = group.tabs.filter(tab => !ownsSession(tab));
+      if (!group.tabs.some(tab => tab.id === group.activeTabId && !tab.isHidden)) {
+        group.activeTabId = group.tabs.find(tab => !tab.isHidden)?.id ?? null;
+      }
+    }
+    next.closedTabs = next.closedTabs.filter(record => !ownsSession(record.tab));
+    agentScopeSnapshots.set(scope, next);
   }
 }
 

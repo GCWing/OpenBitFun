@@ -1,10 +1,10 @@
-import { OverflowText, Button, IconButton } from '@openbitfun/ui';
+import { OverflowText, Button, IconButton, Icon, Tooltip, Toolbar, ToolbarGroup, StatusPill } from '@openbitfun/ui';
 import React, {useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore} from 'react';
 import {getActiveSurfaceId, onSurfaceActivated} from '@/infrastructure/peer-device/deviceSurface';
 import {createBtwPanelViewState, type BtwPanelViewState} from './btwPanelViewState';
 import {useTranslation} from 'react-i18next';
 import path from 'path-browserify';
-import { CornerUpLeft, Loader2, Square } from 'lucide-react';
+import { CornerUpLeft, Square } from 'lucide-react';
 import {FlowChatContext, FlowChatVolatileContext} from '../modern/FlowChatContext';
 import { FlowChatSelectionBar } from '../../selection/FlowChatSelectionBar';
 import { ConversationExcerptSourceProvider } from '../../selection/ConversationExcerptSources';
@@ -14,7 +14,7 @@ import {useFlowChatViewportOwner} from '../modern/useFlowChatViewportOwner';
 import {RuntimeStatusSlot} from '../modern/RuntimeStatusSlot';
 import {pendingPermissionToolCallIdsForSession} from '../modern/permissionRequestRouting';
 import {usePermissionRequests} from '../modern/usePermissionRequests';
-import {useExploreGroupState} from '../modern/useExploreGroupState';
+import {useFlowGroupState} from '../modern/useFlowGroupState';
 import {ChatInputApprovalBand} from '../ChatInputApprovalBand';
 import {ScrollToBottomButton} from '@/flow_chat';
 import {flowChatStore} from '../../store/FlowChatStore';
@@ -24,7 +24,6 @@ import {FLOWCHAT_FOCUS_ITEM_EVENT, type FlowChatFocusItemRequest} from '../../ev
 import {fileTabManager} from '@/shared/services/FileTabManager';
 import {createTab} from '@/shared/utils/tabUtils';
 import { type LineRange } from '@/shared/editor/LineRange';
-import { Tooltip, Icon } from '@openbitfun/ui';
 import { DEFAULT_RETAINED_MOUNT_MS, RetainedMountBoundary } from '@/shared/presence';
 import {resolveSessionRelationship} from '../../utils/sessionMetadata';
 import {agentAPI} from '@/infrastructure/api';
@@ -67,6 +66,7 @@ import { getMotionAwareScrollBehavior } from '../../utils/motionPreference';
 import { sessionLineageLifecycleForSession } from '../../utils/sessionLineage';
 import {
   SubagentAvatar,
+  resolveSubagentNameKey,
 } from '../../subagent-identity';
 import { FlowChatManager } from '../../services/FlowChatManager';
 import { useSessionReadOnOpen } from '../../hooks/useSessionReadOnOpen';
@@ -157,6 +157,7 @@ const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & { viewState: BtwPa
   viewState,
 }) => {
   const { t } = useTranslation('flow-chat');
+  useEffect(() => childSessionId ? flowChatStore.retainSessionHistory(childSessionId) : undefined, [childSessionId]);
   const { childSession, parentMetadata, reviewTaskOutcome } = useBtwSessionState(
     childSessionId, parentSessionId, viewKind === 'review-check',
   );
@@ -219,7 +220,12 @@ const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & { viewState: BtwPa
   const childOriginLabel = t(`childSession.kinds.${childKind}.origin`, {
     defaultValue: t('btw.origin'),
   });
-  const showOriginMeta = childKind !== 'miniapp' && childKind !== 'subagent';
+  const headerTitle = viewKind === 'review-check'
+    ? childBadgeLabel
+    : childKind === 'subagent'
+      ? t(resolveSubagentNameKey(childSessionId ?? ''))
+      : displayTitle?.trim() || resolveSessionTitle(childSession, childTitleFallback);
+  const headerModelName = childKind === 'subagent' ? childSession?.config?.modelName?.trim() : undefined;
   const sessionVirtualItems = useMemo(
     () => sessionToVirtualItems(childSession ?? null),
     [childSession],
@@ -231,15 +237,19 @@ const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & { viewState: BtwPa
     [sessionVirtualItems, viewKind],
   );
   const {
-    exploreGroupStates,
-    onExploreGroupToggle,
+    groupStates: exploreGroupStates,
+    groupReceiveFeedback,
+    expandedToolCapsules,
+    onToolCapsuleExpandedChange,
+    onGroupToggle: onExploreGroupToggle,
     onExpandGroup,
     onExpandAllInTurn,
     onCollapseGroup,
-  } = useExploreGroupState(virtualItems, viewState.exploreGroupStates);
+  } = useFlowGroupState(virtualItems, viewState.exploreGroupStates, childSessionId, viewState.expandedToolCapsules);
   useEffect(() => {
     viewState.exploreGroupStates = exploreGroupStates;
-  }, [exploreGroupStates, viewState]);
+    viewState.expandedToolCapsules = expandedToolCapsules;
+  }, [expandedToolCapsules, exploreGroupStates, viewState]);
   const isReviewDetail = viewKind === 'review-check' || childKind === 'review' || childKind === 'deep_review';
   const reviewDetailProjection = isReviewDetail
     ? deriveReviewDetailProjection(childSession, virtualItems.length > 0, reviewTaskOutcome)
@@ -364,10 +374,12 @@ const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & { viewState: BtwPa
     allowUserMessageRollback: false,
     allowUserMessageEdit: false,
     allowTranscriptExport: viewKind !== 'review-check',
+    onGroupToggle: onExploreGroupToggle,
     onExploreGroupToggle,
     onExpandGroup,
     onExpandAllInTurn,
     onCollapseGroup,
+    onToolCapsuleExpandedChange,
   }), [
     childSession,
     childSessionId,
@@ -377,13 +389,17 @@ const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & { viewState: BtwPa
     onExpandGroup,
     onExpandAllInTurn,
     onCollapseGroup,
+    onToolCapsuleExpandedChange,
     viewKind,
   ]);
 
   const volatileContextValue = useMemo(() => ({
+    groupStates: exploreGroupStates,
+    groupReceiveFeedback,
     exploreGroupStates,
+    expandedToolCapsules,
     pendingPermissionToolCallIds,
-  }), [exploreGroupStates, pendingPermissionToolCallIds]);
+  }), [expandedToolCapsules, groupReceiveFeedback, exploreGroupStates, pendingPermissionToolCallIds]);
 
   const lastDialogTurn = childSession?.dialogTurns[childSession.dialogTurns.length - 1];
   const isTurnProcessing = isActiveReviewTurnStatus(lastDialogTurn?.status);
@@ -1017,6 +1033,8 @@ const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & { viewState: BtwPa
     if (
       event.key !== 'Escape' ||
       event.defaultPrevented ||
+      // Portal readers own their keys even though they bubble through React.
+      !event.currentTarget.contains(event.target as Node) ||
       childKind !== 'btw' ||
       !isTurnProcessing ||
       !childSessionId ||
@@ -1053,70 +1071,68 @@ const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & { viewState: BtwPa
         data-openbitfun-state={retainsReviewActionBarLayout ? 'hasActionBar' : undefined}
       >
         <div className="btw-session-panel__header" data-openbitfun-component="btw-session-panel" data-openbitfun-part="header">
-          <div className="btw-session-panel__header-left" data-openbitfun-component="btw-session-panel" data-openbitfun-part="headerMain">
-            {childKind === 'subagent' ? (
-              <SubagentAvatar
-                sessionId={childSessionId}
-                name={displayTitle}
-                size={24}
-                status={subagentAvatarStatus}
-              />
-            ) : null}
-            <span className="btw-session-panel__badge" data-openbitfun-component="btw-session-panel" data-openbitfun-part="badge">{childBadgeLabel}</span>
-          </div>
-          <div className="btw-session-panel__header-title-wrap">
-            <OverflowText className="btw-session-panel__title" data-openbitfun-component="btw-session-panel" data-openbitfun-part="title">
-              {displayTitle?.trim() || (viewKind === 'review-check'
-                ? childBadgeLabel
-                : resolveSessionTitle(childSession, childTitleFallback))}
-            </OverflowText>
-          </div>
-          <div className="btw-session-panel__header-right" data-openbitfun-component="btw-session-panel" data-openbitfun-part="actions">
-            {showOriginMeta && (
-              <div className="btw-session-panel__meta" data-openbitfun-component="btw-session-panel" data-openbitfun-part="meta">
-                <span className="btw-session-panel__meta-label">{childOriginLabel}</span>
-                <Icon name="link" size="2xs" />
-                <OverflowText className="btw-session-panel__meta-title">{resolveSessionTitle(parentMetadata, t('btw.parent'))}</OverflowText>
-              </div>
-            )}
-            {(viewKind === 'review-check' || childKind === 'review' || childKind === 'deep_review') && (
-              <Tooltip content={stoppingReview
-                  ? stoppingReviewLabel
-                  : stopReviewLabel}>
-                <IconButton
-                  className="btw-session-panel__stop-button"
-                  size="sm"
-                  onClick={() => void handleStopReviewSession()}
-                  disabled={!canStopReviewSession}
-                  aria-label={stoppingReview
-                    ? stoppingReviewLabel
-                    : stopReviewLabel}
-                  data-testid="btw-session-panel-stop-review"
-                  icon={stoppingReview ? (
-                    <Loader2
-                      className="btw-session-panel__stop-spinner"
-                      size={11}
-                      data-testid="btw-session-panel-stop-spinner"
+          <Toolbar size="sm" leading={(
+            <div className="btw-session-panel__header-left" data-openbitfun-component="btw-session-panel" data-openbitfun-part="headerMain">
+              {childKind === 'subagent' ? (
+                <SubagentAvatar
+                  sessionId={childSessionId}
+                  name={headerTitle}
+                  size={24}
+                  status={subagentAvatarStatus}
+                  showStatus={false}
+                />
+              ) : null}
+              <OverflowText className="btw-session-panel__title" data-openbitfun-component="btw-session-panel" data-openbitfun-part="title">
+                {headerTitle}
+              </OverflowText>
+              {headerModelName && <OverflowText className="btw-session-panel__model">{headerModelName}</OverflowText>}
+            </div>
+          )} trailing={(
+            <div data-openbitfun-component="btw-session-panel" data-openbitfun-part="actions">
+              <ToolbarGroup>
+                {childKind === 'btw' && childSession.isTransient && (
+                  <Tooltip content={t('btw.temporaryHint')}>
+                    <StatusPill tone="neutral">{t('btw.temporaryLabel')}</StatusPill>
+                  </Tooltip>
+                )}
+                {childKind === 'btw' && parentMetadata && (
+                  <OverflowText className="btw-session-panel__origin" data-openbitfun-component="btw-session-panel" data-openbitfun-part="meta">
+                    {childOriginLabel} {resolveSessionTitle(parentMetadata, t('btw.parent'))}
+                  </OverflowText>
+                )}
+                {childKind === 'subagent' && viewKind !== 'review-check' && subagentAvatarStatus !== 'idle' && (
+                  <StatusPill tone={subagentAvatarStatus === 'error' ? 'danger' : subagentAvatarStatus === 'waiting' ? 'warning' : 'neutral'}>
+                    {t(`flowChatHeader.agentTreeStatus.${subagentAvatarStatus}`)}
+                  </StatusPill>
+                )}
+                {(canStopReviewSession || stoppingReview) && (
+                  <Tooltip content={stoppingReview ? stoppingReviewLabel : stopReviewLabel}>
+                    <IconButton
+                      size="sm"
+                      tone="danger"
+                      loading={stoppingReview}
+                      onClick={() => void handleStopReviewSession()}
+                      disabled={!canStopReviewSession}
+                      aria-label={stoppingReview ? stoppingReviewLabel : stopReviewLabel}
+                      data-testid="btw-session-panel-stop-review"
+                      icon={<Icon glyph={Square} size="sm" />}
                     />
-                  ) : (
-                    <Square size={11} />
-                  )}
-                />
-              </Tooltip>
-            )}
-            {canReturnToParentSession && (
-              <Tooltip content={viewKind === 'review-check' ? returnToParentLabel : backTooltip}>
-                <IconButton
-                  className="btw-session-panel__origin-button"
-                  size="sm"
-                  onClick={handleReturnToParentSession}
-                  aria-label={returnToParentLabel}
-                  data-testid="btw-session-panel-origin-button"
-                  icon={<CornerUpLeft size={12} />}
-                />
-              </Tooltip>
-            )}
-          </div>
+                  </Tooltip>
+                )}
+                {canReturnToParentSession && (
+                  <Tooltip content={`${viewKind === 'review-check' ? returnToParentLabel : backTooltip} · ${childOriginLabel} ${resolveSessionTitle(parentMetadata, t('btw.parent'))}`}>
+                    <IconButton
+                      size="sm"
+                      onClick={handleReturnToParentSession}
+                      aria-label={returnToParentLabel}
+                      data-testid="btw-session-panel-origin-button"
+                      icon={<Icon glyph={CornerUpLeft} size="sm" />}
+                    />
+                  </Tooltip>
+                )}
+              </ToolbarGroup>
+            </div>
+          )} />
         </div>
 
         {activePermissionBatch ? (

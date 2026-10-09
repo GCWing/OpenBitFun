@@ -28,6 +28,7 @@ export const comboboxMeta = {
     "color.action.neutral.content",
     "color.action.neutral.surface",
     "color.border.subtle",
+    "color.border.default",
     "color.surface.panel",
     "color.focus.ring",
     "color.status.danger.border",

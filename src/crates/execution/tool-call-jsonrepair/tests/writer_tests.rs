@@ -27,7 +27,7 @@ struct FailingWriter;
 
 impl Write for FailingWriter {
     fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
-        Err(io::Error::other("destination closed"))
+        Err(io::Error::new(io::ErrorKind::Other, "destination closed"))
     }
 
     fn flush(&mut self) -> io::Result<()> {

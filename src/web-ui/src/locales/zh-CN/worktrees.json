@@ -15,7 +15,7 @@
   },
   "settings": {
     "title": "Worktrees",
-    "description": "会话在独立 Git worktree 中执行时使用的默认值。路径在当前执行主机上解析；修改根目录只影响之后新建的 worktree。",
+    "description": "设置会话隔离的默认行为，管理执行主机上的 Worktree",
     "loading": "正在加载 Worktree 设置…",
     "loadFailed": "无法加载 Worktree 设置。",
     "retry": "重试",
@@ -31,7 +31,7 @@
     },
     "rootPath": {
       "label": "Worktree 根目录",
-      "description": "之后新建的 worktree 会存放在当前执行主机的此目录下。"
+      "description": "路径属于当前执行主机；修改只影响之后新建的 Worktree"
     },
     "branchPrefix": {
       "label": "分支前缀",
@@ -39,21 +39,21 @@
     },
     "copyChanges": {
       "label": "默认复制本地改动",
-      "description": "默认关闭；开启后会把项目中未提交的改动复制到新 worktree，并保留暂存状态。"
+      "description": "将项目中未提交的改动复制到新 Worktree，并保留暂存状态"
     },
     "autoDelete": {
       "label": "自动删除旧 Worktree",
-      "description": "新建 worktree 后，如果工作区超过保留数量，OpenBitFun 会删除最旧且可安全清理的托管 worktree。"
+      "description": "新建 Worktree 后，若超过保留数量，自动清理最旧且可安全删除的托管 Worktree"
     },
     "autoDeleteLimit": {
-      "label": "自动删除上限",
-      "description": "每个工作区保留的托管 worktree 数量。包含关联会话、本地改动、未发布提交或 Git 锁的 worktree 始终会被保留。",
+      "label": "每个工作区保留数量",
+      "description": "关联会话、存在本地改动、未发布提交或 Git 锁的 Worktree 不会自动删除，实际数量可能超过此值",
       "invalid": "请输入 {{min}} 到 {{max}} 之间的数字。"
     }
   },
   "management": {
     "title": "工作区 Worktrees",
-    "description": "仅显示当前执行主机上 OpenBitFun Worktree 根目录内的 worktree，并按所属工作区分组。",
+    "description": "按工作区分组，仅列出当前执行主机上 OpenBitFun Worktree 根目录内的 Worktree",
     "loading": "正在扫描 OpenBitFun Worktree…",
     "loadFailed": "无法加载 OpenBitFun Worktree 列表。",
     "refresh": "刷新 Worktree",

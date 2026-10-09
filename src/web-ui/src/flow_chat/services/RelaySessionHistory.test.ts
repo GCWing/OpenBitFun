@@ -87,20 +87,28 @@ describe('RelaySessionHistory', () => {
     history.close();
   });
 
-  it('paints latest first and yields between older prefetch pages on the same owner', async () => {
+  it('warms only one adjacent page while visible and retains live delivery when hidden', async () => {
     vi.useFakeTimers();
     fixture.subscribe.mockImplementation(async () => {
       fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 50, cursor: 150 });
       return 'subscription';
     });
     fixture.older.mockImplementation(async () => {
-      fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 150 });
+      fixture.ready?.({ sessionId: 'session', hasMore: true, oldestSeq: 20, cursor: 150 });
     });
-    const history = new RelaySessionHistory('session', vi.fn(), vi.fn(), vi.fn());
+    const apply = vi.fn();
+    const history = new RelaySessionHistory('session', apply, vi.fn(), vi.fn());
     await history.open();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fixture.older).not.toHaveBeenCalled();
+    history.setVisible(true);
     expect(fixture.older).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(250);
     expect(fixture.older).toHaveBeenCalledOnce();
+    history.setVisible(false);
+    fixture.record?.({ sessionId: 'session', id: 'live' });
+    expect(apply).toHaveBeenCalledOnce();
+    expect(fixture.unsubscribe).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1000);
     expect(fixture.older).toHaveBeenCalledOnce();
     history.close();

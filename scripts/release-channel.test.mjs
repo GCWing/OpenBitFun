@@ -163,15 +163,15 @@ exclude = ["src/apps/relay-server", "OpenBitFun-Installer/src-tauri"]
   );
   assert.match(
     readFileSync(path.join(root, 'src/apps/mobile/android/app/build.gradle.kts'), 'utf8'),
-    /versionName = "1\.1\.0-beta\.2"/,
+    /versionName = "1\.0\.0"/,
   );
   assert.match(
     readFileSync(path.join(root, 'src/apps/mobile/ios/OpenBitFun/Info.plist'), 'utf8'),
-    /<string>1\.1\.0-beta\.2<\/string>/,
+    /<string>1\.0\.0<\/string>/,
   );
   assert.match(
     readFileSync(path.join(root, 'src/apps/mobile/harmonyos/AppScope/app.json5'), 'utf8'),
-    /"versionName": "1\.1\.0-beta\.2"/,
+    /"versionName": "1\.0\.0"/,
   );
   assert.match(
     readFileSync(path.join(root, 'Cargo.lock'), 'utf8'),

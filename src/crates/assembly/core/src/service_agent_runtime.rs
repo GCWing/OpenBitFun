@@ -91,6 +91,88 @@ use crate::service::config::types::{AIConfig, GlobalConfig, ModelCapability};
 #[cfg(feature = "remote-connect")]
 use crate::service::session::{DialogTurnData, ToolItemIdentityExt, TurnStatus};
 
+/// Host-local catalog projection. Discovery never activates a workspace or SSH.
+#[derive(Default)]
+pub(crate) struct CoreWorkspaceCatalogPort;
+
+impl CoreWorkspaceCatalogPort {
+    pub(crate) async fn list_from_service(
+        service: &crate::service::workspace::WorkspaceService,
+    ) -> Vec<openbitfun_runtime_ports::AgentWorkspaceCatalogEntry> {
+        use crate::service::workspace::WorkspaceKind;
+        use openbitfun_runtime_ports::{AgentWorkspaceCatalogEntry, AgentWorkspaceRemoteInfo};
+        service
+            .list_workspace_infos()
+            .await
+            .into_iter()
+            .map(|record| {
+                let project = record.project_workspace_id().map(str::to_owned);
+                let remote = (record.workspace_kind == WorkspaceKind::Remote).then(|| {
+                    AgentWorkspaceRemoteInfo {
+                        connection_id: record.remote_ssh_connection_id().map(str::to_owned),
+                        host: record
+                            .metadata
+                            .get("sshHost")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_owned),
+                    }
+                });
+                let binding_error = project.as_ref().err().cloned().or_else(|| {
+                    remote.as_ref().and_then(|route| {
+                        (route
+                            .connection_id
+                            .as_deref()
+                            .is_none_or(|id| id.trim().is_empty())
+                            || route
+                                .host
+                                .as_deref()
+                                .is_none_or(|host| host.trim().is_empty()))
+                        .then(|| {
+                            "Remote workspace is missing its saved SSH connection ID or host"
+                                .to_string()
+                        })
+                    })
+                });
+                let root_path = if record.workspace_kind == WorkspaceKind::Remote {
+                    openbitfun_services_core::workspace_identity::normalize_remote_workspace_path(
+                        &record.root_path.to_string_lossy(),
+                    )
+                } else {
+                    record.root_path.to_string_lossy().into_owned()
+                };
+                AgentWorkspaceCatalogEntry {
+                    workspace_id: record.id,
+                    project_workspace_id: project.ok(),
+                    name: record.name,
+                    kind: record.workspace_kind,
+                    root_path,
+                    last_accessed_at_ms: record.last_accessed.timestamp_millis(),
+                    remote,
+                    binding_error,
+                }
+            })
+            .collect()
+    }
+}
+
+#[async_trait::async_trait]
+impl openbitfun_runtime_ports::AgentWorkspaceCatalogPort for CoreWorkspaceCatalogPort {
+    async fn list_workspaces(
+        &self,
+    ) -> openbitfun_runtime_ports::PortResult<
+        Vec<openbitfun_runtime_ports::AgentWorkspaceCatalogEntry>,
+    > {
+        let service =
+            crate::service::workspace::get_global_workspace_service().ok_or_else(|| {
+                openbitfun_runtime_ports::PortError::new(
+                    openbitfun_runtime_ports::PortErrorKind::NotAvailable,
+                    "Workspace service is unavailable",
+                )
+            })?;
+        Ok(Self::list_from_service(&service).await)
+    }
+}
+
 #[cfg(feature = "opencode-plugin-host")]
 #[derive(Clone)]
 struct ConfiguredPluginSubmissionPort {
@@ -512,18 +594,49 @@ pub(crate) fn remote_workspace_metadata(
 #[cfg(feature = "remote-connect")]
 pub(crate) fn remote_workspace_display_name(
     workspace: &crate::service::workspace::WorkspaceInfo,
-) -> &str {
-    if workspace.workspace_kind == crate::service::workspace::WorkspaceKind::Assistant {
-        workspace
-            .identity
-            .as_ref()
-            .and_then(|identity| identity.name.as_deref())
-            .map(str::trim)
-            .filter(|name| !name.is_empty())
-            .unwrap_or(&workspace.name)
-    } else {
-        &workspace.name
+) -> String {
+    let preferred =
+        if workspace.workspace_kind == crate::service::workspace::WorkspaceKind::Assistant {
+            workspace
+                .identity
+                .as_ref()
+                .and_then(|identity| identity.name.as_deref())
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .unwrap_or(workspace.name.trim())
+        } else {
+            workspace.name.trim()
+        };
+    let normalized = preferred.to_ascii_lowercase();
+    if !preferred.is_empty()
+        && normalized != "unknown"
+        && normalized != "unknown project"
+        && preferred != "未知"
+        && preferred != "未知项目"
+    {
+        return preferred.to_string();
     }
+
+    let path_name = workspace
+        .root_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("");
+    if !path_name.is_empty() {
+        return path_name.to_string();
+    }
+
+    for key in ["connectionName", "sshHost"] {
+        if let Some(value) = workspace_metadata_string(&workspace.metadata, key) {
+            return value;
+        }
+    }
+    if workspace.workspace_kind == crate::service::workspace::WorkspaceKind::Remote {
+        return "Remote workspace".to_string();
+    }
+    "Workspace".to_string()
 }
 
 #[cfg(feature = "remote-connect")]
@@ -536,7 +649,7 @@ pub(crate) async fn remote_opened_workspace_catalog(
         .into_iter()
         .map(|workspace| RemoteRecentWorkspaceFacts {
             workspace_id: workspace.id.clone(),
-            name: remote_workspace_display_name(&workspace).to_string(),
+            name: remote_workspace_display_name(&workspace),
             path: workspace.root_path.to_string_lossy().to_string(),
             last_opened: workspace.last_accessed.to_rfc3339(),
             kind: remote_workspace_kind(workspace.workspace_kind.clone()),
@@ -565,7 +678,7 @@ async fn current_remote_workspace_facts() -> Option<RemoteWorkspaceFacts> {
             RemoteWorkspaceFacts {
                 workspace_id: workspace.id.clone(),
                 path: root_path.to_string_lossy().to_string(),
-                name: workspace.name,
+                name: remote_workspace_display_name(&workspace),
                 git_branch: git_branch_for_workspace_path(&root_path),
                 kind: remote_workspace_kind(workspace.workspace_kind.clone()),
                 assistant_id: workspace.assistant_id,
@@ -610,7 +723,7 @@ async fn open_workspace_with_snapshot(
     Ok(RemoteWorkspaceUpdate {
         workspace_id: info.id.clone(),
         path: info.root_path.to_string_lossy().to_string(),
-        name: info.name,
+        name: remote_workspace_display_name(&info),
         remote_connection_id,
         remote_ssh_host,
     })
@@ -646,7 +759,7 @@ fn remote_workspace_facts_from_record(
     RemoteWorkspaceFacts {
         workspace_id: workspace.id.clone(),
         path: workspace.root_path.to_string_lossy().into_owned(),
-        name: workspace.name.clone(),
+        name: remote_workspace_display_name(workspace),
         git_branch: None,
         kind: remote_workspace_kind(workspace.workspace_kind.clone()),
         assistant_id: workspace.assistant_id.clone(),
@@ -3234,7 +3347,7 @@ impl RemoteWorkspaceRuntimeHost for CoreRemoteWorkspaceRuntimeHost {
             .map(|workspace| RemoteRecentWorkspaceFacts {
                 workspace_id: workspace.id.clone(),
                 path: workspace.root_path.to_string_lossy().to_string(),
-                name: workspace.name.clone(),
+                name: remote_workspace_display_name(&workspace),
                 last_opened: workspace.last_accessed.to_rfc3339(),
                 kind: remote_workspace_kind(workspace.workspace_kind.clone()),
                 remote_connection_id: remote_workspace_metadata(

@@ -18,7 +18,9 @@ const tools: GroupableTool[] = [
   { name: 'Glob', description: 'Find files', is_readonly: true },
   { name: 'Edit', description: 'Edit files', is_readonly: false },
   { name: 'Write', description: 'Write files', is_readonly: false },
-  { name: 'Task', description: 'Delegate work to an agent', is_readonly: false },
+  { name: 'AgentSpawn', description: 'Launch an agent', is_readonly: false },
+  { name: 'AgentSendInput', description: 'Send input to an agent', is_readonly: false },
+  { name: 'AgentControl', description: 'Control an agent', is_readonly: false },
   { name: 'ListModels', description: 'List enabled OpenBitFun models', is_readonly: true },
   { name: 'AgentWait', description: 'Wait for background agent results', is_readonly: true },
   { name: 'Skill', description: 'Load a skill', is_readonly: true },
@@ -54,7 +56,7 @@ describe('tool groups', () => {
     const groups = resolveToolGroups(tools, [], t as never);
 
     expect(groups.find((group) => group.id === 'builtin:delegation')?.tools.map((tool) => tool.name))
-      .toEqual(['AgentWait', 'ListModels', 'Skill', 'Task']);
+      .toEqual(['AgentControl', 'AgentSendInput', 'AgentSpawn', 'AgentWait', 'ListModels', 'Skill']);
   });
 
   it('groups image, canvas, and computer automation tools by their user-facing purpose', () => {

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Activity, AlertTriangle, Database, FileText, GitCompare, ShieldCheck, Wrench, type LucideProps } from 'lucide-react';
+import { Activity, AlertTriangle, Database, FileText, GitCompare, ShieldCheck, Wrench } from 'lucide-react';
 import { MarkdownRenderer } from '@/infrastructure/markdown';
 import { Checkbox, Button, OverflowText, TabGroup, Tooltip } from '@openbitfun/ui';
 import { snapshotAPI } from '@/infrastructure/api';
@@ -56,15 +56,6 @@ interface SessionUsagePanelProps {
 
 const TABS: SessionUsagePanelTab[] = ['overview', 'models', 'tools', 'files', 'errors', 'slowest'];
 const MAX_USAGE_TABLE_ROWS = 50;
-
-const UsageClockIcon: React.FC<LucideProps> = ({ className, size = 16, style }) => (
-  <Icon
-    name="clock"
-    size="md"
-    className={className}
-    style={{ width: size, height: size, ...style }}
-  />
-);
 
 function tabId(tab: SessionUsagePanelTab): string {
   return `session-usage-tab-${tab}`;
@@ -309,7 +300,7 @@ function UsageMetaRow({
             size="sm"
             onClick={onCopy}
             aria-label={copyLabel}
-            icon={copied ? <Icon name="check-line" size="lg" style={{ width: 13, height: 13 }} /> : <Icon name="duplicate" size="lg" style={{ width: 13, height: 13 }} />}
+            icon={copied ? <Icon name="check-line" size="sm" /> : <Icon name="duplicate" size="sm" />}
           />
         </Tooltip>
       )}
@@ -538,21 +529,21 @@ function UsageOverview({ report }: { report: SessionUsageReport }) {
   const metrics = [
     {
       key: 'wall',
-      icon: UsageClockIcon,
+      icon: { name: 'clock' } as const,
       label: t('usage.metrics.wall'),
       value: formatUsageDuration(report.time.wallTimeMs, t),
       help: t('usage.help.wall'),
     },
     {
       key: 'active',
-      icon: Activity,
+      icon: { glyph: Activity },
       label: t('usage.metrics.active'),
       value: formatUsageDuration(report.time.activeTurnMs, t),
       help: t('usage.help.active'),
     },
     {
       key: 'model',
-      icon: Database,
+      icon: { glyph: Database },
       label: t('usage.metrics.modelTime'),
       value: formatUsageDuration(report.time.modelMs, t),
       detail: formatUsagePercent(calculateShare(report.time.modelMs, denominator), t),
@@ -560,7 +551,7 @@ function UsageOverview({ report }: { report: SessionUsageReport }) {
     },
     {
       key: 'tool',
-      icon: Wrench,
+      icon: { glyph: Wrench },
       label: t('usage.metrics.toolTime'),
       value: formatUsageDuration(report.time.toolMs, t),
       detail: formatUsagePercent(calculateShare(report.time.toolMs, denominator), t),
@@ -568,13 +559,13 @@ function UsageOverview({ report }: { report: SessionUsageReport }) {
     },
     {
       key: 'tokens',
-      icon: Database,
+      icon: { glyph: Database },
       label: t('usage.metrics.tokens'),
       value: formatTokenCount(report.tokens.totalTokens, t),
     },
     {
       key: 'files',
-      icon: FileText,
+      icon: { glyph: FileText },
       label: t('usage.metrics.files'),
       value: getFileSummaryLabel(report, t),
       detail: getFileScopeLabel(report.files.scope, t),
@@ -586,17 +577,16 @@ function UsageOverview({ report }: { report: SessionUsageReport }) {
     <section data-openbitfun-product-component="session-usage-panel" data-openbitfun-product-part="section" className="session-usage-panel__section">
       {report.coverage.level !== 'complete' && (
         <div className="session-usage-panel__notice">
-          <AlertTriangle size={14} aria-hidden />
+          <Icon glyph={AlertTriangle} size="sm" aria-hidden />
           <span>{t('usage.coverage.partialNotice')}</span>
         </div>
       )}
 
       <div className="session-usage-panel__overview-grid">
         {metrics.map(metric => {
-          const Icon = metric.icon;
           return (
             <div data-openbitfun-product-component="session-usage-panel" data-openbitfun-product-part="metric" className="session-usage-panel__overview-metric" key={metric.key}>
-              <Icon size={16} aria-hidden />
+              <Icon {...metric.icon} size="md" />
               <div>
                 <span>{metric.label}</span>
                 <UsageValue value={metric.value} help={metric.help} strong />
@@ -632,7 +622,7 @@ function UsageOverview({ report }: { report: SessionUsageReport }) {
       </dl>
 
       <div className="session-usage-panel__privacy">
-        <ShieldCheck size={16} aria-hidden />
+        <Icon glyph={ShieldCheck} size="md" aria-hidden />
         <div>
           <strong>{t('usage.privacy.title')}</strong>
           <span>{t('usage.privacy.summary')}</span>

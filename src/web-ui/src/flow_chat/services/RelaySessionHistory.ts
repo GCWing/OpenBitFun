@@ -2,6 +2,7 @@ import { remoteConnectAPI } from '@/infrastructure/api/service-api/RemoteConnect
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import type { SessionRecord } from '../session-stream/SessionRecordReplica';
 import { createLogger } from '@/shared/utils/logger';
+import { resourceBudget } from '@/shared/utils/resourceBudget';
 
 const log = createLogger('RelaySessionHistory');
 
@@ -30,6 +31,8 @@ export class RelaySessionHistory {
   private historyTimer: ReturnType<typeof setTimeout> | null = null;
   private pageApplied: (() => void) | null = null;
   private rejectPage: ((error: unknown) => void) | null = null;
+  private visible = false;
+  private prefetchCredit = 0;
 
   constructor(
     readonly sessionId: string,
@@ -68,9 +71,27 @@ export class RelaySessionHistory {
     }));
     // A closed subscription may never have had an open() caller.
     void this.firstPage.catch(() => {});
+    if (typeof document !== 'undefined') {
+      const resumePrefetch = () => {
+        if (document.visibilityState !== 'hidden') this.scheduleHistoryPrefetch();
+      };
+      document.addEventListener('visibilitychange', resumePrefetch);
+      this.listeners.push(() => document.removeEventListener('visibilitychange', resumePrefetch));
+    }
   }
 
   private isCurrent(): boolean { return !this.closed && this.scope.isCurrent(); }
+
+  /** Visibility gates optional history IO only; live records/mailboxes stay subscribed. */
+  setVisible(visible: boolean): void {
+    if (visible === this.visible) return;
+    this.visible = visible;
+    if (visible) { this.prefetchCredit = 1; this.scheduleHistoryPrefetch(); }
+    else if (this.historyTimer !== null) {
+      clearTimeout(this.historyTimer);
+      this.historyTimer = null;
+    }
+  }
 
   open(): Promise<void> {
     if (!this.opening) this.opening = this.start();
@@ -97,21 +118,27 @@ export class RelaySessionHistory {
     }
   }
 
-  // Happy sync.ts fetchOlderMessagesInBackground: paint the latest page first,
-  // then reuse the same older-page owner and yield between bounded pages.
+  // Warm one adjacent page after a visible open or reader request. Never drain
+  // an entire remote transcript merely because its live subscription is open.
   private scheduleHistoryPrefetch(): void {
-    if (!this.isCurrent() || !this.ready?.hasMore || this.historyTimer !== null) return;
+    if (!this.isCurrent() || !this.visible || this.prefetchCredit === 0
+      || !this.ready?.hasMore || this.historyTimer !== null || !resourceBudget.canPrefetch()) return;
     this.historyTimer = setTimeout(() => {
       this.historyTimer = null;
-      if (!this.isCurrent()) return;
-      void this.loadOlder().then(() => this.scheduleHistoryPrefetch()).catch(error => {
+      if (!this.isCurrent() || !this.visible || !resourceBudget.canPrefetch()
+        || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return;
+      this.prefetchCredit = 0;
+      void this.loadOlder(true).catch(error => {
         log.warn('Session history prefetch stopped', { sessionId: this.sessionId, error });
       });
     }, 250);
   }
 
-  loadOlder(): Promise<boolean> {
-    if (!this.older) this.older = this.readOlder().finally(() => { this.older = null; });
+  loadOlder(prefetch = false): Promise<boolean> {
+    if (!this.older) this.older = this.readOlder().finally(() => {
+      this.older = null;
+      if (!prefetch) { this.prefetchCredit = 1; this.scheduleHistoryPrefetch(); }
+    });
     return this.older;
   }
 

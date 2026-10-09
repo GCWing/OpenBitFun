@@ -103,19 +103,24 @@ describe('embedded panel reading position', () => {
   it('restores exploration expansion after content remount without retaining items', () => {
     let exploration: ReturnType<typeof useExploreGroupState>;
     function ExpansionHarness() {
-      exploration = useExploreGroupState([], state.exploreGroupStates);
+      exploration = useExploreGroupState([], state.exploreGroupStates, 'child', state.expandedToolCapsules);
       const groups = exploration.exploreGroupStates;
       useEffect(() => { state.exploreGroupStates = groups; }, [groups]);
+      const capsules = exploration.expandedToolCapsules;
+      useEffect(() => { state.expandedToolCapsules = capsules; }, [capsules]);
       return null;
     }
     act(() => root.render(<ExpansionHarness />));
     act(() => exploration.onExpandGroup('group'));
+    act(() => exploration.onToolCapsuleExpandedChange('capsule', true));
     act(() => root.render(null));
     act(() => root.render(<ExpansionHarness />));
     expect(exploration!.exploreGroupStates.get('group')).toBe(true);
+    expect(exploration!.expandedToolCapsules.has('capsule')).toBe(true);
     act(() => root.render(null));
     state = createBtwPanelViewState();
     act(() => root.render(<ExpansionHarness />));
     expect(exploration!.exploreGroupStates.size).toBe(0);
+    expect(exploration!.expandedToolCapsules.size).toBe(0);
   });
 });

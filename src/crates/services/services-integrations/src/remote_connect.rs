@@ -2458,10 +2458,15 @@ pub fn build_remote_chat_messages(turns: Vec<RemoteChatHistoryTurn>) -> Vec<Chat
                     duration_ms: item.duration_ms,
                     start_ms: Some(item.start_ms),
                     input_preview: make_slim_tool_params(&item.call.input),
-                    tool_input: if item.name == "AskUserQuestion"
-                        || item.name == "Task"
-                        || item.name == "TodoWrite"
-                    {
+                    tool_input: if matches!(
+                        item.name.as_str(),
+                        "AskUserQuestion"
+                            | "Task"
+                            | "AgentSpawn"
+                            | "AgentSendInput"
+                            | "AgentControl"
+                            | "TodoWrite"
+                    ) {
                         Some(item.call.input.clone())
                     } else {
                         None
@@ -4023,10 +4028,15 @@ impl RemoteSessionStateTracker {
                         "Started" => {
                             let params = effective_params.clone();
                             let input_preview = params.as_ref().and_then(make_slim_tool_params);
-                            let tool_input = if tool_name == "AskUserQuestion"
-                                || tool_name == "Task"
-                                || tool_name == "TodoWrite"
-                            {
+                            let tool_input = if matches!(
+                                tool_name.as_str(),
+                                "AskUserQuestion"
+                                    | "Task"
+                                    | "AgentSpawn"
+                                    | "AgentSendInput"
+                                    | "AgentControl"
+                                    | "TodoWrite"
+                            ) {
                                 params.clone()
                             } else {
                                 None

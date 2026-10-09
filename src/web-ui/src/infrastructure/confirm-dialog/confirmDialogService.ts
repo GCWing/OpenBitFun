@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { create } from 'zustand';
-import type { ConfirmDialogType } from '@openbitfun/ui';
+import type { ConfirmDialogProps, ConfirmDialogType } from '@openbitfun/ui';
 
 export type ConfirmDialogChoice = 'confirm' | 'secondary' | 'cancel';
 
@@ -10,6 +10,7 @@ export interface ConfirmDialogOptions {
   confirmText?: ReactNode;
   message?: ReactNode;
   preview?: ReactNode;
+  secondaryActionPlacement?: ConfirmDialogProps['secondaryActionPlacement'];
   secondaryText?: ReactNode;
   showCancel?: boolean;
   title: ReactNode;

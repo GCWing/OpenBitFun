@@ -18,6 +18,18 @@ function isSearchableTextNode(node: Node): node is Text {
   return !parent.closest('script, style, button, input, textarea, [contenteditable="true"], [hidden], [aria-hidden="true"]');
 }
 
+/** Source navigation has no query: use its first readable text line as the marker. */
+export function findFlowChatFocusTextRange(root: HTMLElement): Range | null {
+  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!isSearchableTextNode(node) || !node.textContent?.trim()) continue;
+    const range = root.ownerDocument.createRange();
+    range.selectNodeContents(node);
+    return range;
+  }
+  return null;
+}
+
 function foldTextWithOriginalOffsets(text: string): {
   text: string;
   offsets: FoldedTextOffset[];
@@ -156,7 +168,10 @@ export function getFlowChatSearchTextRoot(
 
     const thinkingItem = findElementWithDataValue(wrapper, 'data-tool-card-id', flowItemId);
     const thinkingText = thinkingItem?.querySelector<HTMLElement>('.thinking-markdown');
-    if (thinkingText) {
+    // The lazy reasoning renderer initially paints plain source. Its line
+    // positions differ from the parsed Markdown, so navigation must wait for
+    // that source to materialize before revealing an inner scroll range.
+    if (thinkingText && !thinkingText.querySelector('[data-markdown-pending="true"]')) {
       return thinkingText;
     }
 

@@ -83,9 +83,17 @@ export function formatUsageDuration(value: number | undefined, t: Translator): s
 
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
-  return remainingMinutes === 0
-    ? t('usage.duration.hours', { value: hours })
-    : t('usage.duration.hoursMinutes', { hours, minutes: remainingMinutes });
+  if (hours < 24) {
+    return remainingMinutes === 0
+      ? t('usage.duration.hours', { value: hours })
+      : t('usage.duration.hoursMinutes', { hours, minutes: remainingMinutes });
+  }
+
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return remainingHours === 0
+    ? t('usage.duration.days', { value: days })
+    : t('usage.duration.daysHours', { days, hours: remainingHours });
 }
 
 export function formatUsageTimestamp(value: number | undefined, t: Translator): string {

@@ -1,7 +1,6 @@
 import { WorkspaceToolsIntent } from '../state/WorkspaceToolsState';
 import { RemotePermissionMode, RemoteSession } from '../../model/RemoteModels';
 import { CloudAccountDevice } from '../../services/CloudAccountClient';
-import { DetectedUrlAction } from '../../services/ConnectScanDecisionPolicy';
 import { ConversationIntent } from './ConversationIntent';
 import { AppRoute } from '../navigation/AppRouteContract';
 
@@ -32,7 +31,6 @@ export interface RemoteHomePresentationActions {
   readonly openSidebar: () => void;
   readonly connectWorkspace: () => void;
   readonly addConnection: () => void;
-  readonly openSettings: () => void;
   readonly refresh: () => void;
   readonly showWorkspaces: () => void;
   readonly showAssistants: () => void;
@@ -63,10 +61,8 @@ export interface SidebarPresentationActions {
   readonly close: () => void;
   readonly newChat: (agentType?: string) => void;
   readonly enterCode: () => void;
-  /** Opens the QR scanner directly from sidebar device actions. */
-  readonly scanDesktop: () => void;
-  /** Opens the QR scanner from the device-section add button. */
-  readonly addDesktop: () => void;
+  /** Opens account settings, where the account device directory selects a desktop. */
+  readonly openAccountDevices: () => void;
   /** Refreshes device presence and the disclosed workspace session lists. */
   readonly refreshDevices: () => Promise<void>;
   readonly refreshSessions: () => Promise<void>;
@@ -78,7 +74,8 @@ export interface SidebarPresentationActions {
 
 export interface SettingsPresentationActions {
   readonly close: () => void;
-  readonly addConnection: () => void;
+  /** Account login finished or signed out inside settings; return to the single settings page. */
+  readonly accountSettled: () => void;
   readonly disconnect: () => void;
   readonly clearPairing: () => void;
   readonly reconnect: () => void;
@@ -98,12 +95,6 @@ export interface ConnectPresentationActions {
   readonly openAccount: () => void;
   readonly connect: (password?: string) => void;
   readonly clearPairing: () => void;
-  readonly urlChanged: (url: string) => void;
-  readonly userChanged: (user: string) => void;
-  readonly detected: (url: string) => string;
-  readonly inputVisible: (visible: boolean) => void;
-  readonly paste: () => void;
-  readonly scan: () => void;
   readonly cloudListDevices: () => Promise<CloudAccountDevice[]>;
   readonly cloudSelectDevice: (device: CloudAccountDevice) => Promise<void>;
 }
@@ -118,7 +109,7 @@ export function emptyAppRootPresentationActions(): AppRootPresentationActions {
     onLayoutModeChanged: () => {},
     onRemoteHome: {
       openMiniApps: () => {},
-      openSidebar: () => {}, connectWorkspace: () => {}, addConnection: () => {}, openSettings: () => {},
+      openSidebar: () => {}, connectWorkspace: () => {}, addConnection: () => {},
       refresh: () => {}, showWorkspaces: () => {}, showAssistants: () => {}, selectWorkspace: () => {},
       selectAssistant: () => {}, cancelWorkspace: () => {}, cancelAssistant: () => {}, queryChanged: () => {},
       search: () => {}, loadMore: () => {}, reconnect: () => {}, disconnect: () => {}, clearPairing: () => {},
@@ -128,12 +119,12 @@ export function emptyAppRootPresentationActions(): AppRootPresentationActions {
       openSession: () => {}, openSessionInPlace: () => {}, deleteSession: () => {}
     },
     onSidebar: {
-      close: () => {}, newChat: () => {}, enterCode: () => {}, scanDesktop: () => {}, addDesktop: () => {},
+      close: () => {}, newChat: () => {}, enterCode: () => {}, openAccountDevices: () => {},
       refreshDevices: async () => {}, refreshSessions: async () => {}, settings: () => {}, openAccount: () => {},
       openSession: () => {}, deleteSession: () => {}
     },
     onSettings: {
-      close: () => {}, addConnection: () => {}, disconnect: () => {}, clearPairing: () => {},
+      close: () => {}, accountSettled: () => {}, disconnect: () => {}, clearPairing: () => {},
       reconnect: () => {}, openAccount: () => {},
       cloudCancelLogin: () => {},
       cloudLogin: async () => '', cloudLogout: async () => {},
@@ -144,8 +135,6 @@ export function emptyAppRootPresentationActions(): AppRootPresentationActions {
     },
     onConnect: {
       back: () => {}, openAccount: () => {}, connect: () => {}, clearPairing: () => {},
-      urlChanged: () => {}, userChanged: () => {},
-      detected: () => DetectedUrlAction.INVALID, inputVisible: () => {}, paste: () => {}, scan: () => {},
       cloudListDevices: async () => [], cloudSelectDevice: async () => {}
     },
     onFilePreview: { close: () => {}, refresh: () => {}, download: () => {}, openLink: () => {} },

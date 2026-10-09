@@ -8,10 +8,10 @@
  * When no tabs are open, the viewport renders WelcomeScene as a shell-owned
  * landing surface rather than manufacturing a tab for it.
  */
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 
 import React, {
   Suspense,
-  lazy,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -34,21 +34,21 @@ import './SceneViewport.scss';
 
 // Session is the primary interaction path. Keep it in the main scene bundle so
 // first open does not stall on a lazy chunk fetch/parse before FlowChat mounts.
-const TerminalScene   = lazy(() => import('./terminal/TerminalScene'));
-const GitScene        = lazy(() => import('./git/GitScene'));
-const ProfileScene    = lazy(() => import('./profile/ProfileScene'));
-const AgentsScene       = lazy(() => import('./agents/AgentsScene'));
-const SkillsScene     = lazy(() => import('./skills/SkillsScene'));
-const EcosystemCompatibilityScene = lazy(
+const TerminalScene   = lazyWithRecovery(() => import('./terminal/TerminalScene'));
+const GitScene        = lazyWithRecovery(() => import('./git/GitScene'));
+const ProfileScene    = lazyWithRecovery(() => import('./profile/ProfileScene'));
+const AgentsScene       = lazyWithRecovery(() => import('./agents/AgentsScene'));
+const SkillsScene     = lazyWithRecovery(() => import('./skills/SkillsScene'));
+const EcosystemCompatibilityScene = lazyWithRecovery(
   () => import('./ecosystem-compatibility/EcosystemCompatibilityScene'),
 );
-const MiniAppGalleryScene = lazy(() => import('./miniapps/MiniAppGalleryScene'));
-const PagesScene      = lazy(() => import('./pages/PagesScene'));
-const BrowserScene    = lazy(() => import('./browser/BrowserScene'));
-const TodosScene      = lazy(() => import('./todos/TodosScene'));
-const InsightsScene   = lazy(() => import('./my-agent/InsightsScene'));
-const ShellScene      = lazy(() => import('./shell/ShellScene'));
-const MiniAppScene    = lazy(() => import('./miniapps/MiniAppScene'));
+const MiniAppGalleryScene = lazyWithRecovery(() => import('./miniapps/MiniAppGalleryScene'));
+const PagesScene      = lazyWithRecovery(() => import('./pages/PagesScene'));
+const BrowserScene    = lazyWithRecovery(() => import('./browser/BrowserScene'));
+const TodosScene      = lazyWithRecovery(() => import('./todos/TodosScene'));
+const InsightsScene   = lazyWithRecovery(() => import('./my-agent/InsightsScene'));
+const ShellScene      = lazyWithRecovery(() => import('./shell/ShellScene'));
+const MiniAppScene    = lazyWithRecovery(() => import('./miniapps/MiniAppScene'));
 
 const SCENE_ENTRY_DURATION_MS = 480;
 const EMPTY_SCENE_ID = '__empty-scene__' as const;

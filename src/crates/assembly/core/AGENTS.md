@@ -190,6 +190,12 @@ Narrower local guides already exist for some subtrees:
 
 ## Verification
 
+For config-backed product-control option defaults, typed binding, and persisted readback:
+
+```bash
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,git --lib every_catalog_config_option
+```
+
 AI client construction and subscription credential compatibility:
 
 ```bash
@@ -211,6 +217,9 @@ feature boundary changed, and the third for behavior. Run
 or test-target layout. Workspace checks and product-wide tests are CI-backed and
 are not the default Core precheck. For documentation-only changes, run
 `git diff --check`.
+
+For assistant discovery, opened-state persistence, and reopening by workspace ID:
+`cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib service::workspace::service::tests::assistant_`.
 
 For disk-backed history paging and legacy sessions without a catalog:
 `cargo test --locked -p openbitfun-core --no-default-features --features remote-connect,git --lib history_page_`.
@@ -281,6 +290,32 @@ Skill discovery, installation provenance, and local/remote registry regressions:
 
 ```bash
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::tools::implementations::skills::
+```
+
+SessionControl workspace selection, remote routing, and session-targeted actions:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib session_control_tool::tests
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib list_workspaces
+```
+
+MiniApp Agent appdata workspace registration and pre-ID session compatibility:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,tools-miniapp --lib miniapp::agent_workspace::tests
+```
+
+Workspace history upgrade compatibility and MiniApp record preservation:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib legacy_miniapp_history
+```
+
+Skill hook activation, session cleanup, and tool preflight/permission ordering:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib native_hooks
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::tools::pipeline::tool_pipeline::tests
 ```
 
 For configured OpenCode discovery and explicit skill loading, include their owner feature and tool tests:

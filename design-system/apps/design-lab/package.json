@@ -11,10 +11,11 @@
     "type-check": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@openbitfun/flow-chat-presentation": "workspace:*",
     "@openbitfun/design-tokens": "workspace:^",
     "@openbitfun/theme-openbitfun": "workspace:^",
     "@openbitfun/ui": "workspace:^",
-    "lucide-react": "^0.541.0",
+    "lucide-react": "^0.560.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

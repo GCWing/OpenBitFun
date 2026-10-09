@@ -6,6 +6,7 @@ import {
 } from '@/infrastructure/peer-device/deviceSurface';
 import {
   askUserQuestionDraftKey,
+  askUserQuestionFollowUpDraftKey,
   askUserQuestionDraftStore,
 } from './askUserQuestionDraftStore';
 
@@ -68,6 +69,24 @@ describe('askUserQuestionDraftStore', () => {
     expect(askUserQuestionDraftStore.getState().drafts[otherSessionKey]).toBeDefined();
   });
 
+  it('retains follow-up drafts through mailbox reconciliation and removes them with their session', () => {
+    const pending = askUserQuestionDraftKey('session-a', 'tool-1');
+    const followUp = askUserQuestionFollowUpDraftKey('session-a', 'tool-1');
+    const peerFollowUp = askUserQuestionFollowUpDraftKey('session-a', 'tool-1', 'peer-a');
+    const store = askUserQuestionDraftStore.getState();
+    store.setSingleAnswer(pending, 0, 'Old pending answer');
+    store.setSingleAnswer(followUp, 0, 'Follow-up answer');
+    store.setSingleAnswer(peerFollowUp, 0, 'Peer answer');
+    store.reconcilePendingTools(LOCAL_SURFACE_ID, 'session-a', []);
+    expect(askUserQuestionDraftStore.getState().drafts[pending]).toBeUndefined();
+    expect(askUserQuestionDraftStore.getState().drafts[followUp].answers[0]).toBe('Follow-up answer');
+    store.removeSessionDrafts(['session-a']);
+    expect(askUserQuestionDraftStore.getState().drafts[followUp]).toBeUndefined();
+    expect(askUserQuestionDraftStore.getState().drafts[peerFollowUp]).toBeDefined();
+    store.removeSurfaceDrafts('peer-a');
+    expect(askUserQuestionDraftStore.getState().drafts).toEqual({});
+  });
+
   it('keeps submission phase across remounts without recreating a cleared draft', () => {
     const key = askUserQuestionDraftKey('session-a', 'tool-1');
     const store = askUserQuestionDraftStore.getState();
@@ -80,7 +99,7 @@ describe('askUserQuestionDraftStore', () => {
     expect(askUserQuestionDraftStore.getState().drafts[key]).toBeUndefined();
   });
 
-  it('removes the Other marker when custom input becomes blank', () => {
+  it('preserves the Other marker when custom input becomes blank', () => {
     const multiKey = askUserQuestionDraftKey('session-a', 'tool-multi');
     const singleKey = askUserQuestionDraftKey('session-a', 'tool-single');
     const store = askUserQuestionDraftStore.getState();
@@ -95,21 +114,21 @@ describe('askUserQuestionDraftStore', () => {
     store.setOtherInput(singleKey, 0, '');
 
     expect(askUserQuestionDraftStore.getState().drafts[multiKey]).toMatchObject({
-      answers: { 0: ['PostgreSQL'] },
+      answers: { 0: ['PostgreSQL', 'Other'] },
       otherInputs: { 0: '' },
     });
     expect(askUserQuestionDraftStore.getState().drafts[singleKey]).toMatchObject({
-      answers: {},
+      answers: { 0: 'Other' },
       otherInputs: { 0: '' },
     });
   });
 
-  it('preserves the Other marker for transient blank IME composition values', () => {
+  it('preserves the Other marker for an initially empty custom input', () => {
     const key = askUserQuestionDraftKey('session-a', 'tool-ime');
     const store = askUserQuestionDraftStore.getState();
 
     store.setSingleAnswer(key, 0, 'Other');
-    store.setOtherInput(key, 0, '', true);
+    store.setOtherInput(key, 0, '');
 
     expect(askUserQuestionDraftStore.getState().drafts[key]).toMatchObject({
       answers: { 0: 'Other' },

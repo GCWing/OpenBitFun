@@ -20,6 +20,11 @@ interface AssistantCardProps {
   workspace: WorkspaceInfo;
   onClick: () => void;
   onNewSession?: () => void;
+  onOpen?: () => void;
+  isOpening?: boolean;
+  onClose?: () => void;
+  isClosing?: boolean;
+  closeDisabledReason?: string;
   onDelete?: () => void;
   onSetPrimary?: () => void;
   isPrimary?: boolean;
@@ -33,6 +38,11 @@ const AssistantCard: React.FC<AssistantCardProps> = ({
   workspace,
   onClick,
   onNewSession,
+  onOpen,
+  isOpening = false,
+  onClose,
+  isClosing = false,
+  closeDisabledReason,
   onDelete,
   onSetPrimary,
   isPrimary,
@@ -49,8 +59,8 @@ const AssistantCard: React.FC<AssistantCardProps> = ({
   const emoji = identity?.emoji?.trim() ?? '';
   const creature = identity?.creature?.trim() || '';
   const vibe = identity?.vibe?.trim() || '';
-  const isBusy = isDeleting || isStartingSession || isSettingPrimary;
-  const hasActions = Boolean(onNewSession || onSetPrimary || onDelete);
+  const isBusy = isDeleting || isStartingSession || isSettingPrimary || isOpening || isClosing;
+  const hasActions = Boolean(onOpen || onClose || onNewSession || onSetPrimary || onDelete);
 
   return (
     <article
@@ -78,7 +88,7 @@ const AssistantCard: React.FC<AssistantCardProps> = ({
           className="assistant-card__main"
           onClick={onClick}
           aria-label={`${t('nursery.card.configure')}: ${name}`}
-          disabled={isDeleting || isSettingPrimary}
+          disabled={isDeleting || isSettingPrimary || isOpening || isClosing}
         />
 
         <CardHeader
@@ -141,6 +151,17 @@ const AssistantCard: React.FC<AssistantCardProps> = ({
         {hasActions ? (
           <CardFooter align="end" className="assistant-card__footer" data-openbitfun-component="assistant-card" data-openbitfun-part="footer">
             <span className="assistant-card__session-actions">
+              {onOpen ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  loading={isOpening}
+                  disabled={isBusy}
+                  onClick={onOpen}
+                >
+                  {t('nursery.card.open')}
+                </Button>
+              ) : null}
               {onNewSession ? (
                 <Button
                   variant="primary"
@@ -148,9 +169,22 @@ const AssistantCard: React.FC<AssistantCardProps> = ({
                   leadingIcon={<Icon name="side-chat" size="sm" />}
                   loading={isStartingSession}
                   onClick={onNewSession}
-                  disabled={isStartingSession || isDeleting || isSettingPrimary}
+                  disabled={isBusy}
                 >
                   {t(isStartingSession ? 'nursery.card.startingSession' : 'nursery.card.newSession')}
+                </Button>
+              ) : null}
+
+              {onClose ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  loading={isClosing}
+                  disabled={isBusy || Boolean(closeDisabledReason)}
+                  title={closeDisabledReason}
+                  onClick={onClose}
+                >
+                  {t('nursery.card.close')}
                 </Button>
               ) : null}
 
@@ -164,7 +198,7 @@ const AssistantCard: React.FC<AssistantCardProps> = ({
                       onClick={onSetPrimary}
                       aria-label={t('nursery.card.setPrimary')}
                       loading={isSettingPrimary}
-                      disabled={isDeleting || isStartingSession || isSettingPrimary}
+                      disabled={isBusy}
                       icon={<Icon name="pin" size="sm" aria-hidden="true" />}
                     />
                   </Tooltip>
@@ -180,7 +214,7 @@ const AssistantCard: React.FC<AssistantCardProps> = ({
                       onClick={onDelete}
                       aria-label={t('nursery.card.delete')}
                       loading={isDeleting}
-                      disabled={isDeleting || isStartingSession || isSettingPrimary}
+                      disabled={isBusy}
                       icon={<Icon name="delete" size="sm" aria-hidden="true" />}
                     />
                   </Tooltip>

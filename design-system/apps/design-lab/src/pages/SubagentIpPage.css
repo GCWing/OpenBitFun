@@ -1,0 +1,156 @@
+.subagent-ip-tabs {
+  margin-bottom: var(--openbitfun-space-5);
+}
+
+.subagent-ip-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  align-items: start;
+  gap: var(--openbitfun-space-6);
+}
+
+.subagent-ip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: var(--openbitfun-space-3);
+}
+
+.subagent-ip-card {
+  display: grid;
+  justify-items: center;
+  gap: var(--openbitfun-space-3);
+  min-width: 0;
+  padding: var(--openbitfun-space-5) var(--openbitfun-space-3);
+  border: var(--openbitfun-border-width-default) solid transparent;
+  border-radius: var(--openbitfun-radius-lg);
+  color: var(--openbitfun-color-content-secondary);
+  background: var(--openbitfun-color-surface-subtle);
+  font-family: var(--openbitfun-type-label-md-font-family);
+  font-size: var(--openbitfun-type-body-xs-font-size);
+  cursor: pointer;
+}
+
+.subagent-ip-card:hover {
+  background: var(--openbitfun-color-action-quiet-hover);
+}
+
+.subagent-ip-card[aria-pressed="true"] {
+  border-color: var(--openbitfun-color-border-strong);
+  color: var(--openbitfun-color-content-primary);
+  background: var(--openbitfun-color-action-quiet-pressed);
+}
+
+.subagent-ip-card:focus-visible {
+  outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+  outline-offset: var(--openbitfun-focus-offset);
+}
+
+.subagent-ip-card img,
+.subagent-ip-detail img {
+  display: block;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.subagent-ip-detail {
+  position: sticky;
+  display: grid;
+  gap: var(--openbitfun-space-5);
+  min-width: 0;
+  padding: var(--openbitfun-space-5);
+  border-radius: var(--openbitfun-radius-lg);
+  background: var(--openbitfun-color-surface-panel);
+}
+
+.subagent-ip-detail__heading {
+  display: grid;
+  gap: var(--openbitfun-space-2);
+}
+
+.subagent-ip-detail h2,
+.subagent-ip-detail h3,
+.subagent-ip-detail p {
+  margin: 0;
+}
+
+.subagent-ip-detail h2 {
+  font-size: var(--openbitfun-type-heading-panel-font-size);
+  font-weight: var(--openbitfun-type-heading-panel-font-weight);
+}
+
+.subagent-ip-detail__art {
+  display: grid;
+  min-height: 224px;
+  place-items: center;
+  border-radius: var(--openbitfun-radius-md);
+  background: var(--openbitfun-color-surface-subtle);
+}
+
+.subagent-ip-sizes {
+  display: grid;
+  gap: var(--openbitfun-space-4);
+}
+
+.subagent-ip-sizes h3 {
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  font-weight: var(--openbitfun-type-label-md-font-weight);
+}
+
+.subagent-ip-sizes__samples {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--openbitfun-space-2);
+}
+
+.subagent-ip-sizes figure {
+  display: grid;
+  justify-items: center;
+  gap: var(--openbitfun-space-2);
+  margin: 0;
+}
+
+.subagent-ip-sizes figcaption,
+.subagent-ip-sizes p {
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-body-xs-font-size);
+  line-height: var(--openbitfun-type-body-xs-line-height);
+}
+
+@media (max-width: 1100px) {
+  .subagent-ip-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .subagent-ip-detail {
+    position: static;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .subagent-ip-detail__heading {
+    grid-column: 1 / -1;
+  }
+
+  .subagent-ip-detail__art {
+    grid-row: span 2;
+  }
+
+  .subagent-ip-sizes__samples {
+    max-width: 240px;
+  }
+}
+
+@media (max-width: 560px) {
+  .subagent-ip-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .subagent-ip-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .subagent-ip-card {
+    padding-inline: var(--openbitfun-space-2);
+    font-family: var(--openbitfun-type-label-md-font-family);
+  }
+}

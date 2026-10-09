@@ -637,9 +637,19 @@ pub fn create_main_window(
     #[cfg(debug_assertions)]
     if !use_development_frontend() {
         // Product-path isolation alone does not isolate WKWebView storage.
-        // This guarded test window keeps a private store across document
-        // reloads and never opens the daily client's browser data store.
-        builder = builder.incognito(true);
+        // Default to a private store. Windows persistence tests explicitly opt
+        // into a directory under the already validated isolated product root.
+        let persistent_test_store = cfg!(target_os = "windows")
+            && std::env::var("OPENBITFUN_E2E_PERSISTENT_WEBVIEW").as_deref() == Ok("1");
+        #[cfg(target_os = "windows")]
+        if persistent_test_store {
+            builder = builder.data_directory(
+                openbitfun_core::infrastructure::get_path_manager_arc()
+                    .user_data_dir()
+                    .join("e2e-webview"),
+            );
+        }
+        builder = builder.incognito(!persistent_test_store);
     }
 
     // On Windows, Tauri's native file-drop handler replaces WebView2's OLE drop

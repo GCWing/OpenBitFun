@@ -8,18 +8,36 @@ import { Icon, iconNames, canonicalIconNames, iconAliases } from "../dist/index.
 import { Network } from "lucide-react";
 
 test("Icon exposes the complete named catalog without duplicate names", () => {
-  assert.equal(iconNames.length, 66);
-  assert.equal(canonicalIconNames.length, 63);
+  assert.equal(iconNames.length, 98);
+  assert.equal(canonicalIconNames.length, 95);
   assert.deepEqual(Object.keys(iconAliases).sort(), ["circle", "download"]);
   for (const name of ["thinking", "git", "duplicate", "chevron-left", "selected", "delete", "waitlist-message", "creative", "ultimate", "standard", "minimal", "arrow-down", "unselected"]) {
     assert.ok(canonicalIconNames.includes(name), name);
   }
   assert.equal(new Set(iconNames).size, iconNames.length);
   assert.ok(iconNames.includes("search"));
+  assert.ok(canonicalIconNames.includes("list-todo"));
+  assert.match(renderToStaticMarkup(createElement(Icon, { name: "list-todo" })), /lucide-list-todo/);
+  assert.ok(iconNames.includes("book-open"));
+  assert.ok(iconNames.includes("circle-arrow-right"));
+  assert.match(renderToStaticMarkup(createElement(Icon, { name: "circle-arrow-right" })), /lucide-circle-arrow-right/);
+  assert.match(renderToStaticMarkup(createElement(Icon, { name: "book-open" })), /lucide-book-open/);
+  assert.ok(iconNames.includes("book-search"));
+  assert.ok(iconNames.includes("file-up"));
+  assert.ok(iconNames.includes("file-search-corner"));
+  assert.ok(iconNames.includes("folder-search"));
+  const bookSearch = renderToStaticMarkup(createElement(Icon, { name: "book-search" }));
+  assert.match(bookSearch, /lucide-book-search/);
+  assert.match(bookSearch, /stroke-width="var\(--openbitfun-control-icon-stroke-width\)"/);
   assert.ok(iconNames.includes("commit"));
   assert.ok(iconNames.includes("sidebar-right"));
   assert.ok(iconNames.includes("chevron-up"));
   assert.ok(iconNames.includes("refresh"));
+  assert.ok(iconNames.includes("layers-plus"));
+  for (const name of ["target", "users", "history", "git-pull-request"]) {
+    assert.ok(canonicalIconNames.includes(name));
+    assert.match(renderToStaticMarkup(createElement(Icon, { name })), new RegExp(`lucide-${name}`));
+  }
 });
 
 test("Icon is decorative by default and renders the named Lucide glyph", () => {
@@ -83,7 +101,10 @@ test("Icon mask assets are color-agnostic", async () => {
   const assetDirectory = new URL("../src/components/Icon/assets/", import.meta.url);
   const assetNames = (await readdir(assetDirectory)).filter((name) => name.endsWith(".svg"));
 
-  assert.deepEqual(assetNames.sort(), ["creative.svg", "git.svg", "minimal.svg", "standard.svg", "thinking.svg", "ultimate.svg"]);
+  assert.deepEqual(assetNames.sort(), [
+    "creative.svg", "git.svg", "minimal.svg",
+    "reasoning-auto.svg", "standard.svg", "thinking.svg", "ultimate.svg",
+  ]);
   for (const assetName of assetNames) {
     const source = await readFile(new URL(assetName, assetDirectory), "utf8");
     assert.match(source, /(?:fill|stroke)="currentColor"/i, `${assetName} must use currentColor`);
@@ -98,8 +119,8 @@ test("Icon mask assets are color-agnostic", async () => {
 test("Icon preserves all reviewed asset geometry and opacity", async () => {
   const assets = new URL("../src/components/Icon/assets/", import.meta.url);
   const fingerprints = JSON.parse(await readFile(new URL("fixtures/icon-assets.json", import.meta.url), "utf8"));
-  assert.equal(fingerprints.length, 6);
-  assert.equal(new Set(fingerprints.map(entry => entry.node)).size, 6);
+  assert.equal(fingerprints.length, 7);
+  assert.equal(new Set(fingerprints.map(entry => entry.node)).size, 7);
   assert.deepEqual((await readdir(assets)).filter(name => name.endsWith(".svg")).sort(), fingerprints.map(entry => entry.asset).sort());
   for (const entry of fingerprints) {
     const source = (await readFile(new URL(entry.asset, assets), "utf8")).replaceAll("\r\n", "\n").trim();
@@ -119,7 +140,10 @@ test("compatibility aliases share canonical Lucide geometry", () => {
 });
 
 test("every general-purpose named icon renders Lucide and only the reviewed exceptions use masks", () => {
-  const preserved = new Set(["minimal", "standard", "ultimate", "creative", "git", "thinking"]);
+  const preserved = new Set([
+    "minimal", "standard", "ultimate", "creative", "git", "thinking",
+    "reasoning-auto",
+  ]);
   for (const name of iconNames) {
     const markup = renderToStaticMarkup(createElement(Icon, { name }));
     if (preserved.has(name)) {

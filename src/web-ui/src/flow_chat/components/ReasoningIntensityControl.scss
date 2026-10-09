@@ -1,0 +1,590 @@
+@use 'sass:math';
+@use 'sass:list';
+
+// Distant points drift with the foreground stars, which twinkle in place.
+$reasoning-dust: ();
+@for $index from 1 through 72 {
+  $x: math.div(($index * 31 + $index * $index * 7) % 137, 137) * 100%;
+  $y: math.div(($index * 47 + $index * $index * 13) % 139, 139) * 100%;
+  $reasoning-dust: list.append($reasoning-dust,
+    radial-gradient(circle at $x $y, var(--_reasoning-star-color) 0 0.45px, transparent 1.05px), comma);
+}
+
+.openbitfun-reasoning-control {
+  &__segments[data-wrap='true'] {
+    display: grid;
+  }
+
+  --_reasoning-control-tint-source: color-mix(in oklch, var(--openbitfun-color-link-default) 70%, var(--openbitfun-color-accent-secondary));
+  --_reasoning-control-tint: var(--_reasoning-control-tint-source);
+  --_reasoning-control-glow: color-mix(in oklch, var(--openbitfun-color-link-default) 64%, var(--openbitfun-color-content-on-dark));
+  --_reasoning-control-highlight: color-mix(in oklch, var(--_reasoning-control-glow) 76%, var(--openbitfun-color-content-on-dark));
+  --_reasoning-sky-opacity: 0.74;
+  --_reasoning-light-opacity: 0.78;
+  --_reasoning-texture-opacity: 0.14;
+  --_reasoning-cloud-width: 50%;
+  --_reasoning-cloud-height: 70%;
+  --_reasoning-cloud-depth: 0.46;
+  --_reasoning-dust-opacity: 0.16;
+  --_reasoning-star-color: var(--openbitfun-color-content-on-dark);
+
+  @supports (color: oklch(from currentColor l c h)) {
+    // Normalize chroma after mixing: the light theme's secondary accent is intentionally muted.
+    --_reasoning-control-tint: oklch(from var(--_reasoning-control-tint-source) clamp(0.66, l, 0.72) max(c, 0.18) h);
+    --_reasoning-control-glow: oklch(from var(--openbitfun-color-link-default) clamp(0.76, l, 0.82) max(c, 0.14) h);
+  }
+
+  :where([data-color-scheme='dark']) & {
+    // Atmosphere stays deep; the small luminous clouds keep their own exposure.
+    --_reasoning-sky-opacity: 0.64;
+    --_reasoning-light-opacity: 0.8;
+    --_reasoning-texture-opacity: 0.1;
+    --_reasoning-control-highlight: color-mix(in oklch, var(--_reasoning-control-glow) 58%, var(--openbitfun-color-content-on-dark));
+  }
+
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  min-inline-size: 0;
+  min-block-size: calc(var(--openbitfun-space-6) + var(--openbitfun-space-1));
+  overflow: hidden;
+  color: var(--openbitfun-color-content-secondary);
+  font-family: var(--openbitfun-type-label-md-font-family);
+  font-size: var(--openbitfun-type-label-md-font-size);
+  font-weight: var(--openbitfun-type-label-md-font-weight);
+  line-height: var(--openbitfun-type-action-row-line-height);
+  letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
+
+  &__backdrop,
+  &__sky,
+  &__field,
+  &__aurora,
+  &__stars {
+    position: absolute;
+    inset: 0;
+  }
+
+  &__sky {
+    overflow: hidden;
+    // Lift the translucent base separately from the colored cloud light.
+    background: color-mix(in srgb,
+      color-mix(in oklch, var(--_reasoning-control-tint) 12%, var(--openbitfun-color-content-on-dark)) 78%, transparent);
+    pointer-events: none;
+
+    :where([data-color-scheme='dark']) & {
+      background: color-mix(in srgb,
+        color-mix(in oklch, var(--_reasoning-control-tint) 22%, var(--openbitfun-color-surface-raised)) 74%, transparent);
+    }
+  }
+
+  &__field,
+  &__aurora,
+  &__stars {
+    // Every level covers the same sky; only the depth and luminosity change.
+    transition: opacity 180ms var(--openbitfun-motion-easing-standard);
+  }
+
+  &__stars {
+    inset: -3%;
+    opacity: 1;
+    animation: openbitfun-reasoning-starfield 12s ease-in-out -4s infinite alternate;
+    // The brightest stars stay around the text, not behind its letterforms.
+    mask-image: radial-gradient(ellipse 42% 64% at 50% 42%,
+      transparent 8%, color-mix(in srgb, var(--openbitfun-color-content-on-dark) 30%, transparent) 40%, var(--openbitfun-color-content-on-dark) 88%);
+  }
+
+  &__field {
+    opacity: var(--_reasoning-sky-opacity);
+    background:
+      radial-gradient(ellipse var(--_reasoning-cloud-width) 90% at 12% 100%, color-mix(in srgb, var(--_reasoning-control-glow) 38%, transparent), transparent 72%),
+      radial-gradient(ellipse 72% var(--_reasoning-cloud-height) at 94% 8%, color-mix(in srgb, var(--_reasoning-control-tint) 34%, transparent), transparent 76%),
+      linear-gradient(128deg,
+        color-mix(in srgb, var(--_reasoning-control-tint) 14%, transparent),
+        transparent 48%,
+        color-mix(in srgb, var(--_reasoning-control-tint) 18%, transparent));
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: -30% -10%;
+      background:
+        radial-gradient(ellipse 32% 20% at 20% 78%, color-mix(in srgb, var(--_reasoning-control-highlight) 32%, transparent), transparent 74%),
+        radial-gradient(ellipse 30% 28% at 82% 28%, color-mix(in srgb, var(--_reasoning-control-glow) 38%, transparent), transparent 76%);
+      animation: openbitfun-reasoning-nebula 6.4s ease-in-out -2.1s infinite alternate;
+    }
+  }
+
+  &__nebula,
+  &__aurora {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    overflow: visible;
+  }
+
+  &__nebula {
+    color: var(--_reasoning-control-highlight);
+    opacity: var(--_reasoning-texture-opacity);
+    transform-origin: center;
+    animation: openbitfun-reasoning-cloud 8s ease-in-out -2.7s infinite alternate;
+    mask-image: radial-gradient(ellipse 46% 64% at 50% 40%,
+      color-mix(in srgb, var(--openbitfun-color-content-on-dark) 32%, transparent), var(--openbitfun-color-content-on-dark) 90%);
+  }
+
+  &__aurora {
+    // Emission is independent of atmosphere opacity; lower tiers use smaller clouds.
+    opacity: var(--_reasoning-light-opacity);
+    mask-image: radial-gradient(ellipse 42% 58% at 50% 44%,
+      transparent, var(--openbitfun-color-content-on-dark) 86%);
+
+    &::before,
+    &::after {
+      content: '';
+      position: absolute;
+      inset: -22% -18%;
+      opacity: 0.88;
+      transform-origin: center;
+      animation: openbitfun-reasoning-near-cloud 7.2s ease-in-out -2.4s infinite alternate;
+    }
+
+    &::before {
+      filter: var(--openbitfun-effect-blur-base);
+      background:
+        radial-gradient(ellipse var(--_reasoning-cloud-width) var(--_reasoning-cloud-height) at 18% 82%,
+          color-mix(in srgb, var(--_reasoning-control-glow) 64%, transparent),
+          color-mix(in srgb, var(--_reasoning-control-tint) 42%, transparent) 28%, transparent 72%);
+    }
+
+    &::after {
+      // A smaller unblurred light core gives the soft cloud a readable edge and depth.
+      background:
+        radial-gradient(ellipse 22% 14% at 80% 20%, color-mix(in srgb, var(--_reasoning-control-highlight) 44%, transparent), transparent 78%),
+        radial-gradient(ellipse var(--_reasoning-cloud-width) var(--_reasoning-cloud-height) at 86% 20%,
+          color-mix(in srgb, var(--_reasoning-control-glow) 54%, transparent),
+          color-mix(in srgb, var(--_reasoning-control-tint) 32%, transparent) 30%, transparent 70%);
+      animation-duration: 9.6s;
+      animation-delay: -5.8s;
+      animation-direction: alternate-reverse;
+    }
+  }
+
+  &__stars::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: #{$reasoning-dust};
+    opacity: var(--_reasoning-dust-opacity);
+    transition: opacity 180ms var(--openbitfun-motion-easing-standard);
+  }
+
+  &__star-slot {
+    position: absolute;
+    inline-size: 1.8px;
+    block-size: 1.8px;
+    opacity: 0;
+    transition: opacity 180ms var(--openbitfun-motion-easing-standard);
+
+    &:nth-child(-n + 12) {
+      opacity: 1;
+    }
+
+    // Slots stay mounted across levels so the same stars retain their positions.
+    @for $index from 1 through 48 {
+      &:nth-child(#{$index}) {
+        inset-inline-start: math.div(($index * 37 + $index * $index * 11) % 97, 97) * 96% + 2%;
+        inset-block-start: math.div(($index * 53 + $index * $index * 7) % 83, 83) * 80% + 10%;
+
+        .openbitfun-reasoning-control__star {
+          // Brightness phases vary; the containing starfield owns all movement.
+          animation-duration: 2.8s + ($index % 5) * 0.35s;
+          animation-delay: $index * -0.417s;
+        }
+      }
+    }
+
+    &:nth-child(3n) {
+      inline-size: 1px;
+      block-size: 1px;
+    }
+  }
+
+  &__star {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    border-radius: var(--openbitfun-radius-pill);
+    background: var(--_reasoning-star-color);
+    box-shadow: 0 0 calc(var(--openbitfun-space-1) * 0.5) color-mix(in srgb, var(--_reasoning-star-color) 26%, transparent);
+    opacity: 0.86;
+    animation: openbitfun-reasoning-star 4s ease-in-out infinite;
+  }
+
+  &[data-intensity='2'] {
+    --_reasoning-control-tint-source: color-mix(in oklch, var(--openbitfun-color-link-default) 55%, var(--openbitfun-color-accent-secondary));
+    --_reasoning-cloud-width: 60%;
+    --_reasoning-cloud-height: 80%;
+    --_reasoning-cloud-depth: 0.64;
+    --_reasoning-dust-opacity: 0.24;
+
+    .openbitfun-reasoning-control__star-slot:nth-child(-n + 24) {
+      opacity: 1;
+    }
+  }
+
+  &[data-intensity='3'] {
+    --_reasoning-control-tint-source: color-mix(in oklch, var(--openbitfun-color-link-default) 40%, var(--openbitfun-color-accent-secondary));
+    --_reasoning-cloud-width: 70%;
+    --_reasoning-cloud-height: 90%;
+    --_reasoning-cloud-depth: 0.82;
+    --_reasoning-dust-opacity: 0.38;
+
+    .openbitfun-reasoning-control__star-slot:nth-child(-n + 36) {
+      opacity: 1;
+    }
+  }
+
+  &[data-intensity='4'] {
+    --_reasoning-control-tint-source: color-mix(in oklch, var(--openbitfun-color-link-default) 25%, var(--openbitfun-color-accent-secondary));
+    --_reasoning-cloud-width: 80%;
+    --_reasoning-cloud-height: 100%;
+    --_reasoning-cloud-depth: 1;
+    --_reasoning-dust-opacity: 0.56;
+
+    .openbitfun-reasoning-control__star-slot {
+      opacity: 1;
+    }
+  }
+
+  &[data-reasoning-state='manual']:is([data-intensity='3'], [data-intensity='4']) {
+    .openbitfun-reasoning-control__star-slot:nth-child(12n) {
+      inline-size: 2.2px;
+      block-size: 2.2px;
+    }
+  }
+
+  &[data-reasoning-state='off'] {
+    --_reasoning-control-tint-source: color-mix(in oklch, var(--openbitfun-color-link-default) 64%, var(--openbitfun-color-accent-secondary));
+    --_reasoning-control-glow: color-mix(in oklch, var(--openbitfun-color-link-default) 66%, var(--openbitfun-color-content-on-dark));
+    --_reasoning-light-opacity: 0.58;
+    --_reasoning-texture-opacity: 0.12;
+    --_reasoning-cloud-width: 74%;
+    --_reasoning-cloud-height: 84%;
+    --_reasoning-cloud-depth: 0.74;
+
+    .openbitfun-reasoning-control__field {
+      // An authored silver-blue cloud composition remains when all stars are absent.
+      background:
+        radial-gradient(ellipse 90% 100% at 12% 12%, color-mix(in srgb, var(--_reasoning-control-glow) 28%, transparent), transparent 76%),
+        radial-gradient(ellipse 90% 86% at 78% 86%, color-mix(in srgb, var(--_reasoning-control-tint) 26%, transparent), transparent 82%),
+        linear-gradient(120deg, color-mix(in srgb, var(--_reasoning-control-glow) 16%, transparent), transparent 70%);
+
+      &::after {
+        background:
+          radial-gradient(ellipse 68% 60% at 8% 80%, color-mix(in srgb, var(--_reasoning-control-highlight) 36%, transparent), transparent 78%),
+          radial-gradient(ellipse 54% 48% at 88% 24%, color-mix(in srgb, var(--_reasoning-control-glow) 30%, transparent), transparent 80%);
+      }
+    }
+  }
+
+  &[data-reasoning-state='auto'] {
+    --_reasoning-control-tint-source: color-mix(in oklch, var(--openbitfun-color-link-default) 60%, var(--openbitfun-color-accent-secondary));
+    --_reasoning-light-opacity: 0.68;
+    --_reasoning-cloud-width: 62%;
+    --_reasoning-cloud-height: 88%;
+    --_reasoning-cloud-depth: 0.6;
+    --_reasoning-dust-opacity: 0.18;
+
+    .openbitfun-reasoning-control__field {
+      background:
+        radial-gradient(ellipse 48% 96% at 20% 50%, color-mix(in srgb, var(--_reasoning-control-glow) 28%, transparent), transparent 80%),
+        radial-gradient(ellipse 48% 96% at 80% 50%, color-mix(in srgb, var(--_reasoning-control-tint) 28%, transparent), transparent 80%),
+        linear-gradient(180deg, transparent, color-mix(in srgb, var(--_reasoning-control-tint) 16%, transparent));
+
+      &::after {
+        background:
+          radial-gradient(ellipse 30% 40% at 28% 42%, color-mix(in srgb, var(--_reasoning-control-highlight) 26%, transparent), transparent 80%),
+          radial-gradient(ellipse 30% 40% at 72% 42%, color-mix(in srgb, var(--_reasoning-control-highlight) 26%, transparent), transparent 80%);
+      }
+    }
+
+    .openbitfun-reasoning-control__aurora::before,
+    .openbitfun-reasoning-control__aurora::after {
+      filter: none;
+      animation: openbitfun-reasoning-balance 6s ease-in-out infinite alternate;
+    }
+
+    .openbitfun-reasoning-control__aurora::before {
+      background:
+        radial-gradient(ellipse 28% 24% at 24% 48%, color-mix(in srgb, var(--_reasoning-control-highlight) 24%, transparent), transparent 78%),
+        radial-gradient(ellipse var(--_reasoning-cloud-width) var(--_reasoning-cloud-height) at 24% 50%,
+          color-mix(in srgb, var(--_reasoning-control-glow) 48%, transparent),
+          color-mix(in srgb, var(--_reasoning-control-tint) 24%, transparent) 38%, transparent 78%);
+    }
+
+    .openbitfun-reasoning-control__aurora::after {
+      background:
+        radial-gradient(ellipse 28% 24% at 76% 48%, color-mix(in srgb, var(--_reasoning-control-highlight) 24%, transparent), transparent 78%),
+        radial-gradient(ellipse var(--_reasoning-cloud-width) var(--_reasoning-cloud-height) at 76% 50%,
+          color-mix(in srgb, var(--_reasoning-control-glow) 48%, transparent),
+          color-mix(in srgb, var(--_reasoning-control-tint) 24%, transparent) 38%, transparent 78%);
+      animation-delay: -6s;
+    }
+
+    .openbitfun-reasoning-control__star-slot {
+      opacity: 0;
+
+      &:nth-child(-n + 18) {
+        opacity: 0.82;
+      }
+    }
+  }
+
+  &__value {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    justify-content: center;
+    min-inline-size: 0;
+    inline-size: 100%;
+    min-block-size: calc(var(--openbitfun-space-6) + var(--openbitfun-space-1));
+    text-align: center;
+  }
+
+  &__summary,
+  &__options {
+    grid-area: 1 / 1;
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  &__summary {
+    display: flex;
+    justify-content: center;
+    transition: opacity 180ms var(--openbitfun-motion-easing-standard);
+
+    &[aria-hidden='true'] {
+      opacity: 0;
+      pointer-events: none;
+    }
+  }
+
+  &__value &__options {
+    // Both faces share one center; height changes move the model, not the choices.
+    display: flex;
+    align-items: center;
+    overflow: visible;
+    transform: none;
+  }
+
+  &__options-content {
+    flex: 0 0 100%;
+    min-inline-size: 0;
+    clip-path: inset(calc(-1 * var(--openbitfun-space-1)) 46% round var(--openbitfun-radius-base));
+    transition-property: clip-path;
+    transition-duration: inherit;
+    transition-timing-function: inherit;
+  }
+
+  &__options[aria-hidden='false'] &__options-content {
+    // Reveal sideways without stretching text; leave room for keyboard focus outlines.
+    clip-path: inset(calc(-1 * var(--openbitfun-space-1)) round var(--openbitfun-radius-base));
+
+    @starting-style {
+      clip-path: inset(calc(-1 * var(--openbitfun-space-1)) 46% round var(--openbitfun-radius-base));
+    }
+  }
+
+  &__backdrop {
+    pointer-events: none;
+  }
+
+  &__trigger {
+    inline-size: max-content;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    min-block-size: calc(var(--openbitfun-space-6) + var(--openbitfun-space-1));
+    color: inherit;
+
+    [data-openbitfun-part='trigger'] {
+      justify-content: center;
+      text-align: center;
+    }
+
+    [data-openbitfun-part='label'] {
+      flex: 0 1 auto;
+      inline-size: max-content;
+      min-inline-size: 4em;
+      text-align: center;
+      font-family: var(--openbitfun-type-label-sm-font-family);
+      font-size: var(--openbitfun-type-label-sm-font-size);
+      font-weight: var(--openbitfun-type-label-md-font-weight);
+      line-height: var(--openbitfun-type-label-sm-line-height);
+      letter-spacing: var(--openbitfun-type-label-sm-letter-spacing);
+    }
+  }
+
+  &__choices {
+    display: grid;
+    gap: var(--openbitfun-space-1);
+    inline-size: 100%;
+    min-inline-size: 0;
+
+    [data-openbitfun-component='segmented-control'] {
+      min-inline-size: 0;
+      gap: var(--openbitfun-space-1);
+      padding: 0;
+      background: transparent;
+    }
+
+    [data-openbitfun-part='segment'] {
+      block-size: calc(var(--openbitfun-space-6) + var(--openbitfun-space-1));
+      padding-inline: var(--openbitfun-space-1);
+      color: var(--openbitfun-color-content-secondary);
+      font-family: var(--openbitfun-type-label-sm-font-family);
+      font-size: var(--openbitfun-type-label-sm-font-size);
+      font-weight: var(--openbitfun-type-label-md-font-weight);
+      line-height: var(--openbitfun-type-label-sm-line-height);
+      letter-spacing: var(--openbitfun-type-label-sm-letter-spacing);
+
+      &[aria-pressed='true'] {
+        color: var(--openbitfun-color-content-primary);
+        background: color-mix(in srgb, var(--_reasoning-control-tint) 14%, transparent);
+      }
+
+      &:disabled {
+        color: var(--openbitfun-color-action-neutral-content-disabled);
+      }
+
+      &:is(:hover, :focus-visible):not(:disabled) {
+        color: var(--openbitfun-color-content-primary);
+        background: color-mix(in srgb, var(--_reasoning-control-tint) calc(12% + var(--_reasoning-cloud-depth) * 18%), var(--openbitfun-color-surface-panel));
+      }
+    }
+  }
+
+  &[data-disabled='true'] &__star,
+  &[data-disabled='true'] &__stars,
+  &[data-disabled='true'] &__field::after,
+  &[data-disabled='true'] &__nebula,
+  &[data-disabled='true'] &__aurora::before,
+  &[data-disabled='true'] &__aurora::after {
+    animation-play-state: paused;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+
+    &[data-reasoning-state='auto'] &__aurora::before,
+    &[data-reasoning-state='auto'] &__aurora::after,
+    &__star,
+    &__stars,
+    &__field::after,
+    &__nebula,
+    &__aurora::before,
+    &__aurora::after {
+      animation: none;
+    }
+
+    &__field,
+    &__aurora,
+    &__stars,
+    &__stars::before,
+    &__star-slot,
+    &__summary,
+    &__options,
+    &__options-content {
+      transition: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    color: CanvasText;
+    background: Canvas;
+
+    &__backdrop {
+      display: none;
+    }
+  }
+}
+
+@keyframes openbitfun-reasoning-nebula {
+  from {
+    transform: translate3d(-6%, 4%, 0) scale(1.06);
+    opacity: 0.55;
+  }
+
+  to {
+    transform: translate3d(6%, -4%, 0) scale(1.12);
+    opacity: 0.9;
+  }
+}
+
+@keyframes openbitfun-reasoning-cloud {
+  from {
+    transform: translate3d(-8%, 5%, 0) scale(1.3);
+    opacity: calc(var(--_reasoning-texture-opacity) * 0.85);
+  }
+
+  to {
+    transform: translate3d(8%, -5%, 0) scale(1.3);
+    opacity: var(--_reasoning-texture-opacity);
+  }
+}
+
+@keyframes openbitfun-reasoning-near-cloud {
+  from {
+    transform: translate3d(-8%, 5%, 0) scale(1.06);
+    opacity: 0.78;
+  }
+
+  to {
+    transform: translate3d(8%, -5%, 0) scale(1.1);
+    opacity: 0.98;
+  }
+}
+
+@keyframes openbitfun-reasoning-balance {
+  from {
+    transform: translate3d(-6%, 3%, 0) scale(1.06);
+    opacity: 0.66;
+  }
+
+  to {
+    transform: translate3d(6%, -3%, 0) scale(1.06);
+    opacity: 0.9;
+  }
+}
+
+@keyframes openbitfun-reasoning-starfield {
+  from {
+    transform: translate3d(-6px, 2px, 0);
+  }
+
+  to {
+    transform: translate3d(6px, -2px, 0);
+  }
+}
+
+@keyframes openbitfun-reasoning-star {
+  0%,
+  100% {
+    opacity: 0.28;
+  }
+
+  20%,
+  32% {
+    opacity: 1;
+  }
+
+  58% {
+    opacity: 0.38;
+  }
+
+  78% {
+    opacity: 0.78;
+  }
+}

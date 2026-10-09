@@ -4,6 +4,7 @@ use super::handler::{HookHandler, RuntimeHookRegistration};
 use super::kind::{RuntimeHookKind, RuntimeHookSource};
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +99,12 @@ pub enum RuntimeHookRegistryBuildError {
     InvalidTimeoutMillis { hook_id: String },
     #[error("duplicate runtime hook id {hook_id}")]
     DuplicateHookId { hook_id: String },
+    #[error("invalid session skill hook registration")]
+    InvalidSessionSkill,
+    #[error("skill hooks changed after activation; start a new session to use the changed skill")]
+    SkillChanged,
+    #[error("session skill hook handler limit exceeded")]
+    SessionHandlerLimit,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -177,6 +184,14 @@ struct RuntimeHookRegistryState {
     entries: BTreeMap<RuntimeHookKind, Arc<[RuntimeHookRegistration]>>,
     source_activation: BTreeMap<(RuntimeHookSource, Option<String>), RuntimeHookActivation>,
     active_plugin_generations: BTreeMap<String, (String, String, String)>,
+    session_skills: BTreeMap<String, BTreeMap<String, SessionSkillHooks>>,
+}
+
+struct SessionSkillHooks {
+    fingerprint: String,
+    active: Arc<AtomicBool>,
+    cancellation: tokio::sync::watch::Sender<bool>,
+    entries: Arc<[RuntimeHookRegistration]>,
 }
 
 impl Default for RuntimeHookRegistryState {
@@ -185,6 +200,7 @@ impl Default for RuntimeHookRegistryState {
             entries: BTreeMap::new(),
             source_activation: BTreeMap::new(),
             active_plugin_generations: BTreeMap::new(),
+            session_skills: BTreeMap::new(),
         }
     }
 }
@@ -207,6 +223,113 @@ impl fmt::Debug for RuntimeHookRegistry {
 impl RuntimeHookRegistry {
     pub fn builder() -> RuntimeHookRegistryBuilder {
         RuntimeHookRegistryBuilder::default()
+    }
+
+    /// Publish a skill atomically and at most once per session. The fingerprint
+    /// pins the invoked definition, including consumed once handlers, until
+    /// session teardown; refresh cannot silently replace executable rules.
+    pub fn register_session_skill(
+        &self,
+        session_id: &str,
+        skill_key: &str,
+        fingerprint: &str,
+        mut entries: Vec<RuntimeHookRegistration>,
+    ) -> Result<usize, RuntimeHookRegistryError> {
+        if session_id.trim().is_empty()
+            || skill_key.trim().is_empty()
+            || entries.iter().any(|entry| {
+                entry.plan.source() != RuntimeHookSource::SkillCommand
+                    || !matches!(&entry.handler, HookHandler::Command(_))
+            })
+        {
+            return Err(RuntimeHookRegistryBuildError::InvalidSessionSkill.into());
+        }
+        validate_entries(&entries)?;
+        let mut state = self.inner.write().expect("hook registry lock poisoned");
+        let skills = state
+            .session_skills
+            .entry(session_id.to_string())
+            .or_default();
+        if let Some(existing) = skills.get(skill_key) {
+            return if existing.fingerprint == fingerprint {
+                Ok(existing.entries.len())
+            } else {
+                Err(RuntimeHookRegistryBuildError::SkillChanged.into())
+            };
+        }
+        let count = entries.len();
+        if skills
+            .values()
+            .map(|skill| skill.entries.len())
+            .sum::<usize>()
+            + count
+            > super::settings::MAX_HOOK_HANDLERS
+        {
+            return Err(RuntimeHookRegistryBuildError::SessionHandlerLimit.into());
+        }
+        let active = Arc::new(AtomicBool::new(true));
+        let (cancellation, receiver) = tokio::sync::watch::channel(false);
+        for entry in &mut entries {
+            entry.active = Some(active.clone());
+            entry.cancellation = Some(receiver.clone());
+        }
+        skills.insert(
+            skill_key.to_string(),
+            SessionSkillHooks {
+                fingerprint: fingerprint.to_string(),
+                active,
+                cancellation,
+                entries: Arc::from(entries),
+            },
+        );
+        Ok(count)
+    }
+
+    /// Invalidate snapshots as well as removing the registry's ownership.
+    pub fn clear_session(&self, session_id: &str) {
+        let mut state = self.inner.write().expect("hook registry lock poisoned");
+        if let Some(skills) = state.session_skills.remove(session_id) {
+            for skill in skills.values() {
+                skill.active.store(false, Ordering::Release);
+                skill.cancellation.send_replace(true);
+            }
+        }
+    }
+
+    pub fn registrations_for_session(
+        &self,
+        kind: RuntimeHookKind,
+        workspace_scope: Option<&str>,
+        session_id: &str,
+    ) -> Arc<[RuntimeHookRegistration]> {
+        let mut entries = self
+            .registrations_for_workspace(kind.clone(), workspace_scope)
+            .to_vec();
+        let state = self.inner.read().expect("hook registry lock poisoned");
+        if let Some(skills) = state.session_skills.get(session_id) {
+            entries.extend(
+                skills
+                    .values()
+                    .flat_map(|skill| skill.entries.iter())
+                    .filter(|entry| {
+                        entry.plan.kind() == &kind
+                            && entry.is_active()
+                            && entry
+                                .workspace_scope
+                                .as_deref()
+                                .is_none_or(|scope| Some(scope) == workspace_scope)
+                    })
+                    .cloned(),
+            );
+        }
+        entries.sort_by(|left, right| {
+            left.plan
+                .source()
+                .cmp(&right.plan.source())
+                .then_with(|| left.plan.order().cmp(&right.plan.order()))
+                .then_with(|| left.plan.id().cmp(right.plan.id()))
+        });
+        Arc::from(entries)
     }
 
     pub fn register_batch(

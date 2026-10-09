@@ -163,8 +163,7 @@
       "canvas": "畫布",
       "debugging": "偵錯",
       "coordination": "協作調度",
-      "planning": "規劃",
-      "gstack": "gstack"
+      "planning": "規劃"
     }
   },
   "form": {
@@ -231,6 +230,8 @@
       "globalToggleLabel": "切換 {{name}} 的全域可用狀態"
     },
     "scanIncomplete": "部分技能掃描失敗，已成功讀取的技能仍可使用。",
+    "unsupportedSkills": "部分技能依賴暫不支援的能力，未載入。",
+    "unsupportedField": "目前主機暫不支援技能內的 {{field}} 宣告，該技能未載入。",
     "diagnosticsUnavailable": "目前主機不提供技能掃描診斷。"
   },
   "deleteModal": {

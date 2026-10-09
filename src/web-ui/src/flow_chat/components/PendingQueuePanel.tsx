@@ -1,6 +1,6 @@
 import { HostPendingQueuePanel } from './HostPendingQueuePanel';
 import { hostQueueSupported, hostDialogQueue } from '../services/hostDialogQueue';
-import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceScope, isSurfaceChangedError, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 /**
  * Pending queue panel
  *
@@ -21,13 +21,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useTranslation } from 'react-i18next';
 import { ListEnd } from 'lucide-react';
 import { OverflowText, Tooltip } from '@openbitfun/ui';
-import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import { stateMachineManager } from '../state-machine';
 import { FlowChatStore } from '../store/FlowChatStore';
 import { pendingQueueManager } from '../services/flow-chat-manager/PendingQueueModule';
 import { FlowChatManager } from '../services/FlowChatManager';
 import { interruptedTurnRecoveryGate } from '../services/interruptedTurnRecoveryGate';
-import { insertSteeringItemIfAbsent } from '../services/flow-chat-manager/EventHandlerModule';
+import { submitSteeringMessage } from '../services/steeringSubmission';
 import { notificationService } from '../../shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import type { QueuedMessage, SteeringImage } from '../types/flow-chat';
@@ -126,6 +125,7 @@ function LegacyPendingQueuePanel({
       if (!sessionId || recoveryInFlight) return;
       if (sendNowInFlightIdsRef.current.has(item.id)) return;
       sendNowInFlightIdsRef.current.add(item.id);
+      const surfaceScope = getActiveSurfaceScope();
 
       try {
         const machine = stateMachineManager.get(sessionId);
@@ -138,34 +138,18 @@ function LegacyPendingQueuePanel({
         if (dialogTurnId && !isAcpSession) {
           pendingQueueManager.setStatus(sessionId, item.id, 'sending_now');
           try {
-            const resp = await agentAPI.steerDialogTurn({
+            await submitSteeringMessage({
               sessionId,
               dialogTurnId,
               content: item.content,
               displayContent: item.displayMessage ?? item.content,
               imageContexts: item.imageContexts,
               userMessageMetadata: item.userMessageMetadata,
-            });
-            // Optimistically render the steering bubble in the running round so
-            // the user sees their message land immediately. The backend
-            // `UserSteeringInjected` event dedupes by the same `steeringId`.
-            if (resp?.steeringId) {
-              try {
-                insertSteeringItemIfAbsent({
-                  sessionId,
-                  turnId: dialogTurnId,
-                  steeringId: resp.steeringId,
-                  content: item.displayMessage ?? item.content,
-                  images: item.imageDisplayData as SteeringImage[] | undefined,
-                  status: 'pending',
-                });
-              } catch (renderErr) {
-                log.warn('Optimistic steering render failed', { renderErr });
-              }
-            }
+            }, item.imageDisplayData as SteeringImage[] | undefined);
             pendingQueueManager.remove(sessionId, item.id);
             return;
           } catch (err) {
+            if (isSurfaceChangedError(err)) return;
             // Most often the turn finished between the click and the request.
             // Fall through to the drain path rather than reporting a failure the
             // user cannot act on.
@@ -182,6 +166,7 @@ function LegacyPendingQueuePanel({
         // first opportunity: right now if the session is idle, otherwise the
         // IDLE drain listener picks it up the moment the current turn ends.
         try {
+          surfaceScope.assertCurrent('promote queued message');
           if (!pendingQueueManager.promoteForExplicitDrain(sessionId, item.id)) {
             log.warn('Send now item is no longer queued', { sessionId, itemId: item.id });
             return;
@@ -221,7 +206,7 @@ function LegacyPendingQueuePanel({
         data-openbitfun-product-component="pending-queue-panel"
         data-openbitfun-product-part="header"
       >
-        <ListEnd aria-hidden="true" />
+        <Icon glyph={ListEnd} size="sm" aria-hidden="true" />
         <ChatComposerQueueTitle
           count={visibleItems.length}
           data-openbitfun-product-component="pending-queue-panel"

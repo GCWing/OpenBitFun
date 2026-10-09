@@ -1,6 +1,6 @@
 {
   "name": "@openbitfun/web-ui",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "description": "OpenBitFun Web UI - 支持 Desktop 和 Server 两种部署方式",
   "type": "module",
@@ -31,6 +31,7 @@
     "test:run": "vitest run --maxWorkers=50%"
   },
   "dependencies": {
+    "@openbitfun/flow-chat-presentation": "workspace:*",
     "@openbitfun/design-tokens": "workspace:^",
     "@openbitfun/theme-openbitfun": "workspace:^",
     "@openbitfun/ui": "workspace:^",
@@ -63,7 +64,7 @@
     "immer": "^11.1.3",
     "jszip": "^3.10.1",
     "katex": "^0.16.25",
-    "lucide-react": "^0.541.0",
+    "lucide-react": "^0.560.0",
     "markstream-react": "2.0.13",
     "mermaid": "^11.10.1",
     "modern-screenshot": "^4.7.0",

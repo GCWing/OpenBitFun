@@ -6,8 +6,8 @@
 
 .flow-chat-tool-gallery {
   display: grid;
-  gap: 34px;
-  margin-top: 42px;
+  gap: var(--openbitfun-space-8);
+  margin-top: var(--openbitfun-space-8);
 }
 
 .flow-chat-tool-sequence {
@@ -31,13 +31,13 @@
 
 .flow-chat-tool-gallery > .component-catalog-section-heading {
   margin-block: 0 -8px;
-  padding-top: 34px;
+  padding-top: var(--openbitfun-space-8);
   border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
 }
 
 .flow-chat-tool-group {
   display: grid;
-  gap: 16px;
+  gap: var(--openbitfun-space-4);
 }
 
 .flow-chat-tool-group__heading {
@@ -70,38 +70,9 @@
   font-size: var(--openbitfun-type-flow-section-title-font-size);
 }
 
-.flow-chat-tool-group__heading p,
-.flow-chat-tool-group__heading > button {
+.flow-chat-tool-group__heading p {
   color: var(--openbitfun-color-content-muted);
   font-size: var(--openbitfun-type-body-xs-font-size);
-}
-
-.flow-chat-tool-group__heading > button {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--openbitfun-space-2);
-  margin: 0;
-  padding: var(--openbitfun-space-2) var(--openbitfun-space-3);
-  border: 0;
-  border-radius: var(--openbitfun-radius-md);
-  background: transparent;
-  cursor: pointer;
-}
-
-.flow-chat-tool-group__heading > button:hover {
-  color: var(--openbitfun-color-content-primary);
-  background: var(--openbitfun-color-action-neutral-surface);
-}
-
-.flow-chat-tool-group__heading > button:focus-visible {
-  outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
-  outline-offset: var(--openbitfun-focus-offset);
-}
-
-.flow-chat-tool-group__heading > button > svg {
-  inline-size: var(--openbitfun-font-size-base);
-  block-size: var(--openbitfun-font-size-base);
 }
 
 .flow-chat-tool-grid {
@@ -225,3 +196,13 @@
     text-align: start;
   }
 }
+
+.flow-chat-scenario__controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--openbitfun-space-3);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+}
+.flow-chat-tool-sequence > header h3 { margin: 0; }
+.flow-chat-tool-sequence > header p { color: var(--openbitfun-color-content-secondary); }

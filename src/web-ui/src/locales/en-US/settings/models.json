@@ -1,12 +1,13 @@
 {
   "title": "Models",
-  "subtitle": "Manage default models, providers, subscriptions, catalog data, and network connections.",
+  "subtitle": "Connect model providers and choose models for each type of task",
   "editProvider": "Edit Provider Configuration",
   "newProvider": "New Provider Configuration",
   "editModel": "Edit Model Configuration",
+  "modelEditorTitle": "{{model}} · {{provider}}",
   "newModel": "New Model Configuration",
-  "editProviderSubtitle": "Basic Provider Parameters",
-  "editSubtitle": "Basic Model Parameters",
+  "editProviderSubtitle": "Set the API address, authentication, and models for this provider",
+  "editSubtitle": "Set the model ID, context capacity, and request parameters",
   "confirmDelete": "Are you sure you want to delete this configuration?",
   "sessionTitle": {
     "title": "Auto Session Title",
@@ -69,7 +70,7 @@
     "useFormat": "Use {{format}}",
     "useFormatWithCount": "Use {{format}} ({{modelCount}})",
     "detected": "Will use {{label}} ({{account}})",
-    "notConnected": "{{kind}} is not signed in; sign in above first",
+    "notConnected": "Not signed in to {{kind}}. Sign in under Subscriptions first.",
     "unknownAccount": "current account",
     "reauthenticationRequired": "No usable credential was found in credential storage. Sign in again once.",
     "vaultUnavailable": "Credential storage is temporarily unavailable. Try again; your sign-in has not been removed.",
@@ -93,13 +94,35 @@
     "logoutNoAffectedModels": "No model configuration currently uses this subscription account.",
     "logoutConsequence": "Model configurations will not be deleted. Sign in to the same subscription account again to resume using them.",
     "confirmLogout": "Sign out",
-    "openCodeRemoved": "OpenCode Console OAuth supports Zen only. Select API key and enter a Go key. Your existing model configuration is preserved."
+    "openCodeRemoved": "OpenCode Console OAuth supports Zen only. Select API key and enter a Go key. Your existing model configuration is preserved.",
+    "editorDescription": "Models from this service share the signed-in subscription account",
+    "accountLabel": "Account",
+    "accountAuthentication": "Subscription account",
+    "manageAccount": "Manage account",
+    "loadingAccount": "Reading account…",
+    "accountIdentityUnavailable": "The service did not provide an account identity",
+    "accountUnavailable": "No account information",
+    "serviceUnavailable": "This host does not provide this subscription service. Refresh the status or check the host version.",
+    "signInToUse": "Sign in to use this subscription service. Existing model configurations will be kept.",
+    "sharedAccountHint": "Models from this service share the currently signed-in account.",
+    "credentialExpiresAt": "Credentials expire {{time}}",
+    "credentialExpired": "The current authorization credential has expired. Refresh it in Manage account and try again.",
+    "openCodeLegacyConnection": "This legacy connection uses OpenCode Go. Existing models are kept. Add an API Key provider to continue using Go, or import Zen again for subscription authorization.",
+    "accountState": {
+      "loading": "Reading status",
+      "loadFailed": "Status unavailable",
+      "unavailable": "Service unavailable",
+      "vaultUnavailable": "Credentials unavailable",
+      "reauthenticationRequired": "Sign-in required",
+      "refreshRequired": "Refresh required",
+      "connected": "Signed in"
+    }
   },
   "providerSelection": {
     "modelRoutingPending": "Refresh the model list to show protocols and endpoints. Models outside the catalog can be configured manually.",
     "modelRoutingUnavailable": "The host did not return a valid route for this model. Update the host and refresh the model list.",
     "title": "Select Model Provider",
-    "subtitle": "Choose a preset provider for quick setup, or select custom for full manual configuration",
+    "subtitle": "Presets fill in common connection settings; choose Custom for private deployments or unlisted providers",
     "or": "or",
     "orSelectProvider": "or select a preset provider",
     "customTitle": "Custom Configuration",
@@ -110,6 +133,10 @@
     "collapseProviders": "Collapse the provider list",
     "noProviderMatches": "No matching providers. Use the custom configuration above.",
     "fetchModels": "Fetch Models",
+    "quickAdd": "Quick add",
+    "fetchedModels": "{{count}} models fetched",
+    "presetModels": "Preset models · {{count}}",
+    "searchModels": "Search model name or ID",
     "fetchHint": "Fetch the model list from the current provider; if it fails, fall back to common preset models",
     "fetchingModels": "Fetching model list...",
     "fetchSuccessCount": "Fetched {{count}} models from the provider",
@@ -123,7 +150,8 @@
     "noPresetModels": "No models available. Fetch the model list or enter a model name manually",
     "backToSelection": "Back to provider selection",
     "selectModel": "Select model",
-    "multiSelectHint": "Supports multi-select. After selection, configure context window, max output tokens, and reasoning per model.",
+    "selectedModels": "Models selected: {{count}}",
+    "multiSelectHint": "Select multiple models, then adjust context, output limits, and reasoning for each",
     "searchOrInputModel": "Search or enter model name...",
     "inputModelName": "Enter model name...",
     "useCustomModel": "Press Enter to use",
@@ -132,10 +160,12 @@
     "modelAlreadyInList": "This model is already in the list",
     "noModelsSelected": "Select a model first",
     "removeModel": "Remove model",
+    "removeModelByName": "Remove model {{name}}",
+    "editModelSettings": "Edit model {{name}}",
     "expandModelSettings": "Expand settings for {{name}}",
     "collapseModelSettings": "Collapse settings for {{name}}",
     "unsavedModel": "Unsaved",
-    "unsavedModelHint": "This model has changes that have not been saved. Use Save at the bottom of the model editor to persist them.",
+    "unsavedModelHint": "Model changes are unsaved; save them in the model editor",
     "urlHint": "Official API URL pre-filled, modify if using proxy or private deployment",
     "formatHint": "Automatically selected based on provider, usually no need to change"
   },
@@ -298,10 +328,10 @@
     "provider": "Request Format",
     "providerPlaceholder": "Select request format",
     "contextWindow": "Context Window Size",
-    "contextWindowHint": "Used primarily to determine when context compression should trigger. It can be lower than the model's maximum context window advertised by the provider.",
-    "contextWindowLongWarning": "This model's configured context window exceeds 400K. Very long context can reduce model quality; consider setting it to around 300K.",
+    "contextWindowHint": "Determines when context is compacted; may be lower than the model's supported limit",
+    "contextWindowLongWarning": "Context above 400K may reduce quality. Around 300K is recommended.",
     "maxTokens": "Max Output Tokens",
-    "maxTokensHint": "Maximum tokens for model output per request (affects response length)",
+    "maxTokensHint": "Limits tokens in a single response, affecting output length",
     "description": "Description",
     "descriptionPlaceholder": "Configuration description (optional)"
   },
@@ -323,7 +353,7 @@
   },
   "reasoningEffort": {
     "label": "Reasoning Effort",
-    "hint": "Controls provider-specific reasoning depth for DeepSeek, the Responses API, and supported Claude adaptive reasoning models",
+    "hint": "Set reasoning effort for DeepSeek, Responses API, and Claude models that support adaptive reasoning",
     "placeholder": "Use API default"
   },
   "reasoningPresets": {
@@ -416,29 +446,29 @@
     "saveSuccess": "Proxy configuration saved. Restart OpenBitFun to apply it"
   },
   "streamIdleTimeout": {
-    "title": "Streaming Timeout",
+    "title": "Model response timeouts",
     "effectiveNextRound": "Changes take effect next turn.",
-    "label": "Idle Timeout (seconds)",
-    "hint": "Global idle timeout between streamed chunks after the stream starts. Leave empty to wait indefinitely.",
+    "label": "Response idle timeout (seconds)",
+    "hint": "Maximum wait for the next data chunk after the response starts; leave blank for no timeout",
     "placeholder": "Leave empty for no timeout",
     "invalid": "Enter a positive integer in seconds, or leave this field empty.",
-    "save": "Save Streaming Timeout",
+    "save": "Save response timeouts",
     "saveSuccess": "Streaming timeout saved"
   },
   "streamTtftTimeout": {
-    "title": "First Token Timeout",
-    "label": "TTFT Timeout (seconds)",
-    "hint": "Maximum wait time after a request is sent for the first effective streamed output. Leave empty to wait indefinitely.",
+    "title": "First response timeout",
+    "label": "First response timeout (seconds)",
+    "hint": "Maximum wait for the first valid output after sending a request; leave blank for no timeout",
     "placeholder": "Leave empty for no timeout",
     "invalid": "Enter a positive integer in seconds, or leave this field empty.",
-    "save": "Save First Token Timeout",
+    "save": "Save first response timeout",
     "saveSuccess": "First token timeout saved"
   },
   "toolArgumentJsonRepair": {
     "title": "Tool Argument JSON Repair",
     "description": "Applies to the next model round.",
     "label": "Repair malformed tool arguments",
-    "hint": "Only after the provider confirms a normal tool-use completion. This can change malformed JSON before normal tool validation.",
+    "hint": "Attempt to repair argument JSON only after the provider reports a completed tool call; repair runs before normal tool validation",
     "saveSuccess": "Tool argument JSON repair setting saved"
   },
   "capabilities": {
@@ -456,6 +486,8 @@
   },
   "actions": {
     "save": "Save",
+    "back": "Back",
+    "done": "$t(shared:statuses.done)",
     "cancel": "Cancel",
     "edit": "Edit",
     "delete": "Delete",
@@ -502,7 +534,7 @@
   },
   "messages": {
     "loading": "Loading model settings…",
-    "loadFailedLocked": "Model settings could not be read. This page is locked to avoid overwriting the current configuration.",
+    "loadFailedLocked": "These settings could not be read. Related controls are locked to avoid overwriting the current configuration. Please reload.",
     "retry": "Reload",
     "unsaved": "Unsaved",
     "fillRequired": "Please fill in required fields",
@@ -538,13 +570,14 @@
     "defaultDescription": "{{name}} model configuration",
     "cloneName": "{{name}} - Copy",
     "templateName": "{{provider}} - {{modelName}}",
-    "templateDescription": "{{description}} - {{modelName}}"
+    "templateDescription": "{{description}} - {{modelName}}",
+    "providerRemoved": "This provider was removed. Close the editor and reopen model settings."
   },
   "modelsDevCatalog": {
     "title": "models.dev model catalog",
     "detailsTitle": "models.dev catalog details",
     "viewDetails": "View models.dev catalog details",
-    "description": "Catalog status used for reasoning preset provider and model bindings. It is checked automatically when model settings open.",
+    "description": "Provides provider and model choices for reasoning presets; checks for updates when this page opens",
     "activeSource": "Active source",
     "source": {
       "cache": "Cache",
@@ -569,13 +602,14 @@
     "offlineTitle": "Updating without network access",
     "offlineDescription": "On a device with internet access, download the original models.dev file, name it catalog.json, and place it in the cache directory above. Restart OpenBitFun to apply it; Update now may overwrite this file.",
     "downloadOriginal": "Download original catalog",
-    "openCacheDirectory": "Open cache directory"
+    "openCacheDirectory": "Open cache directory",
+    "fetchCatalog": "Get the models.dev catalog"
   },
   "advancedSettings": {
     "title": "Advanced Settings",
     "inlineThinkInText": {
       "label": "Parse <think> Tags In Text",
-      "hint": "Split text streams containing <think>...</think> into live reasoning content."
+      "hint": "Display content inside <think>...</think> tags as reasoning"
     },
     "skipSslVerify": {
       "label": "Skip SSL Certificate Verification",
@@ -587,8 +621,8 @@
       "modeLabel": "Apply Mode",
       "modeReplace": "Replace",
       "modeMerge": "Merge",
-      "modeReplaceHint": "Custom headers will completely replace default headers (you need to add Content-Type, Authorization, etc.)",
-      "modeMergeHint": "Apply default headers first, then apply custom headers (can override existing values, add new values)",
+      "modeReplaceHint": "Replace all default headers; provide required fields such as Content-Type and Authorization yourself",
+      "modeMergeHint": "Keep default headers and override matching fields with custom values",
       "addHeader": "Add Field",
       "keyPlaceholder": "key",
       "valuePlaceholder": "value"
@@ -607,6 +641,67 @@
       "invalidJson": "Invalid JSON format, please check syntax",
       "validJson": "JSON format is valid",
       "mergeHint": "Custom fields will override corresponding fields in the default request body"
-    }
-  }
+    },
+    "description": "Adapt requests and responses to service-specific requirements; keep the defaults if unsure"
+  },
+  "providersDescription": "Manage endpoints, authentication, and the models sharing each connection",
+  "editSettingsTitle": "Model parameters",
+  "editProviderSettingsTitle": "Service connection",
+  "sections": {
+    "acquisition": "Add or import models",
+    "selectionModes": "Model selection modes",
+    "pool": "Model pool",
+    "more": "More settings"
+  },
+  "acquisition": {
+    "api": "API models",
+    "apiHint": "Add models with an API key or a custom endpoint",
+    "configuredSummary": "{{providers}} services configured, {{models}} models",
+    "noneConfigured": "No API services configured yet",
+    "configureProvider": "Configure {{provider}}",
+    "subscriptions": "Subscriptions",
+    "importedSummary": "{{models}} models imported from {{providers}} services",
+    "noneImported": "No subscriptions imported yet",
+    "import": "Import",
+    "importTitle": "Import subscriptions",
+    "loadFailed": "Could not load subscriptions. Retry to refresh; existing model configurations are retained.",
+    "noServices": "No subscriptions are available to import on this host"
+  },
+  "selectionModes": {
+    "smart": "Smart mode",
+    "smartHint": "Powered by OpenBitFun adaptive routing and collaborative multi-model reasoning to improve cost efficiency and task performance.",
+    "battery": "Battery mode",
+    "batteryHint": "Multi-source model pooling and failover automatically hand off when quota is exhausted or a connection fails.",
+    "unavailable": "Not available yet"
+  },
+  "pool": {
+    "manageConnections": "Manage connections",
+    "search": "Search models, sources, or tags",
+    "capabilityFilter": "Filter model capabilities",
+    "allCapabilities": "All capabilities",
+    "recommendationsUnavailable": "The recommended tag service has not launched, so sync is not connected yet. You can add model tags manually.",
+    "syncTags": "Sync recommended tags",
+    "clearFilter": "Clear filters",
+    "noMatches": "No models match these filters",
+    "empty": "Add API models or import a subscription to build your model pool.",
+    "editTags": "Add tags to {{model}}",
+    "tagsLabel": "Custom tags",
+    "tagsHint": "Type a tag and press Enter to add it, up to {{max}}. Slot labels such as Primary and Fast do not count toward this limit.",
+    "tagsPlaceholder": "Add tags",
+    "tagsCount": "{{count}} / {{max}}",
+    "tagsLimitReached": "You can add up to {{max}} custom tags. Remove one to add another.",
+    "recommendedTags": "Existing recommended tags",
+    "tagsSaveFailed": "Could not save tags. Your changes are retained; please retry.",
+    "addTags": "Add tags",
+    "editTag": "Edit tag {{tag}}",
+    "removeTag": "Remove tag {{tag}}",
+    "moreActions": "More actions for {{model}}",
+    "details": "Details",
+    "enableModel": "Enable {{model}}",
+    "editConnection": "Edit the {{provider}} connection",
+    "providerFilter": "Filter providers",
+    "allProviders": "All providers",
+    "acknowledge": "Got it"
+  },
+  "editConfiguredProviderSubtitle": "Update the API address, key, and models for this provider"
 }

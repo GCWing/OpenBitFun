@@ -6,6 +6,7 @@ import "@openbitfun/ui/mobile.css";
 import { App } from "./App";
 import { I18nProvider } from "./i18n";
 import "./styles.css";
+import "./design-layout.css";
 
 const rootElement = document.getElementById("root");
 

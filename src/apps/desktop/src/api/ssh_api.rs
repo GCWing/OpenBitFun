@@ -3,7 +3,10 @@
 //! Tauri commands for SSH connection management and remote file operations.
 
 use serde::Serialize;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{Emitter, State};
 
@@ -387,6 +390,247 @@ pub async fn remote_rename(
         .map_err(|e| e.to_string())
 }
 
+/// Bytes read or written per transfer step. Matches the chunk the remote file
+/// service uses, so one progress step is one protocol round trip.
+const TRANSFER_CHUNK_BYTES: usize = 256 * 1024;
+
+/// Progress events are throttled to one per interval, plus the terminal event.
+const TRANSFER_PROGRESS_INTERVAL_MS: u128 = 100;
+
+/// Cancellation and cooperative abort share one message so a user-initiated
+/// stop is recognizable on every transfer path.
+const TRANSFER_CANCELLED: &str = "Transfer cancelled";
+
+/// Cancellation registry shared with the `cancel_transfer` command.
+type TransferRegistry = Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>;
+
+/// One in-flight transfer's cancellation slot.
+///
+/// The entry is removed on every exit path — including `?` early returns and
+/// panics — so a failed or rejected transfer cannot leave a stale flag behind
+/// that would abort a later transfer reusing the same id.
+struct ActiveTransfer {
+    registry: TransferRegistry,
+    transfer_id: String,
+    cancel_flag: Arc<AtomicBool>,
+}
+
+impl ActiveTransfer {
+    fn register(registry: &TransferRegistry, transfer_id: &str) -> Result<Self, String> {
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        registry
+            .lock()
+            .map_err(|error| error.to_string())?
+            .insert(transfer_id.to_string(), cancel_flag.clone());
+        Ok(Self {
+            registry: registry.clone(),
+            transfer_id: transfer_id.to_string(),
+            cancel_flag,
+        })
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancel_flag.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for ActiveTransfer {
+    fn drop(&mut self) {
+        let Ok(mut registry) = self.registry.lock() else {
+            return;
+        };
+        // A reused id may already belong to a newer transfer; only this
+        // transfer's own flag may be removed.
+        if registry
+            .get(&self.transfer_id)
+            .is_some_and(|flag| Arc::ptr_eq(flag, &self.cancel_flag))
+        {
+            registry.remove(&self.transfer_id);
+        }
+    }
+}
+
+/// Emit a throttled progress event; `terminal` always emits.
+fn emit_transfer_progress(
+    app_handle: &tauri::AppHandle,
+    event: &str,
+    payload: impl Serialize + Clone,
+    last_emit: &mut Instant,
+    terminal: bool,
+) {
+    let now = Instant::now();
+    if !terminal && now.duration_since(*last_emit).as_millis() < TRANSFER_PROGRESS_INTERVAL_MS {
+        return;
+    }
+    *last_emit = now;
+    let _ = app_handle.emit(event, payload);
+}
+
+fn emit_download_progress(
+    app_handle: &tauri::AppHandle,
+    transfer_id: &str,
+    downloaded: u64,
+    total: u64,
+    last_emit: &mut Instant,
+    terminal: bool,
+) {
+    emit_transfer_progress(
+        app_handle,
+        "download_progress",
+        DownloadProgressPayload {
+            transfer_id: transfer_id.to_string(),
+            downloaded,
+            total,
+        },
+        last_emit,
+        terminal,
+    );
+}
+
+/// Local staging for a streamed remote download.
+///
+/// Bytes land in a private temporary file beside the destination and replace it
+/// only after the transfer completed, so a cancelled or failed download never
+/// truncates an existing local file. This mirrors the controller-local peer
+/// sink in [`crate::api::local_file_download`].
+struct LocalDownloadStaging {
+    file: tokio::fs::File,
+    temp_path: tempfile::TempPath,
+    destination: PathBuf,
+}
+
+impl LocalDownloadStaging {
+    async fn begin(destination: &Path) -> Result<Self, String> {
+        let parent = destination
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        tokio::fs::create_dir_all(parent).await.map_err(|error| {
+            format!(
+                "Failed to prepare local download directory '{}': {}",
+                parent.display(),
+                error
+            )
+        })?;
+        let (file, temp_path) = tempfile::Builder::new()
+            .prefix(".openbitfun-download-")
+            .tempfile_in(parent)
+            .map_err(|error| {
+                format!(
+                    "Failed to stage local download beside '{}': {}",
+                    destination.display(),
+                    error
+                )
+            })?
+            .into_parts();
+        Ok(Self {
+            file: tokio::fs::File::from_std(file),
+            temp_path,
+            destination: destination.to_path_buf(),
+        })
+    }
+
+    async fn write(&mut self, chunk: &[u8]) -> Result<(), String> {
+        use tokio::io::AsyncWriteExt;
+        self.file.write_all(chunk).await.map_err(|error| {
+            format!(
+                "Failed to write local download '{}': {}",
+                self.destination.display(),
+                error
+            )
+        })
+    }
+
+    async fn publish(self) -> Result<(), String> {
+        let Self {
+            file,
+            temp_path,
+            destination,
+        } = self;
+        file.sync_all().await.map_err(|error| {
+            format!(
+                "Failed to flush local download '{}': {}",
+                destination.display(),
+                error
+            )
+        })?;
+        drop(file);
+        let failure_path = destination.clone();
+        tokio::task::spawn_blocking(move || temp_path.persist(&destination))
+            .await
+            .map_err(|error| error.to_string())?
+            .map_err(|error| {
+                format!(
+                    "Failed to publish local download '{}': {}",
+                    failure_path.display(),
+                    error
+                )
+            })
+    }
+}
+
+/// Stream one remote file into a staged local file and publish it.
+///
+/// `on_progress` receives the bytes read for this file after every chunk; the
+/// caller owns throttling and the cumulative total it reports to the frontend.
+/// The remote reader bounds every protocol request, so a cancelled transfer
+/// stops at the next chunk boundary instead of waiting for the whole file.
+async fn download_remote_file_to_local(
+    remote_fs: &openbitfun_core::service::remote_ssh::RemoteFileService,
+    connection_id: &str,
+    remote_path: &str,
+    destination: &Path,
+    transfer: &ActiveTransfer,
+    on_progress: &mut impl FnMut(u64),
+) -> Result<u64, String> {
+    let mut reader = remote_fs
+        .open_read(connection_id, remote_path)
+        .await
+        .map_err(|error| format!("Failed to open remote file '{remote_path}': {error}"))?;
+    let mut staging = LocalDownloadStaging::begin(destination).await?;
+    let mut buffer = vec![0_u8; TRANSFER_CHUNK_BYTES];
+    let mut downloaded = 0_u64;
+    loop {
+        if transfer.is_cancelled() {
+            return Err(TRANSFER_CANCELLED.to_string());
+        }
+        use tokio::io::AsyncReadExt;
+        let read = reader
+            .read(&mut buffer)
+            .await
+            .map_err(|error| format!("Failed to read remote file '{remote_path}': {error}"))?;
+        if read == 0 {
+            break;
+        }
+        staging.write(&buffer[..read]).await?;
+        downloaded = downloaded.saturating_add(read as u64);
+        on_progress(downloaded);
+    }
+    // Stop can arrive during the final read (including an empty file). Do not
+    // replace a destination after that stop just because the stream reached EOF.
+    if transfer.is_cancelled() {
+        return Err(TRANSFER_CANCELLED.to_string());
+    }
+    staging.publish().await?;
+    Ok(downloaded)
+}
+
+/// Remote file size used only to keep the reported percentage sane; the actual
+/// byte count always comes from the stream.
+async fn remote_declared_size(
+    remote_fs: &openbitfun_core::service::remote_ssh::RemoteFileService,
+    connection_id: &str,
+    remote_path: &str,
+) -> u64 {
+    remote_fs
+        .workspace_metadata(connection_id, remote_path, true)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|metadata| metadata.size)
+        .unwrap_or(0)
+}
+
 /// Payload emitted via `download_progress` events during a remote download.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -396,19 +640,20 @@ pub struct DownloadProgressPayload {
     pub total: u64,
 }
 
-/// Read a remote file or directory via SFTP and write it to a local path.
+/// Read a remote file or directory and stream it to a local path.
 ///
-/// If `remote_path` is a file, its bytes are read via SFTP and written to
-/// `local_path` (binary-safe). If it is a directory, the directory tree is
-/// recreated locally: subdirectories are created with `create_dir_all`, and
-/// each file is read via SFTP and written to disk.
+/// If `remote_path` is a file, its bytes are streamed to `local_path`
+/// (binary-safe) through a staged temporary file that replaces the destination
+/// only after the transfer completed. If it is a directory, the directory tree
+/// is recreated locally: subdirectories are created with `create_dir_all`, and
+/// each file is streamed the same way.
 ///
 /// Emits `download_progress` events with `{ transferId, downloaded, total }`
-/// (bytes) during the SFTP read so the frontend can render a determinate
-/// progress bar with speed display. The `transfer_id` lets the frontend
-/// distinguish concurrent downloads and cancel individual transfers. Events
-/// are throttled to at most one per 100 ms (plus a guaranteed final event) to
-/// avoid flooding the webview.
+/// (bytes) during the read so the frontend can render a determinate progress
+/// bar with speed display. The `transfer_id` lets the frontend distinguish
+/// concurrent downloads and cancel individual transfers. Events are throttled
+/// to at most one per 100 ms (plus a guaranteed final event) to avoid flooding
+/// the webview.
 #[tauri::command]
 pub async fn remote_download_to_local_path(
     app_handle: tauri::AppHandle,
@@ -418,14 +663,9 @@ pub async fn remote_download_to_local_path(
     local_path: String,
     transfer_id: String,
 ) -> Result<(), String> {
+    let transfer = ActiveTransfer::register(&state.active_transfers, &transfer_id)?;
     let remote_fs = state.get_remote_file_service_async().await?;
-
-    // Register a cancellation flag for this transfer.
-    let cancel_flag = std::sync::Arc::new(AtomicBool::new(false));
-    {
-        let mut map = state.active_transfers.lock().map_err(|e| e.to_string())?;
-        map.insert(transfer_id.clone(), cancel_flag.clone());
-    }
+    let mut last_emit = Instant::now();
 
     // Check if the remote path is a directory.
     let is_dir = remote_fs
@@ -434,65 +674,48 @@ pub async fn remote_download_to_local_path(
         .map_err(|e| e.to_string())?;
 
     if is_dir {
-        let dir_result = download_directory_from_remote(
+        return download_directory_from_remote(
             &app_handle,
             &state,
             &connection_id,
             &remote_path,
             &local_path,
             &transfer_id,
-            &cancel_flag,
+            &transfer,
+            &mut last_emit,
         )
         .await;
-        // Clean up the cancellation flag.
-        {
-            let mut map = state.active_transfers.lock().map_err(|e| e.to_string())?;
-            map.remove(&transfer_id);
-        }
-        return dir_result;
     }
 
-    // Regular file: read via SFTP with progress.
-    let mut last_emit = Instant::now();
-    let result = remote_fs
-        .read_file_with_progress(&connection_id, &remote_path, &mut |downloaded, total| {
-            // Throttle: emit at most every 100 ms, plus the final 100% event.
-            let now = Instant::now();
-            if downloaded >= total || now.duration_since(last_emit).as_millis() >= 100 {
-                let _ = app_handle.emit(
-                    "download_progress",
-                    DownloadProgressPayload {
-                        transfer_id: transfer_id.clone(),
-                        downloaded,
-                        total,
-                    },
-                );
-                last_emit = now;
-            }
-            // Return false to abort the read if cancelled.
-            !cancel_flag.load(Ordering::Relaxed)
-        })
-        .await;
-
-    // Clean up the cancellation flag.
-    {
-        let mut map = state.active_transfers.lock().map_err(|e| e.to_string())?;
-        map.remove(&transfer_id);
-    }
-
-    let bytes = result.map_err(|e| e.to_string())?;
-
-    tokio::task::spawn_blocking(move || {
-        let path = std::path::Path::new(&local_path);
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-            }
-        }
-        std::fs::write(path, &bytes).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    let declared_total = remote_declared_size(&remote_fs, &connection_id, &remote_path).await;
+    let downloaded = download_remote_file_to_local(
+        &remote_fs,
+        &connection_id,
+        &remote_path,
+        Path::new(&local_path),
+        &transfer,
+        &mut |downloaded| {
+            // A file that grew while it was being read must not report over 100%.
+            emit_download_progress(
+                &app_handle,
+                &transfer_id,
+                downloaded,
+                declared_total.max(downloaded),
+                &mut last_emit,
+                false,
+            );
+        },
+    )
+    .await?;
+    emit_download_progress(
+        &app_handle,
+        &transfer_id,
+        downloaded,
+        declared_total.max(downloaded),
+        &mut last_emit,
+        true,
+    );
+    Ok(())
 }
 
 fn validate_remote_name_for_local_download(name: &str) -> Result<(), String> {
@@ -568,9 +791,10 @@ fn local_download_name_key(name: &str) -> String {
 /// Recursively download a remote directory to a local path.
 ///
 /// Pre-scans the remote tree to determine total file size, then walks the tree
-/// and downloads each file with chunked progress reporting. Emits cumulative
+/// and streams each file through a staged local file. Emits cumulative
 /// `download_progress` events so the frontend can show overall directory
 /// download progress.
+#[allow(clippy::too_many_arguments)]
 async fn download_directory_from_remote(
     app_handle: &tauri::AppHandle,
     state: &State<'_, AppState>,
@@ -578,12 +802,13 @@ async fn download_directory_from_remote(
     remote_dir: &str,
     local_dir: &str,
     transfer_id: &str,
-    cancel_flag: &std::sync::Arc<AtomicBool>,
+    transfer: &ActiveTransfer,
+    last_emit: &mut Instant,
 ) -> Result<(), String> {
     let remote_fs = state.get_remote_file_service_async().await?;
 
     // Create the top-level local directory.
-    let local_dir_path = std::path::PathBuf::from(local_dir);
+    let local_dir_path = PathBuf::from(local_dir);
     tokio::task::spawn_blocking(move || {
         std::fs::create_dir_all(&local_dir_path).map_err(|e| e.to_string())
     })
@@ -594,11 +819,17 @@ async fn download_directory_from_remote(
     let mut total_bytes: u64 = 0;
     let mut scan_stack = vec![remote_dir.to_string()];
     while let Some(current) = scan_stack.pop() {
+        if transfer.is_cancelled() {
+            return Err(TRANSFER_CANCELLED.to_string());
+        }
         let entries = remote_fs
             .read_dir(connection_id, &current)
             .await
             .map_err(|e| e.to_string())?;
         for entry in entries {
+            if transfer.is_cancelled() {
+                return Err(TRANSFER_CANCELLED.to_string());
+            }
             validate_remote_name_for_local_download(&entry.name)?;
             if entry.is_symlink {
                 return Err(format!(
@@ -615,15 +846,14 @@ async fn download_directory_from_remote(
     }
 
     let mut downloaded: u64 = 0;
-    let mut last_emit = Instant::now();
 
     // Walk the remote directory tree.
-    let mut stack: Vec<(String, std::path::PathBuf)> =
-        vec![(remote_dir.to_string(), std::path::PathBuf::from(local_dir))];
+    let mut stack: Vec<(String, PathBuf)> =
+        vec![(remote_dir.to_string(), PathBuf::from(local_dir))];
 
     while let Some((remote_current, local_current)) = stack.pop() {
-        if cancel_flag.load(Ordering::Relaxed) {
-            return Err("Transfer cancelled".to_string());
+        if transfer.is_cancelled() {
+            return Err(TRANSFER_CANCELLED.to_string());
         }
 
         let entries = remote_fs
@@ -659,55 +889,38 @@ async fn download_directory_from_remote(
                 stack.push((remote_child, local_child));
             } else {
                 let base_downloaded = downloaded;
-                let bytes = remote_fs
-                    .read_file_with_progress(connection_id, &remote_child, &mut |read_bytes, _| {
-                        let cumulative = base_downloaded + read_bytes;
-                        let now = Instant::now();
-                        if cumulative >= total_bytes
-                            || now.duration_since(last_emit).as_millis() >= 100
-                        {
-                            let _ = app_handle.emit(
-                                "download_progress",
-                                DownloadProgressPayload {
-                                    transfer_id: transfer_id.to_string(),
-                                    downloaded: cumulative,
-                                    total: total_bytes,
-                                },
-                            );
-                            last_emit = now;
-                        }
-                        !cancel_flag.load(Ordering::Relaxed)
-                    })
-                    .await
-                    .map_err(|e| e.to_string())?;
+                let file_size = download_remote_file_to_local(
+                    &remote_fs,
+                    connection_id,
+                    &remote_child,
+                    &local_child,
+                    transfer,
+                    &mut |file_bytes| {
+                        let cumulative = base_downloaded.saturating_add(file_bytes);
+                        emit_download_progress(
+                            app_handle,
+                            transfer_id,
+                            cumulative,
+                            total_bytes.max(cumulative),
+                            last_emit,
+                            false,
+                        );
+                    },
+                )
+                .await?;
 
-                let file_size = bytes.len() as u64;
-                let local_child_write = local_child.clone();
-                tokio::task::spawn_blocking(move || {
-                    if let Some(parent) = local_child_write.parent() {
-                        if !parent.as_os_str().is_empty() {
-                            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-                        }
-                    }
-                    std::fs::write(&local_child_write, &bytes).map_err(|e| e.to_string())
-                })
-                .await
-                .map_err(|e| e.to_string())??;
-
-                downloaded += file_size;
+                downloaded = base_downloaded.saturating_add(file_size);
+                emit_download_progress(
+                    app_handle,
+                    transfer_id,
+                    downloaded,
+                    total_bytes.max(downloaded),
+                    last_emit,
+                    true,
+                );
             }
         }
     }
-
-    // Final progress event.
-    let _ = app_handle.emit(
-        "download_progress",
-        DownloadProgressPayload {
-            transfer_id: transfer_id.to_string(),
-            downloaded: total_bytes,
-            total: total_bytes,
-        },
-    );
 
     Ok(())
 }
@@ -726,6 +939,27 @@ pub struct UploadProgressPayload {
     pub transfer_id: String,
     pub uploaded: u64,
     pub total: u64,
+}
+
+fn emit_upload_progress(
+    app_handle: &tauri::AppHandle,
+    transfer_id: &str,
+    uploaded: u64,
+    total: u64,
+    last_emit: &mut Instant,
+    terminal: bool,
+) {
+    emit_transfer_progress(
+        app_handle,
+        "upload_progress",
+        UploadProgressPayload {
+            transfer_id: transfer_id.to_string(),
+            uploaded,
+            total,
+        },
+        last_emit,
+        terminal,
+    );
 }
 
 /// Recursively scan a local directory and return the total size of all
@@ -768,18 +1002,22 @@ fn scan_directory_total_size(dir: &std::path::Path) -> Result<u64, String> {
     Ok(total)
 }
 
-/// Upload a local file or directory tree to a remote path via SFTP.
+/// Upload a local file or directory tree to a remote path.
 ///
-/// If `local_path` is a file, its bytes are written to `remote_path`. If it is
-/// a directory, the directory tree is recreated on the remote side:
-/// subdirectories are created with `create_dir_all`, and each file is read
-/// locally and written via SFTP.
+/// If `local_path` is a file, its bytes are streamed to `remote_path` without
+/// buffering the file in memory. If it is a directory, the directory tree is
+/// recreated on the remote side: subdirectories are created with
+/// `create_dir_all`, and each file is streamed the same way.
+///
+/// An upload stages its bytes on the remote side and publishes them only after
+/// the transfer completed, so a cancelled or failed upload never truncates a
+/// valid destination with partial content.
 ///
 /// Emits `upload_progress` events with `{ transferId, uploaded, total }`
-/// (bytes) during the SFTP write so the frontend can render a determinate
-/// progress bar with speed display. The `transfer_id` lets the frontend
-/// distinguish concurrent uploads and cancel individual transfers. Events
-/// are throttled to at most one per 100 ms (plus a guaranteed final event).
+/// (bytes) during the write so the frontend can render a determinate progress
+/// bar with speed display. The `transfer_id` lets the frontend distinguish
+/// concurrent uploads and cancel individual transfers. Events are throttled to
+/// at most one per 100 ms (plus a guaranteed final event).
 #[tauri::command]
 pub async fn remote_upload_from_local_path(
     app_handle: tauri::AppHandle,
@@ -789,6 +1027,7 @@ pub async fn remote_upload_from_local_path(
     remote_path: String,
     transfer_id: String,
 ) -> Result<RemoteUploadResult, String> {
+    let transfer = ActiveTransfer::register(&state.active_transfers, &transfer_id)?;
     let local_path = std::path::Path::new(&local_path);
     let local_metadata = std::fs::symlink_metadata(local_path).map_err(|error| {
         format!(
@@ -810,76 +1049,45 @@ pub async fn remote_upload_from_local_path(
         ));
     }
 
-    // Register a cancellation flag for this transfer.
-    let cancel_flag = std::sync::Arc::new(AtomicBool::new(false));
-    {
-        let mut map = state.active_transfers.lock().map_err(|e| e.to_string())?;
-        map.insert(transfer_id.clone(), cancel_flag.clone());
-    }
-
     // A directory needs to be walked locally and recreated on the remote side.
     if local_path.is_dir() {
-        let dir_result = upload_directory_to_remote(
+        upload_directory_to_remote(
             &app_handle,
             &state,
             &connection_id,
             local_path,
             &remote_path,
             &transfer_id,
-            &cancel_flag,
+            &transfer,
         )
-        .await;
-        // Clean up the cancellation flag.
-        {
-            let mut map = state.active_transfers.lock().map_err(|e| e.to_string())?;
-            map.remove(&transfer_id);
-        }
-        dir_result?;
+        .await?;
         return Ok(RemoteUploadResult {
             was_directory: true,
         });
     }
 
-    // Regular file: read locally, write via SFTP with progress.
-    let local_path_owned = local_path.to_path_buf();
-    let bytes = tokio::task::spawn_blocking(move || {
-        std::fs::read(&local_path_owned).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-
+    // Regular file: stream it to the remote without buffering it in memory.
     let remote_fs = state.get_remote_file_service_async().await?;
     let mut last_emit = Instant::now();
-    let write_result = remote_fs
-        .write_file_with_progress(
+    remote_fs
+        .write_file_from_local_path_with_progress(
             &connection_id,
             &remote_path,
-            &bytes,
+            local_path,
             &mut |written, total| {
-                let now = Instant::now();
-                if written >= total || now.duration_since(last_emit).as_millis() >= 100 {
-                    let _ = app_handle.emit(
-                        "upload_progress",
-                        UploadProgressPayload {
-                            transfer_id: transfer_id.clone(),
-                            uploaded: written,
-                            total,
-                        },
-                    );
-                    last_emit = now;
-                }
-                !cancel_flag.load(Ordering::Relaxed)
+                emit_upload_progress(
+                    &app_handle,
+                    &transfer_id,
+                    written,
+                    total,
+                    &mut last_emit,
+                    written >= total,
+                );
+                !transfer.is_cancelled()
             },
         )
-        .await;
-
-    // Clean up the cancellation flag.
-    {
-        let mut map = state.active_transfers.lock().map_err(|e| e.to_string())?;
-        map.remove(&transfer_id);
-    }
-
-    write_result.map_err(|e| e.to_string())?;
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(RemoteUploadResult {
         was_directory: false,
@@ -899,7 +1107,7 @@ async fn upload_directory_to_remote(
     local_dir: &std::path::Path,
     remote_dir: &str,
     transfer_id: &str,
-    cancel_flag: &std::sync::Arc<AtomicBool>,
+    transfer: &ActiveTransfer,
 ) -> Result<(), String> {
     let remote_fs = state.get_remote_file_service_async().await?;
 
@@ -936,8 +1144,8 @@ async fn upload_directory_to_remote(
         .map_err(|e| e.to_string())??;
 
         for entry in entries {
-            if cancel_flag.load(Ordering::Relaxed) {
-                return Err("Transfer cancelled".to_string());
+            if transfer.is_cancelled() {
+                return Err(TRANSFER_CANCELLED.to_string());
             }
             let entry_path = entry.path();
             let file_name = entry.file_name().into_string().map_err(|name| {
@@ -966,42 +1174,37 @@ async fn upload_directory_to_remote(
                     .map_err(|e| e.to_string())?;
                 stack.push((entry_path, remote_child));
             } else if file_type.is_file() {
-                let local_file = entry_path.clone();
-                let bytes = tokio::task::spawn_blocking(move || {
-                    std::fs::read(&local_file).map_err(|e| e.to_string())
-                })
-                .await
-                .map_err(|e| e.to_string())??;
-
-                let file_size = bytes.len() as u64;
                 let base_uploaded = uploaded;
-                remote_fs
-                    .write_file_with_progress(
+                let file_size = remote_fs
+                    .write_file_from_local_path_with_progress(
                         connection_id,
                         &remote_child,
-                        &bytes,
+                        &entry_path,
                         &mut |written, _| {
-                            let cumulative = base_uploaded + written;
-                            let now = Instant::now();
-                            if cumulative >= total_bytes
-                                || now.duration_since(last_emit).as_millis() >= 100
-                            {
-                                let _ = app_handle.emit(
-                                    "upload_progress",
-                                    UploadProgressPayload {
-                                        transfer_id: transfer_id.to_string(),
-                                        uploaded: cumulative,
-                                        total: total_bytes,
-                                    },
-                                );
-                                last_emit = now;
-                            }
-                            !cancel_flag.load(Ordering::Relaxed)
+                            let cumulative = base_uploaded.saturating_add(written);
+                            emit_upload_progress(
+                                app_handle,
+                                transfer_id,
+                                cumulative,
+                                total_bytes.max(cumulative),
+                                &mut last_emit,
+                                false,
+                            );
+                            !transfer.is_cancelled()
                         },
                     )
                     .await
                     .map_err(|e| e.to_string())?;
-                uploaded += file_size;
+
+                uploaded = base_uploaded.saturating_add(file_size);
+                emit_upload_progress(
+                    app_handle,
+                    transfer_id,
+                    uploaded,
+                    total_bytes.max(uploaded),
+                    &mut last_emit,
+                    true,
+                );
             } else {
                 return Err(format!(
                     "Unsupported local entry type in directory upload: '{}'",
@@ -1211,7 +1414,69 @@ pub async fn ssh_list_remote_listening_ports(
 mod tests {
     use super::{
         hydrate_stored_password, local_download_name_key, validate_remote_name_for_local_download,
+        ActiveTransfer, LocalDownloadStaging,
     };
+    use std::sync::atomic::Ordering;
+    use std::sync::{Arc, Mutex};
+
+    #[tokio::test]
+    async fn staged_local_download_publishes_only_after_it_completed() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("existing.txt");
+        tokio::fs::write(&destination, b"original").await.unwrap();
+
+        // A staging that never publishes keeps the destination and leaves no
+        // temporary behind, so a cancelled download cannot corrupt local data.
+        {
+            let mut staging = LocalDownloadStaging::begin(&destination).await.unwrap();
+            staging.write(b"partial").await.unwrap();
+        }
+        assert_eq!(
+            tokio::fs::read(&destination).await.unwrap(),
+            b"original".to_vec()
+        );
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+
+        let mut staging = LocalDownloadStaging::begin(&destination).await.unwrap();
+        staging.write(b"complete").await.unwrap();
+        staging.publish().await.unwrap();
+        assert_eq!(
+            tokio::fs::read(&destination).await.unwrap(),
+            b"complete".to_vec()
+        );
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn active_transfer_registration_is_removed_on_every_exit_path() {
+        let registry: super::TransferRegistry = Arc::new(Mutex::new(Default::default()));
+
+        {
+            let transfer = ActiveTransfer::register(&registry, "transfer-1").unwrap();
+            let map = registry.lock().unwrap();
+            assert!(map.contains_key("transfer-1"));
+            drop(map);
+            drop(transfer);
+        }
+        // `?` early returns and panics drop the guard the same way.
+        assert!(registry.lock().unwrap().is_empty());
+
+        let transfer = ActiveTransfer::register(&registry, "transfer-2").unwrap();
+        assert!(!transfer.is_cancelled());
+        let flag = {
+            let map = registry.lock().unwrap();
+            map.get("transfer-2").cloned().unwrap()
+        };
+        flag.store(true, Ordering::Relaxed);
+        assert!(transfer.is_cancelled());
+
+        // A newer transfer reusing the id keeps its own flag when an older
+        // guard is dropped afterwards.
+        let newer = ActiveTransfer::register(&registry, "transfer-2").unwrap();
+        drop(transfer);
+        assert!(!newer.is_cancelled());
+        assert!(registry.lock().unwrap().contains_key("transfer-2"));
+    }
 
     #[test]
     fn download_names_cannot_escape_the_selected_local_directory() {

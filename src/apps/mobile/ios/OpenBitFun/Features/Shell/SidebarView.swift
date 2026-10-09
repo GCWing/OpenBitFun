@@ -390,7 +390,7 @@ struct SidebarView: View {
 
     private func selectDirectoryDevice(_ device: MobileDeviceDirectoryEntry) {
         if isCurrentDevice(device), model.connectionPhase == .disconnected {
-            model.retryRemoteConnection()
+            model.reconnectRemote()
             return
         }
         guard device.online else { return }
@@ -857,11 +857,8 @@ struct SidebarView: View {
         Group {
             if !showsPrimaryNavigation {
                 SignedOutConnectionActions(
-                    scanTitle: model.localized("扫码连接"),
                     accountTitle: model.localized("使用邮箱或 GitHub 登录"),
-                    onScan: model.scanRemote,
-                    onOpenAccount: { model.accountSheetOpen = true; model.drawerOpen = false },
-                    showScan: !model.remoteConnected
+                    onOpenAccount: { model.openAccount(); model.drawerOpen = false }
                 )
             } else {
                 authenticatedFooter

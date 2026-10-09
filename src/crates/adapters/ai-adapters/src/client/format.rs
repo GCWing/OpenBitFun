@@ -27,3 +27,21 @@ impl ApiFormat {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ApiFormat;
+
+    #[test]
+    fn gemini_api_key_format_is_distinct_from_code_assist() {
+        for format in ["gemini", "google", " GEMINI "] {
+            assert_eq!(ApiFormat::parse(format).unwrap(), ApiFormat::Gemini);
+        }
+        for format in ["gemini-code-assist", "gemini_code_assist", "code-assist"] {
+            assert_eq!(
+                ApiFormat::parse(format).unwrap(),
+                ApiFormat::GeminiCodeAssist
+            );
+        }
+    }
+}

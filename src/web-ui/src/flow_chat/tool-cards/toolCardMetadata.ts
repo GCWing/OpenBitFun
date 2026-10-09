@@ -1,3 +1,4 @@
+import { dedicatedToolNames } from '@openbitfun/flow-chat-presentation/registry';
 /**
  * Tool-card metadata and lightweight helpers.
  *
@@ -10,6 +11,10 @@ import { isMcpToolName, parseMcpToolName } from '@/infrastructure/mcp/toolName';
 import { APPEARANCE_DOMAIN_TOKENS } from '@/infrastructure/appearance/appearanceDomainTokens';
 import { getEffectiveToolName, projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
 import { getOpenBitFunControlInput, isOpenBitFunControlDiscovery } from './openBitFunControlCardModel';
+import { isShellToolName } from '../grouping/activityClassification';
+import { getControlHubInput, isControlHubObservation } from './runtimeToolCardModel';
+import { SEMANTIC_BUILTIN_TOOL_NAMES, getBuiltinToolInput, getBuiltinToolAttention, isSemanticBuiltinTool } from './builtinToolCardPolicy';
+import { readInteractionInput, readToolRecord } from './toolInteractionModel';
 
 type ToolCardDefinition = Omit<ToolCardConfig, 'attention' | 'presentation'>;
 
@@ -22,12 +27,15 @@ const AMBIENT_TOOL_CARD_NAMES = new Set([
   'WebSearch',
   'WebFetch',
   'AgentWait',
-  'TodoWrite',
   'GetToolSpec',
+  'ListModels',
   'Skill',
   'TerminalControl',
+  'ListWorkspaces',
   'SessionControl',
   'SessionMessage',
+  'AgentSendInput',
+  'AgentInterrupt',
   'Cron',
   'RunCode',
   'ComputerUse',
@@ -35,22 +43,19 @@ const AMBIENT_TOOL_CARD_NAMES = new Set([
 ]);
 
 const PROMINENT_TOOL_CARD_NAMES = new Set([
+  'TodoWrite',
   'OpenBitFunControl',
+  'ControlHub',
   'Write',
   'Edit',
   'Task',
   'LaunchReviewAgent',
   'AgentSpawn',
-  'AgentSendInput',
   'submit_code_review',
   'ContextCompression',
   'ReviewSessionSummary',
   'Git',
   'GetFileDiff',
-  'Bash',
-  'ExecCommand',
-  'WriteStdin',
-  'ExecControl',
   'InitMiniApp',
   'PageDeploy',
   'PagePublish',
@@ -67,12 +72,15 @@ export const DEDICATED_TOOL_CARD_PRESENTATION_NAMES = new Set([
 ]);
 
 function getToolCardClassification(toolName: string): Pick<ToolCardConfig, 'attention' | 'presentation'> {
+  if (isSemanticBuiltinTool(toolName)) {
+    return { attention: getBuiltinToolAttention(toolName), presentation: 'standard' };
+  }
   if (DEDICATED_TOOL_CARD_PRESENTATION_NAMES.has(toolName)) {
     return { attention: 'prominent', presentation: 'dedicated' };
   }
 
   return {
-    attention: AMBIENT_TOOL_CARD_NAMES.has(toolName)
+    attention: AMBIENT_TOOL_CARD_NAMES.has(toolName) || isShellToolName(toolName)
       ? 'ambient'
       : PROMINENT_TOOL_CARD_NAMES.has(toolName)
         ? 'prominent'
@@ -83,6 +91,23 @@ function getToolCardClassification(toolName: string): Pick<ToolCardConfig, 'atte
 
 // Tool card config map - uses backend tool names
 const TOOL_CARD_DEFINITIONS: Record<string, ToolCardDefinition> = {
+  ...Object.fromEntries(SEMANTIC_BUILTIN_TOOL_NAMES.map(toolName => [toolName, {
+    toolName, displayName: toolName, icon: '', requiresConfirmation: false,
+    resultDisplayType: 'detailed', displayMode: 'standard',
+    primaryColor: APPEARANCE_DOMAIN_TOKENS.toolIdentity.assistantAction,
+  } satisfies ToolCardDefinition])),
+  'ListModels': {
+    toolName: 'ListModels', displayName: 'List Models', icon: '',
+    requiresConfirmation: false, resultDisplayType: 'detailed', displayMode: 'compact',
+    description: 'List enabled models and their configured identities',
+    primaryColor: APPEARANCE_DOMAIN_TOKENS.toolIdentity.assistantAction,
+  },
+  'ControlHub': {
+    toolName: 'ControlHub', displayName: 'Control Hub', icon: '',
+    requiresConfirmation: false, resultDisplayType: 'detailed', displayMode: 'standard',
+    description: 'Control browsers and terminals or inspect available capabilities',
+    primaryColor: APPEARANCE_DOMAIN_TOKENS.toolIdentity.assistantAction,
+  },
   'OpenBitFunControl': {
     toolName: 'OpenBitFunControl',
     displayName: 'OpenBitFun',
@@ -220,6 +245,16 @@ const TOOL_CARD_DEFINITIONS: Record<string, ToolCardDefinition> = {
     displayMode: 'detailed',
     primaryColor: APPEARANCE_DOMAIN_TOKENS.toolIdentity.assistantAction
   },
+  'AgentInterrupt': {
+    toolName: 'AgentInterrupt',
+    displayName: 'Interrupt Agent',
+    icon: '',
+    requiresConfirmation: false,
+    resultDisplayType: 'detailed',
+    description: 'Interrupt active background work for an agent',
+    displayMode: 'standard',
+    primaryColor: APPEARANCE_DOMAIN_TOKENS.toolIdentity.assistantAction
+  },
   'AgentWait': {
     toolName: 'AgentWait',
     displayName: 'Wait for Agents',
@@ -328,6 +363,17 @@ const TOOL_CARD_DEFINITIONS: Record<string, ToolCardDefinition> = {
     description: 'Create and manage project plans',
     displayMode: 'detailed',
     primaryColor: 'var(--openbitfun-color-status-warning-content)'
+  },
+
+  'ListWorkspaces': {
+    toolName: 'ListWorkspaces',
+    displayName: 'List Workspaces',
+    icon: 'LW',
+    requiresConfirmation: false,
+    resultDisplayType: 'summary',
+    description: 'Discover registered local and remote workspaces',
+    displayMode: 'compact',
+    primaryColor: APPEARANCE_DOMAIN_TOKENS.toolIdentity.assistantAction
   },
 
   'SessionControl': {
@@ -557,6 +603,12 @@ export const TOOL_CARD_CONFIGS: Record<string, ToolCardConfig> = Object.fromEntr
  * Get tool card config.
  */
 export function getToolCardConfig(toolName: string, input?: unknown): ToolCardConfig {
+  if (isSemanticBuiltinTool(toolName)) {
+    return { ...TOOL_CARD_CONFIGS[toolName], attention: getBuiltinToolAttention(toolName, input) };
+  }
+  if (toolName === 'ControlHub') {
+    return { ...TOOL_CARD_CONFIGS[toolName], attention: isControlHubObservation(input) ? 'ambient' : 'prominent' };
+  }
   if (toolName === 'OpenBitFunControl') {
     return {
       ...TOOL_CARD_CONFIGS[toolName],
@@ -584,8 +636,7 @@ export function getToolCardConfig(toolName: string, input?: unknown): ToolCardCo
 
   // Match by name or fall back to defaults.
   return TOOL_CARD_CONFIGS[toolName] || {
-    attention: 'ambient',
-    presentation: 'standard',
+    ...getToolCardClassification(toolName),
     toolName,
     displayName: `Tool: ${toolName}`,
     icon: 'TOOL',
@@ -598,11 +649,25 @@ export function getToolCardConfig(toolName: string, input?: unknown): ToolCardCo
 }
 
 /** Keep wrapper and transcript spacing aligned with action-specific card anatomy. */
-export function getToolItemCardConfig(toolItem: FlowToolItem): ToolCardConfig {
+export function getToolItemCardConfig(
+  toolItem: FlowToolItem,
+): ToolCardConfig {
   const effective = projectEffectiveToolItem(toolItem);
-  return getToolCardConfig(effective.toolName, effective.toolName === 'OpenBitFunControl'
+  const config = getToolCardConfig(effective.toolName, effective.toolName === 'OpenBitFunControl'
     ? getOpenBitFunControlInput(effective)
-    : effective.toolCall?.input);
+    : effective.toolName === 'ControlHub' ? getControlHubInput(effective)
+      : isSemanticBuiltinTool(effective.toolName) ? getBuiltinToolInput(effective) : effective.toolCall?.input);
+  // Approval is a grouping boundary, but does not change an ambient card's skin.
+  const attention = isShellToolName(effective.toolName) && effective.status === 'rejected'
+    ? 'prominent'
+    : effective.toolName === 'Task' && effective.status === 'cancelled'
+      ? 'ambient' : config.attention;
+  const input = readInteractionInput(effective);
+  const action = readToolRecord(effective.toolResult?.result).action ?? input.action;
+  const relation = ['SessionMessage', 'AgentSendInput', 'AgentInterrupt', 'AgentWait', 'AgentDelete', 'WriteStdin', 'ExecControl'].includes(effective.toolName)
+    || effective.toolName === 'SessionControl' && ['create', 'cancel', 'delete', 'rename'].includes(String(action))
+    || effective.toolName === 'Task' && ['send_input', 'cancel'].includes(String(action));
+  return { ...config, attention, presentation: relation ? 'relation' : config.presentation };
 }
 
 /**
@@ -629,49 +694,7 @@ export function getAllToolNames(): string[] {
  * test enforces equality so classification callers do not need to import every
  * card component just to tell dedicated cards from the DefaultToolCard.
  */
-export const DEDICATED_TOOL_CARD_NAMES = new Set([
-  'OpenBitFunControl',
-  'Read',
-  'Write',
-  'Edit',
-  'Delete',
-  'Grep',
-  'Glob',
-  'LS',
-  'WebSearch',
-  'WebFetch',
-  'Task',
-  'LaunchReviewAgent',
-  'AgentSpawn',
-  'AgentSendInput',
-  'AgentWait',
-  'TodoWrite',
-  'submit_code_review',
-  'ContextCompression',
-  'GetToolSpec',
-  'Skill',
-  'AskUserQuestion',
-  'ReviewSessionSummary',
-  'GetFileDiff',
-  'CreatePlan',
-  'SessionControl',
-  'SessionMessage',
-  'Cron',
-  'RunCode',
-  'ExecCommand',
-  'WriteStdin',
-  'ExecControl',
-  'InitMiniApp',
-  'PageDeploy',
-  'PagePublish',
-  'GenerativeUI',
-  'ComputerUse',
-  'view_image',
-  'CreateCanvas',
-  'ReadCanvas',
-  'UpdateCanvas',
-  'PatchCanvas',
-]);
+export const DEDICATED_TOOL_CARD_NAMES = dedicatedToolNames;
 
 /** Whether FlowChat renders this tool through DefaultToolCard. */
 export function usesDefaultToolCard(toolName: string): boolean {
@@ -679,10 +702,14 @@ export function usesDefaultToolCard(toolName: string): boolean {
 }
 
 
-/**
- * Explicit non-critical tools collected into explore groups.
- * Tools rendered by DefaultToolCard are also collected; see isCollapsibleTool.
- */
+/** Relationship rows and ordinary cards own their element-level interactions. */
+export const CAPSULE_TOOL_NAMES = new Set<string>();
+
+export function isToolCapsule(toolName: string): boolean {
+  return CAPSULE_TOOL_NAMES.has(toolName);
+}
+
+/** Read-only exploration candidates; Shell joins through its own activity policy. */
 export const COLLAPSIBLE_TOOL_NAMES = new Set([
   'Read',
   'LS',
@@ -690,27 +717,36 @@ export const COLLAPSIBLE_TOOL_NAMES = new Set([
   'Glob',
   'WebSearch',
   'WebFetch',
-  'GetFileDiff',
-  'GetToolSpec',
-  'ReviewSessionSummary',
-  'SessionControl',
-  'ExecControl',
   'view_image',
-  'ReadCanvas',
 ]);
 
 /** Read tools (counted in readCount). */
-export const READ_TOOL_NAMES = new Set(['Read', 'LS']);
+export const READ_TOOL_NAMES = new Set(['Read', 'LS', 'WebFetch', 'view_image']);
 
 /** Search tools (counted in searchCount). */
 export const SEARCH_TOOL_NAMES = new Set(['Grep', 'Glob', 'WebSearch']);
 
-/** Command tools (counted in commandCount). */
-export const COMMAND_TOOL_NAMES = new Set<string>();
+/** Shell launches count as commands; polling and process control do not. */
+export const COMMAND_TOOL_NAMES = new Set(['ExecCommand', 'Bash']);
+
+/** Count operations consistently for whole-round and inline exploration groups. */
+export function computeExploreStats(items: readonly FlowItem[]) {
+  let readCount = 0;
+  let searchCount = 0;
+  let commandCount = 0;
+  for (const item of items) {
+    if (item.type !== 'tool') continue;
+    const toolName = getEffectiveToolName(item as FlowToolItem);
+    if (READ_TOOL_NAMES.has(toolName)) readCount++;
+    else if (SEARCH_TOOL_NAMES.has(toolName)) searchCount++;
+    else if (COMMAND_TOOL_NAMES.has(toolName)) commandCount++;
+  }
+  return { readCount, searchCount, commandCount };
+}
 
 /** Check whether a tool is collapsible. */
 export function isCollapsibleTool(toolName: string): boolean {
-  return COLLAPSIBLE_TOOL_NAMES.has(toolName) || usesDefaultToolCard(toolName);
+  return COLLAPSIBLE_TOOL_NAMES.has(toolName);
 }
 
 /**
@@ -728,7 +764,7 @@ export function isCollapsibleItem(item: FlowItem): boolean {
 
   // Tools: only explorer tools are collapsible.
   if (item.type === 'tool') {
-    return isCollapsibleTool(getEffectiveToolName(item as FlowToolItem));
+    return item.status === 'completed' && (item as FlowToolItem).toolResult?.success !== false && isCollapsibleTool(getEffectiveToolName(item as FlowToolItem));
   }
 
   return false;
@@ -745,18 +781,19 @@ export function isCollapsibleItemWithContext(
   nextItem: FlowItem | undefined,
   isLast: boolean
 ): boolean {
-  // Text and thinking depend on what follows.
-  if (item.type === 'text' || item.type === 'thinking') {
+  // Visible narrative is always a boundary, even between two read operations.
+  if (item.type === 'text') return false;
+  if (item.type === 'thinking') {
     // Last item should stay visible.
     if (isLast || !nextItem) return false;
 
     // If followed by an explorer tool, collapse together.
     if (nextItem.type === 'tool') {
-      return isCollapsibleTool(getEffectiveToolName(nextItem as FlowToolItem));
+      return isCollapsibleItem(nextItem);
     }
 
     // If followed by text or thinking, treat as collapsible for grouping.
-    if (nextItem.type === 'text' || nextItem.type === 'thinking') {
+    if (nextItem.type === 'thinking') {
       return true;
     }
 
@@ -766,7 +803,7 @@ export function isCollapsibleItemWithContext(
 
   // Tools: only explorer tools are collapsible.
   if (item.type === 'tool') {
-    return isCollapsibleTool(getEffectiveToolName(item as FlowToolItem));
+    return isCollapsibleItem(item);
   }
 
   return false;

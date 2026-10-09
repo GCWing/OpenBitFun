@@ -1,19 +1,18 @@
 {
   "title": "記憶",
-  "subtitle": "控制自動記憶的生成、使用與整理範圍",
-  "scopeNotice": "這裡的設定、會話候選和記憶檔案都屬於目前執行 OpenBitFun 的主機。切換到其他裝置或 Peer 主機後，其記憶資料與設定可能不同。",
+  "subtitle": "控制智能體如何從會話中產生及使用記憶",
   "sections": {
     "basic": {
-      "title": "基礎",
-      "description": "控制是否生成新記憶，以及是否在會話中使用已整理的記憶"
+      "title": "記憶",
+      "description": "關閉記憶會保留已有資料；如需清空，請在「記憶操作」中單獨執行"
     },
     "models": {
-      "title": "模型",
-      "description": "選擇用於抽取和整理記憶的模型"
+      "title": "記憶模型",
+      "description": "未單獨指定時，抽取跟隨主模型，整理跟隨抽取模型"
     },
     "advanced": {
-      "title": "進階設定",
-      "description": "調整記憶抽取和整理的限制參數，通常無需修改"
+      "title": "記憶處理",
+      "description": "限制記憶處理的會話範圍與工作量；通常無需修改"
     },
     "extraction": {
       "title": "抽取",
@@ -27,11 +26,11 @@
   "fields": {
     "memoryEnabled": {
       "label": "記憶",
-      "description": "啟用後將自動產生記憶，並在會話中使用記憶"
+      "description": "從已完成會話中自動產生記憶，供後續會話參考"
     },
     "memoryActions": {
       "label": "記憶操作",
-      "description": "開啟記憶目錄、恢復預設設定，或永久清空目前執行主機上的記憶資料"
+      "description": "管理目前執行主機的記憶；清空操作會永久刪除記憶資料"
     },
     "generateMemories": {
       "label": "自動生成記憶",
@@ -43,31 +42,31 @@
     },
     "generateForBtwSessions": {
       "label": "從 BTW 會話生成記憶",
-      "description": "允許 BTW 會話貢獻全域記憶"
+      "description": "將側問會話（BTW）也納入記憶產生範圍"
     },
     "externalContextPolicy": {
       "label": "外部上下文處理",
-      "description": "選擇記憶抽取如何處理使用過 Web 搜尋、網頁讀取等工具的會話"
+      "description": "決定抽取記憶時如何處理網頁搜尋、網頁讀取等外部工具結果"
     },
     "minRolloutIdleHours": {
       "label": "最小閒置時間",
       "description": "會話結束後等待多久才允許抽取"
     },
     "maxRolloutAgeDays": {
-      "label": "會話最大年齡",
-      "description": "超過該天數的會話不會再進入抽取，且不能大於候選保留天數"
+      "label": "會話回溯天數",
+      "description": "僅抽取最近這些天內的會話；不能超過候選保留天數"
     },
     "maxRolloutsPerStartup": {
       "label": "單次抽取上限",
-      "description": "每次啟動記憶任務時最多領取多少個會話進行記憶抽取"
+      "description": "每次記憶任務最多抽取的會話數"
     },
     "maxRolloutsScanLimit": {
       "label": "單次掃描上限",
-      "description": "尋找抽取候選時，最多檢查多少個已完成會話"
+      "description": "每次尋找候選時最多檢查的已完成會話數"
     },
     "phase1MaxConcurrency": {
       "label": "抽取並行數",
-      "description": "符合條件的會話最多同時抽取多少個"
+      "description": "最多同時抽取記憶的會話數"
     },
     "extractModel": {
       "label": "抽取模型",
@@ -75,11 +74,11 @@
     },
     "maxRawMemories": {
       "label": "整理候選上限",
-      "description": "每次長期記憶整理最多使用多少條抽取結果"
+      "description": "每次整理長期記憶時最多合併的抽取結果數"
     },
     "maxUnusedDays": {
       "label": "候選保留天數",
-      "description": "未被使用的抽取結果超過該天數後不再參與整理，需不小於會話最大年齡"
+      "description": "未使用的抽取結果超過此天數後不再參與整理；不能小於會話回溯天數"
     },
     "consolidationModel": {
       "label": "整理模型",
@@ -122,7 +121,7 @@
     "retry": "重新載入",
     "saved": "記憶設定已儲存",
     "saveFailed": "儲存記憶設定失敗",
-    "rolloutAgeExceedsRetention": "會話最大年齡不能大於候選保留天數",
+    "rolloutAgeExceedsRetention": "會話回溯天數不能超過候選保留天數",
     "settingsReset": "記憶設定已重設",
     "settingsResetFailed": "重設記憶設定失敗",
     "openDirectoryFailed": "開啟記憶目錄失敗",

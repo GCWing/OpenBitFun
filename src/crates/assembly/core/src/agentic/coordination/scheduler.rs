@@ -15,8 +15,9 @@ mod host_message_queue;
 use host_message_queue::HostQueueState;
 
 use super::coordinator::{
-    session_storage_workspace_locator, ConversationCoordinator, DialogTriggerSource,
-    DialogTurnStopDisposition, HiddenSubagentExecutionRequest, SubagentResult,
+    ensure_session_accepts_conversation, session_storage_workspace_locator,
+    ConversationCoordinator, DialogTriggerSource, DialogTurnStopDisposition,
+    HiddenSubagentExecutionRequest, SubagentResult,
 };
 use super::turn_outcome::TurnOutcome;
 use super::turn_settlement::TurnSettlementRegistration;
@@ -1336,6 +1337,16 @@ impl DialogScheduler {
                 // The session is loaded and bound by ID; an omitted locator makes
                 // the coordinator reuse that binding instead of re-resolving a path.
                 queued_turn.workspace_path = None;
+            }
+        }
+        // The initial hidden-subagent invocation has its own admission path.
+        // All ordinary messages, including queued follow-ups, use one policy.
+        if !matches!(
+            &queued_turn.execution,
+            QueuedTurnExecution::HiddenSubagent(_)
+        ) {
+            if let Some(session) = self.session_manager.get_session(&session_id) {
+                ensure_session_accepts_conversation(&session)?;
             }
         }
         let state = self
@@ -5109,6 +5120,52 @@ mod tests {
             .unwrap();
         assert_eq!(paused.tokens_used, 37);
         assert_eq!(paused.status, ThreadGoalStatus::Paused);
+    }
+
+    #[tokio::test]
+    async fn editing_a_paused_goal_puts_it_back_to_work() {
+        let (scheduler, sessions, _, root) = test_scheduler_with_persistence(true);
+        let session = "goal-edit";
+        mark_session_processing(&sessions, &root, session, "goal-turn").await;
+        let storage = sessions
+            .effective_session_storage_path(session)
+            .await
+            .unwrap();
+        scheduler
+            .coordinator
+            .create_thread_goal(session, &storage, "finish the work".into(), None)
+            .await
+            .unwrap();
+
+        // Saving the objective the goal already carries is a restart too: the user
+        // opened the edit dialog to put the goal back to work, so it must not come
+        // back as active-with-nothing-running.
+        scheduler
+            .coordinator
+            .set_thread_goal_status(session, &storage, ThreadGoalStatus::Paused)
+            .await
+            .unwrap();
+        let unchanged = scheduler
+            .coordinator
+            .update_thread_goal_objective(session, &storage, "finish the work".into())
+            .await
+            .unwrap();
+        assert_eq!(unchanged.status, ThreadGoalStatus::Active);
+
+        // A rewritten objective keeps the goal running instead of inheriting the
+        // pause it was edited from.
+        scheduler
+            .coordinator
+            .set_thread_goal_status(session, &storage, ThreadGoalStatus::Paused)
+            .await
+            .unwrap();
+        let edited = scheduler
+            .coordinator
+            .update_thread_goal_objective(session, &storage, "finish the rest".into())
+            .await
+            .unwrap();
+        assert_eq!(edited.status, ThreadGoalStatus::Active);
+        assert_eq!(edited.objective, "finish the rest");
     }
 
     #[tokio::test]

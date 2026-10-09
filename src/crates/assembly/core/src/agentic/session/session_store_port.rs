@@ -156,6 +156,32 @@ impl CoreSessionStorePort {
             .is_some_and(|candidate| candidate == projects_root)
     }
 
+    fn project_runtime_sessions_kind(
+        path_manager: &PathManager,
+        path: &Path,
+    ) -> SessionStorageKind {
+        let Some(runtime_root) = path.parent() else {
+            return SessionStorageKind::Local;
+        };
+        let state_path = runtime_root
+            .join("config")
+            .join("runtime_layout_state.json");
+        let Ok(bytes) = std::fs::read(state_path) else {
+            return SessionStorageKind::Local;
+        };
+        let Ok(state) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+            return SessionStorageKind::Local;
+        };
+        if state.get("target_kind").and_then(serde_json::Value::as_str)
+            == Some("remote_workspace_mirror")
+            && Self::is_confined_to_managed_root(&path_manager.projects_root(), path)
+        {
+            SessionStorageKind::Remote
+        } else {
+            SessionStorageKind::Local
+        }
+    }
+
     pub(crate) fn resolved_sessions_dir_kind(
         path_manager: &PathManager,
         path: &Path,
@@ -185,8 +211,11 @@ impl CoreSessionStorePort {
             .parent()
             .and_then(|runtime_root| runtime_root.parent())
             .is_some_and(|candidate| candidate == projects_root.as_path());
-        (has_local_shape && Self::is_confined_to_managed_root(&projects_root, path))
-            .then_some(SessionStorageKind::Local)
+        if has_local_shape && Self::is_confined_to_managed_root(&projects_root, path) {
+            Some(Self::project_runtime_sessions_kind(path_manager, path))
+        } else {
+            None
+        }
     }
 }
 

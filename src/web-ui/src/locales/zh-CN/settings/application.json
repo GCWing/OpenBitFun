@@ -4,21 +4,28 @@
   "common": {
     "retry": "重试"
   },
+  "textSelection": {
+    "title": "文本选择",
+    "autoShowToolbar": "自动显示选中文字操作栏",
+    "autoShowToolbarDescription": "选中对话文本后，显示“添加批注”和“侧边提问”。关闭后仍可通过右键菜单操作。",
+    "loading": "正在加载文本选择偏好…",
+    "loadFailed": "加载文本选择偏好失败",
+    "saveFailed": "保存文本选择偏好失败"
+  },
   "applicationGroups": {
     "startupAndUpdates": {
       "title": "启动与更新",
-      "description": "管理登录启动、运行时唤醒和版本检查"
+      "description": "控制登录后和运行期间的自动行为；新版本安装仍需你确认"
     },
     "windowAndNotifications": {
       "title": "窗口与通知",
-      "description": "管理关闭窗口时的行为，以及需要提醒你的事件"
+      "description": "选择关闭窗口时退出还是留在后台，并决定哪些事件需要提醒"
     }
   },
   "appearance": {
     "title": "外观",
     "hint": "界面语言与外观",
     "interfaceTitle": "界面",
-    "interfaceHint": "选择 OpenBitFun 界面的显示语言",
     "language": "语言",
     "appearances": "外观",
     "builtIn": "内置",
@@ -29,7 +36,7 @@
     "languageRowHint": "选择一个语言包作为当前界面语言",
     "appearanceRowHint": "选择界面外观",
     "systemAppearance": "跟随系统",
-    "systemAppearanceDescription": "根据系统设置自动使用亮色或暗色外观，并随系统切换而更新。",
+    "systemAppearanceDescription": "跟随系统自动切换亮色或暗色外观",
     "presets": {
       "openbitfun-dark": {
         "name": "暗色",
@@ -70,9 +77,8 @@
     },
     "fontSize": {
       "title": "字体大小",
-      "hint": "调整界面与对话区域的字号；编辑器字号请在编辑器设置中单独配置",
+      "hint": "应用于界面和对话内容；代码字号在编辑器设置中单独调整",
       "uiSizeLabel": "界面与对话",
-      "uiSizeHint": "选择舒适的字号档位，应用于导航、面板、设置与对话内容",
       "levels": {
         "compact": "紧凑",
         "small": "小",
@@ -84,7 +90,8 @@
       "customPxLabel": "自定义字号（12–20 px）",
       "previewLabel": "字号预览",
       "previewPlaceholder": "输入文字预览当前字号"
-    }
+    },
+    "interfaceHint": "选择菜单、按钮和提示使用的语言，切换后立即生效"
   },
   "autoUpdate": {
     "sections": {
@@ -92,7 +99,7 @@
       "hint": "启动后是否自动检查新版本"
     },
     "toggleLabel": "自动检查更新",
-    "toggleDescription": "启动后及运行期间自动检查更新，每个版本只主动提醒一次。关闭后仍可在左下角「更多」菜单中手动检查更新。",
+    "toggleDescription": "启动及运行期间自动检查新版本，每个版本只主动提醒一次；关闭后仍可手动检查",
     "messages": {
       "loading": "加载中…",
       "loadFailed": "无法读取更新相关设置",
@@ -105,12 +112,12 @@
       "title": "登录时启动",
       "hint": "登录本用户后是否自动运行 OpenBitFun"
     },
-    "toggleLabel": "开机自动启动",
-    "toggleDescription": "登录系统后自动启动 OpenBitFun；具体表现因操作系统而异。",
+    "toggleLabel": "登录时自动启动",
+    "toggleDescription": "当前用户登录系统后自动启动 OpenBitFun",
     "messages": {
       "loading": "加载中…",
-      "loadFailed": "无法读取开机启动设置",
-      "saveFailed": "无法更新开机启动设置"
+      "loadFailed": "无法读取登录启动设置",
+      "saveFailed": "无法更新登录启动设置"
     }
   },
   "preventSleep": {
@@ -119,7 +126,7 @@
       "hint": "OpenBitFun 运行时的电脑睡眠行为"
     },
     "toggleLabel": "阻止电脑睡眠",
-    "toggleDescription": "只要 OpenBitFun 正在运行，就保持电脑唤醒，无论是否有任务在执行。显示器仍可关闭；主动睡眠或合上笔记本电脑由系统策略决定。",
+    "toggleDescription": "OpenBitFun 运行期间保持电脑唤醒，即使没有任务。显示器仍可关闭；手动睡眠和合盖行为由系统决定",
     "messages": {
       "loading": "加载中…",
       "loadFailed": "无法读取阻止睡眠设置",
@@ -130,23 +137,23 @@
   "logging": {
     "sections": {
       "logging": "日志",
-      "loggingHint": "日志级别与本次启动日志目录",
       "level": "日志级别",
-      "path": "本次启动日志路径"
+      "path": "本次启动日志路径",
+      "loggingHint": "记录越详细，日志量越大；分享诊断包前请检查敏感内容"
     },
     "level": {
-      "description": "实时控制日志输出级别，修改后立即生效"
+      "description": "修改后立即生效"
     },
     "sensitiveDiagnostics": {
       "label": "包含敏感调试信息",
-      "description": "默认关闭。开启后，本地日志可能包含用户 Prompt、模型请求和响应 payload、工具参数、文件路径以及 Webview 事件 payload，用于问题排查。OpenBitFun 不会自动上传这些日志文件"
+      "description": "开启后，日志可能包含对话内容、模型请求与响应、工具参数、文件路径和界面事件数据。仅用于排错，日志不会自动上传"
     },
     "path": {
-      "description": "本次启动写入日志文件所在的目录"
+      "description": "本次启动生成的日志保存在此目录"
     },
     "diagnostics": {
       "label": "诊断包",
-      "description": "将最近的本地日志、崩溃报告与运行时元数据导出为 zip 文件。OpenBitFun 不会自动上传",
+      "description": "将近期日志、崩溃报告和运行环境信息导出为 ZIP 文件，不会自动上传",
       "confirmTitle": "导出诊断包？",
       "confirmSensitive": "诊断包将包含敏感调试信息，可能涉及 Prompt、模型请求与响应、工具参数和文件路径。请只保存到可信位置，并在分享前检查内容。",
       "confirmStandard": "诊断包可能包含本机路径、运行环境和错误详情。请只保存到可信位置，并在分享前检查内容。",
@@ -200,14 +207,14 @@
   "terminal": {
     "sections": {
       "terminal": "终端",
-      "terminalHint": "默认 Shell",
-      "defaultTerminal": "默认终端"
+      "defaultTerminal": "默认终端",
+      "terminalHint": "新建终端使用所选 Shell，已打开的终端继续使用原来的 Shell",
+      "terminalHintWithCmdFallback": "新建终端使用所选 Shell，已打开的终端继续使用原来的 Shell；智能体执行命令时实际使用 PowerShell"
     },
     "controls": {
       "refreshTooltip": "刷新可用终端列表",
       "autoDetect": "自动检测 (推荐)",
-      "description": "新建终端以及本地工作区中智能体执行命令时使用的默认 Shell 类型",
-      "cmdFallbackMessage": "智能体执行命令时实际使用 PowerShell。",
+      "description": "用于新建终端，以及本地工作区中智能体执行的命令",
       "placeholder": "选择默认终端",
       "noShells": "未检测到可用的终端"
     },
@@ -235,7 +242,7 @@
       "hint": "点击关闭按钮时的操作"
     },
     "closeButtonLabel": "关闭按钮行为",
-    "closeButtonDescription": "点击窗口关闭按钮（×）时的默认操作。",
+    "closeButtonDescription": "点击窗口的关闭按钮（×）时执行",
     "options": {
       "quit": "退出程序",
       "minimizeToTray": "最小化到系统托盘",
@@ -249,18 +256,18 @@
     }
   },
   "notifications": {    "title": "通知",
-    "hint": "Toast 弹窗通知偏好设置",
+    "hint": "选择需要提醒你的事件",
     "dialogCompletion": {
       "label": "任务完成通知",
-      "description": "当 AI 任务完成且窗口不在焦点时，弹出 Toast 通知"
+      "description": "窗口未处于前台时，提醒你 AI 任务已完成"
     },
     "permissionRequest": {
       "label": "权限审批请求通知",
-      "description": "当有操作需要你审批且窗口不在焦点时，弹出 Toast 通知"
+      "description": "窗口未处于前台时，提醒你有操作等待审批"
     },
     "startupTips": {
       "label": "启动时显示使用技巧",
-      "description": "每次启动时随机展示一条使用技巧卡片，帮助发现更多功能"
+      "description": "每次启动随机显示一条使用技巧"
     },
     "messages": {
       "loading": "加载中…",

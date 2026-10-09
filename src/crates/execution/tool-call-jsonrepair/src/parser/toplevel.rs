@@ -39,7 +39,7 @@ impl JsonRepairer {
             self.parse_ndjson()?;
         } else if processed_comma {
             // Remove trailing comma after a single root value.
-            self.strip_trailing_comma();
+            self.strip_trailing_comma(0);
         }
 
         // Repair redundant closing brackets at the root level.
@@ -67,12 +67,16 @@ impl JsonRepairer {
     fn parse_ndjson(&mut self) -> Result<()> {
         let mut initial = true;
         let mut processed_value = true;
+        // repair() has already inserted or consumed the separator before the
+        // first additional value.
+        let mut pending_comma = self.output.rfind(',');
         while processed_value {
             if !initial {
                 let processed_comma = self.parse_char(',');
                 if !processed_comma {
                     self.insert_before_last_whitespace(",");
                 }
+                pending_comma = self.output.rfind(',');
             } else {
                 initial = false;
             }
@@ -81,7 +85,9 @@ impl JsonRepairer {
         }
 
         if !processed_value {
-            self.strip_trailing_comma();
+            if let Some(index) = pending_comma {
+                self.output.remove(index);
+            }
         }
 
         self.output.insert_str(0, "[\n");

@@ -1,4 +1,5 @@
-import React, { Suspense, lazy, useMemo, useEffect } from 'react';
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
+import React, { Suspense, useMemo, useEffect } from 'react';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { WorkspaceKind } from '@/shared/types';
@@ -6,13 +7,13 @@ import { Spinner } from '@openbitfun/ui';
 import { useMyAgentStore } from '../my-agent/myAgentStore';
 import './AssistantScene.scss';
 
-const ProfileScene = lazy(() => import('../profile/ProfileScene'));
+const ProfileScene = lazyWithRecovery(() => import('../profile/ProfileScene'));
 
 const AssistantScene: React.FC = () => {
   const { t } = useI18n('common');
   const selectedAssistantWorkspaceId = useMyAgentStore((s) => s.selectedAssistantWorkspaceId);
   const setSelectedAssistantWorkspaceId = useMyAgentStore((s) => s.setSelectedAssistantWorkspaceId);
-  const { currentWorkspace, assistantWorkspacesList, primaryAssistantWorkspaceId } = useWorkspaceContext();
+  const { currentWorkspace, allAssistantWorkspacesList: assistantWorkspacesList, primaryAssistantWorkspaceId } = useWorkspaceContext();
   const activeAssistantWorkspace =
     currentWorkspace?.workspaceKind === WorkspaceKind.Assistant ? currentWorkspace : null;
 

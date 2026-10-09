@@ -8,7 +8,7 @@ import { Loader2 } from 'lucide-react';
 import type { VirtualItem } from '../../store/modernFlowChatStore';
 import { UserMessageItem } from './UserMessageItem';
 import { ModelRoundItem } from './ModelRoundItem';
-import { ExploreGroupRenderer } from './ExploreGroupRenderer';
+import { FlowGroupRenderer } from './FlowGroupRenderer';
 import { AmbientToolCard, AmbientToolCardHeader } from '@openbitfun/ui/flow-chat';
 import { useFlowChatVolatileContext } from './FlowChatContext';
 import { TurnCompletionNoticeItem } from './TurnCompletionNoticeItem';
@@ -17,10 +17,15 @@ import './VirtualItemRenderer.scss';
 import { getVirtualItemStableKey } from './virtualItemIdentity';
 import { useFlowChatSearchPresentation } from './useFlowChatSearchPresentation';
 import { ConversationExcerptMarkers } from '../../selection/ConversationExcerptMarkers';
+import { getKnownVirtualItemHeightPx } from './virtualItemHeightEstimators';
+import { Icon } from '@openbitfun/ui';
+import { TimelineContentBlock } from '../../timeline/TimelineContentBlock';
+import { useTurnFooterInteraction } from './useTurnFooterInteraction';
 
 interface VirtualItemRendererProps {
   item: VirtualItem;
   index: number;
+  isLatestTurn?: boolean;
   /** Stable projection facts used for spacing across virtual-row boundaries. */
   endsBeforeUserTurn?: boolean;
   continuesAmbientToolRunAfter?: boolean;
@@ -34,12 +39,16 @@ interface VirtualItemRendererProps {
 }
 
 export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
-  ({ item, index, endsBeforeUserTurn = false, continuesAmbientToolRunAfter = false, measureRef }) => {
+  ({ item, index, isLatestTurn = false, endsBeforeUserTurn = false, continuesAmbientToolRunAfter = false, measureRef }) => {
+    const turnInteraction = useTurnFooterInteraction(item.turnId);
     const { searchQuery, searchMatchesByVirtualIndex, searchCurrentMatch } = useFlowChatVolatileContext();
-    const matches = searchMatchesByVirtualIndex?.get(index);
-    const currentMatch = searchCurrentMatch?.virtualItemIndex === index ? searchCurrentMatch : undefined;
+    const sourceIndex = item.timeline?.sourceIndex ?? index;
+    const ownsMatch = (match: { flowItemId?: string }) => !item.timeline || !match.flowItemId || item.timeline.memberIds.includes(match.flowItemId);
+    const matches = searchMatchesByVirtualIndex?.get(sourceIndex)?.filter(ownsMatch);
+    const currentMatch = searchCurrentMatch?.virtualItemIndex === sourceIndex && ownsMatch(searchCurrentMatch) ? searchCurrentMatch : undefined;
     const isSearchMatch = Boolean(matches?.length);
     const isSearchCurrent = Boolean(currentMatch);
+    const isCollectedEmpty = getKnownVirtualItemHeightPx(item) === 0;
     const [wrapper, setWrapper] = React.useState<HTMLDivElement | null>(null);
     const rowRef = React.useCallback((element: HTMLDivElement | null) => {
       setWrapper(element);
@@ -56,6 +65,8 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
               turnId={item.turnId}
               absoluteTurnIndex={item.absoluteTurnIndex}
               turnStatus={item.turnStatus}
+              submissionPhase={item.submissionPhase}
+              submissionError={item.submissionError}
             />
           );
 
@@ -69,11 +80,17 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
           );
         
         case 'model-round':
+          if (item.timeline?.kind === 'group-header') return <FlowGroupRenderer data={item.timeline.group!}
+            turnId={item.turnId} placement="standalone" timelineExpanded={item.timeline.expanded} />;
+          if (item.timeline?.kind === 'group-members' || item.timeline?.kind === 'content') return <TimelineContentBlock item={item} />;
           return (
             <ModelRoundItem 
+              blockPart={item.timeline ? item.timeline.kind === 'round-header' ? 'header' : item.timeline.kind === 'round-footer' ? 'footer' : 'content' : undefined}
               round={item.data} 
+              projectedGroups={item.projectedGroups}
               turnId={item.turnId} 
               isLastRound={item.isLastRound}
+              isLatestTurn={isLatestTurn}
               isTurnComplete={item.isTurnComplete}
               turnStartedAt={item.turnStartedAt}
               turnEndedAt={item.turnEndedAt}
@@ -86,7 +103,7 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
         
         case 'explore-group':
           return (
-            <ExploreGroupRenderer
+            <FlowGroupRenderer
               data={item.data}
               turnId={item.turnId}
             />
@@ -105,7 +122,7 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
                 status="running"
                 header={
                   <AmbientToolCardHeader
-                    icon={<Loader2 className="animate-spin" size={16} />}
+                    icon={<Icon glyph={Loader2} size="md" className="animate-spin" />}
                     content="Analyzing image with image understanding model..."
                   />
                 }
@@ -119,10 +136,11 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
     })();
     
     // A4-like layout: wrap with a max-width container.
-    // Render the container even when content is empty to avoid zero-size issues.
+    // Keep the keyed wrapper; only collected rows with no visible content collapse to zero.
     // data-turn-id is used for long-image export.
     return (
       <div
+        {...turnInteraction}
         ref={rowRef}
         data-openbitfun-component="virtual-item"
         data-openbitfun-part="root"
@@ -131,6 +149,9 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
         data-testid="flowchat-message-item"
         data-turn-id={item.turnId}
         data-item-type={item.type}
+        data-timeline-kind={item.timeline?.kind}
+        data-timeline-group-id={item.timeline?.group?.groupId}
+        data-collected-empty={isCollectedEmpty ? 'true' : undefined}
         data-turn-boundary-after={endsBeforeUserTurn ? 'true' : undefined}
         data-ambient-tool-run-continuation-after={continuesAmbientToolRunAfter ? 'true' : undefined}
         data-virtual-item-key={getVirtualItemStableKey(item)}
@@ -153,6 +174,7 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
   (prev, next) => (
     prev.item === next.item &&
     prev.index === next.index &&
+    prev.isLatestTurn === next.isLatestTurn &&
     prev.endsBeforeUserTurn === next.endsBeforeUserTurn &&
     prev.continuesAmbientToolRunAfter === next.continuesAmbientToolRunAfter &&
     prev.measureRef === next.measureRef

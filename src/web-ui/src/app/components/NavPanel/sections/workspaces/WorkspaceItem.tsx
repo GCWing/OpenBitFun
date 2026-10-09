@@ -1,3 +1,4 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { subscribeOverlayInteraction, createOverlayPortal, ActionItem } from '@openbitfun/ui';
 import {
   Button,
@@ -15,8 +16,8 @@ import {
   DialogTitle,
   OverflowText,
 } from '@openbitfun/ui';
-import React, { lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { FolderOpen, FolderSearch, RotateCcw, FileText, ListChecks, ShieldCheck, Network, Server } from 'lucide-react';
+import React, { Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { FolderOpen, FolderSearch, RotateCcw, ListChecks, ShieldCheck, Network, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { RetainedMountBoundary } from '@/shared/presence';
 import { InputDialog } from '@/app/components/InputDialog';
@@ -30,8 +31,7 @@ import { useNavSceneStore } from '@/app/stores/navSceneStore';
 import { useApp } from '@/app/hooks/useApp';
 import { useGitBasicInfo } from '@/tools/git/hooks/useGitState';
 import { gitStateManager } from '@/tools/git/state/GitStateManager';
-import { workspaceAPI } from '@/infrastructure/api';
-import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
+import { sessionAPI, workspaceAPI } from '@/infrastructure/api';
 import { notificationService } from '@/shared/notification-system';
 import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
@@ -65,15 +65,15 @@ import {
   WORKSPACE_GIT_PENDING_CANCEL_SOURCES,
 } from './workspaceGitRefreshOptions';
 
-const WorkspaceRelatedPathsDialog = lazy(() => import('./WorkspaceRelatedPathsDialog'));
-const WorkspaceProjectPermissionsDialog = lazy(() => import('./WorkspaceProjectPermissionsDialog'));
-const PortForwardDialog = lazy(() =>
+const WorkspaceRelatedPathsDialog = lazyWithRecovery(() => import('./WorkspaceRelatedPathsDialog'));
+const WorkspaceProjectPermissionsDialog = lazyWithRecovery(() => import('./WorkspaceProjectPermissionsDialog'));
+const PortForwardDialog = lazyWithRecovery(() =>
   import('@/features/ssh-remote/PortForwardDialog').then((module) => ({
     default: module.PortForwardDialog,
   }))
 );
-const WorkspaceSessionBatchModal = lazy(() => import('./WorkspaceSessionBatchModal'));
-const ScheduledJobsModal = lazy(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'));
+const WorkspaceSessionBatchModal = lazyWithRecovery(() => import('./WorkspaceSessionBatchModal'));
+const ScheduledJobsModal = lazyWithRecovery(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'));
 
 const MAX_WORKSPACE_NAME_CHARS = 80;
 
@@ -108,6 +108,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
   const {
     setActiveWorkspace,
     closeWorkspaceById,
+    assistantWorkspaces,
     deleteAssistantWorkspace,
     primaryAssistantWorkspaceId,
     resetAssistantWorkspace,
@@ -664,6 +665,18 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
     }
   }, [t, workspace]);
 
+  const handleRevealSessionStorageDirectory = useCallback(async () => {
+    setMenuOpen(false);
+    try {
+      await sessionAPI.revealStorageDirectory(workspace.id);
+    } catch (error) {
+      notificationService.error(
+        error instanceof Error ? error.message : t('nav.sessions.openStorageDirectoryFailed'),
+        { duration: 4000 },
+      );
+    }
+  }, [t, workspace.id]);
+
   const handleCopyWorkspacePath = useCallback(async () => {
     setMenuOpen(false);
     const path = workspace.rootPath;
@@ -691,7 +704,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
         });
         return;
       }
-      const newSessionId = await flowChatManager.createChatSession(
+      const newSessionId = await flowChatManager.createChatDraft(
         flowChatSessionConfigForWorkspace(workspace),
         resolvedMode
       );
@@ -730,40 +743,6 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
       // createAcpChatSession records the failure through the ACP notification lifecycle.
     }
   }, [setActiveWorkspace, workspace]);
-
-  const handleCreateInitSession = useCallback(async () => {
-    setMenuOpen(false);
-
-    try {
-      const preferredMode = workspace.workspaceKind === WorkspaceKind.Assistant ? 'Claw' : undefined;
-      const sessionId = await flowChatManager.createChatSession(
-        flowChatSessionConfigForWorkspace(workspace),
-        preferredMode
-      );
-
-      await openMainSession(sessionId, {
-        workspaceId: workspace.id,
-        activateWorkspace: setActiveWorkspace,
-      });
-
-      await agentAPI.runInitAgentsMd({
-        sessionId,
-        workspaceId: workspace.id,
-        workspacePath: workspace.rootPath,
-        ...(isRemoteWorkspace(workspace) && workspace.connectionId
-          ? { remoteConnectionId: workspace.connectionId }
-          : {}),
-        ...(isRemoteWorkspace(workspace) && workspace.sshHost
-          ? { remoteSshHost: workspace.sshHost }
-          : {}),
-      });
-    } catch (error) {
-      notificationService.error(
-        error instanceof Error ? error.message : t('nav.workspaces.initSessionFailed'),
-        { duration: 4000 }
-      );
-    }
-  }, [setActiveWorkspace, t, workspace]);
 
   const handleOpenFiles = useCallback(() => {
     switchLeftPanelTab('files');
@@ -961,6 +940,15 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                 >
                   {t('nav.workspaces.actions.reveal')}
                 </MenuItem>
+                <MenuItem
+                  leading={<Icon glyph={FolderOpen} size="sm" />}
+                  onClick={() => { void handleRevealSessionStorageDirectory(); }}
+                  disabled={!sessionAPI.canRevealStorageDirectory()}
+                  title={!sessionAPI.canRevealStorageDirectory() ? t('nav.sessions.storageDirectoryDesktopOnly') : undefined}
+                  data-testid="nav-workspace-menu-open-session-storage"
+                >
+                  {t('nav.sessions.openStorageDirectory')}
+                </MenuItem>
                 <MenuSeparator />
                 <MenuItem
                   leading={<Icon glyph={ListChecks} size="sm" />}
@@ -969,8 +957,18 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                 >
                   {t('nav.sessions.manage')}
                 </MenuItem>
+                <MenuItem
+                  leading={<Icon glyph={FolderOpen} size="sm" />}
+                  onClick={() => { void handleCloseWorkspace(); }}
+                  disabled={assistantWorkspaces === null}
+                  title={assistantWorkspaces === null ? t('nav.workspaces.closeAssistantUnsupported') : undefined}
+                  data-testid="nav-workspace-menu-close-assistant"
+                >
+                  {t('nav.workspaces.actions.closeAssistant')}
+                </MenuItem>
                 {(isDefaultAssistantWorkspace || isDeletableAssistantWorkspace) ? (
                   <>
+                    <MenuSeparator />
                     {isDefaultAssistantWorkspace ? (
                       <MenuItem
                         leading={<Icon glyph={RotateCcw} size="sm" />}
@@ -1425,13 +1423,6 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                   {t('nav.shell.actions.newTerminal')}
                 </MenuItem>
                 <MenuItem
-                  leading={<Icon glyph={FileText} size="sm" />}
-                  onClick={() => { void handleCreateInitSession(); }}
-                  data-testid="nav-workspace-menu-create-init-session"
-                >
-                  {t('nav.workspaces.actions.initAgents')}
-                </MenuItem>
-                <MenuItem
                   leading={<Icon name="link" size="sm" />}
                   onClick={() => {
                     setMenuOpen(false);
@@ -1483,6 +1474,15 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                   data-testid="nav-workspace-menu-reveal"
                 >
                   {t('nav.workspaces.actions.reveal')}
+                </MenuItem>
+                <MenuItem
+                  leading={<Icon glyph={FolderOpen} size="sm" />}
+                  onClick={() => { void handleRevealSessionStorageDirectory(); }}
+                  disabled={!sessionAPI.canRevealStorageDirectory()}
+                  title={!sessionAPI.canRevealStorageDirectory() ? t('nav.sessions.storageDirectoryDesktopOnly') : undefined}
+                  data-testid="nav-workspace-menu-open-session-storage"
+                >
+                  {t('nav.sessions.openStorageDirectory')}
                 </MenuItem>
                 <MenuSeparator />
                 <MenuItem

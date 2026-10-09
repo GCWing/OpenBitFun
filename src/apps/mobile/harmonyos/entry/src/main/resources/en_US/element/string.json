@@ -13,20 +13,2728 @@
       "value": "OpenBitFun"
     },
     {
-      "name": "permission_camera_reason",
-      "value": "Used to scan the OpenBitFun desktop remote connection QR code."
-    },
-    {
-      "name": "permission_read_pasteboard_reason",
-      "value": "Used to paste the OpenBitFun desktop remote connection link."
-    },
-    {
       "name": "permission_microphone_reason",
       "value": "Used to turn speech into text to send in a conversation."
     },
     {
       "name": "permission_distributed_datasync_reason",
       "value": "Used to authorize a watch on the same GitHub account using a separate device credential."
+    },
+    {
+      "name": "workspaceTools_browse",
+      "value": "Browse runtime folders"
+    },
+    {
+      "name": "workspaceTools_selectFolder",
+      "value": "Use this folder"
+    },
+    {
+      "name": "workspaceTools_back",
+      "value": "Back to files"
+    },
+    {
+      "name": "workspaceTools_edit",
+      "value": "Edit"
+    },
+    {
+      "name": "workspaceTools_lineNumbers",
+      "value": "Line numbers"
+    },
+    {
+      "name": "workspaceTools_unsaved",
+      "value": "Unsaved changes"
+    },
+    {
+      "name": "workspaceTools_fileConflict",
+      "value": "File changed on the computer. Your draft is preserved. Copy it before reopening the file to load the latest version."
+    },
+    {
+      "name": "workspaceTools_discard",
+      "value": "Discard changes"
+    },
+    {
+      "name": "workspaceTools_nameAsc",
+      "value": "Name A–Z"
+    },
+    {
+      "name": "workspaceTools_nameDesc",
+      "value": "Name Z–A"
+    },
+    {
+      "name": "workspaceTools_modifiedAsc",
+      "value": "Oldest modified first"
+    },
+    {
+      "name": "workspaceTools_modifiedDesc",
+      "value": "Newest modified first"
+    },
+    {
+      "name": "workspaceTools_upload",
+      "value": "Upload file"
+    },
+    {
+      "name": "workspaceTools_resumeUpload",
+      "value": "Resume upload"
+    },
+    {
+      "name": "workspaceTools_cancelUpload",
+      "value": "Cancel upload"
+    },
+    {
+      "name": "workspaceTools_selectLocation",
+      "value": "Select a location"
+    },
+    {
+      "name": "workspaceTools_runtimeLocal",
+      "value": "This runtime"
+    },
+    {
+      "name": "workspaceTools_download",
+      "value": "Download"
+    },
+    {
+      "name": "workspaceTools_title",
+      "value": "Tools"
+    },
+    {
+      "name": "workspaceTools_files",
+      "value": "Files"
+    },
+    {
+      "name": "sidebar_controlledDevice",
+      "value": "Controlled device"
+    },
+    {
+      "name": "sidebar_currentPath",
+      "value": "Current path"
+    },
+    {
+      "name": "sidebar_recentWorkspaces",
+      "value": "Recent workspaces"
+    },
+    {
+      "name": "sidebar_tapToSwitch",
+      "value": "Tap to switch"
+    },
+    {
+      "name": "workspaceTools_selectTerminal",
+      "value": "Select an existing terminal"
+    },
+    {
+      "name": "workspaceTools_terminal",
+      "value": "Terminal"
+    },
+    {
+      "name": "workspaceTools_up",
+      "value": "Parent"
+    },
+    {
+      "name": "workspaceTools_refresh",
+      "value": "Refresh"
+    },
+    {
+      "name": "workspaceTools_more",
+      "value": "Load more"
+    },
+    {
+      "name": "workspaceTools_fileName",
+      "value": "File name"
+    },
+    {
+      "name": "workspaceTools_path",
+      "value": "Absolute path on controlled runtime"
+    },
+    {
+      "name": "workspaceTools_newFile",
+      "value": "New file"
+    },
+    {
+      "name": "workspaceTools_mkdir",
+      "value": "New folder"
+    },
+    {
+      "name": "workspaceTools_rename",
+      "value": "Rename"
+    },
+    {
+      "name": "workspaceTools_save",
+      "value": "Save"
+    },
+    {
+      "name": "workspaceTools_delete",
+      "value": "Delete file"
+    },
+    {
+      "name": "workspaceTools_confirmDelete",
+      "value": "Confirm delete"
+    },
+    {
+      "name": "workspaceTools_rmdir",
+      "value": "Remove empty folder"
+    },
+    {
+      "name": "workspaceTools_createTerminal",
+      "value": "New terminal"
+    },
+    {
+      "name": "workspaceTools_command",
+      "value": "Terminal input"
+    },
+    {
+      "name": "workspaceTools_send",
+      "value": "Send"
+    },
+    {
+      "name": "workspaceTools_closeTerminal",
+      "value": "Close terminal"
+    },
+    {
+      "name": "workspaceTools_resize",
+      "value": "Resize"
+    },
+    {
+      "name": "home_recent_title",
+      "value": "What would you like to do today?"
+    },
+    {
+      "name": "home_recent_recent",
+      "value": "Recent conversations"
+    },
+    {
+      "name": "home_recent_browse",
+      "value": "Browse workspaces"
+    },
+    {
+      "name": "home_recent_all",
+      "value": "All conversations"
+    },
+    {
+      "name": "home_recent_empty",
+      "value": "No conversations to continue yet"
+    },
+    {
+      "name": "home_recent_connect",
+      "value": "Connect a computer to continue your conversations."
+    },
+    {
+      "name": "account_errorNetwork",
+      "value": "Unable to connect. Check your connection and try again."
+    },
+    {
+      "name": "account_errorTimeout",
+      "value": "Connection timed out. Check your connection and try again."
+    },
+    {
+      "name": "account_errorSecureConnection",
+      "value": "Unable to establish a secure connection. Check your network and try again."
+    },
+    {
+      "name": "account_errorRateLimited",
+      "value": "Too many attempts. Try again later."
+    },
+    {
+      "name": "home_welcome_login",
+      "value": "Sign in"
+    },
+    {
+      "name": "home_welcome_work",
+      "value": "Get things done"
+    },
+    {
+      "name": "home_welcome_play",
+      "value": "Try something fun"
+    },
+    {
+      "name": "home_welcome_yours",
+      "value": "Make it yours"
+    },
+    {
+      "name": "home_connectComputer",
+      "value": "Connect computer"
+    },
+    {
+      "name": "home_connecting",
+      "value": "Connecting…"
+    },
+    {
+      "name": "home_exploreMiniApps",
+      "value": "Explore MiniApps"
+    },
+    {
+      "name": "home_miniAppsHint",
+      "value": "Ready to use, even without a computer"
+    },
+    {
+      "name": "miniapp_allApps",
+      "value": "All apps"
+    },
+    {
+      "name": "miniapp_availableOffline",
+      "value": "Available offline"
+    },
+    {
+      "name": "miniapp_timeout",
+      "value": "The local operation timed out. It may still finish; it was not retried."
+    },
+    {
+      "name": "miniapp_title",
+      "value": "MiniApps"
+    },
+    {
+      "name": "miniapp_refresh",
+      "value": "Refresh"
+    },
+    {
+      "name": "miniapp_empty",
+      "value": "No built-in MiniApps are available."
+    },
+    {
+      "name": "miniapp_unsupported",
+      "value": "This capability is unavailable in built-in mobile MiniApps."
+    },
+    {
+      "name": "miniapp_invalidPage",
+      "value": "The MiniApp page is incomplete. Reopen it."
+    },
+    {
+      "name": "miniapp_closed",
+      "value": "The MiniApp was closed or changed."
+    },
+    {
+      "name": "miniapp_previewHint",
+      "value": "Built in · Works offline. Data stays on this phone."
+    },
+    {
+      "name": "notification_onboardingTitle",
+      "value": "Task completion notifications"
+    },
+    {
+      "name": "notification_onboardingBody",
+      "value": "Allow OpenBitFun to notify you when tasks finish. You can change this later in system settings."
+    },
+    {
+      "name": "notification_onboardingLater",
+      "value": "Later"
+    },
+    {
+      "name": "notification_onboardingEnable",
+      "value": "Enable notifications"
+    },
+    {
+      "name": "app_title",
+      "value": "OpenBitFun"
+    },
+    {
+      "name": "common_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "common_back",
+      "value": "Back"
+    },
+    {
+      "name": "common_close",
+      "value": "Close"
+    },
+    {
+      "name": "common_copy",
+      "value": "Copy"
+    },
+    {
+      "name": "common_current",
+      "value": "Current"
+    },
+    {
+      "name": "common_done",
+      "value": "Done"
+    },
+    {
+      "name": "common_delete",
+      "value": "Delete"
+    },
+    {
+      "name": "common_failed",
+      "value": "Failed"
+    },
+    {
+      "name": "common_keep",
+      "value": "Keep"
+    },
+    {
+      "name": "common_loading",
+      "value": "Loading..."
+    },
+    {
+      "name": "common_open",
+      "value": "Open"
+    },
+    {
+      "name": "common_other",
+      "value": "Other"
+    },
+    {
+      "name": "common_ready",
+      "value": "Ready"
+    },
+    {
+      "name": "common_refresh",
+      "value": "Refresh"
+    },
+    {
+      "name": "common_retry",
+      "value": "Retry"
+    },
+    {
+      "name": "common_save",
+      "value": "Save"
+    },
+    {
+      "name": "common_search",
+      "value": "Search"
+    },
+    {
+      "name": "common_running",
+      "value": "Running"
+    },
+    {
+      "name": "common_waiting",
+      "value": "Waiting"
+    },
+    {
+      "name": "notification_taskCompletedTitle",
+      "value": "Task completed"
+    },
+    {
+      "name": "notification_taskCompletedBody",
+      "value": "Your OpenBitFun task is ready. Tap to open OpenBitFun and view the result."
+    },
+    {
+      "name": "chatHome_prompt",
+      "value": "What do you want to do today?"
+    },
+    {
+      "name": "chatHome_placeholder",
+      "value": "Ask OpenBitFun"
+    },
+    {
+      "name": "chatHome_localHint",
+      "value": "This chat stays on the phone. Switch to Remote to read and write projects on your computer."
+    },
+    {
+      "name": "chatHome_research",
+      "value": "Find sources"
+    },
+    {
+      "name": "chatHome_researchPrompt",
+      "value": "Help me find sources and summarize the key points:"
+    },
+    {
+      "name": "chatHome_image",
+      "value": "Analyze image"
+    },
+    {
+      "name": "chatHome_imagePrompt",
+      "value": "Please analyze this image."
+    },
+    {
+      "name": "chatHome_file",
+      "value": "Work with a file"
+    },
+    {
+      "name": "chatHome_filePrompt",
+      "value": "Help me summarize the key points in this file."
+    },
+    {
+      "name": "chatHome_write",
+      "value": "Help me write"
+    },
+    {
+      "name": "chatHome_writePrompt",
+      "value": "Please draft this for me:"
+    },
+    {
+      "name": "chatHome_organize",
+      "value": "Organize a problem"
+    },
+    {
+      "name": "chatHome_organizePrompt",
+      "value": "Help me organize the key points and approach for this problem:"
+    },
+    {
+      "name": "chatHome_plan",
+      "value": "Make an action plan"
+    },
+    {
+      "name": "chatHome_planPrompt",
+      "value": "Help me make a clear, actionable plan:"
+    },
+    {
+      "name": "chatHome_codeHintTitle",
+      "value": "This task may need Remote"
+    },
+    {
+      "name": "chatHome_codeHintBody",
+      "value": "Connect a desktop workspace before OpenBitFun can read project files, run commands, and change code."
+    },
+    {
+      "name": "chatHome_enterCode",
+      "value": "Open Remote"
+    },
+    {
+      "name": "generalChat_ready",
+      "value": "OpenBitFun is ready"
+    },
+    {
+      "name": "generalChat_generating",
+      "value": "OpenBitFun is answering"
+    },
+    {
+      "name": "generalChat_sending",
+      "value": "Sending message"
+    },
+    {
+      "name": "generalChat_offline",
+      "value": "Network unavailable. Drafts and history stay on this phone."
+    },
+    {
+      "name": "generalChat_stopped",
+      "value": "Generation stopped."
+    },
+    {
+      "name": "generalChat_interrupted",
+      "value": "The reply was interrupted. Received content was kept."
+    },
+    {
+      "name": "generalChat_replyInterrupted",
+      "value": "Reply interrupted"
+    },
+    {
+      "name": "generalChat_fileDownloadMock",
+      "value": "General chat cannot download desktop files. Open Remote to work with local files."
+    },
+    {
+      "name": "generalChat_filePreviewUnavailable",
+      "value": "General chat cannot preview desktop files. Open Remote to view them."
+    },
+    {
+      "name": "generalChat_localRestoreFailed",
+      "value": "General chat history could not be restored. You can still start a new chat."
+    },
+    {
+      "name": "generalChat_modelNotConfigured",
+      "value": "Configure a general chat model in Settings first."
+    },
+    {
+      "name": "generalChat_authenticationFailed",
+      "value": "The API key is invalid or cannot access this model."
+    },
+    {
+      "name": "generalChat_rateLimited",
+      "value": "The model service is rate-limited. Try again later."
+    },
+    {
+      "name": "generalChat_serviceUnavailable",
+      "value": "The model service is temporarily unavailable. Try again later."
+    },
+    {
+      "name": "generalChat_invalidResponse",
+      "value": "The model service returned an unrecognized response."
+    },
+    {
+      "name": "generalChat_emptyResponse",
+      "value": "The model returned no text."
+    },
+    {
+      "name": "generalChat_requestFailed",
+      "value": "Model request failed (HTTP %1$s)."
+    },
+    {
+      "name": "settings_general_section",
+      "value": "General"
+    },
+    {
+      "name": "settings_account_section",
+      "value": "Account"
+    },
+    {
+      "name": "settings_account_currentIdentity",
+      "value": "Current identity"
+    },
+    {
+      "name": "settings_model_section",
+      "value": "Model"
+    },
+    {
+      "name": "settings_model_default",
+      "value": "Default model"
+    },
+    {
+      "name": "settings_devices_section",
+      "value": "Devices"
+    },
+    {
+      "name": "settings_title",
+      "value": "Settings"
+    },
+    {
+      "name": "settings_language_title",
+      "value": "Language"
+    },
+    {
+      "name": "settings_language_choose",
+      "value": "Choose language"
+    },
+    {
+      "name": "settings_language_zhCN",
+      "value": "简体中文"
+    },
+    {
+      "name": "settings_language_enUS",
+      "value": "English"
+    },
+    {
+      "name": "settings_about_section",
+      "value": "About"
+    },
+    {
+      "name": "settings_about_openbitfun",
+      "value": "About OpenBitFun"
+    },
+    {
+      "name": "settings_about_product",
+      "value": "Product"
+    },
+    {
+      "name": "settings_about_version",
+      "value": "Version"
+    },
+    {
+      "name": "settings_modelService_title",
+      "value": "Model"
+    },
+    {
+      "name": "settings_modelService_manageTitle",
+      "value": "General chat model"
+    },
+    {
+      "name": "settings_modelService_localTitle",
+      "value": "Custom local model"
+    },
+    {
+      "name": "settings_modelService_currentModel",
+      "value": "In use"
+    },
+    {
+      "name": "settings_modelService_modelSources",
+      "value": "Model sources"
+    },
+    {
+      "name": "settings_modelService_chooseAccountModel",
+      "value": "Choose account model"
+    },
+    {
+      "name": "settings_modelService_accountModels",
+      "value": "Account sync"
+    },
+    {
+      "name": "settings_modelService_accountModelSummary",
+      "value": "Cloud account models"
+    },
+    {
+      "name": "settings_modelService_localModel",
+      "value": "Custom local"
+    },
+    {
+      "name": "settings_modelService_accountSource",
+      "value": "Cloud account"
+    },
+    {
+      "name": "settings_modelService_localSource",
+      "value": "This device"
+    },
+    {
+      "name": "settings_modelService_syncedCount",
+      "value": "%1$s synced"
+    },
+    {
+      "name": "settings_modelService_accountEmpty",
+      "value": "No account models available"
+    },
+    {
+      "name": "settings_modelService_configured",
+      "value": "Configured"
+    },
+    {
+      "name": "settings_modelService_notConfigured",
+      "value": "Not configured"
+    },
+    {
+      "name": "settings_modelService_apiUrl",
+      "value": "API URL"
+    },
+    {
+      "name": "settings_modelService_apiUrlPlaceholder",
+      "value": "https://api.example.com"
+    },
+    {
+      "name": "settings_modelService_apiKey",
+      "value": "API Key"
+    },
+    {
+      "name": "settings_modelService_apiKeyPlaceholder",
+      "value": "Enter API Key"
+    },
+    {
+      "name": "settings_modelService_apiKeyKeepPlaceholder",
+      "value": "Leave blank to keep the saved key"
+    },
+    {
+      "name": "settings_modelService_modelName",
+      "value": "Model name"
+    },
+    {
+      "name": "settings_modelService_modelPlaceholder",
+      "value": "For example chat-model"
+    },
+    {
+      "name": "settings_modelService_keySaved",
+      "value": "Saved securely"
+    },
+    {
+      "name": "settings_modelService_clearKey",
+      "value": "Clear saved key"
+    },
+    {
+      "name": "settings_modelService_keepKey",
+      "value": "Keep saved key"
+    },
+    {
+      "name": "settings_modelService_testConnection",
+      "value": "Test connection"
+    },
+    {
+      "name": "settings_modelService_testNeedsKey",
+      "value": "Keep or enter an API key to test the connection."
+    },
+    {
+      "name": "settings_modelService_testSuccess",
+      "value": "Connection test passed."
+    },
+    {
+      "name": "settings_modelService_invalidUrl",
+      "value": "API URL must start with http:// or https://."
+    },
+    {
+      "name": "settings_modelService_modelRequired",
+      "value": "Enter a model name."
+    },
+    {
+      "name": "settings_modelService_apiKeyRequired",
+      "value": "Enter an API key."
+    },
+    {
+      "name": "settings_modelService_encryptFailed",
+      "value": "Could not encrypt the API key."
+    },
+    {
+      "name": "settings_modelService_secureStoreFailed",
+      "value": "System secure storage is unavailable. Try again later."
+    },
+    {
+      "name": "sidebar_chat",
+      "value": "Library"
+    },
+    {
+      "name": "sidebar_projects",
+      "value": "Projects"
+    },
+    {
+      "name": "sidebar_tasks",
+      "value": "Scheduled"
+    },
+    {
+      "name": "sidebar_tools",
+      "value": "Apps"
+    },
+    {
+      "name": "sidebar_more",
+      "value": "More"
+    },
+    {
+      "name": "sidebar_newChat",
+      "value": "Chat"
+    },
+    {
+      "name": "sidebar_generalChat",
+      "value": "General chat"
+    },
+    {
+      "name": "sidebar_conversations",
+      "value": "Recent chats"
+    },
+    {
+      "name": "sidebar_devices",
+      "value": "Devices"
+    },
+    {
+      "name": "sidebar_legacyWorkspaceCatalog",
+      "value": "Older device: showing recent workspaces"
+    },
+    {
+      "name": "sidebar_workspaces",
+      "value": "Workspaces"
+    },
+    {
+      "name": "sidebar_deviceOnline",
+      "value": "Online"
+    },
+    {
+      "name": "sidebar_addWorkspace",
+      "value": "Add workspace"
+    },
+    {
+      "name": "sidebar_targetWorkspacePath",
+      "value": "Path on controlled device"
+    },
+    {
+      "name": "sidebar_openWorkspacePath",
+      "value": "Open workspace"
+    },
+    {
+      "name": "sidebar_remoteRootBrowseOnly",
+      "value": "The remote root is for browsing. Choose a specific workspace folder."
+    },
+    {
+      "name": "sidebar_browseRemoteRoot",
+      "value": "Browse remote root"
+    },
+    {
+      "name": "sidebar_selectWorkspace",
+      "value": "Select workspace"
+    },
+    {
+      "name": "sidebar_workspacesOffline",
+      "value": "Disconnected"
+    },
+    {
+      "name": "sidebar_connectDesktop",
+      "value": "Connect a computer"
+    },
+    {
+      "name": "sidebar_addConnection",
+      "value": "Add connection"
+    },
+    {
+      "name": "sidebar_newInWorkspace",
+      "value": "New in this workspace"
+    },
+    {
+      "name": "sidebar_emptyWorkspaces",
+      "value": "This computer has no workspaces yet"
+    },
+    {
+      "name": "sidebar_moreSessions",
+      "value": "%1$s more sessions"
+    },
+    {
+      "name": "sidebar_moreWorkspaces",
+      "value": "%1$s more workspaces"
+    },
+    {
+      "name": "sidebar_deviceOffline",
+      "value": "Offline"
+    },
+    {
+      "name": "sidebar_deviceLoadFailed",
+      "value": "This computer cannot be read right now"
+    },
+    {
+      "name": "sidebar_moreDevices",
+      "value": "%1$s more devices"
+    },
+    {
+      "name": "sidebar_pinned",
+      "value": "Pinned"
+    },
+    {
+      "name": "sidebar_archived",
+      "value": "Archived"
+    },
+    {
+      "name": "sidebar_archive",
+      "value": "Archive"
+    },
+    {
+      "name": "sidebar_unarchive",
+      "value": "Unarchive"
+    },
+    {
+      "name": "sidebar_exportMarkdown",
+      "value": "Copy Markdown"
+    },
+    {
+      "name": "sidebar_untitled",
+      "value": "Untitled session"
+    },
+    {
+      "name": "sidebar_emptyRecentTitle",
+      "value": "No recent sessions"
+    },
+    {
+      "name": "sidebar_emptyRecentText",
+      "value": "They will appear here after you start chatting."
+    },
+    {
+      "name": "sidebar_deleteConfirm",
+      "value": "This session cannot be recovered after deletion."
+    },
+    {
+      "name": "sidebar_searchPlaceholder",
+      "value": "Search chats"
+    },
+    {
+      "name": "sidebar_noSearchResult",
+      "value": "No matching sessions"
+    },
+    {
+      "name": "sidebar_signedOutNewChat",
+      "value": "New chat"
+    },
+    {
+      "name": "sidebar_signInOpenBitFunAccount",
+      "value": "Sign in with email or GitHub"
+    },
+    {
+      "name": "sidebar_collapse",
+      "value": "Collapse sidebar"
+    },
+    {
+      "name": "sidebar_restore",
+      "value": "Expand sidebar"
+    },
+    {
+      "name": "session_actions",
+      "value": "Session actions"
+    },
+    {
+      "name": "session_details",
+      "value": "Session details"
+    },
+    {
+      "name": "session_viewDetails",
+      "value": "View details"
+    },
+    {
+      "name": "session_agentType",
+      "value": "Agent type"
+    },
+    {
+      "name": "session_workspace",
+      "value": "Workspace"
+    },
+    {
+      "name": "session_workspacePath",
+      "value": "Workspace path"
+    },
+    {
+      "name": "session_createdAt",
+      "value": "Created"
+    },
+    {
+      "name": "session_updatedAt",
+      "value": "Updated"
+    },
+    {
+      "name": "session_messageCount",
+      "value": "Messages"
+    },
+    {
+      "name": "session_status",
+      "value": "Status"
+    },
+    {
+      "name": "viewSettings_title",
+      "value": "View settings"
+    },
+    {
+      "name": "viewSettings_subtitle",
+      "value": "Adjust session grouping and information density"
+    },
+    {
+      "name": "viewSettings_grouping",
+      "value": "Grouping"
+    },
+    {
+      "name": "viewSettings_filters",
+      "value": "Filters"
+    },
+    {
+      "name": "viewSettings_metadata",
+      "value": "Shown details"
+    },
+    {
+      "name": "viewSettings_workspace",
+      "value": "Workspace"
+    },
+    {
+      "name": "viewSettings_agentType",
+      "value": "Session type"
+    },
+    {
+      "name": "viewSettings_allWorkspaces",
+      "value": "All workspaces"
+    },
+    {
+      "name": "viewSettings_allAgentTypes",
+      "value": "All types"
+    },
+    {
+      "name": "viewSettings_allStatuses",
+      "value": "All statuses"
+    },
+    {
+      "name": "viewSettings_updated",
+      "value": "Updated time"
+    },
+    {
+      "name": "viewSettings_status",
+      "value": "Run status"
+    },
+    {
+      "name": "common_unknown",
+      "value": "Unknown"
+    },
+    {
+      "name": "code_title",
+      "value": "OpenBitFun Remote"
+    },
+    {
+      "name": "code_heroTitle",
+      "value": "Local development assistant"
+    },
+    {
+      "name": "code_heroBody",
+      "value": "After connecting the desktop, OpenBitFun can access your repositories, run commands, and edit files."
+    },
+    {
+      "name": "code_connectWorkspace",
+      "value": "Connect a local workspace"
+    },
+    {
+      "name": "code_noWorkspacePreview",
+      "value": "Recently opened repositories appear here after you connect the desktop."
+    },
+    {
+      "name": "code_newTask",
+      "value": "New remote task"
+    },
+    {
+      "name": "code_switchWorkspace",
+      "value": "Switch workspace"
+    },
+    {
+      "name": "code_disconnect",
+      "value": "Disconnect"
+    },
+    {
+      "name": "code_recentSessions",
+      "value": "Recent remote sessions"
+    },
+    {
+      "name": "code_emptySessionTitle",
+      "value": "No remote sessions"
+    },
+    {
+      "name": "code_emptySessionText",
+      "value": "After connecting a local workspace, create a remote task to work on the project."
+    },
+    {
+      "name": "remote_actionUnsupported",
+      "value": "This action is not supported by the connected device."
+    },
+    {
+      "name": "remote_title",
+      "value": "Remote"
+    },
+    {
+      "name": "remote_chats",
+      "value": "Chats"
+    },
+    {
+      "name": "remote_searchChats",
+      "value": "Search chat history"
+    },
+    {
+      "name": "remote_emptyTitle",
+      "value": "No remote chats yet"
+    },
+    {
+      "name": "remote_emptyText",
+      "value": "Start a chat to continue desktop tasks from your phone."
+    },
+    {
+      "name": "remote_pickSession",
+      "value": "Choose a session"
+    },
+    {
+      "name": "remote_pickSessionText",
+      "value": "Open a session from the sidebar, or create one."
+    },
+    {
+      "name": "remote_startSession",
+      "value": "New session"
+    },
+    {
+      "name": "remote_harness_title",
+      "value": "Choose execution mode"
+    },
+    {
+      "name": "remote_harness_minimal",
+      "value": "Minimal"
+    },
+    {
+      "name": "remote_harness_standard",
+      "value": "Standard"
+    },
+    {
+      "name": "remote_harness_ultimate",
+      "value": "Ultimate"
+    },
+    {
+      "name": "remote_connectTitle",
+      "value": "Connect desktop"
+    },
+    {
+      "name": "remote_actions",
+      "value": "Remote settings"
+    },
+    {
+      "name": "remote_device",
+      "value": "Connected device"
+    },
+    {
+      "name": "remote_newChat",
+      "value": "Chat"
+    },
+    {
+      "name": "remote_workspace",
+      "value": "Workspace"
+    },
+    {
+      "name": "remote_assistant",
+      "value": "Assistant"
+    },
+    {
+      "name": "remote_noAssistant",
+      "value": "Default assistant"
+    },
+    {
+      "name": "remote_loadMore",
+      "value": "Load more chats"
+    },
+    {
+      "name": "remote_menu_organize",
+      "value": "Organize"
+    },
+    {
+      "name": "remote_menu_byProject",
+      "value": "By project"
+    },
+    {
+      "name": "remote_menu_byTime",
+      "value": "Newest first"
+    },
+    {
+      "name": "remote_menu_chatFirst",
+      "value": "Chats first"
+    },
+    {
+      "name": "remote_menu_manage",
+      "value": "Manage"
+    },
+    {
+      "name": "remote_menu_cloudTasks",
+      "value": "Cloud tasks"
+    },
+    {
+      "name": "remote_menu_addConnection",
+      "value": "Add connection"
+    },
+    {
+      "name": "remote_menu_settings",
+      "value": "Settings"
+    },
+    {
+      "name": "remote_menu_refreshConnection",
+      "value": "Refresh connection"
+    },
+    {
+      "name": "remote_menu_comingSoon",
+      "value": "Coming soon"
+    },
+    {
+      "name": "remote_projects_showMore",
+      "value": "Show %1$s more projects"
+    },
+    {
+      "name": "remote_sessions_showMore",
+      "value": "Show %1$s more sessions"
+    },
+    {
+      "name": "remote_time_today",
+      "value": "Today"
+    },
+    {
+      "name": "remote_time_yesterday",
+      "value": "Yesterday"
+    },
+    {
+      "name": "remote_time_earlier",
+      "value": "Earlier"
+    },
+    {
+      "name": "remote_settings_relayReauthorizationRequired",
+      "value": "Relay has been upgraded. Sign in again to reconnect; your saved account and data are retained."
+    },
+    {
+      "name": "remote_settings_currentControl",
+      "value": "Current remote control"
+    },
+    {
+      "name": "remote_settings_accountDevice",
+      "value": "Account device"
+    },
+    {
+      "name": "remote_settings_qrPairing",
+      "value": "QR pairing"
+    },
+    {
+      "name": "remote_settings_disconnect",
+      "value": "Disconnect"
+    },
+    {
+      "name": "remote_settings_disconnectTemporary",
+      "value": "End temporary access"
+    },
+    {
+      "name": "remote_settings_reconnect",
+      "value": "Reconnect"
+    },
+    {
+      "name": "remote_settings_noDesktop",
+      "value": "No desktop connected yet"
+    },
+    {
+      "name": "remote_settings_openbitfunUser",
+      "value": "OpenBitFun user"
+    },
+    {
+      "name": "remote_settings_accountSignedIn",
+      "value": "Signed in"
+    },
+    {
+      "name": "remote_settings_accountNotSignedIn",
+      "value": "Signed out"
+    },
+    {
+      "name": "remote_settings_accountTemporary",
+      "value": "Temporary access"
+    },
+    {
+      "name": "remote_settings_accountLoginTitle",
+      "value": "Sign in with email or GitHub"
+    },
+    {
+      "name": "remote_settings_accountLoginBody",
+      "value": "Sign in with email or GitHub to connect to your computers.\\nTasks and model settings stay on the controlled computer."
+    },
+    {
+      "name": "remote_settings_loginServer",
+      "value": "Sign-in server"
+    },
+    {
+      "name": "remote_settings_accountSignIn",
+      "value": "Sign in with email or GitHub"
+    },
+    {
+      "name": "remote_settings_accountSigningIn",
+      "value": "Signing in…"
+    },
+    {
+      "name": "remote_settings_accountLoginFailed",
+      "value": "Unable to sign in right now. Try again later."
+    },
+    {
+      "name": "remote_settings_relayUrlPlaceholder",
+      "value": "Relay URL, for example https://relay.example.com"
+    },
+    {
+      "name": "remote_settings_accountLogout",
+      "value": "Sign out"
+    },
+    {
+      "name": "remote_settings_accountLoggingOut",
+      "value": "Signing out…"
+    },
+    {
+      "name": "remote_settings_deviceCurrent",
+      "value": "This device"
+    },
+    {
+      "name": "remote_settings_deviceRefresh",
+      "value": "Refresh"
+    },
+    {
+      "name": "remote_settings_deviceLoading",
+      "value": "Loading devices…"
+    },
+    {
+      "name": "remote_settings_deviceEmpty",
+      "value": "No other registered devices on this account."
+    },
+    {
+      "name": "remote_settings_deviceLoginRequired",
+      "value": "Sign in to the cloud account to see every device on it."
+    },
+    {
+      "name": "remote_settings_deviceOnline",
+      "value": "Online"
+    },
+    {
+      "name": "remote_settings_deviceOffline",
+      "value": "Offline"
+    },
+    {
+      "name": "remote_settings_deviceConnecting",
+      "value": "Connecting"
+    },
+    {
+      "name": "remote_settings_deviceControlling",
+      "value": "Controlling"
+    },
+    {
+      "name": "remote_settings_deviceSwitching",
+      "value": "Switching to %1$s…"
+    },
+    {
+      "name": "remote_settings_deviceSwitchFailed",
+      "value": "Could not switch the control device. Try again later."
+    },
+    {
+      "name": "remote_settings_deviceLoadFailed",
+      "value": "Could not load devices. Try again later."
+    },
+    {
+      "name": "remote_settings_accountExpired",
+      "value": "The cloud account expired. Sign in again."
+    },
+    {
+      "name": "remote_settings_deviceUnavailable",
+      "value": "The target desktop is unavailable. Refresh the device list and retry."
+    },
+    {
+      "name": "remote_settings_deviceIncompatible",
+      "value": "Incompatible client — this device cannot be controlled here"
+    },
+    {
+      "name": "remote_settings_deviceName",
+      "value": "Device"
+    },
+    {
+      "name": "remote_settings_deviceManagementBody",
+      "value": "This device stores account credentials encrypted with HUKS. Signing out clears them immediately."
+    },
+    {
+      "name": "remote_settings_githubId",
+      "value": "Account ID: %1$s"
+    },
+    {
+      "name": "remote_settings_githubAccount",
+      "value": "OpenBitFun account"
+    },
+    {
+      "name": "remote_settings_connectedDesktop",
+      "value": "Current desktop"
+    },
+    {
+      "name": "remote_permissions_title",
+      "value": "Permission mode"
+    },
+    {
+      "name": "remote_permissions_scope",
+      "value": "This setting syncs to the connected desktop and applies to every new tool call."
+    },
+    {
+      "name": "remote_permissions_ask",
+      "value": "Ask"
+    },
+    {
+      "name": "remote_permissions_askDescription",
+      "value": "High-risk actions wait for your confirmation."
+    },
+    {
+      "name": "remote_permissions_auto",
+      "value": "Auto approve"
+    },
+    {
+      "name": "remote_permissions_autoDescription",
+      "value": "Actions that would ask for confirmation are approved automatically."
+    },
+    {
+      "name": "remote_permissions_fullAccess",
+      "value": "Full access"
+    },
+    {
+      "name": "remote_permissions_fullAccessDescription",
+      "value": "Every tool action is allowed without asking again."
+    },
+    {
+      "name": "remote_permissions_loading",
+      "value": "Reading the desktop’s permission setting…"
+    },
+    {
+      "name": "remote_permissions_loadFailed",
+      "value": "Could not read the permission setting. Try again."
+    },
+    {
+      "name": "remote_permissions_saveFailed",
+      "value": "Could not save the permission mode. Try again."
+    },
+    {
+      "name": "remote_permissions_connectionRequired",
+      "value": "Connect a desktop to change the permission mode."
+    },
+    {
+      "name": "remote_permissions_fullAccessWarningTitle",
+      "value": "Turn on full access?"
+    },
+    {
+      "name": "remote_permissions_fullAccessWarningBody",
+      "value": "Desktop tools will be able to run commands and change files directly."
+    },
+    {
+      "name": "remote_permissions_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "remote_permissions_confirmFullAccess",
+      "value": "Turn on full access"
+    },
+    {
+      "name": "connect_localTitle",
+      "value": "Connect a local workspace"
+    },
+    {
+      "name": "connect_chooseConnectionTitle",
+      "value": "Connect a computer"
+    },
+    {
+      "name": "connect_legacySignInRequired",
+      "value": "Sign in with email or GitHub to reconnect this device. Previous connection records have been retained."
+    },
+    {
+      "name": "connect_subtitle",
+      "value": "After connecting the desktop, OpenBitFun can access repositories, run commands, and handle local development tasks."
+    },
+    {
+      "name": "connect_accountDevicesTitle",
+      "value": "Choose a desktop"
+    },
+    {
+      "name": "connect_accountDevicesSubtitle",
+      "value": "Remote"
+    },
+    {
+      "name": "connect_accountDevicesBody",
+      "value": "Choose an online desktop to continue."
+    },
+    {
+      "name": "connect_availableDevices",
+      "value": "Account devices"
+    },
+    {
+      "name": "connect_deviceLastUsed",
+      "value": "Last connected"
+    },
+    {
+      "name": "connect_deviceLinkInvalid",
+      "value": "The saved connection link cannot be used. Sign in and choose a computer from your device list."
+    },
+    {
+      "name": "connect_deviceLinkUnavailable",
+      "value": "This device is offline or does not belong to your OpenBitFun account."
+    },
+    {
+      "name": "connect_accountPairTitle",
+      "value": "Account pairing"
+    },
+    {
+      "name": "connect_accountPairIntro",
+      "value": "The desktop is signed in to a OpenBitFun account. Verify the same account to continue."
+    },
+    {
+      "name": "connect_accountPairBody",
+      "value": "The password is only used for this encrypted pairing and is not saved on the phone."
+    },
+    {
+      "name": "connect_enterAccountToPair",
+      "value": "Sign in with email or GitHub to connect this device"
+    },
+    {
+      "name": "connect_accountUsernamePlaceholder",
+      "value": "OpenBitFun username"
+    },
+    {
+      "name": "connect_accountPasswordPlaceholder",
+      "value": "OpenBitFun password"
+    },
+    {
+      "name": "connect_stepsTitle",
+      "value": "How to connect"
+    },
+    {
+      "name": "connect_or",
+      "value": "or"
+    },
+    {
+      "name": "connect_userId",
+      "value": "Enter user ID"
+    },
+    {
+      "name": "connect_userPlaceholder",
+      "value": "For example: DESKTOP-KM3L4UI"
+    },
+    {
+      "name": "connect_connect",
+      "value": "Connect"
+    },
+    {
+      "name": "connect_connecting",
+      "value": "Connecting..."
+    },
+    {
+      "name": "connect_remoteUrlShort",
+      "value": "Remote connection link"
+    },
+    {
+      "name": "connect_collapse",
+      "value": "Collapse"
+    },
+    {
+      "name": "connect_filled",
+      "value": "Filled"
+    },
+    {
+      "name": "connect_fill",
+      "value": "Fill"
+    },
+    {
+      "name": "connect_clear",
+      "value": "Clear"
+    },
+    {
+      "name": "connect_urlPlaceholder",
+      "value": "openbitfun:// or https://...#/pair?room=...&pk=...&relay=..."
+    },
+    {
+      "name": "connect_statusTitle",
+      "value": "Connection status"
+    },
+    {
+      "name": "connect_targetDesktop",
+      "value": "Target desktop"
+    },
+    {
+      "name": "connect_noDesktop",
+      "value": "No desktop selected"
+    },
+    {
+      "name": "connect_noDesktopDetail",
+      "value": "Connection status appears here after you sign in and choose a computer."
+    },
+    {
+      "name": "connect_desktopId",
+      "value": "Desktop ID: %1$s"
+    },
+    {
+      "name": "connect_desktopIdUnavailable",
+      "value": "Desktop ID unavailable"
+    },
+    {
+      "name": "connect_waitingDevice",
+      "value": "Waiting to connect a desktop"
+    },
+    {
+      "name": "connect_connected",
+      "value": "Connected"
+    },
+    {
+      "name": "connect_connectedTo",
+      "value": "Connected to %1$s · %2$s"
+    },
+    {
+      "name": "connect_waitingDesktop",
+      "value": "Waiting for the desktop to confirm"
+    },
+    {
+      "name": "connect_failed",
+      "value": "Connection failed"
+    },
+    {
+      "name": "connect_cannotConnectDesktop",
+      "value": "Could not connect to the desktop"
+    },
+    {
+      "name": "connect_disconnected",
+      "value": "Disconnected"
+    },
+    {
+      "name": "connect_desktopDisconnected",
+      "value": "Disconnected from the desktop"
+    },
+    {
+      "name": "connect_hintExpiredRoom",
+      "value": "The legacy QR connection expired or the room does not exist. Sign in and choose a computer from your device list."
+    },
+    {
+      "name": "connect_hintNetwork",
+      "value": "This phone cannot reach the relay. Check the network, proxy, or desktop relay URL, then retry."
+    },
+    {
+      "name": "connect_hintProtectedUser",
+      "value": "This connection is bound to a user ID. Continue with the user ID confirmed on the desktop."
+    },
+    {
+      "name": "connect_hintInvalidLink",
+      "value": "The saved connection link is incomplete. Sign in and choose a computer from your device list."
+    },
+    {
+      "name": "connection_connected",
+      "value": "Connected"
+    },
+    {
+      "name": "connection_reconnecting",
+      "value": "Reconnecting"
+    },
+    {
+      "name": "connection_connecting",
+      "value": "Connecting"
+    },
+    {
+      "name": "connection_error",
+      "value": "Connection error"
+    },
+    {
+      "name": "connection_disconnected",
+      "value": "Disconnected"
+    },
+    {
+      "name": "connection_waiting",
+      "value": "Waiting to connect"
+    },
+    {
+      "name": "connection_user",
+      "value": "User %1$s"
+    },
+    {
+      "name": "connection_reconnectingDesktop",
+      "value": "Reconnecting to the desktop"
+    },
+    {
+      "name": "connection_unavailableReconnect",
+      "value": "Connection unavailable. Reconnect to continue."
+    },
+    {
+      "name": "connection_desktopDisconnected",
+      "value": "Disconnected from the desktop"
+    },
+    {
+      "name": "home_reconnect",
+      "value": "Reconnect"
+    },
+    {
+      "name": "home_disconnect",
+      "value": "Disconnect"
+    },
+    {
+      "name": "home_clearPairing",
+      "value": "Clear pairing"
+    },
+    {
+      "name": "home_workbench",
+      "value": "Workbench"
+    },
+    {
+      "name": "home_currentAssistant",
+      "value": "Current assistant"
+    },
+    {
+      "name": "home_currentWorkspace",
+      "value": "Current workspace"
+    },
+    {
+      "name": "home_switchAssistant",
+      "value": "Switch assistant"
+    },
+    {
+      "name": "home_switch",
+      "value": "Switch"
+    },
+    {
+      "name": "home_recentWorkspaces",
+      "value": "Recent workspaces"
+    },
+    {
+      "name": "home_noRecentWorkspaces",
+      "value": "No recent workspaces. Open one on the desktop first."
+    },
+    {
+      "name": "home_assistantWorkspaces",
+      "value": "Assistant workspaces"
+    },
+    {
+      "name": "home_noAssistants",
+      "value": "No assistants available. Create or open one on the desktop first."
+    },
+    {
+      "name": "home_createSession",
+      "value": "New session"
+    },
+    {
+      "name": "home_assistantSession",
+      "value": "Assistant session"
+    },
+    {
+      "name": "home_assistantSessionDisabled",
+      "value": "The desktop does not allow creating assistant sessions yet"
+    },
+    {
+      "name": "home_codeDesc",
+      "value": "Handle coding tasks"
+    },
+    {
+      "name": "home_coworkDesc",
+      "value": "Handle everyday work tasks"
+    },
+    {
+      "name": "home_recent",
+      "value": "Recent"
+    },
+    {
+      "name": "home_viewAll",
+      "value": "View all"
+    },
+    {
+      "name": "home_sessionCount",
+      "value": "%1$s sessions"
+    },
+    {
+      "name": "home_searchPlaceholder",
+      "value": "Search session titles"
+    },
+    {
+      "name": "home_all",
+      "value": "All"
+    },
+    {
+      "name": "home_loadMore",
+      "value": "Load more"
+    },
+    {
+      "name": "home_deleteSession",
+      "value": "Delete session"
+    },
+    {
+      "name": "home_emptyLoadingTitle",
+      "value": "Loading sessions"
+    },
+    {
+      "name": "home_emptyLoadingText",
+      "value": "Syncing the desktop session list."
+    },
+    {
+      "name": "home_emptySearchTitle",
+      "value": "No matching sessions"
+    },
+    {
+      "name": "home_emptySearchText",
+      "value": "Try another keyword or filter."
+    },
+    {
+      "name": "home_emptyAssistantTitle",
+      "value": "No assistant sessions"
+    },
+    {
+      "name": "home_emptyAssistantText",
+      "value": "You can start one here after the desktop allows creation."
+    },
+    {
+      "name": "home_emptyTitle",
+      "value": "No sessions"
+    },
+    {
+      "name": "home_emptyText",
+      "value": "Use Remote for coding tasks, or general chat for everyday questions."
+    },
+    {
+      "name": "sheet_createTitle",
+      "value": "Create a %1$s session"
+    },
+    {
+      "name": "sheet_workspace",
+      "value": "Workspace"
+    },
+    {
+      "name": "sheet_sessionTitleOptional",
+      "value": "Session title (optional)"
+    },
+    {
+      "name": "sheet_firstInstructionOptional",
+      "value": "First instruction (optional)"
+    },
+    {
+      "name": "sheet_instructionPlaceholder",
+      "value": "Tell OpenBitFun what to do..."
+    },
+    {
+      "name": "sheet_advancedOptions",
+      "value": "Advanced options"
+    },
+    {
+      "name": "sheet_unavailable",
+      "value": "Unavailable"
+    },
+    {
+      "name": "sheet_creating",
+      "value": "Creating..."
+    },
+    {
+      "name": "sheet_start",
+      "value": "Start"
+    },
+    {
+      "name": "chat_remoteSession",
+      "value": "Remote session"
+    },
+    {
+      "name": "chat_sessionTitle",
+      "value": "Session title"
+    },
+    {
+      "name": "chat_sessionSection",
+      "value": "Session"
+    },
+    {
+      "name": "chat_pin",
+      "value": "Pin"
+    },
+    {
+      "name": "chat_unpin",
+      "value": "Unpin"
+    },
+    {
+      "name": "chat_uploadedFiles",
+      "value": "Uploaded files"
+    },
+    {
+      "name": "chat_stop",
+      "value": "Stop"
+    },
+    {
+      "name": "chat_send",
+      "value": "Send"
+    },
+    {
+      "name": "chat_voiceInput",
+      "value": "Voice input"
+    },
+    {
+      "name": "chat_stopListening",
+      "value": "Stop dictation"
+    },
+    {
+      "name": "chat_addImage",
+      "value": "Add image"
+    },
+    {
+      "name": "chat_removeImage",
+      "value": "Remove image"
+    },
+    {
+      "name": "chat_selectModel",
+      "value": "Select model"
+    },
+    {
+      "name": "chat_modelPrimary",
+      "value": "Primary Model"
+    },
+    {
+      "name": "chat_modelFast",
+      "value": "Fast Model"
+    },
+    {
+      "name": "chat_modelFastNotConfigured",
+      "value": "Not set, falls back to primary"
+    },
+    {
+      "name": "chat_modelRolePrimary",
+      "value": "Primary"
+    },
+    {
+      "name": "chat_modelRoleFast",
+      "value": "Fast"
+    },
+    {
+      "name": "chat_loadOlder",
+      "value": "Load older messages"
+    },
+    {
+      "name": "chat_loadOlderFailed",
+      "value": "Could not load earlier messages. Tap to retry."
+    },
+    {
+      "name": "chat_inputPlaceholder",
+      "value": "Ask OpenBitFun"
+    },
+    {
+      "name": "chat_voiceListeningPlaceholder",
+      "value": "Listening, please speak..."
+    },
+    {
+      "name": "chat_queuedAfterRunningTurn",
+      "value": "Queued. It will run after the current task finishes."
+    },
+    {
+      "name": "chat_image",
+      "value": "Image"
+    },
+    {
+      "name": "chat_imageUnavailable",
+      "value": "Image not synced to this device"
+    },
+    {
+      "name": "chat_thinkingRunning",
+      "value": "Running"
+    },
+    {
+      "name": "chat_thinkingDone",
+      "value": "Done"
+    },
+    {
+      "name": "chat_thinkingInProgress",
+      "value": "Thinking"
+    },
+    {
+      "name": "chat_thinkingComplete",
+      "value": "Thought"
+    },
+    {
+      "name": "chat_toolCalls",
+      "value": "Tool calls"
+    },
+    {
+      "name": "chat_toolsRan",
+      "value": "Ran %1$s tools"
+    },
+    {
+      "name": "chat_toolOpTodoWrite",
+      "value": "Update task list"
+    },
+    {
+      "name": "chat_toolOpTask",
+      "value": "Start task"
+    },
+    {
+      "name": "chat_toolOpRead",
+      "value": "Read file"
+    },
+    {
+      "name": "chat_toolOpWrite",
+      "value": "Write file"
+    },
+    {
+      "name": "chat_toolOpDelete",
+      "value": "Delete file"
+    },
+    {
+      "name": "chat_toolOpDiff",
+      "value": "View changes"
+    },
+    {
+      "name": "chat_toolOpEdit",
+      "value": "Edit file"
+    },
+    {
+      "name": "chat_toolOpCommand",
+      "value": "Run command"
+    },
+    {
+      "name": "chat_toolOpWebSearch",
+      "value": "Web search"
+    },
+    {
+      "name": "chat_toolOpWebFetch",
+      "value": "Open web page"
+    },
+    {
+      "name": "chat_toolOpSearch",
+      "value": "Search code"
+    },
+    {
+      "name": "chat_toolOpAskUser",
+      "value": "Ask for confirmation"
+    },
+    {
+      "name": "chat_toolTodoFallback",
+      "value": "Task list"
+    },
+    {
+      "name": "chat_toolTaskFallback",
+      "value": "Subtask"
+    },
+    {
+      "name": "chat_subagentOutput",
+      "value": "Subtask output"
+    },
+    {
+      "name": "chat_toolFailed",
+      "value": "%1$s failed"
+    },
+    {
+      "name": "chat_toolRunning",
+      "value": "Running"
+    },
+    {
+      "name": "chat_showMore",
+      "value": "Show more"
+    },
+    {
+      "name": "chat_showLess",
+      "value": "Show less"
+    },
+    {
+      "name": "chat_processing",
+      "value": "Processing"
+    },
+    {
+      "name": "chat_sendFailed",
+      "value": "Send failed. Check the connection and retry."
+    },
+    {
+      "name": "chat_responseFailed",
+      "value": "This response failed"
+    },
+    {
+      "name": "chat_error",
+      "value": "Error"
+    },
+    {
+      "name": "chat_output",
+      "value": "Output"
+    },
+    {
+      "name": "chat_interactionLoadFailed",
+      "value": "Unable to load pending interactions"
+    },
+    {
+      "name": "chat_approvalFailed",
+      "value": "Unable to submit response. Please retry."
+    },
+    {
+      "name": "chat_approvalRequired",
+      "value": "Approval required"
+    },
+    {
+      "name": "chat_editApprovalInput",
+      "value": "Edit input"
+    },
+    {
+      "name": "chat_hideApprovalInput",
+      "value": "Hide input"
+    },
+    {
+      "name": "chat_approve",
+      "value": "Approve"
+    },
+    {
+      "name": "chat_reject",
+      "value": "Reject"
+    },
+    {
+      "name": "chat_cancelTool",
+      "value": "Cancel tool"
+    },
+    {
+      "name": "chat_planView",
+      "value": "View plan"
+    },
+    {
+      "name": "chat_planBuild",
+      "value": "Build Plan"
+    },
+    {
+      "name": "chat_planBuildUnavailable",
+      "value": "Update the desktop app to build plans from mobile."
+    },
+    {
+      "name": "chat_planBuildWaitForTurn",
+      "value": "Wait for the current task to finish before building this plan."
+    },
+    {
+      "name": "chat_toolInput",
+      "value": "Tool input"
+    },
+    {
+      "name": "chat_reset",
+      "value": "Reset"
+    },
+    {
+      "name": "chat_editJsonInput",
+      "value": "Edit JSON input"
+    },
+    {
+      "name": "chat_answerPlaceholder",
+      "value": "Enter your answer"
+    },
+    {
+      "name": "chat_submitAnswer",
+      "value": "Submit answer"
+    },
+    {
+      "name": "chat_emptySyncing",
+      "value": "Syncing"
+    },
+    {
+      "name": "chat_emptyConnectionError",
+      "value": "Connection error"
+    },
+    {
+      "name": "chat_emptyReconnecting",
+      "value": "Restoring connection"
+    },
+    {
+      "name": "chat_emptyNoMessages",
+      "value": "No messages yet"
+    },
+    {
+      "name": "chat_emptyLoadingMessages",
+      "value": "Loading desktop session messages."
+    },
+    {
+      "name": "chat_emptyReconnectFromHome",
+      "value": "Return to the workbench and reconnect the desktop."
+    },
+    {
+      "name": "chat_emptyReconnectSync",
+      "value": "Messages will keep syncing after the connection is restored."
+    },
+    {
+      "name": "chat_emptyFirstMessage",
+      "value": "After you send the first instruction, the desktop response appears here."
+    },
+    {
+      "name": "chat_executing",
+      "value": "OpenBitFun is working..."
+    },
+    {
+      "name": "chat_model",
+      "value": "Model"
+    },
+    {
+      "name": "chat_openbitfunProcessing",
+      "value": "OpenBitFun is processing..."
+    },
+    {
+      "name": "chat_updatedSession",
+      "value": "OpenBitFun updated the session"
+    },
+    {
+      "name": "chat_desktopFile",
+      "value": "Desktop file"
+    },
+    {
+      "name": "chat_fileLink",
+      "value": "File link"
+    },
+    {
+      "name": "chat_reading",
+      "value": "Reading"
+    },
+    {
+      "name": "chat_download",
+      "value": "Download"
+    },
+    {
+      "name": "filePreview_title",
+      "value": "File preview"
+    },
+    {
+      "name": "filePreview_loading",
+      "value": "Reading file"
+    },
+    {
+      "name": "filePreview_offline",
+      "value": "Offline. Showing loaded content only."
+    },
+    {
+      "name": "filePreview_fitImage",
+      "value": "Fit window"
+    },
+    {
+      "name": "filePreview_actualImageSize",
+      "value": "Actual size"
+    },
+    {
+      "name": "filePreview_expand",
+      "value": "Expand preview"
+    },
+    {
+      "name": "filePreview_restoreSize",
+      "value": "Restore preview"
+    },
+    {
+      "name": "filePreview_imageDecodeFailed",
+      "value": "The image could not be decoded. Retry or download the file."
+    },
+    {
+      "name": "filePreview_loadFailed",
+      "value": "Could not open the file"
+    },
+    {
+      "name": "filePreview_notFound",
+      "value": "The file does not exist or was moved"
+    },
+    {
+      "name": "filePreview_unavailable",
+      "value": "The file does not exist or is outside the current workspace"
+    },
+    {
+      "name": "filePreview_accessDenied",
+      "value": "Cannot access files outside the workspace"
+    },
+    {
+      "name": "filePreview_tooLarge",
+      "value": "The file is too large to preview on mobile"
+    },
+    {
+      "name": "filePreview_unsupported",
+      "value": "This file type cannot be previewed yet"
+    },
+    {
+      "name": "filePreview_truncated",
+      "value": "Showing the first %1$s. Download the file to see all of it."
+    },
+    {
+      "name": "chat_pendingConfirmation",
+      "value": "Pending confirmation"
+    },
+    {
+      "name": "chat_cancelled",
+      "value": "Cancelled"
+    },
+    {
+      "name": "chat_jsonObjectRequired",
+      "value": "Enter a JSON object"
+    },
+    {
+      "name": "chat_jsonInvalid",
+      "value": "Invalid JSON"
+    },
+    {
+      "name": "chat_questionDefault",
+      "value": "The desktop needs your answer."
+    },
+    {
+      "name": "chat_analyzeImageDefault",
+      "value": "Please analyze this image."
+    },
+    {
+      "name": "chat_fullText",
+      "value": "Full text"
+    },
+    {
+      "name": "chat_copyFullText",
+      "value": "Copy full text"
+    },
+    {
+      "name": "chat_copyRich",
+      "value": "Copy (rich text)"
+    },
+    {
+      "name": "chat_copyMarkdown",
+      "value": "Copy Markdown"
+    },
+    {
+      "name": "chat_copyPlain",
+      "value": "Copy plain text"
+    },
+    {
+      "name": "status_waitingConnection",
+      "value": "Waiting to connect"
+    },
+    {
+      "name": "status_notConnected",
+      "value": "Not connected"
+    },
+    {
+      "name": "status_restoringConnection",
+      "value": "Restoring connection"
+    },
+    {
+      "name": "status_parsingUrl",
+      "value": "Parsing remote URL"
+    },
+    {
+      "name": "status_pairing",
+      "value": "Pairing"
+    },
+    {
+      "name": "status_reconnecting",
+      "value": "Reconnecting"
+    },
+    {
+      "name": "status_pairingCleared",
+      "value": "Pairing cleared"
+    },
+    {
+      "name": "status_disconnected",
+      "value": "Disconnected"
+    },
+    {
+      "name": "status_remoteUnavailable",
+      "value": "Connection unavailable. Reconnect first."
+    },
+    {
+      "name": "status_loadingRecentWorkspaces",
+      "value": "Loading recent workspaces"
+    },
+    {
+      "name": "status_chooseWorkspace",
+      "value": "Choose a workspace"
+    },
+    {
+      "name": "status_noRecentWorkspaces",
+      "value": "No recent workspaces"
+    },
+    {
+      "name": "status_switchingWorkspace",
+      "value": "Switching workspace"
+    },
+    {
+      "name": "status_workspaceSwitched",
+      "value": "Workspace switched"
+    },
+    {
+      "name": "status_loadingAssistants",
+      "value": "Loading assistant workspaces"
+    },
+    {
+      "name": "status_chooseAssistant",
+      "value": "Choose an assistant"
+    },
+    {
+      "name": "status_noAssistants",
+      "value": "No assistants available"
+    },
+    {
+      "name": "status_switchingAssistant",
+      "value": "Switching assistant"
+    },
+    {
+      "name": "status_assistantSwitched",
+      "value": "Assistant switched"
+    },
+    {
+      "name": "status_refreshSessions",
+      "value": "Refresh session list"
+    },
+    {
+      "name": "status_loadMoreSessions",
+      "value": "Load more sessions"
+    },
+    {
+      "name": "status_sessionsUpdated",
+      "value": "Session list updated"
+    },
+    {
+      "name": "status_createSession",
+      "value": "Create remote session"
+    },
+    {
+      "name": "status_sessionCreated",
+      "value": "Session created"
+    },
+    {
+      "name": "status_loadMessages",
+      "value": "Load session messages"
+    },
+    {
+      "name": "status_deletingSession",
+      "value": "Deleting session"
+    },
+    {
+      "name": "status_sessionDeleted",
+      "value": "Session deleted"
+    },
+    {
+      "name": "status_sessionArchived",
+      "value": "Session archived"
+    },
+    {
+      "name": "status_sessionUnarchived",
+      "value": "Session unarchived"
+    },
+    {
+      "name": "status_sessionExported",
+      "value": "Copied as Markdown"
+    },
+    {
+      "name": "status_messagesSynced",
+      "value": "Messages synced"
+    },
+    {
+      "name": "status_messagesRestored",
+      "value": "Restored local session history"
+    },
+    {
+      "name": "status_switchingModel",
+      "value": "Switching model"
+    },
+    {
+      "name": "status_modelSwitched",
+      "value": "Model switched"
+    },
+    {
+      "name": "status_loadOlderMessages",
+      "value": "Load older messages"
+    },
+    {
+      "name": "status_sendImage",
+      "value": "Send image"
+    },
+    {
+      "name": "status_sendCommand",
+      "value": "Send instruction"
+    },
+    {
+      "name": "status_sentWaiting",
+      "value": "Sent. Waiting for the desktop."
+    },
+    {
+      "name": "status_pickImage",
+      "value": "Choose image"
+    },
+    {
+      "name": "status_noImageSelected",
+      "value": "No image selected"
+    },
+    {
+      "name": "status_imagesSelected",
+      "value": "Selected %1$s images"
+    },
+    {
+      "name": "status_voiceStarting",
+      "value": "Starting voice input"
+    },
+    {
+      "name": "status_voiceListening",
+      "value": "Listening"
+    },
+    {
+      "name": "status_voiceRecognized",
+      "value": "Filled recognized speech"
+    },
+    {
+      "name": "status_voiceStopped",
+      "value": "Voice input stopped"
+    },
+    {
+      "name": "status_noRunningTask",
+      "value": "No task is running"
+    },
+    {
+      "name": "status_stoppingTask",
+      "value": "Stopping task"
+    },
+    {
+      "name": "status_stopRequested",
+      "value": "Stop requested"
+    },
+    {
+      "name": "status_updatingTitle",
+      "value": "Updating session title"
+    },
+    {
+      "name": "status_titleUpdated",
+      "value": "Session title updated"
+    },
+    {
+      "name": "status_messageCopied",
+      "value": "Message copied"
+    },
+    {
+      "name": "status_fileInfo",
+      "value": "Read file info"
+    },
+    {
+      "name": "status_prepareDownload",
+      "value": "Preparing download %1$s"
+    },
+    {
+      "name": "status_downloadDone",
+      "value": "Downloaded %1$s · %2$s"
+    },
+    {
+      "name": "status_approvingTool",
+      "value": "Approving tool call"
+    },
+    {
+      "name": "status_toolApproved",
+      "value": "Tool call approved"
+    },
+    {
+      "name": "status_rejectingTool",
+      "value": "Rejecting tool call"
+    },
+    {
+      "name": "status_toolRejected",
+      "value": "Tool call rejected"
+    },
+    {
+      "name": "status_cancellingTool",
+      "value": "Cancelling tool call"
+    },
+    {
+      "name": "status_toolCancelRequested",
+      "value": "Tool cancellation requested"
+    },
+    {
+      "name": "status_submittingAnswer",
+      "value": "Submitting answer"
+    },
+    {
+      "name": "status_answerSubmitted",
+      "value": "Answer submitted"
+    },
+    {
+      "name": "status_desktopProcessing",
+      "value": "Desktop is working"
+    },
+    {
+      "name": "errors_tooManyAttempts",
+      "value": "Too many attempts. Try again in %1$s seconds."
+    },
+    {
+      "name": "errors_userIdRequired",
+      "value": "Enter a user ID."
+    },
+    {
+      "name": "errors_accountUsernameRequired",
+      "value": "Enter a OpenBitFun username."
+    },
+    {
+      "name": "errors_accountPasswordRequired",
+      "value": "Sign in with email or GitHub to continue."
+    },
+    {
+      "name": "errors_remoteDataInvalid",
+      "value": "The relay returned data that could not be parsed. Confirm the desktop and mobile versions match."
+    },
+    {
+      "name": "errors_pairRejected",
+      "value": "The relay rejected the legacy pairing. Sign in and choose a computer from your device list."
+    },
+    {
+      "name": "errors_roomNotFound",
+      "value": "This remote room was not found. The legacy QR connection may have expired; sign in and choose a computer from your device list."
+    },
+    {
+      "name": "errors_relayTimeout",
+      "value": "Timed out connecting to the relay. Check the network and retry."
+    },
+    {
+      "name": "errors_rateLimited",
+      "value": "Too many requests. Try again later."
+    },
+    {
+      "name": "errors_relayUnavailable",
+      "value": "The relay is temporarily unavailable (HTTP %1$s). Try again later."
+    },
+    {
+      "name": "errors_relayHttp",
+      "value": "The relay returned HTTP %1$s. Pair again and retry."
+    },
+    {
+      "name": "errors_relayTimeoutDetail",
+      "value": "Timed out connecting to the relay. Confirm the phone and desktop can reach the network."
+    },
+    {
+      "name": "errors_relayNetwork",
+      "value": "Could not reach the relay. Check the remote link, network, or proxy settings."
+    },
+    {
+      "name": "errors_remoteConnectFailed",
+      "value": "Remote connection failed. Check the network and retry."
+    },
+    {
+      "name": "errors_remoteUrlRequired",
+      "value": "Enter the desktop remote connection URL."
+    },
+    {
+      "name": "errors_remoteUrlMissingParams",
+      "value": "The remote URL is missing the room or pk parameter."
+    },
+    {
+      "name": "errors_remoteUrlInvalid",
+      "value": "The remote connection link is invalid. Sign in and choose a computer from your device list."
+    },
+    {
+      "name": "errors_permissionDenied",
+      "value": "Required permission was denied. Allow it in system settings and retry."
+    },
+    {
+      "name": "errors_operationFailed",
+      "value": "The operation failed. Try again later."
+    },
+    {
+      "name": "errors_payloadTooLarge",
+      "value": "This message’s attachments exceed the relay size limit. Send fewer images or smaller ones."
+    },
+    {
+      "name": "errors_workspaceIdUnsupported",
+      "value": "The connected desktop does not support workspace ID references. Update the desktop app to open this workspace."
+    },
+    {
+      "name": "errors_hostStreamUnsupported",
+      "value": "The connected desktop runs an older OpenBitFun version that does not support on-demand session streaming. Update OpenBitFun on that device to continue."
+    },
+    {
+      "name": "errors_imageTooLargeAfterCompression",
+      "value": "The image is still larger than %1$s MB after compression. Choose a smaller image."
+    },
+    {
+      "name": "errors_imageCompressionFailed",
+      "value": "Image compression failed. Choose a smaller image."
+    },
+    {
+      "name": "errors_voicePermissionDenied",
+      "value": "Microphone permission was denied, so voice input is unavailable."
+    },
+    {
+      "name": "errors_voiceInputUnavailable",
+      "value": "Speech recognition is unavailable. Try again later."
+    },
+    {
+      "name": "errors_voiceInputFailed",
+      "value": "Speech recognition failed (%1$s). Try again later."
+    },
+    {
+      "name": "watchProvision_title",
+      "value": "Sign in with email or GitHub on this watch?"
+    },
+    {
+      "name": "watchProvision_deviceId",
+      "value": "Device %1$s"
+    },
+    {
+      "name": "watchProvision_body",
+      "value": "If you allow this, the watch will sign in to your account and can connect to a desktop. Confirm the watch is in your hands."
+    },
+    {
+      "name": "watchProvision_approve",
+      "value": "Allow"
+    },
+    {
+      "name": "watchProvision_reject",
+      "value": "Deny"
+    },
+    {
+      "name": "watchProvision_gotIt",
+      "value": "Got it"
+    },
+    {
+      "name": "watchProvision_working",
+      "value": "Setting up the watch account..."
+    },
+    {
+      "name": "watchProvision_passwordBody",
+      "value": "Confirm your account password once more to create a separate sign-in for this watch. The password is used only for this verification."
+    },
+    {
+      "name": "watchProvision_passwordPlaceholder",
+      "value": "Account password"
+    },
+    {
+      "name": "watchProvision_passwordConfirm",
+      "value": "Confirm"
+    },
+    {
+      "name": "watchProvision_doneBody",
+      "value": "%1$s is signed in and ready to use OpenBitFun."
+    },
+    {
+      "name": "watchProvision_rejected",
+      "value": "Denied on the phone."
+    },
+    {
+      "name": "watchProvision_busy",
+      "value": "The phone is handling another device request. Try again later."
+    },
+    {
+      "name": "watchProvision_errors_noDesktop",
+      "value": "Sign in with email or GitHub on the phone, or connect a desktop signed in to the same account."
+    },
+    {
+      "name": "watchProvision_errors_accountUnavailable",
+      "value": "The account could not be verified. Check the phone network and try again."
+    },
+    {
+      "name": "watchProvision_errors_desktopUnreachable",
+      "value": "The desktop could not be reached. Make sure it is online and try again."
+    },
+    {
+      "name": "watchProvision_errors_desktopAuthorizationFailed",
+      "value": "The desktop could not sign in the watch. Make sure it uses the same OpenBitFun account."
+    },
+    {
+      "name": "watchProvision_errors_passwordFailed",
+      "value": "Account verification failed. Check the password or network and retry."
+    },
+    {
+      "name": "watchProvision_errors_handoffFailed",
+      "value": "Authorization finished, but the credential could not be sent to the watch. Retry on the watch."
+    },
+    {
+      "name": "ui_emptyMessage",
+      "value": "(empty message)"
+    },
+    {
+      "name": "ui_desktopProcessing",
+      "value": "Desktop is working..."
+    },
+    {
+      "name": "ui_seedConnected",
+      "value": "%1$s is connected. You can keep sending instructions; the desktop will run them in OpenBitFun."
+    },
+    {
+      "name": "time_justNow",
+      "value": "Just now"
+    },
+    {
+      "name": "time_unknown",
+      "value": "Unknown time"
+    },
+    {
+      "name": "time_minutesAgo",
+      "value": "%1$s minutes ago"
+    },
+    {
+      "name": "time_hoursAgo",
+      "value": "%1$s hours ago"
+    },
+    {
+      "name": "time_daysAgo",
+      "value": "%1$s days ago"
     }
   ]
 }

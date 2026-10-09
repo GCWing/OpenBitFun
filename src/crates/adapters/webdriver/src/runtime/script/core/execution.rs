@@ -78,6 +78,8 @@ pub(super) fn script() -> &'static str {
       validateFrameElement,
       getShadowRoot,
       isDisplayed,
+      scrollElementIntoView,
+      focusWithoutScroll,
       clearElement,
       insertText,
       setElementText,

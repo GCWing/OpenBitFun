@@ -12,6 +12,7 @@ export const multiSelectMeta = {
     { name: "onCreateValue", type: "(input: string) => ComboboxValue | void" },
     { defaultValue: "false", name: "clearable", type: "boolean" },
     { defaultValue: "3", name: "maxVisibleTags", type: "number" },
+    { name: "selectionSummary", type: "ReactNode" },
     { defaultValue: "false", name: "showSelectAll", type: "boolean" },
     { defaultValue: "md", name: "size", type: "sm | md | lg" },
   ],

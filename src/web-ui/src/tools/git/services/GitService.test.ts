@@ -8,6 +8,7 @@ const gitApiMocks = vi.hoisted(() => ({
   isGitRepository: vi.fn(),
   getRepository: vi.fn(),
   getStatus: vi.fn(),
+  getBranches: vi.fn(),
 }));
 
 const gitStateManagerMock = vi.hoisted(() => ({
@@ -29,6 +30,24 @@ vi.mock('../state/GitStateManager', () => ({
 }));
 
 const repositoryPath = { workspaceId: 'workspace-1', repositoryPath: 'D:/workspace/OpenBitFun' };
+
+describe('GitService branch loading', () => {
+  it('preserves the legacy empty-list fallback but lets interactive callers receive errors', async () => {
+    const error = new Error('Remote host unavailable');
+    gitApiMocks.getBranches.mockRejectedValue(error);
+    await expect(gitService.getBranches(repositoryPath)).resolves.toEqual([]);
+    await expect(gitService.getBranches(repositoryPath, true, { throwOnError: true })).rejects.toBe(error);
+  });
+
+  it('forwards the workspace scope and adapts a successful strict read', async () => {
+    const scope = { workspaceId: 'ssh-workspace', repositoryPath: '/srv/project' };
+    gitApiMocks.getBranches.mockResolvedValue([{ name: 'main', current: true, remote: false }]);
+    await expect(gitService.getBranches(scope, true, { throwOnError: true })).resolves.toEqual([
+      expect.objectContaining({ name: 'main', current: true, ahead: 0, behind: 0 }),
+    ]);
+    expect(gitApiMocks.getBranches).toHaveBeenLastCalledWith(scope, true);
+  });
+});
 
 describe('GitService dangerous operation refresh guard', () => {
   beforeEach(() => {

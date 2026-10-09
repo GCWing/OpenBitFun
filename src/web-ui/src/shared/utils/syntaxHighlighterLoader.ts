@@ -1,16 +1,16 @@
 import type React from 'react';
+import { createModuleLoader } from './moduleLoader';
 
 type SyntaxHighlighterComponent = React.ComponentType<any>;
 
-let prismSyntaxHighlighterPromise: Promise<SyntaxHighlighterComponent> | null = null;
 let prismSyntaxHighlighterComponent: SyntaxHighlighterComponent | null = null;
 
 export function getLoadedPrismSyntaxHighlighter(): SyntaxHighlighterComponent | null {
   return prismSyntaxHighlighterComponent;
 }
 
-export function loadPrismSyntaxHighlighter(): Promise<SyntaxHighlighterComponent> {
-  prismSyntaxHighlighterPromise ??= import('react-syntax-highlighter/dist/esm/prism-async-light').then(
+export const loadPrismSyntaxHighlighter = createModuleLoader(() =>
+  import('react-syntax-highlighter/dist/esm/prism-async-light').then(
     async (module) => {
       // The async component module can resolve before its AST engine. Keep the
       // caller's fallback until the engine is ready to avoid its interim,
@@ -24,7 +24,5 @@ export function loadPrismSyntaxHighlighter(): Promise<SyntaxHighlighterComponent
       prismSyntaxHighlighterComponent = component;
       return prismSyntaxHighlighterComponent;
     },
-  );
-
-  return prismSyntaxHighlighterPromise;
-}
+  ),
+);

@@ -1,6 +1,6 @@
 {
   "title": "ACP Agents",
-  "subtitle": "Manage external agents connected through ACP.",
+  "subtitle": "Connect external agents through ACP to run tasks in OpenBitFun",
   "views": {
     "local": "Local",
     "ssh": "SSH",
@@ -26,7 +26,7 @@
   },
   "json": {
     "title": "Advanced JSON configuration",
-    "description": "Edit acpClients on the current execution host directly. Use this only for parameters the list cannot express.",
+    "description": "Use when the list cannot express the settings you need; edits acpClients on the current execution host",
     "discardTitle": "Discard unsaved JSON changes?",
     "discardMessage": "These unsaved changes will be lost when you leave Advanced JSON.",
     "discardConfirm": "Discard changes"
@@ -83,7 +83,8 @@
     "configInvalidDetail": "The current ACP configuration cannot be used as-is.",
     "toolPath": "Path",
     "toolVersion": "Version",
-    "empty": "No matching ACP agents."
+    "empty": "No matching ACP agents.",
+    "description": "Discover agents on the current execution host and enable them for selection in sessions"
   },
   "clients": {
     "loading": "Loading ACP agents…"

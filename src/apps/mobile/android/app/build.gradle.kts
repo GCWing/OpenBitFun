@@ -15,7 +15,10 @@ val hasReleaseSigning = listOf(
     releaseKeyAlias,
     releaseKeyPassword,
 ).all { !it.isNullOrBlank() }
-
+val allowUnsignedRelease = providers.gradleProperty("allowUnsignedRelease")
+    .map { it.equals("true", ignoreCase = true) }
+    .orElse(false)
+    .get()
 android {
     sourceSets.getByName("main").assets.srcDir(file("../../../../shared/terminal/webview/generated"))
     namespace = "com.openbitfun.mobile.app"
@@ -27,7 +30,7 @@ android {
         minSdk = libs.versions.androidMinSdk.get().toInt()
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
         versionCode = 1
-        versionName = "1.0.2"
+        versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -60,7 +63,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig = signingConfigs.findByName("release")
+            signingConfig = when {
+                hasReleaseSigning -> signingConfigs.getByName("release")
+                allowUnsignedRelease -> null
+                else -> signingConfigs.getByName("debug")
+            }
         }
     }
 }
@@ -77,11 +84,6 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation("androidx.camera:camera-camera2:1.4.2")
-    implementation("androidx.camera:camera-lifecycle:1.4.2")
-    implementation("androidx.camera:camera-view:1.4.2")
-    // Bundle QR recognition so pairing also works without Play Services downloads.
-    implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation(libs.androidx.window)
 
     testImplementation("junit:junit:4.13.2")

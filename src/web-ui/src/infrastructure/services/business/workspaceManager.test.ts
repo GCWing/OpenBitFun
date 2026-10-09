@@ -6,12 +6,23 @@ const globalStateMocks = vi.hoisted(() => ({
   cleanupInvalidWorkspaces: vi.fn(),
   getRecentWorkspaces: vi.fn(),
   getOpenedWorkspaces: vi.fn(),
+  getAssistantWorkspaces: vi.fn(),
+  openWorkspaceById: vi.fn(),
+  setActiveWorkspace: vi.fn(),
+  closeWorkspace: vi.fn(),
+  deleteAssistantWorkspace: vi.fn(),
   getCurrentWorkspace: vi.fn(),
   getPrimaryAssistantWorkspace: vi.fn(),
   updateWorkspaceInfo: vi.fn(),
 }));
 
 const listenMock = vi.hoisted(() => vi.fn());
+const flowChatMocks = vi.hoisted(() => ({
+  cancelRunningSessionsForWorkspace: vi.fn().mockResolvedValue([]),
+  removeSessionsForWorkspace: vi.fn(),
+}));
+
+vi.mock('@/flow_chat/store/FlowChatStore', () => ({ flowChatStore: flowChatMocks }));
 
 vi.mock('../../../shared/types', () => ({
   WorkspaceKind: {
@@ -54,6 +65,8 @@ function configureGlobalState(): void {
   globalStateMocks.cleanupInvalidWorkspaces.mockResolvedValue(0);
   globalStateMocks.getRecentWorkspaces.mockResolvedValue([]);
   globalStateMocks.getOpenedWorkspaces.mockResolvedValue([]);
+  globalStateMocks.getAssistantWorkspaces.mockResolvedValue([]);
+  flowChatMocks.cancelRunningSessionsForWorkspace.mockResolvedValue([]);
   globalStateMocks.getCurrentWorkspace.mockResolvedValue(null);
   globalStateMocks.getPrimaryAssistantWorkspace.mockResolvedValue(null);
   globalStateMocks.updateWorkspaceInfo.mockReset();
@@ -360,6 +373,138 @@ describe('WorkspaceManager startup initialization', () => {
   });
 });
 
+describe('WorkspaceManager assistant closing and reopening', () => {
+  const assistant = {
+    id: 'assistant-closed', name: 'Assistant', rootPath: '/test/assistants/closed',
+    workspaceKind: 'assistant',
+  };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    configureGlobalState();
+    listenMock.mockResolvedValue(() => undefined);
+  });
+
+  it('keeps closed assistants in the catalog and reopens the same record by ID', async () => {
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue({
+      cleanupRemovedCount: 0, currentWorkspace: null, openedWorkspaces: [],
+      recentWorkspaces: [], assistantWorkspaces: [assistant], primaryAssistantWorkspaceId: assistant.id,
+    });
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+    expect(manager.getState().openedWorkspaces.size).toBe(0);
+    expect(manager.getState().assistantWorkspaces).toEqual([assistant]);
+
+    globalStateMocks.openWorkspaceById.mockResolvedValue(assistant);
+    globalStateMocks.getOpenedWorkspaces.mockResolvedValue([assistant]);
+    await manager.setActiveWorkspace(assistant.id);
+    expect(globalStateMocks.openWorkspaceById).toHaveBeenCalledWith(assistant.id);
+    expect(globalStateMocks.setActiveWorkspace).not.toHaveBeenCalled();
+    expect(manager.getState().activeWorkspaceId).toBe(assistant.id);
+    expect(manager.getState().openedWorkspaces.has(assistant.id)).toBe(true);
+    expect(manager.getState().assistantWorkspaces).toHaveLength(1);
+  });
+
+  it('waits for running sessions to be cancelled before closing and preserves the catalog', async () => {
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue({
+      cleanupRemovedCount: 0, currentWorkspace: assistant, openedWorkspaces: [assistant],
+      recentWorkspaces: [], assistantWorkspaces: [assistant], primaryAssistantWorkspaceId: assistant.id,
+    });
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+    let releaseCancellation!: (ids: string[]) => void;
+    flowChatMocks.cancelRunningSessionsForWorkspace.mockReturnValueOnce(new Promise(resolve => {
+      releaseCancellation = resolve;
+    }));
+    const closing = manager.closeWorkspaceById(assistant.id);
+    await flushAsyncWork();
+    expect(flowChatMocks.cancelRunningSessionsForWorkspace).toHaveBeenCalledWith(assistant);
+    expect(globalStateMocks.closeWorkspace).not.toHaveBeenCalled();
+    releaseCancellation(['session-running']);
+    await closing;
+    expect(globalStateMocks.closeWorkspace).toHaveBeenCalledWith(assistant.id);
+    expect(manager.getState().openedWorkspaces.size).toBe(0);
+    expect(manager.getState().currentWorkspace).toBeNull();
+    expect(manager.getState().assistantWorkspaces).toEqual([assistant]);
+    expect(manager.getState().primaryAssistantWorkspaceId).toBe(assistant.id);
+    expect(flowChatMocks.removeSessionsForWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('keeps older hosts on the existing opened-only catalog', async () => {
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+    expect(manager.getState().assistantWorkspaces).toBeNull();
+    expect(globalStateMocks.getAssistantWorkspaces).not.toHaveBeenCalled();
+  });
+
+  it('does not close a different host after switching surfaces during cancellation', async () => {
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue({
+      cleanupRemovedCount: 0, currentWorkspace: assistant, openedWorkspaces: [assistant],
+      recentWorkspaces: [], assistantWorkspaces: [assistant],
+    });
+    const { manager, deviceSurface } = await getFreshWorkspaceHarness();
+    await manager.initialize();
+    let releaseCancellation!: (ids: string[]) => void;
+    flowChatMocks.cancelRunningSessionsForWorkspace.mockReturnValueOnce(new Promise(resolve => {
+      releaseCancellation = resolve;
+    }));
+    const closing = manager.closeWorkspaceById(assistant.id);
+    await flushAsyncWork();
+    deviceSurface.activateSurface('peer-b');
+    releaseCancellation(['session-running']);
+    await expect(closing).rejects.toSatisfy(isSurfaceChangedError);
+    expect(globalStateMocks.closeWorkspace).not.toHaveBeenCalled();
+    expect(manager.getState().error).toBeNull();
+  });
+
+  it('removes a closed assistant from the full catalog when explicitly deleted', async () => {
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue({
+      cleanupRemovedCount: 0, currentWorkspace: null, openedWorkspaces: [],
+      recentWorkspaces: [], assistantWorkspaces: [assistant],
+    });
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+    await manager.deleteAssistantWorkspace(assistant.id);
+    expect(manager.getState().assistantWorkspaces).toEqual([]);
+    expect(flowChatMocks.removeSessionsForWorkspace).toHaveBeenCalledWith(assistant);
+  });
+
+  it('keeps assistant catalogs isolated across local and peer device surfaces', async () => {
+    const { manager, deviceSurface } = await getFreshWorkspaceHarness();
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValueOnce({
+      cleanupRemovedCount: 0, currentWorkspace: null, openedWorkspaces: [],
+      recentWorkspaces: [], assistantWorkspaces: [assistant],
+    });
+    await manager.initialize();
+    deviceSurface.activateSurface('peer-b');
+    expect(manager.getState().assistantWorkspaces).toBeNull();
+    const peerAssistant = { ...assistant, name: 'Peer assistant' };
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValueOnce({
+      cleanupRemovedCount: 0, currentWorkspace: peerAssistant, openedWorkspaces: [peerAssistant],
+      recentWorkspaces: [], assistantWorkspaces: [peerAssistant],
+    });
+    await manager.initialize();
+    expect(manager.getState().assistantWorkspaces).toEqual([peerAssistant]);
+    deviceSurface.activateSurface(deviceSurface.LOCAL_SURFACE_ID);
+    expect(manager.getState().assistantWorkspaces).toEqual([assistant]);
+    expect(manager.getState().openedWorkspaces.size).toBe(0);
+  });
+
+  it('updates a closed assistant configuration without reopening it', async () => {
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue({
+      cleanupRemovedCount: 0, currentWorkspace: null, openedWorkspaces: [],
+      recentWorkspaces: [], assistantWorkspaces: [assistant],
+    });
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+    const renamed = { ...assistant, name: 'Renamed assistant' };
+    globalStateMocks.updateWorkspaceInfo.mockResolvedValueOnce(renamed);
+    await manager.renameWorkspace(assistant.id, renamed.name);
+    expect(manager.getState().assistantWorkspaces).toEqual([renamed]);
+    expect(manager.getState().openedWorkspaces.size).toBe(0);
+    expect(manager.getState().activeWorkspaceId).toBeNull();
+  });
+});
+
 describe('WorkspaceManager device surface switching', () => {
   const workspaceA = {
     id: 'workspace-a',
@@ -662,6 +807,26 @@ describe('WorkspaceManager host catalog hints', () => {
       legacyRemoteWorkspace: null,
     };
   }
+
+  it('refreshes closed assistants from the host catalog without adding them to the sidebar', async () => {
+    const assistant = { ...localWorkspace, id: 'closed-assistant', workspaceKind: 'assistant' };
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue({
+      ...snapshot([], null), assistantWorkspaces: [assistant],
+    });
+    const handler = captureCatalogHandler();
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+    const renamed = { ...assistant, name: 'Updated on host' };
+    globalStateMocks.getAssistantWorkspaces.mockResolvedValue([renamed]);
+    handler.current()?.({ payload: { revision: 1 } });
+    await flushAsyncWork();
+    expect(manager.getState().assistantWorkspaces).toEqual([renamed]);
+    expect(manager.getState().openedWorkspaces.size).toBe(0);
+    globalStateMocks.getAssistantWorkspaces.mockResolvedValue([]);
+    handler.current()?.({ payload: { revision: 2 } });
+    await flushAsyncWork();
+    expect(manager.getState().assistantWorkspaces).toEqual([]);
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();

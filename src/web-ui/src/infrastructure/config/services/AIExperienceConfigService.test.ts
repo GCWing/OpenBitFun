@@ -152,4 +152,47 @@ describe('AIExperienceConfigService startup behavior', () => {
     await aiExperienceConfigService.reload();
     expect(aiExperienceConfigService.getSettings().quick_actions).toEqual([]);
   });
+
+  it('keeps commit co-author settings unavailable when an older host omits the field', async () => {
+    configApiMock.getConfig.mockResolvedValueOnce({ quick_actions: [] });
+    const { aiExperienceConfigService } = await import('./AIExperienceConfigService');
+
+    const settings = await aiExperienceConfigService.getSettingsAsync({ forceRefresh: true, requireLoaded: true });
+
+    expect(settings.enable_git_commit_coauthor).toBeUndefined();
+    expect(settings.quick_actions).toEqual([]);
+  });
+
+  it('persists a co-author opt-out without overwriting quick actions or voice settings', async () => {
+    const persisted = {
+      enable_git_commit_coauthor: true,
+      voice_input: { provider: 'cloud', model_id: 'saved-model' },
+      quick_actions: [{ id: 'custom', label: 'Review', prompt: 'Review changes', enabled: false }],
+    };
+    configManagerMock.getConfig.mockResolvedValue(persisted);
+    configManagerMock.setConfig.mockImplementation(async (path: string, value: unknown) => {
+      expect(path).toBe('app.ai_experience.enable_git_commit_coauthor');
+      persisted.enable_git_commit_coauthor = value as boolean;
+    });
+    const { aiExperienceConfigService } = await import('./AIExperienceConfigService');
+
+    await aiExperienceConfigService.saveSettings({ enable_git_commit_coauthor: false });
+    await aiExperienceConfigService.reload();
+
+    expect(configManagerMock.setConfig).toHaveBeenCalledTimes(1);
+    expect(aiExperienceConfigService.getSettings()).toMatchObject({
+      enable_git_commit_coauthor: false,
+      voice_input: persisted.voice_input,
+      quick_actions: persisted.quick_actions,
+    });
+  });
+
+  it('reports host read failures instead of supplying defaults to a settings editor', async () => {
+    const error = new Error('Execution host unavailable');
+    configApiMock.getConfig.mockRejectedValueOnce(error);
+    const { aiExperienceConfigService } = await import('./AIExperienceConfigService');
+
+    await expect(aiExperienceConfigService.getSettingsAsync({ forceRefresh: true, requireLoaded: true }))
+      .rejects.toBe(error);
+  });
 });

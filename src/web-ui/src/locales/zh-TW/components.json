@@ -329,6 +329,7 @@
     }
   },
   "tooltip": {
+    "openDetails": "開啟詳情",
     "copy": "複製",
     "copied": "已複製",
     "close": "關閉",
@@ -337,6 +338,11 @@
   },
   "tabs": {
     "close": "關閉",
+    "closeBtwTitle": "關閉側問？",
+    "saveBtwAsFork": "儲存為 Fork 對話",
+    "saveBtwFailed": "儲存失敗，側問已保留，請重試。",
+    "confirmCloseBtw": "關閉後對話將消失，無法復原。",
+    "closeBtwFailed": "暫時無法關閉側問，標籤頁已保留，請重試。",
     "popOut": "彈出為獨立場景",
     "closeOthers": "關閉其他",
     "closeAll": "全部關閉",
@@ -543,6 +549,13 @@
     "devWingExpand": "展開開發工具"
   },
   "canvas": {
+    "resizePanes": "調整窗格寬度",
+    "chatPane": "聊天",
+    "contentPane": "內容",
+    "swapPanes": "交換左右窗格",
+    "hidePanel": "隱藏面板",
+    "maximizePanel": "面板全螢幕",
+    "restorePanel": "退出面板全螢幕",
     "noContentOpen": "暫未開啟任何內容",
     "filesCount": "{{count}} 個檔案",
     "searchPlaceholder": "搜尋檔案名稱或路徑...",

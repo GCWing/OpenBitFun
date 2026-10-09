@@ -2,7 +2,7 @@ import type { ComponentMeta } from "../../registry.types";
 
 export const iconMeta = {
   category: "primitive",
-  description: "Lucide icons with shared size, tone and accessibility; authored artwork is reserved for the four harness modes and Git branch.",
+  description: "Lucide icons with shared size, tone and accessibility, plus reviewed brand-derived mode, reasoning, thinking and Git artwork.",
   maturity: "stable",
   name: "Icon",
   props: [

@@ -1,38 +1,17 @@
-import { CONNECT_INTENT_SCAN } from '../state/AppShellState';
-
 export class ConnectSheetStep {
   static readonly Intro: string = 'intro';
-  static readonly Scan: string = 'scan';
   static readonly Account: string = 'account';
 }
 
 /**
- * Where the connect sheet should open, and which step it may keep showing.
- *
- * The camera is a named action, not the default: an unsigned-in first open
- * has to explain that the pair code comes from the desktop. A signed-in phone
- * already has an account device list. Only an entry that promised the scanner
- * may land on it.
+ * Which step the connect sheet shows. A signed-in phone picks from the
+ * account device directory; a signed-out phone is sent to account sign-in.
+ * The step follows authentication live, so signing in while the sheet is
+ * open moves it to the device list.
  */
 export class ConnectSheetLandingPolicy {
-  static initialStep(openIntent: string, accountAuthenticated: boolean): string {
-    if (openIntent === CONNECT_INTENT_SCAN) {
-      return ConnectSheetStep.Scan;
-    }
-    if (accountAuthenticated) {
-      return ConnectSheetStep.Account;
-    }
-    return ConnectSheetStep.Intro;
-  }
-
-  static visibleStep(pairingStep: string, accountAuthenticated: boolean): string {
-    if (pairingStep === ConnectSheetStep.Account && accountAuthenticated) {
-      return ConnectSheetStep.Account;
-    }
-    if (pairingStep === ConnectSheetStep.Scan) {
-      return ConnectSheetStep.Scan;
-    }
-    return ConnectSheetStep.Intro;
+  static step(accountAuthenticated: boolean): string {
+    return accountAuthenticated ? ConnectSheetStep.Account : ConnectSheetStep.Intro;
   }
 }
 

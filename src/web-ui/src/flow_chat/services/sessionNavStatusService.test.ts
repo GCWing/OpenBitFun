@@ -114,6 +114,41 @@ const install = (...ids: string[]) => {
 };
 
 describe('navigation status synchronization', () => {
+  it.each(['editing', 'creating'] as const)(
+    'does not query persisted activity for an unmaterialized %s draft', async phase => {
+      const id = `draft-${phase}`;
+      sources.sessions.set(id, { ...row(id), historyState: 'new', isHistorical: false,
+        draft: { phase, workspaceId: 'workspace-1', turnId: 'first-turn' } });
+      sources.read.mockResolvedValue(response([]));
+      install(id);
+      await vi.advanceTimersByTimeAsync(60_000);
+      window.dispatchEvent(new Event('focus'));
+      await vi.advanceTimersByTimeAsync(100);
+      expect(sources.read).not.toHaveBeenCalled();
+      expect(sessionNavStatusService.getSnapshot(id).kind).toBe('idle');
+    },
+  );
+
+  it('starts activity synchronization as soon as a draft is materialized in its chosen workspace', async () => {
+    const id = 'materialized-draft';
+    const draft: Session = { ...row(id), historyState: 'new', isHistorical: false,
+      draft: { phase: 'creating', workspaceId: 'chosen-workspace', turnId: 'first-turn' } };
+    sources.sessions.set(id, draft);
+    sources.read.mockResolvedValue(response([activity(id, 'idle')]));
+    install(id);
+    await vi.advanceTimersByTimeAsync(100);
+    sources.sessions.set(id, { ...draft, workspaceId: 'chosen-workspace',
+      projectWorkspaceId: 'chosen-project', draft: { ...draft.draft!, phase: 'ready' } });
+    sources.storeListeners.forEach(listener => listener({ sessions: sources.sessions }));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sources.read).toHaveBeenCalledExactlyOnceWith({
+      sessionId: id, workspaceId: 'chosen-project', limit: 1, sessionIds: [id],
+    });
+    expect(sessionNavStatusService.getSnapshot(id).kind).toBe('idle');
+    sources.events.get('onDialogTurnStarted')!({ sessionId: id, turnId: 'first-turn' });
+    expect(sessionNavStatusService.getSnapshot(id).kind).toBe('running');
+  });
+
   it('keeps a local submission running across a host read that predates host acceptance', async () => {
     const id = 'local-start-race';
     const pending = { id: 'new-turn', status: 'pending', modelRounds: [] } as unknown as Session['dialogTurns'][number];

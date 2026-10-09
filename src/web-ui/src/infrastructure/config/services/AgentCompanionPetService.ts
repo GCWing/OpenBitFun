@@ -225,6 +225,18 @@ export async function listAgentCompanionPets(): Promise<AgentCompanionPetPackage
   }
 }
 
+export async function selectAgentCompanionPetPackage(title: string): Promise<string | null> {
+  if (!isTauriRuntime()) throw new Error('Pet package selection requires the desktop surface');
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const selected = await open({
+    directory: false,
+    multiple: false,
+    title,
+    filters: [{ name: 'Petdex', extensions: ['zip'] }],
+  });
+  return typeof selected === 'string' ? selected : null;
+}
+
 export async function importAgentCompanionPetPackage(path: string): Promise<AgentCompanionPetPackage> {
   const pet = await api.invoke<AgentCompanionPetSelection>('import_agent_companion_pet_package', {
     request: { path },

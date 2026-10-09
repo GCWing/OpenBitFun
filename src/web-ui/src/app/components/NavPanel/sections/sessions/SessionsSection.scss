@@ -288,20 +288,6 @@
 
   &__inline-item-btw-badge {
     flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    height: 12px;
-    padding: 0 4px;
-    border: 1px solid color-mix(in srgb, color-mix(in srgb, var(--openbitfun-color-accent-default) 40%, transparent) 34%, var(--openbitfun-color-border-subtle));
-    border-radius: 999px;
-    background: color-mix(in srgb, color-mix(in srgb, var(--openbitfun-color-accent-default) 40%, transparent) 13%, var(--openbitfun-color-action-quiet-hover));
-    color: color-mix(in srgb, color-mix(in srgb, var(--openbitfun-color-accent-default) 40%, transparent) 62%, var(--openbitfun-color-content-primary));
-    font-size: var(--openbitfun-type-micro-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    letter-spacing: var(--openbitfun-type-modifier-tracking-wide-letter-spacing);
-    opacity: 0.96;
-    overflow: visible;
-    white-space: nowrap;
   }
 
   &__inline-item-dispatch-badge {

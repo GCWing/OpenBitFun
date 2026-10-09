@@ -1,10 +1,6 @@
 package com.openbitfun.mobile.app
 
-import android.accessibilityservice.AccessibilityService
-import android.os.SystemClock
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.assertHeightIsEqualTo
-import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -18,27 +14,16 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
-import com.openbitfun.mobile.app.ui.chat.COMPOSER_INPUT_TEST_TAG
-import com.openbitfun.mobile.app.ui.chat.COMPOSER_SEND_TEST_TAG
-import com.openbitfun.mobile.app.ui.chat.CONVERSATION_BACK_TEST_TAG
-import com.openbitfun.mobile.app.ui.chat.CONVERSATION_LIST_TEST_TAG
-import com.openbitfun.mobile.app.ui.remote.CONNECT_MANUAL_TEST_TAG
-import com.openbitfun.mobile.app.ui.remote.CONNECT_PAIRING_CODE_TEST_TAG
-import com.openbitfun.mobile.app.ui.remote.CONNECT_SUBMIT_TEST_TAG
-import com.openbitfun.mobile.app.ui.remote.FILE_PREVIEW_DOWNLOAD_TEST_TAG
-import com.openbitfun.mobile.app.ui.remote.FILE_PREVIEW_HEADER_TEST_TAG
-import com.openbitfun.mobile.app.ui.remote.FILE_PREVIEW_REFRESH_TEST_TAG
-import com.openbitfun.mobile.app.ui.remote.FILE_PREVIEW_TEST_TAG
-import com.openbitfun.mobile.app.ui.remote.SESSION_LIST_TEST_TAG
-import com.openbitfun.mobile.app.ui.settings.GENERAL_SETTINGS_CLOSE_TEST_TAG
-import com.openbitfun.mobile.app.ui.settings.GENERAL_SETTINGS_MODEL_TEST_TAG
-import com.openbitfun.mobile.app.ui.settings.GENERAL_SETTINGS_PROFILE_TEST_TAG
-import com.openbitfun.mobile.app.ui.settings.GENERAL_SETTINGS_TEST_TAG
+import com.openbitfun.mobile.app.ui.account.ACCOUNT_SETTINGS_DEVICES_TEST_TAG
+import com.openbitfun.mobile.app.ui.account.ACCOUNT_SETTINGS_SIGN_IN_TEST_TAG
+import com.openbitfun.mobile.app.ui.account.ACCOUNT_SETTINGS_SIGN_OUT_TEST_TAG
+import com.openbitfun.mobile.app.ui.remote.CONNECT_ACCOUNT_DEVICE_TEST_TAG
+import com.openbitfun.mobile.app.ui.settings.SETTINGS_CLOSE_TEST_TAG
+import com.openbitfun.mobile.app.ui.settings.SETTINGS_MODEL_TEST_TAG
+import com.openbitfun.mobile.app.ui.settings.PERMISSION_SECTION_TEST_TAG
+import com.openbitfun.mobile.app.ui.settings.SETTINGS_TEST_TAG
 import com.openbitfun.mobile.app.ui.settings.MODEL_SERVICE_ACCOUNT_TEST_TAG
 import com.openbitfun.mobile.app.ui.settings.MODEL_SERVICE_KEY_TEST_TAG
 import com.openbitfun.mobile.app.ui.settings.MODEL_SERVICE_LOCAL_TEST_TAG
@@ -48,16 +33,11 @@ import com.openbitfun.mobile.app.ui.settings.MODEL_SERVICE_SAVE_TEST_TAG
 import com.openbitfun.mobile.app.ui.settings.MODEL_SERVICE_TEST_TAG
 import com.openbitfun.mobile.app.ui.settings.MODEL_SERVICE_URL_TEST_TAG
 import com.openbitfun.mobile.app.ui.settings.SETTINGS_PROFILE_TEST_TAG
-import com.openbitfun.mobile.app.ui.settings.VIEW_SETTINGS_TEST_TAG
-import com.openbitfun.mobile.app.ui.settings.VIEW_SETTINGS_TOGGLE_TEST_TAG
 import com.openbitfun.mobile.app.ui.shell.MENU_TEST_TAG
 import com.openbitfun.mobile.app.ui.shell.sidebar.SIDEBAR_CODE_TEST_TAG
 import com.openbitfun.mobile.app.ui.shell.sidebar.SIDEBAR_REMOTE_SESSION_TEST_TAG
 import com.openbitfun.mobile.app.ui.shell.sidebar.SIDEBAR_SETTINGS_TEST_TAG
 import com.openbitfun.mobile.app.ui.shell.sidebar.SIDEBAR_TEST_TAG
-import com.openbitfun.mobile.core.feature.layout.ConversationLayoutPolicy
-import java.net.HttpURLConnection
-import java.net.URL
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -73,7 +53,6 @@ class MobileScreenTest {
     fun welcomeOrDrawerExposesNavigationEntries() {
         if (!hasDrawerEntry()) {
             composeRule.onNodeWithText(text(R.string.welcome_login)).assertIsDisplayed()
-            composeRule.onNodeWithText(text(R.string.welcome_scan)).assertIsDisplayed()
             composeRule.onNodeWithText(text(R.string.miniapps_title)).performClick()
             composeRule.onNodeWithContentDescription(text(R.string.miniapps_back)).assertIsDisplayed().performClick()
             composeRule.onNodeWithText(text(R.string.welcome_login)).assertIsDisplayed()
@@ -90,11 +69,9 @@ class MobileScreenTest {
 
         composeRule.onNodeWithTag(SIDEBAR_CODE_TEST_TAG).performClick()
 
-        // The drawer routes to the choose-connection page rather than launching
-        // the scanner, so both entry modes stay visible behind the closing drawer.
-        waitForText(text(R.string.connect_choose_connection))
-        composeRule.onNodeWithText(text(R.string.sidebar_scan_to_connect)).assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.account_login_title)).assertIsDisplayed()
+        // A signed-in drawer reaches desktops only through the account's device
+        // picker; there is no scan or pairing-link step behind it any more.
+        waitForTag(CONNECT_ACCOUNT_DEVICE_TEST_TAG)
         composeRule.onNodeWithTag(SIDEBAR_TEST_TAG).assertIsNotDisplayed()
     }
 
@@ -126,16 +103,17 @@ class MobileScreenTest {
             .isNotEmpty()
         if (signedOut) {
             composeRule.onNodeWithText(text(R.string.account_login_title)).performClick()
+            waitForText(text(R.string.account_login_title))
         } else {
-            // The signed-in exchange: settings first, and the profile row there
-            // is what leads on to the account. The drawer is over the general
-            // chat, so the gear lands on the app's own settings page.
+            // The account is embedded in settings: the gear is the way to it,
+            // and the page itself shows who is signed in, the devices, and sign
+            // out, without another page behind a row.
             composeRule.onNodeWithTag(SIDEBAR_SETTINGS_TEST_TAG).performClick()
-            waitForText(text(R.string.navigation_settings))
-            composeRule.onNodeWithTag(GENERAL_SETTINGS_PROFILE_TEST_TAG).performClick()
+            waitForTag(SETTINGS_PROFILE_TEST_TAG)
+            composeRule.onNodeWithTag(ACCOUNT_SETTINGS_DEVICES_TEST_TAG).assertExists()
+            composeRule.onNodeWithTag(ACCOUNT_SETTINGS_SIGN_OUT_TEST_TAG).assertExists()
+            composeRule.onAllNodesWithTag(ACCOUNT_SETTINGS_SIGN_IN_TEST_TAG).assertCountEquals(0)
         }
-
-        waitForText(text(if (signedOut) R.string.account_login_title else R.string.account_title))
         composeRule.onNodeWithTag(SIDEBAR_TEST_TAG).assertIsNotDisplayed()
     }
 
@@ -153,7 +131,7 @@ class MobileScreenTest {
         openSettingsFromAuthenticatedDrawerOrSkip()
         waitForText(text(R.string.navigation_settings))
 
-        composeRule.onNodeWithTag(GENERAL_SETTINGS_CLOSE_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(SETTINGS_CLOSE_TEST_TAG).performClick()
 
         waitForNoText(text(R.string.settings_about_section))
     }
@@ -164,10 +142,10 @@ class MobileScreenTest {
         openDrawer()
         openSettingsFromAuthenticatedDrawerOrSkip()
 
-        waitForTag(GENERAL_SETTINGS_TEST_TAG)
-        composeRule.onNodeWithTag(GENERAL_SETTINGS_MODEL_TEST_TAG).assertIsDisplayed()
-        composeRule.onNodeWithTag(GENERAL_SETTINGS_CLOSE_TEST_TAG).performClick()
-        waitForNoTag(GENERAL_SETTINGS_TEST_TAG)
+        waitForTag(SETTINGS_TEST_TAG)
+        composeRule.onNodeWithTag(SETTINGS_MODEL_TEST_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(SETTINGS_CLOSE_TEST_TAG).performClick()
+        waitForNoTag(SETTINGS_TEST_TAG)
 
         openDrawer()
         waitForTag(SIDEBAR_TEST_TAG)
@@ -190,11 +168,13 @@ class MobileScreenTest {
         waitForTag(SIDEBAR_TEST_TAG)
         openSettingsFromAuthenticatedDrawerOrSkip()
 
-        waitForTag(GENERAL_SETTINGS_TEST_TAG)
-        composeRule.onNodeWithTag(GENERAL_SETTINGS_MODEL_TEST_TAG).assertIsDisplayed()
-        composeRule.onAllNodesWithTag(SETTINGS_PROFILE_TEST_TAG).assertCountEquals(0)
-        composeRule.onNodeWithTag(GENERAL_SETTINGS_CLOSE_TEST_TAG).performClick()
-        waitForNoTag(GENERAL_SETTINGS_TEST_TAG)
+        waitForTag(SETTINGS_TEST_TAG)
+        composeRule.onNodeWithTag(SETTINGS_MODEL_TEST_TAG).assertIsDisplayed()
+        // One settings page: the permission section is on it whether or not a
+        // desktop is connected.
+        composeRule.onNodeWithTag(PERMISSION_SECTION_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(SETTINGS_CLOSE_TEST_TAG).performClick()
+        waitForNoTag(SETTINGS_TEST_TAG)
     }
 
     /**
@@ -262,279 +242,6 @@ class MobileScreenTest {
         composeRule.onNodeWithTag(MODEL_SERVICE_PROBE_TEST_TAG).assertIsEnabled()
     }
 
-    @Test
-    fun remoteFormRefusesEmptyPairingLink() {
-        openRemote()
-        // Scanning is the front door; the fields live one step behind it.
-        openManualPairing()
-        composeRule.onNodeWithText(text(R.string.connect_pair)).assertIsNotEnabled()
-    }
-
-    @Test
-    fun fakeRelaySupportsPairingReadingAndSending() {
-        val pairingUrl = InstrumentationRegistry.getArguments().getString("openbitfunPairingUrl").orEmpty()
-        assumeTrue("openbitfunPairingUrl instrumentation argument is required", pairingUrl.isNotBlank())
-
-        openRemote()
-        openManualPairing()
-        composeRule.onNodeWithTag(CONNECT_PAIRING_CODE_TEST_TAG).performTextInput(pairingUrl)
-        composeRule.onNodeWithTag(CONNECT_SUBMIT_TEST_TAG).performClick()
-
-        // The shell's top bar names the connection state once pairing lands.
-        waitForText(text(R.string.paired_title))
-        waitForText("完善鸿蒙端远程控制", substring = true)
-        composeRule.onNodeWithText("完善鸿蒙端远程控制", substring = true)
-            .performScrollTo()
-            .performClick()
-
-        // Opening a session replaces the list with the conversation, whose
-        // composer is pinned below the transcript rather than scrolled to.
-        waitForText("我来帮你完善鸿蒙端远程控制流程。", substring = true)
-        // By tag rather than by placeholder: the placeholder is a sibling of the
-        // field now, and typing into a label is not a thing.
-        composeRule.onNodeWithTag(COMPOSER_INPUT_TEST_TAG).performTextInput("Android relay end-to-end")
-        composeRule.onNodeWithTag(COMPOSER_SEND_TEST_TAG).performClick()
-
-        waitForText("收到，我会继续处理这条指令。", substring = true)
-
-        composeRule.onNodeWithTag(CONVERSATION_BACK_TEST_TAG).performClick()
-        composeRule.onNodeWithTag(SESSION_LIST_TEST_TAG).assertIsDisplayed()
-    }
-
-    /**
-     * An agent turn is markdown, and it has to arrive as blocks rather than as
-     * the punctuation that describes them.
-     *
-     * The fixture reply carries a fenced `ts` block, so the fence is the cheapest
-     * thing to test against: if the parser never ran, the three backticks are on
-     * screen and the language is part of a paragraph instead of a card's label.
-     */
-    @Test
-    fun anAgentTurnArrivesAsRenderedMarkdown() {
-        val pairingUrl = InstrumentationRegistry.getArguments().getString("openbitfunPairingUrl").orEmpty()
-        assumeTrue("openbitfunPairingUrl instrumentation argument is required", pairingUrl.isNotBlank())
-
-        openRemote()
-        openManualPairing()
-        composeRule.onNodeWithTag(CONNECT_PAIRING_CODE_TEST_TAG).performTextInput(pairingUrl)
-        composeRule.onNodeWithTag(CONNECT_SUBMIT_TEST_TAG).performClick()
-
-        waitForText("完善鸿蒙端远程控制", substring = true)
-        composeRule.onNodeWithText("完善鸿蒙端远程控制", substring = true)
-            .performScrollTo()
-            .performClick()
-
-        waitForText("我来帮你完善鸿蒙端远程控制流程。", substring = true)
-        // Through the list, and aimed at the paragraph above the card rather than
-        // at the code: the code sits in its own horizontal scroller and does not
-        // wrap, so it is both the wrong scrollable to move and a node whose
-        // bounds run off the side of everything.
-        composeRule.onNodeWithTag(CONVERSATION_LIST_TEST_TAG)
-            .performScrollToNode(hasText("我来帮你完善鸿蒙端远程控制流程。", substring = true))
-
-        // The language became the card's label, and next to it is the copy that
-        // is the whole point of showing a command on a phone.
-        composeRule.onNodeWithText("ts").assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.chat_copy)).assertIsDisplayed()
-        // The code itself is only asserted to exist: it does not wrap, so its own
-        // bounds run past the card it scrolls inside and "displayed" is not a
-        // question that has an answer for it. The card around it is on screen.
-        composeRule.onNodeWithText("await manager.listSessions", substring = true).assertExists()
-        // And the fence that described the block did not survive as text.
-        composeRule.onAllNodesWithText("```", substring = true).assertCountEquals(0)
-    }
-
-    /**
-     * The view settings only pay off against a desktop's own sessions: the
-     * groupings are about dates and workspaces the fake relay supplies, and none
-     * of it can be reached from an unpaired app.
-     */
-    @Test
-    fun viewSettingsRegroupTheSessionListAndAddRowDetail() {
-        val pairingUrl = InstrumentationRegistry.getArguments().getString("openbitfunPairingUrl").orEmpty()
-        assumeTrue("openbitfunPairingUrl instrumentation argument is required", pairingUrl.isNotBlank())
-
-        openRemote()
-        openManualPairing()
-        composeRule.onNodeWithTag(CONNECT_PAIRING_CODE_TEST_TAG).performTextInput(pairingUrl)
-        composeRule.onNodeWithTag(CONNECT_SUBMIT_TEST_TAG).performClick()
-        waitForText("完善鸿蒙端远程控制", substring = true)
-
-        composeRule.onNodeWithTag(VIEW_SETTINGS_TOGGLE_TEST_TAG).performScrollTo().performClick()
-        composeRule.onNodeWithTag(VIEW_SETTINGS_TEST_TAG).assertIsDisplayed()
-
-        // Every fixture session sits in the one open workspace, so the project
-        // grouping says nothing; dating them apart is what proves the regroup.
-        composeRule.onNodeWithText(text(R.string.group_by_time)).performScrollTo().performClick()
-        waitForText(text(R.string.time_yesterday))
-        composeRule.onNodeWithText(text(R.string.time_today)).performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText(text(R.string.time_earlier)).performScrollTo().assertIsDisplayed()
-
-        // A row is its title until asked otherwise; the oldest fixtures are days
-        // old, so the relative time is the part that shows up.
-        composeRule.onNodeWithText(text(R.string.session_updated_at)).performScrollTo().performClick()
-        waitForText("days ago", substring = true)
-    }
-
-    /**
-     * A preview is only useful if the reader can find the line the agent named,
-     * so this follows the gutter all the way from the relay's bytes to the
-     * screen. Which kind each run got is the shared lexer's own tests' business —
-     * a span colour is not in the semantics tree, so there is nothing here to
-     * assert it with.
-     */
-    @Test
-    fun aSourceFilePreviewArrivesNumberedAndTokenised() {
-        val pairingUrl = InstrumentationRegistry.getArguments().getString("openbitfunPairingUrl").orEmpty()
-        assumeTrue("openbitfunPairingUrl instrumentation argument is required", pairingUrl.isNotBlank())
-
-        openRemote()
-        openManualPairing()
-        composeRule.onNodeWithTag(CONNECT_PAIRING_CODE_TEST_TAG).performTextInput(pairingUrl)
-        composeRule.onNodeWithTag(CONNECT_SUBMIT_TEST_TAG).performClick()
-        // The workspace panel only appears once the desktop has answered with
-        // one, which is the same round trip the file field then depends on.
-        waitForText(text(R.string.file_reference_label))
-
-        composeRule.onNodeWithText(text(R.string.file_reference_label)).performScrollTo().performTextInput("src/preview.rs")
-        composeRule.onNodeWithText(text(R.string.file_preview_open)).performScrollTo().performClick()
-
-        waitForText("preview.rs")
-        // Wherever it lands the preview is a surface of its own, not a card at
-        // the bottom of a long page: no scrolling to reach it.
-        composeRule.onNodeWithTag(FILE_PREVIEW_TEST_TAG).assertIsDisplayed()
-        // HarmonyOS' `FilePreviewSurface.ets` gives the header a fixed 68vp and
-        // each of its controls a 44vp square. Those are the numbers a pixel
-        // comparison would otherwise be the first thing to notice.
-        composeRule.onNodeWithTag(FILE_PREVIEW_HEADER_TEST_TAG).assertHeightIsEqualTo(68.dp)
-        composeRule.onNodeWithTag(FILE_PREVIEW_REFRESH_TEST_TAG)
-            .assertWidthIsEqualTo(44.dp)
-            .assertHeightIsEqualTo(44.dp)
-        composeRule.onNodeWithTag(FILE_PREVIEW_DOWNLOAD_TEST_TAG)
-            .assertWidthIsEqualTo(44.dp)
-            .assertHeightIsEqualTo(44.dp)
-        // The type and size come from `get_file_info`, so their presence in the
-        // header is evidence the real desktop answered and not just that the
-        // bytes arrived.
-        composeRule.onNodeWithText("text/", substring = true).assertIsDisplayed()
-        // Two lines rather than one: a number in front of the second line is
-        // what proves the gutter counts the file rather than labelling its top.
-        composeRule.onNodeWithText("1  // openbitfun preview fixture\n2  fn main() {", substring = true)
-            .assertIsDisplayed()
-
-        // On a narrow window `FilePreviewPlacementPolicy` has nothing to split,
-        // so the file is the page — it covers the list, and the card's own
-        // button is the only way back. A wide one keeps both and has neither
-        // claim to make, which is why this is a branch and not an assumption.
-        val widthDp = composeRule.activity.resources.configuration.screenWidthDp
-        if (widthDp < ConversationLayoutPolicy.WIDE_LAYOUT_MIN_WIDTH) {
-            composeRule.onNodeWithTag(SESSION_LIST_TEST_TAG).assertDoesNotExist()
-            // The close control is the header's chevron now, not a labelled
-            // button, and the installed locale may not be English.
-            composeRule.onNodeWithContentDescription(
-                InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.common_close),
-            ).performClick()
-            composeRule.onNodeWithTag(SESSION_LIST_TEST_TAG).assertIsDisplayed()
-        }
-    }
-
-    /**
-     * The heartbeat, end to end: the relay stops answering commands while the
-     * room itself stays, which is the one situation the unit tests can only
-     * simulate — here it is a real 15-second timer against a real socket.
-     */
-    @Test
-    fun aDesktopThatStopsAnsweringIsReportedAndRecovers() {
-        val pairingUrl = InstrumentationRegistry.getArguments().getString("openbitfunPairingUrl").orEmpty()
-        assumeTrue("openbitfunPairingUrl instrumentation argument is required", pairingUrl.isNotBlank())
-
-        openRemote()
-        openManualPairing()
-        composeRule.onNodeWithTag(CONNECT_PAIRING_CODE_TEST_TAG).performTextInput(pairingUrl)
-        composeRule.onNodeWithTag(CONNECT_SUBMIT_TEST_TAG).performClick()
-        waitForText(text(R.string.paired_title))
-
-        try {
-            setRelayReachable(pairingUrl, reachable = false)
-            // No tap in between: only the store's own timer can notice, and it
-            // has fifteen seconds to run plus the ping it then has to fail.
-            waitForText(text(R.string.connection_error), timeoutMillis = 60_000)
-
-            setRelayReachable(pairingUrl, reachable = true)
-            composeRule.onNodeWithText(InstrumentationRegistry.getInstrumentation().targetContext.getString(R.string.sidebar_device_retry)).performScrollTo().performClick()
-            waitForText(text(R.string.paired_title), timeoutMillis = 40_000)
-        } finally {
-            setRelayReachable(pairingUrl, reachable = true)
-        }
-    }
-
-    /** The remote surface is reached through the drawer now that the tab bar is gone. */
-    private fun openRemote() {
-        openDrawer()
-        composeRule.onNodeWithTag(SIDEBAR_CODE_TEST_TAG).performClick()
-        waitForText(text(R.string.connect_choose_connection))
-    }
-
-    /**
-     * The connect page starts on the choose-connection step; tapping "Scan to
-     * connect" opens the system scanner, and canceling it exposes the typed-link
-     * fallback Harmony shows after a scan error.
-     */
-    private fun openManualPairing() {
-        composeRule.onNodeWithText(text(R.string.sidebar_scan_to_connect)).performClick()
-        // Google Code Scanner owns a separate system activity. Espresso's
-        // pressBack requires our activity to be resumed, so inject the platform
-        // key directly and wait for the cancellation callback to reveal the
-        // same manual fallback Harmony shows after a scan error.
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val automation = instrumentation.uiAutomation
-        val targetPackage = instrumentation.targetContext.packageName
-        val scannerDeadline = SystemClock.uptimeMillis() + 10_000
-        var activePackage = automation.rootInActiveWindow?.packageName?.toString()
-        while (SystemClock.uptimeMillis() < scannerDeadline &&
-            (activePackage == null || activePackage == targetPackage)
-        ) {
-            SystemClock.sleep(100)
-            activePackage = automation.rootInActiveWindow?.packageName?.toString()
-        }
-        check(activePackage != null && activePackage != targetPackage) {
-            "Google Code Scanner did not become the active window"
-        }
-        automation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-        val returnDeadline = SystemClock.uptimeMillis() + 10_000
-        while (SystemClock.uptimeMillis() < returnDeadline &&
-            automation.rootInActiveWindow?.packageName?.toString() != targetPackage
-        ) {
-            SystemClock.sleep(100)
-        }
-        composeRule.waitUntil(timeoutMillis = 10_000) {
-            composeRule.onAllNodesWithTag(CONNECT_MANUAL_TEST_TAG)
-                .fetchSemanticsNodes()
-                .isNotEmpty()
-        }
-        composeRule.onNodeWithTag(CONNECT_MANUAL_TEST_TAG).assertIsDisplayed().performClick()
-        composeRule.onNodeWithText(text(R.string.connect_manual_title)).assertIsDisplayed()
-    }
-
-    /**
-     * Drives the fake relay's `/control/reachable` switch, on the same origin the
-     * pairing link names — the app reaches it through `adb reverse`, and so does
-     * this, since the instrumentation runs in the app's own process.
-     */
-    private fun setRelayReachable(pairingUrl: String, reachable: Boolean) {
-        val origin = pairingUrl.substringBefore("/#/")
-        val connection = URL("$origin/control/reachable").openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = "POST"
-            connection.doOutput = true
-            connection.setRequestProperty("Content-Type", "application/json")
-            connection.outputStream.use { it.write("""{"reachable":$reachable}""".toByteArray()) }
-            check(connection.responseCode == 200) { "relay control returned ${connection.responseCode}" }
-        } finally {
-            connection.disconnect()
-        }
-    }
-
     private fun waitForText(text: String, substring: Boolean = false, timeoutMillis: Long = 20_000) {
         composeRule.waitUntil(timeoutMillis = timeoutMillis) {
             composeRule.onAllNodesWithText(text, substring = substring)
@@ -583,6 +290,6 @@ class MobileScreenTest {
         openDrawer()
         openSettingsFromAuthenticatedDrawerOrSkip()
         waitForText(text(R.string.navigation_settings))
-        composeRule.onNodeWithTag(GENERAL_SETTINGS_MODEL_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(SETTINGS_MODEL_TEST_TAG).performClick()
     }
 }

@@ -57,7 +57,10 @@
   }
 
   .textPreview {
-    font-family: var(--openbitfun-type-code-md-font-family);
+    font-family: var(--openbitfun-type-flow-code-font-family);
+    font-size: var(--openbitfun-type-flow-code-font-size);
+    font-weight: var(--openbitfun-type-flow-code-font-weight);
+    line-height: var(--openbitfun-type-flow-code-line-height);
   }
 
   .outputGroup {
@@ -71,8 +74,6 @@
     color: var(--openbitfun-color-content-muted);
     font-size: var(--openbitfun-type-body-sm-font-size);
     font-weight: var(--openbitfun-type-label-selected-font-weight);
-    text-transform: uppercase;
-    letter-spacing: var(--openbitfun-type-modifier-tracking-wider-letter-spacing);
   }
 
   .outputGroup[data-tone="warning"] .outputBlock {
@@ -154,11 +155,14 @@
     display: flex;
     min-inline-size: 0;
     flex-direction: column;
-    gap: var(--openbitfun-space-3);
+  }
+
+  .diffBody > .textPreview {
+    border-radius: 0;
   }
 
   .message {
-    padding-block-end: var(--openbitfun-space-2);
+    padding: var(--openbitfun-space-3);
     border-block-end: 1px solid var(--openbitfun-color-border-subtle);
     color: var(--openbitfun-color-content-muted);
     font-size: var(--openbitfun-type-body-sm-font-size);
@@ -179,7 +183,10 @@
     line-height: var(--openbitfun-type-body-md-line-height);
   }
 
+  .fileViewport { max-block-size: 20rem; }
+
   .fileList {
+    overflow-wrap: anywhere;
     display: grid;
     gap: var(--openbitfun-space-1);
     margin: 0;
@@ -194,108 +201,6 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--openbitfun-space-2);
-  }
-
-  .field {
-    display: grid;
-    min-inline-size: 0;
-    grid-template-columns: minmax(6rem, auto) minmax(0, 1fr);
-    gap: var(--openbitfun-space-2);
-    color: var(--openbitfun-color-content-secondary);
-    font-size: var(--openbitfun-type-body-sm-font-size);
-  }
-
-  .fieldLabel {
-    color: var(--openbitfun-color-content-muted);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-  }
-
-  .fieldValue {
-    min-inline-size: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .agentIdentity,
-  .agentExtra,
-  .agentMeta {
-    display: inline-flex;
-    min-inline-size: 0;
-    align-items: center;
-    gap: var(--openbitfun-space-1);
-  }
-
-  .agentIdentity {
-    max-inline-size: 100%;
-  }
-
-  .agentExtra {
-    max-inline-size: min(20rem, 42vw);
-  }
-
-  .agentAvatar {
-    display: inline-flex;
-    inline-size: 100%;
-    block-size: 100%;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .agentAvatar > :where(svg, img, span) {
-    max-inline-size: 100%;
-    max-block-size: 100%;
-  }
-
-  .agentName,
-  .agentModel,
-  .agentSummary,
-  .agentMeta,
-  .agentStatus {
-    min-inline-size: 0;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-
-  .agentName {
-    font-weight: var(--openbitfun-type-label-lg-font-weight);
-  }
-
-  .agentModel,
-  .agentSummary,
-  .agentMeta {
-    color: var(--openbitfun-color-content-muted);
-    font-weight: var(--openbitfun-type-body-sm-font-weight);
-  }
-
-  .agentSummary {
-    display: block;
-  }
-
-  .agentStatus {
-    color: var(--openbitfun-color-content-muted);
-  }
-
-  .agentStatus[data-tone="success"] {
-    color: var(--openbitfun-color-status-success-content);
-  }
-
-  .agentStatus[data-tone="warning"] {
-    color: var(--openbitfun-color-status-warning-content);
-  }
-
-  .agentStatus[data-tone="danger"] {
-    color: var(--openbitfun-color-status-danger-content);
-  }
-
-  .agentPrompt {
-    max-block-size: 15rem;
-    overflow: auto;
-    padding: var(--openbitfun-space-3);
-    border: 1px solid var(--openbitfun-color-border-default);
-    border-radius: var(--openbitfun-radius-sm);
-    background: var(--openbitfun-color-surface-canvas);
-    color: var(--openbitfun-color-content-secondary);
-    font-size: var(--openbitfun-type-body-sm-font-size);
-    line-height: var(--openbitfun-type-body-md-line-height);
   }
 
 }

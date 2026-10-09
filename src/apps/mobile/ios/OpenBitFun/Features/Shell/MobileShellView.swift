@@ -272,23 +272,16 @@ struct MobileShellView: View {
             SettingsView(model: model)
         }
         .openBitFunAdaptiveModal(
-            isPresented: $model.remoteControlSettingsOpen,
-            placement: settingsPlacement
-        ) {
-            RemoteControlSettingsView(model: model)
-        }
-        .openBitFunAdaptiveModal(
             isPresented: $model.remoteViewSettingsOpen,
             placement: remoteViewSettingsPlacement
         ) {
             RemoteViewSettingsView(model: model)
         }
         .openBitFunAdaptiveModal(
-            isPresented: $model.pairingSheetOpen,
-            placement: connectPlacement,
-            onDismiss: model.dismissPairing
+            isPresented: $model.devicePickerOpen,
+            placement: connectPlacement
         ) {
-            PairingSheet(model: model)
+            AccountDevicePickerSheet(model: model)
         }
         .openBitFunAdaptiveModal(
             isPresented: $model.accountSheetOpen,
@@ -422,6 +415,9 @@ struct MobileShellView: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
+                // Keep the fade behind the home indicator. safeAreaInset
+                // reserves room for controls and the scroll content at rest.
+                .ignoresSafeArea(.container, edges: .bottom)
             )
             .background(
                 GeometryReader { proxy in

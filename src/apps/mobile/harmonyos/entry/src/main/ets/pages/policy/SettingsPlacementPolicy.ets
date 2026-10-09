@@ -16,7 +16,13 @@ export enum SettingsSheetKind {
   Settings = 'settings',
   Connect = 'connect',
   SessionDetails = 'session_details',
-  RemoteViewSettings = 'remote_view_settings'
+  RemoteViewSettings = 'remote_view_settings',
+  /**
+   * The conversation's full-text panel. It is content rather than settings, but
+   * it is placed by the same contract: an overlay sheet that must land inside a
+   * foldable's leaf, and inside the operate half of a half-folded screen.
+   */
+  UserMessageFullText = 'user_message_full_text'
 }
 
 export class SettingsPlacement {

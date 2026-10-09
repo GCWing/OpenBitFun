@@ -49,7 +49,7 @@ export const TurnFailureNoticeItem: React.FC<TurnFailureNoticeItemProps> = ({ er
       aria-label={t(presentation.titleKey)}
     >
       <div data-openbitfun-component="turn-failure-notice" data-openbitfun-part="icon" className="turn-failure-notice__icon" aria-hidden="true">
-        <AlertCircle size={16} />
+        <Icon glyph={AlertCircle} size="md" />
       </div>
       <div data-openbitfun-component="turn-failure-notice" data-openbitfun-part="content" className="turn-failure-notice__content">
         <div data-openbitfun-component="turn-failure-notice" data-openbitfun-part="header" className="turn-failure-notice__header">
@@ -104,7 +104,7 @@ export const TurnFailureNoticeItem: React.FC<TurnFailureNoticeItemProps> = ({ er
                       onClick={() => void copyRawError()}
                       aria-label={t('turnFailure.copy')}
                     >
-                      {copied ? <Icon name="check-line" size="lg" style={{ width: 13, height: 13 }} /> : <Icon name="duplicate" size="lg" style={{ width: 13, height: 13 }} />}
+                      {copied ? <Icon name="check-line" size="sm" /> : <Icon name="duplicate" size="sm" />}
                     </button>
                   </Tooltip>
                 </div>

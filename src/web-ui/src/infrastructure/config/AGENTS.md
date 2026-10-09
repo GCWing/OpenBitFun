@@ -34,3 +34,12 @@ pnpm --dir src/web-ui run test:run src/infrastructure/config/components/mcpConfi
 
 These checks cover local configuration handling and unavailable-surface gates;
 they do not prove an actual remote MCP connection.
+
+For model editor drafts and dialog presentation, run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/infrastructure/config/components/modelEditorRequestSettings.test.ts src/infrastructure/config/components/subscriptionAccountState.test.ts src/infrastructure/config/components/ModelSettingsDialog.presentation.test.ts src/app/scenes/settings/pages/ai/ModelSettingsPage.presentation.test.ts
+```
+
+These checks cover draft isolation and source contracts, not rendered visuals
+or remote runtime behavior.

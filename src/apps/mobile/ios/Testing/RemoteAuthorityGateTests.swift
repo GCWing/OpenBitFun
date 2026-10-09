@@ -209,13 +209,6 @@ struct RemoteAuthorityGateTests {
             "current target file transfer callback remains accepted"
         )
 
-        let pairingReplacement = RemoteAuthorityGate.pairingAttemptTransition(
-            authoritativeTargetKey: "pairing",
-            remoteConnected: true
-        )
-        expect(pairingReplacement.clearBoundRemoteProjection, "re-pair clears the replaced pairing projection")
-        expect(!pairingReplacement.remoteConnected, "failed re-pair remains disconnected after the old projection was discarded")
-
         expect(
             RemoteAuthorityGate.exactInvalidationMatchesAuthority(
                 expectedTargetKey: "account:device-a",
@@ -223,7 +216,7 @@ struct RemoteAuthorityGateTests {
                 currentTargetKey: "account:device-a",
                 currentEpoch: 7
             ),
-            "terminal pairing failure may invalidate the exact old account authority"
+            "terminal failure may invalidate the exact old account authority"
         )
         expect(
             !RemoteAuthorityGate.exactInvalidationMatchesAuthority(
@@ -232,52 +225,9 @@ struct RemoteAuthorityGateTests {
                 currentTargetKey: "account:device-a",
                 currentEpoch: 8
             ),
-            "terminal pairing failure cannot invalidate a newer account authority"
+            "terminal failure cannot invalidate a newer account authority"
         )
 
-        let capturedAccount = RetainedAccountAuthority(targetKey: "account:device-a", epoch: 7)
-        expect(
-            RemoteAuthorityGate.shouldRetainAccountAfterPairingFailure(
-                captured: capturedAccount,
-                adapterTargetKey: "account:device-a",
-                adapterEpoch: 7,
-                modelTargetKey: "account:device-a",
-                modelEpoch: 7,
-                healthyConnected: true
-            ),
-            "failed pairing retains the explicitly captured healthy authoritative account"
-        )
-        expect(
-            !RemoteAuthorityGate.shouldRetainAccountAfterPairingFailure(
-                captured: capturedAccount,
-                adapterTargetKey: "account:device-a",
-                adapterEpoch: 7,
-                modelTargetKey: "account:device-a",
-                modelEpoch: 7,
-                healthyConnected: false
-            ),
-            "failed account remote cannot be retained by a later pairing failure"
-        )
-        expect(
-            !RemoteAuthorityGate.shouldRetainAccountAfterPairingFailure(
-                captured: capturedAccount,
-                adapterTargetKey: "account:device-a",
-                adapterEpoch: 8,
-                modelTargetKey: "account:device-a",
-                modelEpoch: 7,
-                healthyConnected: true
-            ),
-            "changed adapter epoch cannot retain the captured account"
-        )
-
-        let retainedAccountPairingAttempt = RemoteAuthorityGate.pairingAttemptTransition(
-            authoritativeTargetKey: "account:device-a",
-            remoteConnected: true
-        )
-        expect(
-            !retainedAccountPairingAttempt.clearBoundRemoteProjection,
-            "pairing submission does not invalidate a retained account before its terminal result"
-        )
         expect(
             !RemoteAuthorityGate.fileTransferCallbackMatchesAuthority(
                 requestTargetKey: "account:device-a",
@@ -558,19 +508,6 @@ struct RemoteAuthorityGateTests {
             function: "func disconnectRemote()",
             mutation: "coreAdapter?.disconnect()",
             message: "disconnect invalidates transfers before adapter authority reset"
-        )
-        expectInvalidationBeforeMutation(
-            in: modelSource,
-            function: "private func prepareProjectionForPairingSubmission()",
-            mutation: "remoteExpectedDeviceKey = nil",
-            message: "replacing pairing invalidates transfers before old pairing projection is revoked"
-        )
-        expectCallBeforeMutation(
-            in: modelSource,
-            function: "func submitPairing(url: String)",
-            call: "coreAdapter?.resolveDeviceLink(url: url)",
-            mutation: "selectRemoteDevice(device)",
-            message: "QR membership validation precedes the device selection path that invalidates transfers"
         )
         let remoteSessionSource = readSource(
             iosDirectory.appendingPathComponent("OpenBitFun/Infrastructure/MobileAppModel+RemoteSession.swift")

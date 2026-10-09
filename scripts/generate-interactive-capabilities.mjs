@@ -18,6 +18,10 @@ const APPEARANCE_BOOTSTRAP_PATH = path.join(
 );
 const SETTINGS_REGISTRY = path.join(REPO_ROOT, 'src/web-ui/src/app/scenes/settings/settingsRegistry.ts');
 const SETTINGS_TYPES = path.join(REPO_ROOT, 'src/web-ui/src/app/scenes/settings/settingsTypes.ts');
+const SETTINGS_MIGRATIONS = JSON.parse(readFileSync(
+  path.join(REPO_ROOT, 'src/web-ui/src/app/scenes/settings/settingsDestinationMigrations.json'),
+  'utf8',
+));
 const PRODUCT_ACTION_CATALOG = path.join(REPO_ROOT, 'src/web-ui/src/app/global-search/productActionCatalog.ts');
 const SCENE_TYPES = path.join(REPO_ROOT, 'src/web-ui/src/app/components/SceneBar/types.ts');
 const TOOL_PROVIDER_GROUPS = path.join(
@@ -381,6 +385,23 @@ function controlCoverage(source) {
   return coverage;
 }
 
+// Keep historical destinations on the wire for older presentation surfaces.
+// Validate coverage against the same migration data used by the current Web UI.
+export function projectSettingsCatalogDestination(capabilityId, destination, itemId) {
+  if (destination.kind !== 'settings') return destination;
+  const capability = SETTINGS_MIGRATIONS.capabilities[capabilityId];
+  const input = capability?.items?.[itemId] ?? capability?.destination ?? destination;
+  const migratedView = SETTINGS_MIGRATIONS.views[input.pageId]?.[input.viewId];
+  const migrated = migratedView ?? SETTINGS_MIGRATIONS.pages[input.pageId];
+  const sectionId = input.sectionId ?? migrated?.sectionId;
+  return {
+    kind: 'settings',
+    pageId: migrated?.pageId ?? input.pageId,
+    ...(sectionId ? { sectionId } : {}),
+    ...(!migratedView && input.viewId ? { viewId: input.viewId } : {}),
+  };
+}
+
 function validateSource(source) {
   if (source.schemaVersion !== 5) throw new Error('Interactive capability source must use schemaVersion 5');
   const capabilityIds = new Set();
@@ -389,6 +410,7 @@ function validateSource(source) {
     [...settingsSource.matchAll(/definePage\(\{\s*id:\s*'([^']+)'/gu)].map((match) => match[1]),
   );
   const settingsViewIds = extractTypeUnionIds(readFileSync(SETTINGS_TYPES, 'utf8'), 'SettingsViewId');
+  const settingsSectionIds = extractTypeUnionIds(readFileSync(SETTINGS_TYPES, 'utf8'), 'SettingsSectionId');
   const actionIds = extractSingleQuotedIds(readFileSync(PRODUCT_ACTION_CATALOG, 'utf8'));
   const sceneIds = new Set([
     ...readFileSync(SCENE_TYPES, 'utf8').matchAll(/^\s*\|\s*'([^']+)'/gmu),
@@ -396,13 +418,18 @@ function validateSource(source) {
   const productToolNames = extractProductToolNames(readFileSync(TOOL_PROVIDER_GROUPS, 'utf8'));
   const delegatedToolNames = new Set();
 
-  const validateDestination = (destination, owner) => {
+  const validateDestination = (original, capabilityId, itemId) => {
+    const owner = itemId ? `${capabilityId}.${itemId}` : capabilityId;
+    const destination = projectSettingsCatalogDestination(capabilityId, original, itemId);
     if (destination.kind === 'settings') {
       if (!settingsIds.has(destination.pageId)) {
         throw new Error(`${owner} targets unknown settings page ${destination.pageId}`);
       }
       if (destination.viewId && !settingsViewIds.has(destination.viewId)) {
         throw new Error(`${owner} targets unknown settings view ${destination.viewId}`);
+      }
+      if (destination.sectionId && !settingsSectionIds.has(destination.sectionId)) {
+        throw new Error(`${owner} targets unknown settings section ${destination.sectionId}`);
       }
       return;
     }
@@ -470,7 +497,7 @@ function validateSource(source) {
       itemIds.add(item.id);
       assertBilingual({ ...item, id: `${capability.id}.${item.id}` }, 'title');
       if (item.destination) {
-        validateDestination(item.destination, `${capability.id}.${item.id}`);
+        validateDestination(item.destination, capability.id, item.id);
         if (
           item.destination.kind === 'settings'
           && capability.destination.kind === 'settings'
@@ -691,9 +718,16 @@ function validateSource(source) {
     throw new Error('User-facing capabilities may not silently ship as unsupported Agent controls');
   }
 
-  const semanticSettings = new Set(source.capabilities
+  const projectedSettingsDestinations = source.capabilities
     .filter(({ kind }) => kind === 'setting')
-    .map(({ destination }) => destination.kind === 'settings' ? destination.pageId : null)
+    .flatMap((capability) => [
+      projectSettingsCatalogDestination(capability.id, capability.destination),
+      ...capability.items.map((item) => projectSettingsCatalogDestination(
+        capability.id, item.destination ?? capability.destination, item.id,
+      )),
+    ]);
+  const semanticSettings = new Set(projectedSettingsDestinations
+    .map((destination) => destination.kind === 'settings' ? destination.pageId : null)
     .filter(Boolean));
   const missingSettings = [...settingsIds].filter((id) => !semanticSettings.has(id));
   const staleSettings = [...semanticSettings].filter((id) => !settingsIds.has(id));
@@ -704,10 +738,9 @@ function validateSource(source) {
     ].filter(Boolean).join('\n'));
   }
 
-  const semanticSettingsViews = new Set(source.capabilities.flatMap((capability) =>
-    capability.items
-      .map(({ destination }) => destination?.kind === 'settings' ? destination.viewId : null)
-      .filter(Boolean)));
+  const semanticSettingsViews = new Set(projectedSettingsDestinations
+    .map((destination) => destination.kind === 'settings' ? destination.viewId : null)
+    .filter(Boolean));
   const missingSettingsViews = [...settingsViewIds].filter((id) => !semanticSettingsViews.has(id));
   const staleSettingsViews = [...semanticSettingsViews].filter((id) => !settingsViewIds.has(id));
   if (missingSettingsViews.length || staleSettingsViews.length) {
@@ -1034,7 +1067,7 @@ function loadOwnerDefinitions() {
   const result = spawnSync(
     'cargo',
     ['run', '--quiet', '-p', 'openbitfun-product-domains', '--bin', PRODUCT_CONTROL_OWNER_EXPORT],
-    { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
+    { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, windowsHide: true },
   );
   if (result.status !== 0) {
     throw new Error([
@@ -1067,7 +1100,7 @@ export function loadRemoteSurfaceRegistry() {
   const result = spawnSync(
     'cargo',
     ['run', '--quiet', '-p', 'openbitfun-product-domains', '--bin', REMOTE_SURFACE_EXPORT],
-    { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
+    { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, windowsHide: true },
   );
   if (result.status !== 0) {
     throw new Error([

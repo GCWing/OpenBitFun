@@ -9,8 +9,11 @@ import type {
   AnyFlowItem,
   FlowToolItem,
 } from '../../types/flow-chat';
-import type { VirtualItem } from '../../store/modernFlowChatStore';
+import type { ToolGroupData, VirtualItem } from '../../store/modernFlowChatStore';
 import { getEffectiveToolName } from '../../utils/toolInvocationIdentity';
+import { buildInlineFlowGroupData, getModelRoundActiveItems, getProjectedModelRoundGroups, hasModelRoundLeadingControls } from '../../grouping/roundGroups';
+import { isFlowGroupExpanded } from '../../grouping/types';
+import { estimateAgentCardColumns } from '../../timeline/agentCardLayout';
 
 export interface VirtualItemHeightEstimateContext {
   /** Width available to the reading column, excluding the scrollbar. */
@@ -18,12 +21,24 @@ export interface VirtualItemHeightEstimateContext {
   isHistorical?: boolean;
   expandedThinkingItemIds?: readonly string[];
   exploreGroupStates?: ReadonlyMap<string, boolean>;
+  groupStates?: ReadonlyMap<string, boolean>;
 }
 
 export interface VirtualItemHeightEstimate {
   heightPx: number;
   confidence: 'high' | 'medium' | 'low';
   kind: string;
+}
+
+/** Collected rounds keep their virtual identity but have no visible row content. */
+export function getKnownVirtualItemHeightPx(item: VirtualItem): number | undefined {
+  if (item.timeline) return undefined;
+  if (item.type !== 'model-round' || item.projectedGroups?.length !== 0
+    || (item.isLastRound && item.isTurnComplete)
+    || hasModelRoundLeadingControls(item.data)
+    || item.canvasArtifactItems?.length
+    || getModelRoundActiveItems(item.data).length === 0) return undefined;
+  return 0;
 }
 
 const DEFAULT_WIDTH_PX = 900;
@@ -39,8 +54,10 @@ const TOOL_HEADER_HEIGHT_PX = 38;
 const TOOL_COMPACT_HEIGHT_PX = 53;
 const TODO_COMPACT_HEIGHT_PX = 24;
 const TOOL_EXPANDED_BASE_HEIGHT_PX = 96;
-const EXPLORE_GROUP_HEADER_HEIGHT_PX = 20;
-const EXPLORE_GROUP_MAX_CONTENT_HEIGHT_PX = 400;
+// A 32px unframed header plus the transcript's 8px trailing gap; DOM wins after mount.
+const EXPLORE_GROUP_HEADER_HEIGHT_PX = 40;
+// The collapsed capsule matches a prominent row, including its two 1px strokes.
+const EXPLORE_GROUP_COLLAPSED_HEIGHT_PX = 42;
 const ESTIMATED_TEXT_CHARS_PER_LINE = 60;
 const TERMINAL_TOOL_NAMES = new Set(['ExecCommand', 'WriteStdin', 'ExecControl']);
 const COLLAPSED_TOOL_STATUSES = new Set(['completed', 'cancelled', 'error', 'rejected']);
@@ -132,6 +149,11 @@ export function estimateFlowItemHeight(
   item: AnyFlowItem,
   context: VirtualItemHeightEstimateContext = {},
 ): VirtualItemHeightEstimate {
+  // A live thought starts as one line even when its parent keeps the body
+  // mounted. User expansion is measured after mount, not inferred from length.
+  if (item.type === 'thinking' && (item.isStreaming || item.status === 'streaming')) {
+    return { heightPx: 40, confidence: 'high', kind: 'thinking-streaming' };
+  }
   if (item.type === 'thinking' && !(context.expandedThinkingItemIds ?? []).includes(item.id)) {
     return { heightPx: 40, confidence: 'high', kind: 'thinking-collapsed' };
   }
@@ -213,36 +235,43 @@ export function estimateModelRoundHeight(
   item: Extract<VirtualItem, { type: 'model-round' }>,
   context: VirtualItemHeightEstimateContext = {},
 ): VirtualItemHeightEstimate {
-  const flowItems = item.data.items ?? [];
+  const flowItems = getModelRoundActiveItems(item.data);
   if (flowItems.length === 0) {
     return { heightPx: 200, confidence: 'low', kind: 'model-round-empty' };
   }
-  const contentHeight = flowItems.reduce(
-    (total, flowItem) => total + estimateFlowItemHeight(flowItem, context).heightPx,
-    0,
-  );
+  const groups = getProjectedModelRoundGroups(item);
+  if (getKnownVirtualItemHeightPx(item) === 0) {
+    return { heightPx: 0, confidence: 'high', kind: 'model-round-collected' };
+  }
+  const contentHeight = groups.reduce((total, group) => total + (group.type !== 'critical'
+    ? estimateFlowGroupHeight(buildInlineFlowGroupData(item.data.id, group, item.isLastRound && group.isLast), context).heightPx
+    : estimateFlowItemHeight(group.item as AnyFlowItem, context).heightPx), 0);
   return {
-    heightPx: clamp(MODEL_ROUND_BASE_HEIGHT_PX + contentHeight, 200, 3600),
+    heightPx: Math.max(MODEL_ROUND_BASE_HEIGHT_PX + contentHeight, 200),
     confidence: flowItems.some(flowItem => flowItem.type === 'tool') ? 'medium' : 'high',
     kind: 'model-round',
   };
 }
 
 export function estimateExploreGroupHeight(
-  item: Extract<VirtualItem, { type: 'explore-group' }>,
+  item: { type: 'explore-group'; turnId: string; data: ToolGroupData },
   context: VirtualItemHeightEstimateContext = {},
 ): VirtualItemHeightEstimate {
-  const isExpanded = context.exploreGroupStates?.has(item.data.groupId)
-    ? context.exploreGroupStates.get(item.data.groupId)
-    : false;
-  const contentHeight = item.data.allItems.reduce<number>(
+  return estimateFlowGroupHeight(item.data, context);
+}
+
+export function estimateFlowGroupHeight(data: ToolGroupData, context: VirtualItemHeightEstimateContext = {}): VirtualItemHeightEstimate {
+  const isExpanded = isFlowGroupExpanded(data, context.groupStates ?? context.exploreGroupStates);
+  // File identity, revision count and two exposed page edges share one header.
+  const fileRevisionHeader = 'category' in data && data.category === 'file-edit' ? 44 : undefined;
+  const contentHeight = data.allItems.reduce<number>(
     (total, flowItem) => total + estimateFlowItemHeight(flowItem as AnyFlowItem, context).heightPx,
     0,
   );
   return {
     heightPx: isExpanded
-      ? EXPLORE_GROUP_HEADER_HEIGHT_PX + Math.min(EXPLORE_GROUP_MAX_CONTENT_HEIGHT_PX, contentHeight)
-      : EXPLORE_GROUP_HEADER_HEIGHT_PX,
+      ? (fileRevisionHeader ?? EXPLORE_GROUP_HEADER_HEIGHT_PX) + contentHeight
+      : (fileRevisionHeader ?? EXPLORE_GROUP_COLLAPSED_HEIGHT_PX),
     confidence: 'medium',
     kind: isExpanded ? 'explore-group-expanded' : 'explore-group-collapsed',
   };
@@ -252,6 +281,23 @@ export function estimateVirtualItemHeight(
   item: VirtualItem,
   context: VirtualItemHeightEstimateContext = {},
 ): VirtualItemHeightEstimate {
+  if (item.timeline && item.type === 'model-round') {
+    if (item.timeline.layout === 'agent-cards') {
+      const thoughts = item.data.items.filter(member => member.type === 'thinking');
+      const cardCount = item.data.items.length - thoughts.length;
+      const rows = Math.ceil(cardCount / estimateAgentCardColumns(context.availableWidthPx));
+      // Identity cards keep two fixed content lines in every execution state.
+      // Sum visual rows, not individual cards; DOM owns approvals/wrapped notes.
+      return { heightPx: rows * (80 + 12)
+        + thoughts.reduce((height, thought) => height + estimateFlowItemHeight(thought, context).heightPx, 0),
+        confidence: 'medium', kind: 'timeline-agent-cards' };
+    }
+    const { kind, expanded, group } = item.timeline;
+    const heightPx = kind === 'group-header' ? (group?.category === 'file-edit' ? 52 : expanded ? 48 : 36)
+      : kind === 'round-header' ? 48 : kind === 'round-footer' ? 56
+        : item.data.items.reduce((height, member) => height + estimateFlowItemHeight(member as AnyFlowItem, context).heightPx, 0);
+    return { heightPx: Math.max(1, heightPx), confidence: 'medium', kind: `timeline-${kind}` };
+  }
   switch (item.type) {
     case 'user-message':
     case 'user-steering-message':

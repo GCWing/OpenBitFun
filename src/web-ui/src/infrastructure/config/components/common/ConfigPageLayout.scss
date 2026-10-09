@@ -106,6 +106,13 @@
   text-wrap: pretty;
 }
 
+.openbitfun-config-page-section__description--inline {
+  margin: 0;
+  max-inline-size: none;
+  white-space: nowrap;
+  text-wrap: nowrap;
+}
+
 .openbitfun-config-page-section__extra {
   flex-shrink: 0;
   display: flex;

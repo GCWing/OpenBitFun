@@ -18,7 +18,6 @@ export interface QuickAction {
 
 export interface AIExperienceSettings {
   enable_session_title_generation: boolean;
-  enable_visual_mode: boolean;
   /** Whether to show the desktop Agent companion. */
   enable_agent_companion: boolean;
   /** Optional Petdex-compatible companion package selected by the user. */
@@ -29,6 +28,8 @@ export interface AIExperienceSettings {
   voice_input: VoiceInputSettings;
   /** User-defined quick actions shown in the post-coding actions menu. */
   quick_actions?: QuickAction[];
+  /** Absent on older execution hosts; their commit co-author policy is not configurable. */
+  enable_git_commit_coauthor?: boolean;
 }
 
 export type AIExperienceSettingsPatch = Partial<Omit<AIExperienceSettings, 'voice_input'>> & {
@@ -50,6 +51,8 @@ export interface AgentCompanionPetSelection {
 const CONFIG_PATH = 'app.ai_experience';
 
 type PersistedAIExperienceSettings = AIExperienceSettings & {
+  /** Retired visual mode setting from older builds. */
+  enable_visual_mode?: unknown;
   /** Retired in favor of the desktop-only companion surface. */
   agent_companion_display_mode?: unknown;
 };
@@ -71,7 +74,6 @@ export const DEFAULT_QUICK_ACTIONS: QuickAction[] = [
 
 const defaultSettings: AIExperienceSettings = {
   enable_session_title_generation: true,
-  enable_visual_mode: false,
   enable_agent_companion: true,
   agent_companion_pet: DEFAULT_AGENT_COMPANION_PET,
   enable_workspace_search: false,
@@ -91,6 +93,7 @@ function normalizeSettings(settings: PersistedAIExperienceSettings | null | unde
   // longer exists, so discard the retired field and let the enable flag own
   // the single desktop companion surface.
   const {
+    enable_visual_mode: _legacyVisualMode,
     agent_companion_display_mode: _legacyDisplayMode,
     ...currentSettings
   } = settings ?? {} as PersistedAIExperienceSettings;
@@ -102,6 +105,10 @@ function normalizeSettings(settings: PersistedAIExperienceSettings | null | unde
       ...currentSettings.voice_input,
     },
     quick_actions: currentSettings.quick_actions ?? DEFAULT_QUICK_ACTIONS,
+    // Older hosts omit the field; keep it absent so the UI can gate unsupported writes.
+    enable_git_commit_coauthor: typeof currentSettings.enable_git_commit_coauthor === 'boolean'
+      ? currentSettings.enable_git_commit_coauthor
+      : undefined,
   };
   // Legacy configs used null to mean the built-in SVG panda. Resolve null to the current preset.
   if (!merged.agent_companion_pet) {
@@ -159,7 +166,7 @@ export class AIExperienceConfigService {
   }
 
    
-  async getSettingsAsync(options?: { forceRefresh?: boolean }): Promise<AIExperienceSettings> {
+  async getSettingsAsync(options?: { forceRefresh?: boolean; requireLoaded?: boolean }): Promise<AIExperienceSettings> {
     this.ensureConfigWatcher();
     try {
       const settings = options?.forceRefresh
@@ -169,6 +176,7 @@ export class AIExperienceConfigService {
       return this.cachedSettings;
     } catch (error) {
       log.error('Failed to get config', error);
+      if (options?.requireLoaded) throw error;
       return this.getSettings(); 
     }
   }

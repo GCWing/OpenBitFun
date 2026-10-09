@@ -1,3 +1,4 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { OverflowText } from '@openbitfun/ui';
 /**
  * Main application layout.
@@ -9,7 +10,7 @@ import { OverflowText } from '@openbitfun/ui';
  * TitleBar removed; window controls moved to NavBar, dialogs managed here.
  */
 
-import React, { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useContext, lazy, Suspense } from 'react';
+import React, { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useContext, Suspense } from 'react';
 import { useWorkspaceContext } from '../../infrastructure/contexts/WorkspaceContext';
 import { useWindowControls } from '../hooks/useWindowControls';
 import { isWindowFullscreenShortcut } from '../hooks/windowFullscreenShortcut';
@@ -46,21 +47,21 @@ import './AppLayout.scss';
 type TransitionDirection = 'entering' | 'returning' | null;
 
 const log = createLogger('AppLayout');
-const NewProjectDialog = lazy(() =>
+const NewProjectDialog = lazyWithRecovery(() =>
   import('../components/NewProjectDialog').then(module => ({ default: module.NewProjectDialog }))
 );
-const ToolbarMode = lazy(() =>
+const ToolbarMode = lazyWithRecovery(() =>
   import('../../flow_chat/components/toolbar-mode/ToolbarMode').then(module => ({
     default: module.ToolbarMode,
   }))
 );
-const FloatingMiniChat = lazy(() =>
+const FloatingMiniChat = lazyWithRecovery(() =>
   import('./FloatingMiniChat').then(module => ({ default: module.FloatingMiniChat }))
 );
-const AboutDialog = lazy(() =>
+const AboutDialog = lazyWithRecovery(() =>
   import('../components/AboutDialog').then(module => ({ default: module.AboutDialog }))
 );
-const WorkspaceManager = lazy(() => import('../../tools/workspace/components/WorkspaceManager'));
+const WorkspaceManager = lazyWithRecovery(() => import('../../tools/workspace/components/WorkspaceManager'));
 
 interface AppLayoutProps {
   className?: string;
@@ -325,7 +326,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
             currentWorkspace.workspaceKind === WorkspaceKind.Assistant
               ? 'Claw'
               : explicitPreferredMode;
-          sessionId = await flowChatManager.createChatSession(
+          sessionId = await flowChatManager.createChatDraft(
             flowChatSessionConfigForWorkspace(currentWorkspace),
             initialSessionMode,
           );
@@ -583,7 +584,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
       }
       const flowChatManager = FlowChatManager.getInstance();
       const sessionConfig = flowChatSessionConfigForWorkspace(currentWorkspace);
-      const sessionId = await flowChatManager.createChatSession(sessionConfig);
+      const sessionId = await flowChatManager.createChatDraft(sessionConfig);
       await openMainSession(sessionId);
     } catch (error) {
       log.error('Failed to create FlowChat session', error);

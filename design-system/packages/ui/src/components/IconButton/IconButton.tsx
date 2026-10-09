@@ -14,7 +14,8 @@ export interface IconButtonProps
   shape?: "circle" | "square";
   size?: "xs" | "standard" | "sm" | "md" | "lg";
   tone?: "danger" | "neutral";
-  variant?: "fill" | "outline" | "primary" | "quiet";
+  /** Use annotation with an xs size and Tooltip for supplemental label help. */
+  variant?: "annotation" | "fill" | "outline" | "primary" | "quiet";
 }
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton({

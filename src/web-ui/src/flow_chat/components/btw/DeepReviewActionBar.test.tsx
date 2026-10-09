@@ -665,7 +665,7 @@ describeWithJsdom('DeepReviewActionBar', () => {
     });
 
     const { useSettingsStore } = await import('@/app/scenes/settings/settingsStore');
-    expect(useSettingsStore.getState().activePageId).toBe('tools.execution');
+    expect(useSettingsStore.getState().activePageId).toBe('ai.execution');
     expect(useSettingsStore.getState().activeViewId).toBeNull();
   });
 

@@ -45,18 +45,16 @@ function expectRole(source: string, selector: string, role: string): void {
 }
 
 describe('FlowChat semantic typography roles', () => {
-  it('uses 90% black for standard light-theme answer copy only', () => {
+  it('keeps answer and reasoning content on theme-owned tones', () => {
     const flowTextBlock = readSource('./FlowTextBlock.scss');
+    const reasoning = readSource('../tool-cards/ModelThinkingDisplay.scss');
 
-    expect(flowTextBlock).toContain(
-      ":root[data-color-scheme='light'][data-contrast='standard'] & .markdown-renderer",
+    expect(extractBlock(flowTextBlock, '.flow-text-block {')).toContain(
+      'color: var(--openbitfun-color-content-primary);',
     );
-    expect(flowTextBlock).toContain(
-      ":root[data-color-scheme='light'][data-contrast='standard'] & .text-content",
-    );
-    expect(flowTextBlock).toContain(
-      'color-mix(in srgb, var(--openbitfun-color-content-on-light) 90%, transparent)',
-    );
+    expect(reasoning).toContain('color: var(--openbitfun-color-content-secondary);');
+    expect(flowTextBlock).not.toContain('data-color-scheme');
+    expect(flowTextBlock).not.toContain('color-mix(');
   });
 
   it('consumes public semantic roles without a parallel Sass or Appearance ladder', () => {
@@ -77,56 +75,85 @@ describe('FlowChat semantic typography roles', () => {
     }
   });
 
-  it('keeps every FlowChat Markdown surface on one compact weight hierarchy', () => {
-    const policy = readSource('../_markdown-typography.scss');
-    const renderer = extractBlock(policy, '.markdown-renderer {');
-    const headings = extractBlock(policy, 'h1,');
-    const emphasis = extractBlock(policy, 'strong,');
+  it('uses public reading roles and the shared code font for code content', () => {
+    const markdown = readSource('../../infrastructure/markdown/Markdown.scss');
+    for (const [selector, role] of [
+      ['.markdown-renderer {', 'flow-body'],
+      ...[1, 2, 3, 4, 5, 6].map(level => [`.markdown-renderer h${level}`, 'heading-section']),
+      ['.markdown-renderer pre {', 'flow-code'],
+      ['.markdown-renderer .code-block-lang {', 'flow-meta'],
+      ['.markdown-renderer .code-block-body {', 'flow-code'],
+      ['.markdown-renderer summary {', 'heading-card'],
+      ['.markdown-renderer .table-wrapper table {', 'flow-body'],
+      ['.markdown-renderer .table-wrapper th {', 'label-sm'],
+    ]) {
+      const block = extractBlock(markdown, selector);
+      expect(block).toContain(selector === '.markdown-renderer {'
+        ? 'font-family: var(--openbitfun-type-flow-body-font-family);'
+        : role === 'flow-code' ? 'font-family: var(--openbitfun-type-flow-code-font-family);'
+        : 'font-family: inherit;');
+      for (const property of ['font-size', 'font-weight', 'line-height', 'letter-spacing']) {
+        expect(block).toContain(`${property}: var(--openbitfun-type-${role}-${property});`);
+      }
+    }
 
-    expect(renderer).toContain('font-size: var(--openbitfun-type-flow-control-font-size);');
-    expect(renderer).toContain('font-weight: var(--openbitfun-type-flow-control-font-weight);');
-    expect(headings).toContain('font-size: var(--openbitfun-type-flow-control-font-size);');
-    expect(headings).toContain('font-weight: var(--openbitfun-type-label-selected-font-weight);');
-    expect(emphasis).toContain('font-weight: var(--openbitfun-type-label-lg-font-weight);');
+    for (const source of [markdown, readSource('../../infrastructure/markdown/MermaidBlock.scss')]) {
+      const families = Array.from(source.matchAll(/font-family:\s*([^;]+);/g), match => match[1].trim());
+      expect(families.every(family => family === 'inherit'
+        || family === 'var(--openbitfun-type-flow-code-font-family)'
+        || family === 'var(--openbitfun-type-flow-body-font-family)')).toBe(true);
+    }
 
     for (const consumer of [
       './FlowTextBlock.scss',
       './modern/VirtualItemRenderer.scss',
       './usage/SessionUsagePanel.scss',
       './usage/SessionUsageReportCard.scss',
+      './voice/ConversationModeSurface.scss',
       '../tool-cards/ModelThinkingDisplay.scss',
     ]) {
-      expect(readSource(consumer)).toContain('@include markdownTypography.apply;');
+      expect(readSource(consumer)).not.toContain('markdownTypography');
     }
 
     const flowTextBlock = extractBlock(
       readSource('./FlowTextBlock.scss'),
-      '.markdown-renderer {',
+      '.flow-text-block {',
     );
     const thinkingMarkdown = extractBlock(
       readSource('../tool-cards/ModelThinkingDisplay.scss'),
       '.thinking-content .markdown-renderer.thinking-markdown {',
     );
 
-    expect(flowTextBlock).not.toContain(
+    expect(flowTextBlock).toContain(
       'font-size: var(--openbitfun-type-flow-body-font-size);',
     );
-    expect(thinkingMarkdown).not.toContain(
-      'font-size: var(--openbitfun-type-flow-body-font-size);',
-    );
+    expect(thinkingMarkdown).not.toContain('font-size:');
   });
 
-  it('keeps frequent composer and menu actions on the control role', () => {
+  it('keeps composer controls on their flow role and menu labels on the shared action role', () => {
     const chatInput = readSource('./ChatInput.scss');
     const harness = readSource('./HarnessProfileSelector.scss');
     const model = readSource('./ModelSelector.scss');
     const reasoning = readSource('./ReasoningPresetSelector.scss');
+    const menu = readSource('../../../../../design-system/packages/ui/src/components/Menu/Menu.tsx');
+    const actionItem = readSource('../../../../../design-system/packages/ui/src/components/ActionItem/ActionItem.module.css');
 
     expectRole(chatInput, '&__target-tab {', 'control');
     expectRole(chatInput, '&__slash-command-name {', 'control');
     expectRole(harness, '.openbitfun-harness-selector__trigger {', 'control');
     expectRole(model, '&__trigger {', 'control');
-    expectRole(model, '&__option-name {', 'control');
+    // MenuItem now owns the model row's label through ActionItem; the product
+    // wrapper must inherit that public role rather than recreate its sizing.
+    expect(menu).toContain('<ActionItem');
+    expect(extractBlock(model, '&__option-name {')).not.toMatch(/\bfont(?:-[\w-]+)?\s*:/);
+    const label = extractBlock(actionItem, '\n  .label {');
+    for (const property of ['font-family', 'font-size', 'font-weight', 'letter-spacing']) {
+      expect(label).toContain(`${property}: var(--openbitfun-type-label-md-${property});`);
+      expect(extractBlock(model, '&__dropdown {')).toContain(
+        `${property}: var(--openbitfun-type-label-md-${property});`,
+      );
+    }
+    expect(label).toContain('line-height: var(--openbitfun-type-action-row-line-height);');
     expectRole(reasoning, '&__title {', 'control');
     expectRole(reasoning, '&__option-label {', 'control');
   });
@@ -135,7 +162,7 @@ describe('FlowChat semantic typography roles', () => {
     const chatInput = readSource('./ChatInput.scss');
     const modelRound = readSource('./modern/ModelRoundItem.scss');
     const userMessage = readSource('./modern/UserMessageItem.scss');
-    const flowTextBlock = readSource('./FlowTextBlock.scss');
+    const markdown = readSource('../../infrastructure/markdown/Markdown.scss');
     const workspaceStrip = readSource('./ChatInputWorkspaceStrip.scss');
 
     expectRole(chatInput, '&__placeholder {', 'control');
@@ -144,8 +171,7 @@ describe('FlowChat semantic typography roles', () => {
     // The context track is a quiet meta line above the composer surface: one
     // step for every label on it, facts and controls alike.
     expectRole(workspaceStrip, '&__permission-trigger {', 'meta');
-    expectRole(modelRound, '.model-round-item__retry-toggle {', 'control');
-    expectRole(modelRound, '.model-round-item__attempt-diagnostic-section pre {', 'support');
+    expect(modelRound).not.toContain('.model-round-item__retry-toggle {');
     expect(extractBlock(modelRound, '.model-round-item__meta {')).toContain(
       'font-size: var(--openbitfun-type-flow-meta-font-size);',
     );
@@ -154,17 +180,31 @@ describe('FlowChat semantic typography roles', () => {
     expect(extractBlock(userMessage, '.user-message-item--failed {')).toContain(
       '--_failed-font-size: var(--openbitfun-type-flow-control-font-size);',
     );
-    expectRole(flowTextBlock, '.markdown-renderer .inline-code {', 'control');
+    const inlineCode = extractBlock(markdown, '.markdown-renderer .inline-code {');
+    expect(inlineCode).toContain('font-family: var(--openbitfun-type-flow-code-font-family);');
+    expect(inlineCode).toContain('font-size: inherit;');
+    expect(inlineCode).toContain('font-weight: var(--openbitfun-type-flow-body-font-weight);');
   });
 
-  it('keeps completion metadata as an unlabeled two-value row on public tokens', () => {
+  it('keeps inline duration and shared completion details accessible on public tokens', () => {
     const component = readSource('./modern/ModelRoundItem.tsx');
     const stylesheet = readSource('./modern/ModelRoundItem.scss');
     const meta = extractBlock(stylesheet, '.model-round-item__meta {');
+    const metrics = readSource('../../../../../design-system/packages/ui/src/flow-chat/conversation/FlowChatTurnMetrics.tsx');
+    const metricStyles = readSource('../../../../../design-system/packages/ui/src/flow-chat/conversation/FlowChatTurnMetrics.module.css');
 
     expect(component).not.toContain('model-round-item__meta-label');
     expect(component).not.toContain('model-round-item__meta-value');
-    expect(component).toContain('aria-label={`${item.label}: ${item.value}`}');
+    expect(component).toContain('description={completionMetaItems.map(item => `${item.label}: ${item.value}`).join(\' · \')}');
+    expect(component).toContain('content={<FlowChatMetricDetails rows={completionMetaItems} />}');
+    expect(component).toContain('{durationMetaItem.value}');
+    expect(metrics).toContain('aria-label={description}');
+    expect(extractBlock(metricStyles, '.metric {')).toContain('font: inherit;');
+    for (const property of ['font-family', 'font-size', 'font-weight', 'line-height']) {
+      expect(extractBlock(metricStyles, '.root {')).toContain(
+        `${property}: var(--openbitfun-type-flow-meta-${property});`,
+      );
+    }
     expect(meta).toContain('gap: var(--openbitfun-space-2);');
     expect(meta).toContain('color: var(--openbitfun-color-content-muted);');
     expect(meta).toContain('font-family: var(--openbitfun-type-flow-meta-font-family);');

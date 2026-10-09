@@ -15,6 +15,24 @@ expansion and stable-item reading anchors; following readers return to the lates
 output. A successfully restored review location must not reload stale persisted
 UI state on each tab switch. Closing a tab releases its wrapper and view state.
 
+Ordinary BTW conversations are agent-backed transient sessions, excluded from
+sidebar history and disk persistence. Explicit tab closure uses the shared
+design-system confirmation, waits for initial submission, stops the runtime, and
+discards the session and drafts. Keep the tab on cleanup failure. Switching tabs,
+collapsing the pane, and changing surfaces never imply closure. Review and
+subagent detail tabs retain their independent runtime and persistence lifetimes.
+Legacy persisted BTW records remain readable until explicitly discarded.
+The confirmation also offers saving submitted BTW content as a durable Fork
+session. Save through the existing session-fork transport before deleting the
+temporary source, keep its tab on failure, and reuse the saved fork on cleanup
+retry. An empty draft has no submitted conversation to save.
+
+For BTW creation, model selection, and explicit closure, run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/services/BtwThreadService.test.ts src/flow_chat/services/BtwSessionLifecycle.test.ts src/flow_chat/components/ModelSelectorExternal.test.tsx src/app/components/panels/content-canvas/hooks/useTabLifecycle.btw.test.tsx
+```
+
 For transcript windowing, scrolling, or review integration changes, run:
 
 ```bash

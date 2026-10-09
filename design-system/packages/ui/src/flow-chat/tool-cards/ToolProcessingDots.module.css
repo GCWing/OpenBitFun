@@ -1,65 +1,10 @@
 @layer openbitfun.components {
   .root {
-    --_dot-size: 2px;
-    --_dot-gap: 2px;
-
     display: inline-flex;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    gap: var(--_dot-gap);
     color: inherit;
     vertical-align: middle;
-  }
-
-  .root[data-size="10"] {
-    --_dot-gap: 1px;
-  }
-
-  .root[data-size="14"] {
-    --_dot-size: 2.5px;
-  }
-
-  .root[data-size="16"] {
-    --_dot-size: 3px;
-    --_dot-gap: 3px;
-  }
-
-  .dot {
-    inline-size: var(--_dot-size);
-    block-size: var(--_dot-size);
-    flex: 0 0 auto;
-    border-radius: var(--openbitfun-radius-pill);
-    background: currentColor;
-    animation: openbitfun-flow-chat-processing-dot var(--openbitfun-motion-duration-loop) var(--openbitfun-motion-easing-standard) infinite;
-  }
-
-  .dot:nth-child(2) {
-    animation-delay: var(--openbitfun-motion-duration-fast);
-  }
-
-  .dot:nth-child(3) {
-    animation-delay: var(--openbitfun-motion-duration-base);
-  }
-
-  @keyframes openbitfun-flow-chat-processing-dot {
-    0%,
-    60%,
-    100% {
-      opacity: var(--openbitfun-opacity-disabled);
-      transform: translateY(0);
-    }
-
-    30% {
-      opacity: 1;
-      transform: translateY(-2px);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .dot {
-      animation: none;
-      opacity: var(--openbitfun-opacity-hover);
-      transform: none;
-    }
   }
 }

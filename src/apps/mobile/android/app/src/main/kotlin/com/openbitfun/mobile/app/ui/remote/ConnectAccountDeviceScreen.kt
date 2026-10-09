@@ -39,7 +39,6 @@ import com.openbitfun.mobile.core.feature.account.AccountUiState
 
 internal const val CONNECT_ACCOUNT_DEVICE_TEST_TAG: String = "connect-account-device"
 internal const val CONNECT_ACCOUNT_DEVICE_REFRESH_TEST_TAG: String = "connect-account-device-refresh"
-internal const val CONNECT_ACCOUNT_DEVICE_SCAN_TEST_TAG: String = "connect-account-device-scan"
 internal const val CONNECT_ACCOUNT_DEVICE_ROW_TEST_TAG_PREFIX: String = "connect-account-device-row:"
 
 /**
@@ -48,8 +47,8 @@ internal const val CONNECT_ACCOUNT_DEVICE_ROW_TEST_TAG_PREFIX: String = "connect
  *
  * A signed-in phone should not fall through to anonymous pairing just because
  * no desktop happened to be online when its session was restored. The last
- * device snapshot remains useful, refresh is explicit, and QR pairing is still
- * available as the alternate path.
+ * device snapshot remains useful and refresh is explicit; the account is the
+ * only way to reach a desktop.
  */
 @Composable
 internal fun ConnectAccountDeviceScreen(
@@ -57,7 +56,6 @@ internal fun ConnectAccountDeviceScreen(
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onSelect: (String) -> Unit,
-    onOpenScanner: () -> Unit,
     modifier: Modifier,
 ) {
     Column(
@@ -115,41 +113,6 @@ internal fun ConnectAccountDeviceScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             DeviceListCard(state = state, onRefresh = onRefresh, onSelect = onSelect)
-            Surface(
-                onClick = onOpenScanner,
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(58.dp)
-                    .testTag(CONNECT_ACCOUNT_DEVICE_SCAN_TEST_TAG),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        painterResource(R.drawable.ic_symbol_link),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp).alpha(0.66f),
-                    )
-                    Text(
-                        stringResource(R.string.connect_account_devices_scan),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Icon(
-                        painterResource(R.drawable.ic_symbol_chevron_right),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(15.dp).alpha(0.44f),
-                    )
-                }
-            }
         }
     }
 }

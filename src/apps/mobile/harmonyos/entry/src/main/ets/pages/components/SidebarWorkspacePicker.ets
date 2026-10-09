@@ -3,7 +3,8 @@ import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { SavedRuntimeConnection, RecentWorkspaceEntry, RemoteWorkspaceIdentity } from '../../model/RemoteModels';
 import { remoteWorkspaceIdentityMatches, remoteWorkspaceKey } from '../../services/RemoteSessionIdentity';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
-import { CARD, INK, LINE, MUTED, PAGE_BG, SOFT } from './Theme';
+import { CARD, CONTENT_ON_ACTION, INK, LINE, MUTED, PAGE_BG, PRIMARY_ACTION, SOFT, TRANSPARENT } from './Theme';
+import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 
 @ComponentV2
 export struct SidebarWorkspacePicker {
@@ -23,6 +24,23 @@ export struct SidebarWorkspacePicker {
   @Param selectedWorkspaceSshHost: string = '';
   @Param loading: boolean = false;
   @Event onClose: () => void = () => {};
+  /**
+   * The sheet's own bottom edge, in vp. The picker is a full-height sheet and
+   * its confirm button is the fixed control at that edge, so the button keeps
+   * the navigation bar clear itself.
+   */
+  @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
+
+  aboutToAppear(): void {
+    const context = this.getUIContext().getHostContext();
+    if (context) {
+      this.insets.bind(this.getUIContext(), context);
+    }
+  }
+
+  aboutToDisappear(): void {
+    this.insets.unbind();
+  }
   /**
    * Catalog rows report their stable `workspaceId`; the manual path entry has
    * none, which is the only case where the host may resolve by path.
@@ -61,30 +79,124 @@ export struct SidebarWorkspacePicker {
     return options;
   }
 
+  private selectedConnectionIndex(): number {
+    if (this.connectionId.length === 0) return 0;
+    const index = this.savedConnections.findIndex((connection: SavedRuntimeConnection): boolean => connection.id === this.connectionId);
+    return index >= 0 ? index + 1 : 0;
+  }
+
+  private visibleWorkspaces(): RecentWorkspaceEntry[] {
+    if (this.connectionId.length === 0) {
+      return this.workspaces.filter((item: RecentWorkspaceEntry): boolean => !this.isRemoteRoot(item))
+        .concat(this.workspaces.filter((item: RecentWorkspaceEntry): boolean => this.isRemoteRoot(item)));
+    }
+    // A saved SSH profile is not a live connection. Do not keep showing the
+    // host catalog while the selected profile is still probing or unavailable.
+    if (this.tools.browseBusy || this.tools.browseError.length > 0 ||
+      this.tools.browsePath.length === 0 || this.tools.browseEntries.length === 0) return [];
+    const connection = this.savedConnections.find((item: SavedRuntimeConnection): boolean => item.id === this.connectionId);
+    const rows = this.workspaces.filter((item: RecentWorkspaceEntry): boolean =>
+      item.remoteConnectionId === this.connectionId ||
+      (connection !== undefined && connection.host.length > 0 && item.remoteSshHost === connection.host)
+    );
+    // Keep a persisted remote root available for browsing, but put concrete
+    // project folders first so the root cannot masquerade as the project.
+    return rows.filter((item: RecentWorkspaceEntry): boolean => !this.isRemoteRoot(item))
+      .concat(rows.filter((item: RecentWorkspaceEntry): boolean => this.isRemoteRoot(item)));
+  }
+
+  private isRemoteRoot(workspace: RecentWorkspaceEntry): boolean {
+    const path = (workspace.path || '').trim();
+    return path === '/' && (workspace.workspaceKind || '').toLowerCase() === 'remote';
+  }
+
+  private canOpenTargetPath(): boolean {
+    const path = this.targetPath.trim();
+    return !this.loading && path.length > 0 && !(this.connectionId.length > 0 && path === '/');
+  }
+
+  private openRemoteRootForBrowsing(workspace: RecentWorkspaceEntry): void {
+    const connection = workspace.remoteConnectionId || this.connectionId;
+    if (connection.length === 0) return;
+    this.connectionId = connection;
+    this.targetPath = '/';
+    this.browsing = true;
+    this.onBrowse({ type: 'browse-workspace', path: '/', text: connection });
+  }
+
+  private workspaceTitle(workspace: RecentWorkspaceEntry): string {
+    if (this.isRemoteRoot(workspace)) return RemoteI18n.t('sidebar.browseRemoteRoot');
+    return workspace.name || this.basename(workspace.path);
+  }
+
+  private workspaceSubtitle(workspace: RecentWorkspaceEntry): string {
+    const connectionId = workspace.remoteConnectionId?.trim() || '';
+    const savedConnection = connectionId.length > 0 ?
+      this.savedConnections.find((connection: SavedRuntimeConnection): boolean => connection.id === connectionId) : undefined;
+    const remoteLabel = savedConnection?.name?.trim() || workspace.remoteSshHost?.trim() || '';
+    return remoteLabel.length > 0 ? `${remoteLabel} · ${workspace.path}` : workspace.path;
+  }
+
+  private selectConnection(index: number): void {
+    this.connectionId = index > 0 ? this.savedConnections[index - 1].id : '';
+    this.browsing = this.connectionId.length > 0;
+    if (this.connectionId.length > 0) {
+      this.targetPath = '/';
+      this.onBrowse({ type: 'browse-workspace', path: '/', text: this.connectionId });
+    }
+  }
+
   build() {
-    Column() {
+    Column({ space: 0 }) {
       this.Header()
       Divider().color(LINE)
-      TextInput({ text: this.targetPath, placeholder: RemoteI18n.t('sidebar.targetWorkspacePath') })
-        .onChange((value: string) => { this.targetPath = value; })
-        .enabled(!this.loading)
-      Select(this.connectionOptions())
-        .selected(0)
-        .onSelect((index: number) => { this.connectionId = index > 0 ? this.savedConnections[index - 1].id : ''; this.browsing = false; })
-      Button(RemoteI18n.t('workspaceTools.browse')).enabled(this.canBrowse && !this.tools.browseBusy)
+      if (this.savedConnections.length > 0 || this.deviceName.length > 0) {
+        Column({ space: 7 }) {
+          Text(RemoteI18n.t('sidebar.controlledDevice')).fontColor(MUTED).fontSize(MobileDesignTypography.labelSmall.size)
+          Select(this.connectionOptions())
+            .selected(this.selectedConnectionIndex())
+            .value(this.connectionId.length > 0 ? this.savedConnections.find((connection: SavedRuntimeConnection): boolean => connection.id === this.connectionId)?.name || this.deviceName : this.deviceName)
+            .fontColor(INK).width('100%').height(54).enabled(!this.loading)
+            .backgroundColor(CARD).border({ width: 1, color: LINE }).borderRadius(16)
+            .onSelect((index: number) => this.selectConnection(index))
+        }.width('100%').padding({ top: 14, bottom: 12 })
+      }
+      Column({ space: 7 }) {
+        Text(RemoteI18n.t('sidebar.currentPath')).fontColor(MUTED).fontSize(MobileDesignTypography.labelSmall.size)
+        Row({ space: 10 }) {
+          Stack({ alignContent: Alignment.Center }) {
+            SymbolGlyph($r('sys.symbol.folder')).fontSize(19).fontColor([INK])
+          }.width(38).height(38).borderRadius(11).backgroundColor(CARD)
+          TextInput({ text: this.targetPath, placeholder: RemoteI18n.t('sidebar.targetWorkspacePath') })
+            .fontColor(INK).fontSize(MobileDesignTypography.bodySmall.size).layoutWeight(1)
+            .height(38).padding({ left: 0, right: 0 }).backgroundColor(TRANSPARENT).border({ width: 0, color: TRANSPARENT })
+            .onChange((value: string) => { this.targetPath = value; })
+            .enabled(!this.loading)
+          SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(16).fontColor([MUTED])
+        }.width('100%').height(64).padding({ left: 12, right: 12 }).backgroundColor(SOFT).borderRadius(16)
+      }.width('100%').padding({ bottom: 12 })
+      Button(RemoteI18n.t('workspaceTools.browse'))
+        .fontColor(INK).fontSize(MobileDesignTypography.bodySmall.size).height(44).width('100%')
+        .backgroundColor(SOFT).borderRadius(13).enabled(this.canBrowse && !this.tools.browseBusy && !this.loading)
         .onClick(() => { this.browsing = true; this.onBrowse({ type: 'browse-workspace', path: this.targetPath || (this.connectionId.length === 0 ? this.selectedWorkspacePath : '') || '/', text: this.connectionId }); })
       if (this.browsing) { this.FolderBrowser() }
-      Button(RemoteI18n.t('sidebar.openWorkspacePath'))
-        .enabled(!this.loading && this.targetPath.trim().length > 0)
-        .onClick(() => this.onSelectWorkspace(this.targetPath.trim(), this.connectionId.length > 0 ? this.connectionId : undefined))
-      if (this.loading && this.workspaces.length === 0) {
+      if (this.connectionId.length > 0 && this.targetPath.trim() === '/') {
+        Text(RemoteI18n.t('sidebar.remoteRootBrowseOnly'))
+          .fontColor(MUTED).fontSize(MobileDesignTypography.labelSmall.size)
+          .maxLines(2).width('100%').padding({ top: 2 })
+      }
+      Row({ space: 8 }) {
+        Text(RemoteI18n.t('sidebar.recentWorkspaces')).fontColor(MUTED).fontSize(MobileDesignTypography.labelSmall.size).fontWeight(FontWeight.Medium).layoutWeight(1)
+        Text(RemoteI18n.t('sidebar.tapToSwitch')).fontColor(MUTED).fontSize(MobileDesignTypography.labelSmall.size)
+      }.width('100%').padding({ top: 14, bottom: 7 })
+      if ((this.loading || this.tools.browseBusy) && this.visibleWorkspaces().length === 0) {
         this.LoadingState()
-      } else if (this.workspaces.length === 0) {
+      } else if (this.visibleWorkspaces().length === 0) {
         this.EmptyState()
       } else {
         Scroll() {
           Column({ space: 4 }) {
-            ForEach(this.workspaces, (row: RecentWorkspaceEntry) => {
+            ForEach(this.visibleWorkspaces(), (row: RecentWorkspaceEntry) => {
               this.WorkspaceRow(row)
             }, (workspace: RecentWorkspaceEntry): string => remoteWorkspaceKey(workspace))
           }
@@ -95,6 +207,15 @@ export struct SidebarWorkspacePicker {
         .layoutWeight(1)
         .scrollBar(BarState.Off)
       }
+      Row() {
+        Button(RemoteI18n.t('sidebar.openWorkspacePath'))
+          .fontColor(CONTENT_ON_ACTION).fontSize(MobileDesignTypography.bodyMedium.size).fontWeight(FontWeight.Medium)
+          .backgroundColor(PRIMARY_ACTION).height(48).width('100%').borderRadius(14)
+          .enabled(this.canOpenTargetPath())
+          .onClick(() => this.onSelectWorkspace(this.targetPath.trim(), this.connectionId.length > 0 ? this.connectionId : undefined))
+        // The sheet's fixed confirm button: the strip, or the design's own
+        // spacing where the strip is already clear, so it never sits in it.
+      }.width('100%').padding({ top: 12, bottom: this.insets.bottomPadding(16) }).backgroundColor(PAGE_BG)
     }
     .width('100%')
     .height('100%')
@@ -105,14 +226,29 @@ export struct SidebarWorkspacePicker {
   @Builder
   private FolderBrowser() {
     Column({ space: 8 }) {
-      Text(this.tools.browseError || this.tools.browsePath).fontColor(MUTED).maxLines(2)
+      if (this.tools.browseBusy) {
+        Row({ space: 8 }) {
+          LoadingProgress().width(18).height(18).color(MUTED)
+          Text(RemoteI18n.t('common.loading')).fontColor(MUTED).fontSize(MobileDesignTypography.bodySmall.size)
+        }.width('100%')
+      } else if (this.tools.browseError.length > 0) {
+        Text(this.tools.browseError).fontColor(MUTED).fontSize(MobileDesignTypography.bodySmall.size).maxLines(3)
+      } else {
+        Text(this.tools.browsePath).fontColor(MUTED).fontSize(MobileDesignTypography.bodySmall.size).maxLines(2)
+      }
       Row({ space: 8 }) {
-        Button(RemoteI18n.t('workspaceTools.up')).onClick(() => {
+        Button(RemoteI18n.t('workspaceTools.up'))
+          .fontColor(INK).fontSize(MobileDesignTypography.labelSmall.size).height(40).layoutWeight(1)
+          .backgroundColor(CARD).border({ width: 1, color: LINE }).borderRadius(12)
+          .onClick(() => {
           const current = this.tools.browsePath.replace(/\/+$/, '');
           this.onBrowse({ type: 'browse-workspace', path: current.slice(0, current.lastIndexOf('/')) || '/', text: this.connectionId });
         })
-        Button(RemoteI18n.t('workspaceTools.selectFolder')).onClick(() => { this.targetPath = this.tools.browsePath; this.browsing = false; })
-      }.enabled(!this.tools.browseBusy && this.tools.browsePath.length > 0)
+        Button(RemoteI18n.t('workspaceTools.selectFolder'))
+          .fontColor(CONTENT_ON_ACTION).fontSize(MobileDesignTypography.labelSmall.size).height(40).layoutWeight(1)
+          .backgroundColor(INK).borderRadius(12)
+          .onClick(() => { this.targetPath = this.tools.browsePath; this.browsing = false; })
+      }.enabled(!this.tools.browseBusy && this.tools.browseError.length === 0 && this.tools.browsePath.length > 0)
       List() {
         ForEach(this.tools.browseEntries, (entry: WorkspaceFileEntry) => {
           if (entry.isDirectory) {
@@ -173,14 +309,14 @@ export struct SidebarWorkspacePicker {
       .borderRadius(10)
       .backgroundColor(CARD)
       Column({ space: 3 }) {
-        Text((this.currentWorkspace(row).name || this.basename(this.currentWorkspace(row).path)) + (this.currentWorkspace(row).remoteSshHost?.trim() ? ` · ${(this.currentWorkspace(row).remoteSshHost || '').trim()}` : ''))
+        Text(this.workspaceTitle(this.currentWorkspace(row)))
           .width('100%')
           .fontSize(MobileDesignTypography.bodyLarge.size)
           .fontWeight(this.isSelected(this.currentWorkspace(row)) ? FontWeight.Medium : FontWeight.Regular)
           .fontColor(INK)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(this.currentWorkspace(row).path)
+        Text(this.workspaceSubtitle(this.currentWorkspace(row)))
           .width('100%')
           .fontSize(MobileDesignTypography.labelSmall.size)
           .fontColor(MUTED)
@@ -190,10 +326,11 @@ export struct SidebarWorkspacePicker {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
       Stack({ alignContent: Alignment.Center }) {
-        SymbolGlyph(this.isSelected(this.currentWorkspace(row)) ?
-          $r('sys.symbol.checkmark') : $r('sys.symbol.chevron_right'))
-          .fontSize(this.isSelected(this.currentWorkspace(row)) ? 17 : 15)
-          .fontColor([this.isSelected(this.currentWorkspace(row)) ? INK : MUTED])
+        SymbolGlyph(this.isRemoteRoot(this.currentWorkspace(row)) ?
+          $r('sys.symbol.questionmark_circle') : this.isSelected(this.currentWorkspace(row)) ?
+          $r('sys.symbol.checkmark_circle_fill') : $r('sys.symbol.chevron_right'))
+          .fontSize(this.isRemoteRoot(this.currentWorkspace(row)) ? 17 : this.isSelected(this.currentWorkspace(row)) ? 19 : 15)
+          .fontColor([this.isRemoteRoot(this.currentWorkspace(row)) ? MUTED : this.isSelected(this.currentWorkspace(row)) ? PRIMARY_ACTION : MUTED])
       }
       .width(40)
       .height(40)
@@ -203,7 +340,14 @@ export struct SidebarWorkspacePicker {
     .padding({ left: 10, right: 8 })
     .borderRadius(14)
     .backgroundColor(this.isSelected(this.currentWorkspace(row)) ? SOFT : PAGE_BG)
-    .onClick(() => this.onSelectWorkspace(this.currentWorkspace(row).path, this.currentWorkspace(row).remoteConnectionId, this.currentWorkspace(row).remoteSshHost, this.currentWorkspace(row).workspaceId))
+    .onClick(() => {
+      const workspace = this.currentWorkspace(row);
+      if (this.isRemoteRoot(workspace)) {
+        this.openRemoteRootForBrowsing(workspace);
+      } else {
+        this.onSelectWorkspace(workspace.path, workspace.remoteConnectionId, workspace.remoteSshHost, workspace.workspaceId);
+      }
+    })
   }
 
   @Builder
@@ -222,7 +366,7 @@ export struct SidebarWorkspacePicker {
   private EmptyState() {
     Column({ space: 8 }) {
       SymbolGlyph($r('sys.symbol.folder')).fontSize(30).fontColor([MUTED])
-      Text(RemoteI18n.t('sidebar.emptyWorkspaces'))
+      Text(this.connectionId.length > 0 ? RemoteI18n.t('status.remoteUnavailable') : RemoteI18n.t('sidebar.emptyWorkspaces'))
         .fontSize(MobileDesignTypography.bodyMedium.size)
         .fontColor(MUTED)
         .textAlign(TextAlign.Center)

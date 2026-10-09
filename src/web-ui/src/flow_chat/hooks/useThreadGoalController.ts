@@ -121,6 +121,12 @@ export function useThreadGoalController(
   const [editInitialObjective, setEditInitialObjective] = useState('');
   const [resumeOpen, setResumeOpen] = useState(false);
   const lastResumePromptKey = useRef<string | null>(null);
+  /**
+   * Goal the user paused on purpose. A pause the user asked for is not an
+   * interruption to report back, so it must not raise the resume prompt; a pause
+   * that happened for another reason (a stopped turn, a usage limit) still does.
+   */
+  const userPausedGoalId = useRef<string | null>(null);
 
   const goal = storeGoal;
 
@@ -190,6 +196,11 @@ export function useThreadGoalController(
       return;
     }
     lastResumePromptKey.current = resumePromptKey(goal);
+    // The user paused this goal from the track or the menu, so the paused state
+    // they are looking at is the one they asked for.
+    if (userPausedGoalId.current && goal?.goalId === userPausedGoalId.current) {
+      return;
+    }
     setResumeOpen(true);
   }, [disabled, goal, sceneActive, sessionId]);
 
@@ -234,6 +245,9 @@ export function useThreadGoalController(
       if (!session || disabled) return null;
       const parsed = parseGoalCommand(message);
       if (!parsed) return null;
+      // `/goal pause` is the same deliberate pause as the track's control, while
+      // any other goal command leaves the goal free to report an interruption.
+      userPausedGoalId.current = parsed.kind === 'pause' ? (goal?.goalId ?? null) : null;
 
       return runGoalCommandSafely({
         session,
@@ -254,12 +268,22 @@ export function useThreadGoalController(
         },
       });
     },
-    [confirmReplaceGoal, disabled, openEdit, session, titles]
+    [confirmReplaceGoal, disabled, goal?.goalId, openEdit, session, titles]
   );
 
   const runUiAction = useCallback(
     async (action: 'clear' | 'pause' | 'resume') => {
       if (!session || disabled) return;
+      // Clearing drops the objective together with the time and tokens spent on
+      // it, and none of that can be recovered, so every entry point asks first.
+      if (action === 'clear') {
+        const confirmed = await confirmWarning(
+          t('threadGoal.clearConfirmTitle'),
+          t('threadGoal.clearConfirmMessage', { objective: goal?.objective ?? '' })
+        );
+        if (!confirmed) return;
+      }
+      userPausedGoalId.current = action === 'pause' ? (goal?.goalId ?? null) : null;
       try {
         await runThreadGoalUiAction(session, action, titles);
         if (action === 'clear') {
@@ -273,7 +297,7 @@ export function useThreadGoalController(
         notificationService.error(message, { title: titles.failedTitle, duration: 5000 });
       }
     },
-    [disabled, session, titles]
+    [disabled, goal?.goalId, goal?.objective, session, t, titles]
   );
 
   const saveEdit = useCallback(
@@ -286,6 +310,9 @@ export function useThreadGoalController(
         if (!saved) {
           return;
         }
+        // Saving an objective puts the goal back to work, so the pause the user
+        // asked for before the edit no longer describes the goal in front of them.
+        userPausedGoalId.current = null;
         setEditOpen(false);
         setMenuOpen(false);
       } catch (error) {

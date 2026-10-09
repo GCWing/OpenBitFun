@@ -12,9 +12,13 @@ never determines whether an accepted turn continues running.
 `RelaySessionHistory` owns one subscription per visible surface/session.
 `SessionRecordReplica` applies both replayed pages and live canonical records
 using stable IDs, revisions and tombstones; every page comes from the online
-host, and a stream-epoch change (host restart) drops the replica before replay. Following Happy's sync owner,
-the latest page paints first; older pages share one in-flight reader and are
-prefetched with a yield between pages. Receive cursors advance only after applying
+host, and a stream-epoch change (host restart) drops the replica before replay.
+The latest page paints first; older pages share one in-flight reader. A visible
+open or explicit reader request can warm one adjacent page while the document is
+visible and the shared resource budget permits it. This never recursively drains
+the transcript. Hiding a view pauses optional prefetch only; live records,
+reconnect and interaction-mailbox delivery keep their subscriptions.
+Receive cursors advance only after applying
 records, never from a send acknowledgement. Transport reconnect resumes that same
 subscription. Local Runtime projection machinery is not a second Relay content
 writer: peer token/body events must not overwrite canonical records.

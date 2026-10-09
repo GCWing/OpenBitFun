@@ -68,6 +68,14 @@ vi.mock('./StatusBarPopovers', () => ({
 }));
 
 const disposable = () => ({ dispose() {} });
+const findListeners = new Set<() => void>();
+const findState = {
+  isRevealed: false, searchString: '', replaceString: '',
+  onFindReplaceStateChange(listener: () => void) {
+    findListeners.add(listener);
+    return { dispose: () => { findListeners.delete(listener); } };
+  },
+};
 class TextModel {
   private version = 1;
   private listeners = new Set<() => void>();
@@ -106,6 +114,7 @@ function createRuntime() {
       },
       create: (container: HTMLElement) => ({
         getDomNode: () => container,
+        getContribution: () => ({ getState: () => findState }),
         updateOptions() {},
         onDidFocusEditorText: disposable,
         onDidBlurEditorText: disposable,
@@ -135,13 +144,13 @@ function deferred<T>() {
 
 // Exercise the callback that owns the visible dirty indicator as well as the
 // real manager and document snapshot; only Monaco rendering and host IO are fake.
-function EditorTab({ session, filePath, onChange }: {
-  session: EditorDocument; filePath: string; onChange?: (content: string) => void;
+function EditorTab({ session, filePath, onChange, active = true }: {
+  session: EditorDocument; filePath: string; onChange?: (content: string) => void; active?: boolean;
 }) {
   const [dirty, setDirty] = useState(session.snapshot?.isDirty ?? false);
   return <EditorDocumentContext.Provider value={session}>
     <output data-testid="dirty">{dirty ? 'modified' : 'saved'}</output>
-    <CodeEditor filePath={filePath} showBreadcrumb={false} onContentChange={(content, changed) => {
+    <CodeEditor filePath={filePath} isActiveTab={active} showBreadcrumb={false} onContentChange={(content, changed) => {
       setDirty(changed);
       onChange?.(content);
     }} />
@@ -175,8 +184,10 @@ function newDocument(filePath = path) {
 
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
   vi.clearAllMocks();
+  Object.assign(findState, { isRevealed: false, searchString: '', replaceString: '' });
+  findListeners.clear();
   activateSurface('local');
   documents = [];
   mocks.read.mockReset().mockResolvedValue('disk');
@@ -198,6 +209,60 @@ afterEach(async () => {
 });
 
 describe('CodeEditor disk synchronization', () => {
+  it('retains find/replace interaction across inactivity and releases only after the query is cleared', async () => {
+    await render();
+    const originalModel = model();
+    const changeFind = async (state: Partial<typeof findState>) => act(async () => {
+      Object.assign(findState, state);
+      findListeners.forEach(listener => listener());
+    });
+    await changeFind({ isRevealed: true, searchString: 'workspace' });
+    await act(async () => root.render(<EditorTab session={session} filePath={path} active={false} />));
+    await act(async () => vi.advanceTimersByTimeAsync(30_001));
+    expect(metadata().referenceCount).toBe(1);
+    await changeFind({ isRevealed: false });
+    await act(async () => vi.advanceTimersByTimeAsync(30_001));
+    expect(metadata().referenceCount).toBe(1);
+    await changeFind({ searchString: '' });
+    await act(async () => vi.advanceTimersByTimeAsync(30_001));
+    expect(metadata().referenceCount).toBe(0);
+    expect(model()).toBe(originalModel);
+    expect(findListeners.size).toBe(0);
+  });
+
+  it('keeps a composing view alive until IME composition ends, even after its tab becomes inactive', async () => {
+    await render();
+    const originalModel = model();
+    const editor = container.querySelector('.code-editor-tool')!;
+    await act(async () => editor.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })));
+    await act(async () => root.render(<EditorTab session={session} filePath={path} active={false} />));
+    await act(async () => vi.advanceTimersByTimeAsync(30_001));
+    expect(metadata().referenceCount).toBe(1);
+    expect(model()).toBe(originalModel);
+    await act(async () => editor.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })));
+    await act(async () => vi.advanceTimersByTimeAsync(30_001));
+    expect(metadata().referenceCount).toBe(0);
+    expect(model()).toBe(originalModel);
+  });
+
+  it('sleeps an inactive view while retaining the exact dirty model, and saves before reopening', async () => {
+    await render();
+    const originalModel = model();
+    await act(async () => originalModel.setValue('unsaved edit'));
+    await act(async () => root.render(<EditorTab session={session} filePath={path} active={false} />));
+    await act(async () => vi.advanceTimersByTimeAsync(30_001));
+    expect(metadata().referenceCount).toBe(0);
+    expect(model()).toBe(originalModel);
+    expect(session.snapshot).toMatchObject({ content: 'unsaved edit', savedContent: 'disk', isDirty: true });
+    await act(async () => session.save?.());
+    expect(mocks.write).toHaveBeenCalledWith('test-workspace', path, 'unsaved edit');
+    expect(session.snapshot?.isDirty).toBe(false);
+    await render();
+    expect(model()).toBe(originalModel);
+    expect(metadata().referenceCount).toBe(1);
+    expect(model().getValue()).toBe('unsaved edit');
+  });
+
   it.each(['success', 'failure'])('keeps edits dirty after a delayed metadata %s', async outcome => {
     await render();
     const pendingMetadata = deferred<typeof fileMetadata>();

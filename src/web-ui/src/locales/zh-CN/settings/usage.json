@@ -1,9 +1,9 @@
 {
   "title": "调用统计",
-  "subtitle": "当前执行主机本地保存的历史模型调用统计，不跨主机合并或同步；包含按模型、供应商和端点统计的请求数、Token 用量与缓存命中率",
+  "subtitle": "当前 OpenBitFun 主机跨工作区已记录的模型用量，包含子代理调用",
   "overview": {
-    "title": "统计概览",
-    "description": "显示当前执行主机在“{{timeRange}}”范围内的调用数据，日期和小时按 {{timeZone}} 时区划分；调整筛选后会自动刷新"
+    "title": "所选时段用量",
+    "description": "按 {{timeZone}} 统计"
   },
   "timeRange": {
     "label": "时间范围",
@@ -21,16 +21,16 @@
   "filter": {
     "kind": {
       "label": "筛选字段",
-      "all": "全部",
+      "all": "全部字段",
       "provider": "供应商",
       "model": "模型"
     },
-    "placeholder": "筛选供应商或模型",
-    "inputLabel": "筛选调用统计",
+    "placeholder": "搜索当前明细",
+    "inputLabel": "搜索用量来源",
     "clear": "清除筛选",
     "empty": {
-      "title": "没有匹配的调用数据",
-      "description": "当前筛选条件下没有调用记录"
+      "title": "没有匹配项",
+      "description": "试试其他关键词"
     }
   },
   "refresh": "刷新",
@@ -39,11 +39,15 @@
   "unsupported": "当前连接设备的 OpenBitFun 版本较旧，暂不支持调用统计。",
   "empty": {
     "title": "暂无调用数据",
-    "description": "开始与模型对话后，这里会展示模型调用统计"
+    "description": "开始与模型对话后，这里会展示模型调用统计",
+    "periodTitle": "此时段暂无调用数据",
+    "periodDescription": "可以切换时间范围查看其他记录"
   },
   "summary": {
-    "requests": "请求数",
+    "requests": "已记录模型请求",
     "tokens": "Token 总量",
+    "inputTokens": "输入 Token",
+    "outputTokens": "输出 Token",
     "cachedTokens": "缓存命中 Token",
     "cacheHitRate": "缓存命中率"
   },
@@ -51,11 +55,31 @@
     "totalTokens": "Token 总量：{{count}}",
     "tokensUnit": "Token"
   },
+  "activity": {
+    "title": "近半年每日用量",
+    "description": "固定近半年 · {{timeZone}}",
+    "day": "{{date}}：{{tokens}} Token",
+    "total": "累计 {{tokens}} Token",
+    "less": "少",
+    "more": "多"
+  },
   "distributions": {
-    "title": "使用分布",
+    "title": "用量来源",
     "byModel": "模型分布",
-    "byGroup": "分组使用分布",
-    "byEndpoint": "端点分布"
+    "byGroup": "供应商分布",
+    "byEndpoint": "端点明细",
+    "more": "更多来源",
+    "showAll": "查看全部",
+    "showLess": "收起"
+  },
+  "details": {
+    "title": "更多明细"
+  },
+  "cache": {
+    "title": "缓存数据",
+    "description": "仅在模型服务提供数据时计算",
+    "unavailable": "未提供",
+    "note": "缓存读取 Token 已包含在输入 Token 中；命中率仅按有缓存数据的请求计算。"
   },
   "cacheHitRate": {
     "title": "模型缓存命中率"
@@ -68,23 +92,29 @@
     "unknownEndpoint": "未知端点"
   },
   "trend": {
-    "title": "Token 使用趋势",
-    "description": "按时间查看输入、输出、缓存写入、缓存读取 Token 与缓存命中率的变化",
+    "title": "详细趋势",
+    "summary": "查看所选时段的输入与输出变化",
+    "description": "输入与输出 Token 用量变化",
+    "range": "{{start}} 至 {{end}}",
+    "partial": "仅显示最近的趋势，总量仍按完整时段统计",
     "dataTableCaption": "Token 使用趋势明细",
     "time": "时间",
     "legend": {
-      "input": "Input",
-      "output": "Output",
-      "cacheRead": "Cache Read",
+      "input": "输入",
+      "output": "输出",
+      "cacheRead": "缓存读取",
       "cacheHitRate": "缓存命中率"
     }
   },
   "table": {
     "caption": "{{dimension}}明细",
     "model": "模型",
-    "group": "分组",
+    "group": "供应商",
     "endpoint": "端点",
     "requests": "请求",
-    "tokens": "Token"
+    "requestsCount": "{{count}} 次请求",
+    "tokens": "Token",
+    "share": "占比",
+    "shareValue": "占 {{share}}"
   }
 }

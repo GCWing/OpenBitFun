@@ -7,9 +7,10 @@ import {
   getVirtualMessageDefaultItemHeight,
   selectInitialHistoryRenderWindow,
 } from './virtualMessageListLayout';
-import { estimateToolHeight } from './virtualItemHeightEstimators';
+import { estimateFlowGroupHeight, estimateToolHeight } from './virtualItemHeightEstimators';
 import type { VirtualItem } from '../../store/modernFlowChatStore';
-import type { FlowToolItem } from '../../types/flow-chat';
+import type { FlowThinkingItem, FlowToolItem } from '../../types/flow-chat';
+import type { FlowGroupBase } from '../../grouping/types';
 
 describe('getVirtualMessageDefaultItemHeight', () => {
   it('keeps compact historical projections on the small row estimate', () => {
@@ -118,6 +119,29 @@ describe('estimateVirtualMessageItemHeight', () => {
     expect(estimateVirtualMessageItemHeight(item)).toBeLessThanOrEqual(160);
   });
 
+  it('estimates collapsed exploration within a mixed round from its disclosure state', () => {
+    const item = {
+      type: 'model-round', turnId: 'turn', isLastRound: true, isTurnComplete: true,
+      data: {
+        id: 'mixed', status: 'completed', isStreaming: false,
+        items: [
+          { id: 'intro', type: 'text', content: 'Inspecting', status: 'completed', timestamp: 1 },
+          ...Array.from({ length: 120 }, (_, index) => ({
+            id: `search-${index}`, type: 'tool', toolName: 'Grep', status: 'completed', timestamp: index + 2,
+            toolCall: { id: `search-${index}`, input: {} },
+          })),
+        ],
+      },
+    } as VirtualItem;
+    const collapsed = estimateVirtualMessageItemHeightWithContext(item);
+    const expanded = estimateVirtualMessageItemHeightWithContext(item, {
+      exploreGroupStates: new Map([['mixed:explore:search-0', true]]),
+    });
+    expect(expanded).toBeGreaterThan(collapsed);
+    expect(expanded).toBeGreaterThan(3600);
+    expect(collapsed).toBeLessThan(300);
+  });
+
   it('uses tool-owned data to distinguish compact and expanded Write estimates', () => {
     const tool = {
       id: 'write-1',
@@ -194,6 +218,27 @@ describe('estimateVirtualMessageItemHeight', () => {
     expect(defaultHeight).toBe(collapsed);
     expect(expanded).toBeGreaterThan(collapsed);
   });
+});
+
+it('keeps live thinking estimates compact regardless of content length', () => {
+  const read: FlowToolItem = { id: 'read', type: 'tool', toolName: 'Read', status: 'completed',
+    timestamp: 1, toolCall: { id: 'read', input: {} } };
+  const thinking: FlowThinkingItem = { id: 'thought', type: 'thinking', content: 'Checking the result.',
+    timestamp: 1, status: 'streaming', isStreaming: true, isCollapsed: false };
+  const data: FlowGroupBase = { groupId: 'group', rounds: [], allItems: [read, thinking],
+    phase: 'collecting', isGroupStreaming: true, isLastGroupInTurn: true, wasCutByCritical: false };
+  const short = estimateFlowGroupHeight(data).heightPx;
+  const long = estimateFlowGroupHeight({ ...data, allItems: [read, { ...thinking, content: 'x'.repeat(5000) } as FlowThinkingItem] }).heightPx;
+  const longer = estimateFlowGroupHeight({ ...data, allItems: [read, { ...thinking, content: 'x'.repeat(10000) } as FlowThinkingItem] }).heightPx;
+  const closed = estimateFlowGroupHeight(data, { groupStates: new Map([['group', false]]) }).heightPx;
+  expect(short).toBeGreaterThan(closed);
+  expect(short).toBe(long);
+  expect(longer).toBe(long);
+  expect(estimateFlowGroupHeight(data, { expandedThinkingItemIds: [thinking.id] }).heightPx).toBe(short);
+  const completed: FlowThinkingItem = { ...thinking, content: 'x'.repeat(5000), status: 'completed', isStreaming: false };
+  const settledContent = { ...data, allItems: [read, completed] };
+  expect(estimateFlowGroupHeight(settledContent).heightPx).toBe(short);
+  expect(estimateFlowGroupHeight(settledContent, { expandedThinkingItemIds: [thinking.id] }).heightPx).toBeGreaterThan(long);
 });
 
 describe('selectInitialHistoryRenderWindow', () => {

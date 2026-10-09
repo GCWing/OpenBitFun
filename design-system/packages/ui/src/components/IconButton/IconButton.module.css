@@ -53,6 +53,14 @@
     outline-offset: var(--openbitfun-focus-offset);
   }
 
+  .button[data-openbitfun-variant="annotation"][data-openbitfun-tone="neutral"]:not(:disabled) {
+    --_icon-button-content: var(--openbitfun-color-content-muted);
+  }
+
+  .button[data-openbitfun-variant="annotation"][data-openbitfun-tone="neutral"]:is(:hover, :active, :focus-visible, [data-openbitfun-preview-state="hover"], [data-openbitfun-preview-state="active"]):not(:disabled) {
+    --_icon-button-content: var(--openbitfun-color-content-secondary);
+  }
+
   .button:disabled {
     --_icon-button-content: var(--openbitfun-color-action-neutral-content-disabled);
 
@@ -114,6 +122,10 @@
   .button[data-size="xs"] {
     --_icon-button-icon-size: var(--openbitfun-control-icon-button-xs-icon-size);
     --_icon-button-size: var(--openbitfun-control-icon-button-xs-size);
+  }
+
+  .button[data-size="xs"][data-openbitfun-variant="annotation"] {
+    --_icon-button-icon-size: var(--openbitfun-control-icon-size-xs);
   }
 
   .button[data-size="xs"][data-openbitfun-shape="square"] {

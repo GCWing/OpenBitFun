@@ -1,4 +1,6 @@
 import { sessionWorkspaceIdRequest } from './legacyWorkspaceCompatibility';
+import { isTauriRuntime } from '@/infrastructure/runtime/environment';
+import { getActiveSurfaceId, isLocalSurface } from '@/infrastructure/peer-device/deviceSurface';
 
 import { api } from './ApiClient';
 import { createTauriCommandError } from '../errors/TauriCommandError';
@@ -279,6 +281,25 @@ export interface SessionUsageReport {
 }
 
 export class SessionAPI {
+  canRevealStorageDirectory(): boolean {
+    return isTauriRuntime() && isLocalSurface(getActiveSurfaceId());
+  }
+
+  async revealStorageDirectory(workspaceId: string, sessionId?: string): Promise<void> {
+    if (!this.canRevealStorageDirectory()) {
+      throw new Error('Session storage directories can only be opened on the local desktop');
+    }
+    if (!workspaceId.trim()) throw new Error('Workspace ID is required');
+    if (sessionId !== undefined && !sessionId.trim()) throw new Error('Session ID is required');
+    try {
+      await api.invoke('reveal_session_storage_directory', {
+        request: { workspace_id: workspaceId, session_id: sessionId },
+      });
+    } catch (error) {
+      throw createTauriCommandError('reveal_session_storage_directory', error, { workspaceId, sessionId });
+    }
+  }
+
   async searchSessionContent(
     request: SessionContentSearchRequest,
     signal?: AbortSignal,

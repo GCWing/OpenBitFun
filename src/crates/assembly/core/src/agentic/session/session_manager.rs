@@ -13,6 +13,7 @@ use crate::agentic::fork_agent::normalize_incomplete_tool_calls;
 use crate::agentic::image_analysis::ImageContextData;
 use crate::agentic::keyed_lock::{KeyedAsyncLock, KeyedAsyncLockGuard};
 use crate::agentic::memories::db::{MemoryDatabase, MEMORY_PHASE2_GLOBAL_JOB_KEY};
+use crate::agentic::persistence::session_branch::TransientSessionBranchSource;
 use crate::agentic::persistence::{MaterializedSessionReferenceTranscript, PersistenceManager};
 use crate::agentic::session::revert::SessionRevertPhase;
 use crate::agentic::session::session_store_port::CoreSessionStorePort;
@@ -68,7 +69,7 @@ use openbitfun_services_core::session::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -355,6 +356,9 @@ pub struct SessionManager {
     /// removed with that Session; they are never serialized into public config.
     transient_session_ids: Arc<DashMap<String, ()>>,
 
+    /// Authoritative temporary history survives context compression until explicit closure.
+    transient_turns: Arc<DashMap<String, TransientSessionHistory>>,
+
     /// Recent authoritative terminal results for live Turn settlement callers.
     /// The bounded cache preserves the exact execution result; persisted Turns
     /// remain the fallback, while transient Sessions depend on this copy.
@@ -412,9 +416,16 @@ pub struct ActiveTurnPermissionMode {
     pub mode: PermissionMode,
 }
 
+#[derive(Default)]
+struct TransientSessionHistory {
+    turns: Vec<DialogTurnData>,
+    context_snapshots: BTreeMap<usize, Vec<Message>>,
+}
+
 fn clear_session_runtime_stores(
     session_id: &str,
     context_store: &SessionContextStore,
+    transient_turns: &DashMap<String, TransientSessionHistory>,
     prompt_cache_store: &SessionPromptCacheStore,
     token_anchor_store: &TokenAnchorStore,
     turn_skill_agent_snapshot_store: &TurnSkillAgentSnapshotStore,
@@ -423,6 +434,7 @@ fn clear_session_runtime_stores(
     evidence_ledger: &SessionEvidenceLedger,
 ) {
     context_store.delete_session(session_id);
+    transient_turns.remove(session_id);
     prompt_cache_store.delete_session(session_id);
     token_anchor_store.delete_session(session_id);
     turn_skill_agent_snapshot_store.delete_session(session_id);
@@ -518,6 +530,7 @@ impl SessionManager {
     pub(crate) fn evict_loaded_session_for_test(&self, session_id: &str) {
         self.sessions.remove(session_id);
         self.transient_session_ids.remove(session_id);
+        self.transient_turns.remove(session_id);
         self.clear_turn_settlement_results(session_id);
         self.release_active_session_reservation(session_id);
         self.release_session_write_lock(session_id);
@@ -1682,6 +1695,12 @@ impl SessionManager {
         reason: &str,
     ) {
         if !self.should_persist_session_id(session_id) {
+            if let Some(mut history) = self.transient_turns.get_mut(session_id) {
+                history.context_snapshots.insert(
+                    turn_index,
+                    self.context_store.get_context_messages(session_id),
+                );
+            }
             return;
         }
 
@@ -1991,6 +2010,7 @@ impl SessionManager {
             sessions: Arc::new(DashMap::new()),
             active_turn_permission_modes: Arc::new(DashMap::new()),
             transient_session_ids: Arc::new(DashMap::new()),
+            transient_turns: Arc::new(DashMap::new()),
             turn_settlement_results: Arc::new(DashMap::new()),
             turn_settlement_result_order: Arc::new(Mutex::new(VecDeque::new())),
             active_session_capacity: Arc::new(Semaphore::new(config.max_active_sessions)),
@@ -2258,7 +2278,7 @@ impl SessionManager {
         let event = EvidenceLedgerEvent::new(
             session_id,
             turn_id,
-            "Task",
+            "AgentSpawn",
             EvidenceLedgerTargetKind::Subagent,
             subagent_type,
             EvidenceLedgerEventStatus::PartialTimeout,
@@ -2493,6 +2513,7 @@ impl SessionManager {
         let sessions = self.sessions.clone();
         let active_turn_permission_modes = self.active_turn_permission_modes.clone();
         let transient_session_ids = self.transient_session_ids.clone();
+        let transient_turns = self.transient_turns.clone();
         let turn_settlement_results = self.turn_settlement_results.clone();
         let turn_settlement_result_order = self.turn_settlement_result_order.clone();
         let active_session_capacity = self.active_session_capacity.clone();
@@ -2530,6 +2551,7 @@ impl SessionManager {
                 sessions,
                 active_turn_permission_modes,
                 transient_session_ids,
+                transient_turns,
                 turn_settlement_results,
                 turn_settlement_result_order,
                 active_session_capacity,
@@ -4976,6 +4998,7 @@ impl SessionManager {
         clear_session_runtime_stores(
             session_id,
             self.context_store.as_ref(),
+            self.transient_turns.as_ref(),
             self.prompt_cache_store.as_ref(),
             self.token_anchor_store.as_ref(),
             self.turn_skill_agent_snapshot_store.as_ref(),
@@ -5016,10 +5039,12 @@ impl SessionManager {
             }
         }
 
+        crate::native_hooks::clear_session_hook_state(session_id);
         self.active_turn_permission_modes.remove(session_id);
         clear_session_runtime_stores(
             session_id,
             self.context_store.as_ref(),
+            self.transient_turns.as_ref(),
             self.prompt_cache_store.as_ref(),
             self.token_anchor_store.as_ref(),
             self.turn_skill_agent_snapshot_store.as_ref(),
@@ -6209,6 +6234,7 @@ impl SessionManager {
             clear_session_runtime_stores(
                 session_id,
                 self.context_store.as_ref(),
+                self.transient_turns.as_ref(),
                 self.prompt_cache_store.as_ref(),
                 self.token_anchor_store.as_ref(),
                 self.turn_skill_agent_snapshot_store.as_ref(),
@@ -7068,28 +7094,27 @@ impl SessionManager {
                 .add_message(session_id, message.with_turn_id(turn_id.clone()));
         }
 
+        let turn_data = DialogTurnData::new_with_kind(
+            kind,
+            turn_id.clone(),
+            turn_index,
+            session_id.to_string(),
+            if kind == DialogTurnKind::UserDialog {
+                agent_type.clone()
+            } else {
+                None
+            },
+            UserMessageData {
+                id: format!("{}-user", turn_id),
+                content: user_input,
+                timestamp: SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+                metadata: user_message_metadata,
+            },
+        );
         if self.should_persist_session_id(session_id) {
-            let turn_data = DialogTurnData::new_with_kind(
-                kind,
-                turn_id.clone(),
-                turn_index,
-                session_id.to_string(),
-                if kind == DialogTurnKind::UserDialog {
-                    agent_type.clone()
-                } else {
-                    None
-                },
-                UserMessageData {
-                    id: format!("{}-user", turn_id),
-                    content: user_input,
-                    timestamp: SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64,
-                    metadata: user_message_metadata,
-                },
-            );
-
             // Clone the session data out of the DashMap guard before awaiting I/O.
             let session_snapshot = self.sessions.get(session_id).map(|s| s.clone());
             // Ref guard released -- DashMap shard lock is free.
@@ -7101,6 +7126,12 @@ impl SessionManager {
             self.persistence_manager
                 .save_dialog_turn(&workspace_path, &turn_data)
                 .await?;
+        } else {
+            self.transient_turns
+                .entry(session_id.to_string())
+                .or_default()
+                .turns
+                .push(turn_data);
         }
 
         self.persist_context_snapshot_for_turn_best_effort(session_id, turn_index, "turn_started")
@@ -7526,6 +7557,16 @@ impl SessionManager {
             self.persistence_manager
                 .save_dialog_turn(&workspace_path, &turn)
                 .await?;
+        } else {
+            let mut history = self
+                .transient_turns
+                .entry(session_id.to_string())
+                .or_default();
+            if let Some(current) = history.turns.get_mut(turn_index) {
+                *current = turn.clone();
+            } else {
+                history.turns.push(turn.clone());
+            }
         }
 
         let session_snapshot = if let Some(mut session) = self.sessions.get_mut(session_id) {
@@ -7786,7 +7827,116 @@ impl SessionManager {
         }
     }
 
-    /// Complete dialog turn
+    /// Read the canonical turn from its durable or temporary owner.
+    async fn load_runtime_dialog_turn(
+        &self,
+        workspace_path: &Path,
+        session_id: &str,
+        turn_index: usize,
+    ) -> OpenBitFunResult<Option<DialogTurnData>> {
+        if self.should_persist_session_id(session_id) {
+            self.persistence_manager
+                .load_dialog_turn(workspace_path, session_id, turn_index)
+                .await
+        } else {
+            Ok(self
+                .transient_turns
+                .get(session_id)
+                .and_then(|history| history.turns.get(turn_index).cloned()))
+        }
+    }
+
+    async fn save_runtime_dialog_turn(
+        &self,
+        workspace_path: &Path,
+        turn: &DialogTurnData,
+    ) -> OpenBitFunResult<()> {
+        if self.should_persist_session_id(&turn.session_id) {
+            self.persistence_manager
+                .save_dialog_turn(workspace_path, turn)
+                .await
+        } else {
+            let mut history = self
+                .transient_turns
+                .get_mut(&turn.session_id)
+                .ok_or_else(|| {
+                    OpenBitFunError::NotFound(format!(
+                        "Temporary session history not found: {}",
+                        turn.session_id
+                    ))
+                })?;
+            let current = history.turns.get_mut(turn.turn_index).ok_or_else(|| {
+                OpenBitFunError::NotFound(format!("Dialog turn not found: {}", turn.turn_id))
+            })?;
+            *current = turn.clone();
+            Ok(())
+        }
+    }
+
+    /// Called under the source Session mutation lock after execution has settled.
+    pub(crate) fn transient_branch_source_locked(
+        &self,
+        session_id: &str,
+    ) -> OpenBitFunResult<TransientSessionBranchSource> {
+        let session = self
+            .get_session(session_id)
+            .ok_or_else(|| OpenBitFunError::NotFound(format!("Session not found: {session_id}")))?;
+        if !matches!(
+            session.state,
+            SessionState::Idle | SessionState::Error { .. }
+        ) {
+            return Err(OpenBitFunError::Validation(
+                "Stop the temporary conversation before saving it".to_string(),
+            ));
+        }
+        let history = self.transient_turns.get(session_id).ok_or_else(|| {
+            OpenBitFunError::Validation(
+                "Temporary conversation has no submitted questions".to_string(),
+            )
+        })?;
+        let turns = history.turns.clone();
+        let context_snapshots = history
+            .context_snapshots
+            .iter()
+            .map(|(index, messages)| (*index, messages.clone()))
+            .collect();
+        drop(history);
+        if turns.len() != session.dialog_turn_ids.len()
+            || turns
+                .iter()
+                .any(|turn| turn.status == TurnStatus::InProgress)
+        {
+            return Err(OpenBitFunError::Validation(
+                "Temporary conversation history has not settled".to_string(),
+            ));
+        }
+        let skill_agent_snapshots = turns
+            .iter()
+            .filter_map(|turn| {
+                self.turn_skill_agent_snapshot_store
+                    .get_snapshot(session_id, turn.turn_index)
+                    .map(|snapshot| (turn.turn_index, snapshot))
+            })
+            .collect();
+        let evidence_events = turns
+            .iter()
+            .flat_map(|turn| self.evidence_events_for_turn(session_id, &turn.turn_id))
+            .collect();
+        Ok(TransientSessionBranchSource {
+            session,
+            turns,
+            context_snapshots,
+            prompt_cache: self.prompt_cache_store.get_cache(session_id),
+            skill_agent_snapshots,
+            baseline_override: self
+                .skill_agent_baseline_override_snapshot_store
+                .get(session_id)
+                .map(|snapshot| snapshot.clone()),
+            evidence_events,
+        })
+    }
+
+    /// Complete a dialog turn in its history owner.
     pub async fn complete_dialog_turn(
         &self,
         session_id: &str,
@@ -7797,7 +7947,9 @@ impl SessionManager {
         finish_reason: Option<String>,
         has_final_response: Option<bool>,
     ) -> OpenBitFunResult<()> {
-        if !self.should_persist_session_id(session_id) {
+        if !self.should_persist_session_id(session_id)
+            && !self.transient_turns.contains_key(session_id)
+        {
             debug!(
                 "Skipping dialog turn persistence for transient session completion: session_id={}, turn_id={}, response_len={}, rounds={}",
                 session_id,
@@ -7847,8 +7999,7 @@ impl SessionManager {
         let _mutation_guard = self.acquire_session_mutation(session_id).await?;
 
         let mut turn = self
-            .persistence_manager
-            .load_dialog_turn(&workspace_path, session_id, turn_index)
+            .load_runtime_dialog_turn(&workspace_path, session_id, turn_index)
             .await?
             .ok_or_else(|| {
                 OpenBitFunError::NotFound(format!("Dialog turn not found: {}", turn_id))
@@ -7949,11 +8100,8 @@ impl SessionManager {
         turn.end_time = Some(completion_timestamp);
 
         // Persist
-        if self.should_persist_session_id(session_id) {
-            self.persistence_manager
-                .save_dialog_turn(&workspace_path, &turn)
-                .await?;
-        }
+        self.save_runtime_dialog_turn(&workspace_path, &turn)
+            .await?;
 
         debug!(
             "Dialog turn completed: turn_id={}, rounds={}, tools={}",
@@ -8244,7 +8392,9 @@ impl SessionManager {
         generation_messages: &[Message],
     ) -> OpenBitFunResult<()> {
         let _mutation_guard = self.acquire_session_mutation(session_id).await?;
-        if !self.should_persist_session_id(session_id) {
+        if !self.should_persist_session_id(session_id)
+            && !self.transient_turns.contains_key(session_id)
+        {
             debug!(
                 "Skipping dialog turn persistence for transient session failure: session_id={}, turn_id={}, error={}",
                 session_id, turn_id, error
@@ -8269,8 +8419,7 @@ impl SessionManager {
                 OpenBitFunError::NotFound(format!("Dialog turn not found: {}", turn_id))
             })?;
         let mut turn = self
-            .persistence_manager
-            .load_dialog_turn(&workspace_path, session_id, turn_index)
+            .load_runtime_dialog_turn(&workspace_path, session_id, turn_index)
             .await?
             .ok_or_else(|| {
                 OpenBitFunError::NotFound(format!("Dialog turn not found: {}", turn_id))
@@ -8305,11 +8454,8 @@ impl SessionManager {
             )
             .await;
         }
-        if self.should_persist_session_id(session_id) {
-            self.persistence_manager
-                .save_dialog_turn(&workspace_path, &turn)
-                .await?;
-        }
+        self.save_runtime_dialog_turn(&workspace_path, &turn)
+            .await?;
 
         debug!(
             "Dialog turn marked as failed: turn_id={}, turn_index={}, error={}",
@@ -8340,7 +8486,9 @@ impl SessionManager {
         generation_messages: &[Message],
     ) -> OpenBitFunResult<()> {
         let _mutation_guard = self.acquire_session_mutation(session_id).await?;
-        if !self.should_persist_session_id(session_id) {
+        if !self.should_persist_session_id(session_id)
+            && !self.transient_turns.contains_key(session_id)
+        {
             debug!(
                 "Skipping dialog turn persistence for transient session cancellation: session_id={}, turn_id={}",
                 session_id, turn_id
@@ -8365,8 +8513,7 @@ impl SessionManager {
                 OpenBitFunError::NotFound(format!("Dialog turn not found: {}", turn_id))
             })?;
         let mut turn = self
-            .persistence_manager
-            .load_dialog_turn(&workspace_path, session_id, turn_index)
+            .load_runtime_dialog_turn(&workspace_path, session_id, turn_index)
             .await?
             .ok_or_else(|| {
                 OpenBitFunError::NotFound(format!("Dialog turn not found: {}", turn_id))
@@ -8401,8 +8548,7 @@ impl SessionManager {
             .await;
         }
 
-        self.persistence_manager
-            .save_dialog_turn(&workspace_path, &turn)
+        self.save_runtime_dialog_turn(&workspace_path, &turn)
             .await?;
 
         debug!(
@@ -9020,7 +9166,9 @@ impl SessionManager {
         duration_ms: u64,
         snapshot_reason: &str,
     ) -> OpenBitFunResult<()> {
-        if !self.should_persist_session_id(session_id) {
+        if !self.should_persist_session_id(session_id)
+            && !self.transient_turns.contains_key(session_id)
+        {
             debug!(
                 "Skipping turn persistence for transient session completion: session_id={}, turn_id={}, rounds={}, duration_ms={}",
                 session_id,
@@ -9048,8 +9196,7 @@ impl SessionManager {
                 OpenBitFunError::NotFound(format!("Dialog turn not found: {}", turn_id))
             })?;
         let mut turn = self
-            .persistence_manager
-            .load_dialog_turn(&workspace_path, session_id, turn_index)
+            .load_runtime_dialog_turn(&workspace_path, session_id, turn_index)
             .await?
             .ok_or_else(|| {
                 OpenBitFunError::NotFound(format!("Dialog turn not found: {}", turn_id))
@@ -9071,11 +9218,8 @@ impl SessionManager {
         )
         .await;
 
-        if self.should_persist_session_id(session_id) {
-            self.persistence_manager
-                .save_dialog_turn(&workspace_path, &turn)
-                .await?;
-        }
+        self.save_runtime_dialog_turn(&workspace_path, &turn)
+            .await?;
 
         Ok(())
     }
@@ -9123,7 +9267,9 @@ impl SessionManager {
         model_rounds: Vec<ModelRoundData>,
         snapshot_reason: &str,
     ) -> OpenBitFunResult<()> {
-        if !self.should_persist_session_id(session_id) {
+        if !self.should_persist_session_id(session_id)
+            && !self.transient_turns.contains_key(session_id)
+        {
             debug!(
                 "Skipping turn persistence for transient session failure: session_id={}, turn_id={}, rounds={}, error={}",
                 session_id,
@@ -9151,8 +9297,7 @@ impl SessionManager {
                 OpenBitFunError::NotFound(format!("Dialog turn not found: {}", turn_id))
             })?;
         let mut turn = self
-            .persistence_manager
-            .load_dialog_turn(&workspace_path, session_id, turn_index)
+            .load_runtime_dialog_turn(&workspace_path, session_id, turn_index)
             .await?
             .ok_or_else(|| {
                 OpenBitFunError::NotFound(format!("Dialog turn not found: {}", turn_id))
@@ -9177,11 +9322,8 @@ impl SessionManager {
         )
         .await;
 
-        if self.should_persist_session_id(session_id) {
-            self.persistence_manager
-                .save_dialog_turn(&workspace_path, &turn)
-                .await?;
-        }
+        self.save_runtime_dialog_turn(&workspace_path, &turn)
+            .await?;
 
         debug!(
             "Turn marked as failed: turn_id={}, turn_index={}, error={}",
@@ -9723,6 +9865,7 @@ impl SessionManager {
         let session_mutation_locks = self.session_mutation_locks.clone();
         let session_write_locks = self.session_write_locks.clone();
         let context_store = self.context_store.clone();
+        let transient_turns = self.transient_turns.clone();
         let prompt_cache_store = self.prompt_cache_store.clone();
         let token_anchor_store = self.token_anchor_store.clone();
         let turn_skill_agent_snapshot_store = self.turn_skill_agent_snapshot_store.clone();
@@ -9822,6 +9965,7 @@ impl SessionManager {
                         clear_session_runtime_stores(
                             &candidate.session_id,
                             context_store.as_ref(),
+                            transient_turns.as_ref(),
                             prompt_cache_store.as_ref(),
                             token_anchor_store.as_ref(),
                             turn_skill_agent_snapshot_store.as_ref(),
@@ -9878,6 +10022,8 @@ mod tests {
         SessionRelationship, SessionRelationshipKind, ToolCallData, ToolItemData, ToolResultData,
         TurnStatus, UserMessageData,
     };
+    #[cfg(feature = "remote-workspace")]
+    use crate::service::WorkspaceRuntimeService;
     use crate::util::errors::OpenBitFunError;
     use dashmap::{try_result::TryResult, DashMap};
     use openbitfun_core_types::{
@@ -14875,12 +15021,13 @@ mod tests {
         let workspace = TestWorkspace::new();
         let path_manager = workspace.path_manager();
         let port = CoreSessionStorePort::with_path_manager_for_tests(path_manager.clone());
-        let sessions_dir =
-            openbitfun_services_integrations::remote_ssh::remote_workspace_session_mirror_dir(
-                path_manager.remote_ssh_mirror_root_dir(),
-                "example-host",
-                "/root/repo",
-            );
+        WorkspaceRuntimeService::new(path_manager.clone())
+            .ensure_remote_workspace_runtime("example-host", "/root/repo")
+            .await
+            .expect("remote runtime should be ensured");
+        let runtime = WorkspaceRuntimeService::new(path_manager.clone())
+            .context_for_remote_workspace("example-host", "/root/repo");
+        let sessions_dir = runtime.sessions_dir;
         let resolved = port
             .resolve_session_storage_path(SessionStoragePathRequest {
                 workspace_path: sessions_dir.clone(),
@@ -14893,12 +15040,7 @@ mod tests {
         assert_eq!(resolved.storage_kind, SessionStorageKind::Remote);
         assert_eq!(resolved.effective_storage_path, sessions_dir);
 
-        let runtime_root =
-            openbitfun_services_integrations::remote_ssh::remote_workspace_runtime_root(
-                path_manager.remote_ssh_mirror_root_dir(),
-                "example-host",
-                "/root/repo",
-            );
+        let runtime_root = runtime.runtime_root;
         let runtime_root_resolution = port
             .resolve_session_storage_path(SessionStoragePathRequest {
                 workspace_path: runtime_root.clone(),
@@ -18230,7 +18372,7 @@ mod tests {
             )
             .await
             .expect("session should be created");
-        let identity = SystemPromptCacheIdentity::new("template:agentic_mode");
+        let identity = SystemPromptCacheIdentity::new("template:standard_mode");
         let user_context_identity = UserContextCacheIdentity::new(
             "workspace_context|workspace_instructions|project_layout",
         );
@@ -18672,7 +18814,7 @@ mod tests {
             )
             .await
             .expect("session should be created");
-        let identity = SystemPromptCacheIdentity::new("template:agentic_mode");
+        let identity = SystemPromptCacheIdentity::new("template:standard_mode");
         let user_context_identity = UserContextCacheIdentity::new(
             "workspace_context|workspace_instructions|project_layout",
         );
@@ -18835,7 +18977,7 @@ mod tests {
             )
             .await
             .expect("target session should be created");
-        let identity = SystemPromptCacheIdentity::new("template:agentic_mode");
+        let identity = SystemPromptCacheIdentity::new("template:standard_mode");
         let user_context_identity = UserContextCacheIdentity::new(
             "workspace_context|workspace_instructions|project_layout",
         );
@@ -18916,7 +19058,7 @@ mod tests {
             )
             .await
             .expect("session should be created");
-        let identity = SystemPromptCacheIdentity::new("template:agentic_mode");
+        let identity = SystemPromptCacheIdentity::new("template:standard_mode");
         let user_context_identity = UserContextCacheIdentity::new(
             "workspace_context|workspace_instructions|project_layout",
         );

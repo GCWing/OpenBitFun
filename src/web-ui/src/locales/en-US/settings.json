@@ -5,102 +5,108 @@
       "empty": "No matching settings"
     },
     "categories": {
-      "application": "App & Interface",
-      "ai": "AI & Models",
-      "workspace": "Sessions & Workspace",
+      "application": "Application & Interface",
+      "ai": "Models & Agents",
+      "development": "Programming & Development",
       "tools": "Tools & Integrations",
       "data": "Data & Maintenance"
     },
     "pages": {
       "general": {
         "label": "General",
-        "description": "Startup, updates, window behavior, sleep, and notifications."
+        "description": "Configure language, startup, updates, sleep, window behavior, and notifications"
       },
       "appearance": {
         "label": "Appearance",
-        "description": "Language, themes, effects, appearance packages, and interface typography."
+        "description": "Customize themes, appearance packages, and fonts"
       },
       "pet": {
-        "label": "Pet",
-        "description": "Display surface, character packages, import, and preview."
-      },
-      "voice": {
-        "label": "Voice",
-        "description": "Voice input, local speech models, and realtime voice calls."
-      },
-      "shortcuts": {
-        "label": "Keyboard Shortcuts",
-        "description": "Browse, customize, and reset keyboard shortcuts."
+        "label": "Pet & assistant",
+        "description": "Choose your pet and configure real-time voice calls with the assistant"
       },
       "terminal": {
         "label": "Terminal",
-        "description": "Default shell."
+        "description": "Choose the shell for new terminals and commands in local workspaces"
       },
       "editor": {
         "label": "Editor",
-        "description": "Code editor appearance, indentation, display, and formatting."
+        "description": "Adjust code display, indentation, and automatic formatting"
       },
       "models": {
         "label": "Models",
-        "description": "Default models, providers, subscriptions, catalog, and network proxy."
-      },
-      "memory": {
-        "label": "Memory",
-        "description": "Memory generation, use, extraction, and consolidation."
-      },
-      "sessionWorkspace": {
-        "label": "Session & Workspace",
-        "description": "Default Harness, session titles, and current workspace search."
-      },
-      "worktrees": {
-        "label": "Worktrees",
-        "description": "Git worktree isolation and parallel-session defaults."
+        "description": "Connect model providers and choose models for each type of task"
       },
       "execution": {
-        "label": "Execution & Permissions",
-        "description": "Tool permissions, execution, review, and recovery settings."
+        "label": "Execution & Collaboration",
+        "description": "Configure tool timeouts, agent concurrency, and review capacity"
       },
       "browserDesktopControl": {
         "label": "Browser & Desktop Control",
-        "description": "Browser connections, desktop interaction, and required system permissions."
+        "description": "Connect a browser and allow screen access and desktop control"
       },
       "automation": {
         "label": "Automation",
-        "description": "Quick actions and Agent lifecycle hooks."
+        "description": "Set up reusable AI prompts and commands triggered by events"
       },
       "webSearch": {
         "label": "Web Search",
-        "description": "Choose the WebSearch provider, endpoint, and device-local credential."
+        "description": "Choose the service agents use to search the web"
       },
       "mcp": {
         "label": "MCP",
-        "description": "Manage MCP servers, connections, and exposed tools."
+        "description": "Connect MCP servers to give agents access to external tools and data"
       },
       "acp": {
-        "label": "ACP Agents",
-        "description": "Configure external agents that connect through Agent Client Protocol."
+        "label": "External Agents",
+        "description": "Connect external agents on this host or an SSH host through ACP"
       },
       "usage": {
         "label": "Call Statistics",
-        "description": "Model requests, token usage, and cache hit rates."
+        "description": "View model request counts, token usage, and cache hit rates"
       },
       "archivedSessions": {
         "label": "Archived Sessions",
-        "description": "View, restore, or permanently delete archived sessions."
+        "description": "View, restore, or permanently delete archived sessions"
       },
       "diagnostics": {
         "label": "Logs & Diagnostics",
-        "description": "Log levels, runtime information, and troubleshooting."
+        "description": "Configure logging and export diagnostic information"
+      },
+      "input": {
+        "label": "Input & Interaction",
+        "description": "Configure text selection actions, voice dictation, and keyboard shortcuts"
+      },
+      "sessionMemory": {
+        "label": "Sessions & Memory",
+        "description": "Configure default harnesses, session titles, and memory behavior"
+      },
+      "permissions": {
+        "label": "Permission Rules",
+        "description": "Configure default approval behavior and global tool permission rules"
+      },
+      "workspaceGit": {
+        "label": "Workspace & Git",
+        "description": "Configure file search, commit attribution, and worktrees, and manage isolated working directories"
       }
     },
     "views": {
-      "common": "Common",
-      "advanced": "Advanced",
       "local": "Local",
       "ssh": "SSH",
-      "json": "Advanced JSON",
+      "json": "Advanced JSON"
+    },
+    "sections": {
+      "text-selection": "Text selection",
+      "voice": "Voice",
+      "shortcuts": "Keyboard Shortcuts",
+      "session": "Session Defaults",
+      "memory": "Memory",
+      "workspace-search": "Workspace Search",
+      "worktrees": "Worktrees",
+      "git": "Git Commits",
       "quick-actions": "Quick Actions",
-      "hooks": "Hooks"
+      "hooks": "Event Hooks",
+      "pet": "Pet",
+      "voice-call": "Real-time voice calls"
     }
   },
   "changeGuard": {
@@ -230,7 +236,7 @@
   },
   "keyboard": {
     "title": "Keyboard Shortcuts",
-    "description": "View and edit bindings below.",
+    "description": "View and customize keyboard shortcuts",
     "search": "Search shortcuts or key bindings…",
     "apply": "Apply",
     "saving": "Saving…",
@@ -323,6 +329,15 @@
         "push": "Push",
         "pull": "Pull"
       }
+    },
+    "scopeDescriptions": {
+      "app": "Available within the OpenBitFun window; some actions do not trigger while typing",
+      "chat": "Active when the chat area has focus",
+      "editor": "Active when code text has focus; editor canvas shortcuts also apply",
+      "terminal": "Active when the terminal area has focus",
+      "canvas": "Active when the editor canvas or a code editor inside it has focus",
+      "filetree": "Active when the file tree has focus",
+      "git": "Active when the Git panel has focus"
     }
   },
   "advanced": {
@@ -595,5 +610,8 @@
       "import": "Import Appearance",
       "export": "Export Current Appearance"
     }
+  },
+  "archivedSessions": {
+    "sectionDescription": "Grouped by workspace; restore a session to continue it, or delete it permanently with no undo"
   }
 }

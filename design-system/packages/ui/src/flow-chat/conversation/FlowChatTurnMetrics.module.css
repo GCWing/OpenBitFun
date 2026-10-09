@@ -1,0 +1,120 @@
+@layer openbitfun.components {
+  .root {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-1);
+    min-inline-size: 0;
+    margin-inline-start: calc(-1 * (var(--openbitfun-space-2) + var(--openbitfun-border-width-default) / 2));
+    color: var(--openbitfun-color-content-muted);
+    font-family: var(--openbitfun-type-flow-meta-font-family);
+    font-size: var(--openbitfun-type-flow-meta-font-size);
+    font-weight: var(--openbitfun-type-flow-meta-font-weight);
+    line-height: var(--openbitfun-type-flow-meta-line-height);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .metric {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--openbitfun-space-1);
+    padding: calc(var(--openbitfun-space-1) / 2) var(--openbitfun-space-2);
+    border: calc(var(--openbitfun-border-width-default) / 2) solid transparent;
+    white-space: nowrap;
+    border-radius: var(--openbitfun-radius-pill);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .metric:hover, .metric:focus-visible, .metric[aria-describedby] {
+    border-color: var(--openbitfun-color-border-subtle);
+    background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 80%, transparent);
+  }
+
+  /* Paint and blur on the animated surface itself, like the selected-text capsule.
+     An opacity-animated ancestor would isolate an inner backdrop filter. */
+  .detailsCard {
+    border: calc(var(--openbitfun-border-width-default) / 2) solid var(--openbitfun-color-border-subtle);
+    border-radius: var(--openbitfun-radius-lg);
+    background: var(--openbitfun-color-surface-raised);
+    box-shadow: var(--openbitfun-shadow-sm);
+  }
+
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .detailsCard {
+      background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 80%, transparent);
+      backdrop-filter: var(--openbitfun-effect-blur-base);
+      -webkit-backdrop-filter: var(--openbitfun-effect-blur-base);
+    }
+  }
+
+  .detailsCard [data-openbitfun-part='content'] {
+    padding: var(--openbitfun-space-3);
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .detailsCard [data-openbitfun-part='arrow'] { display: none; }
+
+  .detailsGrid {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--openbitfun-space-2) var(--openbitfun-space-6);
+    margin: 0;
+  }
+
+  .detailLabel { color: var(--openbitfun-color-content-secondary); }
+  .detailValue { margin: 0; text-align: end; font-variant-numeric: tabular-nums; }
+  .detailsNote {
+    max-inline-size: 32ch;
+    margin: var(--openbitfun-space-2) 0 0;
+    color: var(--openbitfun-color-content-secondary);
+  }
+
+  .metric:focus-visible {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: var(--openbitfun-focus-offset);
+  }
+
+  .gauge {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+    inline-size: var(--openbitfun-control-icon-size-sm);
+    block-size: var(--openbitfun-control-icon-size-sm);
+  }
+
+  .track { color: var(--openbitfun-color-border-default); }
+
+  .gauge[data-cache-state='unknown'] .track circle { stroke-dasharray: 2 3; }
+
+  .cacheFill, .speedFill {
+    position: absolute;
+    inset: 0;
+  }
+
+  .cacheFill { transform: rotate(-90deg); }
+
+  .cacheFill circle { stroke-dasharray: var(--_cache-dash); }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .detailsCard {
+      background: var(--openbitfun-color-surface-raised);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .track { color: GrayText; }
+    .cacheFill, .speedFill { color: CanvasText; }
+    .metric:hover, .metric:focus-visible, .metric[aria-describedby] { border-color: ButtonText; background: Canvas; }
+    .detailsCard { border-color: CanvasText; background: Canvas; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  }
+}

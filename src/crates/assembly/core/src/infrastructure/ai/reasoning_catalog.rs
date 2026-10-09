@@ -468,6 +468,7 @@ mod tests {
                 value: "high".to_string(),
             }],
             source: ReasoningPresetSource::ModelsDev,
+            effective_effort: None,
             execution_provider: Some("openai".to_string()),
             execution_model: Some("model-v1".to_string()),
         };

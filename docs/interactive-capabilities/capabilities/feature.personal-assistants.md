@@ -19,6 +19,8 @@ Create and manage persistent AI assistants, define their identity and persona, c
 
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 浏览已有助理、创建新助理并查看每个助理的身份与能力概览
   - Browse existing assistants, create a new one, and review each assistant's identity and capability summary
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 关闭侧栏中的助理并取消正在运行的会话，保留配置和历史，之后从助理空间重新打开
+  - Close sidebar assistants and cancel running sessions, preserve configuration and history, and reopen them from the assistant gallery
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 设为主助理、删除非主助理，或将助理工作区重置为默认状态
   - Set the primary assistant, delete non-primary assistants, or reset an assistant workspace to defaults
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 编辑助理名称、角色类型和气质，并选择官方头像、Emoji 或自定义头像字符

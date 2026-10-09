@@ -444,7 +444,7 @@ describeWithJsdom('RichTextInput external sync', () => {
     ) as HTMLElement | null;
     expect(skillPill).toBeTruthy();
     expect(skillPill?.getAttribute('data-tag-format')).toBe('[$pdf]');
-    expect(skillPill?.querySelector('[data-openbitfun-component="icon"][data-openbitfun-name="extension"]')).toBeTruthy();
+    expect(skillPill?.querySelector('[data-openbitfun-component="icon"][data-openbitfun-name="book-open"]')).toBeTruthy();
     expect(editor.textContent).toContain('pdf');
   });
 
@@ -936,7 +936,7 @@ describeWithJsdom('RichTextInput external sync', () => {
     expect(onChange).toHaveBeenCalledWith('[$pdf]', emptyContexts);
     const skillPill = editor?.querySelector('.rich-text-tag-pill--skill-ref');
     expect(skillPill).toBeTruthy();
-    expect(skillPill?.querySelector('[data-openbitfun-component="icon"][data-openbitfun-name="extension"]')).toBeTruthy();
+    expect(skillPill?.querySelector('[data-openbitfun-component="icon"][data-openbitfun-name="book-open"]')).toBeTruthy();
     expect(skillPill?.nextSibling?.textContent).toBe(' ');
     const selection = window.getSelection();
     expect(selection?.anchorNode).toBe(editor);

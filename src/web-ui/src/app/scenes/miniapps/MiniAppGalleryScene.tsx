@@ -2,14 +2,15 @@
  * MiniAppGalleryScene — Mini App gallery scene.
  * Opening an app opens a separate scene tab (miniapp:id).
  */
-import React, { Suspense, lazy, useState } from 'react';
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
+import React, { Suspense, useState } from 'react';
 
 import { TabGroup } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n';
 import './MiniAppGalleryScene.scss';
 
-const MiniAppLibraryView = lazy(() => import('./views/MiniAppLibraryView'));
-const MiniAppSubmissionsView = lazy(() => import('./views/MiniAppSubmissionsView'));
+const MiniAppLibraryView = lazyWithRecovery(() => import('./views/MiniAppLibraryView'));
+const MiniAppSubmissionsView = lazyWithRecovery(() => import('./views/MiniAppSubmissionsView'));
 
 type MiniAppGalleryTab = 'apps' | 'submissions';
 

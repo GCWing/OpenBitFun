@@ -22,69 +22,32 @@
   }
 
   &__header {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 10px 16px;
-    background: var(--openbitfun-color-surface-panel);
     flex-shrink: 0;
-    min-height: 36px;
+    min-width: 0;
   }
 
-  &__header-icon {
-    color: var(--openbitfun-color-content-secondary);
-    flex-shrink: 0;
+  &__header-main {
+    display: flex;
+    align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: var(--openbitfun-space-2);
   }
 
   &__header-title {
     font-size: var(--openbitfun-type-flow-control-font-size);
     font-weight: var(--openbitfun-type-label-sm-font-weight);
     color: var(--openbitfun-color-content-primary);
-    overflow: hidden;
-    white-space: nowrap;
-    max-width: 60%;
-    text-align: center;
+    flex: 0 1 auto;
+    min-width: 0;
   }
 
-  &__header-badge {
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: var(--openbitfun-type-flow-micro-font-size);
-    font-weight: var(--openbitfun-type-label-sm-font-weight);
-    color: var(--openbitfun-color-content-secondary);
-    background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 8%, transparent);
-    flex-shrink: 0;
-  }
-
-  &__header-duration {
-    position: absolute;
-    right: 16px;
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    font-size: var(--openbitfun-type-flow-support-font-size);
+  &__header-model {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 50%;
     color: var(--openbitfun-color-content-muted);
-  }
-
-  &__header-loading {
-    position: absolute;
-    right: 16px;
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    align-items: center;
-  }
-
-  &__header-failed {
-    position: absolute;
-    right: 16px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--openbitfun-color-status-danger-content);
+    font-size: var(--openbitfun-type-flow-support-font-size);
   }
 
   &__error-banner {
@@ -122,99 +85,36 @@
     min-height: 0;
   }
 
-  // Prompt section uses a dashed border to match subagent style.
-  &__prompt-section {
-    background: transparent;
+  &__prompt-section,
+  &__reviewer-section {
     flex-shrink: 0;
+  }
 
-    summary {
-      padding: 8px 12px;
-      font-size: var(--openbitfun-type-flow-control-font-size);
-      font-weight: var(--openbitfun-type-label-sm-font-weight);
-      color: var(--openbitfun-color-content-secondary);
-      cursor: pointer;
-      user-select: none;
-      transition:
-        color 150ms ease,
-        border-color 150ms ease;
-      border: 1px dashed var(--openbitfun-color-border-default);
-      border-radius: 6px;
-
-      &:hover {
-        color: var(--openbitfun-color-content-primary);
-      }
-
-      &::marker {
-        color: var(--openbitfun-color-content-muted);
-      }
-    }
-
-    &[open] summary {
-      border-radius: 6px 6px 0 0;
-      border-bottom: none;
-    }
+  &__details-content {
+    padding-inline: 0;
   }
 
   &__prompt-content {
     margin: 0;
-    padding: 10px 12px;
-    font-family:var(--openbitfun-type-body-sm-font-family);
+    padding-inline: var(--openbitfun-layout-disclosure-trigger-padding-inline);
+    font-family: var(--openbitfun-type-body-sm-font-family);
     font-size: var(--openbitfun-type-flow-control-font-size);
-    font-weight: var(--openbitfun-type-label-sm-font-weight);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
     line-height: var(--openbitfun-type-flow-support-line-height);
     color: var(--openbitfun-color-content-secondary);
     background: transparent;
     white-space: pre-wrap;
-    word-break: break-word;
+    overflow-wrap: anywhere;
     max-height: 300px;
     overflow-y: auto;
-    border: 1px dashed var(--openbitfun-color-border-default);
-    border-top: none;
-    border-radius: 0 0 6px 6px;
-
-  }
-
-  // Reviewer context section replaces raw prompt for review-team members.
-  &__reviewer-section {
-    background: transparent;
-    flex-shrink: 0;
-
-    summary {
-      padding: 8px 12px;
-      font-size: var(--openbitfun-type-flow-control-font-size);
-      font-weight: var(--openbitfun-type-label-sm-font-weight);
-      color: var(--openbitfun-color-content-secondary);
-      cursor: pointer;
-      user-select: none;
-      transition:
-        color 150ms ease,
-        border-color 150ms ease;
-      border: 1px dashed var(--openbitfun-color-border-default);
-      border-radius: 6px;
-
-      &:hover {
-        color: var(--openbitfun-color-content-primary);
-      }
-
-      &::marker {
-        color: var(--openbitfun-color-content-muted);
-      }
-    }
-
-    &[open] summary {
-      border-radius: 6px 6px 0 0;
-      border-bottom: none;
-    }
+    overscroll-behavior-y: auto;
   }
 
   &__reviewer-context {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    padding: 10px 12px;
-    border: 1px dashed var(--openbitfun-color-border-default);
-    border-top: none;
-    border-radius: 0 0 6px 6px;
+    padding-inline: var(--openbitfun-layout-disclosure-trigger-padding-inline);
     font-size: var(--openbitfun-type-flow-control-font-size);
     line-height: var(--openbitfun-type-flow-support-line-height);
   }
@@ -254,23 +154,6 @@
     }
   }
 
-  &__actions {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 12px;
-    border-radius: 8px;
-    border: 1px solid var(--openbitfun-color-border-default);
-    background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 4%, transparent);
-    flex-shrink: 0;
-  }
-
-  &__actions-hint {
-    font-size: var(--openbitfun-type-flow-control-font-size);
-    line-height: var(--openbitfun-type-flow-support-line-height);
-    color: var(--openbitfun-color-content-muted);
-  }
-
   &__loading {
     display: flex;
     flex-direction: column;
@@ -302,12 +185,12 @@
     border: 1px solid color-mix(in srgb, var(--openbitfun-color-status-danger-content) 20%, transparent);
     flex-shrink: 0;
 
-    svg {
+    > :is(svg, [data-openbitfun-component='icon']) {
       flex-shrink: 0;
       margin-top: 1px;
     }
 
-    span {
+    > span:not([data-openbitfun-component='icon']) {
       flex: 1;
       word-break: break-word;
     }

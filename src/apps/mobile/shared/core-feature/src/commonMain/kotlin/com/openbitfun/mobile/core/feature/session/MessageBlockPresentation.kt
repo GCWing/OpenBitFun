@@ -106,7 +106,7 @@ private fun scopeSubagentItems(items: List<ChatMessageItemResponse>): List<ChatM
     // restatement is skipped, and a child that legitimately repeats survives.
     var carried = mutableListOf<Int>()
     for (entry in items) {
-        if (entry.isSubagent != true && entry.tool?.let(ToolNamePolicy::isTask) == true) {
+        if (entry.tool?.let(ToolNamePolicy::isTask) == true) {
             result += entry
             taskIndex = result.lastIndex
             carried = result.last().subItems.orEmpty().indices.toMutableList()
@@ -144,7 +144,8 @@ private fun scopeSubagentItems(items: List<ChatMessageItemResponse>): List<ChatM
             // branch with its content instead of exposing it as parent output.
             result += if (entry.isSubagent == true && entry.type.orEmpty().lowercase() !in SUBAGENT_TYPES &&
                 entry.tool?.let(ToolNamePolicy::isTask) != true && entry.subItems.isNullOrEmpty()) {
-                entry.copy(subItems = listOf(entry.copy(isSubagent = false)))
+                entry.copy(content = if (entry.tool == null) "" else entry.content,
+                    subItems = listOf(entry.copy(isSubagent = false, subItems = emptyList())))
             } else entry
         }
     }

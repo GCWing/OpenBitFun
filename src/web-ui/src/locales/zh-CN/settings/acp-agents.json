@@ -1,6 +1,6 @@
 {
   "title": "ACP 智能体",
-  "subtitle": "管理通过 ACP 连接的外部智能体",
+  "subtitle": "通过 ACP 接入外部智能体，在 OpenBitFun 中运行任务",
   "views": {
     "local": "本机",
     "ssh": "SSH",
@@ -26,7 +26,7 @@
   },
   "json": {
     "title": "高级 JSON 配置",
-    "description": "直接编辑当前执行主机上的 acpClients 配置。仅在列表无法表达所需参数时使用",
+    "description": "仅在列表无法配置所需参数时使用；修改当前执行主机的 acpClients 配置",
     "discardTitle": "放弃未保存的 JSON 修改？",
     "discardMessage": "离开高级 JSON 后，这些未保存的修改将丢失。",
     "discardConfirm": "放弃修改"
@@ -83,7 +83,8 @@
     "configInvalidDetail": "当前 ACP 配置暂时无法直接使用。",
     "toolPath": "路径",
     "toolVersion": "版本",
-    "empty": "没有匹配的 ACP 智能体"
+    "empty": "没有匹配的 ACP 智能体",
+    "description": "检测当前执行主机上的智能体，启用后可在会话中选择"
   },
   "clients": {
     "loading": "正在加载 ACP 智能体…"

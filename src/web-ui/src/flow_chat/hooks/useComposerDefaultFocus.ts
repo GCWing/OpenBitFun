@@ -47,6 +47,14 @@ function hasBlockingModal(): boolean {
   return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
 }
 
+function hasTranscriptSelection(): boolean {
+  const selection = document.getSelection();
+  if (!selection || selection.isCollapsed || !selection.anchorNode?.isConnected) return false;
+  const node = selection.anchorNode;
+  const element = node instanceof Element ? node : node.parentElement;
+  return Boolean(element?.closest('[data-flowchat-selection-root]'));
+}
+
 function isTextEntryKey(event: KeyboardEvent): boolean {
   if (event.defaultPrevented || event.metaKey) {
     return false;
@@ -100,6 +108,7 @@ export function useComposerDefaultFocus({
         || document.activeElement === editor
         || hasVisibleTextInputFocus()
         || hasBlockingModal()
+        || hasTranscriptSelection()
       ) {
         return;
       }

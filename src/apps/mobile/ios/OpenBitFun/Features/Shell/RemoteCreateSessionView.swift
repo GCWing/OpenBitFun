@@ -224,7 +224,7 @@ struct RemoteCreateSessionView: View {
                 if let selectedModel {
                     Button { pickerKind = .model } label: {
                         HStack(spacing: 4) {
-                            Text(selectedModel.primaryLabel)
+                            Text(selectedModel.roleLabelKey.map(model.localized) ?? selectedModel.primaryLabel)
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(OpenBitFunTheme.ink)
                                 .lineLimit(1)
@@ -239,7 +239,7 @@ struct RemoteCreateSessionView: View {
                         [.model: $0]
                     }
                     .accessibilityLabel(model.localized(RemoteCreateSelectionKind.model.accessibilityLabelKey))
-                    .accessibilityValue(selectedModel.primaryLabel)
+                    .accessibilityValue(selectedModel.roleLabelKey.map(model.localized) ?? selectedModel.primaryLabel)
                     .accessibilityHint(model.localized(RemoteCreateSelectionKind.model.accessibilityHintKey))
                     .disabled(model.remoteCreateSubmitting || model.isSending)
                 }
@@ -467,8 +467,8 @@ struct RemoteCreateSessionView: View {
                                 selectionRow(
                                     kind: .model,
                                     icon: option.source == "LOCAL" ? "gearshape" : "cloud",
-                                    title: option.primaryLabel,
-                                    subtitle: option.secondaryLabel,
+                                    title: option.roleLabelKey.map(model.localized) ?? option.primaryLabel,
+                                    subtitle: option.fallsBackToPrimary ? model.localized("未配置快速模型，使用主力模型") : option.secondaryLabel,
                                     selected: option.id == selectedModelID,
                                     enabled: true
                                 ) {

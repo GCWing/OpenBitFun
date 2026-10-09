@@ -3,7 +3,9 @@
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot, type Root } from 'react-dom/client';
+import { Dialog, DialogBody } from '@openbitfun/ui';
 import { BtwSessionPanel } from './BtwSessionPanel';
+import { resolveSubagentNameKey } from '../../subagent-identity/nameResolver';
 import { useReviewActionBarStore } from '../../store/deepReviewActionBarStore';
 import { loadPersistedReviewState } from '../../services/ReviewActionBarPersistenceService';
 import type { FlowChatState, Session } from '../../types/flow-chat';
@@ -13,6 +15,7 @@ const panelMocks = vi.hoisted(() => ({
   cancelSession: vi.fn(),
   cancelSessionTask: vi.fn(),
   hydrateSessionHistoryForDetail: vi.fn(),
+  ensurePersistedSessionMetadata: vi.fn(() => Promise.resolve(true)),
   notificationError: vi.fn(),
   permissionRequests: [] as PermissionRequest[],
   ownedPermissionRequests: [] as PermissionRequest[],
@@ -24,6 +27,7 @@ const panelMocks = vi.hoisted(() => ({
   respondPermission: vi.fn(() => Promise.resolve()),
   respondPermissionBatch: vi.fn(() => Promise.resolve()),
   virtualItems: [] as unknown[],
+  transcriptExtra: null as React.ReactNode,
   flowChatSubscriber: null as ((state: FlowChatState) => void) | null,
   flowChatSelectorSubscribers: new Set<(state: FlowChatState) => void>(),
 }));
@@ -63,15 +67,18 @@ vi.mock('./BtwVirtualSessionList', async () => {
   const { VirtualItemRenderer } = await import('../modern/VirtualItemRenderer');
   return {
     BtwVirtualSessionList: ({ items }: { items: import('../../store/modernFlowChatStore').VirtualItem[] }) => (
-      <>{items.map((item, index) => <VirtualItemRenderer key={index} item={item} index={index} />)}</>
+      <>{items.map((item, index) => <VirtualItemRenderer key={index} item={item} index={index} />)}{panelMocks.transcriptExtra}</>
     ),
   };
 });
 
-vi.mock('../modern/useExploreGroupState', () => ({
-  useExploreGroupState: () => ({
-    exploreGroupStates: {},
-    onExploreGroupToggle: vi.fn(),
+vi.mock('../modern/useFlowGroupState', () => ({
+  useFlowGroupState: () => ({
+    groupStates: new Map(),
+    groupReceiveFeedback: new Map(),
+    expandedToolCapsules: new Set(),
+    onToolCapsuleExpandedChange: vi.fn(),
+    onGroupToggle: vi.fn(),
     onExpandGroup: vi.fn(),
     onExpandAllInTurn: vi.fn(),
     onCollapseGroup: vi.fn(),
@@ -119,35 +126,6 @@ vi.mock('./DeepReviewActionBar', () => ({
 
 vi.mock('@openbitfun/ui', async importOriginal => ({
   ...await importOriginal<typeof import('@openbitfun/ui')>(),
-  IconButton: ({
-    children,
-    onClick,
-    disabled,
-    className,
-    icon,
-    'data-testid': testId,
-    'aria-label': ariaLabel,
-  }: {
-    children?: React.ReactNode;
-    icon?: React.ReactNode;
-    onClick?: () => void;
-    disabled?: boolean;
-    className?: string;
-    'data-testid'?: string;
-    'aria-label'?: string;
-  }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={className}
-      data-testid={testId}
-      aria-label={ariaLabel}
-    >
-      {icon}
-      {children}
-    </button>
-  ),
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
@@ -170,6 +148,7 @@ vi.mock('@/infrastructure/api', () => ({
 vi.mock('@/infrastructure/event-bus', () => ({
   globalEventBus: {
     emit: vi.fn(),
+    on: vi.fn(() => () => {}),
   },
 }));
 
@@ -196,6 +175,10 @@ vi.mock('../../store/FlowChatStore', () => ({
     }),
   },
   flowChatStore: {
+    retainSessionHistory: () => () => {},
+    clearSessionUnreadCompletion: vi.fn(),
+    ensurePersistedSessionMetadata: (...args: unknown[]) =>
+      panelMocks.ensurePersistedSessionMetadata(...args),
     getState: () => flowChatState,
     subscribeSelector: <T,>(select: (state: FlowChatState) => T, notify: (selected: T) => void) => {
       let previous = select(flowChatState);
@@ -563,6 +546,7 @@ describe('BtwSessionPanel review action bar integration', () => {
     panelMocks.cancelSessionTask.mockResolvedValue(true);
     panelMocks.hydrateSessionHistoryForDetail.mockReset();
     panelMocks.hydrateSessionHistoryForDetail.mockResolvedValue(undefined);
+    panelMocks.ensurePersistedSessionMetadata.mockClear();
     panelMocks.notificationError.mockReset();
     panelMocks.permissionRequests = [];
     panelMocks.ownedPermissionRequests = [];
@@ -572,6 +556,7 @@ describe('BtwSessionPanel review action bar integration', () => {
     panelMocks.respondPermissionBatch.mockReset();
     panelMocks.respondPermissionBatch.mockResolvedValue(undefined);
     panelMocks.virtualItems = [];
+    panelMocks.transcriptExtra = null;
     panelMocks.flowChatSubscriber = null;
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -688,6 +673,30 @@ describe('BtwSessionPanel review action bar integration', () => {
     expect(panelMocks.cancelSession).not.toHaveBeenCalled();
   });
 
+  it('leaves Escape from a transcript dialog with the shared overlay owner', async () => {
+    panelMocks.virtualItems = [{ type: 'model-round', turnId: 'btw-turn-1' }];
+    flowChatState = {
+      ...flowChatState,
+      sessions: new Map([
+        ['btw-child', createRunningBtwSession()],
+        ['parent-session', flowChatState.sessions.get('parent-session')!],
+      ]),
+      activeSessionId: 'parent-session',
+    } as FlowChatState;
+    const onOpenChange = vi.fn();
+    panelMocks.transcriptExtra = <Dialog open onOpenChange={onOpenChange} aria-label="Thinking Process">
+      <DialogBody>Reasoning details</DialogBody>
+    </Dialog>;
+    await act(async () => root.render(<BtwSessionPanel childSessionId="btw-child" parentSessionId="parent-session" />));
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    await act(async () => dialog!.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Escape', bubbles: true, cancelable: true,
+    })));
+    expect(onOpenChange).toHaveBeenCalledWith(false, 'escape-key');
+    expect(panelMocks.cancelSessionTask).not.toHaveBeenCalled();
+  });
+
   it('keeps Escape with the IME inside a running side-question panel', async () => {
     flowChatState = {
       ...flowChatState,
@@ -794,11 +803,11 @@ describe('BtwSessionPanel review action bar integration', () => {
     expect(container.querySelector('[data-testid="child-permission-approval"]')).toBeNull();
   });
 
-  it('shows the session-mapped subagent avatar in the side-thread header', async () => {
+  it('shows subagent identity and model without repeating the task description in the header', async () => {
     flowChatState = {
       ...flowChatState,
       sessions: new Map([
-        ['review-check-child', createEmptyReviewCheckSession()],
+        ['review-check-child', createEmptyReviewCheckSession({ config: { modelName: 'gpt-5.5' } })],
         ['parent-session', flowChatState.sessions.get('parent-session')!],
       ]),
     } as FlowChatState;
@@ -808,6 +817,7 @@ describe('BtwSessionPanel review action bar integration', () => {
           childSessionId="review-check-child"
           parentSessionId="parent-session"
           workspacePath="D:/workspace/project"
+          displayTitle="Investigate a long task description"
         />,
       );
     });
@@ -818,7 +828,13 @@ describe('BtwSessionPanel review action bar integration', () => {
     expect(avatar).toBeTruthy();
     expect(avatar?.hasAttribute('data-openbitfun-name-id')).toBe(false);
     expect(container.querySelector('[data-openbitfun-part="subagentName"]')).toBeNull();
-    expect(container.querySelector('[data-openbitfun-part="badge"]')?.textContent).toBe('Agent');
+    const header = container.querySelector('[data-openbitfun-component="btw-session-panel"][data-openbitfun-part="header"]');
+    expect(header?.querySelector('[data-openbitfun-component="toolbar"]')).toBeTruthy();
+    expect(header?.querySelector('.subagent-avatar__status')).toBeNull();
+    expect(header?.querySelector('[data-openbitfun-component="btw-session-panel"][data-openbitfun-part="badge"]')).toBeNull();
+    expect(header?.textContent).toContain(resolveSubagentNameKey('review-check-child'));
+    expect(header?.textContent).toContain('gpt-5.5');
+    expect(header?.textContent).not.toContain('Investigate a long task description');
   });
 
   it('shows a Review-check loading state instead of an empty thread', async () => {
@@ -1039,7 +1055,9 @@ describe('BtwSessionPanel review action bar integration', () => {
     });
 
     expect(container.textContent).toContain('childSession.reviewDetail.partialTimedOut');
-    expect(container.textContent).toContain('Checking a specific concern');
+    const header = container.querySelector('[data-openbitfun-component="btw-session-panel"][data-openbitfun-part="header"]');
+    expect(header?.textContent).toContain('toolCards.taskTool.reviewCoverageLabel');
+    expect(header?.textContent).not.toContain('Checking a specific concern');
     expect(container.textContent).not.toContain('Internal reviewer title');
     expect(container.querySelector('[data-testid="btw-session-panel-origin-button"]')).toBeTruthy();
   });
@@ -1226,7 +1244,8 @@ describe('BtwSessionPanel review action bar integration', () => {
 
     expect(panelMocks.cancelSession).toHaveBeenCalledWith('review-check-child');
     expect(panelMocks.hydrateSessionHistoryForDetail).not.toHaveBeenCalled();
-    expect(container.querySelector('[data-testid="btw-session-panel-stop-spinner"]')).toBeTruthy();
+    expect(stopButton?.getAttribute('aria-busy')).toBe('true');
+    expect(stopButton?.disabled).toBe(true);
 
     await act(async () => {
       resolveCancel({ cancelled: true, dialogTurnId: 'turn-running' });

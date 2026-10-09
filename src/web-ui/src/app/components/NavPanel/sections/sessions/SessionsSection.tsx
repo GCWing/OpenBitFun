@@ -1,3 +1,4 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { useDeviceDirectory, resolveDeviceName } from '@/infrastructure/account/deviceDirectory';
 import { requireSessionOwningWorkspaceId } from '@/flow_chat/utils/sessionOrdering';
 /**
@@ -7,9 +8,9 @@ import { requireSessionOwningWorkspaceId } from '@/flow_chat/utils/sessionOrderi
  * Owns all data fetching / mutation for chat sessions.
  */
 
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { subscribeOverlayInteraction, createOverlayPortal, Button, Icon, IconButton, Input, Menu, MenuItem, OverflowText, Tooltip } from '@openbitfun/ui';
-import { Loader2, Archive, FolderGit2, ListChecks } from 'lucide-react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { subscribeOverlayInteraction, createOverlayPortal, Button, Icon, IconButton, Input, Menu, MenuItem, OverflowText, StatusPill, Tooltip } from '@openbitfun/ui';
+import { Loader2, Archive, FolderGit2, FolderOpen, ListChecks } from 'lucide-react';
 import { RetainedMountBoundary } from '@/shared/presence';
 import { useI18n } from '@/infrastructure/i18n';
 import { flowChatStore } from '../../../../../flow_chat/store/FlowChatStore';
@@ -17,6 +18,7 @@ import { flowChatManager } from '../../../../../flow_chat/services/FlowChatManag
 import type { FlowChatState, Session } from '../../../../../flow_chat/types/flow-chat';
 import { useSceneStore } from '../../../../stores/sceneStore';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
+import { sessionAPI } from '@/infrastructure/api/service-api/SessionAPI';
 import { createLogger } from '@/shared/utils/logger';
 import { isSamePath } from '@/shared/utils/pathUtils';
 import { isLinkedWorktreeWorkspace } from '@/shared/types/global-state';
@@ -105,11 +107,12 @@ import {
 } from './sessionNavExpand';
 import { useSessionRowRemovalTransition } from './sessionRowShift';
 import { SessionStatusIndicator } from './SessionStatusIndicator';
+import { createSessionsNavSelector } from './sessionsNavSelector';
 import './SessionsSection.scss';
 
 const log = createLogger('SessionsSection');
-const ScheduledJobsModal = lazy(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'));
-const WorkspaceSessionBatchModal = lazy(() => import('../workspaces/WorkspaceSessionBatchModal'));
+const ScheduledJobsModal = lazyWithRecovery(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'));
+const WorkspaceSessionBatchModal = lazyWithRecovery(() => import('../workspaces/WorkspaceSessionBatchModal'));
 
 type HistoryOpenIntentDispatchResult = 'none' | 'dispatched' | 'already-pending';
 
@@ -338,29 +341,10 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   const bufferPrefetchSignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const selector = (s: FlowChatState): string => {
-      const parts: string[] = [s.activeSessionId ?? ''];
-      for (const session of s.sessions.values()) {
-        const latestTurn = session.dialogTurns[session.dialogTurns.length - 1];
-        const dispatchTarget = session.config.dispatchTarget;
-        const dispatchTargetSnapshot = dispatchTarget?.kind === 'ssh'
-          ? `ssh:${dispatchTarget.connectionId}:${dispatchTarget.workspacePath}:${dispatchTarget.displayName}`
-          : dispatchTarget?.kind === 'device'
-            ? `device:${dispatchTarget.deviceId}:${dispatchTarget.workspacePath}:${dispatchTarget.displayName}`
-            : 'local';
-        parts.push(
-          `${session.sessionId}|${session.isTransient ? '1':'0'}|${session.sessionKind}|` +
-          `${session.parentSessionId ?? ''}|${session.parentToolCallId ?? ''}|${session.subagentType ?? ''}|` +
-          `${session.workspacePath ?? ''}|${session.mode ?? ''}|${session.needsUserAttention ?? ''}|` +
-          `${session.hasUnreadCompletion ?? ''}|${latestTurn?.status ?? ''}|` +
-          `${session.title ?? ''}|${dispatchTargetSnapshot}|${session.config.dispatchJobState ?? ''}`
-        );
-      }
-      return parts.join(';');
-    };
+    const selector = createSessionsNavSelector();
     const unsub = flowChatStore.subscribeSelector(selector, (() => {
       setFlowChatState(flowChatStore.getState());
-    }), { isEqual: (a, b) => a === b });
+    }));
     return () => unsub();
   }, []);
 
@@ -1173,6 +1157,23 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     [activeSessionId, dispatchHistoryOpenIntentForSession, editingSessionId],
   );
 
+  const handleRevealSessionStorageDirectory = useCallback(async (e: React.MouseEvent, session: Session) => {
+    e.stopPropagation();
+    closeSessionMenu();
+    try {
+      if (isNonLocalDispatchTarget(session.config.dispatchTarget)) {
+        throw new Error(t('nav.sessions.storageDirectoryDesktopOnly'));
+      }
+      const storageWorkspaceId = workspaceId ?? requireSessionOwningWorkspaceId(session);
+      await sessionAPI.revealStorageDirectory(storageWorkspaceId, session.sessionId);
+    } catch (error) {
+      notificationService.error(
+        error instanceof Error ? error.message : t('nav.sessions.openStorageDirectoryFailed'),
+        { duration: 4000 },
+      );
+    }
+  }, [closeSessionMenu, t, workspaceId]);
+
   const resolveSessionTitle = getTitle;
   const titleNumbers = useSessionTitleNumbers(flowChatState.sessions);
 
@@ -1782,7 +1783,9 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                           <SessionTitleNumber number={titleNumber} />
                         </span>
                     {isChildSession ? (
-                      <span className="openbitfun-nav-panel__inline-item-btw-badge">{childSessionBadge}</span>
+                      <StatusPill className="openbitfun-nav-panel__inline-item-btw-badge" tone="neutral">
+                        {childSessionBadge}
+                      </StatusPill>
                     ) : null}
                     {isDispatched ? (
                       <span
@@ -1934,6 +1937,21 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                             data-session-id={session.sessionId}
                           >
                             <span>{t('nav.sessions.copySessionId')}</span>
+                          </MenuItem>
+                          <MenuItem
+                            type="button"
+                            leading={<Icon glyph={FolderOpen} size="sm" />}
+                            onClick={e => { void handleRevealSessionStorageDirectory(e, session); }}
+                            disabled={!sessionAPI.canRevealStorageDirectory() || isDispatched || (!workspaceId && !session.projectWorkspaceId && !session.workspaceId)}
+                            title={!sessionAPI.canRevealStorageDirectory() || isDispatched
+                              ? t('nav.sessions.storageDirectoryDesktopOnly')
+                              : (!workspaceId && !session.projectWorkspaceId && !session.workspaceId)
+                                ? t('nav.sessions.storageDirectoryWorkspaceUnavailable')
+                                : undefined}
+                            data-testid="nav-session-menu-open-storage"
+                            data-session-id={session.sessionId}
+                          >
+                            <span>{t('nav.sessions.openStorageDirectory')}</span>
                           </MenuItem>
                           <MenuItem
                             type="button"

@@ -4,6 +4,13 @@
     "subtitle": "在聊天中快速运行常用 AI 指令"
   },
   "loading": "加载中...",
+  "commitAttribution": {
+    "title": "提交署名",
+    "scope": "此执行主机上的所有工作区共用，下次加载内置提交流程时生效。",
+    "label": "添加 OpenBitFun 联合提交人",
+    "description": "使用内置提交流程创建新提交时，将 OpenBitFun（{{account}}）标记为联合提交人。",
+    "unsupported": "当前执行主机不支持此设置，请升级主机上的 OpenBitFun。"
+  },
   "quickActions": {
     "defaults": {
       "commit": {
@@ -18,11 +25,13 @@
   },
   "sections": {
     "builtin": {
-      "title": "内置动作"
+      "title": "内置动作",
+      "description": "可修改预置动作的名称与指令，不需要的动作可以关闭"
     },
     "custom": {
       "title": "自定义动作",
-      "empty": "还没有自定义动作"
+      "empty": "还没有自定义动作",
+      "description": "为重复任务保存自己的指令，触发时发送到当前会话"
     }
   },
   "edit": {
@@ -44,7 +53,7 @@
     "labelPlaceholder": "例：生成单元测试",
     "promptField": "触发指令",
     "promptPlaceholder": "例：请为当前代码变更生成单元测试",
-    "promptHint": "触发动作时，此指令会发送给 AI 执行。",
+    "promptHint": "触发动作后，将此指令发送给 AI",
     "cancel": "取消",
     "saveEdit": "保存",
     "confirmAdd": "添加",

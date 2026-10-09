@@ -88,7 +88,7 @@ export class Header extends BasePage {
       throw new Error('Minimize button not found');
     }
 
-    await element.scrollIntoView();
+    await element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
     await element.waitForClickable({ timeout: 10000 });
     await element.click();
   }
@@ -120,7 +120,7 @@ export class Header extends BasePage {
       throw new Error('Maximize button not found');
     }
 
-    await element.scrollIntoView();
+    await element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
     await element.waitForClickable({ timeout: 10000 });
     await element.click();
   }
@@ -152,7 +152,7 @@ export class Header extends BasePage {
       throw new Error('Close button not found');
     }
 
-    await element.scrollIntoView();
+    await element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
     await element.waitForClickable({ timeout: 10000 });
     await element.click();
   }

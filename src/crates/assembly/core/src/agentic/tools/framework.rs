@@ -111,6 +111,12 @@ pub trait Tool: Send + Sync {
         self.is_readonly()
     }
 
+    /// Subsequent calls must be preflighted after this tool finishes because
+    /// it can change session execution policy (for example, activate hooks).
+    fn invalidates_tool_preflight(&self) -> bool {
+        false
+    }
+
     /// Describe permission actions and resources without performing side effects.
     fn permission_intents(
         &self,

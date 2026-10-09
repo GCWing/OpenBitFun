@@ -1,9 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import type { AppearancePackage } from '../types';
-import { APPEARANCE_THEME_TOKEN_NAMES } from './catalog';
+import { APPEARANCE_THEME_TOKEN_NAMES, getBuiltinAppearanceThemeTokens } from './catalog';
 import { composeAppearancePackage } from './composeAppearancePackage';
 
 describe('composeAppearancePackage', () => {
+  it.each(['light', 'dark'] as const)('supplies subagent accents to legacy %s packages and preserves overrides', mode => {
+    const original: AppearancePackage = {
+      schema: 'openbitfun.appearance', schemaVersion: 2,
+      id: 'example.legacy-subagents', name: 'Legacy subagents', version: '1.0.0', mode,
+    };
+    const payload = JSON.stringify(original);
+    const resolved = composeAppearancePackage(JSON.parse(payload));
+    const tokens = resolved.renderers!['theme-tokens']!.settings.tokens;
+    const defaults = getBuiltinAppearanceThemeTokens(`openbitfun-${mode}`);
+    for (const name of APPEARANCE_THEME_TOKEN_NAMES.filter(name => name.startsWith('--openbitfun-domain-subagent-'))) {
+      expect(tokens[name as keyof typeof tokens]).toBe(defaults[name as keyof typeof defaults]);
+    }
+    expect(composeAppearancePackage(JSON.parse(JSON.stringify(resolved))).renderers?.['theme-tokens']?.settings.tokens)
+      .toEqual(tokens);
+    expect(JSON.stringify(original)).toBe(payload);
+
+    tokens['--openbitfun-domain-subagent-robot-01'] = '#446688';
+    expect(composeAppearancePackage(JSON.parse(JSON.stringify(resolved))).renderers!['theme-tokens']!.settings.tokens)
+      .toHaveProperty('--openbitfun-domain-subagent-robot-01', '#446688');
+  });
+
   it.each(['light', 'dark'] as const)('supplies update material cyan to legacy %s packages and preserves explicit overrides', mode => {
     const original: AppearancePackage = {
       schema: 'openbitfun.appearance', schemaVersion: 2,

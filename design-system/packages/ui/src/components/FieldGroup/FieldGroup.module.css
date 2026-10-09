@@ -71,6 +71,26 @@
     letter-spacing: var(--openbitfun-type-body-sm-letter-spacing);
   }
 
+  .section[data-description-layout="inline"] .header,
+  .section[data-description-layout="inline"] .headingRegion {
+    align-items: center;
+  }
+
+  .section[data-description-layout="inline"] .headingContent {
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--openbitfun-layout-form-section-header-gap);
+  }
+
+  .section[data-description-layout="inline"] .title {
+    flex: 0 0 auto;
+  }
+
+  .section[data-description-layout="inline"] .description {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+
   .actions {
     display: flex;
     flex: 0 0 auto;

@@ -8,6 +8,7 @@ export const checkboxMeta = {
   props: [
     { name: "appearance", type: "custom | native", defaultValue: "custom" },
     { name: "checked", type: "boolean" },
+    { name: "readOnly", type: "boolean", defaultValue: "false" },
     { name: "indeterminate", type: "boolean", defaultValue: "false" },
     { name: "invalid", type: "boolean", defaultValue: "false" },
     { name: "label", type: "ReactNode" },

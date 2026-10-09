@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::HashSet;
 
-pub const STANDARD_HARNESS_PROMPT_TEMPLATE: &str = "agentic_mode";
+pub const STANDARD_HARNESS_PROMPT_TEMPLATE: &str = "standard_mode";
 pub const STANDARD_HARNESS_CONFIG_ID: &str = "Standard";
 pub const STANDARD_HARNESS_CONFIG_LABEL: &str = "Standard";
 pub const STANDARD_HARNESS_CONFIG_MEMBERS: &[&str] = &["Standard"];
@@ -186,12 +186,6 @@ pub fn builtin_agent_definition_specs() -> Vec<BuiltinAgentDefinitionSpec> {
             SubagentVisibilityPolicy::default(),
         ),
         builtin_agent_spec(
-            "GenerateDoc",
-            Hidden,
-            "fast",
-            SubagentVisibilityPolicy::default(),
-        ),
-        builtin_agent_spec(
             "OpenBitFun",
             Hidden,
             "primary",
@@ -212,8 +206,7 @@ pub fn default_model_id_for_builtin_agent(agent_type: &str) -> &'static str {
         | "DeepResearch" | "Ultimate" => "primary",
         "Explore" | "CodeReview" | "GeneralPurpose" | "MemoryPhase2" | "SwarmPlanner"
         | "SwarmWorker" => "primary",
-        "GenerateDoc"
-        | "ResearchSpecialist"
+        "ResearchSpecialist"
         | "DeepReview"
         | "ReviewWorker"
         | "ReviewBusinessLogic"

@@ -83,6 +83,8 @@ export type WorkspaceEventListener = (event: WorkspaceEvent) => void;
 export interface WorkspaceState {
   currentWorkspace: WorkspaceInfo | null;
   openedWorkspaces: Map<string, WorkspaceInfo>;
+  /** null means the host does not advertise the complete assistant catalog. */
+  assistantWorkspaces: WorkspaceInfo[] | null;
   activeWorkspaceId: string | null;
   lastUsedWorkspaceId: string | null;
   recentWorkspaces: WorkspaceInfo[];
@@ -129,6 +131,7 @@ function createWorkspaceSurfaceContainer(): WorkspaceSurfaceContainer {
     state: {
       currentWorkspace: null,
       openedWorkspaces: new Map(),
+      assistantWorkspaces: null,
       activeWorkspaceId: null,
       lastUsedWorkspaceId: null,
       recentWorkspaces: [],
@@ -242,6 +245,7 @@ class WorkspaceManager {
     return {
       ...this.state,
       openedWorkspaces: new Map(this.state.openedWorkspaces),
+      assistantWorkspaces: this.state.assistantWorkspaces ? [...this.state.assistantWorkspaces] : null,
     };
   }
 
@@ -282,9 +286,23 @@ class WorkspaceManager {
   }
 
   private updateState(updates: Partial<WorkspaceState>, event?: WorkspaceEvent): void {
+    const assistantWorkspaces = updates.assistantWorkspaces === undefined
+      ? this.state.assistantWorkspaces
+      : updates.assistantWorkspaces;
+    const assistantsById = assistantWorkspaces === null
+      ? null
+      : new Map(assistantWorkspaces.map(workspace => [workspace.id, workspace]));
+    for (const workspace of updates.openedWorkspaces?.values() ?? []) {
+      if (workspace.workspaceKind === WorkspaceKind.Assistant) assistantsById?.set(workspace.id, workspace);
+    }
+    if (event?.type === 'workspace:updated' && event.workspace.workspaceKind === WorkspaceKind.Assistant) {
+      assistantsById?.set(event.workspace.id, event.workspace);
+    }
+    if (event?.type === 'workspace:removed') assistantsById?.delete(event.workspaceId);
     this.state = {
       ...this.state,
       ...updates,
+      assistantWorkspaces: assistantsById ? Array.from(assistantsById.values()) : null,
       openedWorkspaces: updates.openedWorkspaces
         ? new Map(updates.openedWorkspaces)
         : this.state.openedWorkspaces,
@@ -614,12 +632,16 @@ class WorkspaceManager {
     const recentWorkspaces = state.recentWorkspaces.map(
       workspace => updateWorkspace(workspace) ?? workspace
     );
+    const assistantWorkspaces = state.assistantWorkspaces?.map(
+      workspace => updateWorkspace(workspace) ?? workspace
+    ) ?? null;
 
     const updatedWorkspace =
       currentWorkspace?.id === update.workspaceId
         ? currentWorkspace
         : openedWorkspaces.get(update.workspaceId) ||
           recentWorkspaces.find(workspace => workspace.id === update.workspaceId) ||
+          assistantWorkspaces?.find(workspace => workspace.id === update.workspaceId) ||
           null;
 
     if (!updatedWorkspace) {
@@ -634,6 +656,7 @@ class WorkspaceManager {
       currentWorkspace,
       openedWorkspaces,
       recentWorkspaces,
+      assistantWorkspaces,
     };
     if (getActiveSurfaceId() === LOCAL_SURFACE_ID) {
       this.emit({ type: 'workspace:updated', workspace: updatedWorkspace });
@@ -703,14 +726,16 @@ class WorkspaceManager {
     try {
       do {
         container.catalogResyncPending = false;
-        const [currentWorkspace, recentWorkspaces, openedWorkspaces] = await Promise.all([
+        const [currentWorkspace, recentWorkspaces, openedWorkspaces, assistantWorkspaces] = await Promise.all([
           globalStateAPI.getCurrentWorkspace(),
           globalStateAPI.getRecentWorkspaces(),
           globalStateAPI.getOpenedWorkspaces(),
+          this.state.assistantWorkspaces === null ? null : globalStateAPI.getAssistantWorkspaces(),
         ]);
         if (!this.isSurfaceUnchanged(surface)) {
           return;
         }
+        this.updateState({ assistantWorkspaces });
         this.applyHostCatalog(currentWorkspace, recentWorkspaces, openedWorkspaces);
       } while (container.catalogResyncPending && this.isSurfaceUnchanged(surface));
     } catch (error) {
@@ -858,6 +883,7 @@ class WorkspaceManager {
         recentWorkspaces,
         openedWorkspaces,
         currentWorkspace,
+        assistantWorkspaces,
         primaryAssistantWorkspaceId,
         legacyRemoteWorkspace,
       } = await globalStateAPI.initializeWorkspaceStartupState();
@@ -886,7 +912,7 @@ class WorkspaceManager {
       });
 
       const updateStateStartedAt = markWorkspaceStartupStepStart('update_workspace_state');
-      this.updateState({ primaryAssistantWorkspaceId });
+      this.updateState({ primaryAssistantWorkspaceId, assistantWorkspaces: assistantWorkspaces ?? null });
       this.updateWorkspaceState(
         currentWorkspace,
         recentWorkspaces,
@@ -1102,7 +1128,8 @@ class WorkspaceManager {
         throw new Error(`Workspace ${workspaceId} is not a remote workspace`);
       }
 
-      await this.cancelRunningSessionsForWorkspace(workspace);
+      await this.cancelRunningSessionsForWorkspace(workspace, surface);
+      this.assertSurfaceUnchanged(surface, 'remove remote workspace');
       await globalStateAPI.closeWorkspace(workspace.id);
       await globalStateAPI.removeWorkspaceFromRecent(workspace.id).catch(error => {
         if (isSurfaceChangedError(error)) {
@@ -1199,8 +1226,10 @@ class WorkspaceManager {
 
       const closingWorkspace = this.state.openedWorkspaces.get(workspaceId);
       if (closingWorkspace) {
-        await this.cancelRunningSessionsForWorkspace(closingWorkspace);
+        await this.cancelRunningSessionsForWorkspace(closingWorkspace, surface);
       }
+
+      this.assertSurfaceUnchanged(surface, 'close workspace');
 
       await globalStateAPI.closeWorkspace(workspaceId);
 
@@ -1232,9 +1261,10 @@ class WorkspaceManager {
     }
   }
 
-  private async cancelRunningSessionsForWorkspace(workspace: WorkspaceInfo): Promise<void> {
+  private async cancelRunningSessionsForWorkspace(workspace: WorkspaceInfo, surface: SurfaceCapture): Promise<void> {
     try {
       const { flowChatStore } = await import('@/flow_chat/store/FlowChatStore');
+      this.assertSurfaceUnchanged(surface, 'cancel workspace sessions');
       const cancelledSessionIds = await flowChatStore.cancelRunningSessionsForWorkspace(workspace);
       if (cancelledSessionIds.length > 0) {
         log.info('Cancelled running sessions before closing workspace', {
@@ -1243,6 +1273,7 @@ class WorkspaceManager {
         });
       }
     } catch (error) {
+      if (isSurfaceChangedError(error)) throw error;
       log.warn('Failed to cancel running sessions before closing workspace', {
         workspaceId: workspace.id,
         error,
@@ -1258,11 +1289,14 @@ class WorkspaceManager {
 
       log.info('Deleting assistant workspace', { workspaceId });
 
-      const removedWorkspace = this.state.openedWorkspaces.get(workspaceId);
+      const removedWorkspace = this.state.openedWorkspaces.get(workspaceId)
+        ?? this.state.assistantWorkspaces?.find(workspace => workspace.id === workspaceId);
       await globalStateAPI.deleteAssistantWorkspace(workspaceId);
+      this.assertSurfaceUnchanged(surface, 'delete assistant workspace');
 
       if (removedWorkspace) {
         const { flowChatStore } = await import('@/flow_chat/store/FlowChatStore');
+        this.assertSurfaceUnchanged(surface, 'delete assistant sessions');
         flowChatStore.removeSessionsForWorkspace(removedWorkspace);
       }
 
@@ -1379,7 +1413,12 @@ class WorkspaceManager {
       this.setLoading(true);
       this.setError(null);
 
-      const workspace = await globalStateAPI.setActiveWorkspace(workspaceId);
+      const isClosedAssistant = !this.state.openedWorkspaces.has(workspaceId)
+        && this.state.assistantWorkspaces?.some(workspace => workspace.id === workspaceId);
+      const workspace = isClosedAssistant
+        ? await globalStateAPI.openWorkspaceById(workspaceId)
+        : await globalStateAPI.setActiveWorkspace(workspaceId);
+      this.assertSurfaceUnchanged(surface, 'set active workspace');
       const [recentWorkspaces, openedWorkspaces] = await Promise.all([
         globalStateAPI.getRecentWorkspaces(),
         globalStateAPI.getOpenedWorkspaces(),

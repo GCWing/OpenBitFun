@@ -1,4 +1,5 @@
-import React, { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react';
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
+import React, { Suspense, useState, useCallback, useEffect, useRef } from 'react';
 
 import { createOverlayPortal,
   Icon,
@@ -36,7 +37,7 @@ import { UpdateDownloadIndicator } from '@/infrastructure/update/UpdateDownloadI
 import { UpdateMenuItems } from '@/infrastructure/update/UpdateMenuItems';
 import { useUpdateInstallStore } from '@/infrastructure/update/updateInstallStore';
 
-const RemoteConnectDialog = lazy(() => import('../../RemoteConnectDialog'));
+const RemoteConnectDialog = lazyWithRecovery(() => import('../../RemoteConnectDialog'));
 
 const PersistentFooterActions: React.FC = () => {
   const { t } = useI18n('common');
@@ -241,6 +242,7 @@ const PersistentFooterActions: React.FC = () => {
                     onOpenAppearanceSettings={handleOpenAppearanceSettings}
                   />
                   <MenuSeparator />
+                  <UpdateMenuItems onCloseMenu={closeMenu} />
                   <MenuItem
                     leading={<Icon name="gear" size="sm" aria-hidden="true" />}
                     onClick={handleOpenSettings}
@@ -248,7 +250,6 @@ const PersistentFooterActions: React.FC = () => {
                   >
                     {t('nav.settingsMenu.openSettings')}
                   </MenuItem>
-                  <UpdateMenuItems onCloseMenu={closeMenu} />
                   <MenuItem
                     leading={<Icon name="info" size="sm" aria-hidden="true" />}
                     onClick={handleShowAbout}

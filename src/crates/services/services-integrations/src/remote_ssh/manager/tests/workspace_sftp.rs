@@ -401,6 +401,75 @@ async fn dependency_drop_reproduces_client_limit_with_zero_server_handles() {
 }
 
 #[tokio::test]
+async fn streamed_upload_reports_progress_and_stops_at_a_chunk_boundary() {
+    let f = Fixture::new().await;
+    let local = f._dir.path().join("upload");
+    let bytes: Vec<u8> = (0..600_000).map(|index| (index % 251) as u8).collect();
+    tokio::fs::write(&local, &bytes).await.unwrap();
+
+    let mut progress = Vec::new();
+    let written = f
+        .manager
+        .sftp_write_from_file_with_progress(
+            "sftp-test",
+            "/file",
+            &local,
+            u64::MAX,
+            &mut |written, total| {
+                progress.push((written, total));
+                true
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(written, bytes.len() as u64);
+    assert_eq!(
+        f.manager.sftp_read("sftp-test", "/file").await.unwrap(),
+        bytes
+    );
+    assert_eq!(
+        progress.last(),
+        Some(&(bytes.len() as u64, bytes.len() as u64))
+    );
+    assert!(progress.windows(2).all(|pair| pair[0].0 <= pair[1].0));
+
+    let cancelled = f
+        .manager
+        .sftp_write_from_file_with_progress(
+            "sftp-test",
+            "/file",
+            &local,
+            u64::MAX,
+            &mut |written, _| written < 262_144,
+        )
+        .await;
+    assert!(cancelled.is_err());
+    assert!(
+        f.manager
+            .sftp_read("sftp-test", "/file")
+            .await
+            .unwrap()
+            .len()
+            < bytes.len(),
+        "a cancelled stream must stop before the whole file reaches the remote"
+    );
+    assert_eq!(f.state.live.load(Ordering::SeqCst), 0);
+
+    // The cancelled stream must not poison the next upload on the same channel.
+    assert_eq!(
+        f.manager
+            .sftp_write_from_file("sftp-test", "/file", &local, u64::MAX)
+            .await
+            .unwrap(),
+        bytes.len() as u64
+    );
+    assert_eq!(
+        f.manager.sftp_read("sftp-test", "/file").await.unwrap(),
+        bytes
+    );
+}
+
+#[tokio::test]
 async fn repeated_manager_transfers_release_handles_and_preserve_bytes() {
     let f = Fixture::new().await;
     let local = f._dir.path().join("upload");

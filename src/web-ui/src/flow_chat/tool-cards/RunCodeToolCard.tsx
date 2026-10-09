@@ -1,3 +1,4 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * Run Code tool card.
  *
@@ -8,9 +9,10 @@
  * file into a terminal card's command line.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
 import { CodePreview } from '../components/CodePreview';
 import { RunCodeToolCard as RunCodeToolCardView } from '@openbitfun/ui/flow-chat';
@@ -57,8 +59,9 @@ export const RunCodeToolCard: React.FC<ToolCardProps> = ({
   onExpand,
 }) => {
   const { t } = useTranslation('flow-chat');
-  const { toolCall, toolResult, status } = toolItem;
-  const [isExpanded, setIsExpanded] = useState(false);
+  const { toolCall, toolResult } = toolItem;
+  const status = getToolCardStatus(toolItem);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,
@@ -79,25 +82,9 @@ export const RunCodeToolCard: React.FC<ToolCardProps> = ({
     if (!canExpand) return;
 
     applyExpandedState(isExpanded, !isExpanded, setIsExpanded, { onExpand });
-  }, [applyExpandedState, canExpand, isExpanded, onExpand]);
+  }, [applyExpandedState, canExpand, isExpanded, onExpand, setIsExpanded]);
 
-  const summary = useMemo(() => {
-    if (errorMessage) return errorMessage;
-
-    const subject = description || firstMeaningfulLine(code);
-    if (status === 'completed') {
-      return subject || t('toolCards.runCode.completed');
-    }
-    if (status === 'cancelled') {
-      return t('toolCards.runCode.cancelled');
-    }
-    if (status === 'rejected') {
-      return t('toolCards.runCode.rejected');
-    }
-    if (subject) return subject;
-
-    return code ? t('toolCards.runCode.running') : t('toolCards.runCode.writing');
-  }, [code, description, errorMessage, status, t]);
+  const summary = description || firstMeaningfulLine(code);
 
   return (
     <div
@@ -111,6 +98,7 @@ export const RunCodeToolCard: React.FC<ToolCardProps> = ({
         onToggle={canExpand ? handleToggleExpand : undefined}
         action={t('toolCards.runCode.title')}
         summary={summary}
+        statusDescription={getToolCardStatusDescription(status, t, errorMessage)}
         actions={code ? (
           <ToolCardCopyAction
             getText={getCopyCodeText}

@@ -232,8 +232,66 @@ export class CloudAccountClient {
   private readonly cipher: HarmonyRemoteCryptoCipher = new HarmonyRemoteCryptoCipher();
 
   private authorizationGeneration: number = 0;
+  private authorizationForeground: boolean = true;
+  private authorizationForegroundWaiters: Array<() => void> = [];
 
-  cancelAuthorization(): void { this.authorizationGeneration++; }
+  cancelAuthorization(): void {
+    this.authorizationGeneration++;
+    this.releaseAuthorizationForegroundWaiters();
+  }
+
+  /**
+   * Browser authorization is a foreground interaction. HarmonyOS may suspend
+   * the page while the external browser is open, so do not start or continue
+   * relay polling until the page is visible again.
+   */
+  setAuthorizationForeground(value: boolean): void {
+    if (this.authorizationForeground === value) return;
+    this.authorizationForeground = value;
+    this.releaseAuthorizationForegroundWaiters();
+  }
+
+  private releaseAuthorizationForegroundWaiters(): void {
+    const waiters = this.authorizationForegroundWaiters;
+    this.authorizationForegroundWaiters = [];
+    waiters.forEach((resolve: () => void): void => resolve());
+  }
+
+  private async waitForAuthorizationForeground(generation: number): Promise<boolean> {
+    if (generation !== this.authorizationGeneration) return false;
+    if (this.authorizationForeground) return true;
+    await new Promise<void>((resolve: () => void): void => {
+      this.authorizationForegroundWaiters.push(resolve);
+    });
+    return generation === this.authorizationGeneration && this.authorizationForeground;
+  }
+
+  /**
+   * Wait for the normal poll interval, but interrupt it when the page is
+   * backgrounded or foregrounded. A foreground transition therefore performs
+   * the next poll immediately instead of making the user wait for an old timer.
+   */
+  private async waitForAuthorizationTick(generation: number, delayMs: number): Promise<boolean> {
+    if (!await this.waitForAuthorizationForeground(generation)) return false;
+    let timer: number = -1;
+    let finish: () => void = (): void => {};
+    await new Promise<void>((resolve: () => void): void => {
+      let settled: boolean = false;
+      finish = (): void => {
+        if (settled) return;
+        settled = true;
+        if (timer !== -1) clearTimeout(timer);
+        const index = this.authorizationForegroundWaiters.indexOf(finish);
+        if (index >= 0) this.authorizationForegroundWaiters.splice(index, 1);
+        resolve();
+      };
+      this.authorizationForegroundWaiters.push(finish);
+      timer = setTimeout(finish, delayMs);
+    });
+    if (generation !== this.authorizationGeneration) return false;
+    if (!this.authorizationForeground) return this.waitForAuthorizationForeground(generation);
+    return true;
+  }
 
   async login(relayUrl: string, deviceId: string, openAuthorization: (url: string) => Promise<boolean>, deviceSecret: Uint8Array): Promise<CloudAccountSession> {
     const generation = ++this.authorizationGeneration;
@@ -243,12 +301,25 @@ export class CloudAccountClient {
     if (!start.authorizationUrl.startsWith('https://github.com/login/oauth/authorize?') && !/^https:\/\/auth\.openbitfun\.com\/sign-in#ticket=[A-Za-z0-9_-]+$/.test(start.authorizationUrl)) {
       throw new Error('Untrusted account authorization URL.');
     }
-    if (!await openAuthorization(start.authorizationUrl)) throw new Error('Could not open account sign-in.');
+    const authorizationUrl = start.authorizationUrl.replace(
+      '/sign-in#',
+      '/sign-in?returnTo=openbitfun%3A%2F%2Fauth%2Fcallback#'
+    );
+    if (!await openAuthorization(authorizationUrl)) throw new Error('Could not open account sign-in.');
     const deadline = Math.min(start.expiresAt * 1000, Date.now() + 600000);
     let lastTransient: Error | undefined = undefined;
+    let firstPoll = true;
     while (Date.now() < deadline && generation === this.authorizationGeneration) {
-      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(30, Math.max(1, start.pollIntervalSeconds)) * 1000));
-      if (generation !== this.authorizationGeneration) break;
+      if (!firstPoll) {
+        // Keep the return-to-app handoff responsive even when the relay's
+        // conservative interval is large; the next poll is bounded to 2s.
+        if (!await this.waitForAuthorizationTick(
+          generation,
+          Math.min(2, Math.max(1, start.pollIntervalSeconds)) * 1000,
+        )) break;
+      }
+      firstPoll = false;
+      if (!await this.waitForAuthorizationForeground(generation)) break;
       const request: GitHubPollRequest = { transactionId: start.transactionId, transactionSecret: start.transactionSecret };
       let poll: GitHubPoll;
       try {
@@ -266,7 +337,7 @@ export class CloudAccountClient {
         continue;
       }
       lastTransient = undefined;
-      if (generation !== this.authorizationGeneration) break;
+      if (!await this.waitForAuthorizationForeground(generation)) break;
       if (poll.status === 'authorized' && poll.tokens?.accessToken) {
         if (deviceSecret.length !== 32) throw new Error('Invalid device identity.');
         const keys: DeviceKeyPair = { privateKey: new Uint8Array(deviceSecret), publicKey: X25519.scalarMultBase(deviceSecret) };
@@ -299,27 +370,34 @@ export class CloudAccountClient {
     session: CloudAccountSession,
     deviceId: string,
     deviceName: string,
-    requestId: string
+    requestId: string,
+    deviceSecret?: Uint8Array
   ): Promise<CloudProvisionedDevice> {
-    const keys = X25519.generateKeyPair();
-    const body: ProvisionDeviceRequest = {
-      public_key: Encoding.bytesToBase64(keys.publicKey),
-      device_id: deviceId,
-      device_name: deviceName,
-      device_kind: DEVICE_KIND_WATCH,
-      request_id: requestId
-    };
-    const wire = await this.request<ProvisionDeviceWire>(
-      relayUrl, '/api/auth/provision-device', 'POST', body, session.token);
-    const token = (wire.token || '').trim();
-    const userId = (wire.user_id || '').trim();
-    const provisionedDeviceId = (wire.device_id || '').trim();
-    if (token.length === 0 || userId !== session.userId || provisionedDeviceId !== deviceId) {
-      // A credential naming a different account or device would sign the watch
-      // in as somebody else. Refuse rather than pass it on.
-      throw new Error('Relay returned a mismatched provisioned device identity.');
+    const privateKey = deviceSecret ? Encoding.copyBytes(deviceSecret) : X25519.generateKeyPair().privateKey;
+    try {
+      if (privateKey.length !== 32) throw new Error('Invalid watch device identity.');
+      const body: ProvisionDeviceRequest = {
+        public_key: Encoding.bytesToBase64(X25519.scalarMultBase(privateKey)),
+        device_id: deviceId,
+        device_name: deviceName,
+        device_kind: DEVICE_KIND_WATCH,
+        request_id: requestId
+      };
+      const wire = await this.request<ProvisionDeviceWire>(
+        relayUrl, '/api/auth/provision-device', 'POST', body, session.token);
+      const token = (wire.token || '').trim();
+      const userId = (wire.user_id || '').trim();
+      const provisionedDeviceId = (wire.device_id || '').trim();
+      if (token.length === 0 || userId !== session.userId || provisionedDeviceId !== deviceId) {
+        // A credential naming a different account or device would sign the watch
+        // in as somebody else. Refuse rather than pass it on.
+        throw new Error('Relay returned a mismatched provisioned device identity.');
+      }
+      return { token, userId, deviceId: provisionedDeviceId, deviceSecret: privateKey };
+    } catch (err) {
+      privateKey.fill(0);
+      throw err instanceof Error ? err : new Error('Watch credential provisioning failed.');
     }
-    return { token, userId, deviceId: provisionedDeviceId, deviceSecret: keys.privateKey };
   }
 
   /**

@@ -12,6 +12,7 @@ import React, {
 import { createOverlayPortal, OverflowText,
   Button,
   Icon,
+  IconButton,
   Input,
   Listbox,
   ListboxEmpty,
@@ -104,6 +105,8 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const switchInFlightRef = useRef(false);
+  const branchRequestRef = useRef(0);
+  const refreshButtonRef = useRef<HTMLButtonElement>(null);
 
   // The "current" marker comes from the shared branch (passed in by the
   // composer strip) rather than from the fetched list's own flag, so a switch
@@ -164,33 +167,20 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
   }, [focusReady]);
 
   const loadBranches = useCallback(async () => {
+    const request = ++branchRequestRef.current;
     setIsLoading(true);
     setLoadFailed(false);
     try {
-      const cachedBranches = branchListFromCache(repositoryPath);
-      if (cachedBranches?.length) setBranches(cachedBranches);
-
-      await gitStateManager.refresh(repositoryPath, {
-        layers: ['detailed'],
-        force: true,
-        silent: true,
-        reason: 'manual',
-        source: 'branch_quick_switch',
-      });
-      const refreshedBranches = branchListFromCache(repositoryPath);
-      if (refreshedBranches) {
-        setBranches(refreshedBranches);
-        return;
-      }
-
-      const serviceBranches = await gitService.getBranches(repositoryPath, false);
-      setBranches(serviceBranches);
+      // Read only branches through the workspace-aware service. The passive
+      // detailed cache also loads commits and turns branch failures into [].
+      const serviceBranches = await gitService.getBranches(repositoryPath, true, { throwOnError: true });
+      if (request === branchRequestRef.current) setBranches(serviceBranches);
     } catch (error) {
+      if (request !== branchRequestRef.current) return;
       log.error('Failed to load branches', { repositoryPath, error });
       setLoadFailed(true);
-      if (!branchListFromCache(repositoryPath)?.length) setBranches([]);
     } finally {
-      setIsLoading(false);
+      if (request === branchRequestRef.current) setIsLoading(false);
     }
   }, [repositoryPath]);
 
@@ -204,8 +194,10 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
+    setBranches(branchListFromCache(repositoryPath) ?? []);
     void loadBranches();
-  }, [isOpen, loadBranches]);
+    return () => { branchRequestRef.current += 1; };
+  }, [isOpen, loadBranches, repositoryPath]);
 
   useEffect(() => {
     setBlocker(null);
@@ -343,10 +335,15 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
       return;
     }
     if (event.key === 'Tab') {
-      // Resume the page's tab order at the trigger, outside the portal.
-      closePicker();
+      // Search and refresh are the two tab stops in this virtual-focus picker.
+      const leaving = event.shiftKey
+        ? event.target === inputRef.current
+        : event.target !== inputRef.current || refreshButtonRef.current?.disabled;
+      if (leaving) closePicker();
       return;
     }
+    // Enter on the refresh button must not also check out the active option.
+    if (event.target !== inputRef.current) return;
     if (filteredBranches.length === 0) return;
 
     if (event.key === 'ArrowDown') {
@@ -476,12 +473,27 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
           data-openbitfun-product-component="branch-quick-switch"
           data-openbitfun-product-part="input"
         />
+        <IconButton
+          ref={refreshButtonRef}
+          aria-label={t('quickSwitch.refresh')}
+          title={t('quickSwitch.refresh')}
+          icon={<Icon name="refresh" size="sm" />}
+          loading={isLoading}
+          disabled={isSwitching}
+          onClick={() => void loadBranches()}
+        />
       </div>
+      {loadFailed && branches.length > 0 && (
+        <div className="branch-quick-switch__error" role="status">
+          {t('quickSwitch.errors.refreshFailed')}
+        </div>
+      )}
       <Listbox
         ref={listRef}
         aria-label={t('quickSwitch.menuLabel')}
         className="branch-quick-switch__list"
         focusMode="virtual"
+        aria-busy={isLoading}
       >
         {isLoading && branches.length === 0 ? (
           <ListboxEmpty

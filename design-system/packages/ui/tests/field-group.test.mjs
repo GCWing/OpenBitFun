@@ -41,6 +41,7 @@ test("form grouping composes semantic sections, grouped surfaces, and independen
   );
 
   assert.match(markup, /<section[^>]+data-openbitfun-component="form-section"/);
+  assert.match(markup, /data-description-layout="stacked"/);
   assert.match(markup, /<h3[^>]+data-openbitfun-part="title"[^>]*>Provider<\/h3>/);
   assert.match(markup, /data-openbitfun-part="heading-region"/);
   assert.match(markup, /data-openbitfun-part="leading"[^>]*><svg aria-hidden="true"><\/svg>/);
@@ -54,6 +55,25 @@ test("form grouping composes semantic sections, grouped surfaces, and independen
   assert.match(markup, /data-align="center"[^>]+data-openbitfun-part="row"[^>]+data-padding="md"/);
   assert.match(markup, /data-align="start"[^>]+data-openbitfun-part="row"[^>]+data-padding="none"/);
   assert.match(markup, /data-control-width="fill"/);
+});
+
+test("inline summaries preserve separate headings, descriptions, and actions", () => {
+  const markup = renderToStaticMarkup(
+    createElement(FormSection, {
+      actions: createElement("button", { type: "button", "aria-expanded": false }, "Expand"),
+      description: "Connection settings",
+      descriptionLayout: "inline",
+      headingAs: "h3",
+      title: "Provider",
+    }),
+  );
+
+  assert.match(markup, /data-description-layout="inline"/);
+  assert.match(markup, /<h3[^>]+data-openbitfun-part="title"[^>]*>Provider<\/h3>/);
+  assert.match(markup, /data-openbitfun-part="description"/);
+  assert.match(markup, /Connection settings/);
+  assert.match(markup, /data-openbitfun-part="actions"[^>]*><button[^>]*aria-expanded="false"/);
+  assert.doesNotMatch(markup, /<h3[^>]*>[\s\S]*Connection settings[\s\S]*<\/h3>/);
 });
 
 test("form grouping styles consume only shared public composition tokens", async () => {

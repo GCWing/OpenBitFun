@@ -52,22 +52,30 @@ internal const val PERMISSION_SECTION_TEST_TAG: String = "permission-section"
  * with its own red card.
  *
  * It belongs to the desktop rather than to one of its sessions — both permission
- * commands go out unaddressed — so it sits on the remote-control page beside the
+ * commands go out unaddressed — so it sits on the settings page beside the
  * connection it describes, where the source puts it, and needs no session open to
  * be asked or answered.
+ *
+ * Always on the settings page. With no Ready session store ([state] null) there
+ * is no desktop to be permitted by, so the section stays in place but disabled —
+ * rows faded and inert, the connection hint under them — rather than vanishing
+ * and moving the rest of the page.
  */
 @Composable
 internal fun PermissionSection(
-    state: RemoteSessionUiState.Ready,
+    state: RemoteSessionUiState.Ready?,
     connected: Boolean,
     onIntent: (RemoteSessionIntent) -> Unit,
     modifier: Modifier,
 ) {
     // Cleared whenever the mode changes underneath it: a confirmation left
     // standing after a successful change would confirm the wrong thing.
-    var confirmFullAccess by rememberSaveable(state.permissionMode) { mutableStateOf(false) }
-    val refreshEnabled = !state.busy && connected
-    val selectEnabled = refreshEnabled && state.permissionMode != SessionPermissionMode.UNKNOWN
+    val permissionMode = state?.permissionMode
+    // Nothing to command without a Ready store, whatever the link says.
+    val live = state != null && connected
+    var confirmFullAccess by rememberSaveable(permissionMode, live) { mutableStateOf(false) }
+    val refreshEnabled = live && state?.busy == false
+    val selectEnabled = refreshEnabled && permissionMode != SessionPermissionMode.UNKNOWN
 
     Column(
         modifier = modifier.fillMaxWidth().testTag(PERMISSION_SECTION_TEST_TAG),
@@ -85,7 +93,7 @@ internal fun PermissionSection(
             // `if (this.canManagePermissions())` has it: a refresh that cannot
             // reach anything is not an action the page should keep offering, and
             // the line under the modes already says why.
-            if (connected) {
+            if (live) {
                 TextButton(
                     onClick = { onIntent(RemoteSessionIntent.RefreshPermissionMode) },
                     enabled = refreshEnabled,
@@ -108,7 +116,7 @@ internal fun PermissionSection(
                 PermissionModeRow(
                     label = stringResource(entry.label),
                     description = stringResource(entry.description),
-                    selected = state.permissionMode == entry.mode,
+                    selected = permissionMode == entry.mode,
                     enabled = selectEnabled,
                     onSelect = {
                         // Full access removes every confirmation the desktop
@@ -122,7 +130,7 @@ internal fun PermissionSection(
                     },
                 )
             }
-            PermissionStatus(state = state, connected = connected)
+            PermissionStatus(state = state, connected = live)
 
             // Inside the card, under the row it is about, where the source puts
             // it. Below the card it would read as a fourth section of the page
@@ -206,10 +214,18 @@ private fun PermissionModeRow(
 
 /** One line under the modes: loading, unreachable, or which command failed. */
 @Composable
-private fun ColumnScope.PermissionStatus(state: RemoteSessionUiState.Ready, connected: Boolean) {
+private fun ColumnScope.PermissionStatus(state: RemoteSessionUiState.Ready?, connected: Boolean) {
+    if (state == null || !connected) {
+        Text(
+            stringResource(R.string.permission_needs_connection),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 16.dp),
+        )
+        return
+    }
     val failure = state.permissionModeFailure
     val text = when {
-        !connected -> stringResource(R.string.permission_needs_connection)
         failure == PermissionModeFailure.LOAD -> stringResource(R.string.permission_load_failed)
         failure == PermissionModeFailure.SAVE -> stringResource(R.string.permission_save_failed)
         state.permissionMode == SessionPermissionMode.UNKNOWN -> stringResource(R.string.permission_unknown)

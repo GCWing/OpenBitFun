@@ -1,3 +1,4 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * File operation tool card on the shared prominent FlowChat framework.
  * Supports Write/Edit/Delete file operations
@@ -7,9 +8,10 @@
  * that it should remeasure the card after the transition.
  */
 
-import React, { useEffect, useCallback, useMemo, useState, useRef, useLayoutEffect } from 'react';
+import React, { useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import path from 'path-browserify';
+import { getToolCardStatus } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
 import {
   FileOperationToolCard as FileOperationCardView,
@@ -21,10 +23,8 @@ import { createDiffEditorTab } from '../../shared/utils/tabUtils';
 import { fileTabManager } from '../../shared/services/FileTabManager';
 import { CodePreview } from '../components/CodePreview';
 import { InlineDiffPreview } from '../components/InlineDiffPreview';
-import { diffLines } from 'diff';
 import { createLogger } from '@/shared/utils/logger';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
-import { useToolCardCompletionGracePeriod } from './useToolCardCompletionGracePeriod';
 import { useTypewriter } from '../hooks/useTypewriter';
 import { useReportTypewriterReveal } from '../hooks/typewriterRevealGateContext';
 import { hasNonFileUriScheme } from '@/shared/utils/pathUtils';
@@ -37,6 +37,9 @@ import { i18nService } from '@/infrastructure/i18n';
 import { WritePlanDisplay } from './WritePlanDisplay';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { hasSessionFileProvider, openFileThroughSession } from '../session-drivers/sessionFileNavigation';
+import { FileEditGroupContext } from '../grouping/FileEditGroupContext';
+import { EMPTY_FILE_DIFF_STATS, fileOperationPreview } from './fileOperationDiffStats';
+import { useFileOperationDiffStats } from './useFileOperationDiffStats';
 
 const log = createLogger('FileOperationToolCard');
 const FILE_OPERATION_STREAMING_MAX_HEIGHT = 4 * 22; // 88px – compact while streaming
@@ -128,29 +131,27 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
   config,
   sessionId,
   onOpenInEditor,
-  isLastItem,
 }) => {
   const { t } = useTranslation('flow-chat');
+  const fileEditGroup = React.useContext(FileEditGroupContext);
+  const revisionLabel = fileEditGroup?.revisionLabels.get(toolItem.id);
   const {
     toolCall,
     toolResult,
-    status,
     isParamsStreaming,
     partialParams,
     requiresConfirmation,
     userConfirmed,
   } = toolItem;
   const toolId = toolItem.id ?? toolCall?.id;
-  const isFailed = status === 'error' || (toolResult && 'success' in toolResult && !toolResult.success);
+  const status = getToolCardStatus(toolItem);
+  const isFailed = status === 'error';
   
-  const [isContentExpanded, setIsContentExpanded] = useState(status !== 'completed' && !isFailed);
-  const [isFailureExpanded, setIsFailureExpanded] = useState(false);
-  const [retainLiveCompletionPreview, setRetainLiveCompletionPreview] = useState(false);
-  const [operationDiffStats, setOperationDiffStats] = useState<{ surfaceEpoch: number; additions: number; deletions: number } | null>(null);
+  // Streaming stays in the summary until the reader asks for the live preview.
+  const [isContentExpanded, setIsContentExpanded] = useToolCardDisclosure('isContentExpanded');
   
   const hasInitializedCompletionEffectRef = useRef(false);
   const previousCompletionEndTimeRef = useRef<number | null>(toolItem.endTime ?? null);
-  const userToggledContentRef = useRef(false);
   const {
     cardRootRef,
     applyExpandedState: applyHeightContractExpandedState,
@@ -207,30 +208,9 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
     [currentFilePath, currentWorkspace?.rootPath],
   );
 
-  const getOldString = useCallback((): string => {
-    const params = partialParams || toolCall?.input;
-    if (!params) return '';
-    return params.old_string || '';
-  }, [toolCall, partialParams]);
-
-  const getNewString = useCallback((): string => {
-    const params = partialParams || toolCall?.input;
-    if (!params) return '';
-    return params.new_string || '';
-  }, [toolCall, partialParams]);
-
-  const getContent = useCallback((): string => {
-    const params = partialParams || toolCall?.input;
-    if (!params) return '';
-    const combinedParts = splitFilePathAndContent(params.payload);
-    if (combinedParts) return combinedParts.content;
-    if (typeof params.payload === 'string') return params.payload;
-    return params.content || params.contents || '';
-  }, [toolCall, partialParams]);
-
-  const oldStringContent = getOldString();
-  const newStringContent = getNewString();
-  const contentPreview = getContent();
+  const { oldStringContent, newStringContent, contentPreview } = useMemo(
+    () => fileOperationPreview(toolItem), [toolItem],
+  );
 
   const isWriteContentAnimating =
     toolItem.toolName === 'Write'
@@ -250,10 +230,12 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
   const writeTypewriter = useTypewriter(
     toolItem.toolName === 'Write' ? contentPreview : '',
     isWriteContentAnimating,
+    { revealImmediately: !isContentExpanded },
   );
   const editTypewriter = useTypewriter(
     toolItem.toolName === 'Edit' ? newStringContent : '',
     isEditContentAnimating,
+    { revealImmediately: !isContentExpanded },
   );
   useReportTypewriterReveal(`${toolId ?? 'file-op'}:write`, writeTypewriter.isRevealing);
   useReportTypewriterReveal(`${toolId ?? 'file-op'}:edit`, editTypewriter.isRevealing);
@@ -268,28 +250,6 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
   const editVisuallyStreaming = isEditContentAnimating || editTypewriter.isRevealing;
 
   const writeContentCharCount = toolItem.toolName === 'Write' ? contentPreview.length : 0;
-  const writeContentStatusText = useMemo(() => {
-    if (toolItem.toolName !== 'Write' || writeContentCharCount <= 0) return null;
-
-    const formattedCount = i18nService.formatNumber(writeContentCharCount);
-    if (status === 'completed') {
-      return `${formattedCount} chars written`;
-    }
-    return `${formattedCount} chars received`;
-  }, [status, toolItem.toolName, writeContentCharCount]);
-  
-  const {
-    begin: beginCompletionPreview,
-    isActive: isCompletionPreviewActive,
-  } = useToolCardCompletionGracePeriod({
-    eligible:
-      status === 'completed' &&
-      !isFailed &&
-      isLastItem === true &&
-      isContentExpanded &&
-      !userToggledContentRef.current,
-    isRevealing: writeTypewriter.isRevealing || editTypewriter.isRevealing,
-  });
   const rawErrorMessage = (() => {
     if (toolResult && 'error' in toolResult) {
       return toolResult.error;
@@ -360,20 +320,13 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
     Delete: t('toolCards.file.delete'),
   }[toolItem.toolName] ?? config.displayName;
 
-  const applyContentExpandedState = useCallback((
-    nextExpanded: boolean,
-    reason: 'manual' | 'auto',
-  ) => {
-    if (reason === 'manual') {
-      userToggledContentRef.current = true;
-      setRetainLiveCompletionPreview(false);
-    }
+  const applyContentExpandedState = useCallback((nextExpanded: boolean) => {
     applyHeightContractExpandedState(
       isContentExpanded,
       nextExpanded,
       setIsContentExpanded,
     );
-  }, [applyHeightContractExpandedState, isContentExpanded]);
+  }, [applyHeightContractExpandedState, isContentExpanded, setIsContentExpanded]);
 
   useEffect(() => {
     if (error) {
@@ -382,143 +335,26 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
     }
   }, [error, clearError, currentFilePath]);
 
-  useLayoutEffect(() => {
-    if (!isFailed && isFailureExpanded) {
-      setIsFailureExpanded(false);
-    }
-  }, [isFailed, isFailureExpanded]);
+  const groupedStats = fileEditGroup?.diffStats.get(toolItem.id);
+  const statsItems = useMemo(() => groupedStats ? [] : [toolItem], [toolItem, groupedStats]);
+  const ownDiffStats = useFileOperationDiffStats(statsItems, { sessionId, surfaceEpoch, snapshotsAvailable });
+  const currentFileDiffStats = groupedStats ?? ownDiffStats.get(toolItem.id) ?? EMPTY_FILE_DIFF_STATS;
 
-  useLayoutEffect(() => {
-    if (isFailed) {
-      setRetainLiveCompletionPreview(false);
-      applyContentExpandedState(false, 'auto');
-      return;
-    }
-
-    if (userToggledContentRef.current) {
-      return;
-    }
-
-    if (status === 'completed' && !isFailed) {
-      if (isLastItem === true && isContentExpanded) {
-        if (beginCompletionPreview()) {
-          setRetainLiveCompletionPreview(true);
-          return;
-        }
-      }
-
-      setRetainLiveCompletionPreview(false);
-      applyContentExpandedState(false, 'auto');
-      return;
-    }
-
-    setRetainLiveCompletionPreview(false);
-    applyContentExpandedState(true, 'auto');
-  }, [
-    applyContentExpandedState,
-    beginCompletionPreview,
-    isCompletionPreviewActive,
-    isContentExpanded,
-    isFailed,
-    isLastItem,
-    status,
-  ]);
-
-  const localDiffStats = useMemo(() => {
-    if (status !== 'completed' || isFailed) return null;
-    if (toolItem.toolName === 'Write' && contentPreview) {
-      const lines = contentPreview.split('\n');
-      const count = lines[lines.length - 1] === '' ? lines.length - 1 : lines.length;
-      return { additions: count, deletions: 0 };
-    }
-    if (toolItem.toolName === 'Edit' && (oldStringContent || newStringContent)) {
-      const changes = diffLines(oldStringContent, newStringContent);
-      let additions = 0;
-      let deletions = 0;
-      for (const change of changes) {
-        const lineCount = change.count ?? 0;
-        if (change.added) additions += lineCount;
-        else if (change.removed) deletions += lineCount;
-      }
-      return { additions, deletions };
-    }
-    return null;
-  }, [toolItem.toolName, contentPreview, oldStringContent, newStringContent, status, isFailed]);
-
-  const currentFileDiffStats = useMemo(() => {
-    return (operationDiffStats?.surfaceEpoch === surfaceEpoch ? operationDiffStats : null)
-      ?? localDiffStats ?? { additions: 0, deletions: 0 };
-  }, [operationDiffStats, localDiffStats, surfaceEpoch]);
-
-  useEffect(() => {
-    setOperationDiffStats(null);
-    if (!operationSnapshotAvailable || !sessionId || !toolCall?.id || status !== 'completed' || isFailed) return;
-    const scope = getActiveSurfaceScope();
-    let cancelled = false;
-
-    (async () => {
-      try {
-        // The snapshot service persists this summary with the operation. Keep
-        // the chat-history payload small and resolve that static value lazily.
-        const { snapshotAPI } = await import('../../infrastructure/api');
-        if (cancelled || !scope.isCurrent()) return;
-        const summary = await snapshotAPI.getOperationSummary(sessionId, toolCall.id);
-        if (cancelled || !scope.isCurrent()) return;
-        setOperationDiffStats({
-          surfaceEpoch,
-          additions: summary.linesAdded ? Number(summary.linesAdded) : 0,
-          deletions: summary.linesRemoved ? Number(summary.linesRemoved) : 0
-        });
-      } catch (error) {
-        if (cancelled || !scope.isCurrent()) return;
-        log.warn('Failed to load operation summary', { sessionId, toolCallId: toolCall.id, error });
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [operationSnapshotAvailable, sessionId, toolCall?.id, status, isFailed, surfaceEpoch]);
-
-  const isLoading = status === 'preparing' || status === 'streaming' || status === 'running';
-  /*
-   * Auto-managed completed cards must keep their compact streaming preview
-   * from the first completed render through the collapse commit. Waiting for
-   * the grace-period layout effect to set its state briefly renders the large
-   * diff preview, and follow-output can treat that transient height as output.
-   * A manually expanded card marks itself as user-owned and still gets the
-   * full diff preview.
-   */
-  const keepAutoCompletionPreview =
-    status === 'completed' &&
-    !isFailed &&
-    !userToggledContentRef.current;
-  const keepCompactCompletionPreview =
-    retainLiveCompletionPreview || keepAutoCompletionPreview;
+  const isLoading = status === 'preparing' || status === 'receiving' || status === 'streaming' || status === 'running';
   const shouldUseExpandedDiffPreviewHeight =
     status === 'completed' &&
-    isContentExpanded &&
-    !keepCompactCompletionPreview;
-  const keepLiveEditPreview =
-    keepCompactCompletionPreview &&
-    toolItem.toolName === 'Edit' &&
-    Boolean(newStringContent);
-  const keepLiveWritePreview =
-    keepCompactCompletionPreview &&
-    toolItem.toolName === 'Write' &&
-    Boolean(contentPreview);
+    isContentExpanded;
   const previewVariant = useMemo(() => {
     if (toolItem.toolName === 'Edit') {
       // Keep streaming-code until typewriter drains so completion does not snap
       // the remaining characters into the diff view.
-      if ((status !== 'completed' || editTypewriter.isRevealing || keepLiveEditPreview) && newStringContent) {
+      if ((status !== 'completed' || editTypewriter.isRevealing) && newStringContent) {
         return 'streaming-code';
       }
       if (
         status === 'completed'
         && !isParamsStreaming
         && !editTypewriter.isRevealing
-        && !keepLiveEditPreview
         && (oldStringContent || newStringContent)
       ) {
         return 'completed-diff';
@@ -526,14 +362,13 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
     }
 
     if (toolItem.toolName === 'Write') {
-      if ((status !== 'completed' || writeTypewriter.isRevealing || keepLiveWritePreview) && contentPreview) {
+      if ((status !== 'completed' || writeTypewriter.isRevealing) && contentPreview) {
         return 'streaming-code';
       }
       if (
         status === 'completed'
         && !isParamsStreaming
         && !writeTypewriter.isRevealing
-        && !keepLiveWritePreview
         && contentPreview
       ) {
         return 'completed-diff';
@@ -545,8 +380,6 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
     contentPreview,
     editTypewriter.isRevealing,
     isParamsStreaming,
-    keepLiveEditPreview,
-    keepLiveWritePreview,
     newStringContent,
     oldStringContent,
     status,
@@ -698,10 +531,13 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
         return (
           <div data-testid="chat-file-change-preview">
             <CodePreview
+              inset
+              edgeFade="none"
+              scrollbarVisibility="hover"
               content={editDisplayContent}
               filePath={currentFilePath}
               isStreaming={editVisuallyStreaming}
-              showLineNumbers={isContentExpanded}
+              showLineNumbers={false}
               maxHeight={previewMaxHeight}
               autoScrollToBottom={false}
               onLineClick={handleCodeLineClick}
@@ -714,12 +550,13 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
         return (
           <div data-testid="chat-file-change-preview">
             <InlineDiffPreview
+              edgeFade="none"
+              scrollbarVisibility="hover"
               originalContent={oldStringContent}
               modifiedContent={newStringContent}
               filePath={currentFilePath}
               maxHeight={previewMaxHeight}
-              showLineNumbers={isContentExpanded}
-              lineNumberMode="dual"
+              showLineNumbers={false}
               showPrefix={false}
               contextLines={-1}
             />
@@ -733,10 +570,13 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
         return (
           <div data-testid="chat-file-change-preview">
             <CodePreview
+              inset
+              edgeFade="none"
+              scrollbarVisibility="hover"
               content={writeDisplayContent}
               filePath={currentFilePath}
               isStreaming={writeVisuallyStreaming}
-              showLineNumbers={isContentExpanded}
+              showLineNumbers={false}
               maxHeight={previewMaxHeight}
               autoScrollToBottom={false}
               onLineClick={handleCodeLineClick}
@@ -749,13 +589,14 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
         return (
           <div data-testid="chat-file-change-preview">
             <InlineDiffPreview
+              edgeFade="none"
+              scrollbarVisibility="hover"
               originalContent=""
               modifiedContent={contentPreview}
               filePath={currentFilePath}
               maxHeight={previewMaxHeight}
-              showLineNumbers={isContentExpanded}
-              lineNumberMode="single"
-              showPrefix={true}
+              showLineNumbers={false}
+              showPrefix={false}
               contextLines={-1}
             />
           </div>
@@ -778,12 +619,9 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
 
   const expandedContent = renderExpandedContent();
   const hasExpandableContent =
-    !isDeleteTool &&
-    (isFailed || Boolean(expandedContent));
+    isFailed || (!isDeleteTool && Boolean(expandedContent));
 
-  const isCardContentExpanded =
-    !isDeleteTool &&
-    (isFailed ? isFailureExpanded : isContentExpanded);
+  const isCardContentExpanded = (isFailed || !isDeleteTool) && isContentExpanded;
 
   const operation = isDeleteTool
     ? 'delete'
@@ -792,15 +630,16 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
       : 'write';
   const hasDiffStats =
     currentFileDiffStats.additions > 0 || currentFileDiffStats.deletions > 0;
-  const headerStatusText = status === 'completed'
+  const showChangeSummary = !isDeleteTool && !isFailed && (isLoading || hasDiffStats);
+  const headerStatusText = status === 'cancelled' ? t('toolCards.default.cancelled')
+    : status === 'rejected' ? t('toolCards.default.rejected')
+      : status === 'completed' || showChangeSummary
     ? undefined
-    : writeContentStatusText ?? (
+    : (
       isParamsStreaming && (status === 'preparing' || status === 'streaming')
         ? (currentFilePath ? t('toolCards.file.receivingParams') : t('toolCards.file.analyzing'))
         : undefined
     );
-  const showChangeSummary =
-    !isDeleteTool && !isFailed && !isParamsStreaming && !isLoading && hasDiffStats;
   const formattedAdditions = i18nService.formatNumber(currentFileDiffStats.additions);
   const formattedDeletions = i18nService.formatNumber(currentFileDiffStats.deletions);
   const actionLabel = isDeleteTool
@@ -823,7 +662,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
       data-expanded={isCardContentExpanded ? 'true' : 'false'}
     >
       <FileOperationCardView
-        actionLabel={actionLabel}
+        actionLabel={revisionLabel ?? actionLabel}
         actionTestId="chat-file-change-action"
         changeSummary={showChangeSummary ? {
           additions: formattedAdditions,
@@ -833,7 +672,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
             deletions: formattedDeletions,
           }),
         } : undefined}
-        error={isFailed && !isDeleteTool ? {
+        error={isFailed ? {
           guidance: isFileGuidanceBlocked,
           message: getDisplayMessage(),
           title: isFileGuidanceBlocked
@@ -847,17 +686,11 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
           testId: 'chat-file-change-open-file',
         } : undefined}
         onToggle={hasExpandableContent
-          ? isFailed
-            ? () => applyHeightContractExpandedState(
-              isFailureExpanded,
-              !isFailureExpanded,
-              setIsFailureExpanded,
-            )
-            : () => applyContentExpandedState(!isContentExpanded, 'manual')
+          ? () => applyContentExpandedState(!isContentExpanded)
           : undefined}
         operation={operation}
         path={currentFilePath}
-        pathLabel={fileName}
+        pathLabel={revisionLabel ? null : fileName}
         pathTestId="chat-file-change-path"
         preview={expandedContent}
         requiresConfirmation={showConfirmationActions}

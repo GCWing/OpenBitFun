@@ -11,24 +11,19 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => {
+    t: (key: string, options?: { name?: string }) => {
       const messages: Record<string, string> = {
-        'toolCards.skill.skillAction': 'Skill:',
+        'toolCards.skill.action': 'Load skill',
+        'toolCards.skill.skillAction': 'Load skill: {{name}}',
         'toolCards.skill.unknownSkill': 'Unknown skill',
         'toolCards.skill.unknown': 'Unknown',
         'toolCards.skill.loadSkillFailed': 'Failed to load skill',
         'toolCards.skill.loadingSkill': 'Loading skill',
         'toolCards.skill.preparingSkill': 'Preparing skill',
       };
-      return messages[key] ?? key;
+      return (messages[key] ?? key).replace('{{name}}', options?.name ?? '');
     },
   }),
-}));
-
-vi.mock('@openbitfun/ui/flow-chat', () => ({
-  SkillToolCard: ({ summary }: { summary: string }) => (
-    <div data-testid="skill-summary">{summary}</div>
-  ),
 }));
 
 const skillConfig: ToolCardConfig = {
@@ -47,7 +42,7 @@ describe('SkillDisplay', () => {
   let root: Root;
 
   beforeEach(() => {
-    dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
+    dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', { pretendToBeVisual: true });
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);
     vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
@@ -64,7 +59,7 @@ describe('SkillDisplay', () => {
     dom.window.close();
   });
 
-  it('shows the original skill name and source after loading', () => {
+  it('shows the original skill name without source after loading', () => {
     const toolItem: FlowToolItem = {
       id: 'skill-academic-research',
       type: 'tool',
@@ -90,10 +85,10 @@ describe('SkillDisplay', () => {
       root.render(<SkillDisplay toolItem={toolItem} config={skillConfig} />);
     });
 
-    expect(container.textContent).toBe('Skill: deep-research · Codex');
+    expect(container.textContent).toBe('Load skill: deep-research');
   });
 
-  it('derives the source label for historical results that only recorded a slot', () => {
+  it('omits the source label for historical results that only recorded a slot', () => {
     const toolItem: FlowToolItem = {
       id: 'skill-legacy-research',
       type: 'tool',
@@ -118,18 +113,18 @@ describe('SkillDisplay', () => {
       root.render(<SkillDisplay toolItem={toolItem} config={skillConfig} />);
     });
 
-    expect(container.textContent).toBe('Skill: legacy-deep-research · Codex');
+    expect(container.textContent).toBe('Load skill: legacy-deep-research');
   });
 
   it.each([
-    [{ skill_name: 'deep-research' }, 'Skill: deep-research'],
-    [{ name: 'deep-research' }, 'Skill: deep-research'],
-    [{ skill_name: 'deep-research', source_id: 'codex' }, 'Skill: deep-research · Codex'],
-    [{ skill_name: 'deep-research', source_slot: 'future' }, 'Skill: deep-research'],
-    [{ skill_name: 'deep-research', source_label: ' ', source_id: null }, 'Skill: deep-research'],
-    [{ skill_name: 'deep-research', source_label: 42, source_id: {}, source_slot: 'codex' }, 'Skill: deep-research · Codex'],
-    [{ skill_name: {}, name: 'legacy-name' }, 'Skill: legacy-name'],
-    [{}, 'Skill: Unknown skill'],
+    [{ skill_name: 'deep-research' }, 'Load skill: deep-research'],
+    [{ name: 'deep-research' }, 'Load skill: deep-research'],
+    [{ skill_name: 'deep-research', source_id: 'codex' }, 'Load skill: deep-research'],
+    [{ skill_name: 'deep-research', source_slot: 'future' }, 'Load skill: deep-research'],
+    [{ skill_name: 'deep-research', source_label: ' ', source_id: null }, 'Load skill: deep-research'],
+    [{ skill_name: 'deep-research', source_label: 42, source_id: {}, source_slot: 'codex' }, 'Load skill: deep-research'],
+    [{ skill_name: {}, name: 'legacy-name' }, 'Load skill: legacy-name'],
+    [{}, 'Load skill: Unknown skill'],
   ])('renders compatible tool result %j', (result, summary) => {
     const toolItem: FlowToolItem = {
       id: 'compatible-skill',
@@ -149,9 +144,9 @@ describe('SkillDisplay', () => {
   });
 
   it.each([
-    ['running', 'Loading skill deep-research...'],
-    ['pending', 'Preparing skill deep-research'],
-    ['error', 'Failed to load skill deep-research'],
+    ['running', 'Load skill: deep-research'],
+    ['pending', 'Load skill: deep-research'],
+    ['error', 'Load skill: deep-research'],
   ] as const)('keeps the command name while %s', (status, summary) => {
     const toolItem: FlowToolItem = {
       id: 'pending-skill',

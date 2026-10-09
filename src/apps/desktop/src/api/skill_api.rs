@@ -1604,6 +1604,7 @@ mod tests {
                     path: "/remote/denied".into(),
                     source_id: "codex".into(),
                     message: "permission denied".into(),
+                    unsupported_field: None,
                 },
             ],
         };

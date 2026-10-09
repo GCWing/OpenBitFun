@@ -22,6 +22,13 @@ export struct SubagentTaskCard {
   @Param title: string = '';
   @Param path: string = '';
   @Param status: string = 'completed';
+  /**
+   * Process items of this branch, as re-read by the bubble on every render.
+   *
+   * A snapshot array would freeze the first empty branch: the ForEach that draws
+   * this card is keyed by the branch view key, which deliberately does not change
+   * while the subagent publishes steps, so its item builder never re-runs.
+   */
   @Param items: ConversationUiMessageItem[] = [];
   @Param renderRevision: number = 0;
   @Event onApproveTool: (toolId: string, updatedInput?: Object) => void =

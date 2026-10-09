@@ -10,6 +10,7 @@ export const statusPillMeta = {
     { name: "leading", type: "ReactNode" },
     { defaultValue: "false", name: "emphasis", type: "boolean" },
     { defaultValue: "success", name: "tone", type: "neutral | accent | info | success | warning | danger" },
+    { defaultValue: "pill", name: "shape", type: "pill | rounded" },
   ],
   states: ["neutral", "accent", "info", "success", "warning", "danger"],
   tokens: [
@@ -33,6 +34,7 @@ export const statusPillMeta = {
     "control.statusPill.paddingBlock",
     "control.statusPill.paddingInline",
     "control.statusPill.radius",
+    "radius.sm",
     "control.statusPill.iconSize",
     "type.meta.fontSize",
   ],

@@ -106,7 +106,7 @@ export function useInstalledSkills({
       ]));
 
       const diagnosticKeys = list.diagnostics
-        .map(({ sourceId, path, message }) => JSON.stringify([sourceId, path, message]))
+        .map(({ sourceId, path, message, unsupportedField }) => JSON.stringify([sourceId, path, message, unsupportedField]))
         .sort();
       const feedbackKey = JSON.stringify([
         capabilityRef.current.key, list.diagnosticsAvailable, diagnosticKeys,
@@ -114,17 +114,30 @@ export function useInstalledSkills({
       // Gallery focus and tab re-entry refresh the scan; only changed results notify.
       if (lastScanFeedbackKeyRef.current !== feedbackKey) {
         lastScanFeedbackKeyRef.current = feedbackKey;
-        if (list.diagnostics.length > 0) {
+        const failures = list.diagnostics.filter(item => !item.unsupportedField);
+        const unsupported = list.diagnostics.filter(item => item.unsupportedField);
+        if (failures.length > 0) {
           const message = list.skills.length > 0 ? t('list.scanIncomplete') : t('list.loadFailed');
           notifyScanWarning(message, {
             title: t('nav.title'),
             metadata: {
-              diagnostics: list.diagnostics
+              diagnostics: failures
                 .map(({ path, message }) => `${path}: ${message}`)
                 .join('\n'),
             },
           });
-        } else if (!list.diagnosticsAvailable) {
+        }
+        if (unsupported.length > 0) {
+          notifyScanInfo(t('list.unsupportedSkills'), {
+            title: t('nav.title'),
+            metadata: {
+              diagnostics: unsupported
+                .map(item => `${item.path}: ${t('list.unsupportedField', { field: item.unsupportedField })}`)
+                .join('\n'),
+            },
+          });
+        }
+        if (list.diagnostics.length === 0 && !list.diagnosticsAvailable) {
           notifyScanInfo(t('list.diagnosticsUnavailable'), { title: t('nav.title') });
         }
       }

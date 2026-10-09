@@ -37,15 +37,16 @@ pub(super) fn script() -> &'static str {
         };
       }
 
-      if (origin && typeof origin === "object" && typeof origin[ELEMENT_KEY] === "string") {
-        const element = getElement(origin[ELEMENT_KEY]);
+      // Script arguments have already deserialized wire element references.
+      if (isElementLike(origin) || (origin && typeof origin === "object" && typeof origin[ELEMENT_KEY] === "string")) {
+        const element = isElementLike(origin) ? origin : getElement(origin[ELEMENT_KEY]);
         if (!element) {
           throw new Error("Element not found");
         }
-        const rect = element.getBoundingClientRect();
+        const { x, y } = getInViewCenter(element);
         return {
-          x: rect.left + rect.width / 2 + (Number(action?.x) || 0),
-          y: rect.top + rect.height / 2 + (Number(action?.y) || 0),
+          x: x + (Number(action?.x) || 0),
+          y: y + (Number(action?.y) || 0),
           target: element
         };
       }
@@ -108,13 +109,9 @@ pub(super) fn script() -> &'static str {
       if (!element) {
         throw new Error("Element not found");
       }
-      element.scrollIntoView({ block: "center", inline: "center" });
-      if (typeof element.focus === "function") {
-        element.focus();
-      }
-      const rect = element.getBoundingClientRect();
-      const x = rect.left + rect.width / 2;
-      const y = rect.top + rect.height / 2;
+      scrollElementIntoView(element);
+      focusWithoutScroll(element);
+      const { x, y } = getInViewCenter(element);
       updatePointerTarget(getFrameContext(), x, y, element);
       const runtime = ensureRuntimeState();
       const buttonMask = pointerButtonMask(button);

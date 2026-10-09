@@ -163,8 +163,7 @@
       "canvas": "画布",
       "debugging": "调试",
       "coordination": "协作调度",
-      "planning": "规划",
-      "gstack": "gstack"
+      "planning": "规划"
     }
   },
   "form": {
@@ -231,6 +230,8 @@
       "globalToggleLabel": "切换 {{name}} 的全局可用状态"
     },
     "scanIncomplete": "部分技能扫描失败，已成功读取的技能仍可使用。",
+    "unsupportedSkills": "部分技能依赖暂不支持的能力，未加载。",
+    "unsupportedField": "当前主机暂不支持技能内的 {{field}} 声明，该技能未加载。",
     "diagnosticsUnavailable": "当前主机不提供技能扫描诊断。"
   },
   "deleteModal": {

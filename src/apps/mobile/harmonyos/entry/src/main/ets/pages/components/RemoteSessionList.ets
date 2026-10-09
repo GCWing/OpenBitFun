@@ -22,6 +22,7 @@ import { SessionActionCapabilities, SessionActionPolicy, SessionActionScope } fr
 import { SessionDetailsView } from './SessionDetailsView';
 import { RemoteSessionRow } from './RemoteSessionRow';
 import { HarnessProfileMenu } from './HarnessProfileMenu';
+import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 import {
   SessionListInputs,
   SessionListProjection,
@@ -81,6 +82,10 @@ export struct RemoteSessionList {
   @Local detailsSessionId: string = '';
   @Local showSessionDetails: boolean = false;
   @Local optimisticSelectedSessionId: string = '';
+  // The list owns two window-level sheets whose content ends at the screen
+  // edge, so it reads the strip itself: the action sheet's rows are fixed
+  // controls that keep the bar clear, and the details sheet scrolls under it.
+  @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
   // Selecting a row reruns this whole builder tree, and the tree asks for the
   // grouped lists far more often than it changes them. The cache answers from
   // the last projection unless the sessions, the workspaces or a filter moved —
@@ -121,8 +126,25 @@ export struct RemoteSessionList {
     this.optimisticSelectedSessionId = '';
   }
 
+  aboutToAppear(): void {
+    const context = this.getUIContext().getHostContext();
+    if (context) {
+      this.insets.bind(this.getUIContext(), context);
+    }
+  }
+
+  aboutToDisappear(): void {
+    this.insets.unbind();
+  }
+
   build() {
     Column() {
+      // A node carries at most one bindSheet: chaining the action sheet and
+      // the details sheet on one node left the first sheet unopenable, so the
+      // action sheet binds on its own zero-height carrier row — the same
+      // pattern the sidebar's section uses for its own pair of sheets.
+      Row() {}.height(0)
+        .bindSheet($$this.showSessionActionSheet, this.SessionActionSheet(), this.sessionActionSheetOptions())
       Scroll() {
         Column() {
           if (this.filteredSessions().length === 0) {
@@ -161,7 +183,6 @@ export struct RemoteSessionList {
     .width('100%')
     .layoutWeight(1)
     .alignItems(HorizontalAlign.Start)
-    .bindSheet($$this.showSessionActionSheet, this.SessionActionSheet(), this.sessionActionSheetOptions())
     .bindSheet($$this.showSessionDetails, this.SessionDetailsSheet(), this.sessionDetailsSheetOptions())
   }
 
@@ -632,6 +653,10 @@ export struct RemoteSessionList {
     SessionActionSurface({
       presentation,
       sessionTitle: this.actionSessionTitle(),
+      // Only the bottom-sheet presentation sits at the screen edge; a popover
+      // floats at its anchor and keeps the plain design spacing.
+      bottomPadding: presentation === SessionActionPresentation.BottomSheet ?
+        this.insets.bottomPadding(18) : 18,
       canViewDetails: this.actionCapabilities().canViewDetails,
       canDelete: this.actionCapabilities().canDelete,
       onViewDetails: () => this.openActionSessionDetails(),

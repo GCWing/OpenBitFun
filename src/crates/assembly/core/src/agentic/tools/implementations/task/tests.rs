@@ -1,5 +1,5 @@
 use super::{
-    execution::resolved_subagent_is_available, AgentInterruptTool, AgentSendInputTool,
+    execution::resolved_subagent_is_available, AgentExecutionTool, AgentSendInputTool,
     AgentSpawnTool, LaunchReviewAgentTool, TaskTool,
 };
 use crate::agentic::agents::CustomSubagentConfig;
@@ -108,70 +108,6 @@ fn find_agent_block_index(description: &str, agent_id: &str) -> usize {
         .unwrap_or_else(|| panic!("expected agent block for {}", agent_id))
 }
 
-#[test]
-fn task_prompt_guidance_omits_subagent_name_examples() {
-    let description = TaskTool::new().render_description();
-    assert!(!description.contains("subagent_type=\"Explore\""));
-    assert!(!description.contains("For Explore"));
-    assert!(!description.contains("file-discovery"));
-    assert!(!description.contains("listed investigation"));
-
-    let schema = TaskTool::new().input_schema();
-    let subagent_description = schema["properties"]["subagent_type"]["description"]
-        .as_str()
-        .expect("subagent_type description should be a string");
-    assert!(!subagent_description.contains("Explore"));
-    assert!(!subagent_description.contains("available_agents"));
-}
-
-#[test]
-fn split_agent_tools_expose_action_specific_schemas() {
-    let spawn = AgentSpawnTool::new().input_schema();
-    assert_eq!(
-        spawn["required"],
-        json!(["agent_id", "prompt", "agent_type"])
-    );
-
-    let send_input = AgentSendInputTool::new().input_schema();
-    assert_eq!(send_input["required"], json!(["agent_id", "prompt"]));
-
-    let interrupt = AgentInterruptTool::new().input_schema();
-    assert_eq!(interrupt["required"], json!(["agent_id"]));
-    assert_eq!(interrupt["properties"].as_object().unwrap().len(), 2);
-    assert_eq!(interrupt["properties"]["cascade"]["default"], false);
-}
-
-#[tokio::test]
-async fn split_agent_tools_validate_their_public_inputs() {
-    let spawn = AgentSpawnTool::new()
-        .validate_input(
-            &json!({
-                "agent_id": "parser-review",
-                "prompt": "Inspect the parser and report findings.",
-                "agent_type": "Explore"
-            }),
-            None,
-        )
-        .await;
-    assert!(spawn.result, "{:?}", spawn.message);
-
-    let send_input = AgentSendInputTool::new()
-        .validate_input(
-            &json!({
-                "agent_id": "a1",
-                "prompt": "Focus next on error recovery."
-            }),
-            None,
-        )
-        .await;
-    assert!(send_input.result, "{:?}", send_input.message);
-
-    let interrupt = AgentInterruptTool::new()
-        .validate_input(&json!({ "agent_id": "a1", "cascade": true }), None)
-        .await;
-    assert!(interrupt.result, "{:?}", interrupt.message);
-}
-
 #[tokio::test]
 async fn agent_spawn_rejects_invalid_or_missing_caller_ids() {
     for agent_id in [
@@ -235,46 +171,9 @@ async fn task_spawn_rejects_invalid_or_missing_caller_ids() {
             "subagent_type": "Explore"
         }),
     ] {
-        let validation = TaskTool::new().validate_input(&input, None).await;
+        let validation = AgentExecutionTool::new().validate_input(&input, None).await;
         assert!(!validation.result, "{input} should be rejected");
     }
-}
-
-#[tokio::test]
-async fn split_agent_tools_reject_fields_outside_their_contracts() {
-    let spawn = AgentSpawnTool::new()
-        .validate_input(
-            &json!({
-                "agent_id": "parser-review",
-                "prompt": "Inspect the parser.",
-                "agent_type": "Explore",
-                "run_in_background": false
-            }),
-            None,
-        )
-        .await;
-    assert!(!spawn.result);
-    assert!(spawn
-        .message
-        .as_deref()
-        .is_some_and(|message| message.contains("does not accept field 'run_in_background'")));
-
-    let send_input = AgentSendInputTool::new()
-        .validate_input(
-            &json!({
-                "agent_id": "a1",
-                "prompt": "Continue.",
-                "background": true
-            }),
-            None,
-        )
-        .await;
-    assert!(!send_input.result);
-
-    let interrupt = AgentInterruptTool::new()
-        .validate_input(&json!({ "agent_id": "a1", "prompt": "Stop now." }), None)
-        .await;
-    assert!(!interrupt.result);
 }
 
 #[test]
@@ -310,22 +209,31 @@ fn agent_send_input_tool_message_renders_the_target_agent_id() {
 }
 
 #[test]
-fn agent_interrupt_defaults_to_non_cascading_and_can_request_cascade() {
-    let default_input = AgentInterruptTool::task_input(&json!({"agent_id": "a1"}))
-        .expect("default interrupt input should translate");
-    assert_eq!(default_input["cancel_descendants"], false);
+fn background_subagent_start_acknowledgement_exposes_agent_wait_task_id() {
+    let message = AgentExecutionTool::background_subagent_started_assistant_message(
+        "parser-review",
+        "bg-task-1",
+    );
 
-    let cascading_input = AgentInterruptTool::task_input(&json!({
-        "agent_id": "a1",
-        "cascade": true
-    }))
-    .expect("cascading interrupt input should translate");
-    assert_eq!(cascading_input["cancel_descendants"], true);
+    assert!(message.contains("Background subagent started successfully."));
+    assert!(message.contains("agent_id: \"parser-review\""));
+    assert!(message.contains("bg_task_id: \"bg-task-1\""));
+    assert!(message.contains("Use AgentWait with this bg_task_id"));
+}
+
+#[test]
+fn started_background_tasks_do_not_expose_structured_task_markers() {
+    let message = AgentExecutionTool::background_subagent_started_assistant_message(
+        "parser-review",
+        "bg-task-1",
+    );
+
+    assert!(!message.contains("<background_task"));
 }
 
 #[test]
 fn task_model_id_inherit_requests_parent_model_inheritance() {
-    let invocation = TaskTool::parse_invocation(
+    let invocation = AgentExecutionTool::parse_invocation(
         &json!({
             "action": "spawn",
             "agent_id": "parser-review",
@@ -345,42 +253,6 @@ fn task_model_id_inherit_requests_parent_model_inheritance() {
     );
 }
 
-#[tokio::test]
-async fn validate_input_accepts_review_background_for_agent_wait() {
-    let validation = TaskTool::new()
-        .validate_input(
-            &json!({
-                "action": "spawn",
-                "agent_id": "review-changes",
-                "prompt": "Review the current diff",
-                "subagent_type": "CodeReview",
-                "run_in_background": true
-            }),
-            None,
-        )
-        .await;
-
-    assert!(validation.result, "{:?}", validation.message);
-}
-
-#[tokio::test]
-async fn validate_input_preserves_non_review_background_tasks() {
-    let validation = TaskTool::new()
-        .validate_input(
-            &json!({
-                "action": "spawn",
-                "agent_id": "log-investigation",
-                "prompt": "Inspect the logs and report later",
-                "subagent_type": "GeneralPurpose",
-                "run_in_background": true
-            }),
-            None,
-        )
-        .await;
-
-    assert!(validation.result, "{:?}", validation.message);
-}
-
 #[test]
 fn code_review_tasks_are_serial_even_though_the_agent_is_readonly() {
     let input = json!({
@@ -390,7 +262,7 @@ fn code_review_tasks_are_serial_even_though_the_agent_is_readonly() {
         "subagent_type": "CodeReview"
     });
 
-    assert!(!TaskTool::new().is_concurrency_safe(Some(&input)));
+    assert!(!AgentExecutionTool::new().is_concurrency_safe(Some(&input)));
 }
 
 #[test]
@@ -444,24 +316,6 @@ async fn launch_review_agent_describes_one_dynamic_worker_instead_of_fixed_revie
     ] {
         assert!(!description.contains(legacy_reviewer));
     }
-}
-
-#[test]
-fn task_schema_describes_spawn_context_modes_as_exclusive() {
-    let description = TaskTool::new().render_description();
-    assert!(description.contains("The two modes are mutually exclusive"));
-    assert!(description.contains("do not provide `subagent_type` when `fork_context=true`"));
-
-    let schema = TaskTool::new().input_schema();
-    let subagent_description = schema["properties"]["subagent_type"]["description"]
-        .as_str()
-        .expect("subagent_type description should be a string");
-    assert!(subagent_description.contains("Do not provide with fork_context=true"));
-
-    let fork_context_description = schema["properties"]["fork_context"]["description"]
-        .as_str()
-        .expect("fork_context description should be a string");
-    assert!(fork_context_description.contains("do not provide subagent_type"));
 }
 
 #[tokio::test]
@@ -519,28 +373,6 @@ async fn code_review_delegation_requires_an_explicit_adaptive_manifest() {
         }),
     );
     assert!(tool.is_available_in_context(Some(&prepared_context)).await);
-}
-
-#[tokio::test]
-async fn adaptive_code_review_worker_is_admitted_by_the_task_runtime() {
-    let direct_context = test_tool_context("CodeReview");
-    let direct_types = TaskTool::new()
-        .get_agents_types(Some(&direct_context))
-        .await;
-    assert!(!direct_types.iter().any(|agent| agent == "ReviewWorker"));
-
-    let mut prepared_context = test_tool_context("CodeReview");
-    prepared_context.custom_data.insert(
-        "deep_review_run_manifest".to_string(),
-        json!({
-            "reviewMode": "deep",
-            "adaptiveReview": { "version": 1, "maxFocusedCalls": 2 }
-        }),
-    );
-    let prepared_types = TaskTool::new()
-        .get_agents_types(Some(&prepared_context))
-        .await;
-    assert!(prepared_types.iter().any(|agent| agent == "ReviewWorker"));
 }
 
 #[tokio::test]
@@ -666,41 +498,9 @@ async fn non_managed_review_agent_rejects_an_untrusted_packet_id() {
         .is_some_and(|message| message.contains("only valid for managed Review packets")));
 }
 
-#[test]
-fn background_subagent_start_acknowledgement_exposes_agent_wait_task_id() {
-    let message = TaskTool::background_subagent_started_assistant_message("a1", "bg1");
-
-    assert!(message.starts_with("Background subagent started successfully."));
-    assert!(message.contains("agent_id: \"a1\""));
-    assert!(message.contains("bg_task_id: \"bg1\""));
-    assert!(message.contains("Use AgentWait"));
-    assert!(!message.contains("GeneralPurpose"));
-    assert!(!message.contains("<background_task"));
-}
-
-#[tokio::test]
-async fn validate_input_requires_subagent_type_when_not_forking() {
-    let validation = TaskTool::new()
-        .validate_input(
-            &json!({
-                "action": "spawn",
-                "agent_id": "repo-inspector",
-                "prompt": "Inspect the repo"
-            }),
-            None,
-        )
-        .await;
-
-    assert!(!validation.result);
-    assert!(validation
-        .message
-        .as_deref()
-        .is_some_and(|message| message.contains("subagent_type is required")));
-}
-
 #[tokio::test]
 async fn validate_input_infers_spawn_without_action_when_subagent_type_present() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "agent_id": "repo-inspector",
@@ -716,7 +516,7 @@ async fn validate_input_infers_spawn_without_action_when_subagent_type_present()
 
 #[tokio::test]
 async fn validate_input_infers_spawn_without_action_when_forking_context() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "agent_id": "repo-inspector",
@@ -732,7 +532,7 @@ async fn validate_input_infers_spawn_without_action_when_forking_context() {
 
 #[tokio::test]
 async fn validate_input_accepts_fork_context_with_model_id() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "action": "spawn",
@@ -750,7 +550,7 @@ async fn validate_input_accepts_fork_context_with_model_id() {
 
 #[tokio::test]
 async fn validate_input_rejects_fork_spawn_with_empty_agent_id() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "action": "spawn",
@@ -774,7 +574,7 @@ async fn validate_input_rejects_fork_spawn_with_empty_agent_id() {
 
 #[tokio::test]
 async fn validate_input_rejects_fresh_spawn_with_empty_agent_id() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "action": "spawn",
@@ -798,7 +598,7 @@ async fn validate_input_rejects_fresh_spawn_with_empty_agent_id() {
 
 #[tokio::test]
 async fn validate_input_rejects_fork_context_with_subagent_type_as_mode_conflict() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "action": "spawn",
@@ -822,7 +622,7 @@ async fn validate_input_rejects_fork_context_with_subagent_type_as_mode_conflict
 
 #[tokio::test]
 async fn validate_input_accepts_send_input_agent_id_without_subagent_type() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "action": "send_input",
@@ -838,7 +638,7 @@ async fn validate_input_accepts_send_input_agent_id_without_subagent_type() {
 
 #[tokio::test]
 async fn validate_input_accepts_send_input_with_model_id() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "action": "send_input",
@@ -855,7 +655,7 @@ async fn validate_input_accepts_send_input_with_model_id() {
 
 #[tokio::test]
 async fn validate_input_accepts_send_input_with_neutral_spawn_placeholders() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "action": "send_input",
@@ -873,7 +673,7 @@ async fn validate_input_accepts_send_input_with_neutral_spawn_placeholders() {
 
 #[tokio::test]
 async fn validate_input_infers_send_input_without_action_when_agent_id_present() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "prompt": "Continue the previous analysis",
@@ -888,7 +688,7 @@ async fn validate_input_infers_send_input_without_action_when_agent_id_present()
 
 #[test]
 fn permission_intents_follow_the_agent_id_contract() {
-    let tool = TaskTool::new();
+    let tool = AgentExecutionTool::new();
     let context = test_tool_context("Standard");
 
     for (action, expected_resource) in [("send_input", "send_input:a1"), ("cancel", "cancel:a1")] {
@@ -909,7 +709,7 @@ fn permission_intents_follow_the_agent_id_contract() {
 
 #[tokio::test]
 async fn validate_input_rejects_send_input_with_subagent_type() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "action": "send_input",
@@ -931,7 +731,7 @@ async fn validate_input_rejects_send_input_with_subagent_type() {
 #[tokio::test]
 async fn validate_input_rejects_deep_review_retry_fields_for_regular_parent() {
     let context = test_tool_context("Standard");
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "action": "spawn",
@@ -954,7 +754,7 @@ async fn validate_input_rejects_deep_review_retry_fields_for_regular_parent() {
 #[tokio::test]
 async fn validate_input_rejects_timeout_for_regular_parent() {
     let context = test_tool_context("Standard");
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "action": "spawn",
@@ -1046,7 +846,7 @@ async fn launch_review_agent_rejects_non_string_model_id() {
 
 #[tokio::test]
 async fn validate_input_accepts_cancel_with_agent_id_only() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "action": "cancel",
@@ -1061,7 +861,7 @@ async fn validate_input_accepts_cancel_with_agent_id_only() {
 
 #[tokio::test]
 async fn validate_input_rejects_cancel_with_prompt() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "action": "cancel",
@@ -1081,7 +881,7 @@ async fn validate_input_rejects_cancel_with_prompt() {
 
 #[tokio::test]
 async fn validate_input_accepts_cancel_with_neutral_optional_placeholders() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "action": "cancel",
@@ -1102,14 +902,16 @@ async fn validate_input_accepts_cancel_with_neutral_optional_placeholders() {
 #[tokio::test]
 async fn task_tool_stays_available_without_enabled_subagents() {
     assert!(
-        TaskTool::new().is_available_in_context(None).await,
+        AgentExecutionTool::new()
+            .is_available_in_context(None)
+            .await,
         "Task should remain prompt-visible even when no fresh subagents are currently available"
     );
 }
 
 #[tokio::test]
 async fn validate_input_accepts_fork_context_with_caller_selected_agent_id() {
-    let validation = TaskTool::new()
+    let validation = AgentExecutionTool::new()
         .validate_input(
             &json!({
                 "action": "spawn",
@@ -1150,7 +952,7 @@ async fn call_impl_rejects_nested_subagent_delegation() {
         runtime_handles: openbitfun_runtime_ports::ToolRuntimeHandles::default(),
     };
 
-    let error = TaskTool::new()
+    let error = AgentExecutionTool::new()
         .call_impl(
             &json!({
                 "action": "spawn",
@@ -1204,22 +1006,25 @@ fn deep_review_policy_allows_only_configured_team_members() {
 #[test]
 fn resolve_subagent_timeout_uses_session_execution_timeout_as_floor() {
     assert_eq!(
-        TaskTool::resolve_subagent_timeout_seconds(Some(300), Some(1200)),
+        AgentExecutionTool::resolve_subagent_timeout_seconds(Some(300), Some(1200)),
         Some(1200)
     );
     assert_eq!(
-        TaskTool::resolve_subagent_timeout_seconds(None, Some(1200)),
+        AgentExecutionTool::resolve_subagent_timeout_seconds(None, Some(1200)),
         Some(1200)
     );
     assert_eq!(
-        TaskTool::resolve_subagent_timeout_seconds(Some(1800), Some(1200)),
+        AgentExecutionTool::resolve_subagent_timeout_seconds(Some(1800), Some(1200)),
         Some(1800)
     );
     assert_eq!(
-        TaskTool::resolve_subagent_timeout_seconds(Some(300), None),
+        AgentExecutionTool::resolve_subagent_timeout_seconds(Some(300), None),
         Some(300)
     );
-    assert_eq!(TaskTool::resolve_subagent_timeout_seconds(None, None), None);
+    assert_eq!(
+        AgentExecutionTool::resolve_subagent_timeout_seconds(None, None),
+        None
+    );
 }
 
 #[test]
@@ -1291,7 +1096,7 @@ async fn description_with_context_filters_restricted_subagents_by_parent_agent()
     };
 
     let agentic_description =
-        TaskTool::build_available_agents_context_section(Some(&agentic_context))
+        AgentExecutionTool::build_available_agents_context_section(Some(&agentic_context))
             .await
             .expect("agentic available agents should render");
     assert!(agentic_description.contains("<agent type=\"Explore\">"));
@@ -1299,32 +1104,12 @@ async fn description_with_context_filters_restricted_subagents_by_parent_agent()
     assert!(!agentic_description.contains("<agent type=\"ResearchSpecialist\">"));
 
     let deep_review_description =
-        TaskTool::build_available_agents_context_section(Some(&deep_review_context))
+        AgentExecutionTool::build_available_agents_context_section(Some(&deep_review_context))
             .await
             .expect("deep review available agents should render");
     assert!(deep_review_description.contains("<agent type=\"ReviewWorker\">"));
     assert!(!deep_review_description.contains("<agent type=\"ReviewSecurity\">"));
     assert!(!deep_review_description.contains("<agent type=\"ResearchSpecialist\">"));
-}
-
-#[tokio::test]
-async fn swarm_planners_use_static_agent_types_without_dynamic_listing() {
-    for parent_agent_type in ["Ultimate", "SwarmPlanner"] {
-        let context = test_tool_context(parent_agent_type);
-        assert_eq!(
-            TaskTool::build_available_agents_context_section(Some(&context)).await,
-            None,
-            "{parent_agent_type} should get its AgentSpawn types from the system prompt"
-        );
-        assert_eq!(
-            TaskTool::new().get_agents_types(Some(&context)).await,
-            vec![
-                "SwarmPlanner".to_string(),
-                "SwarmWorker".to_string(),
-                "SwarmReviewer".to_string(),
-            ]
-        );
-    }
 }
 
 #[tokio::test]
@@ -1366,7 +1151,7 @@ async fn prompt_stability_description_with_context_renders_available_agents_in_s
         }),
     );
 
-    let description = TaskTool::build_available_agents_context_section(Some(&context))
+    let description = AgentExecutionTool::build_available_agents_context_section(Some(&context))
         .await
         .expect("available agents should render");
 

@@ -1,6 +1,6 @@
 {
   "title": "默認模型設定",
-  "subtitle": "設定各場景使用的 AI 模型",
+  "subtitle": "未另行指定模型時，各類任務使用以下預設值",
   "loading": "載入中...",
   "sections": {
     "defaults": "預設模型",
@@ -13,15 +13,15 @@
     "optional": "可選",
     "primary": {
       "label": "主力模型",
-      "description": "用於複雜推理、代碼生成、多步驟任務",
+      "description": "未單獨指定時使用主力模型，適合日常對話與複雜任務",
       "placeholder": "請選擇主力模型"
     },
     "fast": {
       "label": "快速模型",
-      "description": "用於簡單問答、快速響應場景，節省成本",
+      "description": "用於輕量任務；未選擇時使用主力模型",
       "hint": "未設定時，所有任務都使用主力模型",
       "placeholder": "請選擇快速模型",
-      "notSet": "不設置（使用主力模型）"
+      "notSet": "跟隨主力模型"
     }
   },
   "optional": {
@@ -52,7 +52,7 @@
     "notConfigured": "未設定，將使用主力模型"
   },
   "empty": {
-    "noModels": "暫無可用模型，請先在「模型列表」中新增模型"
+    "noModels": "尚無可用模型，請先新增 API 模型或匯入訂閱服務"
   },
   "messages": {
     "loadFailed": "載入設定失敗",

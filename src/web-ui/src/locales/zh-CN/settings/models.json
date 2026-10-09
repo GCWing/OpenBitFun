@@ -1,12 +1,13 @@
 {
   "title": "模型",
-  "subtitle": "管理默认模型、模型服务、订阅账户、模型目录与网络连接",
+  "subtitle": "连接模型服务，并选择各类任务使用的模型",
   "editProvider": "编辑服务商配置",
   "newProvider": "新建服务商配置",
   "editModel": "编辑模型配置",
+  "modelEditorTitle": "{{model}} · {{provider}}",
   "newModel": "新建模型配置",
-  "editProviderSubtitle": "基础服务商参数配置",
-  "editSubtitle": "基础模型参数配置",
+  "editProviderSubtitle": "设置此服务的 API 地址、认证方式与模型",
+  "editSubtitle": "设置模型标识、上下文容量与请求参数",
   "confirmDelete": "确定删除此配置？",
   "sessionTitle": {
     "title": "会话标题自动生成",
@@ -69,7 +70,7 @@
     "useFormat": "使用 {{format}}",
     "useFormatWithCount": "使用 {{format}}（{{modelCount}} 个模型）",
     "detected": "将使用 {{label}}（账号 {{account}}）",
-    "notConnected": "尚未登录 {{kind}}，请先在上方完成登录",
+    "notConnected": "尚未登录 {{kind}}，请先在「订阅服务」中登录",
     "unknownAccount": "当前登录账号",
     "reauthenticationRequired": "凭据存储中未找到可用凭据，请重新登录一次",
     "vaultUnavailable": "凭据存储暂时不可用，请重试；你的登录信息并未被移除",
@@ -93,13 +94,35 @@
     "logoutNoAffectedModels": "当前没有模型配置使用此订阅账号。",
     "logoutConsequence": "模型配置不会被删除；重新登录同一订阅账号后可以继续使用。",
     "confirmLogout": "确认退出",
-    "openCodeRemoved": "OpenCode Console OAuth 仅支持 Zen。Go 模型请选择 API key 并填写密钥，已有模型配置保留。"
+    "openCodeRemoved": "OpenCode Console OAuth 仅支持 Zen。Go 模型请选择 API key 并填写密钥，已有模型配置保留。",
+    "editorDescription": "此服务的模型共用当前登录的订阅账号",
+    "accountLabel": "账号",
+    "accountAuthentication": "订阅账号授权",
+    "manageAccount": "管理账号",
+    "loadingAccount": "正在读取账号…",
+    "accountIdentityUnavailable": "服务未提供账号标识",
+    "accountUnavailable": "暂无账号信息",
+    "serviceUnavailable": "当前主机未提供此订阅服务，请刷新状态或检查主机版本。",
+    "signInToUse": "登录此服务的订阅账号后即可使用，已有模型配置会保留。",
+    "sharedAccountHint": "此服务的模型共用当前登录账号。",
+    "credentialExpiresAt": "凭据有效期至 {{time}}",
+    "credentialExpired": "当前授权凭据已过期，请在管理账号中刷新凭据后重试。",
+    "openCodeLegacyConnection": "此旧版连接使用 OpenCode Go，已有模型配置会保留。如需继续使用 Go，请新建 API Key 服务；订阅授权请重新导入 Zen。",
+    "accountState": {
+      "loading": "正在读取状态",
+      "loadFailed": "状态读取失败",
+      "unavailable": "服务不可用",
+      "vaultUnavailable": "凭据暂不可用",
+      "reauthenticationRequired": "需重新登录",
+      "refreshRequired": "凭据待刷新",
+      "connected": "已登录"
+    }
   },
   "providerSelection": {
     "modelRoutingPending": "刷新模型列表后显示协议和端点；目录外模型可手动配置。",
     "modelRoutingUnavailable": "主机未返回此模型的有效接口信息，请更新主机后刷新模型列表。",
     "title": "选择模型提供商",
-    "subtitle": "选择一个预设提供商快速配置，或选择自定义完全手动配置",
+    "subtitle": "预设会填入常用连接参数；私有部署或未列出的服务可选择自定义",
     "or": "或者",
     "orSelectProvider": "或选择预设提供商",
     "customTitle": "自定义配置",
@@ -110,6 +133,10 @@
     "collapseProviders": "收起提供商列表",
     "noProviderMatches": "没有匹配的提供商，可选择上方的自定义配置",
     "fetchModels": "获取模型列表",
+    "quickAdd": "快捷添加",
+    "fetchedModels": "已获取 {{count}} 个模型",
+    "presetModels": "预设模型 · {{count}}",
+    "searchModels": "搜索模型名称或 ID",
     "fetchHint": "可从当前供应商拉取模型列表；拉取失败时回退到常用预设模型",
     "fetchingModels": "正在拉取模型列表...",
     "fetchSuccessCount": "已从供应商拉取 {{count}} 个模型",
@@ -123,7 +150,8 @@
     "noPresetModels": "暂无可用模型，请获取模型列表或手动输入模型名",
     "backToSelection": "返回选择提供商",
     "selectModel": "选择模型",
-    "multiSelectHint": "支持多选；选中后可分别设置每个模型的上下文窗口、最大输出 Tokens 和推理配置",
+    "selectedModels": "已选择 {{count}} 个模型",
+    "multiSelectHint": "可多选，添加后可分别调整各模型的上下文、输出上限和推理设置",
     "searchOrInputModel": "搜索或输入模型名称...",
     "inputModelName": "输入自定义模型名称...",
     "useCustomModel": "按 Enter 使用",
@@ -132,10 +160,12 @@
     "modelAlreadyInList": "该模型已在列表中",
     "noModelsSelected": "请先选择模型",
     "removeModel": "移除模型",
+    "removeModelByName": "移除模型「{{name}}」",
+    "editModelSettings": "编辑模型「{{name}}」",
     "expandModelSettings": "展开「{{name}}」的详细设置",
     "collapseModelSettings": "收起「{{name}}」的详细设置",
     "unsavedModel": "待保存",
-    "unsavedModelHint": "此模型包含尚未保存的修改，请点击模型编辑弹窗底部的“保存”完成持久化",
+    "unsavedModelHint": "模型修改尚未保存，请在编辑窗口中保存",
     "urlHint": "已预填官方 API 地址，如使用代理或私有部署可修改",
     "formatHint": "已根据提供商自动选择，通常无需修改"
   },
@@ -298,10 +328,10 @@
     "provider": "请求格式",
     "providerPlaceholder": "选择请求格式",
     "contextWindow": "上下文窗口大小",
-    "contextWindowHint": "此值主要用于判断何时触发上下文压缩，可以小于供应商标称的模型最大上下文窗口",
-    "contextWindowLongWarning": "当前模型配置的上下文窗口超过 400K。超长上下文可能降低模型效果，建议将其调整到 300K 左右。",
+    "contextWindowHint": "用于判断何时压缩上下文，可小于模型实际支持的上限",
+    "contextWindowLongWarning": "上下文超过 400K，可能影响效果，建议约 300K。",
     "maxTokens": "最大输出Tokens",
-    "maxTokensHint": "单次请求时限制模型输出的最大token数量（影响响应长度）",
+    "maxTokensHint": "限制单次响应的最大 Token 数，影响输出长度",
     "description": "描述",
     "descriptionPlaceholder": "配置说明（可选）"
   },
@@ -323,7 +353,7 @@
   },
   "reasoningEffort": {
     "label": "推理深度",
-    "hint": "控制 provider 支持的推理强度，适用于 DeepSeek、Responses API 与支持自适应推理的 Claude 模型",
+    "hint": "调整模型推理强度；适用于 DeepSeek、Responses API 和支持自适应推理的 Claude 模型",
     "placeholder": "使用 API 默认值"
   },
   "reasoningPresets": {
@@ -416,29 +446,29 @@
     "saveSuccess": "代理配置已保存，重启 OpenBitFun 后生效"
   },
   "streamIdleTimeout": {
-    "title": "流式超时",
+    "title": "模型响应超时",
     "effectiveNextRound": "修改后下一次对话生效",
-    "label": "Chunk 空闲超时（秒）",
-    "hint": "流式响应开始后，两次 chunk 之间的最大等待时间。留空表示无限等待",
+    "label": "响应间隔超时（秒）",
+    "hint": "响应开始后，等待下一段数据的最长时间；留空表示不限时",
     "placeholder": "留空表示不设超时",
     "invalid": "请输入正整数秒数，或留空。",
-    "save": "保存流式超时",
+    "save": "保存响应超时",
     "saveSuccess": "流式超时已保存"
   },
   "streamTtftTimeout": {
-    "title": "首 Token 超时",
-    "label": "TTFT 超时（秒）",
-    "hint": "请求发出后，等待首个有效流式输出的最长时间。留空表示无限等待",
+    "title": "首次响应超时",
+    "label": "首次响应超时（秒）",
+    "hint": "发出请求后，等待首段有效响应的最长时间；留空表示不限时",
     "placeholder": "留空表示不设超时",
     "invalid": "请输入正整数秒数，或留空。",
-    "save": "保存首 Token 超时",
+    "save": "保存首次响应超时",
     "saveSuccess": "首 Token 超时已保存"
   },
   "toolArgumentJsonRepair": {
     "title": "工具参数 JSON 修复",
     "description": "修改将在下一轮模型调用生效",
     "label": "修复非法 JSON 工具参数",
-    "hint": "仅在供应商确认工具调用正常完成后尝试。修复可能在常规工具校验前改写非法 JSON",
+    "hint": "仅在服务提供方确认工具调用正常完成后尝试修复参数 JSON；修复发生在常规工具校验之前",
     "saveSuccess": "工具参数 JSON 修复设置已保存"
   },
   "capabilities": {
@@ -456,6 +486,8 @@
   },
   "actions": {
     "save": "保存",
+    "back": "返回",
+    "done": "$t(shared:statuses.done)",
     "cancel": "取消",
     "edit": "编辑",
     "delete": "删除",
@@ -502,7 +534,7 @@
   },
   "messages": {
     "loading": "正在加载模型设置…",
-    "loadFailedLocked": "无法读取模型设置。为避免覆盖现有配置，当前页面已锁定。",
+    "loadFailedLocked": "无法读取此处的设置。为避免覆盖现有配置，相关操作已锁定，请重新加载。",
     "retry": "重新加载",
     "unsaved": "未保存",
     "fillRequired": "请填写必要字段",
@@ -538,13 +570,14 @@
     "defaultDescription": "{{name}} 模型配置",
     "cloneName": "{{name}} - 副本",
     "templateName": "{{provider}} - {{modelName}}",
-    "templateDescription": "{{description}} - {{modelName}}"
+    "templateDescription": "{{description}} - {{modelName}}",
+    "providerRemoved": "此服务已被移除，请关闭编辑器后重新打开模型设置。"
   },
   "modelsDevCatalog": {
     "title": "models.dev 模型目录",
     "detailsTitle": "models.dev 目录详情",
     "viewDetails": "查看 models.dev 目录详情",
-    "description": "用于推理预设供应商和模型绑定的目录状态。打开模型设置时会自动检查更新",
+    "description": "为推理预设提供供应商和模型选项；打开此页时自动检查更新",
     "activeSource": "当前来源",
     "source": {
       "cache": "缓存",
@@ -569,13 +602,14 @@
     "offlineTitle": "无法联网时如何更新",
     "offlineDescription": "在可联网的设备上下载 models.dev 原始文件，将其命名为 catalog.json 并放入上方缓存目录。替换后重启 OpenBitFun 即可生效；点击立即更新可能会覆盖该文件。",
     "downloadOriginal": "下载原始目录",
-    "openCacheDirectory": "打开缓存目录"
+    "openCacheDirectory": "打开缓存目录",
+    "fetchCatalog": "获取 models.dev 模型目录"
   },
   "advancedSettings": {
     "title": "高级设置",
     "inlineThinkInText": {
       "label": "解析文本中的 <think> 标签",
-      "hint": "将文本流中的 <think>...</think> 实时拆分为思考内容"
+      "hint": "将响应中的 <think>...</think> 内容显示为思考过程"
     },
     "skipSslVerify": {
       "label": "跳过SSL证书验证",
@@ -587,8 +621,8 @@
       "modeLabel": "应用模式",
       "modeReplace": "替换",
       "modeMerge": "合并",
-      "modeReplaceHint": "自定义请求头将完全替换默认请求头（需要自行添加Content-Type、Authorization等）",
-      "modeMergeHint": "先应用默认请求头，再应用自定义请求头（可覆盖已有值，添加新值）",
+      "modeReplaceHint": "完全替换默认请求头；需自行提供 Content-Type、Authorization 等必需字段",
+      "modeMergeHint": "保留默认请求头，自定义值会覆盖同名字段",
       "addHeader": "添加字段",
       "keyPlaceholder": "key",
       "valuePlaceholder": "value"
@@ -607,6 +641,67 @@
       "invalidJson": "JSON格式错误，请检查语法",
       "validJson": "JSON格式有效",
       "mergeHint": "自定义字段将覆盖默认请求体中的对应字段"
-    }
-  }
+    },
+    "description": "用于适配服务的特殊请求与响应要求；不确定时保留默认值"
+  },
+  "providersDescription": "统一管理 API 地址、认证方式和同一服务下的模型",
+  "editSettingsTitle": "模型参数",
+  "editProviderSettingsTitle": "服务连接",
+  "sections": {
+    "acquisition": "添加或导入模型",
+    "selectionModes": "模型选用模式",
+    "pool": "模型池",
+    "more": "更多设置"
+  },
+  "acquisition": {
+    "api": "API 模型",
+    "apiHint": "通过 API Key 或自定义地址添加模型",
+    "configuredSummary": "已配置 {{providers}} 个服务，共 {{models}} 个模型",
+    "noneConfigured": "尚未配置 API 服务",
+    "configureProvider": "配置 {{provider}}",
+    "subscriptions": "订阅服务",
+    "importedSummary": "已导入 {{providers}} 个服务，共 {{models}} 个模型",
+    "noneImported": "尚未导入订阅服务",
+    "import": "导入",
+    "importTitle": "导入订阅服务",
+    "loadFailed": "无法读取订阅服务，请重试。已有模型配置仍会保留。",
+    "noServices": "当前主机没有可导入的订阅服务"
+  },
+  "selectionModes": {
+    "smart": "智能模式",
+    "smartHint": "基于 OpenBitFun 自适应路由与多模型协同推理技术，提升经济效益和任务表现。",
+    "battery": "电池模式",
+    "batteryHint": "基于多源模型池化与故障转移技术，额度耗尽或连接失效时自动接力。",
+    "unavailable": "尚未开放"
+  },
+  "pool": {
+    "manageConnections": "管理连接",
+    "search": "搜索模型、来源或标签",
+    "capabilityFilter": "筛选模型能力",
+    "allCapabilities": "全部能力",
+    "recommendationsUnavailable": "推荐标签服务暂未上线，当前尚未接入同步。你可以先手动给模型添加标签。",
+    "syncTags": "同步推荐标签",
+    "clearFilter": "清除筛选",
+    "noMatches": "没有符合条件的模型",
+    "empty": "先添加 API 模型或导入订阅服务，模型会汇集在这里。",
+    "editTags": "为 {{model}} 添加标签",
+    "tagsLabel": "自定义标签",
+    "tagsHint": "输入标签后按 Enter 添加，最多 {{max}} 个。主力、快速等槽位标签不占名额。",
+    "tagsPlaceholder": "添加标签",
+    "tagsCount": "{{count}} / {{max}}",
+    "tagsLimitReached": "最多添加 {{max}} 个自定义标签，移除一个后可继续添加。",
+    "recommendedTags": "已有推荐标签",
+    "tagsSaveFailed": "标签保存失败，修改已保留，请重试。",
+    "addTags": "添加标签",
+    "editTag": "编辑标签“{{tag}}”",
+    "removeTag": "移除标签“{{tag}}”",
+    "moreActions": "{{model}} 的更多操作",
+    "details": "详情",
+    "enableModel": "启用 {{model}}",
+    "editConnection": "编辑 {{provider}} 的连接",
+    "providerFilter": "筛选供应商",
+    "allProviders": "全部供应商",
+    "acknowledge": "知道了"
+  },
+  "editConfiguredProviderSubtitle": "更新此服务的 API 地址、密钥与模型"
 }

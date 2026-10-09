@@ -1,10 +1,11 @@
 import React from 'react';
-import { Plug } from 'lucide-react';
+
 import type { ComposerPresentation } from '../../utils/composerPresentation';
 import { getMcpPromptReferenceMatches } from '../../utils/mcpPromptReference';
 import { MessageReferenceCapsule } from './MessageReferenceCapsule';
 import { messageInlineTokenIcon } from './messageReferenceIcons';
 import { ConversationExcerptPreview } from '../../selection/ConversationExcerptAttachments';
+import { Icon } from '@openbitfun/ui';
 
 /** Render the persisted prompt format without requiring newer message metadata. */
 export const UserMessageTextContent: React.FC<{ text: string }> = ({ text }) => {
@@ -21,7 +22,7 @@ export const UserMessageTextContent: React.FC<{ text: string }> = ({ text }) => 
         type="mcp"
         label={match.payload.serverName}
         title={`MCP: ${match.payload.serverName}`}
-      ><Plug size={13} aria-hidden /></MessageReferenceCapsule>,
+      ><Icon name="plug" size="sm" aria-hidden /></MessageReferenceCapsule>,
     );
     cursor = match.end;
   }

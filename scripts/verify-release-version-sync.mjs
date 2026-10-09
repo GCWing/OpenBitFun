@@ -2,6 +2,8 @@
 import { readFileSync } from 'fs';
 
 const args = parseArgs(process.argv.slice(2));
+// Desktop release workflows resolve their version from the root package. Mobile
+// apps ship on their own cadence, so they form a separate consistency group.
 const expected = args.version || readJsonVersion('package.json');
 const versions = new Map([
   ['package.json', readJsonVersion('package.json')],
@@ -15,6 +17,9 @@ const versions = new Map([
   ['src/apps/relay-server/Cargo.toml', readTomlVersion('src/apps/relay-server/Cargo.toml', /version = "([^"]+)" # x-release-please-version/)],
   ['src/crates/services/relay-service/Cargo.toml', readTomlVersion('src/crates/services/relay-service/Cargo.toml', /^version = "([^"]+)"/m)],
   ['src/crates/services/page-function-runtime/Cargo.toml', readTomlVersion('src/crates/services/page-function-runtime/Cargo.toml', /^version = "([^"]+)"/m)],
+]);
+
+const mobileVersions = new Map([
   ['src/apps/mobile/android/app/build.gradle.kts', readTextVersion('src/apps/mobile/android/app/build.gradle.kts', /versionName\s*=\s*"([^"]+)"/)],
   ['src/apps/mobile/ios/OpenBitFun/Info.plist', readTextVersion('src/apps/mobile/ios/OpenBitFun/Info.plist', /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/)],
   ['src/apps/mobile/harmonyos/AppScope/app.json5', readTextVersion('src/apps/mobile/harmonyos/AppScope/app.json5', /"versionName"\s*:\s*"([^"]+)"/)],
@@ -26,13 +31,18 @@ if (!expected.includes('-')) {
 }
 
 const mismatches = [...versions].filter(([, version]) => version !== expected);
-if (mismatches.length > 0) {
-  for (const [file, version] of mismatches) {
-    console.error(`[release-version] ${file}: expected ${expected}, found ${version}`);
-  }
+const mobileExpected = args['mobile-version'] || mobileVersions.values().next().value;
+const mobileMismatches = [...mobileVersions].filter(([, version]) => version !== mobileExpected);
+for (const [file, version] of mismatches) {
+  console.error(`[release-version] ${file}: expected ${expected}, found ${version}`);
+}
+for (const [file, version] of mobileMismatches) {
+  console.error(`[release-version] ${file}: expected mobile ${mobileExpected}, found ${version}`);
+}
+if (mismatches.length > 0 || mobileMismatches.length > 0) {
   process.exit(1);
 }
-console.log(`[release-version] OK: ${expected}`);
+console.log(`[release-version] OK: desktop ${expected}; mobile ${mobileExpected}`);
 
 function readJsonVersion(file) {
   return JSON.parse(readFileSync(file, 'utf8')).version;

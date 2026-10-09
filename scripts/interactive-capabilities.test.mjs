@@ -8,11 +8,32 @@ import {
   buildCapabilityCatalog,
   loadRemoteSurfaceRegistry,
   parseRegisteredCommands,
+  projectSettingsCatalogDestination,
   renderRemoteSurfaceTsBindings,
 } from './generate-interactive-capabilities.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relativePath) => readFile(path.join(repositoryRoot, relativePath), 'utf8');
+
+test('historical settings wire targets resolve through the current presentation migration', () => {
+  const { runtimeCatalog } = buildCapabilityCatalog();
+  const execution = runtimeCatalog.capabilities.find(({ id }) => id === 'setting.tools.execution');
+  const permissions = execution.items.find(({ id }) => id === 'permission-mode');
+  assert.deepEqual(permissions.destination, { kind: 'settings', pageId: 'tools.execution', viewId: 'common' });
+  assert.deepEqual(projectSettingsCatalogDestination(execution.id, permissions.destination, permissions.id), {
+    kind: 'settings', pageId: 'ai.permissions',
+  });
+  const automation = runtimeCatalog.capabilities.find(({ id }) => id === 'setting.tools.automation');
+  const hooks = automation.items.find(({ id }) => id === 'hooks-enabled');
+  assert.deepEqual(hooks.destination, { kind: 'settings', pageId: 'tools.automation', viewId: 'hooks' });
+  assert.deepEqual(projectSettingsCatalogDestination(automation.id, hooks.destination, hooks.id), {
+    kind: 'settings', pageId: 'tools.automation', sectionId: 'hooks',
+  });
+  const computerUse = runtimeCatalog.capabilities.find(({ id }) => id === 'feature.computer-use');
+  assert.deepEqual(projectSettingsCatalogDestination(computerUse.id, computerUse.destination), {
+    kind: 'settings', pageId: 'tools.desktop-control',
+  });
+});
 
 test('the public contract is a compact feature-and-settings manual', () => {
   const { publicCatalog, runtimeCatalog } = buildCapabilityCatalog();
@@ -202,7 +223,7 @@ test('every product Agent tool is mapped to a user capability or explicitly clas
     productTools,
     'new Agent tools must be mapped in the shared manual or receive a reviewed framework-only exclusion',
   );
-  assert.deepEqual(excludedTools, new Set(['GetToolSpec', 'CallDeferredTool']));
+  assert.deepEqual(excludedTools, new Set(['Task', 'GetToolSpec', 'CallDeferredTool']));
   assert.equal([...delegatedTools].filter((tool) => excludedTools.has(tool)).length, 0);
 
   const byId = new Map(source.capabilities.map((capability) => [capability.id, capability]));
@@ -352,7 +373,9 @@ test('docs, runtime, and technical views are generated projections of one semant
   assert.ok(interactionAudit.files.some(({ sourceFile }) =>
     sourceFile.endsWith('/AssistantDefaultsPage.tsx')));
   assert.ok(interactionAudit.files.some(({ sourceFile }) =>
-    sourceFile.endsWith('/AppearanceSettingsPage.tsx')));
+    sourceFile.endsWith('/LanguageSettingsSection.tsx')));
+  assert.ok(interactionAudit.files.some(({ sourceFile }) =>
+    sourceFile.endsWith('/AppearancePackageConfigSection.tsx')));
   assert.equal(publicCatalog.source, 'src/shared/interactive-capabilities/catalog.json');
 
   const appearance = runtimeCatalog.capabilities

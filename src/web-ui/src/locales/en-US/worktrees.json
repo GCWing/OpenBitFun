@@ -15,7 +15,7 @@
   },
   "settings": {
     "title": "Worktrees",
-    "description": "Defaults used when a session runs in its own Git worktree. Paths are resolved on the current execution host; root changes affect new worktrees only.",
+    "description": "Set session isolation defaults and manage worktrees on the execution host",
     "loading": "Loading worktree settings…",
     "loadFailed": "Could not load worktree settings.",
     "retry": "Try again",
@@ -31,7 +31,7 @@
     },
     "rootPath": {
       "label": "Worktree root",
-      "description": "New worktrees are stored under this directory on the current execution host."
+      "description": "Path on the current execution host; changes affect only newly created worktrees"
     },
     "branchPrefix": {
       "label": "Branch prefix",
@@ -39,21 +39,21 @@
     },
     "copyChanges": {
       "label": "Copy local changes by default",
-      "description": "Off by default. Copies uncommitted project changes into the new worktree, preserving staging."
+      "description": "Copy uncommitted project changes into new worktrees, preserving staged changes"
     },
     "autoDelete": {
       "label": "Automatically delete old worktrees",
-      "description": "After creating a worktree, OpenBitFun removes the oldest managed worktrees beyond the workspace limit when they are safe to delete."
+      "description": "After creating a worktree, remove the oldest managed worktrees that are safe to delete if the retention count is exceeded"
     },
     "autoDeleteLimit": {
-      "label": "Auto-delete limit",
-      "description": "Managed worktrees to keep per workspace. Worktrees with associated conversations, local changes, unpublished commits, or Git locks are always kept.",
+      "label": "Worktrees to keep per workspace",
+      "description": "Worktrees with sessions, local changes, unpublished commits, or Git locks are kept, so the actual count may exceed this value",
       "invalid": "Enter a number from {{min}} to {{max}}."
     }
   },
   "management": {
     "title": "Workspace worktrees",
-    "description": "Worktrees under the configured OpenBitFun root on the current execution host, grouped by owning workspace.",
+    "description": "Grouped by workspace; only worktrees in OpenBitFun's worktree root on the current execution host are listed",
     "loading": "Scanning OpenBitFun worktrees…",
     "loadFailed": "Could not load the OpenBitFun worktree list.",
     "refresh": "Refresh worktrees",

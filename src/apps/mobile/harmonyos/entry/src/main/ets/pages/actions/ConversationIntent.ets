@@ -41,6 +41,22 @@ export class PlanBuildRequest {
   }
 }
 
+/**
+ * What a `CopyMessage` intent asks the clipboard owner to write.
+ *
+ * `Plain` is the default so every caller that existed before the assistant copy
+ * menu — the code-block copy button and the user message's "full text" copy —
+ * keeps its single-flavor plain write. Only `Rich` changes the payload shape.
+ */
+export enum MessageCopyScope {
+  /** Markdown source as the plain flavor plus its rendered html. */
+  Rich = 'rich',
+  /** The Markdown source alone, one plain flavor. */
+  Markdown = 'markdown',
+  /** A plain-text rendering of the message, one plain flavor. */
+  Plain = 'plain'
+}
+
 export class ConversationIntent {
   readonly type: ConversationIntentType;
   readonly value: string;
@@ -49,6 +65,7 @@ export class ConversationIntent {
   readonly answers?: ConversationUiQuestionAnswer;
   readonly filePreviewRequest?: FilePreviewRequest;
   readonly planBuildRequest?: PlanBuildRequest;
+  readonly copyScope: MessageCopyScope;
   mailboxAction?: InteractionMailboxAction;
 
   constructor(
@@ -58,7 +75,8 @@ export class ConversationIntent {
     updatedInput?: Object,
     answers?: ConversationUiQuestionAnswer,
     filePreviewRequest?: FilePreviewRequest,
-    planBuildRequest?: PlanBuildRequest
+    planBuildRequest?: PlanBuildRequest,
+    copyScope: MessageCopyScope = MessageCopyScope.Plain
   ) {
     this.type = type;
     this.value = value;
@@ -67,6 +85,7 @@ export class ConversationIntent {
     this.answers = answers;
     this.filePreviewRequest = filePreviewRequest;
     this.planBuildRequest = planBuildRequest;
+    this.copyScope = copyScope;
   }
 }
 
@@ -82,6 +101,23 @@ export class ConversationIntents {
 
   static value(type: ConversationIntentType, value: string): ConversationIntent {
     return new ConversationIntent(type, value);
+  }
+
+  /**
+   * The scoped copy intent. The value is already the text for that scope: the
+   * Markdown source for `rich`/`markdown`, the plain rendering for `plain`.
+   */
+  static copyMessage(text: string, scope: MessageCopyScope): ConversationIntent {
+    return new ConversationIntent(
+      ConversationIntentType.CopyMessage,
+      text,
+      '',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      scope
+    );
   }
 
   static approveTool(toolId: string, updatedInput?: Object): ConversationIntent {

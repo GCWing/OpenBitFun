@@ -85,6 +85,7 @@ use api::review_platform_api::*;
 use api::runtime_api::*;
 use api::search_api::*;
 use api::session_api::*;
+use api::session_storage_directory::reveal_session_storage_directory;
 use api::skill_api::*;
 use api::snapshot_service::*;
 use api::speech_api::*;
@@ -614,6 +615,10 @@ pub async fn run() {
         Ok(state) => state,
         Err(e) => {
             log::error!("Failed to initialize AppState: {}", e);
+            show_fatal_startup_error(&format!(
+                "OpenBitFun could not initialize its application state and cannot continue.\n\n{e}\n\nSee {} for details.",
+                logging::early_startup_log_path(&session_log_dir).display()
+            ));
             return;
         }
     };
@@ -1587,6 +1592,7 @@ pub async fn run() {
             get_all_modified_files,
             get_baseline_snapshot_diff,
             // Session persistence API
+            reveal_session_storage_directory,
             list_persisted_sessions,
             search_session_content,
             search_referenceable_sessions,
@@ -1657,6 +1663,7 @@ pub async fn run() {
             remove_recent_workspace,
             cleanup_invalid_workspaces,
             get_opened_workspaces,
+            get_assistant_workspaces,
             open_workspace,
             open_remote_workspace,
             create_assistant_workspace,

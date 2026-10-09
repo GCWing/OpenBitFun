@@ -96,7 +96,7 @@ impl JsonRepairer {
                     .and_then(|idx| self.prev_non_whitespace_index(idx));
                 let prev_char = prev_non_ws.and_then(|idx| self.peek_at(idx));
 
-                if prev_char == Some(',') {
+                if prev_char == Some(',') && stop_at_index != prev_non_ws {
                     // {"a":"b,c,"d":"e"} -> stop at comma before quote.
                     self.pos = input_start;
                     self.output.truncate(output_start);
@@ -116,9 +116,12 @@ impl JsonRepairer {
                 self.pos = quote_pos + 1;
             } else if stop_at_delimiter && chars::is_unquoted_string_delimiter(c) {
                 // URL like "https://..." should not stop at '/'.
-                if self.pos > input_start + 1
-                    && self.peek_at(self.pos.saturating_sub(1)) == Some(':')
-                    && self.looks_like_url_start(input_start + 1, self.pos)
+                if c == '/'
+                    && self.pos > input_start + 1
+                    && self.peek_at(self.pos - 1) == Some(':')
+                    && (self.looks_like_url_start(input_start + 1, self.pos)
+                        || (self.pos + 1 == self.chars.len()
+                            && self.ends_with_url_scheme(input_start + 1, self.pos)))
                 {
                     while self.peek().is_some_and(chars::is_url_char) {
                         self.output.push(self.chars[self.pos]);
@@ -173,6 +176,47 @@ impl JsonRepairer {
                 }
 
                 if digits == 4 {
+                    let code_unit = self.hex_quad(self.pos + 1).ok_or_else(|| {
+                        self.error_at_kind(
+                            "Invalid unicode escape",
+                            backslash_pos,
+                            JsonRepairErrorKind::InvalidUnicode,
+                        )
+                    })?;
+                    if (0xD800..=0xDBFF).contains(&code_unit) {
+                        let next = self.pos + 5;
+                        let low = if self.peek_at(next) == Some('\\')
+                            && self.peek_at(next + 1) == Some('u')
+                        {
+                            self.hex_quad(next + 2)
+                        } else {
+                            None
+                        };
+                        if !low.is_some_and(|unit| (0xDC00..=0xDFFF).contains(&unit)) {
+                            return Err(self.error_at_kind(
+                                "Invalid unicode surrogate pair",
+                                backslash_pos,
+                                JsonRepairErrorKind::InvalidUnicode,
+                            ));
+                        }
+                        self.output.push_str("\\u");
+                        for i in 0..4 {
+                            self.output.push(self.chars[self.pos + 1 + i]);
+                        }
+                        self.output.push_str("\\u");
+                        for i in 0..4 {
+                            self.output.push(self.chars[next + 2 + i]);
+                        }
+                        self.pos += 11;
+                        return Ok(());
+                    }
+                    if (0xDC00..=0xDFFF).contains(&code_unit) {
+                        return Err(self.error_at_kind(
+                            "Invalid unicode surrogate pair",
+                            backslash_pos,
+                            JsonRepairErrorKind::InvalidUnicode,
+                        ));
+                    }
                     self.output.push_str("\\u");
                     for i in 0..4 {
                         self.output.push(self.chars[self.pos + 1 + i]);
@@ -202,11 +246,20 @@ impl JsonRepairer {
             }
             _ => {
                 // Invalid escape: drop '\' and keep char.
-                self.output.push(esc);
+                self.push_string_char(esc);
                 self.pos += 1;
             }
         }
         Ok(())
+    }
+
+    fn hex_quad(&self, start: usize) -> Option<u16> {
+        let mut value = 0u16;
+        for offset in 0..4 {
+            let digit = self.peek_at(start + offset)?.to_digit(16)? as u16;
+            value = value * 16 + digit;
+        }
+        Some(value)
     }
 
     fn parse_string_char(&mut self, c: char) -> Result<()> {
@@ -324,6 +377,13 @@ impl JsonRepairer {
             self.pos -= 1;
         }
 
+        // A whitespace-only token has no value. Form feed is trimmed here but
+        // is not consumed by parse_whitespace_and_comments. Returning false
+        // prevents the array parser from looping at an unchanged position.
+        if self.pos == start {
+            return Ok(false);
+        }
+
         // Compare directly on char slice — no String allocation.
         if !is_key && self.slice_eq(start, self.pos, "undefined") {
             self.output.push_str("null");
@@ -393,6 +453,17 @@ impl JsonRepairer {
             || self.matches_at(start, "file://")
             || self.matches_at(start, "data://")
             || self.matches_at(start, "irc://")
+    }
+
+    fn ends_with_url_scheme(&self, start: usize, slash_idx: usize) -> bool {
+        [
+            "http:", "https:", "ftp:", "mailto:", "file:", "data:", "irc:",
+        ]
+        .iter()
+        .any(|scheme| {
+            slash_idx >= start + scheme.len()
+                && self.slice_eq(slash_idx - scheme.len(), slash_idx, scheme)
+        })
     }
 
     fn is_known_wrapper_function(&self, start: usize, end: usize) -> bool {

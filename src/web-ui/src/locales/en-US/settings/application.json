@@ -4,21 +4,28 @@
   "common": {
     "retry": "Retry"
   },
+  "textSelection": {
+    "title": "Text selection",
+    "autoShowToolbar": "Automatically show text selection actions",
+    "autoShowToolbarDescription": "Show Add annotation and Ask in side chat after selecting conversation text. When disabled, these actions remain available in the right-click menu.",
+    "loading": "Loading text selection preferences…",
+    "loadFailed": "Failed to load text selection preferences",
+    "saveFailed": "Failed to save text selection preferences"
+  },
   "applicationGroups": {
     "startupAndUpdates": {
       "title": "Startup & updates",
-      "description": "Manage launch at login, wake behavior while running, and update checks."
+      "description": "Choose automatic behavior at sign-in and while the app runs; installing updates still requires your confirmation"
     },
     "windowAndNotifications": {
       "title": "Window & notifications",
-      "description": "Manage what closing the window does and which events should notify you."
+      "description": "Choose whether closing the window quits the app or keeps it running, and which events need your attention"
     }
   },
   "appearance": {
     "title": "Appearance",
     "hint": "Interface language and appearance",
     "interfaceTitle": "Interface",
-    "interfaceHint": "Choose the language used across OpenBitFun.",
     "language": "Language",
     "appearances": "Appearances",
     "builtIn": "Built-in",
@@ -29,7 +36,7 @@
     "languageRowHint": "Choose one language pack as the active UI language.",
     "appearanceRowHint": "Choose the interface appearance.",
     "systemAppearance": "Match system",
-    "systemAppearanceDescription": "Use a light or dark appearance based on your OS setting. Updates when the system switches.",
+    "systemAppearanceDescription": "Switch between light and dark themes with the system",
     "presets": {
       "openbitfun-dark": {
         "name": "Dark",
@@ -70,9 +77,8 @@
     },
     "fontSize": {
       "title": "Font Size",
-      "hint": "Adjust text size across the interface and conversations. Editor text size is configured separately in Editor settings.",
+      "hint": "Applies to the interface and chat content; adjust code text size separately in Editor settings",
       "uiSizeLabel": "Interface and chat",
-      "uiSizeHint": "Choose a comfortable scale for navigation, panels, settings, and conversation content.",
       "levels": {
         "compact": "Compact",
         "small": "Small",
@@ -84,7 +90,8 @@
       "customPxLabel": "Custom size (12–20 px)",
       "previewLabel": "Font size preview",
       "previewPlaceholder": "Type to preview the selected size"
-    }
+    },
+    "interfaceHint": "Choose the language for menus, buttons, and messages; changes apply immediately"
   },
   "autoUpdate": {
     "sections": {
@@ -92,7 +99,7 @@
       "hint": "Check for new versions after startup"
     },
     "toggleLabel": "Automatic update check",
-    "toggleDescription": "Automatically check at startup and while running. Each version is announced once. You can still check manually in the bottom-left More menu when this is off.",
+    "toggleDescription": "Check for updates at startup and while running, with one prompt per version; manual checks remain available when off",
     "messages": {
       "loading": "Loading...",
       "loadFailed": "Failed to read update settings",
@@ -105,12 +112,12 @@
       "title": "Login",
       "hint": "Start OpenBitFun when you sign in to this account"
     },
-    "toggleLabel": "Launch at login",
-    "toggleDescription": "Automatically start OpenBitFun after you log in. Exact behavior depends on your operating system.",
+    "toggleLabel": "Launch at sign-in",
+    "toggleDescription": "Start OpenBitFun when you sign in to the system",
     "messages": {
       "loading": "Loading...",
-      "loadFailed": "Failed to read launch-at-login setting",
-      "saveFailed": "Failed to update launch-at-login setting"
+      "loadFailed": "Failed to load launch-at-sign-in settings",
+      "saveFailed": "Failed to update launch-at-sign-in settings"
     }
   },
   "preventSleep": {
@@ -119,7 +126,7 @@
       "hint": "Computer sleep behavior while OpenBitFun is running"
     },
     "toggleLabel": "Prevent sleep",
-    "toggleDescription": "Keep the computer awake whenever OpenBitFun is running, whether or not a task is active. The display may still turn off, and explicit sleep or closing a laptop lid follows system policy.",
+    "toggleDescription": "Keep the computer awake while OpenBitFun is running, even without a task. The display may turn off; the system controls manual sleep and lid-close behavior",
     "messages": {
       "loading": "Loading…",
       "loadFailed": "Failed to read the prevent-sleep setting",
@@ -130,23 +137,23 @@
   "logging": {
     "sections": {
       "logging": "Logging",
-      "loggingHint": "Log level and directory for this session",
       "level": "Log Level",
-      "path": "Startup Log Path"
+      "path": "Startup Log Path",
+      "loggingHint": "More detail produces more log data; check diagnostic bundles for sensitive content before sharing"
     },
     "level": {
-      "description": "Controls log verbosity in real time. Changes apply immediately."
+      "description": "Changes take effect immediately"
     },
     "sensitiveDiagnostics": {
       "label": "Include sensitive diagnostic data",
-      "description": "Off by default. When enabled, local logs may include prompts, model request and response payloads, tool arguments, file paths, and webview event payloads for troubleshooting. OpenBitFun does not upload these log files automatically."
+      "description": "Logs may include conversation content, model requests and responses, tool arguments, file paths, and interface events. Use for troubleshooting; logs are not uploaded automatically"
     },
     "path": {
-      "description": "Directory where log files for this run are written."
+      "description": "Logs from this run are stored in this folder"
     },
     "diagnostics": {
       "label": "Diagnostics Bundle",
-      "description": "Export recent local logs, crash reports, and runtime metadata as a zip file. OpenBitFun does not upload it automatically.",
+      "description": "Export recent logs, crash reports, and runtime information as a ZIP file; nothing is uploaded automatically",
       "confirmTitle": "Export diagnostics bundle?",
       "confirmSensitive": "The bundle will include sensitive diagnostic data and may contain prompts, model requests and responses, tool arguments, and file paths. Save it only to a trusted location and review it before sharing.",
       "confirmStandard": "The bundle may contain local paths, runtime details, and error information. Save it only to a trusted location and review it before sharing.",
@@ -200,14 +207,14 @@
   "terminal": {
     "sections": {
       "terminal": "Terminal",
-      "terminalHint": "Default shell",
-      "defaultTerminal": "Default Terminal"
+      "defaultTerminal": "Default Terminal",
+      "terminalHint": "New terminals use the selected shell; open terminals keep their existing shell",
+      "terminalHintWithCmdFallback": "New terminals use the selected shell; open terminals keep their existing shell. Agent commands actually use PowerShell."
     },
     "controls": {
       "refreshTooltip": "Refresh available terminals",
       "autoDetect": "Auto Detect (Recommended)",
-      "description": "Default shell type for new terminals and for agent command execution in local workspaces.",
-      "cmdFallbackMessage": "Agent commands actually use PowerShell.",
+      "description": "Used for new terminals and agent commands in local workspaces",
       "placeholder": "Select default terminal",
       "noShells": "No available terminals detected"
     },
@@ -235,7 +242,7 @@
       "hint": "What happens when the close button is clicked"
     },
     "closeButtonLabel": "Close button action",
-    "closeButtonDescription": "Default action when the window close button (×) is clicked.",
+    "closeButtonDescription": "Action taken when you click the window close button (×)",
     "options": {
       "quit": "Quit",
       "minimizeToTray": "Minimize to System Tray",
@@ -250,18 +257,18 @@
   },
   "notifications": {
     "title": "Notifications",
-    "hint": "Toast notification preferences",
+    "hint": "Choose which events send notifications",
     "dialogCompletion": {
       "label": "Task completion notification",
-      "description": "Show a toast notification when an AI task completes while the window is not in focus"
+      "description": "Notify you when an AI task finishes while the window is in the background"
     },
     "permissionRequest": {
       "label": "Permission request notification",
-      "description": "Show a toast notification when an action needs your approval while the window is not in focus"
+      "description": "Notify you when an action needs approval while the window is in the background"
     },
     "startupTips": {
       "label": "Show tips on startup",
-      "description": "Display a usage tip card each time the app starts to help you discover features"
+      "description": "Show a random tip at startup"
     },
     "messages": {
       "loading": "Loading…",

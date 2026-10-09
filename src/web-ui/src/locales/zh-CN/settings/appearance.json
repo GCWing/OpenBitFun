@@ -1,9 +1,9 @@
 {
   "title": "外观",
-  "subtitle": "界面语言、外观与全局字体大小",
+  "subtitle": "调整界面语言、主题与字体大小",
   "package": {
     "title": "外观",
-    "description": "选择内置主题或已安装的外观包；悬停缩略图可预览，资源仅保存在当前设备",
+    "description": "外观包保存在当前设备；悬停缩略图可预览",
     "import": "导入外观包",
     "importSuccess": "已导入 {{name}}",
     "importFailed": "无法导入外观包，请查看问题详情。",
@@ -93,7 +93,7 @@
         "manual": {
           "open": "上传外观包",
           "title": "手动投稿",
-          "hint": "选择本机的 .openbitfun-appearance 文件。OpenBitFun 会在上传前校验，Skin 服务器会在进入审核前再次校验",
+          "hint": "上传本机的 .openbitfun-appearance 文件；上传前和送审前都会校验",
           "package": "外观包文件",
           "packagePlaceholder": "选择 .openbitfun-appearance 文件",
           "choose": "选择文件",

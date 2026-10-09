@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "d2710a9488e6f021e11ece435e8d067a9285903c26f20f5bc0b586ac46d67e6d",
-  "commandCount": 668,
+  "catalogDigest": "e05dbc222e1267523832f82d6392701ab011c9d8d5ad1582dbe407904dc80d3d",
+  "commandCount": 670,
   "coverage": {
-    "commandCount": 668,
-    "documentedCommandCount": 620,
+    "commandCount": 670,
+    "documentedCommandCount": 622,
     "implementationCommandCount": 48,
     "implementationDigest": "f6d38a24a70708988cb47ada81d07eccf0668684e8734c9ee5155b9ffa7e3db8"
   },
@@ -1285,11 +1285,13 @@
     {
       "id": "close_workspace",
       "moduleId": "commands",
-      "capabilityId": "feature.projects",
+      "capabilityId": null,
       "capabilityIds": [
+        "feature.personal-assistants",
         "feature.projects"
       ],
       "documentedItemIds": [
+        "feature.personal-assistants:assistant-open-close",
         "feature.projects:close-switch-reorder"
       ],
       "visibility": "documented",
@@ -2790,6 +2792,22 @@
       "rustPath": "get_app_version",
       "sourceFile": "src/apps/desktop/src/api/system_api.rs",
       "signature": "fn get_app_version( app: AppHandle, request: GetAppVersionRequest, ) -> Result<String, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
+      "id": "get_assistant_workspaces",
+      "moduleId": "commands",
+      "capabilityId": "feature.personal-assistants",
+      "capabilityIds": [
+        "feature.personal-assistants"
+      ],
+      "documentedItemIds": [
+        "feature.personal-assistants:assistant-gallery"
+      ],
+      "visibility": "documented",
+      "rustPath": "get_assistant_workspaces",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn get_assistant_workspaces( state: State<'_, AppState>, ) -> Result<Vec<WorkspaceInfoDto>, String>",
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
@@ -6361,11 +6379,13 @@
     {
       "id": "open_workspace",
       "moduleId": "commands",
-      "capabilityId": "feature.projects",
+      "capabilityId": null,
       "capabilityIds": [
+        "feature.personal-assistants",
         "feature.projects"
       ],
       "documentedItemIds": [
+        "feature.personal-assistants:assistant-open-close",
         "feature.projects:open-create"
       ],
       "visibility": "documented",
@@ -7904,6 +7924,22 @@
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
       "signature": "fn reveal_models_dev_cache_directory() -> Result<(), String>",
       "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
+      "id": "reveal_session_storage_directory",
+      "moduleId": "session_storage_directory",
+      "capabilityId": "feature.ai-assistant",
+      "capabilityIds": [
+        "feature.ai-assistant"
+      ],
+      "documentedItemIds": [
+        "feature.ai-assistant:session-storage-directory"
+      ],
+      "visibility": "documented",
+      "rustPath": "reveal_session_storage_directory",
+      "sourceFile": "src/apps/desktop/src/api/session_storage_directory.rs",
+      "signature": "fn reveal_session_storage_directory( state: State<'_, AppState>, request: RevealSessionStorageDirectoryRequest, ) -> Result<(), String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "review_platform_clear_auth_token",

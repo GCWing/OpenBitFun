@@ -76,6 +76,16 @@ source scripts/ohos-env.sh
 "$HVIGORW" --mode module -p module=entry@default -p ohos.test.type=LocalTest test --no-daemon
 ```
 
+For window inset subscription lifecycle and late completion regressions, run
+`node --test tools/tests/window-insets-lifecycle.test.cjs tools/tests/immersive-bottom.test.cjs`.
+The lifecycle tests run the production service with deferred platform window
+reads; device rotation and folding still require native verification.
+
+For language-refresh and literal-parameter regressions, run
+`node --test tools/tests/host-text-retranslator.test.cjs`. This exercises the
+production retranslator and RemoteI18n with real element catalogs; platform
+resource access is mocked and does not replace native resource/device checks.
+
 For workspace/session catalog rendering, install the debug HAP and run
 `python3 tools/check-catalog-refresh.py --hdc "$HDC"` (add `--dark` for dark
 mode). Run in compact and wide postures. The isolated fixture replaces objects

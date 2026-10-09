@@ -164,7 +164,7 @@ async fn child_delegation_policy(
     ))
 }
 
-impl TaskTool {
+impl AgentExecutionTool {
     async fn derive_parent_permission_runtime_ceiling(
         context: &ToolUseContext,
     ) -> OpenBitFunResult<PermissionRuntimeCeiling> {
@@ -266,7 +266,7 @@ impl TaskTool {
                 "cancelled_background_tasks": cancelled_count,
             }),
             result_for_assistant: Some(format!(
-                "Cancelled {} background Task run(s) for agent {}.\n<background_task status=\"cancelled\" agent_id=\"{}\" cancelled_count=\"{}\">Cancelled background runs will not deliver results back to you.</background_task>",
+                "Cancelled {} background agent run(s) for agent {}.\n<background_task status=\"cancelled\" agent_id=\"{}\" cancelled_count=\"{}\">Cancelled background runs will not deliver results back to you.</background_task>",
                 cancelled_count, agent_id, agent_id, cancelled_count
             )),
             image_attachments: None,
@@ -301,11 +301,6 @@ impl TaskTool {
             .is_some_and(is_swarm_planner_agent_type);
         if let Some(requested_type) = invocation.subagent_type.as_deref() {
             let requested_is_swarm = is_swarm_delegate_agent_type(requested_type);
-            if parent_is_swarm_planner && !requested_is_swarm {
-                return Err(OpenBitFunError::tool(format!(
-                    "Swarm planners may launch only SwarmPlanner, SwarmWorker, or SwarmReviewer; got {requested_type}"
-                )));
-            }
             if !parent_is_swarm_planner && requested_is_swarm {
                 return Err(OpenBitFunError::tool(format!(
                     "agent_type {requested_type} is available only inside an Ultra Swarm"
@@ -326,7 +321,7 @@ impl TaskTool {
                 }
             };
             let target_is_swarm = is_swarm_delegate_agent_type(&target_agent_type);
-            if parent_is_swarm_planner != target_is_swarm {
+            if !parent_is_swarm_planner && target_is_swarm {
                 return Err(OpenBitFunError::tool(
                     "The target agent is outside the current delegation scope".to_string(),
                 ));
@@ -450,7 +445,7 @@ impl TaskTool {
         if is_deep_review_parent {
             let subagent_type = subagent_type.as_deref().ok_or_else(|| {
                 OpenBitFunError::tool(
-                    "subagent_type is required for DeepReview Task calls".to_string(),
+                    "subagent_type is required for DeepReview AgentSpawn calls".to_string(),
                 )
             })?;
             let base_policy = load_default_deep_review_policy().await.map_err(|error| {
@@ -498,7 +493,7 @@ impl TaskTool {
                 .transpose()
                 .map_err(|violation| {
                     OpenBitFunError::tool(format!(
-                        "DeepReview Task policy violation: {}",
+                        "DeepReview AgentSpawn policy violation: {}",
                         violation.to_tool_error_message()
                     ))
                 })?
@@ -508,14 +503,14 @@ impl TaskTool {
                 .classify_subagent(subagent_type)
                 .map_err(|violation| {
                     OpenBitFunError::tool(format!(
-                        "DeepReview Task policy violation: {}",
+                        "DeepReview AgentSpawn policy violation: {}",
                         violation.to_tool_error_message()
                     ))
                 })?;
             deep_review_subagent_role = Some(role);
             if requested_auto_retry && !is_retry {
                 return Err(OpenBitFunError::tool(
-                    "auto_retry requires retry=true for DeepReview Task calls".to_string(),
+                    "auto_retry requires retry=true for DeepReview AgentSpawn calls".to_string(),
                 ));
             }
             if let Some(gate) = deep_review_run_manifest
@@ -524,7 +519,7 @@ impl TaskTool {
             {
                 gate.ensure_active(subagent_type).map_err(|violation| {
                     OpenBitFunError::tool(format!(
-                        "DeepReview Task policy violation: {}",
+                        "DeepReview AgentSpawn policy violation: {}",
                         violation.to_tool_error_message()
                     ))
                 })?;
@@ -551,7 +546,7 @@ impl TaskTool {
                                 );
                             }
                             return Err(OpenBitFunError::tool(format!(
-                                "DeepReview Task policy violation: {}",
+                                "DeepReview AgentSpawn policy violation: {}",
                                 violation.to_tool_error_message()
                             )));
                         }
@@ -568,7 +563,7 @@ impl TaskTool {
                             LaunchReviewAgentTool::auto_retry_suppression_reason(violation.code),
                         );
                         OpenBitFunError::tool(format!(
-                            "DeepReview Task policy violation: {}",
+                            "DeepReview AgentSpawn policy violation: {}",
                             violation.to_tool_error_message()
                         ))
                     })?;
@@ -579,7 +574,7 @@ impl TaskTool {
                 .unwrap_or(false);
             if !is_readonly {
                 return Err(OpenBitFunError::tool(format!(
-                    "DeepReview Task policy violation: {}",
+                    "DeepReview AgentSpawn policy violation: {}",
                     json!({
                         "code": "deep_review_subagent_not_readonly",
                         "message": format!(
@@ -594,7 +589,7 @@ impl TaskTool {
                 .unwrap_or(false);
             if !is_review {
                 return Err(OpenBitFunError::tool(format!(
-                    "DeepReview Task policy violation: {}",
+                    "DeepReview AgentSpawn policy violation: {}",
                     json!({
                         "code": "deep_review_subagent_not_review",
                         "message": format!(
@@ -688,7 +683,7 @@ impl TaskTool {
                         },
                         Err(violation) => {
                             return Err(OpenBitFunError::tool(format!(
-                                "DeepReview Task policy violation: {}",
+                                "DeepReview AgentSpawn policy violation: {}",
                                 violation.to_tool_error_message()
                             )));
                         }
@@ -736,7 +731,7 @@ impl TaskTool {
                     );
                 }
                 OpenBitFunError::tool(format!(
-                    "DeepReview Task policy violation: {}",
+                    "DeepReview AgentSpawn policy violation: {}",
                     violation.to_tool_error_message()
                 ))
             })?;
@@ -987,7 +982,7 @@ impl TaskTool {
             };
             let subagent_execution_started_at = Instant::now();
             debug!(
-                "TaskTool awaiting subagent result: parent_session_id={}, dialog_turn_id={}, tool_call_id={}, context_mode={}, delegate_target={}, timeout_seconds={:?}, workspace_path={:?}, model_id={:?}, inherit_parent_model={}",
+                "AgentExecutionTool awaiting subagent result: parent_session_id={}, dialog_turn_id={}, tool_call_id={}, context_mode={}, delegate_target={}, timeout_seconds={:?}, workspace_path={:?}, model_id={:?}, inherit_parent_model={}",
                 session_id,
                 dialog_turn_id,
                 tool_call_id,
@@ -1038,7 +1033,7 @@ impl TaskTool {
             match execution_result {
                 Ok(result) => {
                     debug!(
-                        "TaskTool subagent returned: parent_session_id={}, dialog_turn_id={}, tool_call_id={}, context_mode={}, delegate_target={}, status={:?}, text_len={}, duration_ms={}, ledger_event_id={:?}",
+                        "AgentExecutionTool subagent returned: parent_session_id={}, dialog_turn_id={}, tool_call_id={}, context_mode={}, delegate_target={}, status={:?}, text_len={}, duration_ms={}, ledger_event_id={:?}",
                         session_id,
                         dialog_turn_id,
                         tool_call_id,
@@ -1059,7 +1054,7 @@ impl TaskTool {
                 }
                 Err(error) => {
                     warn!(
-                        "TaskTool subagent failed: parent_session_id={}, dialog_turn_id={}, tool_call_id={}, context_mode={}, delegate_target={}, duration_ms={}, error={}",
+                        "AgentExecutionTool subagent failed: parent_session_id={}, dialog_turn_id={}, tool_call_id={}, context_mode={}, delegate_target={}, duration_ms={}, error={}",
                         session_id,
                         dialog_turn_id,
                         tool_call_id,
@@ -1217,7 +1212,7 @@ impl TaskTool {
                                                 }
                                                 Err(violation) => {
                                                     return Err(OpenBitFunError::tool(format!(
-                                                        "DeepReview Task policy violation: {}",
+                                                        "DeepReview AgentSpawn policy violation: {}",
                                                         violation.to_tool_error_message()
                                                     )));
                                                 }

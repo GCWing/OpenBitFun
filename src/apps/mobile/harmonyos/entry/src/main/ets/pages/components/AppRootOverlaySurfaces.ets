@@ -3,19 +3,20 @@ import {
   emptyAppRootPresentationActions
 } from '../actions/AppRootPresentationActions';
 import { AppRouteContract } from '../navigation/AppRouteContract';
-import { AppShellState, CONNECT_INTENT_AUTO } from '../state/AppShellState';
+import { AppShellState } from '../state/AppShellState';
 import {
   SettingsPlacement,
   SettingsPlacementPolicy,
   SettingsSheetKind
 } from '../policy/SettingsPlacementPolicy';
+import { SettingsPagePolicy } from '../policy/SettingsPagePolicy';
 import { GeneralChatPageState } from '../state/GeneralChatPageState';
 import { DeviceDirectoryState } from '../state/DeviceDirectoryState';
 import { RemotePageState } from '../state/RemotePageState';
 import { REMOTE_CAPABILITY_HARNESS_PROFILES_V1 } from '../../model/RemoteModels';
 import { AppSidebar } from './AppSidebar';
 import { ConnectView } from './ConnectView';
-import { RemoteControlSettingsSheet } from './RemoteControlSettingsSheet';
+import { AccountLoginSheet } from './AccountLoginSheet';
 import { RemoteSurfaceState } from './remote/RemoteSurfaceHost';
 import { SettingsSheet } from './SettingsSheet';
 import { SidebarWorkspaceSection } from './SidebarWorkspaceSection';
@@ -53,7 +54,6 @@ export struct AppSidebarSurface {
       onNewChat: this.actions.onSidebar.newChat,
       onEnterCode: this.actions.onSidebar.enterCode,
       onOpenMiniApps: this.actions.onRemoteHome.openMiniApps,
-      onScanDesktop: this.actions.onSidebar.scanDesktop,
       onOpenViewSettings: this.onOpenRemoteViewSettings,
       onSearchQueryChange: (query: string) => {
         this.actions.onRemoteHome.queryChanged(query);
@@ -107,7 +107,7 @@ export struct AppSidebarSurface {
       onReconnect: this.actions.onRemoteHome.reconnect,
       onAddWorkspace: this.actions.onRemoteHome.addDirectoryWorkspace,
       onRefreshDevices: this.actions.onSidebar.refreshDevices,
-      onAddDevice: this.actions.onSidebar.addDesktop
+      onAddDevice: this.actions.onSidebar.openAccountDevices
     })
   }
 
@@ -135,33 +135,13 @@ export struct AppSettingsSurface {
   @Param actions: AppRootPresentationActions = emptyAppRootPresentationActions();
 
   build() {
-    if (this.shellState.settingsMode === 'remote' || this.shellState.settingsMode === 'account') {
-      RemoteControlSettingsSheet({
-        desktopName: this.remotePageState.desktopName,
-        desktopId: this.remotePageState.desktopId,
-        userId: this.remotePageState.userId,
-        accountUsername: this.remotePageState.accountUsername,
-        accountAvatarUrl: this.remotePageState.accountAvatarUrl,
-        accountUserId: this.remotePageState.accountUserId,
-        deviceId: this.deviceId,
-        controlTargetType: this.remotePageState.controlTargetType,
-        controlTargetDeviceId: this.remotePageState.controlTargetDeviceId,
-        connectionState: this.remotePageState.connectionState,
-        statusText: this.remotePageState.conversation.statusText,
-        isBusy: this.remotePageState.conversation.isBusy,
+    if (SettingsPagePolicy.resolve(this.shellState.settingsMode === 'account',
+      this.remotePageState.accountUserId.trim().length > 0) === 'login') {
+      AccountLoginSheet({
         onClose: this.actions.onSettings.close,
-        onOpenAccount: this.actions.onSettings.openAccount,
-        onAddConnection: this.actions.onSettings.addConnection,
+        onAccountSettled: this.actions.onSettings.accountSettled,
         cloudLogin: this.actions.onSettings.cloudLogin,
-        cloudCancelLogin: this.actions.onSettings.cloudCancelLogin,
-        cloudLogout: this.actions.onSettings.cloudLogout,
-        cloudListDevices: this.actions.onSettings.cloudListDevices,
-        cloudSelectDevice: this.actions.onSettings.cloudSelectDevice,
-        getPermissionMode: this.actions.onSettings.getPermissionMode,
-        setPermissionMode: this.actions.onSettings.setPermissionMode,
-        openAccountOnAppear: this.shellState.settingsMode === 'account',
-        onDisconnect: this.actions.onSettings.disconnect,
-        onReconnect: this.actions.onSettings.reconnect
+        cloudCancelLogin: this.actions.onSettings.cloudCancelLogin
       })
     } else {
       SettingsSheet({
@@ -176,6 +156,7 @@ export struct AppSettingsSurface {
         controlTargetType: this.remotePageState.controlTargetType,
         controlTargetDeviceId: this.remotePageState.controlTargetDeviceId,
         connectionState: this.remotePageState.connectionState,
+        statusText: this.remotePageState.conversation.statusText,
         onOpenAccount: this.actions.onSettings.openAccount,
         onDisconnect: this.actions.onSettings.disconnect,
         onClearPairing: this.actions.onSettings.clearPairing,
@@ -183,6 +164,8 @@ export struct AppSettingsSurface {
         cloudLogout: this.actions.onSettings.cloudLogout,
         cloudListDevices: this.actions.onSettings.cloudListDevices,
         cloudSelectDevice: this.actions.onSettings.cloudSelectDevice,
+        getPermissionMode: this.actions.onSettings.getPermissionMode,
+        setPermissionMode: this.actions.onSettings.setPermissionMode,
         onSetLanguage: this.actions.onSettings.setLanguage,
         onClose: this.actions.onSettings.close
       })
@@ -194,7 +177,6 @@ export struct AppSettingsSurface {
 export struct AppConnectSurface {
   @Param remotePageState: RemotePageState = new RemotePageState();
   @Param deviceId: string = '';
-  @Param openIntent: string = CONNECT_INTENT_AUTO;
   @Param actions: AppRootPresentationActions = emptyAppRootPresentationActions();
 
   build() {
@@ -210,16 +192,9 @@ export struct AppConnectSurface {
       deviceId: this.deviceId,
       accountUserId: this.remotePageState.accountUserId,
       controlTargetDeviceId: this.remotePageState.controlTargetDeviceId,
-      requiresAccountAuth: this.remotePageState.requiresAccountAuth,
-      accountUsername: this.remotePageState.accountUsername,
-      openIntent: this.openIntent,
       onBack: this.actions.onConnect.back,
       onOpenAccount: this.actions.onConnect.openAccount,
       onConnect: this.actions.onConnect.connect,
-      onRemoteUrlChange: this.actions.onConnect.urlChanged,
-      onUserIdChange: this.actions.onConnect.userChanged,
-      onRemoteUrlDetected: this.actions.onConnect.detected,
-      onRemoteUrlInputVisibleChange: this.actions.onConnect.inputVisible,
       cloudListDevices: this.actions.onConnect.cloudListDevices,
       cloudSelectDevice: this.actions.onConnect.cloudSelectDevice
     })

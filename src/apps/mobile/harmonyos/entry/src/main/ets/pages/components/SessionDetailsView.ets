@@ -2,6 +2,7 @@ import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteSession } from '../../model/RemoteModels';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { TimeFormat } from '../../services/TimeFormat';
+import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 import { CARD, INK, LINE, MUTED, PAGE_BG, SOFT } from './Theme';
 
 @ComponentV2
@@ -16,6 +17,21 @@ export struct SessionDetailsView {
     messageCount: 0
   };
   @Event onClose: () => void = () => {};
+  // The sheet is a bottom sheet under the immersive shell, so the scrolling
+  // column reads the strip itself and ends in a tail that rests the last row
+  // above the navigation bar.
+  @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
+
+  aboutToAppear(): void {
+    const context = this.getUIContext().getHostContext();
+    if (context) {
+      this.insets.bind(this.getUIContext(), context);
+    }
+  }
+
+  aboutToDisappear(): void {
+    this.insets.unbind();
+  }
 
   build() {
     Column() {
@@ -74,7 +90,7 @@ export struct SessionDetailsView {
           }
         }
         .width('100%')
-        .padding({ left: 20, right: 20, top: 8, bottom: 24 })
+        .padding({ left: 20, right: 20, top: 8, bottom: this.insets.tailSpacing(24) })
       }
       .width('100%')
       .layoutWeight(1)

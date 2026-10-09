@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "d2710a9488e6f021e11ece435e8d067a9285903c26f20f5bc0b586ac46d67e6d",
-  "count": 212,
+  "catalogDigest": "e05dbc222e1267523832f82d6392701ab011c9d8d5ad1582dbe407904dc80d3d",
+  "count": 214,
   "reasonCounts": {
     "externalAuth": 4,
     "secretEntry": 5,
     "unstructuredInteraction": 185,
-    "visualSelection": 18
+    "visualSelection": 20
   },
   "entries": [
     {
@@ -96,6 +96,22 @@
         "command:subscribe_permission_requests",
         "command:submit_user_answers",
         "command:start_user_question_interaction"
+      ]
+    },
+    {
+      "capabilityId": "feature.ai-assistant",
+      "itemId": "session-storage-directory",
+      "titleZh": "从工作区或会话菜单打开会话存储目录，用于备份与手动排障",
+      "titleEn": "Open session storage from workspace or session menus for backups and manual troubleshooting",
+      "reasonCode": "visualSelection",
+      "reasonZh": "需要用户选择工作区或会话，并在本机桌面文件管理器中操作；远程工作区打开本机保存的会话镜像，对端设备和 Detached Dispatch 会话不支持此操作。打开目录不会修改会话归属。",
+      "reasonEn": "The user selects a workspace or session and works in the local desktop file manager; remote workspaces reveal their locally stored session mirror, while peer and detached-dispatch sessions are unsupported. Opening storage does not change session ownership.",
+      "presentationTarget": {
+        "kind": "scene",
+        "sceneId": "session"
+      },
+      "evidence": [
+        "command:reveal_session_storage_directory"
       ]
     },
     {
@@ -337,7 +353,27 @@
       },
       "evidence": [
         "command:create_assistant_workspace",
+        "command:get_assistant_workspaces",
         "source:src/web-ui/src/app/scenes/profile/views/NurseryGallery.tsx#NurseryGallery"
+      ]
+    },
+    {
+      "capabilityId": "feature.personal-assistants",
+      "itemId": "assistant-open-close",
+      "titleZh": "关闭侧栏中的助理并取消正在运行的会话，保留配置和历史，之后从助理空间重新打开",
+      "titleEn": "Close sidebar assistants and cancel running sessions, preserve configuration and history, and reopen them from the assistant gallery",
+      "reasonCode": "visualSelection",
+      "reasonZh": "关闭操作依赖用户选择的助理；助理空间保留完整目录，并提供重新打开入口。",
+      "reasonEn": "Closing depends on the assistant selected by the user; the gallery retains the complete catalog and provides a reopen action.",
+      "presentationTarget": {
+        "kind": "scene",
+        "sceneId": "profile"
+      },
+      "evidence": [
+        "command:close_workspace",
+        "command:open_workspace",
+        "source:src/web-ui/src/app/components/NavPanel/sections/workspaces/WorkspaceItem.tsx#handleCloseWorkspace",
+        "source:src/web-ui/src/app/scenes/profile/views/NurseryGallery.tsx#handleOpenAssistant"
       ]
     },
     {
@@ -2639,7 +2675,7 @@
         "pageId": "application.shortcuts"
       },
       "evidence": [
-        "source:src/web-ui/src/app/scenes/settings/components/KeyboardShortcutsTab.tsx#lists every known shortcut"
+        "source:src/web-ui/src/app/scenes/settings/pages/application/KeyboardShortcutsSection.tsx#lists every known shortcut"
       ]
     },
     {
@@ -2655,8 +2691,8 @@
         "pageId": "application.shortcuts"
       },
       "evidence": [
-        "source:src/web-ui/src/app/scenes/settings/components/KeyboardShortcutsTab.tsx#buildFinalConflictMap",
-        "source:src/web-ui/src/app/scenes/settings/components/KeyboardShortcutsTab.tsx#buildStoredKeybindings({})"
+        "source:src/web-ui/src/app/scenes/settings/pages/application/KeyboardShortcutsSection.tsx#buildFinalConflictMap",
+        "source:src/web-ui/src/app/scenes/settings/pages/application/KeyboardShortcutsSection.tsx#buildStoredKeybindings({})"
       ]
     },
     {
@@ -2795,9 +2831,9 @@
         "pageId": "ai.models"
       },
       "evidence": [
-        "source:src/web-ui/src/infrastructure/config/components/ModelSettingsPage.tsx#custom_headers",
-        "source:src/web-ui/src/infrastructure/config/components/ModelSettingsPage.tsx#custom_request_body",
-        "source:src/web-ui/src/infrastructure/config/components/ModelSettingsPage.tsx#skip_ssl_verify"
+        "source:src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.tsx#custom_headers",
+        "source:src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.tsx#custom_request_body",
+        "source:src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.tsx#skip_ssl_verify"
       ]
     },
     {
@@ -2882,7 +2918,7 @@
         "pageId": "workspace.session"
       },
       "evidence": [
-        "source:src/web-ui/src/infrastructure/config/components/DefaultHarnessConfig.tsx#DefaultHarnessConfig",
+        "source:src/web-ui/src/app/scenes/settings/pages/ai/DefaultHarnessSection.tsx#DefaultHarnessSection",
         "source:src/web-ui/src/locales/zh-CN/settings/runtime.json#defaultHarness.title"
       ]
     },

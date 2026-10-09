@@ -1,6 +1,6 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { useDeviceDirectory, resolveDeviceName } from '@/infrastructure/account/deviceDirectory';
 import React, {
-  lazy,
   Suspense,
   useEffect,
   useMemo,
@@ -41,7 +41,7 @@ interface DispatchTargetPickerProps {
   onSelectTarget: (selection: DispatchSelection) => void;
 }
 
-const RemoteConnectDialog = lazy(
+const RemoteConnectDialog = lazyWithRecovery(
   () => import('@/app/components/RemoteConnectDialog'),
 );
 

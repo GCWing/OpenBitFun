@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -44,15 +47,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.openbitfun.mobile.app.R
 import com.openbitfun.mobile.app.platform.rememberWindowMetrics
 import com.openbitfun.mobile.app.state.MobileSurface
-import com.openbitfun.mobile.app.state.SettingsMode
 import com.openbitfun.mobile.app.state.rememberAppShellState
-import com.openbitfun.mobile.app.ui.account.AccountScreen
+import com.openbitfun.mobile.app.ui.account.AccountLoginScreen
 import com.openbitfun.mobile.app.ui.common.AdaptiveModalSurface
 import com.openbitfun.mobile.app.ui.remote.AccountRemoteScreen
 import com.openbitfun.mobile.app.ui.remote.ConnectAccountDeviceScreen
 import com.openbitfun.mobile.app.ui.remote.FilePreviewSurface
-import com.openbitfun.mobile.app.ui.remote.ConnectView
-import com.openbitfun.mobile.app.ui.settings.GeneralSettingsScreen
 import com.openbitfun.mobile.app.ui.settings.SettingsScreen
 import com.openbitfun.mobile.app.ui.shell.sidebar.AppSidebar
 import com.openbitfun.mobile.app.ui.theme.openBitFunColors
@@ -137,38 +137,32 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
     val accountPhase by accountViewModel.connectionPhase.collectAsStateWithLifecycle()
     val accountWorkspaceDirectory by accountViewModel.workspaceDirectory.collectAsStateWithLifecycle()
     val readyAccount = accountState as? AccountUiState.Ready
+    LaunchedEffect(accountPhase, shell.remoteCreating) {
+        // A create failure is terminal for the creation route. The shared
+        // store keeps the last valid session projection so returning to the
+        // remote home here restores the same pre-create route as Harmony and
+        // iOS, while the store's typed create error remains available to the
+        // surface-level error/toast handling.
+        if (shell.remoteCreating && accountPhase == ConnectionPhase.FAILED) {
+            shell.closeRemoteSession()
+        }
+    }
     LaunchedEffect(accountState) {
         if (accountState !is AccountUiState.Idle && accountState !is AccountUiState.Restoring) {
             onAccountRestored(readyAccount?.userId?.isNotBlank() == true)
         }
     }
-    val linkContext = androidx.compose.ui.platform.LocalContext.current
-    var pendingDeviceLink by rememberSaveable { mutableStateOf<String?>(null) }
-    val connectDeviceLink: (String) -> Unit = { url ->
-        val result = com.openbitfun.mobile.core.feature.account.resolveAccountDeviceLink(url, accountState)
-        when (result.status) {
-            com.openbitfun.mobile.core.feature.account.AccountDeviceLinkStatus.READY -> {
-                pendingDeviceLink = null
-                accountViewModel.selectDevice(result.deviceId!!)
-                shell.closeRemoteConnect()
-            }
-            com.openbitfun.mobile.core.feature.account.AccountDeviceLinkStatus.SIGN_IN_REQUIRED -> {
-                pendingDeviceLink = url
-                accountViewModel.dispatch(com.openbitfun.mobile.core.feature.account.AccountIntent.SelectRelay(result.relayUrl!!))
-                shell.closeRemoteConnect()
-                shell.openAccount()
-            }
-            else -> {
-                pendingDeviceLink = null
-                android.widget.Toast.makeText(linkContext,
-                    linkContext.getString(if (result.status == com.openbitfun.mobile.core.feature.account.AccountDeviceLinkStatus.INVALID)
-                        R.string.account_device_link_invalid else R.string.account_device_link_unavailable),
-                    android.widget.Toast.LENGTH_LONG).show()
-            }
-        }
+    // Login is its own sheet only while it is running. Once the account is
+    // ready it shows inside settings, so the sheet hands the user over there.
+    LaunchedEffect(shell.showAccount, readyAccount != null) {
+        if (shell.showAccount && readyAccount != null) shell.completeLogin()
     }
-    LaunchedEffect(readyAccount) {
-        if (readyAccount != null) pendingDeviceLink?.let(connectDeviceLink)
+    // A connect sheet restored from before sign-out has no picker to show; drop
+    // it once the account has settled as signed out rather than reopen it later.
+    LaunchedEffect(shell.remoteConnectOpen, accountState) {
+        if (shell.remoteConnectOpen && (accountState is AccountUiState.SignedOut || accountState is AccountUiState.Failed)) {
+            shell.closeRemoteConnect()
+        }
     }
 
     val accountUserId = readyAccount?.userId
@@ -188,6 +182,13 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
         RemoteControlSource.ACCOUNT_DEVICE -> accountRemoteState
         RemoteControlSource.NONE -> RemoteSessionUiState.Idle
     }
+    val committedRemoteSessions = (activeRemoteState as? RemoteSessionUiState.Ready)?.sessions.orEmpty()
+    // Shell navigation is only a transient request while the shared store
+    // catches up. Once a delete succeeds the row disappears, which invalidates
+    // a stale shell request and lets the store's selection take over.
+    val routedSessionId = shell.remoteSessionId
+        ?.takeIf { requested -> committedRemoteSessions.any { it.id == requested } }
+        ?: (activeRemoteState as? RemoteSessionUiState.Ready)?.selectedSessionId
     val activeWorkspaceDirectory = when (controlSummary.source) {
         RemoteControlSource.ACCOUNT_DEVICE -> accountWorkspaceDirectory
         RemoteControlSource.NONE -> WorkspaceSessionDirectoryUiState(emptyList())
@@ -330,17 +331,18 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
             workspaceState = activeWorkspaceState,
             workspaceDirectory = activeWorkspaceDirectory,
             remoteActive = shell.surface == MobileSurface.REMOTE,
-            remoteSelectedSessionId = shell.remoteSessionId,
+            // The session store owns selection. The shell only owns the
+            // container route, so deleting the active row clears this value
+            // without leaving a stale requested session behind.
+            remoteSelectedSessionId = routedSessionId,
             query = shell.sidebarQuery,
             searchOpen = shell.searchOpen,
             onQueryChange = shell::search,
             onToggleSearch = shell::toggleSearch,
-            onScanDesktop = {
-                // The sidebar row opens the choose-connection page, not the
-                // camera: ML Kit's scanner is a full-screen system activity, so
-                // launching it from the drawer would leave the user no way to
-                // pick "scan" vs "sign in" and would cover the app on every tap.
-                shell.openRemoteConnect()
+            onConnectDesktop = {
+                // Desktops are reached only through the account: signed in, the
+                // row opens the account's device picker; signed out, login.
+                if (readyAccount != null) shell.openRemoteConnect() else shell.openAccount(signedIn = false)
                 closeDrawer()
             },
             onRefreshRemoteDevices = { accountViewModel.dispatch(AccountIntent.RefreshDevices) },
@@ -361,6 +363,11 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
                 dispatchActiveSession(RemoteSessionIntent.Open(sessionId))
             },
             onCreateRemoteInWorkspace = { workspace, agentType ->
+                // Workspace quick-create used to dispatch directly while the
+                // shell still rendered the home surface, so its committed
+                // session had no creation route callback. Enter the same
+                // creation route as the global new-session action first.
+                shell.createRemoteSession()
                 // With an ID the create carries only the ID; the legacy triple is for pre-ID rows.
                 dispatchActiveSession(
                     RemoteSessionIntent.CreateSession(
@@ -374,7 +381,6 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
                         workspaceId = workspace.workspaceId,
                     ),
                 )
-                shell.show(MobileSurface.REMOTE)
                 closeDrawer()
             },
             onWorkspaceTool = { path, connectionId, terminal ->
@@ -406,14 +412,12 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
             },
             onDeleteRemoteSession = { id -> dispatchActiveSession(RemoteSessionIntent.DeleteSession(id)) },
             onOpenSettings = {
-                // HarmonyOS' `onSidebar.settings` always opens root settings.
-                // Remote-control settings has a separate remote-home action;
-                // the sidebar gear does not change meaning behind the drawer.
-                shell.openSettings(SettingsMode.GENERAL)
+                // The gear and the remote home header open the same page.
+                shell.openSettings()
                 closeDrawer()
             },
             onOpenAccount = {
-                shell.openAccount()
+                shell.openAccount(signedIn = readyAccount != null)
                 closeDrawer()
             },
             modifier = Modifier,
@@ -421,7 +425,17 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
     }
 
     val content: @Composable () -> Unit = {
-        Scaffold(
+        if (controlSummary.source == RemoteControlSource.NONE && readyAccount == null) {
+            // The compact signed-out welcome surface owns the full window,
+            // including the gesture/navigation area. Keeping it outside the
+            // Scaffold prevents Scaffold's content insets from leaving a
+            // platform-colored strip below the welcome dock.
+            WelcomeHome(
+                signedIn = false,
+                onLogin = { shell.openAccount(signedIn = false) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else Scaffold(
             // The manifest asks for `adjustResize`, but an edge-to-edge window
             // is never resized by it — the keyboard simply draws on top, and
             // what it draws on top of is the composer. Adding the IME to the
@@ -429,13 +443,17 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
             // keeps the input bar above the keyboard. `union` rather than a
             // second padding: the IME inset already contains the navigation
             // bar's, and adding them would leave a gap the height of the bar.
-            contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime),
+            contentWindowInsets = (if (shell.surface == MobileSurface.REMOTE && routedSessionId != null) {
+                // The conversation owns the bottom strip: its viewport reaches
+                // the screen edge while the fixed composer clears navigation.
+                ScaffoldDefaults.contentWindowInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+            } else ScaffoldDefaults.contentWindowInsets).union(WindowInsets.ime),
             // HarmonyOS hides the platform title bar. Each product surface owns
             // its 44dp controls and title row, so a Material TopAppBar here would
             // add a second header above every conversation and remote page.
             topBar = {},
         ) { insets ->
-            Box(Modifier.padding(insets)) {
+            Box(Modifier.padding(insets).consumeWindowInsets(insets)) {
                 when (shell.surface) {
                     MobileSurface.REMOTE -> when (controlSummary.source) {
                         RemoteControlSource.ACCOUNT_DEVICE -> AccountRemoteScreen(
@@ -457,7 +475,7 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
                             settingsPlacement = settingsPlacement,
                             sessionDetailsPlacement = sessionDetailsPlacement,
                             viewSettingsPlacement = remoteViewSettingsPlacement,
-                            onOpenRemoteSettings = { shell.openSettings(SettingsMode.REMOTE) },
+                            onOpenRemoteSettings = { shell.openSettings() },
                             onCreateDevicePick = accountViewModel::selectDevice,
                             onSessionIntent = accountViewModel::dispatchSession,
                             onWorkspaceIntent = accountViewModel::dispatchWorkspace,
@@ -467,9 +485,13 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
                                 null
                             },
                             compact = !wide,
-                            requestedSessionId = shell.remoteSessionId,
+                            requestedSessionId = routedSessionId,
                             creatingSession = shell.remoteCreating,
                             onOpenSession = shell::openRemoteSession,
+                            onCreatedSession = { id ->
+                                shell.openRemoteSession(id)
+                                closeDrawer()
+                            },
                             onCreateSession = shell::createRemoteSession,
                             onRemoteHome = shell::closeRemoteSession,
                             modifier = Modifier,
@@ -486,9 +508,8 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
                         } else WelcomeHome(
                             signedIn = readyAccount != null,
                             onLogin = {
-                                if (readyAccount != null) shell.openRemoteConnect() else shell.openAccount()
+                                if (readyAccount != null) shell.openRemoteConnect() else shell.openAccount(signedIn = false)
                             },
-                            onScan = shell::openRemoteScanner,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
@@ -587,82 +608,71 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
         }
     }
 
+    // The settings page embeds the account, so it takes these verbs.
+    val signInFromSettings: () -> Unit = { shell.openAccount(signedIn = false) }
+    val refreshAccountDevices: () -> Unit = { accountViewModel.dispatch(AccountIntent.RefreshDevices) }
+    val selectAccountDevice: (String) -> Unit = { deviceId ->
+        accountViewModel.selectDevice(deviceId)
+        shell.dismissSettings()
+        shell.closeRemoteSession()
+        shell.show(MobileSurface.REMOTE)
+    }
+    val signOutFromSettings: () -> Unit = {
+        accountViewModel.dispatch(AccountIntent.Logout)
+        shell.dismissSettings()
+    }
     val settingsContent: @Composable (Modifier) -> Unit = { contentModifier ->
-        when (shell.settingsMode) {
-            SettingsMode.GENERAL -> GeneralSettingsScreen(
-                modifier = contentModifier,
-                accountUserId = accountUserId,
-                accountUsername = readyAccount?.username.orEmpty(),
-                onOpenAccount = shell::openAccount,
-                onClose = shell::dismissSettings,
-            )
-
-            SettingsMode.REMOTE -> SettingsScreen(
-                modifier = contentModifier,
-                accountUserId = accountUserId,
-                summary = controlSummary,
-                // The permission mode belongs to the desktop the summary
-                // named, so it has to be asked of that desktop's store —
-                // asking the other one would answer for a connection this
-                // page is not describing, or for none at all.
-                remoteState = when (controlSummary.source) {
-                    RemoteControlSource.ACCOUNT_DEVICE -> accountRemoteState
-                    RemoteControlSource.NONE -> RemoteSessionUiState.Idle
-                },
-                onSessionIntent = when (controlSummary.source) {
-                    RemoteControlSource.ACCOUNT_DEVICE -> accountViewModel::dispatchSession
-                    RemoteControlSource.NONE -> {
-                        {}
-                    }
-                },
-                onClose = shell::dismissSettings,
-                onOpenAccount = shell::openAccount,
-                onDisconnect = { accountViewModel.disconnectDevice() },
-                onReconnect = {
-                    // A room is re-checked where it stands; a device is asked
-                    // for again, which is the same command its row in the
-                    // account sends. Neither re-pairs behind the user's back.
-                    when (controlSummary.source) {
-                        RemoteControlSource.ACCOUNT_DEVICE -> {
-                            val deviceId = readyAccount?.selectedDeviceId
-                            if (deviceId != null) {
-                                accountViewModel.selectDevice(deviceId)
-                            }
+        SettingsScreen(
+            modifier = contentModifier,
+            account = readyAccount,
+            summary = controlSummary,
+            // The permission mode belongs to the desktop the summary named, so
+            // it has to be asked of that desktop's store — asking another would
+            // answer for a connection this page is not describing.
+            remoteState = activeRemoteState,
+            onSessionIntent = ::dispatchActiveSession,
+            onClose = shell::dismissSettings,
+            onSignIn = signInFromSettings,
+            onRefreshDevices = refreshAccountDevices,
+            onSelectDevice = selectAccountDevice,
+            onSignOut = signOutFromSettings,
+            onDisconnect = { accountViewModel.disconnectDevice() },
+            onReconnect = {
+                // A device is asked for again, which is the same command its
+                // row in the account sends. Nothing re-pairs behind the user's
+                // back.
+                when (controlSummary.source) {
+                    RemoteControlSource.ACCOUNT_DEVICE -> {
+                        val deviceId = readyAccount?.selectedDeviceId
+                        if (deviceId != null) {
+                            accountViewModel.selectDevice(deviceId)
                         }
-
-                        RemoteControlSource.NONE -> Unit
                     }
-                },
-                onConnectByLink = {
-                    shell.dismissSettings()
-                    shell.openRemoteScanner()
-                },
-            )
-        }
+
+                    RemoteControlSource.NONE -> Unit
+                }
+            },
+        )
     }
 
+    // The connect sheet is the account's device picker and nothing else; a
+    // signed-out user is sent to login by every entry point instead.
+    val connectAccount = readyAccount
     AdaptiveModalSurface(
-        visible = shell.remoteConnectOpen,
+        visible = shell.remoteConnectOpen && connectAccount != null,
         edgeToEdgeContent = true,
         placement = connectPlacement,
         onDismissRequest = shell::closeRemoteConnect,
     ) { sheetModifier ->
-        if (readyAccount != null && !shell.remoteScanRequested) {
+        if (connectAccount != null) {
             ConnectAccountDeviceScreen(
-                state = readyAccount,
+                state = connectAccount,
                 onBack = shell::closeRemoteConnect,
                 onRefresh = { accountViewModel.dispatch(AccountIntent.RefreshDevices) },
                 onSelect = { shell.closeRemoteConnect(); accountViewModel.selectDevice(it) },
-                onOpenScanner = shell::openRemoteScanner,
                 modifier = sheetModifier,
             )
-        } else ConnectView(
-            onSubmit = connectDeviceLink,
-            modifier = sheetModifier,
-            onBack = shell::closeRemoteConnect,
-            onOpenAccount = { shell.closeRemoteConnect(); shell.openAccount() },
-            startScanning = shell.remoteScanRequested,
-        )
+        }
     }
     AdaptiveModalSurface(
         visible = shell.showSettings,
@@ -672,21 +682,14 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
     )
     AdaptiveModalSurface(
         visible = shell.showAccount,
-        fitContent = readyAccount == null,
-        edgeToEdgeContent = readyAccount != null,
+        fitContent = true,
         placement = settingsPlacement,
         onDismissRequest = shell::dismissAccount,
     ) { modifier ->
-        AccountScreen(
-                modifier = modifier,
-                onBack = shell::dismissAccount,
-                onDeviceSelected = {
-                    shell.dismissAccount()
-                    shell.dismissSettings()
-                    shell.closeRemoteSession()
-                    shell.show(MobileSurface.REMOTE)
-                },
-                viewModel = accountViewModel,
-            )
+        AccountLoginScreen(
+            modifier = modifier,
+            onBack = shell::dismissAccount,
+            viewModel = accountViewModel,
+        )
     }
 }

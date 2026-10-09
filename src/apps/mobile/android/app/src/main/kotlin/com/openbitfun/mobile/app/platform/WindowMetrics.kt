@@ -103,6 +103,13 @@ internal fun rememberWindowMetrics(): WindowMetrics {
     val hasHingeSensor = remember(context) {
         context.packageManager.hasSystemFeature(FEATURE_SENSOR_HINGE_ANGLE)
     }
+    //卓易通在鸿蒙上会向 Android 兼容层暴露一个“垂直折痕”，但它不是
+    //Android WindowManager 的真实折叠区域。把它当成铰链会把普通宽屏窗口
+    //错误拆成左右两套页面。通过鸿蒙系统文件管理器包识别兼容层；普通
+    //Android 平板和真实 Android 折叠屏不会安装这个包，因此保持原行为。
+    val isHarmonyCompatibilityLayer = remember(context) {
+        context.packageManager.hasPackage("com.huawei.hmos.filemanager")
+    }
 
     val activity = remember(context) { context.findActivity() }
     // No activity means no window to track — a @Preview, or a composable hosted
@@ -154,9 +161,14 @@ internal fun rememberWindowMetrics(): WindowMetrics {
                 }
         }
     }
-    val foldInfo by foldInfoFlow.collectAsStateWithLifecycle(
+    val reportedFoldInfo by foldInfoFlow.collectAsStateWithLifecycle(
         AndroidFoldInfo(emptyList(), emptyList(), reduceFoldFacts(false, emptyList())),
     )
+    val foldInfo = if (isHarmonyCompatibilityLayer) {
+        AndroidFoldInfo(emptyList(), emptyList(), reduceFoldFacts(false, emptyList()))
+    } else {
+        reportedFoldInfo
+    }
 
     return WindowMetrics(
         widthDp = widthDp,
@@ -175,6 +187,14 @@ internal fun rememberWindowMetrics(): WindowMetrics {
 }
 
 private const val FEATURE_SENSOR_HINGE_ANGLE = "android.hardware.sensor.hinge_angle"
+
+private fun android.content.pm.PackageManager.hasPackage(packageName: String): Boolean =
+    try {
+        getApplicationInfo(packageName, 0)
+        true
+    } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+        false
+    }
 
 private fun Context.findActivity(): Activity? {
     var current: Context? = this

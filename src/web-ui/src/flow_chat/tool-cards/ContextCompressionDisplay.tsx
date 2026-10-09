@@ -1,3 +1,4 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * Context compression display for Flow Chat.
  */
@@ -7,6 +8,8 @@ import { useTranslation } from 'react-i18next';
 import type { FlowToolItem } from '../types/flow-chat';
 import { ContextCompressionToolCard } from '@openbitfun/ui/flow-chat';
 import { i18nService } from '@/infrastructure/i18n';
+import { getToolCardStatus } from './toolCardStatus';
+import { useToolCardHeightContract } from './useToolCardHeightContract';
 
 interface ContextCompressionDisplayProps {
   toolItem?: FlowToolItem;
@@ -34,12 +37,17 @@ export const ContextCompressionDisplay: React.FC<ContextCompressionDisplayProps>
   compressionData
 }) => {
   const { t } = useTranslation('flow-chat');
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
+  const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
+    toolId: toolItem?.id,
+    toolName: 'ContextCompression',
+  });
   const data = toolItem ? {
     tokensBefore: toolItem.toolResult?.result?.tokens_before ?? toolItem.toolCall?.input?.tokens_before ?? compressionData?.tokens_before,
     tokensAfter: toolItem.toolResult?.result?.tokens_after ?? compressionData?.tokens_after,
     compressionRatio: toolItem.toolResult?.result?.compression_ratio ?? compressionData?.compression_ratio,
     summarySource: toolItem.toolResult?.result?.summary_source ?? compressionData?.summary_source,
-    status: (toolItem.status === 'cancelled' || toolItem.status === 'analyzing') ? 'completed' : toolItem.status,
+    status: getToolCardStatus(toolItem),
     error: toolItem.toolResult?.error
   } : {
     tokensBefore: compressionData?.tokens_before,
@@ -49,12 +57,6 @@ export const ContextCompressionDisplay: React.FC<ContextCompressionDisplayProps>
     status: 'completed' as const
   };
 
-  const compressionReduction =
-    typeof data.compressionRatio === 'number'
-      ? 1 - data.compressionRatio
-      : typeof data.tokensBefore === 'number' && data.tokensBefore > 0 && typeof data.tokensAfter === 'number'
-        ? 1 - (data.tokensAfter / data.tokensBefore)
-        : undefined;
   const formatNumber = (value: number, options?: Intl.NumberFormatOptions): string =>
     i18nService.formatNumber(value, options);
 
@@ -66,26 +68,32 @@ export const ContextCompressionDisplay: React.FC<ContextCompressionDisplayProps>
       ? t('toolCards.contextCompression.contextCompressionFailed')
       : t('toolCards.contextCompression.contextCompression');
 
-  const summary =
-    typeof data.tokensAfter === 'number' && typeof compressionReduction === 'number'
-      ? t('toolCards.contextCompression.resultSummary', {
-          length: formatNumber(data.tokensAfter),
-          ratio: formatNumber(compressionReduction * 100, { maximumFractionDigits: 0 }),
-        })
-      : undefined;
+  const interrupted = data.status === 'cancelled' || data.status === 'rejected';
+  const active = ['pending', 'preparing', 'streaming', 'running', 'analyzing'].includes(data.status);
+  const summary = interrupted
+    ? data.status === 'cancelled' ? t('toolCards.default.cancelled') : t('toolCards.default.rejected')
+    : typeof data.tokensBefore === 'number' && typeof data.tokensAfter === 'number'
+      ? t('toolCards.contextCompression.tokenChange', { before: formatNumber(data.tokensBefore), after: formatNumber(data.tokensAfter) })
+      : typeof data.tokensAfter === 'number'
+        ? t('toolCards.contextCompression.remainingTokens', { count: data.tokensAfter, formattedCount: formatNumber(data.tokensAfter) })
+        : active ? undefined : t('toolCards.default.completed');
 
   return (
-    <ContextCompressionToolCard
-      status={data.status}
-      title={headerAction}
-      summary={!isFailed ? summary : undefined}
-      processingText={!isFailed && !summary
-        ? t('toolCards.contextCompression.compressingContext')
-        : undefined}
-      error={isFailed
-        ? data.error || t('toolCards.contextCompression.contextCompressionFailed')
-        : undefined}
-      data-summary-source={usedLocalFallback ? 'local-fallback' : data.summarySource}
-    />
+    <div ref={cardRootRef} data-openbitfun-adapter="context-compression" data-tool-card-id={toolItem?.id ?? ''}>
+      <ContextCompressionToolCard
+        isExpanded={isExpanded}
+        onToggle={() => applyExpandedState(isExpanded, !isExpanded, setIsExpanded)}
+        status={data.status}
+        title={headerAction}
+        summary={!isFailed ? summary : undefined}
+        processingText={!isFailed && active && !summary
+          ? t('toolCards.contextCompression.compressingContext')
+          : undefined}
+        error={isFailed
+          ? data.error || t('toolCards.contextCompression.contextCompressionFailed')
+          : undefined}
+        data-summary-source={usedLocalFallback ? 'local-fallback' : data.summarySource}
+      />
+    </div>
   );
 };

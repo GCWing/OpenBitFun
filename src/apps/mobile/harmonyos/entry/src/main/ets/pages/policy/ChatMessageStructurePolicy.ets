@@ -129,22 +129,13 @@ export class ChatMessageStructurePolicy {
       // Remote snapshots also mark tools executed inside a subagent. Those
       // are Task details, not sibling subagent cards in the parent timeline.
       if (ChatMessageStructurePolicy.isSubagentInternalTool(entry)) return;
-      if (ChatMessageStructurePolicy.shouldFoldIntoActivityGroup(entry)) {
-        activityItems.push(entry);
-        activityStatuses.push(ChatMessageStructurePolicy.itemStatus(entry, index, activeItemIndex,
-          activeScope, messageStatus));
-        activityStreaming.push(ChatMessageStructurePolicy.itemShouldStream(entry, index, activeItemIndex, activeScope));
-        activityChildScopes.push(ChatMessageStructurePolicy.itemChildActiveScope(entry, index,
-          activeItemIndex, activeScope));
-        activityHasThinking = activityHasThinking || ChatMessageStructurePolicy.isThinkingEntry(entry);
-        return;
-      }
-
-      flushActivity();
-      // Task tool entries are subagent branches, not ordinary tool rows. Route
-      // them as structured items before the generic tool buffer so they keep
-      // their branch title, children, and lifecycle presentation.
+      // Task tool entries are subagent branches, not ordinary tool rows, and a
+      // subagent branch is never parent activity. Both checks run before the
+      // activity fold so a child's reasoning is never summarised as the
+      // parent's own, and so the branch keeps its title, children, and
+      // lifecycle presentation.
       if (ChatMessageStructurePolicy.isSubagentEntry(entry)) {
+        flushActivity();
         flushTools();
         const subagentPath = nextPath('subagent');
         groups.push({
@@ -159,6 +150,18 @@ export class ChatMessageStructurePolicy {
         });
         return;
       }
+      if (ChatMessageStructurePolicy.shouldFoldIntoActivityGroup(entry)) {
+        activityItems.push(entry);
+        activityStatuses.push(ChatMessageStructurePolicy.itemStatus(entry, index, activeItemIndex,
+          activeScope, messageStatus));
+        activityStreaming.push(ChatMessageStructurePolicy.itemShouldStream(entry, index, activeItemIndex, activeScope));
+        activityChildScopes.push(ChatMessageStructurePolicy.itemChildActiveScope(entry, index,
+          activeItemIndex, activeScope));
+        activityHasThinking = activityHasThinking || ChatMessageStructurePolicy.isThinkingEntry(entry);
+        return;
+      }
+
+      flushActivity();
       if (entry.tool) {
         toolBuffer.push(entry.tool);
         return;
@@ -193,6 +196,11 @@ export class ChatMessageStructurePolicy {
    * A Task's children can arrive nested in its own items and again flat behind
    * it, so folding the restatement would draw every child twice. A counted
    * restatement is skipped, and a child that legitimately repeats survives.
+   *
+   * A marked record with no owning Task in this list — a partial snapshot, or a
+   * child that arrived before its Task — keeps its own collapsed branch rather
+   * than being dropped, because the process it carries is exactly what the
+   * reader opened the branch to see.
    */
   static scopeSubagentItems(items: ConversationUiMessageItem[]): ConversationUiMessageItem[] {
     const result: ConversationUiMessageItem[] = [];
@@ -211,6 +219,8 @@ export class ChatMessageStructurePolicy {
       if (entry.is_subagent === true) {
         if (currentTask) {
           ChatMessageStructurePolicy.appendScopedChild(currentTask, carried, entry);
+        } else {
+          result.push(ChatMessageStructurePolicy.orphanSubagentBranch(entry));
         }
         return;
       }
@@ -223,6 +233,34 @@ export class ChatMessageStructurePolicy {
       result.push(entry);
     });
     return result;
+  }
+
+  /**
+   * A marked record whose Task is not in this list still owns process the reader
+   * must be able to open, so it becomes its own collapsed branch. The outer copy
+   * keeps the marker and the tool identity that title and status come from; the
+   * inner copy drops the marker so the same record renders as branch content
+   * instead of nesting a second branch inside the first.
+   *
+   * A non-tool record's text is that content: leaving it on the outer copy would
+   * print it twice, once as the branch label and once as the step it labels, so
+   * the label falls back to the generic Task name and the body comes only from
+   * the child. A tool record keeps its text, because its label already resolves
+   * through the tool identity and its child draws a tool row rather than text.
+   */
+  private static orphanSubagentBranch(entry: ConversationUiMessageItem): ConversationUiMessageItem {
+    const branch = ChatMessageStructurePolicy.copyItem(entry);
+    if (branch.subItems && branch.subItems.length > 0) {
+      return branch;
+    }
+    const child = ChatMessageStructurePolicy.copyItem(entry);
+    child.is_subagent = false;
+    child.subItems = [];
+    if (!entry.tool) {
+      branch.content = '';
+    }
+    branch.subItems = [child];
+    return branch;
   }
 
   /** Only original nested occurrences are matched; new flat entries consume no quota. */
@@ -425,9 +463,17 @@ export class ChatMessageStructurePolicy {
       (!!entry.tool && ToolStatusPresentationPolicy.normalizedName(entry.tool) === 'task');
   }
 
+  /**
+   * The Task tool entry that owns a subagent branch.
+   *
+   * A Task entry may carry the subagent marker as well: the host records the
+   * child Session id on the Task tool item, and the remote wire maps that field
+   * onto `is_subagent`. The marker therefore means "this Task owns a subagent",
+   * not "this entry is subagent output", so it must not disqualify the owner —
+   * otherwise no Task ever opens a branch and every flat child record is lost.
+   */
   private static isParentTaskEntry(entry: ConversationUiMessageItem): boolean {
-    return entry.is_subagent !== true && !!entry.tool &&
-      ToolStatusPresentationPolicy.normalizedName(entry.tool) === 'task';
+    return !!entry.tool && ToolStatusPresentationPolicy.normalizedName(entry.tool) === 'task';
   }
 
   private static isRunningTaskEntry(entry: ConversationUiMessageItem): boolean {
@@ -435,6 +481,43 @@ export class ChatMessageStructurePolicy {
     const status = (entry.tool.status || '').toLowerCase();
     return status === 'running' || status === 'active' || status === 'preparing' ||
       status === 'pending' || status === 'queued';
+  }
+
+  /**
+   * The branch entry a Task card is drawing, read from the transcript as it is
+   * now.
+   *
+   * The structured ForEach is keyed by the branch view key, which deliberately
+   * does not change while a subagent publishes steps, so its item builder keeps
+   * the entry it first captured — including the empty child list of a Task whose
+   * subagent had not started yet. Param expressions are re-evaluated on every
+   * render, so the card re-reads its branch through here instead of trusting that
+   * snapshot, and a step published later reaches a card that is already open.
+   *
+   * Branches are identified by the Task's tool call when the host sent one, and
+   * by the ordinal the render path numbered them with otherwise.
+   */
+  static subagentBranchAt(
+    items: ConversationUiMessageItem[],
+    ordinal: number,
+    ownerToolId: string
+  ): ConversationUiMessageItem | undefined {
+    const branches = ChatMessageStructurePolicy.scopeSubagentItems(items)
+      .filter((entry: ConversationUiMessageItem) => ChatMessageStructurePolicy.isSubagentEntry(entry));
+    if (ownerToolId.length > 0) {
+      const owned = branches.find((entry: ConversationUiMessageItem) =>
+        !!entry.tool && entry.tool.id === ownerToolId);
+      if (owned) return owned;
+    }
+    return ordinal >= 0 && ordinal < branches.length ? branches[ordinal] : undefined;
+  }
+
+  /** The ordinal a branch path was numbered with, e.g. `item-subagent-2` is 2. */
+  static subagentOrdinal(path: string): number {
+    const marker = path.lastIndexOf('-subagent-');
+    if (marker < 0) return 0;
+    const ordinal = Number(path.slice(marker + '-subagent-'.length));
+    return Number.isFinite(ordinal) && ordinal >= 0 ? ordinal : 0;
   }
 
   private static isLegacySubagentProcessEntry(entry: ConversationUiMessageItem): boolean {
@@ -456,6 +539,9 @@ export class ChatMessageStructurePolicy {
   }
 
   private static isSubagentInternalTool(entry: ConversationUiMessageItem): boolean {
+    // A marked record that already carries children is a branch of its own, not
+    // an internal tool of some other branch.
+    if (!!entry.subItems && entry.subItems.length > 0) return false;
     return entry.is_subagent === true && !!entry.tool &&
       ToolStatusPresentationPolicy.normalizedName(entry.tool) !== 'task';
   }

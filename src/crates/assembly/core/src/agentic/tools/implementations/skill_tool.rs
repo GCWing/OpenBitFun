@@ -153,6 +153,10 @@ impl Tool for SkillTool {
     }
 
     fn is_concurrency_safe(&self, _input: Option<&Value>) -> bool {
+        false
+    }
+
+    fn invalidates_tool_preflight(&self) -> bool {
         true
     }
 
@@ -298,6 +302,8 @@ impl Tool for SkillTool {
                     .await?
             }
         };
+
+        crate::native_hooks::activate_skill_hooks(&skill_data, context).await?;
 
         if let Some(arguments) = input.get("arguments").and_then(Value::as_str) {
             skill_data.content = expand_prompt_template_arguments_with_names(
@@ -1074,7 +1080,7 @@ Use the remote project skill.
     }
 
     #[tokio::test]
-    async fn remote_call_loads_default_hidden_builtin_team_skill_when_explicitly_invoked() {
+    async fn remote_call_loads_default_hidden_builtin_skill_when_explicitly_invoked() {
         let identity =
             workspace_session_identity("/remote/project", Some("conn-1"), Some("remote-host"))
                 .expect("remote identity");
@@ -1106,9 +1112,9 @@ Use the remote project skill.
         };
 
         let results = SkillTool::new()
-            .call_impl(&json!({ "command": "cso" }), &context)
+            .call_impl(&json!({ "command": "create-agent" }), &context)
             .await
-            .expect("explicit cso invocation should load the local built-in skill");
+            .expect("explicit create-agent invocation should load the local built-in skill");
 
         let ToolResult::Result {
             data,
@@ -1118,16 +1124,16 @@ Use the remote project skill.
         else {
             panic!("expected result payload");
         };
-        assert_eq!(data["skill_name"], "cso");
+        assert_eq!(data["skill_name"], "create-agent");
         assert_eq!(data["location"], "user");
         assert!(data["content"]
             .as_str()
             .unwrap_or_default()
-            .contains("# /cso"));
+            .contains("# Create an OpenBitFun Agent"));
         let assistant = result_for_assistant.as_deref().unwrap_or_default();
         assert!(assistant.contains("<skill_content>\n"));
         assert!(assistant.contains("\n</skill_content>"));
-        assert!(assistant.contains("# /cso"));
+        assert!(assistant.contains("# Create an OpenBitFun Agent"));
         assert!(!assistant.contains("from stable key"));
     }
 

@@ -2,18 +2,19 @@ import type { ComponentMeta } from "../../registry.types";
 
 export const tooltipMeta = {
   category: "feedback",
-  description: "A portaled, delay-managed hover label that flips placement at viewport edges and supports cursor-following and interactive content.",
+  description: "A portaled, delay-managed label with optional click persistence, cursor-following and interactive content; dismisses immediately on scrolling or when its trigger leaves the visible viewport.",
   maturity: "stable",
   name: "Tooltip",
   props: [
     { name: "children", type: "ReactElement" },
     { name: "content", type: "ReactNode" },
     { defaultValue: "top", name: "placement", type: "top | bottom | left | right" },
-    { defaultValue: "hover", name: "trigger", type: "hover | click | focus" },
+    { defaultValue: "hover", name: "trigger", type: "hover | click | focus | hover-focus" },
     { defaultValue: "450", name: "delay", type: "number" },
     { defaultValue: "false", name: "disabled", type: "boolean" },
     { defaultValue: "false", name: "followCursor", type: "boolean" },
     { defaultValue: "false", name: "interactive", type: "boolean" },
+    { defaultValue: "false", name: "openOnClick", type: "boolean" },
     { name: "portalContainer", type: "TooltipPortalTarget" },
   ],
   states: ["default", "visible", "interactive", "instant"],

@@ -29,7 +29,7 @@ import {
   GalleryLayout,
   GalleryPageHeader,
   GallerySkeleton,
-} from '@/app/components';
+} from '@/app/components/GalleryLayout';
 import { MarketList } from '@/app/components/GalleryLayout/MarketList';
 import { MarketImage } from '@/app/components/GalleryLayout/MarketImage';
 import { getInteractionMotion } from '@/shared/utils/motionPreference';

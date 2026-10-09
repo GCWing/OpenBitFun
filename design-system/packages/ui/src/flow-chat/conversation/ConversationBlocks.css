@@ -1,0 +1,883 @@
+@import './FlowItemRhythm.css';
+
+.flow-thinking-item {
+  --_thinking-header-size: max(1lh, var(--openbitfun-control-tool-card-ambient-row-min-block-size));
+  --_thinking-last-center: calc(var(--_thinking-header-size) / 2);
+  --_thinking-continuation-center: var(--_thinking-last-center);
+  --_thinking-text-start: 0px;
+  --_thinking-text-end: 0px;
+  --_thinking-toggle-size: var(--openbitfun-control-icon-button-xs-size);
+  --_thinking-side-offset: calc(var(--_thinking-toggle-size) + var(--openbitfun-control-flow-chat-row-icon-gap));
+  --_thinking-fold-duration: var(--openbitfun-motion-duration-base);
+  --_thinking-fold-ease: var(--openbitfun-motion-easing-smooth);
+  --_thinking-fade-duration: var(--openbitfun-motion-duration-instant);
+  --_thinking-fold-delay: 0ms;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  box-sizing: border-box;
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  line-height: var(--openbitfun-type-flow-support-line-height);
+  transition:
+    margin-bottom var(--_thinking-fold-duration) var(--_thinking-fold-ease),
+    min-block-size var(--_thinking-fold-duration) var(--_thinking-fold-ease);
+}
+
+.thinking-header-slot {
+  position: relative;
+  block-size: var(--_thinking-header-size);
+  transition: block-size var(--_thinking-fold-duration) var(--_thinking-fold-ease);
+}
+
+.thinking-collapsed-header {
+  position: absolute;
+  /* The live control and the completed annotation share one gutter column.
+     Titles and reasoning keep the successor's original content edge. */
+  inset-block-start: calc((var(--_thinking-header-size) - var(--_thinking-toggle-size)) / 2);
+  inset-inline-start: calc(0px - var(--_thinking-side-offset));
+  inline-size: calc(100% + var(--_thinking-side-offset));
+  block-size: var(--_thinking-toggle-size);
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-control-flow-chat-row-icon-gap);
+  padding: 0;
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  line-height: var(--openbitfun-type-flow-support-line-height);
+  box-sizing: border-box;
+  opacity: 1;
+  transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+
+.thinking-toggle {
+  margin-inline: 0;
+  flex-shrink: 0;
+}
+
+.thinking-annotation-line {
+  display: none;
+  position: absolute;
+  inset-inline-start: calc(50% - var(--openbitfun-border-width-default) / 2);
+  inline-size: var(--openbitfun-border-width-default);
+  block-size: var(--openbitfun-space-4);
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-border-default);
+  pointer-events: none;
+}
+.thinking-annotation-line--before {
+  inset-block-end: calc(100% + var(--openbitfun-space-1));
+  max-block-size: max(0px, calc(var(--_thinking-continuation-center) - var(--_thinking-toggle-size) / 2 - var(--openbitfun-space-1) - var(--_thinking-text-start) - var(--openbitfun-space-1)));
+}
+.thinking-annotation-line--after {
+  inset-block-start: calc(100% + var(--openbitfun-space-1));
+  max-block-size: max(0px, calc(var(--_thinking-text-end) - var(--openbitfun-space-1) - var(--_thinking-continuation-center) - var(--_thinking-toggle-size) / 2 - var(--openbitfun-space-1)));
+}
+.flow-thinking-item[data-thinking-phase='side'][data-thinking-annotation='text'] .thinking-annotation-line {
+  display: block;
+}
+
+.thinking-label-target {
+  flex: 1;
+  min-inline-size: 0;
+  cursor: pointer;
+}
+.thinking-collapsed-header:hover .thinking-label {
+  color: var(--openbitfun-color-content-secondary);
+  opacity: 1;
+}
+.thinking-collapsed-header:hover .thinking-leading-icon {
+  opacity: 1;
+}
+.thinking-collapsed-header:hover .thinking-leading-icon__default {
+  opacity: 0;
+}
+.thinking-collapsed-header:hover .thinking-leading-icon__collapsed-hover {
+  opacity: 1;
+}
+.thinking-collapsed-header .thinking-leading-icon {
+  position: relative;
+  inline-size: 100%;
+  block-size: 100%;
+  flex-shrink: 0;
+  color: var(--openbitfun-color-content-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.thinking-collapsed-header .thinking-leading-icon > :is([data-openbitfun-component=icon], [data-openbitfun-component=thinking-indicator]) {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.thinking-collapsed-header .thinking-leading-icon__default {
+  opacity: 1;
+}
+.thinking-collapsed-header .thinking-leading-icon__collapsed-hover, .thinking-collapsed-header .thinking-leading-icon__expanded {
+  opacity: 0;
+}
+.thinking-collapsed-header .thinking-label {
+  min-width: 0;
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  color: var(--openbitfun-color-content-secondary);
+  line-height: var(--openbitfun-type-flow-support-line-height);
+  opacity: 1;
+  transition: opacity var(--_thinking-fade-duration) var(--openbitfun-motion-easing-exit);
+}
+
+.flow-thinking-item.summary.collapsed .thinking-collapsed-header {
+  min-width: 0;
+}
+.flow-thinking-item.summary.collapsed .thinking-label {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.flow-thinking-item.summary .thinking-label {
+  color: var(--openbitfun-color-content-secondary);
+}
+
+.flow-thinking-item.expanded .thinking-leading-icon__default,
+.flow-thinking-item.expanded .thinking-leading-icon__collapsed-hover {
+  opacity: 0;
+}
+.flow-thinking-item.expanded .thinking-leading-icon__expanded {
+  opacity: 1;
+}
+
+.thinking-expand-container {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--_thinking-fold-duration) var(--_thinking-fold-ease) var(--_thinking-fold-delay),
+    opacity var(--_thinking-fade-duration) var(--openbitfun-motion-easing-exit);
+}
+.thinking-expand-container--open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition-delay: 0ms, 0ms;
+}
+.thinking-expand-container > .thinking-content-wrapper {
+  overflow: hidden;
+}
+
+/* A nonempty successor anchors a side icon in the existing leading gutter.
+   Neither the successor nor its descendants reserve or animate any inline space.
+   Keep both siblings mounted so docking preserves Markdown, tool state and selection. */
+.flow-thinking-item[data-thinking-attachment='side'] {
+  margin-bottom: 0;
+  transition-delay: var(--_thinking-fold-delay);
+}
+
+.flow-thinking-item[data-thinking-attachment='side'] .thinking-header-slot {
+  block-size: 0;
+  transition-delay: var(--_thinking-fold-delay);
+}
+
+.flow-thinking-item[data-thinking-phase='side'] .thinking-collapsed-header {
+  z-index: 1;
+  inset-block-start: calc(var(--_thinking-continuation-center) - var(--_thinking-toggle-size) / 2);
+  inline-size: var(--_thinking-toggle-size);
+  gap: 0;
+  opacity: 0;
+  pointer-events: none;
+  /* Position follows scrolling without lag. Only visibility is animated. */
+  transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+
+.flow-thinking-item[data-thinking-phase='side'] .thinking-leading-icon__default {
+  opacity: 1;
+}
+
+.flow-thinking-item[data-thinking-phase='side'] .thinking-leading-icon__collapsed-hover {
+  opacity: 0;
+}
+
+.flow-thinking-item[data-thinking-phase='side'] .thinking-label-target,
+.flow-thinking-item[data-thinking-phase='leaving'][data-thinking-origin='side'] .thinking-label-target {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.flow-thinking-item[data-thinking-phase='leaving'] .thinking-collapsed-header {
+  /* Freeze the outgoing vertical anchor, including interrupted returns from a
+     long paragraph. The final anchor is applied only at zero opacity. */
+  inset-block-start: var(--_thinking-handoff-top);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--_thinking-fade-duration) var(--openbitfun-motion-easing-exit);
+}
+
+/* Keep the pointer path from the content to its side control continuous. */
+.flow-thinking-item[data-thinking-phase='side'] .thinking-collapsed-header::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 100%;
+  inline-size: var(--openbitfun-control-flow-chat-row-icon-gap);
+}
+
+/* The whole leading column belongs to this continuation's hover area. A reader
+   can leave any text line and move up to the button without crossing a dead gap.
+   This hit area stays outside the content box, below the actual icon button. */
+.flow-thinking-item[data-thinking-attachment='side'] + [data-thinking-continuation],
+[data-thinking-continuation][data-thinking-side-target='true'] {
+  position: relative;
+}
+
+.flow-thinking-item[data-thinking-attachment='side'] + [data-thinking-continuation]::before,
+[data-thinking-continuation][data-thinking-side-target='true']::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 100%;
+  inline-size: calc(var(--openbitfun-control-icon-button-xs-size) + var(--openbitfun-control-flow-chat-row-icon-gap));
+  pointer-events: auto;
+}
+
+/* Pointer clicks retain native focus without pinning the side control open.
+   Only keyboard-visible focus keeps it revealed after the pointer leaves. */
+.flow-thinking-item[data-thinking-phase='side'][data-thinking-active='true'] .thinking-collapsed-header,
+.flow-thinking-item[data-thinking-phase='side']:has(.thinking-toggle:focus-visible) .thinking-collapsed-header,
+.flow-thinking-item[data-thinking-phase='side']:has(.thinking-toggle:active) .thinking-collapsed-header {
+  opacity: 1;
+  pointer-events: auto;
+  transition-delay: 0ms;
+}
+.flow-thinking-item[data-thinking-phase='side'][data-thinking-in-view='false'] .thinking-collapsed-header {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Extend only the clipping boundary into the gutter. Equal padding/margin keep
+   the existing content edge and wrapping, including bounded exploration scroll. */
+.explore-region--expanded:not(.explore-region--hidden):has(.flow-thinking-item) {
+  --_explore-thinking-gutter: calc(var(--openbitfun-control-icon-button-xs-size) + var(--openbitfun-control-flow-chat-row-icon-gap) + var(--openbitfun-focus-width) + var(--openbitfun-focus-offset));
+  overflow: visible;
+}
+
+.explore-region--expanded:not(.explore-region--hidden):has(.flow-thinking-item) > .smooth-height-collapse--open > .explore-region__content-inner {
+  overflow: visible;
+}
+
+.explore-region--expanded:not(.explore-region--hidden):has(.flow-thinking-item) > .explore-region__content-wrapper > .explore-region__content-inner > .explore-region__content {
+  margin-inline-start: calc(0px - var(--_explore-thinking-gutter));
+  padding-inline-start: var(--_explore-thinking-gutter);
+}
+
+/* Measuring a newly mounted history row must not create an entrance/fold. */
+.flow-thinking-item[data-thinking-motion='initial'],
+.flow-thinking-item[data-thinking-motion='initial'] .thinking-header-slot,
+.flow-thinking-item[data-thinking-motion='initial'] .thinking-collapsed-header,
+.flow-thinking-item[data-thinking-motion='initial'] .thinking-expand-container {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-thinking-item,
+  .thinking-header-slot,
+  .thinking-collapsed-header,
+  .thinking-toggle,
+  .thinking-label-target,
+  .thinking-collapsed-header .thinking-leading-icon,
+  .thinking-collapsed-header .thinking-leading-icon > :is([data-openbitfun-component=icon], [data-openbitfun-component=thinking-indicator]),
+  .thinking-collapsed-header .thinking-label,
+  .thinking-expand-container {
+    transition: none !important;
+  }
+}
+.thinking-content {
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  font-weight: var(--openbitfun-type-flow-control-font-weight);
+  line-height: var(--openbitfun-type-flow-body-line-height);
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  word-break: break-word;
+  color: var(--openbitfun-color-content-muted);
+  padding: var(--openbitfun-control-flow-chat-card-expanded-padding-block) var(--openbitfun-control-flow-chat-card-expanded-padding-inline) 0 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  margin-top: 0;
+  max-height: var(--openbitfun-control-flow-chat-stream-viewport-block-size);
+  overflow-y: auto;
+  min-height: 0;
+  cursor: text;
+  user-select: text;
+}
+
+.flow-thinking-item[data-openbitfun-state~='streaming'] .thinking-content {
+  color: var(--openbitfun-color-content-muted);
+}
+
+/* Keep the outgoing viewport and its inline header geometry through completion.
+   A standalone row reserves its final header; a side annotation occupies none. */
+.flow-thinking-item[data-thinking-viewport] {
+  --_thinking-header-size: max(calc(var(--openbitfun-type-flow-body-font-size) * var(--openbitfun-type-flow-body-line-height)), var(--openbitfun-control-tool-card-ambient-row-min-block-size));
+  min-block-size: var(--_thinking-header-size);
+}
+.flow-thinking-item[data-thinking-viewport][data-thinking-attachment='side'] {
+  min-block-size: 0;
+}
+.flow-thinking-item[data-thinking-viewport] .thinking-header-slot {
+  block-size: 0;
+}
+.flow-thinking-item[data-thinking-viewport]:not([data-thinking-phase='side']):not([data-thinking-phase='leaving']) .thinking-collapsed-header {
+  inset-block-start: calc((var(--openbitfun-type-flow-body-font-size) * var(--openbitfun-type-flow-body-line-height) - var(--_thinking-toggle-size)) / 2);
+}
+.flow-thinking-item[data-streaming-expanded] .thinking-collapsed-header {
+  z-index: 1;
+  pointer-events: none;
+}
+.flow-thinking-item[data-streaming-expanded] .thinking-toggle {
+  pointer-events: auto;
+}
+.flow-thinking-item[data-streaming-expanded] .thinking-label-target {
+  block-size: calc(var(--openbitfun-type-flow-body-font-size) * var(--openbitfun-type-flow-body-line-height));
+}
+.flow-thinking-item[data-thinking-viewport][data-expanded='true'] .thinking-label {
+  opacity: 0;
+  visibility: hidden;
+}
+.flow-thinking-item[data-thinking-viewport][data-expanded='false']:not([data-thinking-attachment='side']) .thinking-label {
+  transition-delay: var(--_thinking-fade-duration);
+}
+.flow-thinking-item[data-streaming-expanded='false'] .thinking-label-target {
+  pointer-events: auto;
+}
+.flow-thinking-item[data-thinking-viewport] .thinking-content {
+  box-sizing: border-box;
+  font-size: var(--openbitfun-type-flow-body-font-size);
+  padding-block: 0;
+  min-height: 1lh;
+  max-height: 7lh;
+}
+.flow-thinking-item[data-thinking-viewport='compact'] .thinking-content {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  block-size: 1lh;
+  max-height: 1lh;
+  overflow: clip;
+}
+.flow-thinking-item[data-thinking-viewport='compact'] .thinking-content-body {
+  /* The latest typeset line replaces the previous one in a fixed slot. The
+     browser owns wrapping; no scroll offset or animated translation is used. */
+  flex: 0 0 auto;
+}
+.thinking-content-body {
+  display: flow-root;
+  min-inline-size: 0;
+}
+.flow-thinking-item[data-thinking-viewport='compact'] .thinking-content-wrapper::before,
+.flow-thinking-item[data-thinking-viewport='compact'] .thinking-content-wrapper::after {
+  display: none;
+}
+
+/* The live predecessor owns this short transaction. The successor keeps its
+   React tree and execution state, but takes no space until the row is ready. */
+[data-thinking-continuation][data-thinking-successor='held'] {
+  /* display:none also removes the line box of an inline capsule. Unlike
+     conditional rendering, it preserves the actual card and its subscriptions. */
+  display: none !important;
+}
+.flow-thinking-item[data-thinking-exchange='closing'],
+.flow-thinking-item[data-thinking-exchange='closing'][data-thinking-viewport] {
+  min-block-size: var(--_thinking-header-size);
+  transition: none;
+}
+.flow-thinking-item[data-thinking-exchange='closing'] .thinking-collapsed-header {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--_thinking-fade-duration) var(--openbitfun-motion-easing-exit);
+}
+.flow-thinking-item[data-thinking-exchange='closing'] .thinking-header-slot {
+  block-size: 0;
+  transition: none;
+}
+.flow-thinking-item[data-thinking-exchange='closing'] .thinking-expand-container {
+  opacity: 0;
+}
+.flow-thinking-item[data-thinking-exchange='closing'][data-thinking-viewport='compact'] .thinking-expand-container {
+  /* A single line fades in place; there is no visible one-line fold. */
+  grid-template-rows: 1fr;
+}
+.flow-thinking-item[data-thinking-exchange='released'] {
+  min-block-size: 0;
+  margin-bottom: 0;
+  transition: none;
+}
+.flow-thinking-item[data-thinking-exchange='released'] .thinking-header-slot {
+  block-size: 0;
+  transition: none;
+}
+.flow-thinking-item[data-thinking-exchange='released'] .thinking-expand-container {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: none;
+}
+
+.thinking-content-wrapper {
+  position: relative;
+  min-height: 0;
+  --_thinking-scroll-fade-base: var(--openbitfun-color-surface-scene);
+}
+.thinking-content-wrapper::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 24px;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  background: var(--_thinking-scroll-fade-base);
+  -webkit-mask-image: linear-gradient(to bottom, var(--openbitfun-color-content-on-light) 0%, var(--openbitfun-color-content-on-light) 22%, transparent 100%);
+  mask-image: linear-gradient(to bottom, var(--openbitfun-color-content-on-light) 0%, var(--openbitfun-color-content-on-light) 22%, transparent 100%);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
+.thinking-content-wrapper::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 24px;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  background: var(--_thinking-scroll-fade-base);
+  -webkit-mask-image: linear-gradient(to top, var(--openbitfun-color-content-on-light) 0%, var(--openbitfun-color-content-on-light) 22%, transparent 100%);
+  mask-image: linear-gradient(to top, var(--openbitfun-color-content-on-light) 0%, var(--openbitfun-color-content-on-light) 22%, transparent 100%);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
+.thinking-content-wrapper.has-scroll::before, .thinking-content-wrapper.has-scroll::after {
+  opacity: 1;
+}
+.thinking-content-wrapper.at-top::before {
+  opacity: 0;
+}
+.thinking-content-wrapper.at-bottom::after {
+  opacity: 0;
+}
+
+.explore-region {
+  box-sizing: border-box;
+  padding-inline: var(--openbitfun-control-flow-chat-content-padding-inline);
+}
+@media (max-width: 768px) {
+  .explore-region {
+    padding-inline: var(--openbitfun-control-flow-chat-content-padding-inline-mobile);
+  }
+}
+.explore-region {
+  position: relative;
+  overflow: hidden;
+  width: min(100%, 900px);
+  margin: 0 auto;
+  padding-block: 0;
+}
+
+.explore-region--collapsible {
+  margin: 0 0 var(--openbitfun-control-flow-chat-flow-item-gap) 0;
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  line-height: var(--openbitfun-type-flow-support-line-height);
+}
+.explore-region[data-placement='inline'] {
+  padding-inline: 0;
+  width: 100%;
+}
+.explore-region--collapsible .explore-region__header {
+  --_flow-group-header-min-block-size: var(--openbitfun-control-height-sm);
+  position: relative;
+  z-index: var(--openbitfun-layer-content);
+  isolation: isolate;
+  box-sizing: border-box;
+  min-block-size: max(1lh, var(--openbitfun-control-tool-card-ambient-row-min-block-size));
+  display: flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  align-items: center;
+  padding: 0;
+  background: transparent;
+  user-select: none;
+  border-radius: var(--openbitfun-control-status-pill-radius);
+}
+.explore-region--collapsible .explore-region__header[data-expanded="false"] {
+  /* Retain the transcript row and hit target while the inner capsule gets lighter. */
+  --_flow-group-collapsed-min-block-size: calc(max(var(--_flow-group-header-min-block-size), var(--openbitfun-space-6) + var(--openbitfun-space-1) * 2) + var(--openbitfun-border-width-default) * 2);
+  min-block-size: max(var(--_flow-group-collapsed-min-block-size), var(--openbitfun-control-tool-card-ambient-row-min-block-size));
+}
+.explore-region--collapsible .explore-region__header[role="button"] {
+  cursor: pointer;
+}
+.explore-region--collapsible .explore-region__header:focus-visible {
+  outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+  outline-offset: calc(-1 * var(--openbitfun-focus-width));
+}
+.explore-region--collapsible .explore-region__summary-surface {
+  position: relative;
+  display: inline-flex;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  border-radius: inherit;
+}
+.explore-region--collapsible .explore-region__pill {
+  min-inline-size: 0;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-block-size: var(--_flow-group-header-min-block-size);
+  gap: var(--openbitfun-control-flow-chat-row-icon-gap);
+  justify-content: flex-start;
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  background: transparent;
+}
+.explore-region--collapsible .explore-region__header[data-expanded="false"] .explore-region__pill {
+  min-block-size: var(--openbitfun-space-6);
+  padding-block: var(--openbitfun-control-status-pill-padding-block);
+  padding-inline: var(--openbitfun-space-2);
+  font-family: var(--openbitfun-type-flow-control-font-family);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  font-weight: var(--openbitfun-type-flow-control-font-weight);
+  line-height: var(--openbitfun-type-flow-control-line-height);
+  letter-spacing: var(--openbitfun-type-flow-control-letter-spacing);
+}
+.explore-region--collapsible .explore-region__header[data-expanded="true"] .explore-region__pill {
+  /* The unframed disclosure shares the content's leading edge. */
+  padding-inline: 0;
+}
+.explore-region--collapsible .explore-region__skin {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  box-sizing: border-box;
+  pointer-events: none;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.explore-region--collapsible .explore-region__header[data-expanded="false"] .explore-region__skin {
+  background: var(--openbitfun-color-action-quiet-hover);
+}
+.explore-region--collapsible .explore-region__header[data-expanded="false"][role="button"]:is(:hover, :focus-visible, :active) .explore-region__skin {
+  background: var(--openbitfun-color-action-quiet-pressed);
+}
+.explore-region--collapsible.explore-region--collapsed .explore-region__header[role="button"]:is(:hover, :focus-visible) .explore-region__leading-icon--default {
+  opacity: 0;
+}
+.explore-region--collapsible.explore-region--collapsed .explore-region__header[role="button"]:is(:hover, :focus-visible) .explore-region__leading-icon--collapsed-hover {
+  opacity: 1;
+}
+.explore-region--collapsible .explore-region__leading-icon {
+  position: relative;
+  width: var(--openbitfun-control-flow-chat-row-icon-size);
+  height: var(--openbitfun-control-flow-chat-row-icon-size);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+.explore-region--collapsible .explore-region__leading-icon > * {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.explore-region--collapsible .explore-region__leading-icon--default {
+  opacity: 1;
+}
+.explore-region--collapsible .explore-region__leading-icon--collapsed-hover,
+.explore-region--collapsible .explore-region__leading-icon--expanded {
+  opacity: 0;
+}
+.explore-region--collapsible .explore-region__summary {
+  color: inherit;
+}
+.explore-region--collapsible .explore-region__count {
+  color: var(--openbitfun-color-content-muted);
+  font-variant-numeric: tabular-nums;
+}
+.explore-region--collapsible .explore-region__separator {
+  color: var(--openbitfun-color-content-disabled);
+}
+.explore-region--collapsible .explore-region__content-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+.explore-region--collapsible :is(.explore-region__content, .flow-group-content-segment) > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item,
+.task-with-subagent-wrapper, .subagent-projection-text--truncated) {
+  margin: 0 0 var(--openbitfun-control-flow-chat-flow-item-gap) 0;
+}
+/* Side reasoning is positioned beside its successor; the surrounding tools
+   supply the full gap, including across deferred content segments. */
+.explore-region--collapsible :is(.explore-region__content, .flow-group-content-segment) > .flow-thinking-item[data-thinking-attachment='side'] {
+  margin-bottom: 0;
+}
+.explore-region--collapsible :is(.explore-region__content, .flow-group-content-segment) > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-tool-capsule=true]) {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  interpolate-size: allow-keywords;
+}
+.explore-region--collapsible :is(.explore-region__content, .flow-group-content-segment) > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-capsule-row=true]) {
+  display: block;
+  inline-size: var(--openbitfun-control-flow-chat-capsule-inline-size);
+  max-inline-size: 100%;
+  vertical-align: top;
+}
+.explore-region--collapsible :is(.explore-region__content, .flow-group-content-segment) > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-capsule-row=true][data-capsule-parallel=true]) {
+  display: inline-block;
+  max-inline-size: calc(100% - var(--openbitfun-space-2));
+  margin-inline-end: var(--openbitfun-space-2);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .explore-region--collapsible :is(.explore-region__content, .flow-group-content-segment) > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-capsule-row=true]) {
+    transition:
+      inline-size 520ms var(--openbitfun-motion-easing-smooth),
+      max-inline-size 520ms var(--openbitfun-motion-easing-smooth);
+  }
+
+}
+@media (pointer: coarse) {
+  .explore-region--collapsible .explore-region__header {
+    --_flow-group-header-min-block-size: var(--openbitfun-control-height-lg);
+  }
+}
+@media (forced-colors: active) {
+  .explore-region--collapsible .explore-region__header[data-expanded="false"] .explore-region__skin {
+    border: var(--openbitfun-border-width-default) solid ButtonText;
+    background: Canvas;
+  }
+}
+.explore-region--collapsible .explore-region__content > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item,
+.task-with-subagent-wrapper, .subagent-projection-text--truncated):is(:last-child, :has(+ .flowchat-capsule-row-break:last-child)),
+.explore-region--collapsible .flow-group-content-segment:last-child > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item,
+.task-with-subagent-wrapper, .subagent-projection-text--truncated):is(:last-child, :has(+ .flowchat-capsule-row-break:last-child)) {
+  margin-bottom: 0;
+}
+.flow-group-content-segment {
+  /* Contain item margins without clipping side disclosures or changing width. */
+  display: flow-root;
+}
+.explore-region--collapsible .explore-region__content {
+  position: relative;
+  padding: var(--openbitfun-space-2) 0 0;
+  box-sizing: border-box;
+}
+
+.explore-region--collapsible.explore-region--expanded .explore-region__header .explore-region__leading-icon--default,
+.explore-region--collapsible.explore-region--expanded .explore-region__header .explore-region__leading-icon--collapsed-hover {
+  opacity: 0;
+}
+.explore-region--collapsible.explore-region--expanded .explore-region__header .explore-region__leading-icon--expanded {
+  opacity: 1;
+}
+.explore-region--collapsible.explore-region--expanded .explore-region__content-wrapper {
+  height: auto;
+}
+
+.explore-region--bounded .explore-region__content {
+  max-height: calc(var(--openbitfun-control-flow-chat-stream-viewport-block-size) * 2);
+  padding-bottom: var(--openbitfun-space-2);
+}
+
+.explore-region__toolbar {
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--openbitfun-space-1);
+  inline-size: fit-content;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+.explore-region--expanded > .explore-region__toolbar {
+  inline-size: 100%;
+  padding-block-end: var(--openbitfun-space-2);
+  border-block-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+}
+.explore-region__toolbar--browsable {
+  inline-size: 100%;
+  min-block-size: var(--openbitfun-control-height-sm);
+}
+.explore-region__toolbar--browsable > .explore-region__header {
+  flex: 0 1 auto;
+  min-inline-size: var(--openbitfun-control-height-sm);
+  max-inline-size: 40%;
+}
+.explore-region__controls {
+  --_group-search-max-inline-size: 20rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 0;
+  margin-inline-start: auto;
+  gap: var(--openbitfun-space-1);
+  min-inline-size: 0;
+  max-inline-size: var(--_group-search-max-inline-size);
+}
+.explore-region__browse-main {
+  display: flex;
+  align-items: center;
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+.explore-region__search {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: var(--_group-search-max-inline-size);
+}
+.explore-region__filter-status {
+  display: flex;
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  max-inline-size: 12ch;
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  font-variant-numeric: tabular-nums;
+}
+.explore-region__empty {
+  padding: var(--openbitfun-space-4);
+  color: var(--openbitfun-color-content-muted);
+  text-align: center;
+}
+
+/* Native hidden must win over the card/segment display rules, including capsules. */
+.explore-region .flow-group-content-segment[hidden],
+.explore-region .flow-group-content-segment > [hidden] {
+  display: none !important;
+}
+
+.flow-thinking-item[data-scroll-owner="parent"] .thinking-content {
+  max-height: none;
+  overflow: visible;
+}
+
+.flow-thinking-item[data-scroll-owner="parent"] .thinking-content-wrapper::before,
+.flow-thinking-item[data-scroll-owner="parent"] .thinking-content-wrapper::after {
+  display: none;
+}
+
+.smooth-height-collapse {
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition-property: height, opacity, transform;
+  transition-duration: 300ms, 300ms, 300ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1), cubic-bezier(0.4, 0, 0.2, 1), cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: auto;
+}
+
+.smooth-height-collapse--opening,
+.smooth-height-collapse--closing {
+  will-change: height, opacity, transform;
+}
+
+.smooth-height-collapse--opening,
+.smooth-height-collapse--open {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.smooth-height-collapse--open {
+  height: auto;
+  overflow: visible;
+}
+
+.smooth-height-collapse--closing {
+  opacity: 0;
+  transform: translateY(-2px);
+}
+
+.smooth-height-collapse__inner {
+  min-height: 0;
+}
+
+.smooth-height-collapse--instant {
+  transition: none;
+  transform: none;
+  will-change: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explore-region--collapsible .explore-region__skin,
+  .explore-region--collapsible .explore-region__pill,
+  .explore-region--collapsible .explore-region__leading-icon > * {
+    transition: none;
+  }
+  .smooth-height-collapse {
+    transition: none;
+    transform: none;
+    will-change: auto;
+  }
+}
+.thinking-collapsed-header:focus-visible {
+  outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+  outline-offset: var(--openbitfun-focus-offset);
+}
+
+.runtime-status-slot {
+  width: 100%;
+  height: 24px;
+  min-height: 24px;
+  flex: 0 0 24px;
+  box-sizing: border-box;
+  overflow: hidden;
+  pointer-events: none;
+}
+.runtime-status-slot__content {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-control-flow-chat-row-icon-gap);
+  height: 24px;
+  min-width: 0;
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-flow-body-font-size);
+  line-height: var(--openbitfun-type-flow-support-line-height);
+  opacity: 0;
+  transform: translateY(3px);
+  transition: opacity 140ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.runtime-status-slot--visible .runtime-status-slot__content {
+  opacity: 1;
+  transform: translateY(0);
+}
+.runtime-status-slot__hint {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.runtime-status-slot__icon {
+  display: inline-flex;
+  flex: 0 0 var(--openbitfun-control-flow-chat-row-icon-size);
+  width: var(--openbitfun-control-flow-chat-row-icon-size);
+  height: var(--openbitfun-control-flow-chat-row-icon-size);
+  align-items: center;
+  justify-content: center;
+  color: var(--openbitfun-color-content-caption);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runtime-status-slot__content {
+    transform: none;
+    transition: none;
+  }
+}

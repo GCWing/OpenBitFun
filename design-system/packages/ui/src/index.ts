@@ -4,7 +4,7 @@ import "./styles/scrollbars.css";
 export { VoiceCallPanel, type VoiceCallPanelProps, type VoiceCallLabels, type VoiceCallPhase } from "./components/VoiceCallPanel";
 export { VoiceCallTranscript, VoiceCallControls, VoiceCallIdentity, type VoiceTranscriptEntry, type VoiceCallTranscriptProps, type VoiceCallControlsProps, type VoiceCallIdentityProps } from "./components/VoiceCallPanel";
 export { VoiceCallHeader, type VoiceCallHeaderProps } from "./components/VoiceCallPanel";
-export { VoiceParticleLogo, type VoiceParticleLogoProps, type VoiceParticleAudio, type VoiceParticleAudioReader } from "./components/VoiceParticleLogo";
+export { VoiceParticleLogo, type VoiceParticleLogoProps, type VoiceParticleAudio, type VoiceParticleAudioReader } from "./brand/VoiceParticleLogo";
 
 export {
   DesignSystemProvider,
@@ -138,6 +138,7 @@ export {
   type IconTone,
 } from "./components/Icon";
 export { IconButton, type IconButtonProps } from "./components/IconButton";
+export { ThinkingIndicator, type ThinkingIndicatorProps } from "./components/ThinkingIndicator";
 export { Input, type InputProps } from "./components/Input";
 export { KeyHint, type KeyHintProps } from "./components/KeyHint";
 export {
@@ -221,9 +222,12 @@ export {
 export { PageHeader, type PageHeaderProps } from "./components/PageHeader";
 export { Radio, type RadioProps, type RadioSize } from "./components/Radio";
 export { RollingText, type RollingTextProps } from "./components/RollingText";
+export { ShimmerText, type ShimmerTextProps } from "./components/ShimmerText";
 export {
   ScrollArea,
+  type ScrollAreaEdgeFade,
   type ScrollAreaOrientation,
+  type ScrollAreaOverscrollBehaviorY,
   type ScrollAreaProps,
   type ScrollbarVisibility,
 } from "./components/ScrollArea";
@@ -298,3 +302,7 @@ export {
   type TokenOverrideName,
   type TokenOverrides,
 } from "./primitives/ThemeRoot";
+
+export { LayersPlusIcon } from "./components/Icon";
+export { SplitView } from './components/SplitView';
+export type { SplitViewProps, SplitViewMode } from './components/SplitView';

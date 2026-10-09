@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const modelSettingsSource = readFileSync(
-  fileURLToPath(new URL('./ModelSettingsPage.tsx', import.meta.url)),
+  fileURLToPath(new URL('../../../app/scenes/settings/pages/ai/ModelSettingsPage.tsx', import.meta.url)),
   'utf8',
 ).replaceAll('\r\n', '\n');
 const defaultModelSource = readFileSync(
@@ -11,7 +11,7 @@ const defaultModelSource = readFileSync(
   'utf8',
 );
 const modelSettingsStyles = readFileSync(
-  fileURLToPath(new URL('./ModelSettingsPage.scss', import.meta.url)),
+  fileURLToPath(new URL('../../../app/scenes/settings/pages/ai/ModelSettingsPage.scss', import.meta.url)),
   'utf8',
 );
 const collectionItemStyles = readFileSync(
@@ -68,7 +68,7 @@ describe('model service collapsed presentation', () => {
 
   it('marks the primary model slot as required in both label and control semantics', () => {
     expect(defaultModelSource).toMatch(
-      /label=\{t\('core\.primary\.label'\)\}[\s\S]*?description=\{t\('core\.primary\.description'\)\}[\s\S]*?required[\s\S]*?<Combobox[\s\S]*?aria-required="true"/,
+      /label=\{renderSlotLabel\(t\('core\.primary\.label'\), t\('core\.primary\.description'\)\)\}[\s\S]*?required[\s\S]*?<Combobox[\s\S]*?aria-required="true"/,
     );
   });
 

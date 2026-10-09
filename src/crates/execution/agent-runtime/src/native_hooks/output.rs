@@ -56,8 +56,16 @@ pub(crate) struct RawPermissionRequestDecision {
 /// or PermissionRequest `decision.behavior`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentHookPermissionOutcome {
-    Allow { reason: Option<String> },
-    Deny { reason: Option<String> },
+    Allow {
+        reason: Option<String>,
+    },
+    Deny {
+        reason: Option<String>,
+    },
+    /// Only enabled by registrations whose source contract supports ask.
+    Ask {
+        reason: Option<String>,
+    },
 }
 
 /// Aggregated result of dispatching one event across all matching handlers.
@@ -103,7 +111,11 @@ impl AgentHookOutcome {
     /// Fold one parsed stdout document into the aggregate. Returns `true`
     /// when dispatch should stop running further handlers (a final blocking
     /// or denying decision was made).
-    pub(crate) fn apply_output(&mut self, output: RawHookOutput) -> bool {
+    pub(crate) fn apply_output_with_ask(
+        &mut self,
+        output: RawHookOutput,
+        supports_ask: bool,
+    ) -> bool {
         let mut finalized = false;
         if let Some(message) = non_empty(output.system_message) {
             self.system_messages.push(message);
@@ -125,6 +137,14 @@ impl AgentHookOutcome {
             finalized = true;
         }
         if let Some(specific) = output.hook_specific_output {
+            if supports_ask
+                && specific.permission_decision.as_deref() == Some("ask")
+                && !self.permission_denied()
+            {
+                self.permission = Some(AgentHookPermissionOutcome::Ask {
+                    reason: non_empty(specific.permission_decision_reason.clone()),
+                });
+            }
             if let Some(context) = non_empty(specific.additional_context) {
                 self.additional_context.push(context);
             }
@@ -159,7 +179,13 @@ impl AgentHookOutcome {
                 self.permission = Some(AgentHookPermissionOutcome::Deny { reason });
                 true
             }
-            Some("allow") if !self.permission_denied() => {
+            Some("allow")
+                if !self.permission_denied()
+                    && !matches!(
+                        self.permission,
+                        Some(AgentHookPermissionOutcome::Ask { .. })
+                    ) =>
+            {
                 self.permission = Some(AgentHookPermissionOutcome::Allow { reason });
                 false
             }

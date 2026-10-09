@@ -1,19 +1,24 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * Tool card for GlobSearch file matching.
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
+import { isToolCardVisible } from '../utils/flowItemVisibility';
 import { GlobSearchToolCard } from '@openbitfun/ui/flow-chat';
+import { basenamePath } from "@/shared/utils/pathUtils";
 import { useToolCardHeightContract } from './useToolCardHeightContract';
 export const GlobSearchDisplay: React.FC<ToolCardProps> = ({
   toolItem,
   onExpand
 }) => {
   const { t } = useTranslation('flow-chat');
-  const { toolCall, toolResult, status } = toolItem;
-  const [isExpanded, setIsExpanded] = useState(false);
+  const { toolCall, toolResult } = toolItem;
+  const status = getToolCardStatus(toolItem);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,
@@ -85,7 +90,8 @@ export const GlobSearchDisplay: React.FC<ToolCardProps> = ({
   const pattern = getSearchPattern();
   const searchPath = getSearchPath();
   const hasDetails = status === 'completed' && files.length > 0;
-  const hasResultData = toolResult?.result !== undefined && toolResult?.result !== null;
+  const hasResultData = Array.isArray(toolResult?.result)
+    || Array.isArray(toolResult?.result?.files) || Array.isArray(toolResult?.result?.matches);
 
   const handleClick = useCallback(() => {
     if (hasDetails) {
@@ -93,46 +99,22 @@ export const GlobSearchDisplay: React.FC<ToolCardProps> = ({
         onExpand,
       });
     }
-  }, [applyExpandedState, hasDetails, isExpanded, onExpand]);
+  }, [applyExpandedState, hasDetails, isExpanded, onExpand, setIsExpanded]);
 
-  const renderAction = () => {
-    if (status === 'completed') {
-      return `${t('toolCards.globSearch.searchFile')}:`;
-    }
-    if (status === 'running' || status === 'streaming') {
-      return t('toolCards.globSearch.searchingFile');
-    }
-    if (status === 'pending') {
-      return t('toolCards.globSearch.preparingSearch');
-    }
-    return undefined;
-  };
-
-  const renderContent = () => {
-    if (status === 'completed') {
-      return `${pattern}${hasResultData ? ` (${t('toolCards.globSearch.filesCount', { count: stats.files })})` : ''}`;
-    }
-    if (status === 'running' || status === 'streaming') {
-      return `${pattern}...`;
-    }
-    if (status === 'pending') {
-      return pattern;
-    }
-    return pattern;
-  };
-
-  if (status === 'error') {
+  if (!isToolCardVisible(toolItem)) {
     return null;
   }
 
   return (
     <div ref={cardRootRef} data-openbitfun-adapter="glob-search" data-tool-card-id={toolId ?? ''}>
       <GlobSearchToolCard
-        action={renderAction()}
+        action={t('toolCards.globSearch.searchFile')}
         status={status}
         isExpanded={isExpanded}
         onToggle={hasDetails ? handleClick : undefined}
-        summary={renderContent()}
+        summary={pattern}
+        resultSummary={status === 'completed' && hasResultData ? t('toolCards.globSearch.filesCount', { count: stats.files }) : undefined}
+        statusDescription={getToolCardStatusDescription(status, t, toolResult?.error)}
         details={hasDetails ? [
           { label: `${t('toolCards.globSearch.labelPattern')}:`, value: pattern },
           { label: `${t('toolCards.globSearch.labelPath')}:`, value: searchPath },
@@ -145,10 +127,14 @@ export const GlobSearchDisplay: React.FC<ToolCardProps> = ({
         ] : undefined}
         results={hasDetails ? files.slice(0, 50).map((file: any, index: number) => {
           const fileName = typeof file === 'string' ? file : (file.name || file.path || '');
+          const normalizedPath = fileName.replace(/\\/g, '/').replace(/\/$/, '');
+          const basename = basenamePath(normalizedPath);
+          const parent = normalizedPath.slice(0, Math.max(0, normalizedPath.length - basename.length)).replace(/\/$/, '');
           return {
             icon: fileName.endsWith('/') ? 'directory' as const : 'file' as const,
             key: `${fileName}-${index}`,
-            title: fileName,
+            title: basename || fileName,
+            description: parent || undefined,
           };
         }) : undefined}
         moreResultsLabel={files.length > 50

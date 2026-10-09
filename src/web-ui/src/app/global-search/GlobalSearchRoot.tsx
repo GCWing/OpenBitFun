@@ -76,7 +76,7 @@ const ACTION_ICONS: Record<ProductActionIcon, IconSource> = {
   terminal: { name: 'terminal' },
   files: { glyph: FileText },
   users: { glyph: Users },
-  puzzle: { name: 'extension' },
+  'book-open': { name: 'book-open' },
   blocks: { glyph: Blocks },
   'check-square': { glyph: CheckSquare2 },
   chart: { glyph: BarChart3 },

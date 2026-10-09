@@ -8,10 +8,12 @@ import { ChatTimelineItem } from '../../model/ChatTimelineModels';
 import { ChatTimelineState, ChatTimelineStore } from '../../services/ChatTimelineStore';
 import { ConnectionErrorPolicy } from '../../services/ConnectionErrorPolicy';
 import { Encoding } from '../../services/Encoding';
+import { MarkdownHtmlSerializer } from '../../services/MarkdownHtmlSerializer';
 import { RemoteChatPollingCursor, RemoteChatPollingSnapshot } from '../../services/RemoteChatPollingLifecycleController';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { RemoteLogger } from '../../services/RemoteLogger';
 import { RemoteUiState } from '../../services/RemoteUiState';
+import { MessageCopyScope } from '../actions/ConversationIntent';
 import { RemotePageState } from '../state/RemotePageState';
 import {
   RemoteConversationDependencies,
@@ -228,12 +230,26 @@ export class RemoteTranscriptController {
     );
   }
 
-  async copyRemoteMessage(text: string): Promise<void> {
+  /**
+   * Writes one message body to the clipboard.
+   *
+   * `rich` is the only scope that changes the payload shape: the Markdown source
+   * goes out as the plain flavor and its rendered html as a second record, so a
+   * rich-text receiver pastes formatted content while everything else still
+   * pastes the source. The other scopes stay the single plain write that every
+   * copy caller used before the assistant menu.
+   */
+  async copyRemoteMessage(text: string, scope: MessageCopyScope): Promise<void> {
     if (text.trim().length === 0) {
       return;
     }
     try {
-      await requireRemoteRuntime(this.remoteRuntime).clipboard.writeText(text);
+      const clipboard = requireRemoteRuntime(this.remoteRuntime).clipboard;
+      if (scope === MessageCopyScope.Rich) {
+        await clipboard.copyRich(text, MarkdownHtmlSerializer.toHtml(text));
+      } else {
+        await clipboard.writeText(text);
+      }
       this.remote.setStatusText(RemoteI18n.t('status.messageCopied'));
     } catch (err) {
       this.remote.setStatusText(ConnectionErrorPolicy.errorText(err));

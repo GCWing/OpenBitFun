@@ -321,6 +321,80 @@ fn truncated_nested() {
     ok(r#"{"a": [1, 2, {"b": 3"#, r#"{"a": [1, 2, {"b": 3}]}"#);
 }
 
+#[test]
+fn llm_stream_prefix_ending_at_first_url_slash() {
+    ok(
+        r##"{"content":"# Heading\nhttps:/"##,
+        r##"{"content":"# Heading\nhttps:/"}"##,
+    );
+}
+
+#[test]
+fn llm_stream_string_prefixes_remain_repairable() {
+    let full =
+        r##"{"content":"# Heading\nhttps://example.com/path","items":[{"id":1,"name":"Ada"}]}"##;
+    for end in full
+        .char_indices()
+        .map(|(index, _)| index)
+        .skip(1)
+        .chain(std::iter::once(full.len()))
+    {
+        let prefix = &full[..end];
+        let repaired = openbitfun_tool_call_jsonrepair::jsonrepair(prefix)
+            .unwrap_or_else(|error| panic!("prefix {prefix:?} failed: {error}"));
+        serde_json::from_str::<serde_json::Value>(&repaired)
+            .unwrap_or_else(|error| panic!("prefix {prefix:?} produced invalid JSON: {error}"));
+    }
+}
+
+#[test]
+fn unsupported_whitespace_only_array_value_does_not_loop() {
+    for input in ["[\u{000C}", "[1,\u{000C}"] {
+        assert!(
+            jsonrepair(input).is_err(),
+            "input {input:?} must return an error"
+        );
+    }
+}
+
+#[test]
+fn root_list_trailing_comma_does_not_remove_earlier_separator() {
+    let repaired = jsonrepair("R ,[{[").unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&repaired).unwrap();
+    assert_eq!(parsed.as_array().map(Vec::len), Some(2));
+}
+
+#[test]
+fn invalid_escape_before_control_character_is_escaped_in_output() {
+    ok("'z\\\u{0010}'", r#""z\u0010""#);
+}
+
+#[test]
+fn isolated_unicode_surrogates_return_invalid_unicode_error() {
+    use openbitfun_tool_call_jsonrepair::JsonRepairErrorKind;
+
+    for input in [r#""\udfff""#, r#""\ud83d""#, r#""\ud83d\u0041""#] {
+        let error = jsonrepair(input).expect_err("isolated surrogate must fail");
+        assert_eq!(error.kind, JsonRepairErrorKind::InvalidUnicode);
+    }
+    ok(r#""\ud83d\ude00""#, r#""\ud83d\ude00""#);
+}
+
+#[test]
+fn escaped_comma_does_not_cause_recursive_string_retry() {
+    let input = "'\\,'?";
+    if let Ok(repaired) = jsonrepair(input) {
+        serde_json::from_str::<serde_json::Value>(&repaired).unwrap();
+    }
+}
+
+#[test]
+fn empty_fenced_root_value_does_not_leave_trailing_comma() {
+    let repaired = jsonrepair("\0\n``````").unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&repaired).unwrap();
+    assert_eq!(parsed.as_array().map(Vec::len), Some(1));
+}
+
 // ── 13. Markdown code fences ─────────────────────────────────
 
 #[test]

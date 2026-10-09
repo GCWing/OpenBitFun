@@ -507,8 +507,13 @@ impl WorkspaceService {
                     "Remote workspace path is not a directory",
                 ));
             }
+            // The root path has no basename. Keep a friendly stable label for
+            // this common remote workspace instead of letting the manager use
+            // its generic "Unknown" placeholder.
+            let display_name = (path == "/").then(|| config.name.clone());
             let options = WorkspaceOpenOptions {
                 workspace_kind: WorkspaceKind::Remote,
+                display_name,
                 remote_connection_id: Some(connection_id.to_string()),
                 remote_ssh_host: Some(host.clone()),
                 stable_workspace_id: Some(remote_workspace_stable_id(&host, &path)),
@@ -1051,12 +1056,16 @@ impl WorkspaceService {
     /// Returns all tracked assistant workspaces, including inactive ones.
     pub async fn get_assistant_workspaces(&self) -> Vec<WorkspaceInfo> {
         let manager = self.manager.read().await;
-        manager
+        let mut workspaces: Vec<_> = manager
             .get_workspaces()
             .values()
             .filter(|workspace| workspace.workspace_kind == WorkspaceKind::Assistant)
             .cloned()
-            .collect()
+            .collect();
+        workspaces.sort_by(|left, right| {
+            (&left.assistant_id, &left.id).cmp(&(&right.assistant_id, &right.id))
+        });
+        workspaces
     }
 
     /// Returns the assistant workspace currently assigned the primary role.
@@ -1895,10 +1904,19 @@ impl WorkspaceService {
             .await;
             validate_workspace_persistence_data(&data, &self.path_manager.miniapps_dir())?;
 
+            // Older current-format catalogs tracked MiniApp activity as recent
+            // projects. Normalize only that UI history; keep every workspace
+            // record and its opened/current/session references intact. Remote
+            // paths belong to another host and must not match our local root.
+            data.recent_workspaces.retain(|id| {
+                let workspace = &data.workspaces[id];
+                workspace.workspace_kind == WorkspaceKind::Remote
+                    || !self.is_miniapp_owned_path(&workspace.root_path)
+            });
+
             let mut manager = self.manager.write().await;
             *manager.get_workspaces_mut() = data.workspaces;
             manager.set_opened_workspace_ids(data.opened_workspace_ids);
-            manager.set_recent_workspaces(data.recent_workspaces);
             manager.set_recent_assistant_workspaces(data.recent_assistant_workspaces);
             manager.set_primary_assistant_key(data.primary_assistant_key);
 
@@ -1909,6 +1927,10 @@ impl WorkspaceService {
                     )));
                 }
             }
+
+            // Selecting the current workspace touches recency, so restore the
+            // filtered history afterwards, including when a MiniApp is current.
+            manager.set_recent_workspaces(data.recent_workspaces);
 
             let workspaces_to_restore = Self::collect_startup_restored_workspaces(&manager);
             drop(manager);
@@ -2163,6 +2185,7 @@ impl WorkspaceService {
 
     async fn ensure_assistant_workspaces(&self) -> OpenBitFunResult<()> {
         let descriptors = self.discover_assistant_workspaces().await?;
+        let known_assistants = self.get_assistant_workspaces().await;
         let has_current_workspace = self.get_current_workspace().await.is_some();
         let has_opened_remote = {
             let manager = self.manager.read().await;
@@ -2192,8 +2215,13 @@ impl WorkspaceService {
             // If a remote workspace tab exists but nothing is current yet (e.g. pending SSH
             // reconnect), do not auto-activate the default assistant workspace — that would look
             // like a spurious new local workspace.
-            let should_activate =
-                !has_current_workspace && !has_opened_remote && index == activation_index;
+            // Discovery refreshes the catalog, not the user's opened list. Only
+            // a fresh install selects an assistant automatically; an empty opened
+            // list on an existing install can mean the user closed every assistant.
+            let should_activate = known_assistants.is_empty()
+                && !has_current_workspace
+                && !has_opened_remote
+                && index == activation_index;
             let options = WorkspaceCreateOptions {
                 auto_set_current: should_activate,
                 add_to_recent: false,
@@ -2203,8 +2231,17 @@ impl WorkspaceService {
                 ..Default::default()
             };
 
-            self.open_workspace_with_options(descriptor.path, options)
+            if should_activate {
+                self.open_workspace_with_options(descriptor.path, options)
+                    .await?;
+            } else {
+                self.track_workspace_activity(
+                    descriptor.path,
+                    options,
+                    WorkspaceActivityMode::RefreshMetadata,
+                )
                 .await?;
+            }
         }
 
         {
@@ -2485,6 +2522,145 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn assistant_close_preserves_catalog_and_closed_state_after_restart() {
+        let env = TestEnvironment::new();
+        let service = build_test_workspace_service(env.path_manager.clone()).await;
+        service.ensure_assistant_workspaces().await.unwrap();
+        let built_in = service.get_primary_assistant_workspace().await.unwrap();
+        let named = service
+            .create_assistant_workspace(Some("closed-assistant".to_string()))
+            .await
+            .unwrap();
+        service
+            .set_primary_assistant_workspace(&named.id)
+            .await
+            .unwrap();
+        let history_marker = named.root_path.join("history-marker.txt");
+        fs::write(&history_marker, "preserved").await.unwrap();
+        service.close_workspace(&named.id).await.unwrap();
+        service.close_workspace(&built_in.id).await.unwrap();
+
+        let restored = build_test_workspace_service(env.path_manager.clone()).await;
+        restored.load_workspace_history_only().await.unwrap();
+        restored.ensure_assistant_workspaces().await.unwrap();
+        // Repeated discovery/cleanup must not reopen an explicitly closed row.
+        restored.ensure_assistant_workspaces().await.unwrap();
+        assert!(restored.get_opened_workspaces().await.is_empty());
+        assert!(restored.get_current_workspace().await.is_none());
+        assert_eq!(restored.get_assistant_workspaces().await.len(), 2);
+        assert_eq!(
+            restored.get_primary_assistant_workspace().await.unwrap().id,
+            named.id
+        );
+        assert_eq!(
+            fs::read_to_string(&history_marker).await.unwrap(),
+            "preserved"
+        );
+
+        let reopened = restored.open_workspace_by_id(&named.id).await.unwrap();
+        assert_eq!(reopened.id, named.id);
+        assert_eq!(restored.get_opened_workspaces().await.len(), 1);
+        assert_eq!(restored.get_current_workspace().await.unwrap().id, named.id);
+    }
+
+    #[tokio::test]
+    async fn assistant_discovery_preserves_existing_opened_order_and_selection() {
+        let env = TestEnvironment::new();
+        let service = build_test_workspace_service(env.path_manager.clone()).await;
+        service.ensure_assistant_workspaces().await.unwrap();
+        let built_in = service.get_primary_assistant_workspace().await.unwrap();
+        let named = service
+            .create_assistant_workspace(Some("named".into()))
+            .await
+            .unwrap();
+        let second = service
+            .create_assistant_workspace(Some("second".into()))
+            .await
+            .unwrap();
+        service.set_active_workspace(&named.id).await.unwrap();
+        service
+            .reorder_opened_workspaces(vec![
+                built_in.id.clone(),
+                second.id.clone(),
+                named.id.clone(),
+            ])
+            .await
+            .unwrap();
+        service.close_workspace(&built_in.id).await.unwrap();
+        service.ensure_assistant_workspaces().await.unwrap();
+        assert_eq!(
+            service
+                .get_opened_workspaces()
+                .await
+                .iter()
+                .map(|workspace| &workspace.id)
+                .collect::<Vec<_>>(),
+            vec![&second.id, &named.id]
+        );
+        assert_eq!(service.get_current_workspace().await.unwrap().id, named.id);
+        assert_eq!(
+            service.get_primary_assistant_workspace().await.unwrap().id,
+            built_in.id
+        );
+    }
+
+    #[tokio::test]
+    async fn assistant_catalog_accepts_legacy_persistence_without_primary_selection() {
+        let env = TestEnvironment::new();
+        let service = build_test_workspace_service(env.path_manager.clone()).await;
+        service.ensure_assistant_workspaces().await.unwrap();
+        let built_in = service.get_primary_assistant_workspace().await.unwrap();
+        let named = service
+            .create_assistant_workspace(Some("legacy".into()))
+            .await
+            .unwrap();
+        let mut payload: serde_json::Value = service
+            .persistence
+            .load_json("workspace_data")
+            .await
+            .unwrap()
+            .unwrap();
+        payload
+            .as_object_mut()
+            .unwrap()
+            .remove("primary_assistant_key");
+        payload
+            .as_object_mut()
+            .unwrap()
+            .remove("recent_assistant_workspaces");
+        service
+            .persistence
+            .save_json("workspace_data", &payload, StorageOptions::default())
+            .await
+            .unwrap();
+
+        let restored = build_test_workspace_service(env.path_manager.clone()).await;
+        restored.load_workspace_history_only().await.unwrap();
+        restored.ensure_assistant_workspaces().await.unwrap();
+        assert_eq!(
+            restored
+                .get_opened_workspaces()
+                .await
+                .iter()
+                .map(|workspace| &workspace.id)
+                .collect::<Vec<_>>(),
+            vec![&named.id, &built_in.id]
+        );
+        assert_eq!(restored.get_current_workspace().await.unwrap().id, named.id);
+        assert_eq!(
+            restored.get_primary_assistant_workspace().await.unwrap().id,
+            built_in.id
+        );
+        let saved: WorkspacePersistenceData = restored
+            .persistence
+            .load_json("workspace_data")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.opened_workspace_ids, vec![named.id, built_in.id]);
+    }
+
+    #[tokio::test]
     async fn deleted_built_in_assistant_is_not_recreated_when_named_assistant_exists() {
         let env = TestEnvironment::new();
         let service = build_test_workspace_service(env.path_manager.clone()).await;
@@ -2755,6 +2931,84 @@ mod tests {
         assert!(
             service.get_current_workspace().await.is_none(),
             "tracked workspace activity should not change the current workspace"
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_miniapp_history_loads_without_losing_workspace_references() {
+        let mut env = TestEnvironment::new();
+        // Use the production canonicalizer for macOS /var aliases and Windows
+        // verbatim-path prefixes so the fixture has one consistent local root.
+        env.path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            canonicalize_local_workspace_root(&env.root)
+                .unwrap()
+                .0
+                .join("user-root"),
+        ));
+        let service = build_test_workspace_service(env.path_manager.clone()).await;
+        let project = service
+            .open_workspace(env.create_workspace_dir("project"))
+            .await
+            .unwrap();
+        let root = env.path_manager.miniapp_dir("legacy-deck").join("appdata");
+        std::fs::create_dir_all(&root).unwrap();
+        let miniapp = service.open_workspace(root).await.unwrap();
+        let mut payload: serde_json::Value = service
+            .persistence
+            .load_json("workspace_data")
+            .await
+            .unwrap()
+            .unwrap();
+        // Reproduce the old writer, which included app-owned workspaces here.
+        // A remote record with the same path is still a user project, even
+        // while its connection is unavailable.
+        let mut remote = payload["workspaces"][&miniapp.id].clone();
+        remote["id"] = "offline-remote".into();
+        remote["workspaceKind"] = "remote".into();
+        payload["workspaces"]["offline-remote"] = remote;
+        payload["recent_workspaces"] =
+            serde_json::json!([miniapp.id, project.id, "offline-remote"]);
+        service
+            .persistence
+            .save_json("workspace_data", &payload, StorageOptions::default())
+            .await
+            .unwrap();
+
+        let restored = build_test_workspace_service(env.path_manager.clone()).await;
+        restored.load_workspace_history_only().await.unwrap();
+        assert_eq!(
+            restored.get_current_workspace().await.unwrap().id,
+            miniapp.id
+        );
+        assert!(restored
+            .get_opened_workspaces()
+            .await
+            .iter()
+            .any(|ws| ws.id == miniapp.id));
+        assert_eq!(
+            restored
+                .get_recent_workspaces()
+                .await
+                .iter()
+                .map(|ws| &ws.id)
+                .collect::<Vec<_>>(),
+            vec![&project.id, &"offline-remote".to_string()]
+        );
+        let saved: WorkspacePersistenceData = restored
+            .persistence
+            .load_json("workspace_data")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(saved.workspaces.contains_key(&miniapp.id));
+        assert_eq!(
+            saved.workspaces["offline-remote"].workspace_kind,
+            WorkspaceKind::Remote
+        );
+        assert_eq!(saved.current_workspace_id, Some(miniapp.id));
+        assert_eq!(
+            saved.recent_workspaces,
+            vec![project.id, "offline-remote".to_string()]
         );
     }
 

@@ -1,5 +1,10 @@
+// `SelectionContainerAttribute` is not decoration: the ArkUI compiler resolves
+// the attribute type of a component that lives in an api/ declaration through
+// this file's imports, so dropping it fails CompileArkTS.
+import { SelectionContainer, SelectionContainerAttribute, SelectionContainerTextJoinStyle } from '@kit.ArkUI';
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
+import { DeviceApiLevelService } from '../../services/DeviceApiLevelService';
 import {
   MarkdownParseCache,
   ParsedMarkdownBlock,
@@ -8,11 +13,18 @@ import {
   ParsedMarkdownTableCell,
   ParsedMarkdownTableRow
 } from '../../services/MarkdownParser';
+import { SelectionCapabilityPolicy } from '../policy/SelectionCapabilityPolicy';
 import { CARD, FILE_LINK, INK, LINE, MUTED, SOFT } from './Theme';
 
 @ComponentV2
 export struct MarkdownContent {
   private readonly parseCache: MarkdownParseCache = new MarkdownParseCache();
+  /**
+   * Whether this device can select across blocks. Resolved once: a running
+   * process cannot change its API level.
+   */
+  private readonly crossBlockSelection: boolean =
+    SelectionCapabilityPolicy.supportsCrossBlockSelection(DeviceApiLevelService.sdkApiVersion());
   @Param text: string = '';
   // Explicit primitive invalidation for retained Repeat rows. The text remains
   // the source of truth; this revision only ensures parameter propagation on
@@ -22,6 +34,40 @@ export struct MarkdownContent {
   @Event onOpenLink: (reference: string, label: string) => void = (_reference: string, _label: string) => {};
 
   build() {
+    if (this.crossBlockSelection) {
+      // API 26 only: the container is what lets one long press span several
+      // `Text` children. Its `copyOption` and join style govern the system
+      // selection menu, which copies the selected range with a line break
+      // between the blocks it covers. The children keep their own `copyOption`
+      // as well: that is the documented shape, and it is also what keeps each
+      // block copyable on its own.
+      //
+      // Colors are deliberately left to the platform. The app has no caret or
+      // selection-highlight token, and native color resources are generated from
+      // the shared mobile token contract, so inventing one here would rewrite
+      // the Android, iOS and design-preview token outputs. The platform paints
+      // its own interactive-selection state, which is what the approved UI draft
+      // specifies for the missing tokens; the handles take the app's information
+      // accent so selection reads as this app's.
+      SelectionContainer() {
+        this.MarkdownBlockColumn()
+      }
+      .width('100%')
+      .copyOption(CopyOptions.LocalDevice)
+      .textJoinStyle(SelectionContainerTextJoinStyle.NEWLINE)
+      .caretColor(FILE_LINK)
+    } else {
+      this.MarkdownBlockColumn()
+    }
+  }
+
+  /**
+   * The rendered answer. Both selection paths draw this exact subtree; only the
+   * wrapper differs, so the fallback below API 26 cannot drift from the API 26
+   * presentation.
+   */
+  @Builder
+  MarkdownBlockColumn() {
     Column({ space: 5 }) {
       ForEach(this.parseCache.blocksFor(this.text), (block: ParsedMarkdownBlock) => {
         this.MarkdownBlockView(block)
@@ -79,6 +125,10 @@ export struct MarkdownContent {
       .lineHeight(MobileDesignTypography.bodySmall.lineHeight)
       .fontColor(MUTED)
       .fontFamily('monospace')
+      // `copyOption` is what carries selection; without it `textSelectable`
+      // alone is inert. Kept alongside it because it states the intent that this
+      // surface is read-only: selectable, never focusable.
+      .copyOption(CopyOptions.LocalDevice)
       .textSelectable(TextSelectableMode.SELECTABLE_UNFOCUSABLE)
   }
 
@@ -93,6 +143,10 @@ export struct MarkdownContent {
     .lineHeight(lineHeight)
     .fontColor(color)
     .width('100%')
+    // Paragraphs, headings, quotes and list items all render through this one
+    // Text, so its `copyOption` is the fallback path for every prose block: one
+    // block per long press on a device without `SelectionContainer`.
+    .copyOption(CopyOptions.LocalDevice)
   }
 
   @Builder
@@ -235,6 +289,10 @@ export struct MarkdownContent {
       .fontWeight(header ? FontWeight.Medium : FontWeight.Regular)
       .fontColor(INK)
       .textAlign(this.tableTextAlign(cell.alignment))
+      // A cell is its own Text because the table lays cells out in Rows, so it
+      // needs its own copyOption to be selectable inside the container and on
+      // the fallback path alike.
+      .copyOption(CopyOptions.LocalDevice)
     }
     .layoutWeight(1)
     .constraintSize({ minWidth: 132, minHeight: 42 })
@@ -249,10 +307,12 @@ export struct MarkdownContent {
         Text(language.length > 0 ? language : 'code')
           .fontSize(MobileDesignTypography.labelSmall.size)
           .fontColor(MUTED)
+          .textSelectable(TextSelectableMode.UNSELECTABLE)
         Blank()
         Text(RemoteI18n.t('common.copy'))
           .fontSize(MobileDesignTypography.labelSmall.size)
           .fontColor(MUTED)
+          .textSelectable(TextSelectableMode.UNSELECTABLE)
           .onClick(() => {
             this.onCopyText(body);
           })
@@ -265,6 +325,14 @@ export struct MarkdownContent {
           .fontColor(INK)
           .fontFamily('monospace')
           .constraintSize({ minWidth: '100%' })
+          // The code body scrolls horizontally inside the block, so it carries
+          // its own copyOption rather than relying on the container to reach it.
+          // The language label and the copy action above stay outside the
+          // selection: measured on device, a container selection that spans the
+          // block copied those two labels as well, so the block's chrome reached
+          // the clipboard as text. `UNSELECTABLE` is what keeps a label out of a
+          // selection the container drives; the copy action's click still fires.
+          .copyOption(CopyOptions.LocalDevice)
       }
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)

@@ -1,49 +1,46 @@
+/* Official variable faces cover the design system's 400/500/600/700 weights. */
 @font-face {
   font-family: "OpenBitFun HarmonyOS Sans";
-  src: url("../assets/fonts/harmonyos-sans/base/HarmonyOS_Sans_Regular.ttf") format("truetype");
+  src: url("../assets/fonts/harmonyos-sans/base/HarmonyOS_Sans.ttf") format("truetype");
   font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "OpenBitFun HarmonyOS Sans";
-  src: url("../assets/fonts/harmonyos-sans/base/HarmonyOS_Sans_Medium.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "OpenBitFun HarmonyOS Sans";
-  src: url("../assets/fonts/harmonyos-sans/base/HarmonyOS_Sans_Bold.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 700;
+  font-weight: 400 700;
   font-display: swap;
 }
 
 @font-face {
   font-family: "OpenBitFun HarmonyOS Sans SC";
-  src: url("../assets/fonts/harmonyos-sans/sc/HarmonyOS_Sans_SC_Regular.ttf") format("truetype");
+  src: url("../assets/fonts/harmonyos-sans/sc/HarmonyOS_Sans_SC.ttf") format("truetype");
   font-style: normal;
-  font-weight: 400;
+  font-weight: 400 700;
   font-display: swap;
-}
-
-@font-face {
-  font-family: "OpenBitFun HarmonyOS Sans SC";
-  src: url("../assets/fonts/harmonyos-sans/sc/HarmonyOS_Sans_SC_Medium.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "OpenBitFun HarmonyOS Sans SC";
-  src: url("../assets/fonts/harmonyos-sans/sc/HarmonyOS_Sans_SC_Bold.ttf") format("truetype");
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
+  /*
+   * The zh-CN profile puts this face in front of all body text, so it is the face
+   * Chinese copy is centred by. HarmonyOS Sans splits its line box as 92.8%
+   * ascent / 24.4% descent, but its ideographs draw from 84.5% above the baseline
+   * to 7.5% below it, which leaves the box about 0.043em more room under the
+   * glyphs than over them: a selected line reads as an uneven band and message
+   * text sits high in its bubble. Splitting the same 117.2% as 97.1% / 20.1%
+   * moves the shared baseline down by exactly that 0.043em, before the glyphs are
+   * painted and without touching any box the product lays out.
+   *
+   * Keeping the sum is what contains the blast radius. `line-height: normal` and
+   * `1lh` both resolve to it, and the product sets an explicit numeric leading on
+   * every other text it lays out, so a line box only follows the split where the
+   * leading is intrinsic. Chromium on Windows rounds each metric to whole pixels,
+   * which at 13px, 14px and 20px turns the split into a one pixel `normal` box
+   * change and a half pixel baseline move; the design system's text overflow
+   * primitive is the only consumer of that intrinsic leading, and its block
+   * padding and centred grid absorb the pixel.
+   *
+   * The descent is deliberately tighter than the deepest Latin descender (24.5%):
+   * one reaches 0.044em past the content box, which is the same block padding.
+   *
+   * The Latin-first base face above keeps its own metrics: Latin ink brackets that
+   * split from both sides (lowercase 52%, sentence case 53%, cap labels 73%), so
+   * shifting it would trade one class of text for the other.
+   */
+  ascent-override: 97.1%;
+  descent-override: 20.1%;
 }
 
 @font-face {
@@ -79,14 +76,14 @@
 }
 
 @layer openbitfun.tokens.system {
-  :where([data-openbitfun-design-system-root]) {
+  /* This profile loads before package CSS; outrank its zero-specificity defaults. */
+  [data-openbitfun-design-system-root] {
     --openbitfun-font-family-sans: "OpenBitFun HarmonyOS Sans", system-ui, "Segoe UI", Arial, sans-serif;
     --openbitfun-font-family-control: "OpenBitFun HarmonyOS Sans", system-ui, "Segoe UI", Arial, sans-serif;
+    /* The design system owns the code stack and its localized body fallback. */
   }
 
   :where([data-openbitfun-design-system-root]):lang(zh-CN) {
-    /* Keep Latin code monospaced and use the same Chinese face as body text. */
-    --openbitfun-font-family-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, "Cascadia Mono", "Cascadia Code", Consolas, "Liberation Mono", "Courier New", "OpenBitFun HarmonyOS Sans SC", "OpenBitFun HarmonyOS Sans", "Microsoft YaHei UI", monospace;
     --openbitfun-font-family-sans: "OpenBitFun HarmonyOS Sans SC", "OpenBitFun HarmonyOS Sans", system-ui, "Microsoft YaHei UI", sans-serif;
     --openbitfun-font-family-control: "OpenBitFun HarmonyOS Sans SC", "OpenBitFun HarmonyOS Sans", system-ui, "Microsoft YaHei UI", sans-serif;
   }

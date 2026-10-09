@@ -74,6 +74,16 @@ fn custom_mode_defaults_generate_id_and_default_policy() {
     for tool_name in ["get_goal", "create_goal", "update_goal"] {
         assert!(parsed.definition.tools.iter().any(|tool| tool == tool_name));
     }
+    for tool_name in [
+        "AgentSpawn",
+        "AgentSendInput",
+        "AgentControl",
+        "AgentList",
+        "AgentWait",
+    ] {
+        assert!(parsed.definition.tools.iter().any(|tool| tool == tool_name));
+    }
+    assert!(!parsed.definition.tools.iter().any(|tool| tool == "Task"));
     assert_eq!(parsed.definition.readonly, DEFAULT_CUSTOM_MODE_READONLY);
     assert_eq!(parsed.definition.model, DEFAULT_CUSTOM_MODE_MODEL);
     assert_eq!(

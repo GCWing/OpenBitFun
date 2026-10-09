@@ -651,8 +651,8 @@ impl PersistenceManager {
     /// Resolve the on-disk sessions directory for `workspace_path`.
     ///
     /// Callers may pass either a logical workspace root or an already-resolved
-    /// managed sessions directory. Local workspace roots are slugified under
-    /// `~/.openbitfun/projects/`; already-resolved local/remote sessions
+    /// managed sessions directory. Local workspace roots use compact runtime
+    /// keys under `~/.openbitfun/projects/`; already-resolved local/remote sessions
     /// directories are used as-is.
     fn project_sessions_dir(&self, workspace_path: &Path) -> PathBuf {
         if self.is_resolved_sessions_dir(workspace_path) {
@@ -1124,7 +1124,7 @@ impl PersistenceManager {
         }
     }
 
-    async fn build_session_metadata(
+    pub(super) async fn build_session_metadata(
         &self,
         workspace_path: &Path,
         session: &Session,
@@ -8065,7 +8065,7 @@ mod tests {
         assert!(runtime.snapshot_by_hash_dir.exists());
         assert!(runtime.snapshot_metadata_dir.exists());
         assert!(runtime.snapshot_operations_dir.exists());
-        assert!(runtime.plans_dir.exists());
+        assert!(!runtime.runtime_root.join("plans").exists());
         assert!(runtime.layout_state_file.exists());
     }
 

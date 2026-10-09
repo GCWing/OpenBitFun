@@ -1,0 +1,69 @@
+.kb-shortcuts {
+  &__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--openbitfun-space-3);
+    margin-bottom: var(--openbitfun-space-4);
+  }
+
+  /** Design-system `SearchField` — align with settings nav capsule */
+  &__search {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    flex-shrink: 0;
+  }
+
+  &__error {
+    padding: var(--openbitfun-space-4) var(--openbitfun-space-5);
+    margin-bottom: var(--openbitfun-space-4);
+    border-radius: var(--openbitfun-radius-md);
+    background: var(--openbitfun-color-status-danger-surface);
+    color: var(--openbitfun-color-status-danger-content);
+    font-size: var(--openbitfun-type-label-md-font-size);
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__item {
+    &.kb-shortcuts__item--recording {
+      background: var(--openbitfun-color-action-secondary-background);
+    }
+
+    &.kb-shortcuts__item--conflict {
+      background: var(--openbitfun-color-status-warning-surface);
+    }
+
+    &--modified .kb-shortcuts__item-name {
+      font-style: italic;
+    }
+  }
+
+  &__item-conflict-hint {
+    display: block;
+    color: var(--openbitfun-color-status-warning-content);
+  }
+
+  &__item-key {
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    flex-shrink: 0;
+  }
+
+  &__empty {
+    padding: var(--openbitfun-space-8);
+    text-align: center;
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-body-md-font-size);
+  }
+}

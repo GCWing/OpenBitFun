@@ -726,7 +726,7 @@ export const SessionFilesBadge: React.FC<SessionFilesBadgeProps> = ({
   const getOperationIcon = (operationType: 'write' | 'edit' | 'delete') => {
     switch (operationType) {
       case 'write':
-        return <FilePlus size={12} className="icon-write" />;
+        return <Icon glyph={FilePlus} size="xs" className="icon-write" />;
       case 'delete':
         return <Icon name="delete" size="xs" className="icon-delete" />;
       default:

@@ -287,6 +287,28 @@ fn hash_host_and_root(host: &str, root_norm: &str) -> String {
     hex_encode(&hasher.finalize()[..16])
 }
 
+/// Build the compact runtime-directory key for a local workspace.
+///
+/// Runtime keys intentionally omit a product or workspace-kind prefix from
+/// the directory name. The domain marker remains part of the hashed input so
+/// local and remote identities cannot accidentally share a key.
+pub fn local_workspace_runtime_key(canonical_root_norm: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"runtime-local\0");
+    hasher.update(canonical_root_norm.as_bytes());
+    hex_encode(&hasher.finalize()[..12])
+}
+
+/// Build the compact runtime-directory key for a remote workspace.
+pub fn remote_workspace_runtime_key(ssh_host: &str, remote_root_norm: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"runtime-remote\0");
+    hasher.update(ssh_host.trim().to_lowercase().as_bytes());
+    hasher.update(b"\0");
+    hasher.update(remote_root_norm.as_bytes());
+    hex_encode(&hasher.finalize()[..12])
+}
+
 /// Stable storage id for a local workspace (`localhost` + canonical absolute root).
 pub fn local_workspace_stable_storage_id(canonical_root_norm: &str) -> String {
     format!(

@@ -32,6 +32,8 @@ const MARQUEE_PIXELS_PER_SECOND = 36;
 export type OverflowTextBehavior = "fade" | "marquee";
 
 export interface OverflowTextProps extends HTMLAttributes<HTMLElement> {
+  /** Full application-tooltip text, even when the label fits. Empty opts out. Never a native title. */
+  title?: string;
   /** Preserve paragraph/div semantics when adopting the shared text behavior. */
   as?: "span" | "p" | "div";
   /** Clamp a multiline preview; its full text uses the same hover/focus tooltip. */
@@ -143,7 +145,7 @@ export const OverflowText = forwardRef<HTMLElement, OverflowTextProps>(
     }, [behavior, children, lines, overflowStyle, readOverflow, updateOverflow]);
 
     useEffect(() => {
-      if (measurementRef.current.isOverflowing) prepareTooltip();
+      if (measurementRef.current.isOverflowing || title) prepareTooltip();
     }, [children, title, prepareTooltip]);
 
     useEffect(() => {
@@ -191,7 +193,7 @@ export const OverflowText = forwardRef<HTMLElement, OverflowTextProps>(
       } : {}),
     } as CSSProperties;
 
-    const hasOverflowTooltip = measurement.isOverflowing && !hasExplicitTooltip && title !== "";
+    const hasOverflowTooltip = (measurement.isOverflowing || Boolean(title)) && !hasExplicitTooltip && title !== "";
 
     return (
       <>
@@ -208,7 +210,6 @@ export const OverflowText = forwardRef<HTMLElement, OverflowTextProps>(
         data-overflow-text={title}
         ref={setElementRef}
         style={resolvedStyle}
-        title={hasOverflowTooltip ? undefined : title}
       >
         {behavior === "marquee" || ((textOnly || overflowStyle === "ellipsis") && lines === undefined) ? (
           <span className={styles.content} data-openbitfun-part="content" data-overflow-content="" ref={contentRef}>

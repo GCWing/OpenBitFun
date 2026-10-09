@@ -1,6 +1,6 @@
 use super::*;
 
-impl TaskTool {
+impl AgentExecutionTool {
     pub(super) fn background_subagent_started_assistant_message(
         agent_id: &str,
         bg_task_id: &str,

@@ -1,11 +1,11 @@
 {
   "title": "MCP",
-  "subtitle": "管理 MCP 伺服器連接",
+  "subtitle": "連線 MCP 服務，為智能體提供外部工具與資料來源",
   "subtitleReadOnly": "檢視 MCP 連線",
   "section": {
     "serverList": {
       "title": "MCP 服務列表",
-      "description": "MCP 服務與 JSON 設定",
+      "description": "啟用並連線服務後，其工具才可供智能體呼叫",
       "desktopUnavailable": "請在桌面端管理 OpenBitFun MCP。",
       "remoteUnavailable": "遠端連線時暫不支援管理 OpenBitFun MCP。",
       "loadFailed": "無法載入 MCP 服務。"
@@ -13,7 +13,7 @@
   },
   "external": {
     "title": "外部 MCP 伺服器",
-    "description": "來自其他 AI 應用",
+    "description": "顯示其他 AI 應用程式中的服務及其在 OpenBitFun 中的啟用狀態",
     "manage": "管理外部擴充",
     "retry": "重試載入外部 MCP",
     "loading": "正在檢查外部 MCP 來源...",
@@ -199,7 +199,7 @@
   "jsonEditor": {
     "title": "進階 JSON 設定",
     "loadFailed": "無法載入 MCP 設定。",
-    "hint1": "使用標準 Cursor 格式的 MCP 設定。設定將自動儲存到用戶目錄下的 app.json 檔案中。",
+    "hint1": "使用 mcpServers 物件組織服務設定，修改後點擊儲存才會生效。",
     "hint2": "使用 command 設定 stdio，使用 url 設定 Streamable HTTP。舊 HTTP+SSE 設定仍可讀取；transport 可明確指定傳輸協定。",
     "secretWarning": "設定中的 env、headers 或 URL 可能包含 API 金鑰。請只在 OpenBitFun 內檢查和儲存，不要貼到線上 JSON 驗證工具。",
     "discardTitle": "放棄 MCP JSON 修改？",
@@ -209,7 +209,8 @@
     "lintError": "JSON 有語法錯誤{{location}}：{{message}}",
     "exampleTitle": "設定示例：",
     "localProcess": "本地進程（stdio）：",
-    "remoteService": "遠端服務（Streamable HTTP）："
+    "remoteService": "遠端服務（Streamable HTTP）：",
+    "description": "直接編輯同一組 MCP 服務設定，適合批次調整或填寫進階參數"
   },
   "resourceBrowser": {
     "title": "MCP 資源",
@@ -339,7 +340,7 @@
     "editTitle": "編輯服務",
     "edit": "$t(shared:tools.edit)",
     "importTitle": "匯入設定",
-    "scopeHint": "此裝置 · 使用者設定 · 適用於此裝置上的所有工作區",
+    "scopeHint": "執行主機 · 使用者設定 · 適用於該主機上的所有工作區",
     "connectionType": "連線方式",
     "http": "服務網址（Streamable HTTP）",
     "stdio": "啟動命令（stdio）",
@@ -347,7 +348,7 @@
     "url": "服務 URL",
     "command": "可執行程式",
     "commandPlaceholder": "npx、uvx、docker 或程式路徑",
-    "commandHint": "程式與路徑均屬於此裝置。啟動參數逐項填寫，不會按空格拆分為命令。",
+    "commandHint": "程式與路徑屬於執行主機。每個啟動參數單獨填寫，不會依空格拆分",
     "arguments": "啟動參數",
     "argumentIndex": "參數 {{index}}",
     "addArgument": "新增參數",
@@ -376,9 +377,9 @@
     "defaultTimeout": "使用系統預設值",
     "autoStart": "啟用後自動連線",
     "enabled": "啟用此服務",
-    "credentialHint": "環境變數與 Header 儲存在此裝置的設定檔中。已有值預設隱藏，未編輯時保留；刪除列可移除對應設定。",
-    "newServerHint": "新服務預設儲存為停用狀態。確認設定後，在清單中啟用並啟動。",
-    "applyHint": "儲存會將修改套用至已啟用的服務，可能重新連線。設定儲存成功不代表連線成功。",
+    "credentialHint": "環境變數與請求標頭儲存在執行主機的設定檔中。既有值預設隱藏，未編輯時保留；刪除列可移除",
+    "newServerHint": "新服務儲存後保持停用，需在清單中手動啟用",
+    "applyHint": "儲存會更新已啟用的服務，可能重新連線；儲存成功不代表連線成功",
     "editJson": "此服務的進階 JSON",
     "backToForm": "返回表單",
     "saveNew": "儲存設定",

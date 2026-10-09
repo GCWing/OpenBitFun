@@ -76,10 +76,10 @@ $track-item-gap: 10px;
 
   // One glyph size for the whole track, enforced here so component-owned
   // icons land on the same rhythm without the strip reaching into them.
-  > svg {
+  > :is(svg, [data-openbitfun-component='icon']) {
     flex: none;
-    width: 12px;
-    height: 12px;
+    width: var(--openbitfun-control-icon-size-xs);
+    height: var(--openbitfun-control-icon-size-xs);
   }
 }
 
@@ -273,6 +273,58 @@ $track-item-gap: 10px;
     position: fixed;
     z-index: var(--openbitfun-layer-popover);
     width: min(240px, calc(100vw - 16px));
+  }
+
+  // The one control whose subject keeps working while nobody is watching, so
+  // its flag is the state: running, parked, or stuck. Only the states that wait
+  // on the user raise their voice — a healthy goal stays part of the hushed line
+  // — and a raised state keeps its ink through hover, because a blocked goal
+  // must not soften into the resting hover colour while the user points at it.
+  &__goal-btn {
+    @include strip-control;
+
+    // Running is the quiet case, so only the glyph says the goal is alive.
+    // `<Icon>` owns the svg, so the flag is tinted on the icon slot itself;
+    // hovering the control then lifts the label without dimming the flag.
+    &--active > [data-openbitfun-component='icon'] {
+      color: var(--openbitfun-color-accent-default);
+    }
+
+    &--paused,
+    &--paused:hover:not(:disabled) {
+      color: var(--openbitfun-color-status-warning-emphasis);
+    }
+
+    &--blocked,
+    &--blocked:hover:not(:disabled) {
+      color: var(--openbitfun-color-status-danger-emphasis);
+    }
+  }
+
+  // State and elapsed time are one reading of one goal, so they share the
+  // control's ink and leave the track together when it runs out of width.
+  &__goal-text {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: $track-part-gap;
+  }
+
+  // The goal's own two exits. They sit after the readout rather than inside it,
+  // because acting on a goal is a different gesture from opening it, and they
+  // are square like the context ring so a track with a goal keeps one rhythm.
+  &__goal-run,
+  &__goal-clear {
+    @include strip-control;
+
+    width: 18px;
+    padding: 0;
+  }
+
+  // Clearing cannot be undone, so the one irreversible control on the track says
+  // so before it is pressed instead of joining the quiet ink of the rest.
+  &__goal-clear:hover:not(:disabled) > [data-openbitfun-component='icon'] {
+    color: var(--openbitfun-color-status-danger-emphasis);
   }
 
   &__usage-btn {
@@ -516,6 +568,17 @@ $track-item-gap: 10px;
 
     &__chip--branch {
       max-width: 84px;
+    }
+
+    // The words go and the flag stays, so the row keeps knowing a goal is
+    // driving at the width where it can no longer say what it is doing.
+    &__goal-text {
+      display: none;
+    }
+
+    &__goal-btn {
+      width: 18px;
+      padding: 0;
     }
   }
 }

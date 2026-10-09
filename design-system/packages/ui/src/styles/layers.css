@@ -44,6 +44,6 @@
    */
   [data-openbitfun-icon-slot="true"] > :where(svg.lucide[stroke-width="2"]) {
     color: inherit;
-    stroke-width: 1.6;
+    stroke-width: var(--openbitfun-control-icon-stroke-width);
   }
 }

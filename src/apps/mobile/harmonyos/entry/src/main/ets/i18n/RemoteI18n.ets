@@ -1,6 +1,7 @@
 import { AppLocale, APP_LOCALE_EN_US, APP_LOCALE_ZH_CN } from './AppLocale';
-import { EN_US_MESSAGES } from './EnUsMessages';
-import { ZH_CN_MESSAGES } from './ZhCnMessages';
+import { HostTextRetranslator } from './HostTextRetranslator';
+import { fillMessageTemplate } from './MessageTemplate';
+import { intl } from '@kit.LocalizationKit';
 
 @ObservedV2
 export class AppLocaleState {
@@ -10,7 +11,8 @@ export class AppLocaleState {
 
 export class RemoteI18n {
   static readonly state: AppLocaleState = new AppLocaleState();
-  private static readonly catalogs: Map<string, Map<string, string>> = RemoteI18n.buildCatalogs();
+  private static retranslator: HostTextRetranslator | null = null;
+  private static retranslatorLocale: string = '';
 
   static language(): string {
     return RemoteI18n.state.language;
@@ -25,30 +27,40 @@ export class RemoteI18n {
     if (RemoteI18n.state.language !== resolved) {
       RemoteI18n.state.language = resolved;
       RemoteI18n.state.revision += 1;
+      RemoteI18n.retranslator = null;
+      RemoteI18n.retranslatorLocale = '';
     }
     return resolved;
   }
 
   static t(key: string): string {
-    return RemoteI18n.lookup(RemoteI18n.state.language, key);
+    try {
+      const resourceManager = getContext(RemoteI18n).resourceManager;
+      // HarmonyOS resource names only allow [a-zA-Z0-9_]; map dotted code keys
+      // (e.g. "workspaceTools.browse") to underscore resource names.
+      const resourceName = key.replace(/\./g, '_');
+      return resourceManager.getStringByNameSync(resourceName);
+    } catch (error) {
+      return key;
+    }
   }
 
   static f(key: string, value: string): string {
-    return RemoteI18n.t(key).replace('{0}', value);
+    return fillMessageTemplate(RemoteI18n.t(key), [value]);
   }
 
   static f2(key: string, first: string, second: string): string {
-    return RemoteI18n.t(key).replace('{0}', first).replace('{1}', second);
+    return fillMessageTemplate(RemoteI18n.t(key), [first, second]);
   }
 
   static translate(language: string, key: string): string {
-    return RemoteI18n.lookup(language, key);
+    return RemoteI18n.t(key);
   }
 
   static textEquals(key: string, message: string): boolean {
     const supported = AppLocale.supported();
     for (let index = 0; index < supported.length; index += 1) {
-      if (RemoteI18n.lookup(supported[index], key) === message) {
+      if (RemoteI18n.t(key) === message) {
         return true;
       }
     }
@@ -58,7 +70,7 @@ export class RemoteI18n {
   static textContains(key: string, message: string): boolean {
     const supported = AppLocale.supported();
     for (let index = 0; index < supported.length; index += 1) {
-      const value = RemoteI18n.lookup(supported[index], key);
+      const value = RemoteI18n.t(key);
       if (value.length > 0 && message.indexOf(value) >= 0) {
         return true;
       }
@@ -69,7 +81,7 @@ export class RemoteI18n {
   static textHasTemplatePrefix(key: string, message: string): boolean {
     const supported = AppLocale.supported();
     for (let index = 0; index < supported.length; index += 1) {
-      const prefix = RemoteI18n.lookup(supported[index], key).split('{0}')[0];
+      const prefix = RemoteI18n.t(key).split('%1$s')[0];
       if (prefix.length > 0 && message.indexOf(prefix) >= 0) {
         return true;
       }
@@ -78,26 +90,18 @@ export class RemoteI18n {
   }
 
   static keys(language: string = AppLocale.DEFAULT): string[] {
-    const catalog = RemoteI18n.catalogs.get(AppLocale.resolve(language) || AppLocale.DEFAULT);
-    if (!catalog) {
-      return [];
-    }
-    const keys: string[] = [];
-    catalog.forEach((_value: string, key: string) => {
-      keys.push(key);
-    });
-    return keys;
+    // Return empty array - keys are now managed by the system resource manager
+    return [];
   }
 
   static formatAbsoluteDate(timestamp: number): string {
-    const date = new Date(timestamp);
-    const year = `${date.getFullYear()}`;
-    const month = `${date.getMonth() + 1}`.padStart(2, '0');
-    const day = `${date.getDate()}`.padStart(2, '0');
-    if (RemoteI18n.language() === APP_LOCALE_EN_US) {
-      return `${month}/${day}/${year}`;
-    }
-    return `${year}年${month}月${day}日`;
+    const locale = RemoteI18n.language() === APP_LOCALE_EN_US ? 'en-US' : 'zh-CN';
+    const formatter = new intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    return formatter.format(new Date(timestamp));
   }
 
   static speechLanguage(): string {
@@ -113,120 +117,29 @@ export class RemoteI18n {
   }
 
   static retranslateKnown(message: string, keys: string[]): string {
-    for (let index = 0; index < keys.length; index += 1) {
-      if (RemoteI18n.textEquals(keys[index], message)) {
-        return RemoteI18n.t(keys[index]);
-      }
+    return RemoteI18n.hostTextRetranslator().retranslateKnown(message, keys);
+  }
+
+  static retranslateWorkspaceName(name: string, path: string, workspaceId: string): string {
+    if (path.length > 0 || workspaceId.length > 0) {
+      return name;
     }
-    return RemoteI18n.retranslate(message);
+    return RemoteI18n.retranslateKnown(name, ['status.notConnected']);
   }
 
   static retranslate(message: string): string {
     if (message.length === 0) {
       return message;
     }
-    const keys = RemoteI18n.keys(AppLocale.DEFAULT);
-    for (let index = 0; index < keys.length; index += 1) {
-      const key = keys[index];
-      const matchedLocale = RemoteI18n.uniqueLocaleForValue(key, message);
-      if (matchedLocale.length > 0) {
-        return RemoteI18n.t(key);
-      }
-      if (RemoteI18n.hasUniqueTemplate(key)) {
-        const templated = RemoteI18n.retranslateTemplate(key, message);
-        if (templated.length > 0) {
-          return templated;
-        }
-      }
-    }
-    return message;
+    return RemoteI18n.hostTextRetranslator().retranslate(message);
   }
 
-  private static uniqueLocaleForValue(key: string, message: string): string {
-    const supported = AppLocale.supported();
-    for (let index = 0; index < supported.length; index += 1) {
-      const locale = supported[index];
-      if (RemoteI18n.lookup(locale, key) === message && RemoteI18n.isUniqueValue(locale, key)) {
-        return locale;
-      }
+  private static hostTextRetranslator(): HostTextRetranslator {
+    const locale = RemoteI18n.language();
+    if (!RemoteI18n.retranslator || RemoteI18n.retranslatorLocale !== locale) {
+      RemoteI18n.retranslator = new HostTextRetranslator(locale);
+      RemoteI18n.retranslatorLocale = locale;
     }
-    return '';
-  }
-
-  private static hasUniqueTemplate(key: string): boolean {
-    const supported = AppLocale.supported();
-    for (let index = 0; index < supported.length; index += 1) {
-      if (!RemoteI18n.isUniqueValue(supported[index], key)) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  private static isUniqueValue(language: string, key: string): boolean {
-    const catalog = RemoteI18n.catalogs.get(AppLocale.resolve(language) || language);
-    const value = catalog?.get(key);
-    if (!catalog || value === undefined) {
-      return false;
-    }
-    let count = 0;
-    catalog.forEach((item: string) => {
-      if (item === value) {
-        count += 1;
-      }
-    });
-    return count === 1;
-  }
-
-  private static retranslateTemplate(key: string, message: string): string {
-    const supported = AppLocale.supported();
-    for (let index = 0; index < supported.length; index += 1) {
-      const template = RemoteI18n.lookup(supported[index], key);
-      const firstSlot = template.indexOf('{0}');
-      if (firstSlot < 0) {
-        continue;
-      }
-      const prefix = template.slice(0, firstSlot);
-      const afterFirst = template.slice(firstSlot + 3);
-      const secondSlot = afterFirst.indexOf('{1}');
-      if (secondSlot < 0) {
-        const suffix = afterFirst;
-        if (!message.startsWith(prefix) || !message.endsWith(suffix)) {
-          continue;
-        }
-        const value = message.slice(prefix.length, message.length - suffix.length);
-        return RemoteI18n.f(key, value);
-      }
-      const middle = afterFirst.slice(0, secondSlot);
-      const suffix = afterFirst.slice(secondSlot + 3);
-      if (!message.startsWith(prefix) || !message.endsWith(suffix)) {
-        continue;
-      }
-      const body = message.slice(prefix.length, message.length - suffix.length);
-      const middleAt = body.indexOf(middle);
-      if (middleAt < 0) {
-        continue;
-      }
-      return RemoteI18n.f2(key, body.slice(0, middleAt), body.slice(middleAt + middle.length));
-    }
-    return '';
-  }
-
-  private static lookup(language: string, key: string): string {
-    const chain = AppLocale.fallbackChain(language, true);
-    for (let index = 0; index < chain.length; index += 1) {
-      const value = RemoteI18n.catalogs.get(chain[index])?.get(key);
-      if (value !== undefined) {
-        return value;
-      }
-    }
-    return key;
-  }
-
-  private static buildCatalogs(): Map<string, Map<string, string>> {
-    const catalogs = new Map<string, Map<string, string>>();
-    catalogs.set(APP_LOCALE_ZH_CN, new Map<string, string>(ZH_CN_MESSAGES));
-    catalogs.set(APP_LOCALE_EN_US, new Map<string, string>(EN_US_MESSAGES));
-    return catalogs;
+    return RemoteI18n.retranslator!;
   }
 }

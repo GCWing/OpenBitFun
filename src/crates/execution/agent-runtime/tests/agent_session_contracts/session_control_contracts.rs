@@ -28,6 +28,25 @@ fn validates_cancel_without_workspace_and_ignores_workspace_shape() {
 }
 
 #[test]
+fn create_and_list_accept_opaque_workspace_ids_before_host_resolution() {
+    let context = SessionControlValidationContext {
+        current_session_id: Some("caller"),
+        has_workspace_root: true,
+    };
+    for action in [SessionControlAction::Create, SessionControlAction::List] {
+        let mut input = base_input(action);
+        input.workspace = Some("/remote/project".into());
+        assert!(validate_session_control_input(&input, context).result);
+        for path in ["workspace-id", "C:/local/project", "relative/path"] {
+            input.workspace = Some(path.into());
+            assert!(validate_session_control_input(&input, context).result);
+        }
+        input.workspace = Some("   ".into());
+        assert!(!validate_session_control_input(&input, context).result);
+    }
+}
+
+#[test]
 fn rejects_current_session_mutation_when_context_matches() {
     let mut input = base_input(SessionControlAction::Delete);
     input.session_id = Some("session_a".to_string());

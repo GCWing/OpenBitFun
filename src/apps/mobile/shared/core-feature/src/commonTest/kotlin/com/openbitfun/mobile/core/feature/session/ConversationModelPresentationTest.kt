@@ -13,6 +13,29 @@ import kotlin.test.assertNull
 
 class ConversationModelPresentationTest {
     @Test
+    fun rolesResolveWithoutSelectingTheirConcreteRows() {
+        val options = timeline(models = listOf(model("a"), model("b")), primary = "a", fast = "b",
+            selectedModelId = " fast ").modelOptions(FALLBACK)
+        assertEquals(listOf("primary", "fast", "a", "b"), options.map { it.id })
+        assertEquals(listOf("fast"), options.filter { it.selected }.map { it.id })
+        assertEquals(ModelRole.FAST, options[1].role)
+        assertEquals(listOf(ModelRole.PRIMARY), options[2].roles)
+        assertEquals(listOf(ModelRole.FAST), options[3].roles)
+    }
+
+    @Test
+    fun missingOrDisabledFastFallsBackToPrimary() {
+        val options = timeline(models = listOf(model("a"), model("b", enabled = false)), primary = "a", fast = "b",
+            selectedModelId = "fast").modelOptions(FALLBACK)
+        val fast = options.single { it.id == "fast" }
+        assertEquals(true, fast.fallsBackToPrimary)
+        assertEquals(true, fast.selected)
+        assertEquals("a · Anthropic", fast.secondaryLabel)
+        assertNull(timeline(models = listOf(model("a", enabled = false)), primary = "a",
+            selectedModelId = "fast").selectedModelOption(FALLBACK))
+    }
+
+    @Test
     fun onlyEnabledModelsAreOffered() {
         val options = timeline(
             models = listOf(model("a", enabled = true), model("b", enabled = false)),
@@ -96,6 +119,7 @@ private fun timeline(
     models: List<RemoteModelConfig> = emptyList(),
     sessionModelId: String? = null,
     primary: String? = null,
+    fast: String? = null,
     selectedModelId: String = "",
 ) = ChatTimelineState(
     sessionId = "s-1",
@@ -107,7 +131,7 @@ private fun timeline(
     modelCatalog = RemoteModelCatalog(
         version = 1,
         models = models,
-        defaultModels = RemoteDefaultModels(primary = primary),
+        defaultModels = RemoteDefaultModels(primary = primary, fast = fast),
         sessionModelId = sessionModelId,
     ),
     selectedModelId = selectedModelId,

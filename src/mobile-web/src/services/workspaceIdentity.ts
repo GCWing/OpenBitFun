@@ -21,7 +21,15 @@ export function projectWorkspaceCatalog(
   const seen = new Set<string>();
   return {
     source,
-    workspaces: rows.map(normalizeWorkspaceRouting).map((workspace) => {
+    workspaces: rows.map((workspace) => ({
+      ...workspace,
+      name: workspaceDisplayName(
+        workspace.name,
+        workspace.path,
+        workspace.remote_ssh_host,
+        workspace.remote_connection_id,
+      ),
+    })).map(normalizeWorkspaceRouting).map((workspace) => {
       if (workspace.remote_connection_id || workspace.remote_ssh_host) return workspace;
       const assistant = assistants.find(candidate => sameWorkspace(candidate, workspace));
       return assistant?.name.trim()
@@ -206,4 +214,23 @@ export function normalizeWorkspaceRouting<T extends {
       && (workspace.remote_connection_id !== undefined || workspace.remote_ssh_host !== undefined)
     ? { ...workspace, remote_connection_id: undefined, remote_ssh_host: undefined }
     : workspace;
+}
+
+/** Display fallback for remote root workspaces created by older hosts. */
+export function workspaceDisplayName(
+  name: string | undefined,
+  path: string | undefined,
+  remoteSshHost?: string,
+  remoteConnectionId?: string,
+): string {
+  const value = name?.trim() ?? '';
+  const normalized = value.toLowerCase();
+  if (value && normalized !== 'unknown' && normalized !== 'unknown project'
+    && value !== '\u672A\u77E5' && value !== '\u672A\u77E5\u9879\u76EE') {
+    return value;
+  }
+  const root = (path ?? '').trim().replace(/\/+$/, '');
+  const basename = root.split('/').pop()?.trim() ?? '';
+  if (basename) return basename;
+  return remoteSshHost?.trim() || remoteConnectionId?.trim() || 'Workspace';
 }

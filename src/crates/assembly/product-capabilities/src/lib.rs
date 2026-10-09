@@ -1041,7 +1041,6 @@ const CODE_AGENT_IDS: &[&str] = &[
     "ComputerUse",
     "Explore",
     "GeneralPurpose",
-    "GenerateDoc",
     "MemoryPhase2",
 ];
 const DEEP_REVIEW_AGENT_IDS: &[&str] = &[

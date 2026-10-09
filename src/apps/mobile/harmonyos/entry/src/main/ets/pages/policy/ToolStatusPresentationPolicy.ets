@@ -26,7 +26,8 @@ interface TaskPreviewPayload {
 /** Pure tool classification and payload projection used by the ArkUI renderer. */
 export class ToolStatusPresentationPolicy {
   static normalizedName(tool: ConversationUiToolStatus): string {
-    return (tool.name || 'Tool').replace(/[\s-]/g, '_').toLowerCase();
+    const raw = (tool.name || '').trim();
+    return (raw.length > 0 ? raw : 'Tool').replace(/[\s-]/g, '_').toLowerCase();
   }
 
   static isQuestionLike(tool: ConversationUiToolStatus): boolean {

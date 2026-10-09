@@ -11,7 +11,7 @@ import { withConversationExcerpts } from '../utils/composerPresentation';
 import React, { useRef, useCallback, useEffect, useReducer, useState, useMemo, useSyncExternalStore } from 'react';
 import path from 'path-browserify';
 import { useTranslation } from 'react-i18next';
-import { RotateCcw, Loader2, Play } from 'lucide-react';
+import { RotateCcw, Loader2, Play, Goal } from 'lucide-react';
 import { ContextDropZone, useContextStore, useContextStoreApi } from '../../shared/context-system';
 import { useConversationViewScope } from '../contexts/conversationViewScope';
 import { useActiveSessionState } from '@/flow_chat/hooks';
@@ -133,7 +133,6 @@ import { PendingQueuePanel } from './PendingQueuePanel';
 import { useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores';
 import { openBtwSessionInAuxPane, selectActiveBtwSessionTab } from '../services/btwSessionPane';
 import { resolveSessionRelationship } from '../utils/sessionMetadata';
-import { isProjectedSessionEmpty } from '../utils/flowChatTurnIdentity';
 import {
   canSwitchSessionMainAgent,
   isChatInputActionVisibleForTarget,
@@ -233,7 +232,10 @@ import { isSessionInUseError } from '@/infrastructure/api/errors/TauriCommandErr
 import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFlag';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { isBtwSessionDraft } from '../utils/modelSelectionTarget';
-import { SubagentAvatar } from '../subagent-identity';
+import { hasSessionStarted, isSessionBindingLocked } from '../utils/sessionLifecycle';
+import { prepareSessionDraftForCommand } from '../services/sessionDraftService';
+import { useSessionWorkspaceSelection } from '../hooks/useSessionWorkspaceSelection';
+import { SubagentAvatar, resolveSubagentNameKey } from '../subagent-identity';
 import { sessionLineageLifecycleForSession } from '../utils/sessionLineage';
 import { workspaceAPI } from '@/infrastructure/api/service-api/WorkspaceAPI';
 import { useLocalFileDrop } from '@/infrastructure/files/useLocalFileDrop';
@@ -280,10 +282,8 @@ import {
   setChatPopupActive,
   subscribeChatPopupChange,
 } from './chatPopupState';
-import {
-  resolveChatInputTargetSessionId,
-  type ChatInputTarget,
-} from '../utils/chatInputTarget';
+import { useChatInputTargets } from '../hooks/useChatInputTargets';
+import type { BtwSessionPanelData } from '../services/btwSessionPane';
 import { Menu, MenuItem, MenuSeparator, Icon } from '@openbitfun/ui';
 import {
   ChatComposer,
@@ -572,7 +572,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   // History navigation state
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [savedDraft, setSavedDraft] = useState('');
-  const [inputTarget, setInputTarget] = useState<ChatInputTarget>('main');
   const [toolPermissionConfig, setToolPermissionConfig] = useState<ToolPermissionConfig>(
     DEFAULT_TOOL_PERMISSION_CONFIG,
   );
@@ -595,6 +594,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [activeTurnPermissionMode, setActiveTurnPermissionMode] =
     useState<SessionPermissionMode | null>(null);
   const [isHarnessSessionCreating, setIsHarnessSessionCreating] = useState(false);
+  const [isWorkspaceSubmitting, setIsWorkspaceSubmitting] = useState(false);
+  const workspaceSubmittingRef = useRef(false);
   const permissionModeRequestGenerationRef = useRef(0);
   const permissionModeLifecycleRef = useRef<{
     sessionId: string | null;
@@ -632,15 +633,25 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const currentSessionId = activeSessionState.sessionId;
   const currentSession = currentSessionId ? flowChatState.sessions.get(currentSessionId) : undefined;
   const activeBtwSessionData = activeBtwSessionTab?.content.data as
-    | { childSessionId: string; parentSessionId: string; workspacePath?: string }
+    | BtwSessionPanelData
     | undefined;
   const activeBtwSessionId = !conversationScope && activeBtwSessionData?.parentSessionId === currentSessionId
     ? activeBtwSessionData.childSessionId
     : undefined;
-  const effectiveTargetSessionId = resolveChatInputTargetSessionId({
-    currentSessionId,
+  const {
+    effectiveSessionId: effectiveTargetSessionId,
     inputTarget,
-    activeBtwSessionId,
+    selectTarget: setInputTarget,
+    selectTargetSession,
+    isTargetCurrent,
+    showSwitcher: showTargetSwitcher,
+    canSubmit: targetCanSubmit,
+    canCompose: targetCanCompose,
+  } = useChatInputTargets({
+    currentSessionId,
+    activeChild: activeBtwSessionId ? activeBtwSessionData : undefined,
+    sessions: flowChatState.sessions,
+    auxiliaryEnabled: !conversationScope,
   });
   const effectiveTargetSessionIdRef = useRef<string | null>(effectiveTargetSessionId);
   effectiveTargetSessionIdRef.current = effectiveTargetSessionId;
@@ -690,14 +701,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const isBtwDraftTarget = isBtwSessionDraft(effectiveTargetSession);
   const btwDraftSettingsInherited = isBtwDraftTarget && Boolean(peer?.peerMode.active)
     && peer?.currentPeerCapabilities?.btwInitialModelSelectionV1 !== true;
-  const effectiveTargetSessionHasTurns = effectiveTargetSession
-    ? !isProjectedSessionEmpty(effectiveTargetSession)
-    : false;
   // A submission keeps the session started even if every surviving Turn is
   // later rolled back. Before that first submission, the composer intentionally
   // stays expanded instead of collapsing as the empty draft is measured.
-  const effectiveTargetSessionStarted = effectiveTargetSessionHasTurns
-    || Boolean(effectiveTargetSession?.lastSubmittedMode?.trim());
+  const effectiveTargetSessionStarted = effectiveTargetSession ? hasSessionStarted(effectiveTargetSession) : false;
   const isNewSessionComposer = !effectiveTargetSessionStarted;
   const dispatchObserverJob = dispatchJobStore(state => {
     const jobId = effectiveTargetSession?.config.dispatchJobId;
@@ -730,12 +737,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   });
   const canReloadContext = reloadContextSupported && Boolean(effectiveTargetSessionId);
   const { entries: acpPlanEntries } = useAcpPlan(acpSessionForInput?.sessionId ?? null);
-  const currentSessionTitle = currentSession?.title?.trim() || t('session.untitled');
+  const currentSessionTitle = currentSessionId && resolveSessionRelationship(currentSession).isSubagent
+    ? t(resolveSubagentNameKey(currentSessionId))
+    : currentSession?.title?.trim() || t('session.untitled');
   const activeBtwSession = activeBtwSessionId
     ? flowChatState.sessions.get(activeBtwSessionId)
     : undefined;
   const activeBtwRelationship = resolveSessionRelationship(activeBtwSession);
-  const showTargetSwitcher = !!activeBtwSessionId;
   const activeBtwKind =
     activeBtwRelationship.kind === 'review' ||
     activeBtwRelationship.kind === 'deep_review' ||
@@ -743,16 +751,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     activeBtwRelationship.kind === 'subagent'
     ? activeBtwRelationship.kind
     : 'btw';
-  const activeBtwAgentType = activeBtwRelationship.isSubagent
-    ? activeBtwSession?.subagentType?.trim()
-      || activeBtwSession?.mode?.trim()
-      || activeBtwSession?.config.agentType?.trim()
+  const activeBtwSubagentName = activeBtwRelationship.isSubagent && activeBtwSessionId
+    ? t(resolveSubagentNameKey(activeBtwSessionId))
     : undefined;
-  const activeBtwTargetLabel = activeBtwAgentType || t(`childSession.kinds.${activeBtwKind}.short`, {
+  const activeBtwTargetLabel = activeBtwSubagentName || t(`childSession.kinds.${activeBtwKind}.short`, {
     defaultValue: t('chatInput.targetBtw'),
   });
   const activeBtwSessionTitle = activeBtwSession
-    ? activeBtwSession.title?.trim() || t(`childSession.kinds.${activeBtwKind}.title`, {
+    ? activeBtwSubagentName || activeBtwSession.title?.trim() || t(`childSession.kinds.${activeBtwKind}.title`, {
         defaultValue: t('btw.threadLabel'),
       })
     : '';
@@ -780,7 +786,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const hasSendableInput = Boolean(inputState.value.trim() || annotationOnlyMessage);
   const focusExcerptComposer = useCallback(() => richTextInputRef.current?.focus(), []);
   useExcerptComposerActions({ mainSessionId: currentSessionId, targetSessionId: effectiveTargetSessionId,
-    active: isSceneActive && !registration, setInputTarget, focus: focusExcerptComposer });
+    active: isSceneActive && !registration, selectTargetSession, focus: focusExcerptComposer });
   // The primary composer owns only the active primary session's requests.
   // Direct child-session requests are answered in BtwSessionPanel, even while
   // this composer is targeting that child, so the same request never has two
@@ -1114,25 +1120,32 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const hasRegisteredWorkspace = Boolean(
     registration && Object.prototype.hasOwnProperty.call(registration, 'workspacePath'),
   );
+  const { openedWorkspaces } = useWorkspaceContext();
+  const workspaceSelection = useSessionWorkspaceSelection(
+    effectiveTargetSession, isWorkspaceSubmitting || !!derivedState?.isProcessing,
+  );
+  const draftWorkspaceId = !hasRegisteredWorkspace ? workspaceSelection.draftWorkspaceId : undefined;
+  const draftTargetWorkspace = draftWorkspaceId ? workspaceSelection.selectedWorkspace : undefined;
   const workspacePath = hasRegisteredWorkspace
     ? (registration?.workspacePath || '').trim()
+    : draftWorkspaceId ? draftTargetWorkspace?.rootPath ?? ''
     : conversationScope ? (currentSession?.workspacePath ?? '') : currentWorkspacePath;
   const workspaceName = hasRegisteredWorkspace
     ? (workspacePath ? path.basename(workspacePath) : '')
+    : draftWorkspaceId ? draftTargetWorkspace?.name ?? ''
     : conversationScope ? (workspacePath ? path.basename(workspacePath) : '') : currentWorkspaceName;
   const sessionBoundWorkspacePath = (
-    (!hasRegisteredWorkspace && effectiveTargetSession?.workspacePath)
+    (!draftWorkspaceId && !hasRegisteredWorkspace && effectiveTargetSession?.workspacePath)
     || workspacePath
     || ''
   ).trim();
   const workspacePathRef = useRef(sessionBoundWorkspacePath);
   workspacePathRef.current = sessionBoundWorkspacePath;
-  const { openedWorkspaces } = useWorkspaceContext();
   const contextWorkspace = useMemo(() => (
-    effectiveTargetSession
+    draftWorkspaceId ? draftTargetWorkspace : effectiveTargetSession
       ? findWorkspaceForSession(effectiveTargetSession, openedWorkspaces.values())
       : workspace ?? undefined
-  ), [effectiveTargetSession, openedWorkspaces, workspace]);
+  ), [draftWorkspaceId, draftTargetWorkspace, effectiveTargetSession, openedWorkspaces, workspace]);
   // Workspace record the session's own state and configuration are addressed
   // with. A worktree-isolated session belongs to the project it was started
   // from: its worktree record exists for execution and is usually not an open
@@ -1147,17 +1160,18 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   // Workspace record the input addresses, or the context workspace while no
   // session exists yet. An empty string means the targeted session has no
   // record; it must not fall back to the context.
-  const inputWorkspaceId = effectiveTargetSession
+  const inputWorkspaceId = draftWorkspaceId ?? (effectiveTargetSession
     ? sessionOwningId ?? ''
-    : contextWorkspace?.id;
+    : contextWorkspace?.id);
   // Workspace record of the directory the session actually runs in. Git state
   // and dispatch baselines describe that checkout, not the owning project.
-  const executionWorkspaceId = effectiveTargetSession
+  const executionWorkspaceId = draftWorkspaceId ?? (effectiveTargetSession
     ? sessionWorkspaceId(effectiveTargetSession) ?? ''
-    : contextWorkspace?.id;
+    : contextWorkspace?.id);
   const sessionBoundRemoteConnectionId = (
     hasRegisteredWorkspace
       ? registration?.remoteConnectionId
+      : draftWorkspaceId ? draftTargetWorkspace?.connectionId
       : (
           effectiveTargetSession?.remoteConnectionId
           || effectiveTargetSession?.config?.remoteConnectionId
@@ -1166,14 +1180,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   )?.trim() || undefined;
 
   const chatStripRepositoryPath = useMemo(() => {
-    const fromSession = hasRegisteredWorkspace
+    const fromSession = hasRegisteredWorkspace || draftWorkspaceId
       ? ''
       : (effectiveTargetSession?.workspacePath || '').trim();
     const fromContext = (workspacePath || '').trim();
     return fromSession || fromContext;
-  }, [hasRegisteredWorkspace, workspacePath, effectiveTargetSession?.workspacePath]);
+  }, [hasRegisteredWorkspace, draftWorkspaceId, workspacePath, effectiveTargetSession?.workspacePath]);
 
   const chatStripWorkspaceLabel = useMemo(() => {
+    if (draftWorkspaceId) {
+      return draftTargetWorkspace
+        ? draftTargetWorkspace.name || path.basename(workspacePath)
+        : t('workspaceStrip.unavailableLabel');
+    }
     const name = (workspaceName || '').trim();
     const sessionPath = hasRegisteredWorkspace
       ? ''
@@ -1227,6 +1246,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     workspace?.id,
     workspaceName,
     workspacePath,
+    draftWorkspaceId,
+    draftTargetWorkspace,
+    t,
   ]);
   
   const [tokenUsage, setTokenUsage] = React.useState<ContextUsageDisplay>(
@@ -1351,7 +1373,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       { isEqual: (a: string, b: string) => a === b },
     );
 
-    // Initial token usage sync
+    // A newly opened pane may already exist in the store before this selector
+    // subscribes. Synchronize its metadata as well as token usage immediately.
+    setFlowChatState(store.getState());
     if (effectiveTargetSessionId) {
       const session = store.getState().sessions.get(effectiveTargetSessionId);
       if (session) {
@@ -1361,12 +1385,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     return () => unsubscribe();
   }, [currentSessionId, effectiveTargetSessionId, activeBtwSessionId]);
-
-  useEffect(() => {
-    if (!showTargetSwitcher || !activeBtwSessionId) {
-      setInputTarget('main');
-    }
-  }, [activeBtwSessionId, showTargetSwitcher]);
 
   // Reset history index when switching sessions
   useEffect(() => {
@@ -2474,6 +2492,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       setActiveTurnPermissionMode(null);
       return undefined;
     }
+    if (effectiveTargetSession?.draft) {
+      setSessionPermissionMode(effectiveTargetSession.draft.permissionMode ?? null);
+      setSessionPermissionModeUnread(false);
+      return undefined;
+    }
     void (async () => {
       try {
         const permissionSessionId = isBtwDraftTarget
@@ -2523,6 +2546,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     effectiveTargetSession?.remoteConnectionId,
     effectiveTargetSession?.remoteSshHost,
     effectiveTargetSession?.parentSessionId,
+    effectiveTargetSession?.draft,
     isBtwDraftTarget,
     isAcpTargetSession,
     t,
@@ -2536,6 +2560,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
     const targetSessionId = effectiveTargetSessionId;
+    const store = FlowChatStore.getInstance();
+    const draftSession = store.getState().sessions.get(targetSessionId);
+    if (draftSession?.draft) {
+      if (workspaceSubmittingRef.current || draftSession.draft.phase !== 'editing') return;
+      store.setState(state => {
+        const current = state.sessions.get(targetSessionId);
+        return current?.draft ? { ...state, sessions: new Map(state.sessions).set(targetSessionId, {
+          ...current, draft: { ...current.draft, permissionMode: nextMode },
+        }) } : state;
+      });
+      setSessionPermissionMode(nextMode);
+      return;
+    }
     const targetTurnId = activePermissionTurnIdRef.current;
     const generation = ++permissionModeRequestGenerationRef.current;
     const previousMode = sessionPermissionMode;
@@ -2721,7 +2758,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   // The reset row follows the user-level default, so give it a way to reach the
   // page that owns that default instead of making the user hunt for it.
   const handleOpenPermissionDefaultSettings = useCallback(() => {
-    useSettingsStore.getState().openPage('tools.execution');
+    useSettingsStore.getState().openPage('ai.permissions');
     openScene('settings');
   }, [openScene]);
 
@@ -2767,8 +2804,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
    * Checking worktree isolation only arms the empty session. The first prompt
    * materializes the worktree after it has visibly been submitted.
    */
-  const remoteWorkspaceSession =
-    !isLocalWorkspaceSession(effectiveTargetSession, workspace);
+  const remoteWorkspaceSession = draftWorkspaceId
+    ? !draftTargetWorkspace || !['normal', 'assistant'].includes(draftTargetWorkspace.workspaceKind)
+    : !isLocalWorkspaceSession(effectiveTargetSession, workspace);
 
   const worktreeControl = useMemo(() => {
     if (!effectiveTargetSessionId || !effectiveTargetSession) return undefined;
@@ -2788,7 +2826,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     const locked = isSessionWorktreeBindingLocked(
       effectiveTargetSession,
-      !!derivedState?.isProcessing,
+      !!derivedState?.isProcessing || isWorkspaceSubmitting,
     );
 
     return {
@@ -2801,6 +2839,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           .get(effectiveTargetSessionId);
         if (
           !latestSession
+          || workspaceSubmittingRef.current
           || isSessionWorktreeBindingLocked(latestSession, false)
         ) {
           notificationService.error(tWorktrees('strip.toggleLocked'));
@@ -2821,13 +2860,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     remoteWorkspaceSession,
     tWorktrees,
     caps.worktreeBaselineLocked,
+    isWorkspaceSubmitting,
   ]);
 
   const handleSelectDispatchTarget = useCallback(async (selection: DispatchSelection) => {
     try {
+      if (draftWorkspaceId && !draftTargetWorkspace) {
+        throw new Error(t('workspaceStrip.unavailable'));
+      }
       await FlowChatManager.getInstance().createChatSession(
         {
-          ...flowChatSessionConfigForCurrentWorkspace(workspace),
+          ...flowChatSessionConfigForCurrentWorkspace(draftTargetWorkspace ?? workspace),
           dispatchTargetRequest: selection.request,
           dispatchTarget: selection.target,
           // Not asked for while picking a target: a dispatch session starts on
@@ -2851,9 +2894,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       log.error('Failed to create dispatched session projection', { error });
       notificationService.error(t('chatInput.dispatch.createFailed'));
     }
-  }, [effectiveSendAgentType, permissionMode, t, workspace]);
+  }, [draftWorkspaceId, draftTargetWorkspace, effectiveSendAgentType, permissionMode, t, workspace]);
 
-  const harnessProfileLocked = effectiveTargetSessionStarted;
+  const harnessProfileLocked = effectiveTargetSession
+      ? isSessionBindingLocked(effectiveTargetSession, isWorkspaceSubmitting)
+        || !!effectiveTargetSession.draft && effectiveTargetSession.draft.phase !== 'editing'
+      : false;
   const dispatchControl = useMemo(() => {
     if (
       registration ||
@@ -2885,7 +2931,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       sourceWorkspacePath: workspacePath || undefined,
       locked:
         isNonLocalDispatchTarget(target) ||
-        effectiveTargetSessionHasTurns ||
+        effectiveTargetSessionStarted ||
+        isWorkspaceSubmitting ||
         !!derivedState?.isProcessing,
       onSelectTarget: handleSelectDispatchTarget,
       syncableJobId,
@@ -2898,7 +2945,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     effectiveTargetSession?.config.dispatchJobId,
     effectiveTargetSession?.config.dispatchJobState,
     effectiveTargetSession?.config.dispatchTarget,
-    effectiveTargetSessionHasTurns,
+    effectiveTargetSessionStarted,
+    isWorkspaceSubmitting,
     dispatchObserverJob?.baselineWorktreeMissing,
     dispatchObserverJob?.baselineWorktreePath,
     dispatchObserverJob?.branch,
@@ -3646,13 +3694,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         workspacePath: sessionBoundWorkspacePath,
         expand: true,
       });
-      setInputTarget('btw');
+      selectTargetSession(childSessionId);
     } catch (e) {
       log.error('Failed to start /btw thread', { e });
       replacePendingLargePastes(originalPendingLargePastes);
       dispatchInput({ type: 'SET_VALUE', payload: originalMessage });
     }
-  }, [clearPendingLargePastes, currentSessionId, derivedState, dispatchInput, expandComposerSpecialTokens, imageContexts, inputState.value, isBtwSession, removeContext, replacePendingLargePastes, sessionBoundWorkspacePath, setQueuedInput, t]);
+  }, [clearPendingLargePastes, currentSessionId, derivedState, dispatchInput, expandComposerSpecialTokens, imageContexts, inputState.value, isBtwSession, removeContext, replacePendingLargePastes, sessionBoundWorkspacePath, selectTargetSession, setQueuedInput, t]);
 
   const submitCompactFromInput = useCallback(async () => {
     if (!effectiveTargetSessionId || !effectiveTargetSession) {
@@ -3816,11 +3864,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     setSlashCommandState({ isActive: false, kind: 'all', query: '', selectedIndex: 0 });
 
     try {
+      const commandSession = await prepareSessionDraftForCommand(effectiveTargetSession);
       await agentAPI.runInitAgentsMd({
         sessionId: effectiveTargetSessionId,
-        workspacePath: effectiveTargetSession.workspacePath,
-        remoteConnectionId: effectiveTargetSession.remoteConnectionId,
-        remoteSshHost: effectiveTargetSession.remoteSshHost,
+        workspacePath: commandSession.workspacePath,
+        remoteConnectionId: commandSession.remoteConnectionId,
+        remoteSshHost: commandSession.remoteSshHost,
       });
     } catch (error) {
       log.error('Failed to trigger /init', {
@@ -3914,6 +3963,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     setSlashCommandState({ isActive: false, kind: 'all', query: '', selectedIndex: 0 });
 
     try {
+      const commandSession = FlowChatStore.getInstance().getState().sessions.get(effectiveTargetSessionId);
+      if (commandSession?.draft) await prepareSessionDraftForCommand(commandSession);
       await agentAPI.reloadSessionContext({
         sessionId: effectiveTargetSessionId,
         target: parsed.target,
@@ -3989,11 +4040,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     const originalPendingLargePastes = { ...pendingLargePastesRef.current };
 
     try {
+      const commandSession = await prepareSessionDraftForCommand(effectiveTargetSession);
       const prepared = await prepareReviewLaunchFromSlashCommand(
         message,
-        effectiveTargetSession.workspacePath,
-        effectiveTargetSession.remoteConnectionId,
-        effectiveTargetSession.workspaceId,
+        commandSession.workspacePath,
+        commandSession.remoteConnectionId,
+        commandSession.workspaceId,
       );
       if (prepared.mode === 'strict' && prepared.requiresConsent) {
         const confirmed = await confirmDeepReviewLaunch(prepared.runManifest, {
@@ -4019,7 +4071,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
       const launched = await launchPreparedReviewSession({
         parentSessionId: effectiveTargetSessionId,
-        workspacePath: effectiveTargetSession.workspacePath,
+        workspacePath: commandSession.workspacePath,
         displayMessage: message,
         prepared,
         childSessionName: t('chatInput.reviewThreadTitle'),
@@ -4063,11 +4115,18 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   ]);
 
   const submitMcpPromptFromInput = useCallback(async () => {
+    const submissionScope = getActiveSurfaceScope();
+    const submissionSessionId = effectiveTargetSessionId;
+    const submissionComposerValue = inputValueRef.current;
+    const submissionIsCurrent = () => submissionScope.isCurrent() && isTargetCurrent(submissionSessionId)
+      && inputValueRef.current === submissionComposerValue;
+    if (!submissionIsCurrent()) return;
     const originalMessage = inputState.value.trim();
     let command = resolveTypedMcpPromptCommand(originalMessage);
 
     if (!command) {
       await loadMcpPromptCommands();
+      if (!submissionIsCurrent()) return;
       command = resolveTypedMcpPromptCommand(originalMessage);
     }
 
@@ -4095,20 +4154,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
 
     const confirmed = await confirmPromptCacheGuardIfNeeded();
-    if (!confirmed) {
+    if (!confirmed || !submissionIsCurrent()) {
       return;
     }
 
     const originalPendingLargePastes = { ...pendingLargePastesRef.current };
-    if (effectiveTargetSessionId) {
-      addToHistory(effectiveTargetSessionId, originalMessage);
-    }
-    setHistoryIndex(-1);
-    setSavedDraft('');
-    dispatchInput({ type: 'CLEAR_VALUE' });
-    clearPendingLargePastes();
-    setQueuedInput(null);
-    setSlashCommandState({ isActive: false, kind: 'all', query: '', selectedIndex: 0 });
+    const submittedContexts = [...contexts];
+    let clearedRevision: number | undefined;
+    let clearedStoredDraft: ReturnType<typeof sessionComposerStore.getState>['drafts'][string] | undefined;
 
     try {
       const promptArguments = command.arguments.reduce<Record<string, string>>((acc, argument, index) => {
@@ -4129,9 +4182,22 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       if (!renderedPrompt.trim()) {
         throw new Error('MCP prompt returned no displayable content');
       }
+      if (!submissionIsCurrent()) return;
+      if (submissionSessionId) addToHistory(submissionSessionId, originalMessage);
+      setHistoryIndex(-1);
+      setSavedDraft('');
+      clearComposerForSubmission({
+        clearValue: () => dispatchInput({ type: 'CLEAR_VALUE' }),
+        clearContexts, clearPendingLargePastes,
+        clearQueuedInput: () => setQueuedInput(null),
+      });
+      clearedRevision = submissionSessionId ? composerMutationRevision(submissionSessionId) : 0;
+      clearedStoredDraft = submissionSessionId ? sessionComposerStore.getState().getDraft(submissionSessionId) : undefined;
+      setSlashCommandState({ isActive: false, kind: 'all', query: '', selectedIndex: 0 });
 
       await sendMessage(renderedPrompt, {
         displayMessage: originalMessage,
+        clearContextsOnSuccess: false,
         composerDraft: {
           value: originalMessage,
           pendingLargePastes: originalPendingLargePastes,
@@ -4142,8 +4208,24 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         command: originalMessage,
         error,
       });
-      replacePendingLargePastes(originalPendingLargePastes);
-      dispatchInput({ type: 'SET_VALUE', payload: originalMessage });
+      if (clearedRevision !== undefined) {
+        const composer = sessionComposerStore.getState();
+        const recovery = submissionScope.isCurrent()
+          ? failedSubmissionRecoveryTarget(submissionSessionId, effectiveTargetSessionIdRef.current,
+            clearedRevision, submissionSessionId ? composerMutationRevision(submissionSessionId) : 0)
+          : submissionSessionId && composer.getDraft(submissionSessionId, submissionScope.surfaceId) === clearedStoredDraft
+            ? 'stored' : 'none';
+        if (recovery === 'current') {
+          dispatchInput({ type: 'SET_VALUE', payload: originalMessage });
+          replaceContexts(submittedContexts);
+          replacePendingLargePastes(originalPendingLargePastes);
+        } else if (recovery === 'stored' && submissionSessionId) {
+          composer.setValue(submissionSessionId, originalMessage, submissionScope.surfaceId);
+          composer.setContexts(submissionSessionId, submittedContexts, submissionScope.surfaceId);
+          composer.setPendingLargePastes(submissionSessionId, originalPendingLargePastes, submissionScope.surfaceId);
+        }
+      }
+      if (!submissionScope.isCurrent()) return;
       notificationService.error(
         error instanceof Error ? error.message : t('error.unknown'),
         {
@@ -4154,13 +4236,18 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   }, [
     clearPendingLargePastes,
+    clearContexts,
     addToHistory,
+    composerMutationRevision,
     confirmPromptCacheGuardIfNeeded,
+    contexts,
     dispatchInput,
     effectiveTargetSessionId,
     inputState.value,
+    isTargetCurrent,
     loadMcpPromptCommands,
     resolveTypedMcpPromptCommand,
+    replaceContexts,
     replacePendingLargePastes,
     sendMessage,
     setQueuedInput,
@@ -4176,7 +4263,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     const submissionWorkspacePath = sessionBoundWorkspacePath;
     const submissionWorkspaceId = inputWorkspaceId;
     const submissionComposerValue = inputValueRef.current;
-    const submissionTargetIsCurrent = () => isExternalPromptSubmissionTargetCurrent(
+    const submissionTargetIsCurrent = () => isTargetCurrent(submissionSessionId) && isExternalPromptSubmissionTargetCurrent(
       submissionSessionId,
       effectiveTargetSessionIdRef.current,
       submissionWorkspacePath,
@@ -4475,6 +4562,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   }, [
     addToHistory,
     clearPendingLargePastes,
+    isTargetCurrent,
     confirmPromptCacheGuardIfNeeded,
     contexts,
     dispatchInput,
@@ -4550,6 +4638,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const sessionModeSelectionTarget = useMemo(() => effectiveTargetSessionId && effectiveTargetSession
     ? {
         sessionId: effectiveTargetSessionId,
+        draft: !!effectiveTargetSession.draft,
         workspacePath: sessionProjectWorkspacePath(effectiveTargetSession),
         remoteConnectionId:
           effectiveTargetSession.remoteConnectionId ||
@@ -4659,7 +4748,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     setIsHarnessSessionCreating(true);
     try {
-      const newSessionId = await FlowChatManager.getInstance().createChatSession(
+      const newSessionId = await FlowChatManager.getInstance().createChatDraft(
         flowChatSessionConfigForCurrentWorkspace(workspace),
         modeId,
       );
@@ -5123,6 +5212,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   ]);
 
   const handleSendOrCancel = useCallback(async (messageOverride?: string) => {
+    if (workspaceSubmittingRef.current) return;
     if (!derivedState) return;
     if (caps.transferInFlight) return;
     if (isInterruptedTurnRecoveryInFlight) return;
@@ -5137,6 +5227,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       await handleCancelCurrentTask();
       return;
     }
+
+    // Re-read the target before any command, draft clear, queue or transport work.
+    if (!targetCanSubmit || !isTargetCurrent(effectiveTargetSessionId)) return;
 
     // Block sending while model switch IPC is in-flight — the backend session may
     // not yet reflect the newly selected model.
@@ -5279,89 +5372,104 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     // cannot block cancellation or other controls that do not start a turn.
     if (!modelAvailability.canSend) return;
 
-    const confirmed = await confirmPromptCacheGuardIfNeeded();
-    if (!confirmed || !submissionScope.isCurrent() || effectiveTargetSessionIdRef.current !== submissionSessionId) {
+    if (draftWorkspaceId && !draftTargetWorkspace) {
+      notificationService.error(t('workspaceStrip.unavailable'));
       return;
     }
-
-    // Add to history before clearing (session-scoped)
-    if (effectiveTargetSessionId) {
-      addToHistory(effectiveTargetSessionId, message);
-    }
-    setHistoryIndex(-1);
-    setSavedDraft('');
-
-    clearComposerForSubmission({
-      clearValue: () => dispatchInput({ type: 'CLEAR_VALUE' }),
-      clearContexts,
-      clearPendingLargePastes,
-      // Clear the machine queue too; otherwise queuedInput→input sync puts
-      // the submitted text back into the composer.
-      clearQueuedInput: () => setQueuedInput(null),
-    });
-    const clearedComposerRevision = submissionSessionId
-      ? composerMutationRevision(submissionSessionId)
-      : 0;
-    const clearedStoredDraft = submissionSessionId
-      ? sessionComposerStore.getState().getDraft(submissionSessionId)
-      : null;
-
+    workspaceSubmittingRef.current = true;
+    setIsWorkspaceSubmitting(true);
     try {
-      await submitThroughChatInputRegistration(
-        registration,
-        {
-          text: message,
-          displayText: originalMessage,
-          contexts: submittedContexts,
-          composerPresentation: persistedComposerPresentation,
-          sessionId: effectiveTargetSessionId || undefined,
-          workspacePath: workspacePath || undefined,
-        },
-        () => sendMessage(message, {
-          displayMessage: originalMessage,
-          composerPresentation: persistedComposerPresentation,
-          composerDraft: {
-            value: originalMessage,
-            pendingLargePastes: originalPendingLargePastes,
-          },
-          clearContextsOnSuccess: false,
-        }),
-      );
-    } catch (error) {
-      if (!submissionScope.isCurrent()) {
-        // A failed old-host submission may recover only its own untouched draft.
-        const composer = sessionComposerStore.getState();
-        if (submissionSessionId && composer.getDraft(submissionSessionId, submissionScope.surfaceId) === clearedStoredDraft) {
-          composer.setValue(submissionSessionId, originalMessage, submissionScope.surfaceId);
-          composer.setContexts(submissionSessionId, submittedContexts, submissionScope.surfaceId);
-          composer.setPendingLargePastes(submissionSessionId, originalPendingLargePastes, submissionScope.surfaceId);
-        }
+      const confirmed = await confirmPromptCacheGuardIfNeeded();
+      if (!confirmed || !submissionScope.isCurrent() || !isTargetCurrent(submissionSessionId)) {
         return;
       }
-      log.error('Failed to send message', { error });
-      const recoveryTarget = failedSubmissionRecoveryTarget(
-        submissionSessionId,
-        effectiveTargetSessionIdRef.current,
-        clearedComposerRevision,
-        submissionSessionId ? composerMutationRevision(submissionSessionId) : 0,
-      );
-      if (recoveryTarget === 'current') {
-        dispatchInput({ type: 'SET_VALUE', payload: originalMessage });
-        replaceContexts(submittedContexts);
-        replacePendingLargePastes(originalPendingLargePastes);
-        if (derivedState?.isProcessing) {
-          setQueuedInput(originalMessage);
-        }
-      } else if (recoveryTarget === 'stored' && submissionSessionId) {
-        const composer = sessionComposerStore.getState();
-        composer.setValue(submissionSessionId, originalMessage);
-        composer.setContexts(submissionSessionId, submittedContexts);
-        composer.setPendingLargePastes(submissionSessionId, originalPendingLargePastes);
+
+      // Add to history before clearing (session-scoped)
+      if (effectiveTargetSessionId) {
+        addToHistory(effectiveTargetSessionId, message);
       }
+      setHistoryIndex(-1);
+      setSavedDraft('');
+
+      clearComposerForSubmission({
+        clearValue: () => dispatchInput({ type: 'CLEAR_VALUE' }),
+        clearContexts,
+        clearPendingLargePastes,
+        // Clear the machine queue too; otherwise queuedInput→input sync puts
+        // the submitted text back into the composer.
+        clearQueuedInput: () => setQueuedInput(null),
+      });
+      const clearedComposerRevision = submissionSessionId
+        ? composerMutationRevision(submissionSessionId)
+        : 0;
+      const clearedStoredDraft = submissionSessionId
+        ? sessionComposerStore.getState().getDraft(submissionSessionId)
+        : null;
+
+      try {
+        await submitThroughChatInputRegistration(
+          registration,
+          {
+            text: message,
+            displayText: originalMessage,
+            contexts: submittedContexts,
+            composerPresentation: persistedComposerPresentation,
+            sessionId: effectiveTargetSessionId || undefined,
+            workspacePath: workspacePath || undefined,
+          },
+          () => sendMessage(message, {
+            displayMessage: originalMessage,
+            composerPresentation: persistedComposerPresentation,
+            composerDraft: {
+              value: originalMessage,
+              pendingLargePastes: originalPendingLargePastes,
+            },
+            clearContextsOnSuccess: false,
+          }),
+        );
+      } catch (error) {
+        if (!submissionScope.isCurrent()) {
+          // A failed old-host submission may recover only its own untouched draft.
+          const composer = sessionComposerStore.getState();
+          if (submissionSessionId && composer.getDraft(submissionSessionId, submissionScope.surfaceId) === clearedStoredDraft) {
+            composer.setValue(submissionSessionId, originalMessage, submissionScope.surfaceId);
+            composer.setContexts(submissionSessionId, submittedContexts, submissionScope.surfaceId);
+            composer.setPendingLargePastes(submissionSessionId, originalPendingLargePastes, submissionScope.surfaceId);
+          }
+          return;
+        }
+        log.error('Failed to send message', { error });
+        const recoveryTarget = failedSubmissionRecoveryTarget(
+          submissionSessionId,
+          effectiveTargetSessionIdRef.current,
+          clearedComposerRevision,
+          submissionSessionId ? composerMutationRevision(submissionSessionId) : 0,
+        );
+        if (recoveryTarget === 'current') {
+          dispatchInput({ type: 'SET_VALUE', payload: originalMessage });
+          replaceContexts(submittedContexts);
+          replacePendingLargePastes(originalPendingLargePastes);
+          if (derivedState?.isProcessing) {
+            setQueuedInput(originalMessage);
+          }
+        } else if (recoveryTarget === 'stored' && submissionSessionId) {
+          const composer = sessionComposerStore.getState();
+          composer.setValue(submissionSessionId, originalMessage);
+          composer.setContexts(submissionSessionId, submittedContexts);
+          composer.setPendingLargePastes(submissionSessionId, originalPendingLargePastes);
+        }
+      }
+    } finally {
+      workspaceSubmittingRef.current = false;
+      setIsWorkspaceSubmitting(false);
     }
   }, [
+    draftWorkspaceId,
+    draftTargetWorkspace,
     isModelSwitching,
     modelAvailability.canSend,
+    targetCanSubmit,
+    isTargetCurrent,
     isModeChangePending,
     caps.transferInFlight,
     isInterruptedTurnRecoveryInFlight,
@@ -5534,6 +5642,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     window.setTimeout(() => richTextInputRef.current?.focus(), 0);
   }, [dispatchInput, getRichTextTriggerController, inlineTriggerState.isActive, inputState.value, setQueuedInput]);
 
+  const handleBoostOpenThreadGoal = useCallback(
+    (e: React.SyntheticEvent) => {
+      e.stopPropagation();
+      dispatchMode({ type: 'CLOSE_DROPDOWN' });
+      void threadGoalController.openGoalEntry();
+    },
+    [dispatchMode, threadGoalController]
+  );
+
   const handleBoostStartBtw = useCallback(
     (e: React.SyntheticEvent) => {
       e.stopPropagation();
@@ -5562,7 +5679,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           ? FlowChatStore.getInstance().getState().sessions.get(currentSessionId)?.mode
           : undefined;
         const sessionConfig = flowChatSessionConfigForCurrentWorkspace(workspace);
-        await FlowChatManager.getInstance().createChatSession(sessionConfig, sessionMode);
+        await FlowChatManager.getInstance().createChatDraft(sessionConfig, sessionMode);
       } catch (error) {
         log.error('Failed to create new session from boost menu', { error });
       }
@@ -5710,7 +5827,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     // Tab key: toggle send target when the child session switcher is visible
     if (showTargetSwitcher && e.key === 'Tab' && !e.shiftKey && !slashCommandState.isActive) {
       e.preventDefault();
-      setInputTarget(prev => prev === 'main' ? 'btw' : 'main');
+      setInputTarget(inputTarget === 'main' ? 'btw' : 'main');
       return;
     }
 
@@ -5820,7 +5937,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       handleSendOrCancel();
     }
     
-  }, [canUseThreadGoal, handleSendOrCancel, submitBtwFromInput, submitGoalFromInput, derivedState, dispatchInput, slashCommandState, contextTriggerState.isActive, getActiveSlashPickerItems, selectSlashCommandAction, selectSlashExternalPromptCommand, selectSlashPromptCommand, selectSlashAcpCommand, selectSlashSkill, getRichTextTriggerController, historyIndex, inputHistory, savedDraft, inputState.value, hasSendableInput, currentSessionId, isBtwSession, showTargetSwitcher, setInputTarget, removeContext, t]);
+  }, [canUseThreadGoal, handleSendOrCancel, submitBtwFromInput, submitGoalFromInput, derivedState, dispatchInput, slashCommandState, contextTriggerState.isActive, getActiveSlashPickerItems, selectSlashCommandAction, selectSlashExternalPromptCommand, selectSlashPromptCommand, selectSlashAcpCommand, selectSlashSkill, getRichTextTriggerController, historyIndex, inputHistory, savedDraft, inputState.value, hasSendableInput, currentSessionId, isBtwSession, showTargetSwitcher, inputTarget, setInputTarget, removeContext, t]);
 
   const handleImeCompositionStart = useCallback(() => {
     isImeComposingRef.current = true;
@@ -6067,13 +6184,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     if (sendButtonMode === 'retry') {
       return (
-        <span className="openbitfun-chat-input__send-action" data-openbitfun-component="chat-input" data-openbitfun-part="sendButton" data-openbitfun-action="retry" data-openbitfun-state={isModelSwitching || isModeChangePending || caps.transferInFlight || !modelAvailability.canSend ? 'disabled' : undefined}>
+        <span className="openbitfun-chat-input__send-action" data-openbitfun-component="chat-input" data-openbitfun-part="sendButton" data-openbitfun-action="retry" data-openbitfun-state={isModelSwitching || isModeChangePending || caps.transferInFlight || !targetCanSubmit || !modelAvailability.canSend ? 'disabled' : undefined}>
           <Tooltip content={t('input.retry')}>
             <ChatComposerActionButton
               aria-label={t('input.retry')}
               className="openbitfun-chat-input__send-button openbitfun-chat-input__send-button--retry"
               onClick={() => void handleSendOrCancel()}
-              disabled={isModelSwitching || isModeChangePending || caps.transferInFlight || !modelAvailability.canSend}
+              disabled={isModelSwitching || isModeChangePending || caps.transferInFlight || !targetCanSubmit || !modelAvailability.canSend}
               icon={<RotateCcw />}
               variant="primary"
             />
@@ -6098,13 +6215,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               </div>
             </Tooltip>
           </span>
-          <span className="openbitfun-chat-input__send-action" data-openbitfun-component="chat-input" data-openbitfun-part="sendButton" data-openbitfun-action="send" data-openbitfun-state={!hasSendableInput || isModelSwitching || isModeChangePending || caps.transferInFlight || !modelAvailability.canSend ? 'disabled' : undefined}>
+          <span className="openbitfun-chat-input__send-action" data-openbitfun-component="chat-input" data-openbitfun-part="sendButton" data-openbitfun-action="send" data-openbitfun-state={!hasSendableInput || isModelSwitching || isModeChangePending || caps.transferInFlight || !targetCanSubmit || !modelAvailability.canSend ? 'disabled' : undefined}>
             <Tooltip content={t('input.sendShortcut')}>
               <ChatComposerActionButton
                 aria-label={t('input.sendShortcut')}
                 className="openbitfun-chat-input__send-button"
                 onClick={() => void handleSendOrCancel()}
-                disabled={!hasSendableInput || isModelSwitching || isModeChangePending || caps.transferInFlight || !modelAvailability.canSend}
+                disabled={!hasSendableInput || isModelSwitching || isModeChangePending || caps.transferInFlight || !targetCanSubmit || !modelAvailability.canSend}
                 data-testid="chat-input-send-btn"
                 icon={<Icon name="arrow-up" size="lg" />}
                 variant="primary"
@@ -6116,13 +6233,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
     
     return (
-      <span className="openbitfun-chat-input__send-action" data-openbitfun-component="chat-input" data-openbitfun-part="sendButton" data-openbitfun-action="send" data-openbitfun-state={!hasSendableInput || isModelSwitching || isModeChangePending || caps.transferInFlight || !modelAvailability.canSend ? 'disabled' : undefined}>
+      <span className="openbitfun-chat-input__send-action" data-openbitfun-component="chat-input" data-openbitfun-part="sendButton" data-openbitfun-action="send" data-openbitfun-state={!hasSendableInput || isModelSwitching || isModeChangePending || caps.transferInFlight || !targetCanSubmit || !modelAvailability.canSend ? 'disabled' : undefined}>
         <Tooltip content={t('input.sendShortcut')}>
           <ChatComposerActionButton
             aria-label={t('input.sendShortcut')}
             className="openbitfun-chat-input__send-button"
             onClick={() => void handleSendOrCancel()}
-            disabled={!hasSendableInput || isModelSwitching || isModeChangePending || caps.transferInFlight || !modelAvailability.canSend}
+            disabled={!hasSendableInput || isModelSwitching || isModeChangePending || caps.transferInFlight || !targetCanSubmit || !modelAvailability.canSend}
             data-testid="chat-input-send-btn"
             icon={<Icon name="arrow-up" size="lg" />}
             variant="primary"
@@ -6144,12 +6261,31 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   );
   const workspaceStrip = workspaceStripVisible ? (
     <ChatInputWorkspaceStrip
+      workspaceControl={!registration && !isBtwSession && !isSubagentInputTarget && !isAcpTargetSession && !isAssistantWorkspace
+        ? {
+            ...workspaceSelection.workspaceControl,
+            onSelect: workspaceId => {
+              if (!workspaceSubmittingRef.current) workspaceSelection.workspaceControl.onSelect(workspaceId);
+            },
+          } : undefined}
       workspaceId={executionWorkspaceId ?? ''}
       repositoryPath={chatStripRepositoryPath}
       workspaceLabel={chatStripWorkspaceLabel}
       executionTarget={effectiveTargetSession?.config.executionTarget}
       dispatchControl={dispatchControl}
       worktreeControl={worktreeControl}
+      threadGoal={canUseThreadGoal && threadGoalController.goal
+        ? {
+            goal: threadGoalController.goal,
+            actions: threadGoalController.availableActions,
+            onOpen: () => {
+              void threadGoalController.openGoalEntry();
+            },
+            onAction: action => {
+              void threadGoalController.runUiAction(action);
+            },
+          }
+        : undefined}
       deferPassiveGitRefresh={deferChatStripPassiveGitRefresh}
       permissionControl={showPermissionModeControl
         ? caps.sessionScopedApproval
@@ -6162,7 +6298,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             }
           : {
               mode: permissionMode,
-              disabled: isBtwDraftTarget,
+              disabled: isBtwDraftTarget || isWorkspaceSubmitting
+                || !!effectiveTargetSession?.draft && effectiveTargetSession.draft.phase !== 'editing',
               saving: permissionModeSaving,
               scopeLabel: t('chatInput.permissionMode.sessionScope'),
               overridden: permissionModeOverridden,
@@ -6365,7 +6502,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 onCompositionStart={handleImeCompositionStart}
                 onCompositionEnd={handleImeCompositionEnd}
                 placeholder=""
-                disabled={caps.transferInFlight || isInterruptedTurnRecoveryInFlight}
+                disabled={!targetCanCompose || caps.transferInFlight || isInterruptedTurnRecoveryInFlight}
                 contexts={contexts}
                 onRemoveContext={removeContext}
                 onContextTriggerStateChange={setContextTriggerState}
@@ -6793,14 +6930,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                         {canUseSkillsForTarget && (
                           <ChatInputBoostSubmenu
                             label={t('chatInput.boostSkills')}
-                            icon={<Icon name="spark" size="sm" aria-hidden />}
+                            icon={<Icon name="book-open" size="sm" aria-hidden />}
                             testId="chat-input-skills"
                             open={activeBoostSubmenu === 'skills'}
                             onOpenChange={open => setBoostSubmenuOpen('skills', open)}
                           >
                             {resolvedModeSkillsLoading && !resolvedModeSkillsLoaded ? (
                               <div className="openbitfun-chat-input__boost-submenu-loading" data-openbitfun-component="chat-input" data-openbitfun-part="boostSubmenuState" data-openbitfun-state="loading">
-                                <Loader2 size={14} className="openbitfun-chat-input__boost-submenu-spinner" aria-hidden />
+                                <Icon glyph={Loader2} size="sm" className="openbitfun-chat-input__boost-submenu-spinner" aria-hidden />
                                 <span>{t('chatInput.boostSkillsLoading')}</span>
                               </div>
                             ) : resolvedModeSkillsLoadFailed ? (
@@ -6825,7 +6962,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                                   data-openbitfun-part="boostSubmenuItem"
                                   data-openbitfun-boost-item-kind="skill"
                                   title={skill.description || skill.name}
-                                  leading={<Icon name="spark" size="xs" aria-hidden />}
+                                  leading={<Icon name="book-open" size="xs" aria-hidden />}
                                   onClick={event => {
                                     event.stopPropagation();
                                     insertSkillIntoInput(skill.name);
@@ -6845,6 +6982,22 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                               {t('chatInput.openSkillsLibrary')}
                             </MenuItem>
                           </ChatInputBoostSubmenu>
+                        )}
+
+                        {canUseThreadGoal && !!effectiveTargetSession?.workspacePath && (
+                          <>
+                            <MenuSeparator data-openbitfun-component="chat-input" data-openbitfun-part="boostDivider" />
+                            <MenuItem
+                              data-openbitfun-component="chat-input"
+                              data-openbitfun-part="boostItem"
+                              data-openbitfun-boost-item-kind="thread-goal"
+                              data-testid="chat-input-boost-thread-goal"
+                              leading={<Icon glyph={Goal} size="sm" aria-hidden />}
+                              onClick={handleBoostOpenThreadGoal}
+                            >
+                              {t('chatInput.boostThreadGoal')}
+                            </MenuItem>
+                          </>
                         )}
 
                         {!!currentSessionId && !isBtwSession && (
@@ -6907,7 +7060,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                     externalSelection={dispatchModelSelection}
                     modeDefaultModelId={targetModeInfo?.model}
                     persistSharedModeDefault={!isBtwDraftTarget && Boolean(targetModeInfo && targetModeInfo.source !== 'external')}
-                    disabled={isInterruptedTurnRecoveryInFlight || btwDraftSettingsInherited}
+                    disabled={isInterruptedTurnRecoveryInFlight || btwDraftSettingsInherited || isWorkspaceSubmitting
+                      || !!effectiveTargetSession?.draft && effectiveTargetSession.draft.phase !== 'editing'}
                     disabledReason={btwDraftSettingsInherited ? t('selection.inheritedSettings') : undefined}
                     reasoningTriggerPresentation="label"
                   />

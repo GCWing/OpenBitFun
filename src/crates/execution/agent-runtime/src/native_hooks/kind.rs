@@ -23,6 +23,8 @@ pub enum RuntimeHookSource {
     UserCommand,
     ProjectCommand,
     ImportedCommand,
+    /// Command handlers activated by a skill invocation in one session.
+    SkillCommand,
     /// Executable plugin contribution. The concrete ecosystem is owned by an
     /// adapter; the portable runtime only models trust/source precedence.
     Plugin,
@@ -41,6 +43,7 @@ impl fmt::Display for RuntimeHookSource {
             Self::UserCommand => f.write_str("user-command"),
             Self::ProjectCommand => f.write_str("project-command"),
             Self::ImportedCommand => f.write_str("imported-command"),
+            Self::SkillCommand => f.write_str("skill-command"),
             Self::Plugin => f.write_str("plugin"),
         }
     }

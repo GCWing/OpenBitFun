@@ -8,10 +8,10 @@
     "openbitfunSearchHttp": "自定义 HTTP 服务"
   },
   "providerDescriptions": {
-    "exaMcpFree": "使用 Exa 提供的免费搜索服务，无需 API Key 或额外配置。",
-    "exaSearchApi": "使用你的 Exa API Key 访问搜索服务，请在下方填写并保存凭据。",
-    "tavily": "使用你的 Tavily API Key 访问搜索服务，请在下方填写并保存凭据。",
-    "openbitfunSearchHttp": "连接实现 OpenBitFun 搜索协议的自建或企业内部服务，请在下方填写服务地址，并按需配置认证。"
+    "exaMcpFree": "无需 API Key 或额外配置",
+    "exaSearchApi": "需要 Exa API Key，在下方填写并保存",
+    "tavily": "需要 Tavily API Key，在下方填写并保存",
+    "openbitfunSearchHttp": "接入自建或企业内部搜索服务，需填写服务地址并按需配置认证"
   },
   "auth": {
     "none": "无需认证",
@@ -20,25 +20,26 @@
   },
   "sections": {
     "provider": {
-      "title": "搜索服务"
+      "title": "搜索服务",
+      "description": "搜索服务独立于对话模型；所需地址和凭据取决于所选服务"
     },
     "http": {
-      "title": "OpenBitFun Search HTTP Protocol v1",
-      "description": "连接实现固定 OpenBitFun 协议的自建或企业内部端点"
+      "title": "自定义搜索服务",
+      "description": "服务需实现 OpenBitFun Search HTTP Protocol v1"
     },
     "protocol": {
       "title": "协议说明",
       "description": "实现自定义搜索端点需要遵循的请求与响应格式。"
     },
     "credential": {
-      "title": "设备凭据",
-      "description": "Secret 仅在执行 WebSearch 的主机上加密保存，不会同步"
+      "title": "搜索服务凭据",
+      "description": "密钥仅在执行搜索的主机上加密保存，不会同步到其他设备"
     }
   },
   "fields": {
     "provider": {
       "label": "服务提供方",
-      "description": "切换服务后，保存配置即可生效",
+      "description": "保存后用于后续网页搜索",
       "placeholder": "选择搜索服务"
     },
     "providerHelp": {
@@ -46,33 +47,31 @@
       "description": "选择搜索服务后，这里会显示所需的配置。"
     },
     "endpoint": {
-      "label": "端点",
+      "label": "服务地址",
       "description": "必须使用 HTTPS；仅 localhost 或回环 IP 可使用明文 HTTP",
       "placeholder": "https://search.example.com/search"
     },
     "authMode": {
-      "label": "认证方式",
-      "description": "可选无需认证、Bearer 凭据或一个受限自定义 Header"
+      "label": "认证方式"
     },
     "headerName": {
-      "label": "Header 名称",
-      "description": "用于填写 X-API-Key 等自定义凭据 Header；Bearer 认证请选择“Bearer 凭据”",
+      "label": "凭据请求头名称",
+      "description": "填写 X-API-Key 等自定义请求头；使用 Authorization 时请选择 Bearer 凭据",
       "placeholder": "X-Search-Key"
     },
     "credentialStatus": {
-      "label": "状态",
-      "description": "当前执行主机的凭据状态"
+      "label": "状态"
     },
     "credential": {
       "label": "API Key 或 Secret",
-      "description": "保存新值会替换当前设备上的 Secret",
+      "description": "保存新值会替换执行主机上此服务的密钥",
       "placeholder": "输入凭据",
       "replacePlaceholder": "输入新凭据以替换已保存的值"
     }
   },
   "status": {
-    "configured": "已在此设备配置",
-    "missing": "此设备缺少凭据"
+    "configured": "执行主机已配置",
+    "missing": "执行主机缺少凭据"
   },
   "protocol": {
     "request": {
@@ -106,11 +105,11 @@
     "saved": "网页搜索配置已保存。",
     "saveFailed": "保存网页搜索配置失败。",
     "credentialRequired": "请先输入凭据。",
-    "credentialSaved": "凭据已保存到此设备。",
-    "credentialSaveFailed": "保存设备凭据失败。",
-    "credentialSaveFailedAfterConfigSaved": "网页搜索配置已保存，但设备凭据保存失败。请重新输入凭据后重试。",
-    "credentialCleared": "已从此设备清除凭据。",
-    "credentialClearFailed": "清除设备凭据失败。",
+    "credentialSaved": "凭据已保存到执行主机",
+    "credentialSaveFailed": "保存执行主机凭据失败",
+    "credentialSaveFailedAfterConfigSaved": "搜索配置已保存，但执行主机凭据保存失败。请重新输入凭据后重试",
+    "credentialCleared": "已从执行主机清除凭据",
+    "credentialClearFailed": "清除执行主机凭据失败",
     "protocolCopied": "协议已复制。",
     "protocolCopyFailed": "复制协议失败。"
   }

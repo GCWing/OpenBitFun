@@ -20,8 +20,8 @@ import { resolveStorageTurnIndex } from '../../utils/flowChatTurnIdentity';
 const log = createLogger('PersistenceModule');
 const COALESCED_IMMEDIATE_SAVE_DELAY_MS = 500;
 
-function isTransientSession(session: { isTransient?: boolean } | undefined): boolean {
-  return session?.isTransient === true;
+function isTransientSession(session: { isTransient?: boolean; draft?: { phase: string } } | undefined): boolean {
+  return session?.isTransient === true || session?.draft?.phase === 'editing' || session?.draft?.phase === 'creating';
 }
 
 /**
@@ -520,6 +520,8 @@ export function convertDialogTurnToBackendFormat(dialogTurn: DialogTurn, turnInd
       ? {
           inputTokens: dialogTurn.tokenUsage.inputTokens,
           outputTokens: dialogTurn.tokenUsage.outputTokens,
+          ...(dialogTurn.tokenUsage.cachedTokens !== undefined
+            ? { cachedTokens: dialogTurn.tokenUsage.cachedTokens } : {}),
           totalTokens: dialogTurn.tokenUsage.totalTokens,
           timestamp: dialogTurn.tokenUsage.timestamp,
         }

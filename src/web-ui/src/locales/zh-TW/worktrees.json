@@ -15,7 +15,7 @@
   },
   "settings": {
     "title": "Worktrees",
-    "description": "工作階段在獨立 Git worktree 中執行時使用的預設值。路徑會在目前執行主機上解析；修改根目錄只影響之後新建的 worktree。",
+    "description": "設定會話隔離的預設行為，管理執行主機上的 Worktree",
     "loading": "正在載入 Worktree 設定…",
     "loadFailed": "無法載入 Worktree 設定。",
     "retry": "重試",
@@ -31,7 +31,7 @@
     },
     "rootPath": {
       "label": "Worktree 根目錄",
-      "description": "之後新建的 worktree 會存放在目前執行主機的此目錄下。"
+      "description": "路徑屬於目前執行主機；修改僅影響之後新建的 Worktree"
     },
     "branchPrefix": {
       "label": "分支前綴",
@@ -39,21 +39,21 @@
     },
     "copyChanges": {
       "label": "預設複製本機變更",
-      "description": "預設關閉；開啟後會把專案中未提交的變更複製到新 worktree，並保留暫存狀態。"
+      "description": "將專案中未提交的變更複製到新 Worktree，並保留暫存狀態"
     },
     "autoDelete": {
       "label": "自動刪除舊 Worktree",
-      "description": "新建 worktree 後，如果工作區超過保留數量，OpenBitFun 會刪除最舊且可安全清理的託管 worktree。"
+      "description": "新建 Worktree 後，若超過保留數量，自動清理最舊且可安全刪除的託管 Worktree"
     },
     "autoDeleteLimit": {
-      "label": "自動刪除上限",
-      "description": "每個工作區保留的託管 worktree 數量。包含關聯工作階段、本機變更、未發布提交或 Git 鎖定的 worktree 一律會保留。",
+      "label": "每個工作區保留數量",
+      "description": "關聯會話、存在本機變更、未發佈提交或 Git 鎖定的 Worktree 不會自動刪除，實際數量可能超過此值",
       "invalid": "請輸入 {{min}} 到 {{max}} 之間的數字。"
     }
   },
   "management": {
     "title": "工作區 Worktrees",
-    "description": "僅顯示目前執行主機上 OpenBitFun Worktree 根目錄內的 worktree，並依所屬工作區分組。",
+    "description": "依工作區分組，僅列出目前執行主機上 OpenBitFun Worktree 根目錄內的 Worktree",
     "loading": "正在掃描 OpenBitFun Worktree…",
     "loadFailed": "無法載入 OpenBitFun Worktree 清單。",
     "refresh": "重新整理 Worktree",

@@ -54,6 +54,17 @@ extension MobileAppModel {
     }
 
     func selectModel(_ modelID: String) {
+        #if DEBUG
+        if composerModelPickerPreview {
+            modelOptions = modelOptions.map { option in
+                ComposerModelOption(id: option.id, primaryLabel: option.primaryLabel,
+                    secondaryLabel: option.secondaryLabel, source: option.source,
+                    selected: option.id == modelID, role: option.role, roles: option.roles,
+                    fallsBackToPrimary: option.fallsBackToPrimary)
+            }
+            return
+        }
+        #endif
         guard surface == .remote, remoteSessionSelected,
               let sessionID = RemoteAuthorityGate.sendSessionID(
                 selectedSessionID: selectedSessionID, openedSessionID: remoteOpenedSessionID,

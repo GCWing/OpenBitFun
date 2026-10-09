@@ -84,6 +84,33 @@ pub struct AgentSessionListRequest {
     pub remote_ssh_host: Option<String>,
 }
 
+/// Read-only projection of one workspace registered on the runtime's owning host.
+/// Paths are display/IO facts; IDs are opaque selectors, scoped to that host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentWorkspaceCatalogEntry {
+    pub workspace_id: String,
+    pub project_workspace_id: Option<String>,
+    pub name: String,
+    pub kind: openbitfun_core_types::WorkspaceKind,
+    pub root_path: String,
+    /// Last recorded workspace access, as Unix milliseconds.
+    pub last_accessed_at_ms: i64,
+    pub remote: Option<AgentWorkspaceRemoteInfo>,
+    pub binding_error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentWorkspaceRemoteInfo {
+    pub connection_id: Option<String>,
+    pub host: Option<String>,
+}
+
+/// Catalog discovery must not activate workspaces, inspect files, or connect SSH.
+#[async_trait::async_trait]
+pub trait AgentWorkspaceCatalogPort: Send + Sync {
+    async fn list_workspaces(&self) -> PortResult<Vec<AgentWorkspaceCatalogEntry>>;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]

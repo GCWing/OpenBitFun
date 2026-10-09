@@ -1,10 +1,10 @@
 {
-  "title": "语音输入",
-  "subtitle": "本地转写在当前设备处理且不上传音频；实时语音通话使用单独的云端配置",
+  "title": "语音",
+  "subtitle": "设置当前设备的语音输入",
   "loading": "正在加载语音输入设置...",
   "sections": {
     "basic": "语音输入",
-    "basicDescription": "语音输入在当前设备完成识别，录音和转写音频不会上传。"
+    "basicDescription": "在当前设备识别并转为文字，录音不会上传"
   },
   "languages": {
     "auto": "自动",
@@ -41,8 +41,7 @@
   },
   "composer": {
     "enabled": {
-      "label": "在输入框中显示语音按钮",
-      "description": "在对话输入框中使用麦克风输入文字"
+      "label": "在输入框中显示语音按钮"
     },
     "language": {
       "label": "识别语言",
@@ -51,15 +50,15 @@
   },
   "voiceCall": {
     "title": "实时语音通话",
-    "description": "启用后，麦克风音频会从当前控制端发送到火山引擎实时处理；此功能与本地转写相互独立。",
+    "description": "麦克风音频由当前控制端发送到火山引擎实时处理，与本地语音输入独立",
     "loading": "正在加载实时语音设置…",
     "enabled": {
       "label": "启用客户端语音助手",
-      "description": "从客户端右下角与火山引擎端到端实时语音模型通话，并允许它理解工作区状态和启动 OpenBitFun 任务。"
+      "description": "允许语音助手了解工作区状态并启动任务；从客户端右下角开始通话"
     },
     "apiKey": {
       "label": "火山引擎 API Key",
-      "description": "仅由当前控制端建立语音连接，不会随任务发送到远程工作区或 Peer 设备。",
+      "description": "仅由当前控制端用于语音连接，不会随任务发送到远程工作区或 Peer 设备",
       "placeholder": "输入端到端实时语音 API Key"
     },
     "voice": {
@@ -68,7 +67,7 @@
     },
     "status": {
       "label": "连接配置",
-      "description": "保存只会写入配置，不会验证 API Key 或连接；随后打开客户端右下角的 Hello，即可从文字聊天切换到实时语音。"
+      "description": "保存不会验证密钥或连接；打开右下角的 Hello 可切换到实时语音并测试"
     },
     "save": "保存实时语音",
     "messages": {
@@ -76,7 +75,8 @@
       "saved": "实时语音设置已保存",
       "saveFailed": "保存实时语音设置失败",
       "required": "启用实时语音前，请填写 API Key 和语音角色。",
-      "unsaved": "实时语音配置有尚未保存的修改。"
+      "unsaved": "实时语音配置有尚未保存的修改。",
+      "unsupported": "实时语音通话仅在 OpenBitFun 桌面端中可用。"
     },
     "call": {
       "title": "实时通话",

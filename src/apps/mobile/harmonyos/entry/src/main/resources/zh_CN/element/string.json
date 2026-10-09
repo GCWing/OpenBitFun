@@ -13,20 +13,2728 @@
       "value": "OpenBitFun"
     },
     {
-      "name": "permission_camera_reason",
-      "value": "用于扫描 OpenBitFun 桌面端远程连接二维码。"
-    },
-    {
-      "name": "permission_read_pasteboard_reason",
-      "value": "用于粘贴 OpenBitFun 桌面端远程连接链接。"
-    },
-    {
       "name": "permission_microphone_reason",
       "value": "用于在会话详情页将语音转成待发送文字。"
     },
     {
       "name": "permission_distributed_datasync_reason",
       "value": "用于把 GitHub 账号授权给同账号下的手表，并为手表生成独立的设备凭据。"
+    },
+    {
+      "name": "workspaceTools_browse",
+      "value": "浏览受控设备文件夹"
+    },
+    {
+      "name": "workspaceTools_selectFolder",
+      "value": "选择此文件夹"
+    },
+    {
+      "name": "workspaceTools_back",
+      "value": "返回文件列表"
+    },
+    {
+      "name": "workspaceTools_edit",
+      "value": "编辑"
+    },
+    {
+      "name": "workspaceTools_lineNumbers",
+      "value": "行号"
+    },
+    {
+      "name": "workspaceTools_unsaved",
+      "value": "有未保存的更改"
+    },
+    {
+      "name": "workspaceTools_fileConflict",
+      "value": "电脑上的文件已被修改，当前草稿仍保留。请先复制草稿，再重新打开文件以读取最新内容。"
+    },
+    {
+      "name": "workspaceTools_discard",
+      "value": "放弃更改"
+    },
+    {
+      "name": "workspaceTools_nameAsc",
+      "value": "名称升序"
+    },
+    {
+      "name": "workspaceTools_nameDesc",
+      "value": "名称降序"
+    },
+    {
+      "name": "workspaceTools_modifiedAsc",
+      "value": "修改时间升序"
+    },
+    {
+      "name": "workspaceTools_modifiedDesc",
+      "value": "修改时间降序"
+    },
+    {
+      "name": "workspaceTools_upload",
+      "value": "上传文件"
+    },
+    {
+      "name": "workspaceTools_resumeUpload",
+      "value": "继续上传"
+    },
+    {
+      "name": "workspaceTools_cancelUpload",
+      "value": "取消上传"
+    },
+    {
+      "name": "workspaceTools_selectLocation",
+      "value": "选择位置"
+    },
+    {
+      "name": "workspaceTools_runtimeLocal",
+      "value": "受控设备本机"
+    },
+    {
+      "name": "workspaceTools_download",
+      "value": "下载"
+    },
+    {
+      "name": "workspaceTools_title",
+      "value": "工具"
+    },
+    {
+      "name": "workspaceTools_files",
+      "value": "文件"
+    },
+    {
+      "name": "sidebar_controlledDevice",
+      "value": "受控设备"
+    },
+    {
+      "name": "sidebar_currentPath",
+      "value": "当前路径"
+    },
+    {
+      "name": "sidebar_recentWorkspaces",
+      "value": "最近工作区"
+    },
+    {
+      "name": "sidebar_tapToSwitch",
+      "value": "点击切换"
+    },
+    {
+      "name": "workspaceTools_selectTerminal",
+      "value": "选择已有终端"
+    },
+    {
+      "name": "workspaceTools_terminal",
+      "value": "终端"
+    },
+    {
+      "name": "workspaceTools_up",
+      "value": "上级目录"
+    },
+    {
+      "name": "workspaceTools_refresh",
+      "value": "刷新"
+    },
+    {
+      "name": "workspaceTools_more",
+      "value": "加载更多"
+    },
+    {
+      "name": "workspaceTools_fileName",
+      "value": "文件名"
+    },
+    {
+      "name": "workspaceTools_path",
+      "value": "被控运行端绝对路径"
+    },
+    {
+      "name": "workspaceTools_newFile",
+      "value": "新建文件"
+    },
+    {
+      "name": "workspaceTools_mkdir",
+      "value": "新建文件夹"
+    },
+    {
+      "name": "workspaceTools_rename",
+      "value": "重命名"
+    },
+    {
+      "name": "workspaceTools_save",
+      "value": "保存"
+    },
+    {
+      "name": "workspaceTools_delete",
+      "value": "删除文件"
+    },
+    {
+      "name": "workspaceTools_confirmDelete",
+      "value": "确认删除"
+    },
+    {
+      "name": "workspaceTools_rmdir",
+      "value": "删除空文件夹"
+    },
+    {
+      "name": "workspaceTools_createTerminal",
+      "value": "新建终端"
+    },
+    {
+      "name": "workspaceTools_command",
+      "value": "终端输入"
+    },
+    {
+      "name": "workspaceTools_send",
+      "value": "发送"
+    },
+    {
+      "name": "workspaceTools_closeTerminal",
+      "value": "关闭终端"
+    },
+    {
+      "name": "workspaceTools_resize",
+      "value": "调整尺寸"
+    },
+    {
+      "name": "home_recent_title",
+      "value": "今天，想做点什么？"
+    },
+    {
+      "name": "home_recent_recent",
+      "value": "最近会话"
+    },
+    {
+      "name": "home_recent_browse",
+      "value": "浏览工作区"
+    },
+    {
+      "name": "home_recent_all",
+      "value": "全部会话"
+    },
+    {
+      "name": "home_recent_empty",
+      "value": "还没有可继续的对话"
+    },
+    {
+      "name": "home_recent_connect",
+      "value": "连接电脑后，继续你的对话。"
+    },
+    {
+      "name": "account_errorNetwork",
+      "value": "暂时无法连接，请检查网络后重试。"
+    },
+    {
+      "name": "account_errorTimeout",
+      "value": "连接超时，请检查网络后重试。"
+    },
+    {
+      "name": "account_errorSecureConnection",
+      "value": "无法建立安全连接，请检查网络后重试。"
+    },
+    {
+      "name": "account_errorRateLimited",
+      "value": "操作太频繁，请稍后重试。"
+    },
+    {
+      "name": "home_welcome_login",
+      "value": "登录账号"
+    },
+    {
+      "name": "home_welcome_work",
+      "value": "干点活儿"
+    },
+    {
+      "name": "home_welcome_play",
+      "value": "玩点花样"
+    },
+    {
+      "name": "home_welcome_yours",
+      "value": "随你发挥"
+    },
+    {
+      "name": "home_connectComputer",
+      "value": "连接电脑"
+    },
+    {
+      "name": "home_connecting",
+      "value": "正在连接…"
+    },
+    {
+      "name": "home_exploreMiniApps",
+      "value": "探索小应用"
+    },
+    {
+      "name": "home_miniAppsHint",
+      "value": "无需连接电脑，也能即刻使用"
+    },
+    {
+      "name": "miniapp_allApps",
+      "value": "全部应用"
+    },
+    {
+      "name": "miniapp_availableOffline",
+      "value": "离线可用"
+    },
+    {
+      "name": "miniapp_timeout",
+      "value": "本地操作超时，操作可能仍会完成，未自动重试。"
+    },
+    {
+      "name": "miniapp_title",
+      "value": "小应用"
+    },
+    {
+      "name": "miniapp_refresh",
+      "value": "刷新"
+    },
+    {
+      "name": "miniapp_empty",
+      "value": "暂无内置小应用。"
+    },
+    {
+      "name": "miniapp_unsupported",
+      "value": "手机内置小应用不支持此能力。"
+    },
+    {
+      "name": "miniapp_invalidPage",
+      "value": "小应用页面数据不完整，请重新打开。"
+    },
+    {
+      "name": "miniapp_closed",
+      "value": "小应用已关闭或切换。"
+    },
+    {
+      "name": "miniapp_previewHint",
+      "value": "内置应用 · 离线可用，数据保存在本机。"
+    },
+    {
+      "name": "notification_onboardingTitle",
+      "value": "开启任务完成提醒"
+    },
+    {
+      "name": "notification_onboardingBody",
+      "value": "允许 OpenBitFun 在任务完成时发送通知。你可以稍后在系统设置中更改。"
+    },
+    {
+      "name": "notification_onboardingLater",
+      "value": "稍后"
+    },
+    {
+      "name": "notification_onboardingEnable",
+      "value": "开启通知"
+    },
+    {
+      "name": "app_title",
+      "value": "OpenBitFun"
+    },
+    {
+      "name": "common_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "common_back",
+      "value": "返回"
+    },
+    {
+      "name": "common_close",
+      "value": "关闭"
+    },
+    {
+      "name": "common_copy",
+      "value": "复制"
+    },
+    {
+      "name": "common_current",
+      "value": "当前"
+    },
+    {
+      "name": "common_done",
+      "value": "已完成"
+    },
+    {
+      "name": "common_delete",
+      "value": "删除"
+    },
+    {
+      "name": "common_failed",
+      "value": "失败"
+    },
+    {
+      "name": "common_keep",
+      "value": "保留"
+    },
+    {
+      "name": "common_loading",
+      "value": "加载中..."
+    },
+    {
+      "name": "common_open",
+      "value": "打开"
+    },
+    {
+      "name": "common_other",
+      "value": "其他"
+    },
+    {
+      "name": "common_ready",
+      "value": "就绪"
+    },
+    {
+      "name": "common_refresh",
+      "value": "刷新"
+    },
+    {
+      "name": "common_retry",
+      "value": "重试"
+    },
+    {
+      "name": "common_save",
+      "value": "保存"
+    },
+    {
+      "name": "common_search",
+      "value": "搜索"
+    },
+    {
+      "name": "common_running",
+      "value": "运行中"
+    },
+    {
+      "name": "common_waiting",
+      "value": "等待中"
+    },
+    {
+      "name": "notification_taskCompletedTitle",
+      "value": "任务已完成"
+    },
+    {
+      "name": "notification_taskCompletedBody",
+      "value": "OpenBitFun 任务已经完成，点击打开 OpenBitFun 查看结果。"
+    },
+    {
+      "name": "chatHome_prompt",
+      "value": "今天想做什么？"
+    },
+    {
+      "name": "chatHome_placeholder",
+      "value": "问问 OpenBitFun"
+    },
+    {
+      "name": "chatHome_localHint",
+      "value": "这是手机上的对话。要读写电脑上的项目，请切换到远程。"
+    },
+    {
+      "name": "chatHome_research",
+      "value": "查找资料"
+    },
+    {
+      "name": "chatHome_researchPrompt",
+      "value": "帮我查找资料并整理重点："
+    },
+    {
+      "name": "chatHome_image",
+      "value": "分析图片"
+    },
+    {
+      "name": "chatHome_imagePrompt",
+      "value": "请分析这张图片。"
+    },
+    {
+      "name": "chatHome_file",
+      "value": "处理文件"
+    },
+    {
+      "name": "chatHome_filePrompt",
+      "value": "帮我总结这个文件的重点。"
+    },
+    {
+      "name": "chatHome_write",
+      "value": "帮我写点内容"
+    },
+    {
+      "name": "chatHome_writePrompt",
+      "value": "请帮我起草一段内容："
+    },
+    {
+      "name": "chatHome_organize",
+      "value": "梳理一个问题"
+    },
+    {
+      "name": "chatHome_organizePrompt",
+      "value": "请帮我梳理这个问题的重点和思路："
+    },
+    {
+      "name": "chatHome_plan",
+      "value": "制定行动计划"
+    },
+    {
+      "name": "chatHome_planPrompt",
+      "value": "请帮我制定一份清晰、可执行的行动计划："
+    },
+    {
+      "name": "chatHome_codeHintTitle",
+      "value": "这个任务可能需要远程能力"
+    },
+    {
+      "name": "chatHome_codeHintBody",
+      "value": "连接桌面工作区后，OpenBitFun 才能读取项目文件、运行命令并修改代码。"
+    },
+    {
+      "name": "chatHome_enterCode",
+      "value": "进入远程"
+    },
+    {
+      "name": "generalChat_ready",
+      "value": "OpenBitFun 已就绪"
+    },
+    {
+      "name": "generalChat_generating",
+      "value": "OpenBitFun 正在回复"
+    },
+    {
+      "name": "generalChat_sending",
+      "value": "正在发送消息"
+    },
+    {
+      "name": "generalChat_offline",
+      "value": "网络不可用，草稿和历史仍保存在本机。"
+    },
+    {
+      "name": "generalChat_stopped",
+      "value": "已停止生成。"
+    },
+    {
+      "name": "generalChat_interrupted",
+      "value": "回复已中断，已保留收到的内容。"
+    },
+    {
+      "name": "generalChat_replyInterrupted",
+      "value": "回复中断"
+    },
+    {
+      "name": "generalChat_fileDownloadMock",
+      "value": "普通聊天暂不支持下载桌面端文件，请进入远程后处理本地文件。"
+    },
+    {
+      "name": "generalChat_filePreviewUnavailable",
+      "value": "普通聊天暂不支持预览桌面端文件，请进入远程后打开。"
+    },
+    {
+      "name": "generalChat_localRestoreFailed",
+      "value": "普通对话历史暂时无法恢复，你仍可新建对话。"
+    },
+    {
+      "name": "generalChat_modelNotConfigured",
+      "value": "请先在设置中配置普通对话模型。"
+    },
+    {
+      "name": "generalChat_authenticationFailed",
+      "value": "API Key 无效或无权访问该模型。"
+    },
+    {
+      "name": "generalChat_rateLimited",
+      "value": "模型服务请求过于频繁，请稍后重试。"
+    },
+    {
+      "name": "generalChat_serviceUnavailable",
+      "value": "模型服务暂时不可用，请稍后重试。"
+    },
+    {
+      "name": "generalChat_invalidResponse",
+      "value": "模型服务返回了无法识别的响应。"
+    },
+    {
+      "name": "generalChat_emptyResponse",
+      "value": "模型没有返回文字内容。"
+    },
+    {
+      "name": "generalChat_requestFailed",
+      "value": "模型请求失败（HTTP %1$s）。"
+    },
+    {
+      "name": "settings_general_section",
+      "value": "通用"
+    },
+    {
+      "name": "settings_account_section",
+      "value": "账号"
+    },
+    {
+      "name": "settings_account_currentIdentity",
+      "value": "当前身份"
+    },
+    {
+      "name": "settings_model_section",
+      "value": "模型"
+    },
+    {
+      "name": "settings_model_default",
+      "value": "默认模型"
+    },
+    {
+      "name": "settings_devices_section",
+      "value": "设备"
+    },
+    {
+      "name": "settings_title",
+      "value": "设置"
+    },
+    {
+      "name": "settings_language_title",
+      "value": "语言"
+    },
+    {
+      "name": "settings_language_choose",
+      "value": "选择语言"
+    },
+    {
+      "name": "settings_language_zhCN",
+      "value": "简体中文"
+    },
+    {
+      "name": "settings_language_enUS",
+      "value": "English"
+    },
+    {
+      "name": "settings_about_section",
+      "value": "关于"
+    },
+    {
+      "name": "settings_about_openbitfun",
+      "value": "关于 OpenBitFun"
+    },
+    {
+      "name": "settings_about_product",
+      "value": "产品"
+    },
+    {
+      "name": "settings_about_version",
+      "value": "版本"
+    },
+    {
+      "name": "settings_modelService_title",
+      "value": "模型"
+    },
+    {
+      "name": "settings_modelService_manageTitle",
+      "value": "普通对话模型"
+    },
+    {
+      "name": "settings_modelService_localTitle",
+      "value": "本机自定义模型"
+    },
+    {
+      "name": "settings_modelService_currentModel",
+      "value": "当前使用"
+    },
+    {
+      "name": "settings_modelService_modelSources",
+      "value": "模型来源"
+    },
+    {
+      "name": "settings_modelService_chooseAccountModel",
+      "value": "选择账号模型"
+    },
+    {
+      "name": "settings_modelService_accountModels",
+      "value": "账号同步"
+    },
+    {
+      "name": "settings_modelService_accountModelSummary",
+      "value": "云端账号模型"
+    },
+    {
+      "name": "settings_modelService_localModel",
+      "value": "本机自定义"
+    },
+    {
+      "name": "settings_modelService_accountSource",
+      "value": "云端账号"
+    },
+    {
+      "name": "settings_modelService_localSource",
+      "value": "本机"
+    },
+    {
+      "name": "settings_modelService_syncedCount",
+      "value": "已同步 %1$s 个"
+    },
+    {
+      "name": "settings_modelService_accountEmpty",
+      "value": "暂无可用的账号模型"
+    },
+    {
+      "name": "settings_modelService_configured",
+      "value": "已配置"
+    },
+    {
+      "name": "settings_modelService_notConfigured",
+      "value": "未配置"
+    },
+    {
+      "name": "settings_modelService_apiUrl",
+      "value": "API URL"
+    },
+    {
+      "name": "settings_modelService_apiUrlPlaceholder",
+      "value": "https://api.example.com"
+    },
+    {
+      "name": "settings_modelService_apiKey",
+      "value": "API Key"
+    },
+    {
+      "name": "settings_modelService_apiKeyPlaceholder",
+      "value": "输入 API Key"
+    },
+    {
+      "name": "settings_modelService_apiKeyKeepPlaceholder",
+      "value": "留空则保留已保存的 Key"
+    },
+    {
+      "name": "settings_modelService_modelName",
+      "value": "模型名称"
+    },
+    {
+      "name": "settings_modelService_modelPlaceholder",
+      "value": "例如 chat-model"
+    },
+    {
+      "name": "settings_modelService_keySaved",
+      "value": "已安全保存"
+    },
+    {
+      "name": "settings_modelService_clearKey",
+      "value": "清除已保存的 Key"
+    },
+    {
+      "name": "settings_modelService_keepKey",
+      "value": "保留已保存的 Key"
+    },
+    {
+      "name": "settings_modelService_testConnection",
+      "value": "测试连接"
+    },
+    {
+      "name": "settings_modelService_testNeedsKey",
+      "value": "保留或输入 API Key 后可测试连接。"
+    },
+    {
+      "name": "settings_modelService_testSuccess",
+      "value": "连接测试通过。"
+    },
+    {
+      "name": "settings_modelService_invalidUrl",
+      "value": "API URL 必须以 http:// 或 https:// 开头。"
+    },
+    {
+      "name": "settings_modelService_modelRequired",
+      "value": "请输入模型名称。"
+    },
+    {
+      "name": "settings_modelService_apiKeyRequired",
+      "value": "请输入 API Key。"
+    },
+    {
+      "name": "settings_modelService_encryptFailed",
+      "value": "API Key 加密失败。"
+    },
+    {
+      "name": "settings_modelService_secureStoreFailed",
+      "value": "无法访问系统安全存储，请稍后重试。"
+    },
+    {
+      "name": "sidebar_chat",
+      "value": "库"
+    },
+    {
+      "name": "sidebar_projects",
+      "value": "项目"
+    },
+    {
+      "name": "sidebar_tasks",
+      "value": "已计划"
+    },
+    {
+      "name": "sidebar_tools",
+      "value": "应用"
+    },
+    {
+      "name": "sidebar_more",
+      "value": "更多"
+    },
+    {
+      "name": "sidebar_newChat",
+      "value": "聊天"
+    },
+    {
+      "name": "sidebar_generalChat",
+      "value": "普通对话"
+    },
+    {
+      "name": "sidebar_conversations",
+      "value": "最近对话"
+    },
+    {
+      "name": "sidebar_devices",
+      "value": "设备"
+    },
+    {
+      "name": "sidebar_legacyWorkspaceCatalog",
+      "value": "旧版设备：显示最近访问的工作区"
+    },
+    {
+      "name": "sidebar_workspaces",
+      "value": "工作区"
+    },
+    {
+      "name": "sidebar_deviceOnline",
+      "value": "在线"
+    },
+    {
+      "name": "sidebar_addWorkspace",
+      "value": "添加工作区"
+    },
+    {
+      "name": "sidebar_targetWorkspacePath",
+      "value": "受控设备上的路径"
+    },
+    {
+      "name": "sidebar_openWorkspacePath",
+      "value": "打开工作区"
+    },
+    {
+      "name": "sidebar_remoteRootBrowseOnly",
+      "value": "远程根目录仅用于浏览，请选择具体工作区目录"
+    },
+    {
+      "name": "sidebar_browseRemoteRoot",
+      "value": "浏览远程根目录"
+    },
+    {
+      "name": "sidebar_selectWorkspace",
+      "value": "选择工作区"
+    },
+    {
+      "name": "sidebar_workspacesOffline",
+      "value": "未连接"
+    },
+    {
+      "name": "sidebar_connectDesktop",
+      "value": "连接电脑"
+    },
+    {
+      "name": "sidebar_addConnection",
+      "value": "添加连接"
+    },
+    {
+      "name": "sidebar_newInWorkspace",
+      "value": "在此工作区新建"
+    },
+    {
+      "name": "sidebar_emptyWorkspaces",
+      "value": "这台电脑还没有工作区"
+    },
+    {
+      "name": "sidebar_moreSessions",
+      "value": "还有 %1$s 个会话"
+    },
+    {
+      "name": "sidebar_moreWorkspaces",
+      "value": "还有 %1$s 个工作区"
+    },
+    {
+      "name": "sidebar_deviceOffline",
+      "value": "离线"
+    },
+    {
+      "name": "sidebar_deviceLoadFailed",
+      "value": "这台电脑暂时无法读取"
+    },
+    {
+      "name": "sidebar_moreDevices",
+      "value": "还有 %1$s 台设备"
+    },
+    {
+      "name": "sidebar_pinned",
+      "value": "置顶"
+    },
+    {
+      "name": "sidebar_archived",
+      "value": "已归档"
+    },
+    {
+      "name": "sidebar_archive",
+      "value": "归档"
+    },
+    {
+      "name": "sidebar_unarchive",
+      "value": "取消归档"
+    },
+    {
+      "name": "sidebar_exportMarkdown",
+      "value": "复制 Markdown"
+    },
+    {
+      "name": "sidebar_untitled",
+      "value": "未命名会话"
+    },
+    {
+      "name": "sidebar_emptyRecentTitle",
+      "value": "暂无最近会话"
+    },
+    {
+      "name": "sidebar_emptyRecentText",
+      "value": "开始聊天后会显示在这里。"
+    },
+    {
+      "name": "sidebar_deleteConfirm",
+      "value": "删除后将无法恢复这条会话。"
+    },
+    {
+      "name": "sidebar_searchPlaceholder",
+      "value": "搜索对话"
+    },
+    {
+      "name": "sidebar_noSearchResult",
+      "value": "没有匹配的会话"
+    },
+    {
+      "name": "sidebar_signedOutNewChat",
+      "value": "新聊天"
+    },
+    {
+      "name": "sidebar_signInOpenBitFunAccount",
+      "value": "使用邮箱或 GitHub 登录"
+    },
+    {
+      "name": "sidebar_collapse",
+      "value": "收起侧边栏"
+    },
+    {
+      "name": "sidebar_restore",
+      "value": "展开侧边栏"
+    },
+    {
+      "name": "session_actions",
+      "value": "会话操作"
+    },
+    {
+      "name": "session_details",
+      "value": "会话详情"
+    },
+    {
+      "name": "session_viewDetails",
+      "value": "查看详情"
+    },
+    {
+      "name": "session_agentType",
+      "value": "智能体类型"
+    },
+    {
+      "name": "session_workspace",
+      "value": "工作区"
+    },
+    {
+      "name": "session_workspacePath",
+      "value": "工作区路径"
+    },
+    {
+      "name": "session_createdAt",
+      "value": "创建时间"
+    },
+    {
+      "name": "session_updatedAt",
+      "value": "更新时间"
+    },
+    {
+      "name": "session_messageCount",
+      "value": "消息数"
+    },
+    {
+      "name": "session_status",
+      "value": "状态"
+    },
+    {
+      "name": "viewSettings_title",
+      "value": "视图设置"
+    },
+    {
+      "name": "viewSettings_subtitle",
+      "value": "调整会话列表的分组和信息密度"
+    },
+    {
+      "name": "viewSettings_grouping",
+      "value": "分组方式"
+    },
+    {
+      "name": "viewSettings_filters",
+      "value": "筛选"
+    },
+    {
+      "name": "viewSettings_metadata",
+      "value": "显示信息"
+    },
+    {
+      "name": "viewSettings_workspace",
+      "value": "工作区"
+    },
+    {
+      "name": "viewSettings_agentType",
+      "value": "会话类型"
+    },
+    {
+      "name": "viewSettings_allWorkspaces",
+      "value": "全部工作区"
+    },
+    {
+      "name": "viewSettings_allAgentTypes",
+      "value": "全部类型"
+    },
+    {
+      "name": "viewSettings_allStatuses",
+      "value": "全部状态"
+    },
+    {
+      "name": "viewSettings_updated",
+      "value": "更新时间"
+    },
+    {
+      "name": "viewSettings_status",
+      "value": "运行状态"
+    },
+    {
+      "name": "common_unknown",
+      "value": "未知"
+    },
+    {
+      "name": "code_title",
+      "value": "OpenBitFun 远程"
+    },
+    {
+      "name": "code_heroTitle",
+      "value": "本地开发助手"
+    },
+    {
+      "name": "code_heroBody",
+      "value": "连接桌面端后，OpenBitFun 可以访问你的代码仓库、运行命令和修改文件。"
+    },
+    {
+      "name": "code_connectWorkspace",
+      "value": "连接本地工作区"
+    },
+    {
+      "name": "code_noWorkspacePreview",
+      "value": "连接桌面端后会显示最近打开的代码仓库。"
+    },
+    {
+      "name": "code_newTask",
+      "value": "新建远程任务"
+    },
+    {
+      "name": "code_switchWorkspace",
+      "value": "切换工作区"
+    },
+    {
+      "name": "code_disconnect",
+      "value": "断开连接"
+    },
+    {
+      "name": "code_recentSessions",
+      "value": "最近远程会话"
+    },
+    {
+      "name": "code_emptySessionTitle",
+      "value": "暂无远程会话"
+    },
+    {
+      "name": "code_emptySessionText",
+      "value": "连接本地工作区后，可以新建远程任务处理项目问题。"
+    },
+    {
+      "name": "remote_actionUnsupported",
+      "value": "已连接的设备不支持此操作。"
+    },
+    {
+      "name": "remote_title",
+      "value": "远程"
+    },
+    {
+      "name": "remote_chats",
+      "value": "聊天"
+    },
+    {
+      "name": "remote_searchChats",
+      "value": "搜索聊天记录"
+    },
+    {
+      "name": "remote_emptyTitle",
+      "value": "还没有远程对话"
+    },
+    {
+      "name": "remote_emptyText",
+      "value": "新建聊天后，可以从手机继续处理桌面端任务。"
+    },
+    {
+      "name": "remote_pickSession",
+      "value": "选择一个会话"
+    },
+    {
+      "name": "remote_pickSessionText",
+      "value": "从侧边栏打开会话，或新建一个。"
+    },
+    {
+      "name": "remote_startSession",
+      "value": "新建会话"
+    },
+    {
+      "name": "remote_harness_title",
+      "value": "选择执行模式"
+    },
+    {
+      "name": "remote_harness_minimal",
+      "value": "极简"
+    },
+    {
+      "name": "remote_harness_standard",
+      "value": "标准"
+    },
+    {
+      "name": "remote_harness_ultimate",
+      "value": "极致"
+    },
+    {
+      "name": "remote_connectTitle",
+      "value": "连接桌面端"
+    },
+    {
+      "name": "remote_actions",
+      "value": "远程设置"
+    },
+    {
+      "name": "remote_device",
+      "value": "连接的设备"
+    },
+    {
+      "name": "remote_newChat",
+      "value": "聊天"
+    },
+    {
+      "name": "remote_workspace",
+      "value": "工作区"
+    },
+    {
+      "name": "remote_assistant",
+      "value": "助理"
+    },
+    {
+      "name": "remote_noAssistant",
+      "value": "默认助理"
+    },
+    {
+      "name": "remote_loadMore",
+      "value": "加载更多聊天"
+    },
+    {
+      "name": "remote_menu_organize",
+      "value": "整理"
+    },
+    {
+      "name": "remote_menu_byProject",
+      "value": "按项目"
+    },
+    {
+      "name": "remote_menu_byTime",
+      "value": "按时间倒序排列"
+    },
+    {
+      "name": "remote_menu_chatFirst",
+      "value": "聊天优先"
+    },
+    {
+      "name": "remote_menu_manage",
+      "value": "管理"
+    },
+    {
+      "name": "remote_menu_cloudTasks",
+      "value": "云端任务"
+    },
+    {
+      "name": "remote_menu_addConnection",
+      "value": "添加连接"
+    },
+    {
+      "name": "remote_menu_settings",
+      "value": "设置"
+    },
+    {
+      "name": "remote_menu_refreshConnection",
+      "value": "刷新连接"
+    },
+    {
+      "name": "remote_menu_comingSoon",
+      "value": "待上线"
+    },
+    {
+      "name": "remote_projects_showMore",
+      "value": "再显示 %1$s 个项目"
+    },
+    {
+      "name": "remote_sessions_showMore",
+      "value": "再显示 %1$s 条会话"
+    },
+    {
+      "name": "remote_time_today",
+      "value": "今天"
+    },
+    {
+      "name": "remote_time_yesterday",
+      "value": "昨天"
+    },
+    {
+      "name": "remote_time_earlier",
+      "value": "更早"
+    },
+    {
+      "name": "remote_settings_relayReauthorizationRequired",
+      "value": "中继服务已升级，请重新登录关联新服务；已保存的账户和数据会保留。"
+    },
+    {
+      "name": "remote_settings_currentControl",
+      "value": "当前远程控制"
+    },
+    {
+      "name": "remote_settings_accountDevice",
+      "value": "账号设备"
+    },
+    {
+      "name": "remote_settings_qrPairing",
+      "value": "扫码配对"
+    },
+    {
+      "name": "remote_settings_disconnect",
+      "value": "断开"
+    },
+    {
+      "name": "remote_settings_disconnectTemporary",
+      "value": "断开临时连接"
+    },
+    {
+      "name": "remote_settings_reconnect",
+      "value": "重新连接"
+    },
+    {
+      "name": "remote_settings_noDesktop",
+      "value": "尚未连接桌面端"
+    },
+    {
+      "name": "remote_settings_openbitfunUser",
+      "value": "OpenBitFun 用户"
+    },
+    {
+      "name": "remote_settings_accountSignedIn",
+      "value": "已登录"
+    },
+    {
+      "name": "remote_settings_accountNotSignedIn",
+      "value": "未登录"
+    },
+    {
+      "name": "remote_settings_accountTemporary",
+      "value": "临时登录"
+    },
+    {
+      "name": "remote_settings_accountLoginTitle",
+      "value": "使用邮箱或 GitHub 登录"
+    },
+    {
+      "name": "remote_settings_accountLoginBody",
+      "value": "使用邮箱或 GitHub 登录并连接自己的电脑。\\n任务和模型配置保留在被控电脑上。"
+    },
+    {
+      "name": "remote_settings_loginServer",
+      "value": "登录服务器"
+    },
+    {
+      "name": "remote_settings_accountSignIn",
+      "value": "使用邮箱或 GitHub 登录"
+    },
+    {
+      "name": "remote_settings_accountSigningIn",
+      "value": "正在登录…"
+    },
+    {
+      "name": "remote_settings_accountLoginFailed",
+      "value": "暂时无法登录，请稍后重试。"
+    },
+    {
+      "name": "remote_settings_relayUrlPlaceholder",
+      "value": "Relay 地址，例如 https://relay.example.com"
+    },
+    {
+      "name": "remote_settings_accountLogout",
+      "value": "退出登录"
+    },
+    {
+      "name": "remote_settings_accountLoggingOut",
+      "value": "正在退出…"
+    },
+    {
+      "name": "remote_settings_deviceCurrent",
+      "value": "当前设备"
+    },
+    {
+      "name": "remote_settings_deviceRefresh",
+      "value": "刷新"
+    },
+    {
+      "name": "remote_settings_deviceLoading",
+      "value": "正在加载设备…"
+    },
+    {
+      "name": "remote_settings_deviceEmpty",
+      "value": "账号下还没有其他已注册设备。"
+    },
+    {
+      "name": "remote_settings_deviceLoginRequired",
+      "value": "登录云账号后可查看该账号下的所有设备。"
+    },
+    {
+      "name": "remote_settings_deviceOnline",
+      "value": "在线"
+    },
+    {
+      "name": "remote_settings_deviceOffline",
+      "value": "离线"
+    },
+    {
+      "name": "remote_settings_deviceConnecting",
+      "value": "正在连接"
+    },
+    {
+      "name": "remote_settings_deviceControlling",
+      "value": "当前控制"
+    },
+    {
+      "name": "remote_settings_deviceSwitching",
+      "value": "正在切换到 %1$s…"
+    },
+    {
+      "name": "remote_settings_deviceSwitchFailed",
+      "value": "切换控制设备失败，请稍后重试。"
+    },
+    {
+      "name": "remote_settings_deviceLoadFailed",
+      "value": "设备列表加载失败，请稍后重试。"
+    },
+    {
+      "name": "remote_settings_accountExpired",
+      "value": "云账号已失效，请重新登录。"
+    },
+    {
+      "name": "remote_settings_deviceUnavailable",
+      "value": "目标桌面暂时不可用，请刷新设备列表后重试。"
+    },
+    {
+      "name": "remote_settings_deviceIncompatible",
+      "value": "客户端版本不兼容，无法互控。"
+    },
+    {
+      "name": "remote_settings_deviceName",
+      "value": "设备"
+    },
+    {
+      "name": "remote_settings_deviceManagementBody",
+      "value": "此设备的账号凭据已使用 HUKS 加密保存。退出账号后会立即清理。"
+    },
+    {
+      "name": "remote_settings_githubId",
+      "value": "Account ID: %1$s"
+    },
+    {
+      "name": "remote_settings_githubAccount",
+      "value": "OpenBitFun 账号"
+    },
+    {
+      "name": "remote_settings_connectedDesktop",
+      "value": "当前桌面端"
+    },
+    {
+      "name": "remote_permissions_title",
+      "value": "权限模式"
+    },
+    {
+      "name": "remote_permissions_scope",
+      "value": "此设置会同步到当前桌面，并应用于所有新的工具调用。"
+    },
+    {
+      "name": "remote_permissions_ask",
+      "value": "需要确认"
+    },
+    {
+      "name": "remote_permissions_askDescription",
+      "value": "高风险操作会等待你确认。"
+    },
+    {
+      "name": "remote_permissions_auto",
+      "value": "自动批准"
+    },
+    {
+      "name": "remote_permissions_autoDescription",
+      "value": "原本需要确认的操作会自动通过。"
+    },
+    {
+      "name": "remote_permissions_fullAccess",
+      "value": "完全访问"
+    },
+    {
+      "name": "remote_permissions_fullAccessDescription",
+      "value": "允许所有工具操作，不再请求确认。"
+    },
+    {
+      "name": "remote_permissions_loading",
+      "value": "正在读取桌面权限设置…"
+    },
+    {
+      "name": "remote_permissions_loadFailed",
+      "value": "权限设置读取失败，请重试。"
+    },
+    {
+      "name": "remote_permissions_saveFailed",
+      "value": "权限模式保存失败，请重试。"
+    },
+    {
+      "name": "remote_permissions_connectionRequired",
+      "value": "连接桌面后可修改权限模式。"
+    },
+    {
+      "name": "remote_permissions_fullAccessWarningTitle",
+      "value": "确认开启完全访问？"
+    },
+    {
+      "name": "remote_permissions_fullAccessWarningBody",
+      "value": "开启后，桌面端工具可以直接执行命令和修改文件。"
+    },
+    {
+      "name": "remote_permissions_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "remote_permissions_confirmFullAccess",
+      "value": "开启完全访问"
+    },
+    {
+      "name": "connect_localTitle",
+      "value": "连接本地工作区"
+    },
+    {
+      "name": "connect_chooseConnectionTitle",
+      "value": "连接电脑"
+    },
+    {
+      "name": "connect_legacySignInRequired",
+      "value": "请使用邮箱或 GitHub 登录后重新连接设备。原有连接记录已保留。"
+    },
+    {
+      "name": "connect_subtitle",
+      "value": "连接桌面端后，OpenBitFun 可以访问代码仓库、运行命令和处理本地开发任务。"
+    },
+    {
+      "name": "connect_accountDevicesTitle",
+      "value": "选择桌面设备"
+    },
+    {
+      "name": "connect_accountDevicesSubtitle",
+      "value": "远程"
+    },
+    {
+      "name": "connect_accountDevicesBody",
+      "value": "选择一台在线桌面继续工作。"
+    },
+    {
+      "name": "connect_availableDevices",
+      "value": "账号设备"
+    },
+    {
+      "name": "connect_deviceLastUsed",
+      "value": "上次连接"
+    },
+    {
+      "name": "connect_deviceLinkInvalid",
+      "value": "已保存的连接链接无法使用，请登录账号后从设备列表选择电脑。"
+    },
+    {
+      "name": "connect_deviceLinkUnavailable",
+      "value": "该设备已离线，或不属于当前 OpenBitFun 账户。"
+    },
+    {
+      "name": "connect_accountPairTitle",
+      "value": "账号配对验证"
+    },
+    {
+      "name": "connect_accountPairIntro",
+      "value": "桌面端已使用邮箱或 GitHub 登录，需要验证同一账号后继续连接。"
+    },
+    {
+      "name": "connect_accountPairBody",
+      "value": "密码只用于本次加密配对，不会保存到手机。"
+    },
+    {
+      "name": "connect_enterAccountToPair",
+      "value": "请使用邮箱或 GitHub 登录后连接设备"
+    },
+    {
+      "name": "connect_accountUsernamePlaceholder",
+      "value": "OpenBitFun 用户名"
+    },
+    {
+      "name": "connect_accountPasswordPlaceholder",
+      "value": "OpenBitFun 密码"
+    },
+    {
+      "name": "connect_stepsTitle",
+      "value": "连接步骤"
+    },
+    {
+      "name": "connect_or",
+      "value": "或"
+    },
+    {
+      "name": "connect_userId",
+      "value": "输入用户 ID"
+    },
+    {
+      "name": "connect_userPlaceholder",
+      "value": "例如：DESKTOP-KM3L4UI"
+    },
+    {
+      "name": "connect_connect",
+      "value": "连接"
+    },
+    {
+      "name": "connect_connecting",
+      "value": "连接中..."
+    },
+    {
+      "name": "connect_remoteUrlShort",
+      "value": "远程连接链接"
+    },
+    {
+      "name": "connect_collapse",
+      "value": "收起"
+    },
+    {
+      "name": "connect_filled",
+      "value": "已填写"
+    },
+    {
+      "name": "connect_fill",
+      "value": "填写"
+    },
+    {
+      "name": "connect_clear",
+      "value": "清除"
+    },
+    {
+      "name": "connect_urlPlaceholder",
+      "value": "openbitfun:// 或 https://...#/pair?room=...&pk=...&relay=..."
+    },
+    {
+      "name": "connect_statusTitle",
+      "value": "连接状态"
+    },
+    {
+      "name": "connect_targetDesktop",
+      "value": "目标桌面端"
+    },
+    {
+      "name": "connect_noDesktop",
+      "value": "尚未选择桌面端"
+    },
+    {
+      "name": "connect_noDesktopDetail",
+      "value": "登录账号并选择一台电脑后，会在这里显示连接状态。"
+    },
+    {
+      "name": "connect_desktopId",
+      "value": "桌面 ID：%1$s"
+    },
+    {
+      "name": "connect_desktopIdUnavailable",
+      "value": "桌面 ID 暂不可用"
+    },
+    {
+      "name": "connect_waitingDevice",
+      "value": "等待连接桌面设备"
+    },
+    {
+      "name": "connect_connected",
+      "value": "已连接"
+    },
+    {
+      "name": "connect_connectedTo",
+      "value": "已连接到 %1$s · %2$s"
+    },
+    {
+      "name": "connect_waitingDesktop",
+      "value": "等待桌面端确认"
+    },
+    {
+      "name": "connect_failed",
+      "value": "连接失败"
+    },
+    {
+      "name": "connect_cannotConnectDesktop",
+      "value": "无法连接到桌面设备"
+    },
+    {
+      "name": "connect_disconnected",
+      "value": "已断开"
+    },
+    {
+      "name": "connect_desktopDisconnected",
+      "value": "与桌面断开连接"
+    },
+    {
+      "name": "connect_hintExpiredRoom",
+      "value": "旧的扫码连接已过期或房间不存在，请登录账号后从设备列表选择电脑。"
+    },
+    {
+      "name": "connect_hintNetwork",
+      "value": "手机无法访问中继服务，请检查网络、代理或桌面端中继地址后重试。"
+    },
+    {
+      "name": "connect_hintProtectedUser",
+      "value": "这个连接已绑定用户 ID，请继续使用桌面端确认过的用户 ID。"
+    },
+    {
+      "name": "connect_hintInvalidLink",
+      "value": "已保存的连接链接不完整，请登录账号后从设备列表选择电脑。"
+    },
+    {
+      "name": "connection_connected",
+      "value": "已连接"
+    },
+    {
+      "name": "connection_reconnecting",
+      "value": "正在重连"
+    },
+    {
+      "name": "connection_connecting",
+      "value": "连接中"
+    },
+    {
+      "name": "connection_error",
+      "value": "连接异常"
+    },
+    {
+      "name": "connection_disconnected",
+      "value": "已断开"
+    },
+    {
+      "name": "connection_waiting",
+      "value": "等待连接"
+    },
+    {
+      "name": "connection_user",
+      "value": "用户 %1$s"
+    },
+    {
+      "name": "connection_reconnectingDesktop",
+      "value": "正在重新连接桌面端"
+    },
+    {
+      "name": "connection_unavailableReconnect",
+      "value": "连接不可用，请重新连接"
+    },
+    {
+      "name": "connection_desktopDisconnected",
+      "value": "与桌面端断开连接"
+    },
+    {
+      "name": "home_reconnect",
+      "value": "重连"
+    },
+    {
+      "name": "home_disconnect",
+      "value": "断开"
+    },
+    {
+      "name": "home_clearPairing",
+      "value": "清除配对"
+    },
+    {
+      "name": "home_workbench",
+      "value": "工作台"
+    },
+    {
+      "name": "home_currentAssistant",
+      "value": "当前助理"
+    },
+    {
+      "name": "home_currentWorkspace",
+      "value": "当前工作区"
+    },
+    {
+      "name": "home_switchAssistant",
+      "value": "切换助理"
+    },
+    {
+      "name": "home_switch",
+      "value": "切换"
+    },
+    {
+      "name": "home_recentWorkspaces",
+      "value": "最近工作区"
+    },
+    {
+      "name": "home_noRecentWorkspaces",
+      "value": "没有最近工作区，请先在桌面端打开工作区。"
+    },
+    {
+      "name": "home_assistantWorkspaces",
+      "value": "助理工作区"
+    },
+    {
+      "name": "home_noAssistants",
+      "value": "没有可用助理，请先在桌面端创建或打开助理。"
+    },
+    {
+      "name": "home_createSession",
+      "value": "新建会话"
+    },
+    {
+      "name": "home_assistantSession",
+      "value": "助理会话"
+    },
+    {
+      "name": "home_assistantSessionDisabled",
+      "value": "桌面端暂未开放创建助理会话"
+    },
+    {
+      "name": "home_codeDesc",
+      "value": "处理编码任务"
+    },
+    {
+      "name": "home_coworkDesc",
+      "value": "处理日常办公任务"
+    },
+    {
+      "name": "home_recent",
+      "value": "最近"
+    },
+    {
+      "name": "home_viewAll",
+      "value": "查看全部"
+    },
+    {
+      "name": "home_sessionCount",
+      "value": "%1$s 个会话"
+    },
+    {
+      "name": "home_searchPlaceholder",
+      "value": "搜索会话标题"
+    },
+    {
+      "name": "home_all",
+      "value": "全部"
+    },
+    {
+      "name": "home_loadMore",
+      "value": "加载更多"
+    },
+    {
+      "name": "home_deleteSession",
+      "value": "删除会话"
+    },
+    {
+      "name": "home_emptyLoadingTitle",
+      "value": "加载会话中"
+    },
+    {
+      "name": "home_emptyLoadingText",
+      "value": "正在同步桌面端会话列表。"
+    },
+    {
+      "name": "home_emptySearchTitle",
+      "value": "没有匹配的会话"
+    },
+    {
+      "name": "home_emptySearchText",
+      "value": "换一个关键词或筛选条件后再试。"
+    },
+    {
+      "name": "home_emptyAssistantTitle",
+      "value": "暂无助理会话"
+    },
+    {
+      "name": "home_emptyAssistantText",
+      "value": "桌面端开放创建后可在这里开始。"
+    },
+    {
+      "name": "home_emptyTitle",
+      "value": "暂无会话"
+    },
+    {
+      "name": "home_emptyText",
+      "value": "用远程处理编码任务，或用普通对话处理日常问题。"
+    },
+    {
+      "name": "sheet_createTitle",
+      "value": "创建 %1$s 会话"
+    },
+    {
+      "name": "sheet_workspace",
+      "value": "工作区"
+    },
+    {
+      "name": "sheet_sessionTitleOptional",
+      "value": "会话标题（可选）"
+    },
+    {
+      "name": "sheet_firstInstructionOptional",
+      "value": "首条指令（可选）"
+    },
+    {
+      "name": "sheet_instructionPlaceholder",
+      "value": "告诉 OpenBitFun 要做什么..."
+    },
+    {
+      "name": "sheet_advancedOptions",
+      "value": "高级选项"
+    },
+    {
+      "name": "sheet_unavailable",
+      "value": "暂不可用"
+    },
+    {
+      "name": "sheet_creating",
+      "value": "创建中..."
+    },
+    {
+      "name": "sheet_start",
+      "value": "开始"
+    },
+    {
+      "name": "chat_remoteSession",
+      "value": "远程会话"
+    },
+    {
+      "name": "chat_sessionTitle",
+      "value": "会话标题"
+    },
+    {
+      "name": "chat_sessionSection",
+      "value": "会话"
+    },
+    {
+      "name": "chat_pin",
+      "value": "置顶"
+    },
+    {
+      "name": "chat_unpin",
+      "value": "取消置顶"
+    },
+    {
+      "name": "chat_uploadedFiles",
+      "value": "已上传的文件"
+    },
+    {
+      "name": "chat_stop",
+      "value": "停止"
+    },
+    {
+      "name": "chat_send",
+      "value": "发送"
+    },
+    {
+      "name": "chat_voiceInput",
+      "value": "语音输入"
+    },
+    {
+      "name": "chat_stopListening",
+      "value": "停止听写"
+    },
+    {
+      "name": "chat_addImage",
+      "value": "添加图片"
+    },
+    {
+      "name": "chat_removeImage",
+      "value": "移除图片"
+    },
+    {
+      "name": "chat_selectModel",
+      "value": "选择模型"
+    },
+    {
+      "name": "chat_modelPrimary",
+      "value": "主力模型"
+    },
+    {
+      "name": "chat_modelFast",
+      "value": "快速模型"
+    },
+    {
+      "name": "chat_modelFastNotConfigured",
+      "value": "未配置时使用主力模型"
+    },
+    {
+      "name": "chat_modelRolePrimary",
+      "value": "主力"
+    },
+    {
+      "name": "chat_modelRoleFast",
+      "value": "快速"
+    },
+    {
+      "name": "chat_loadOlder",
+      "value": "加载更早消息"
+    },
+    {
+      "name": "chat_loadOlderFailed",
+      "value": "加载更早消息失败，点按重试。"
+    },
+    {
+      "name": "chat_inputPlaceholder",
+      "value": "向 OpenBitFun 提问"
+    },
+    {
+      "name": "chat_voiceListeningPlaceholder",
+      "value": "正在听，请说话..."
+    },
+    {
+      "name": "chat_queuedAfterRunningTurn",
+      "value": "已排队，当前任务结束后执行"
+    },
+    {
+      "name": "chat_image",
+      "value": "图片"
+    },
+    {
+      "name": "chat_imageUnavailable",
+      "value": "图片未同步到此设备"
+    },
+    {
+      "name": "chat_thinkingRunning",
+      "value": "运行中"
+    },
+    {
+      "name": "chat_thinkingDone",
+      "value": "已完成"
+    },
+    {
+      "name": "chat_thinkingInProgress",
+      "value": "正在思考"
+    },
+    {
+      "name": "chat_thinkingComplete",
+      "value": "已思考"
+    },
+    {
+      "name": "chat_toolCalls",
+      "value": "调用工具"
+    },
+    {
+      "name": "chat_toolsRan",
+      "value": "已运行 %1$s 个工具"
+    },
+    {
+      "name": "chat_toolOpTodoWrite",
+      "value": "更新任务列表"
+    },
+    {
+      "name": "chat_toolOpTask",
+      "value": "发起任务"
+    },
+    {
+      "name": "chat_toolOpRead",
+      "value": "读取文件"
+    },
+    {
+      "name": "chat_toolOpWrite",
+      "value": "写入文件"
+    },
+    {
+      "name": "chat_toolOpDelete",
+      "value": "删除文件"
+    },
+    {
+      "name": "chat_toolOpDiff",
+      "value": "查看变更"
+    },
+    {
+      "name": "chat_toolOpEdit",
+      "value": "修改文件"
+    },
+    {
+      "name": "chat_toolOpCommand",
+      "value": "运行命令"
+    },
+    {
+      "name": "chat_toolOpWebSearch",
+      "value": "网页搜索"
+    },
+    {
+      "name": "chat_toolOpWebFetch",
+      "value": "访问网页"
+    },
+    {
+      "name": "chat_toolOpSearch",
+      "value": "搜索代码"
+    },
+    {
+      "name": "chat_toolOpAskUser",
+      "value": "请求确认"
+    },
+    {
+      "name": "chat_toolTodoFallback",
+      "value": "任务列表"
+    },
+    {
+      "name": "chat_toolTaskFallback",
+      "value": "子任务"
+    },
+    {
+      "name": "chat_subagentOutput",
+      "value": "子任务输出"
+    },
+    {
+      "name": "chat_toolFailed",
+      "value": "%1$s失败"
+    },
+    {
+      "name": "chat_toolRunning",
+      "value": "正在运行"
+    },
+    {
+      "name": "chat_showMore",
+      "value": "查看更多"
+    },
+    {
+      "name": "chat_showLess",
+      "value": "收起"
+    },
+    {
+      "name": "chat_processing",
+      "value": "正在处理"
+    },
+    {
+      "name": "chat_sendFailed",
+      "value": "发送失败，请检查连接后重试"
+    },
+    {
+      "name": "chat_responseFailed",
+      "value": "本次回复失败"
+    },
+    {
+      "name": "chat_error",
+      "value": "错误"
+    },
+    {
+      "name": "chat_output",
+      "value": "输出"
+    },
+    {
+      "name": "chat_interactionLoadFailed",
+      "value": "待处理交互加载失败"
+    },
+    {
+      "name": "chat_approvalFailed",
+      "value": "提交失败，请重试"
+    },
+    {
+      "name": "chat_approvalRequired",
+      "value": "需要批准"
+    },
+    {
+      "name": "chat_editApprovalInput",
+      "value": "编辑参数"
+    },
+    {
+      "name": "chat_hideApprovalInput",
+      "value": "收起参数"
+    },
+    {
+      "name": "chat_approve",
+      "value": "批准"
+    },
+    {
+      "name": "chat_reject",
+      "value": "拒绝"
+    },
+    {
+      "name": "chat_cancelTool",
+      "value": "取消工具"
+    },
+    {
+      "name": "chat_planView",
+      "value": "查看计划"
+    },
+    {
+      "name": "chat_planBuild",
+      "value": "构建 Plan"
+    },
+    {
+      "name": "chat_planBuildUnavailable",
+      "value": "请更新桌面端后再从手机构建 Plan。"
+    },
+    {
+      "name": "chat_planBuildWaitForTurn",
+      "value": "请等待当前任务结束后再构建这个 Plan。"
+    },
+    {
+      "name": "chat_toolInput",
+      "value": "工具输入"
+    },
+    {
+      "name": "chat_reset",
+      "value": "重置"
+    },
+    {
+      "name": "chat_editJsonInput",
+      "value": "编辑 JSON 输入"
+    },
+    {
+      "name": "chat_answerPlaceholder",
+      "value": "输入回答"
+    },
+    {
+      "name": "chat_submitAnswer",
+      "value": "提交回答"
+    },
+    {
+      "name": "chat_emptySyncing",
+      "value": "正在同步"
+    },
+    {
+      "name": "chat_emptyConnectionError",
+      "value": "连接异常"
+    },
+    {
+      "name": "chat_emptyReconnecting",
+      "value": "正在恢复连接"
+    },
+    {
+      "name": "chat_emptyNoMessages",
+      "value": "暂无消息"
+    },
+    {
+      "name": "chat_emptyLoadingMessages",
+      "value": "正在加载桌面端会话消息。"
+    },
+    {
+      "name": "chat_emptyReconnectFromHome",
+      "value": "请返回工作台重新连接桌面端。"
+    },
+    {
+      "name": "chat_emptyReconnectSync",
+      "value": "恢复后会继续同步桌面端消息。"
+    },
+    {
+      "name": "chat_emptyFirstMessage",
+      "value": "发送第一条指令后，桌面端响应会显示在这里。"
+    },
+    {
+      "name": "chat_executing",
+      "value": "OpenBitFun 正在执行..."
+    },
+    {
+      "name": "chat_model",
+      "value": "模型"
+    },
+    {
+      "name": "chat_openbitfunProcessing",
+      "value": "OpenBitFun 正在处理..."
+    },
+    {
+      "name": "chat_updatedSession",
+      "value": "OpenBitFun 已更新会话"
+    },
+    {
+      "name": "chat_desktopFile",
+      "value": "桌面端文件"
+    },
+    {
+      "name": "chat_fileLink",
+      "value": "文件链接"
+    },
+    {
+      "name": "chat_reading",
+      "value": "读取中"
+    },
+    {
+      "name": "chat_download",
+      "value": "下载"
+    },
+    {
+      "name": "filePreview_title",
+      "value": "文件预览"
+    },
+    {
+      "name": "filePreview_loading",
+      "value": "正在读取文件"
+    },
+    {
+      "name": "filePreview_offline",
+      "value": "离线，仅显示已加载内容"
+    },
+    {
+      "name": "filePreview_fitImage",
+      "value": "适应窗口"
+    },
+    {
+      "name": "filePreview_actualImageSize",
+      "value": "原始大小"
+    },
+    {
+      "name": "filePreview_expand",
+      "value": "放大预览"
+    },
+    {
+      "name": "filePreview_restoreSize",
+      "value": "还原预览"
+    },
+    {
+      "name": "filePreview_imageDecodeFailed",
+      "value": "图片无法解码，请重试或下载文件。"
+    },
+    {
+      "name": "filePreview_loadFailed",
+      "value": "无法打开文件"
+    },
+    {
+      "name": "filePreview_notFound",
+      "value": "文件不存在或已被移动"
+    },
+    {
+      "name": "filePreview_unavailable",
+      "value": "文件不存在或不在当前工作区"
+    },
+    {
+      "name": "filePreview_accessDenied",
+      "value": "无法访问工作区外的文件"
+    },
+    {
+      "name": "filePreview_tooLarge",
+      "value": "文件过大，无法在移动端预览"
+    },
+    {
+      "name": "filePreview_unsupported",
+      "value": "此文件暂不支持预览"
+    },
+    {
+      "name": "filePreview_truncated",
+      "value": "已显示前 %1$s，下载后可查看完整内容"
+    },
+    {
+      "name": "chat_pendingConfirmation",
+      "value": "待确认"
+    },
+    {
+      "name": "chat_cancelled",
+      "value": "已取消"
+    },
+    {
+      "name": "chat_jsonObjectRequired",
+      "value": "请输入 JSON 对象"
+    },
+    {
+      "name": "chat_jsonInvalid",
+      "value": "JSON 格式错误"
+    },
+    {
+      "name": "chat_questionDefault",
+      "value": "桌面端需要你的回答。"
+    },
+    {
+      "name": "chat_analyzeImageDefault",
+      "value": "请分析这张图片。"
+    },
+    {
+      "name": "chat_fullText",
+      "value": "全文"
+    },
+    {
+      "name": "chat_copyFullText",
+      "value": "复制全文"
+    },
+    {
+      "name": "chat_copyRich",
+      "value": "复制（富文本）"
+    },
+    {
+      "name": "chat_copyMarkdown",
+      "value": "复制 Markdown"
+    },
+    {
+      "name": "chat_copyPlain",
+      "value": "复制纯文本"
+    },
+    {
+      "name": "status_waitingConnection",
+      "value": "等待连接"
+    },
+    {
+      "name": "status_notConnected",
+      "value": "未连接"
+    },
+    {
+      "name": "status_restoringConnection",
+      "value": "正在恢复连接"
+    },
+    {
+      "name": "status_parsingUrl",
+      "value": "解析远程 URL"
+    },
+    {
+      "name": "status_pairing",
+      "value": "正在配对"
+    },
+    {
+      "name": "status_reconnecting",
+      "value": "正在重新连接"
+    },
+    {
+      "name": "status_pairingCleared",
+      "value": "已清除配对信息"
+    },
+    {
+      "name": "status_disconnected",
+      "value": "已断开连接"
+    },
+    {
+      "name": "status_remoteUnavailable",
+      "value": "连接不可用，请先重新连接"
+    },
+    {
+      "name": "status_loadingRecentWorkspaces",
+      "value": "加载最近工作区"
+    },
+    {
+      "name": "status_chooseWorkspace",
+      "value": "请选择工作区"
+    },
+    {
+      "name": "status_noRecentWorkspaces",
+      "value": "没有最近工作区"
+    },
+    {
+      "name": "status_switchingWorkspace",
+      "value": "正在切换工作区"
+    },
+    {
+      "name": "status_workspaceSwitched",
+      "value": "工作区已切换"
+    },
+    {
+      "name": "status_loadingAssistants",
+      "value": "加载助理工作区"
+    },
+    {
+      "name": "status_chooseAssistant",
+      "value": "请选择助理"
+    },
+    {
+      "name": "status_noAssistants",
+      "value": "没有可用助理"
+    },
+    {
+      "name": "status_switchingAssistant",
+      "value": "正在切换助理"
+    },
+    {
+      "name": "status_assistantSwitched",
+      "value": "助理已切换"
+    },
+    {
+      "name": "status_refreshSessions",
+      "value": "刷新会话列表"
+    },
+    {
+      "name": "status_loadMoreSessions",
+      "value": "加载更多会话"
+    },
+    {
+      "name": "status_sessionsUpdated",
+      "value": "会话列表已更新"
+    },
+    {
+      "name": "status_createSession",
+      "value": "创建远程会话"
+    },
+    {
+      "name": "status_sessionCreated",
+      "value": "会话已创建"
+    },
+    {
+      "name": "status_loadMessages",
+      "value": "加载会话消息"
+    },
+    {
+      "name": "status_deletingSession",
+      "value": "正在删除会话"
+    },
+    {
+      "name": "status_sessionDeleted",
+      "value": "会话已删除"
+    },
+    {
+      "name": "status_sessionArchived",
+      "value": "会话已归档"
+    },
+    {
+      "name": "status_sessionUnarchived",
+      "value": "会话已取消归档"
+    },
+    {
+      "name": "status_sessionExported",
+      "value": "已复制为 Markdown"
+    },
+    {
+      "name": "status_messagesSynced",
+      "value": "消息已同步"
+    },
+    {
+      "name": "status_messagesRestored",
+      "value": "已恢复本地会话记录"
+    },
+    {
+      "name": "status_switchingModel",
+      "value": "正在切换模型"
+    },
+    {
+      "name": "status_modelSwitched",
+      "value": "模型已切换"
+    },
+    {
+      "name": "status_loadOlderMessages",
+      "value": "加载更早消息"
+    },
+    {
+      "name": "status_sendImage",
+      "value": "发送图片"
+    },
+    {
+      "name": "status_sendCommand",
+      "value": "发送指令"
+    },
+    {
+      "name": "status_sentWaiting",
+      "value": "已发送，等待桌面端响应"
+    },
+    {
+      "name": "status_pickImage",
+      "value": "选择图片"
+    },
+    {
+      "name": "status_noImageSelected",
+      "value": "未选择图片"
+    },
+    {
+      "name": "status_imagesSelected",
+      "value": "已选择 %1$s 张图片"
+    },
+    {
+      "name": "status_voiceStarting",
+      "value": "启动语音输入"
+    },
+    {
+      "name": "status_voiceListening",
+      "value": "正在语音输入"
+    },
+    {
+      "name": "status_voiceRecognized",
+      "value": "已填入语音识别文本"
+    },
+    {
+      "name": "status_voiceStopped",
+      "value": "已停止语音输入"
+    },
+    {
+      "name": "status_noRunningTask",
+      "value": "当前没有正在执行的任务"
+    },
+    {
+      "name": "status_stoppingTask",
+      "value": "正在停止任务"
+    },
+    {
+      "name": "status_stopRequested",
+      "value": "已请求停止"
+    },
+    {
+      "name": "status_updatingTitle",
+      "value": "正在更新会话标题"
+    },
+    {
+      "name": "status_titleUpdated",
+      "value": "会话标题已更新"
+    },
+    {
+      "name": "status_messageCopied",
+      "value": "消息已复制"
+    },
+    {
+      "name": "status_fileInfo",
+      "value": "读取文件信息"
+    },
+    {
+      "name": "status_prepareDownload",
+      "value": "准备下载 %1$s"
+    },
+    {
+      "name": "status_downloadDone",
+      "value": "下载完成 %1$s · %2$s"
+    },
+    {
+      "name": "status_approvingTool",
+      "value": "正在批准工具调用"
+    },
+    {
+      "name": "status_toolApproved",
+      "value": "已批准工具调用"
+    },
+    {
+      "name": "status_rejectingTool",
+      "value": "正在拒绝工具调用"
+    },
+    {
+      "name": "status_toolRejected",
+      "value": "已拒绝工具调用"
+    },
+    {
+      "name": "status_cancellingTool",
+      "value": "正在取消工具调用"
+    },
+    {
+      "name": "status_toolCancelRequested",
+      "value": "已请求取消工具调用"
+    },
+    {
+      "name": "status_submittingAnswer",
+      "value": "正在提交回答"
+    },
+    {
+      "name": "status_answerSubmitted",
+      "value": "回答已提交"
+    },
+    {
+      "name": "status_desktopProcessing",
+      "value": "桌面端正在处理"
+    },
+    {
+      "name": "errors_tooManyAttempts",
+      "value": "尝试次数过多，请 %1$s 秒后再试。"
+    },
+    {
+      "name": "errors_userIdRequired",
+      "value": "请输入用户 ID。"
+    },
+    {
+      "name": "errors_accountUsernameRequired",
+      "value": "请输入 OpenBitFun 用户名。"
+    },
+    {
+      "name": "errors_accountPasswordRequired",
+      "value": "请使用邮箱或 GitHub 登录以继续。"
+    },
+    {
+      "name": "errors_remoteDataInvalid",
+      "value": "中继返回了无法解析的数据，请确认桌面端和移动端版本匹配。"
+    },
+    {
+      "name": "errors_pairRejected",
+      "value": "中继拒绝了旧的配对连接，请登录账号后从设备列表选择电脑。"
+    },
+    {
+      "name": "errors_roomNotFound",
+      "value": "没有找到这个远程房间，旧的扫码连接可能已过期，请登录账号后从设备列表选择电脑。"
+    },
+    {
+      "name": "errors_relayTimeout",
+      "value": "连接中继超时，请检查网络后重试。"
+    },
+    {
+      "name": "errors_rateLimited",
+      "value": "请求过于频繁，请稍后再试。"
+    },
+    {
+      "name": "errors_relayUnavailable",
+      "value": "中继服务暂时不可用（HTTP %1$s），请稍后重试。"
+    },
+    {
+      "name": "errors_relayHttp",
+      "value": "中继返回 HTTP %1$s，请重新配对后再试。"
+    },
+    {
+      "name": "errors_relayTimeoutDetail",
+      "value": "连接中继超时，请确认手机和桌面端网络可访问。"
+    },
+    {
+      "name": "errors_relayNetwork",
+      "value": "无法连接到中继服务，请检查远程链接、网络或代理设置。"
+    },
+    {
+      "name": "errors_remoteConnectFailed",
+      "value": "远程连接失败，请检查网络后重试。"
+    },
+    {
+      "name": "errors_remoteUrlRequired",
+      "value": "请输入桌面端远程连接 URL。"
+    },
+    {
+      "name": "errors_remoteUrlMissingParams",
+      "value": "远程 URL 缺少 room 或 pk 参数。"
+    },
+    {
+      "name": "errors_remoteUrlInvalid",
+      "value": "远程连接链接格式不正确，请登录账号后从设备列表选择电脑。"
+    },
+    {
+      "name": "errors_permissionDenied",
+      "value": "没有获得所需权限，请在系统设置中允许后重试。"
+    },
+    {
+      "name": "errors_operationFailed",
+      "value": "操作失败，请稍后重试。"
+    },
+    {
+      "name": "errors_payloadTooLarge",
+      "value": "这条消息带的附件超过了中继允许的大小，请减少图片数量或选择更小的图片。"
+    },
+    {
+      "name": "errors_workspaceIdUnsupported",
+      "value": "已连接的桌面端不支持按工作区 ID 引用。请升级桌面端后再打开该工作区。"
+    },
+    {
+      "name": "errors_hostStreamUnsupported",
+      "value": "已连接的桌面端 OpenBitFun 版本过旧，不支持按需会话流。请升级该设备上的 OpenBitFun 后继续。"
+    },
+    {
+      "name": "errors_imageTooLargeAfterCompression",
+      "value": "图片压缩后仍超过 %1$s MB，请选择较小图片。"
+    },
+    {
+      "name": "errors_imageCompressionFailed",
+      "value": "图片压缩失败，请选择较小图片。"
+    },
+    {
+      "name": "errors_voicePermissionDenied",
+      "value": "没有获得麦克风权限，无法语音输入。"
+    },
+    {
+      "name": "errors_voiceInputUnavailable",
+      "value": "语音识别暂不可用，请稍后重试。"
+    },
+    {
+      "name": "errors_voiceInputFailed",
+      "value": "语音识别失败（%1$s），请稍后重试。"
+    },
+    {
+      "name": "watchProvision_title",
+      "value": "在这块手表上使用邮箱或 GitHub 登录？"
+    },
+    {
+      "name": "watchProvision_deviceId",
+      "value": "设备编号 %1$s"
+    },
+    {
+      "name": "watchProvision_body",
+      "value": "同意后，手表会登录你的账号并可以连接桌面端。请确认这块手表就在你手里。"
+    },
+    {
+      "name": "watchProvision_approve",
+      "value": "允许"
+    },
+    {
+      "name": "watchProvision_reject",
+      "value": "拒绝"
+    },
+    {
+      "name": "watchProvision_gotIt",
+      "value": "知道了"
+    },
+    {
+      "name": "watchProvision_working",
+      "value": "正在为手表开通账号..."
+    },
+    {
+      "name": "watchProvision_passwordBody",
+      "value": "需要再确认一次账号密码，才能给这块手表创建独立的登录凭证。密码只会用于本次验证。"
+    },
+    {
+      "name": "watchProvision_passwordPlaceholder",
+      "value": "账号密码"
+    },
+    {
+      "name": "watchProvision_passwordConfirm",
+      "value": "确认"
+    },
+    {
+      "name": "watchProvision_doneBody",
+      "value": "%1$s 已登录，可以在手表上使用 OpenBitFun 了。"
+    },
+    {
+      "name": "watchProvision_rejected",
+      "value": "已在手机上拒绝。"
+    },
+    {
+      "name": "watchProvision_busy",
+      "value": "手机正在处理另一台设备的请求，请稍后再试。"
+    },
+    {
+      "name": "watchProvision_errors_noDesktop",
+      "value": "请先在手机上使用邮箱或 GitHub 登录，或连接已登录同一账号的桌面端。"
+    },
+    {
+      "name": "watchProvision_errors_accountUnavailable",
+      "value": "暂时无法验证账号，请检查手机网络后重试。"
+    },
+    {
+      "name": "watchProvision_errors_desktopUnreachable",
+      "value": "暂时无法连接桌面端，请确认桌面端在线后重试。"
+    },
+    {
+      "name": "watchProvision_errors_desktopAuthorizationFailed",
+      "value": "桌面端没能完成手表登录，请确认桌面端已登录同一 OpenBitFun 账号。"
+    },
+    {
+      "name": "watchProvision_errors_passwordFailed",
+      "value": "账号验证失败，请检查密码或网络后重试。"
+    },
+    {
+      "name": "watchProvision_errors_handoffFailed",
+      "value": "授权已完成，但没能把凭证发给手表，请在手表上重试一次。"
+    },
+    {
+      "name": "ui_emptyMessage",
+      "value": "(空消息)"
+    },
+    {
+      "name": "ui_desktopProcessing",
+      "value": "桌面端正在处理..."
+    },
+    {
+      "name": "ui_seedConnected",
+      "value": "%1$s 已连接。你可以继续发送指令，桌面端会在 OpenBitFun 中执行。"
+    },
+    {
+      "name": "time_justNow",
+      "value": "刚刚"
+    },
+    {
+      "name": "time_unknown",
+      "value": "时间未知"
+    },
+    {
+      "name": "time_minutesAgo",
+      "value": "%1$s 分钟前"
+    },
+    {
+      "name": "time_hoursAgo",
+      "value": "%1$s 小时前"
+    },
+    {
+      "name": "time_daysAgo",
+      "value": "%1$s 天前"
     }
   ]
 }

@@ -3,15 +3,15 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SkillInfo } from '@/infrastructure/config/types';
+import type { SkillInfo, SkillScanDiagnostic } from '@/infrastructure/config/types';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { useInstalledSkills } from './useInstalledSkills';
 import type { InstalledFilter } from '../skillsSceneStore';
 
 const getSkillConfigsMock = vi.hoisted(() => vi.fn());
-const translateMock = vi.hoisted(() => (key: string) => key);
+const translateMock = vi.hoisted(() => (key: string, options?: { field?: string }) => options?.field ? `${key}:${options.field}` : key);
 const diagnosticsMock = vi.hoisted(() => ({
-  items: [] as Array<{path: string; sourceId: string; message: string}>,
+  items: [] as SkillScanDiagnostic[],
   available: true,
 }));
 const getGlobalSkillSettingsMock = vi.hoisted(() => vi.fn());
@@ -111,6 +111,43 @@ describe('useInstalledSkills', () => {
       title: 'nav.title',
       metadata: { diagnostics: '/skills/bad/SKILL.md: missing description' },
     });
+  });
+
+  it('reports unsupported skill capabilities without claiming a scan failure', async () => {
+    diagnosticsMock.items = [{
+      path: '/skills/guard/SKILL.md', sourceId: 'claude-code',
+      message: 'unsupported hooks', unsupportedField: 'hooks',
+    }];
+    await act(async () => root.render(<Harness enabled />));
+    expect(currentInstalled?.skills).toEqual([]);
+    expect(currentInstalled?.diagnostics).toEqual(diagnosticsMock.items);
+    expect(notificationMocks.warning).not.toHaveBeenCalled();
+    expect(notificationMocks.info).toHaveBeenCalledExactlyOnceWith('list.unsupportedSkills', {
+      title: 'nav.title',
+      metadata: { diagnostics: '/skills/guard/SKILL.md: list.unsupportedField:hooks' },
+    });
+    await act(async () => { await currentInstalled?.loadSkills(true); });
+    expect(notificationMocks.info).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps read failures separate from unsupported skill capabilities', async () => {
+    const skill: SkillInfo = {
+      key: 'user::openbitfun::good', name: 'good', description: '', path: '/skills/good',
+      level: 'user', sourceId: 'openbitfun', sourceSlot: 'openbitfun', dirName: 'good', isBuiltin: false,
+    };
+    getSkillConfigsMock.mockResolvedValue([skill]);
+    diagnosticsMock.items = [
+      { path: '/skills/missing', sourceId: 'claude-code', message: 'missing target' },
+      { path: '/skills/guard/SKILL.md', sourceId: 'claude-code', message: 'unsupported hooks', unsupportedField: 'hooks' },
+    ];
+    await act(async () => root.render(<Harness enabled />));
+    expect(notificationMocks.warning).toHaveBeenCalledExactlyOnceWith('list.scanIncomplete', {
+      title: 'nav.title', metadata: { diagnostics: '/skills/missing: missing target' },
+    });
+    expect(notificationMocks.info).toHaveBeenCalledExactlyOnceWith('list.unsupportedSkills', {
+      title: 'nav.title', metadata: { diagnostics: '/skills/guard/SKILL.md: list.unsupportedField:hooks' },
+    });
+    expect(currentInstalled?.skills).toEqual([skill]);
   });
 
   it('does not repeat unchanged scan warnings on refresh, but reports changes and recurrence', async () => {

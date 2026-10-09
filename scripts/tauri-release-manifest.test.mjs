@@ -7,10 +7,22 @@ import test from 'node:test';
 
 const root = path.resolve(import.meta.dirname, '..');
 
-test('release version metadata is synchronized', () => {
+test('desktop and mobile release metadata are synchronized within their own groups', () => {
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
-  const result = run('scripts/verify-release-version-sync.mjs', ['--version', version]);
+  const result = run('scripts/verify-release-version-sync.mjs', [
+    '--version', version,
+    '--mobile-version', '1.0.0',
+  ]);
   assert.equal(result.status, 0, result.stderr);
+});
+
+test('mobile release metadata rejects drift within the mobile group', () => {
+  const result = run('scripts/verify-release-version-sync.mjs', [
+    '--version', JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version,
+    '--mobile-version', '1.0.1',
+  ]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /expected mobile 1\.0\.1/);
 });
 
 test('prepares a versioned custom Windows installer asset', () => {
@@ -73,6 +85,32 @@ test('1.0.0-beta manifest keeps the updater URL separate from the manual install
     '--required-manual-platforms', 'windows-x86_64',
   ]);
   assert.equal(verified.status, 0, verified.stderr);
+});
+
+test('updater manifest carries the version release notes for the update prompt', () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'openbitfun-release-notes-'));
+  const updater = path.join(temp, 'updater');
+  const out = path.join(temp, 'latest-v1.json');
+  const notes = path.join(temp, '1.0.3.md');
+  fs.mkdirSync(updater, { recursive: true });
+  fs.writeFileSync(path.join(updater, 'OpenBitFun_1.0.3_windows-x86_64-setup.exe'), 'setup');
+  fs.writeFileSync(path.join(updater, 'OpenBitFun_1.0.3_windows-x86_64-setup.exe.sig'), 'signature');
+  fs.writeFileSync(notes, '系统优化 AI 对话界面与整体性能，让对话更清晰、交互更流畅。\n');
+
+  const generated = run('scripts/generate-tauri-latest-json.mjs', [
+    '--assets-dir', updater,
+    '--version', '1.0.3',
+    '--tag', 'v1.0.3',
+    '--repo', 'GCWing/OpenBitFun',
+    '--notes-file', notes,
+    '--out', out,
+    '--required-platforms', 'windows-x86_64',
+  ]);
+  assert.equal(generated.status, 0, generated.stderr);
+  assert.equal(
+    JSON.parse(fs.readFileSync(out, 'utf8')).notes,
+    '系统优化 AI 对话界面与整体性能，让对话更清晰、交互更流畅。',
+  );
 });
 
 test('manifest declares the signed macOS .dmg installers next to the .app.tar.gz updater packages', (t) => {

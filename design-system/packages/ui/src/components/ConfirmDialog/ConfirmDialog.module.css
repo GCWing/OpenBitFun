@@ -3,7 +3,9 @@
   .messageRow,
   .icon,
   .message,
-  .preview {
+  .preview,
+  .splitActions,
+  .actionGroup {
     box-sizing: border-box;
   }
 
@@ -91,6 +93,25 @@
     letter-spacing: var(--openbitfun-type-code-sm-letter-spacing);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  .splitActions {
+    display: flex;
+    min-inline-size: 0;
+    inline-size: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    column-gap: var(--openbitfun-space-4);
+    row-gap: var(--openbitfun-space-3);
+  }
+
+  .actionGroup {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    margin-inline-start: auto;
   }
 
   @media (forced-colors: active) {

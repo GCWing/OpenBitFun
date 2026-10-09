@@ -4,21 +4,28 @@
   "common": {
     "retry": "重試"
   },
+  "textSelection": {
+    "title": "文字選取",
+    "autoShowToolbar": "自動顯示選取文字操作列",
+    "autoShowToolbarDescription": "選取對話文字後，顯示「新增批註」和「側邊提問」。關閉後仍可透過右鍵選單操作。",
+    "loading": "正在載入文字選取偏好…",
+    "loadFailed": "載入文字選取偏好失敗",
+    "saveFailed": "儲存文字選取偏好失敗"
+  },
   "applicationGroups": {
     "startupAndUpdates": {
       "title": "啟動與更新",
-      "description": "管理登入啟動、執行期間保持喚醒及版本檢查"
+      "description": "控制登入後和執行期間的自動行為；新版本安裝仍需你確認"
     },
     "windowAndNotifications": {
       "title": "視窗與通知",
-      "description": "管理關閉視窗時的行為，以及需要提醒你的事件"
+      "description": "選擇關閉視窗時結束還是留在背景，並決定哪些事件需要提醒"
     }
   },
   "appearance": {
     "title": "外觀",
     "hint": "介面語言與外觀",
     "interfaceTitle": "介面",
-    "interfaceHint": "選擇 OpenBitFun 介面的顯示語言",
     "language": "語言",
     "appearances": "外觀",
     "builtIn": "內置",
@@ -29,7 +36,7 @@
     "languageRowHint": "選擇一個語言包作為目前界面語言",
     "appearanceRowHint": "選擇界面外觀",
     "systemAppearance": "跟隨系統",
-    "systemAppearanceDescription": "根據系統設定自動使用亮色或暗色外觀，並隨系統切換而更新。",
+    "systemAppearanceDescription": "跟隨系統自動切換淺色或深色外觀",
     "presets": {
       "openbitfun-dark": {
         "name": "暗色",
@@ -70,9 +77,8 @@
     },
     "fontSize": {
       "title": "字體大小",
-      "hint": "調整介面與對話區域的字體大小；編輯器字體大小請在編輯器設定中另外調整",
+      "hint": "套用至介面與對話內容；程式碼字體大小請在編輯器設定中另行調整",
       "uiSizeLabel": "介面與對話",
-      "uiSizeHint": "選擇舒適的字體大小，套用至導覽、面板、設定與對話內容",
       "levels": {
         "compact": "緊湊",
         "small": "小",
@@ -84,19 +90,20 @@
       "customPxLabel": "自訂大小（12–20 px）",
       "previewLabel": "字體大小預覽",
       "previewPlaceholder": "輸入文字預覽目前的字體大小"
-    }
+    },
+    "interfaceHint": "選擇選單、按鈕和提示使用的語言，切換後立即生效"
   },
   "launchAtLogin": {
     "sections": {
       "title": "登錄時啟動",
       "hint": "登錄本用戶後是否自動運行 OpenBitFun"
     },
-    "toggleLabel": "開機自動啟動",
-    "toggleDescription": "登錄系統後自動啟動 OpenBitFun；具體表現因操作系統而異。",
+    "toggleLabel": "登入時自動啟動",
+    "toggleDescription": "目前使用者登入系統後自動啟動 OpenBitFun",
     "messages": {
       "loading": "載入中…",
-      "loadFailed": "無法讀取開機啟動設置",
-      "saveFailed": "無法更新開機啟動設置"
+      "loadFailed": "無法讀取登入啟動設定",
+      "saveFailed": "無法更新登入啟動設定"
     }
   },
   "preventSleep": {
@@ -105,7 +112,7 @@
       "hint": "OpenBitFun 執行時的電腦睡眠行為"
     },
     "toggleLabel": "防止電腦睡眠",
-    "toggleDescription": "只要 OpenBitFun 正在執行，就保持電腦喚醒，無論是否有任務正在執行。顯示器仍可關閉；主動睡眠或闔上筆記型電腦由系統原則決定。",
+    "toggleDescription": "OpenBitFun 執行期間保持電腦喚醒，即使沒有任務。螢幕仍可關閉；手動睡眠及闔蓋行為由系統決定",
     "messages": {
       "loading": "載入中…",
       "loadFailed": "無法讀取防止睡眠設定",
@@ -116,23 +123,23 @@
   "logging": {
     "sections": {
       "logging": "日誌",
-      "loggingHint": "日誌級別與本次啟動日誌目錄",
       "level": "日誌級別",
-      "path": "本次啟動日誌路徑"
+      "path": "本次啟動日誌路徑",
+      "loggingHint": "記錄越詳細，日誌量越大；分享診斷套件前請檢查敏感內容"
     },
     "level": {
-      "description": "實時控制日誌輸出級別，修改後立即生效"
+      "description": "修改後立即生效"
     },
     "sensitiveDiagnostics": {
       "label": "包含敏感除錯資訊",
-      "description": "預設關閉。開啟後，本機日誌可能包含使用者 Prompt、模型請求與回應 payload、工具參數、檔案路徑以及 Webview 事件 payload，用於問題排查。OpenBitFun 不會自動上傳這些日誌檔案"
+      "description": "開啟後，日誌可能包含對話內容、模型請求與回應、工具參數、檔案路徑及介面事件資料。僅供排錯，日誌不會自動上傳"
     },
     "path": {
-      "description": "本次啟動寫入日誌檔案所在的目錄"
+      "description": "本次啟動產生的日誌儲存在此目錄"
     },
     "diagnostics": {
       "label": "診斷包",
-      "description": "將最近的本機日誌、崩潰報告與運行時元資料匯出為 zip 檔案。OpenBitFun 不會自動上傳",
+      "description": "將近期日誌、崩潰報告與執行環境資訊匯出為 ZIP 檔案，不會自動上傳",
       "confirmTitle": "匯出診斷包？",
       "confirmSensitive": "診斷包將包含敏感除錯資訊，可能涉及 Prompt、模型請求與回應、工具參數和檔案路徑。請只儲存到可信位置，並在分享前檢查內容。",
       "confirmStandard": "診斷包可能包含本機路徑、運行環境和錯誤詳情。請只儲存到可信位置，並在分享前檢查內容。",
@@ -186,14 +193,14 @@
   "terminal": {
     "sections": {
       "terminal": "終端",
-      "terminalHint": "預設 Shell",
-      "defaultTerminal": "默認終端"
+      "defaultTerminal": "默認終端",
+      "terminalHint": "新建終端機使用所選 Shell，已開啟的終端機繼續使用原來的 Shell",
+      "terminalHintWithCmdFallback": "新建終端機使用所選 Shell，已開啟的終端機繼續使用原來的 Shell；智能體執行命令時實際使用 PowerShell"
     },
     "controls": {
       "refreshTooltip": "重新整理可用終端列表",
       "autoDetect": "自動檢測 (推薦)",
-      "description": "新增終端以及本地工作區中智能體執行命令時使用的默認 Shell 類型",
-      "cmdFallbackMessage": "智能體執行命令時實際使用 PowerShell。",
+      "description": "用於新建終端機，以及本機工作區中智能體執行的命令",
       "placeholder": "選擇默認終端",
       "noShells": "未檢測到可用的終端"
     },
@@ -221,7 +228,7 @@
       "hint": "點擊關閉按鈕時的操作"
     },
     "closeButtonLabel": "關閉按鈕行為",
-    "closeButtonDescription": "點擊視窗關閉按鈕（×）時的預設操作。",
+    "closeButtonDescription": "點選視窗的關閉按鈕（×）時執行",
     "options": {
       "quit": "退出程式",
       "minimizeToTray": "最小化到系統托盤",
@@ -236,18 +243,18 @@
   },
   "notifications": {
     "title": "通知",
-    "hint": "Toast 彈窗通知偏好設置",
+    "hint": "選擇需要提醒你的事件",
     "dialogCompletion": {
       "label": "任務完成通知",
-      "description": "當 AI 任務完成且視窗不在焦點時，彈出 Toast 通知"
+      "description": "視窗未處於前景時，提醒你 AI 任務已完成"
     },
     "permissionRequest": {
       "label": "權限審批請求通知",
-      "description": "當有操作需要你審批且視窗不在焦點時，彈出 Toast 通知"
+      "description": "視窗未處於前景時，提醒你有操作等待核准"
     },
     "startupTips": {
       "label": "啟動時顯示使用技巧",
-      "description": "每次啟動時隨機展示一條使用技巧卡片，幫助發現更多功能"
+      "description": "每次啟動隨機顯示一則使用技巧"
     },
     "messages": {
       "loading": "載入中…",
@@ -262,7 +269,7 @@
       "hint": "啟動後是否自動檢查新版本"
     },
     "toggleLabel": "自動檢查更新",
-    "toggleDescription": "啟動後及執行期間自動檢查更新，每個版本只主動提醒一次。關閉後仍可在左下角「更多」選單中手動檢查更新。",
+    "toggleDescription": "啟動及執行期間自動檢查新版本，每個版本只主動提醒一次；關閉後仍可手動檢查",
     "messages": {
       "loading": "載入中…",
       "loadFailed": "無法讀取更新相關設定",

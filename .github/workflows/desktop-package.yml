@@ -740,6 +740,7 @@ jobs:
             --version "${{ needs.prepare.outputs.version }}" \
             --tag "${{ needs.prepare.outputs.release_tag }}" \
             --repo "${{ github.repository }}" \
+            --notes-file "scripts/release-notes/${{ needs.prepare.outputs.version }}.md" \
             --out release-updater-assets/latest-v1.json \
             --required-platforms "${REQUIRED_UPDATER_PLATFORMS}"
 
@@ -956,7 +957,11 @@ jobs:
             --clobber
           # A successful HTTP response can still contain the previous CDN object.
           # Retry content validation as well as transport failures after replacement.
-          for attempt in {1..12}; do
+          # GitHub's release CDN can take several minutes to converge after a
+          # clobber, so keep the failure bound at five minutes instead of
+          # treating a transient stale object as a failed release.
+          max_readback_attempts=60
+          for ((attempt = 1; attempt <= max_readback_attempts; attempt++)); do
             if curl -fsSL --max-time 30 \
               "https://github.com/${GITHUB_REPOSITORY}/releases/download/channel-v1-beta/latest-v1.json" \
               -o channel-v1-beta.published.json && \
@@ -965,8 +970,8 @@ jobs:
               echo "Beta channel manifest verified: ${CANDIDATE_VERSION}"
               exit 0
             fi
-            echo "Beta channel manifest is not ready (attempt ${attempt}/12)."
-            if [[ "${attempt}" -lt 12 ]]; then sleep 5; fi
+            echo "Beta channel manifest is not ready (attempt ${attempt}/${max_readback_attempts})."
+            if [[ "${attempt}" -lt "${max_readback_attempts}" ]]; then sleep 5; fi
           done
           echo "Beta channel manifest did not converge to ${CANDIDATE_VERSION}." >&2
           exit 1

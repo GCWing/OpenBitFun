@@ -197,6 +197,7 @@
     "current": "当前"
   },
   "quickSwitch": {
+    "refresh": "刷新分支",
     "menuLabel": "切换分支",
     "searchLabel": "搜索分支",
     "searchPlaceholder": "搜索分支...",
@@ -225,6 +226,7 @@
     },
     "errors": {
       "title": "分支切换失败",
+      "refreshFailed": "刷新分支失败，当前显示上次的列表。",
       "loadFailed": "无法加载分支列表",
       "switchFailed": "无法切换分支",
       "switchFailedWithMessage": "无法切换分支：{{error}}",

@@ -13,7 +13,7 @@ const systemTokens = JSON.parse(readFileSync(
 // No font download or platform fallback is involved in this line-box contract.
 function bundledFontLineHeight(): number {
   const font = readFileSync(resolve(webRoot,
-    'src/assets/fonts/harmonyos-sans/sc/HarmonyOS_Sans_SC_Regular.ttf'));
+    'src/assets/fonts/harmonyos-sans/sc/HarmonyOS_Sans_SC.ttf'));
   expect(font.readUInt32BE(0)).toBe(0x00010000);
 
   const tables = new Map<string, { offset: number; length: number }>();

@@ -3,18 +3,11 @@ import {
   SUBAGENT_AVATAR_CATALOG_VERSION,
   type SubagentAvatarId,
 } from './catalog';
+import { hashSubagentIdentity } from './identityHash';
+import { APPEARANCE_DOMAIN_TOKENS } from '@/infrastructure/appearance/appearanceDomainTokens';
 
 export interface SubagentAvatarPresentation {
   avatarId: SubagentAvatarId;
-}
-
-function hashString(value: string): number {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return hash >>> 0;
 }
 
 /**
@@ -29,7 +22,7 @@ export function resolveSubagentAvatarId(sessionId: string): SubagentAvatarId {
     return SUBAGENT_AVATAR_IDS[0];
   }
 
-  const hash = hashString(
+  const hash = hashSubagentIdentity(
     `${SUBAGENT_AVATAR_CATALOG_VERSION}:avatar:${normalizedSessionId}`,
   );
   return SUBAGENT_AVATAR_IDS[hash % SUBAGENT_AVATAR_IDS.length];
@@ -41,4 +34,8 @@ export function resolveSubagentAvatarPresentation(
   return {
     avatarId: resolveSubagentAvatarId(sessionId),
   };
+}
+
+export function resolveSubagentAvatarAccent(sessionId: string): string {
+  return APPEARANCE_DOMAIN_TOKENS.subagentAvatar(resolveSubagentAvatarId(sessionId));
 }

@@ -15,7 +15,7 @@
   height: auto;
   min-height: 0;
   min-width: 0;
-  max-width: 900px;
+  max-width: var(--openbitfun-control-flow-chat-transcript-max-width);
   z-index: var(--openbitfun-layer-overlay);
   display: flex;
   flex-direction: column;
@@ -486,7 +486,7 @@
 
     .session-file-modifications-bar {
       width: 100%;
-      max-width: 900px;
+      max-width: var(--openbitfun-control-flow-chat-transcript-max-width);
     }
 
     & > * {

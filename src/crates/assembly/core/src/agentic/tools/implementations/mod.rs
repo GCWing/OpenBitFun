@@ -1,6 +1,6 @@
 //! Tool implementation module
 
-pub mod agent_delete_tool;
+pub mod agent_control_tool;
 pub mod agent_list_tool;
 pub mod agent_wait_tool;
 #[cfg(feature = "tools-image-analysis")]
@@ -42,6 +42,7 @@ pub mod get_time_tool;
 pub mod glob_tool;
 pub mod grep_tool;
 pub mod list_models_tool;
+pub mod list_workspaces_tool;
 pub mod ls_tool;
 #[cfg(feature = "tools-mcp")]
 pub mod mcp_tools;
@@ -80,7 +81,7 @@ pub mod worktree_tool;
 
 #[deprecated(note = "GetToolSpecTool is owned by the product tool runtime boundary")]
 pub use crate::agentic::tools::product_runtime::GetToolSpecTool;
-pub use agent_delete_tool::AgentDeleteTool;
+pub use agent_control_tool::AgentControlTool;
 pub use agent_list_tool::AgentListTool;
 pub use agent_wait_tool::AgentWaitTool;
 #[cfg(feature = "tools-image-analysis")]
@@ -112,6 +113,7 @@ pub use get_time_tool::GetTimeTool;
 pub use glob_tool::GlobTool;
 pub use grep_tool::GrepTool;
 pub use list_models_tool::ListModelsTool;
+pub use list_workspaces_tool::ListWorkspacesTool;
 pub use ls_tool::LSTool;
 #[cfg(feature = "tools-mcp")]
 pub use mcp_tools::{
@@ -138,9 +140,8 @@ pub use session_control_tool::SessionControlTool;
 pub use session_history_tool::SessionHistoryTool;
 pub use session_message_tool::SessionMessageTool;
 pub use skill_tool::SkillTool;
-pub use task::{
-    AgentInterruptTool, AgentSendInputTool, AgentSpawnTool, LaunchReviewAgentTool, TaskTool,
-};
+pub(crate) use task::AgentExecutionTool;
+pub use task::{AgentSendInputTool, AgentSpawnTool, LaunchReviewAgentTool, TaskTool};
 pub use thread_goal_tools::{CreateGoalTool, GetGoalTool, UpdateGoalTool};
 pub use todo_write_tool::TodoWriteTool;
 #[cfg(feature = "tools-image-analysis")]

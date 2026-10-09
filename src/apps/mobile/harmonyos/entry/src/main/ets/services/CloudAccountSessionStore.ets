@@ -4,6 +4,7 @@ import { preferences } from '@kit.ArkData';
 import { Encoding } from './Encoding';
 import { HarmonyUpgradeIdentityContract } from './HarmonyUpgradeIdentityContract';
 import { OhosError } from './OhosError';
+import { RemoteLogger } from './RemoteLogger';
 
 const STORE_NAME: string = HarmonyUpgradeIdentityContract.CLOUD_ACCOUNT_STORE;
 const CIPHER_KEY: string = 'github_device_session_v1_cipher';
@@ -18,6 +19,14 @@ export interface PersistedCloudAccountSession {
   masterKey: string;
   targetDeviceId?: string;
   targetDeviceName?: string;
+}
+
+export interface PersistedWatchProvisionIdentity {
+  relayUrl: string;
+  userId: string;
+  deviceId: string;
+  requestId: string;
+  privateKeyBase64: string;
 }
 
 /** Persists only an HUKS-encrypted account session, never plaintext secrets. */
@@ -49,8 +58,31 @@ export class CloudAccountSessionStore {
     const previous = await this.load();
     const secret = previous ? Encoding.base64ToBytes(previous.masterKey) : Encoding.randomBytes(32);
     if (secret.length !== 32) throw new Error('Stored device identity is invalid.');
-    await this.writeSealed('device_private_key_v1_cipher', 'device_private_key_v1_iv', Encoding.bytesToBase64(secret));
+    try {
+      await this.writeSealed('device_private_key_v1_cipher', 'device_private_key_v1_iv', Encoding.bytesToBase64(secret));
+    } catch (err) {
+      // A reinstall clears Preferences but HarmonyOS may retain the HUKS alias.
+      // Only rotate the alias when there is no prior session record: existing
+      // encrypted account data must never be made unreadable as recovery.
+      if (previous) throw err instanceof Error ? err : new Error(OhosError.reason(err));
+      RemoteLogger.warn('cloud account device identity write failed on fresh install; recreating local key');
+      await this.recreateKeyForFreshInstall();
+      await this.writeSealed('device_private_key_v1_cipher', 'device_private_key_v1_iv', Encoding.bytesToBase64(secret));
+    }
     return secret;
+  }
+
+  private async recreateKeyForFreshInstall(): Promise<void> {
+    try {
+      await huks.deleteKeyItem(HUKS_ALIAS, {});
+    } catch (err) {
+      const message = OhosError.reason(err);
+      if (message.indexOf('12000011') < 0 && message.indexOf('-13') < 0 &&
+        message.toLowerCase().indexOf('does not exist') < 0) {
+        throw err instanceof Error ? err : new Error(OhosError.reason(err));
+      }
+    }
+    await this.ensureKey();
   }
 
   async loadProfile(userId: string): Promise<GitHubAccountProfile | undefined> {
@@ -64,6 +96,28 @@ export class CloudAccountSessionStore {
 
   async save(session: PersistedCloudAccountSession): Promise<void> {
     await this.writeSealed(CIPHER_KEY, IV_KEY, JSON.stringify(session));
+  }
+
+  async loadWatchProvisionIdentity(relayUrl: string, userId: string,
+    deviceId: string): Promise<PersistedWatchProvisionIdentity | undefined> {
+    const key = this.watchProvisionKey(relayUrl, userId, deviceId);
+    const text = await this.readSealed(`${key}_cipher`, `${key}_iv`);
+    if (!text) return undefined;
+    const identity = JSON.parse(text) as PersistedWatchProvisionIdentity;
+    if (identity.relayUrl !== relayUrl || identity.userId !== userId || identity.deviceId !== deviceId ||
+      !identity.requestId || Encoding.base64ToBytes(identity.privateKeyBase64).length !== 32) {
+      throw new Error('Stored watch provisioning identity is invalid.');
+    }
+    return identity;
+  }
+
+  async saveWatchProvisionIdentity(identity: PersistedWatchProvisionIdentity): Promise<void> {
+    const key = this.watchProvisionKey(identity.relayUrl, identity.userId, identity.deviceId);
+    await this.writeSealed(`${key}_cipher`, `${key}_iv`, JSON.stringify(identity));
+  }
+
+  private watchProvisionKey(relayUrl: string, userId: string, deviceId: string): string {
+    return `watch_provision_v1_${encodeURIComponent(relayUrl)}_${encodeURIComponent(userId)}_${deviceId}`;
   }
 
   private async writeSealed(cipherKey: string, ivKey: string, plaintext: string): Promise<void> {

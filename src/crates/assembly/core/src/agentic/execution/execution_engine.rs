@@ -9,9 +9,8 @@ use super::round_executor::{ModelRoundLifecycle, RoundExecutor};
 use super::types::{ExecutionContext, ExecutionResult, RoundContext, RoundResult};
 use crate::agentic::agents::{
     build_prompt_context_for_workspace, get_agent_registry, get_embedded_prompt,
-    is_swarm_planner_agent_type, render_direct_tool_listing_body, PrependedPromptReminders,
-    PromptBuilder, PromptBuilderContext, RuntimeContextNeeds, ToolListingSections,
-    UserContextPolicy, UserContextSection,
+    render_direct_tool_listing_body, PrependedPromptReminders, PromptBuilder, PromptBuilderContext,
+    RuntimeContextNeeds, ToolListingSections, UserContextPolicy, UserContextSection,
 };
 use crate::agentic::context_profile::{ContextProfilePolicy, ModelCapabilityProfile};
 use crate::agentic::coordination::scheduler::agent_dialog_turn_image_contexts;
@@ -41,7 +40,7 @@ use crate::agentic::session::{
 };
 use crate::agentic::skill_agent_snapshot::build_skill_agent_tool_listing_sections_from_snapshot;
 use crate::agentic::tools::framework::ToolUseContext;
-use crate::agentic::tools::implementations::{SkillTool, TaskTool};
+use crate::agentic::tools::implementations::{AgentExecutionTool, SkillTool};
 use crate::agentic::tools::product_runtime::{
     collect_product_loaded_deferred_tool_specs, GetToolSpecTool,
 };
@@ -68,7 +67,6 @@ use crate::util::types::ToolDefinition;
 use crate::util::{elapsed_ms_u64, truncate_at_char_boundary};
 use dashmap::DashMap;
 use log::{debug, error, info, trace, warn};
-use openbitfun_agent_runtime::output_surface::TOOL_CONTEXT_INLINE_MARKDOWN_IMAGE_DISPLAY_KEY;
 use openbitfun_agent_runtime::permission::PERMISSION_MODE_CONTEXT_KEY;
 use openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY;
 use openbitfun_ai_adapters::ModelExchangeTraceConfig;
@@ -1438,7 +1436,7 @@ impl ExecutionEngine {
                 None
             },
             agent_listing: if has_tool_definition("Task") || has_tool_definition("AgentSpawn") {
-                TaskTool::build_available_agents_context_section(Some(tool_context)).await
+                AgentExecutionTool::build_available_agents_context_section(Some(tool_context)).await
             } else {
                 None
             },
@@ -1473,12 +1471,6 @@ impl ExecutionEngine {
             .get(TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY)
             .and_then(|value| value.parse::<bool>().ok())
             .unwrap_or(false);
-        let inline_markdown_image_display = context
-            .context
-            .get(TOOL_CONTEXT_INLINE_MARKDOWN_IMAGE_DISPLAY_KEY)
-            .and_then(|value| value.parse::<bool>().ok())
-            .unwrap_or(false);
-
         build_prompt_context_for_workspace(
             workspace,
             workspace.workspace_id.as_deref(),
@@ -1490,9 +1482,7 @@ impl ExecutionEngine {
         )
         .await
         .map(|prompt_context| {
-            prompt_context
-                .with_remote_file_delivery_channel(remote_file_delivery_channel)
-                .with_inline_markdown_image_display(inline_markdown_image_display)
+            prompt_context.with_remote_file_delivery_channel(remote_file_delivery_channel)
         })
     }
 
@@ -1675,11 +1665,8 @@ impl ExecutionEngine {
             built_user_context
         };
         let runtime_context = prompt_builder.build_runtime_context_reminder().await;
-        let (skill_listing, mut agent_listing) =
+        let (skill_listing, agent_listing) =
             skill_agent_listing_reminders(baseline_tool_sections.as_ref());
-        if is_swarm_planner_agent_type(current_agent.id()) {
-            agent_listing = None;
-        }
 
         PrependedPromptReminders {
             deferred_tool_listing: prompt_builder.build_deferred_tool_listing_reminder(),

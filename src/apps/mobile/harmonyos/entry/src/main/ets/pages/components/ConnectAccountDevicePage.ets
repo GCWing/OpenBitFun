@@ -11,7 +11,6 @@ export struct ConnectAccountDevicePage {
   @Param controlTargetDeviceId: string = '';
   @Param connectionState: string = 'idle';
   @Event onBack: () => void = () => {};
-  @Event onOpenScanner: () => void = () => {};
   @Event cloudListDevices: () => Promise<CloudAccountDevice[]> =
     async (): Promise<CloudAccountDevice[]> => [];
   @Event cloudSelectDevice: (device: CloudAccountDevice) => Promise<void> =
@@ -50,7 +49,6 @@ export struct ConnectAccountDevicePage {
           Text(RemoteI18n.t('connect.accountDevicesBody'))
             .fontSize(MobileDesignTypography.bodyMedium.size).lineHeight(MobileDesignTypography.bodyMedium.lineHeight).fontColor(MUTED).width('100%')
           this.AccountDeviceList()
-          this.ScanPairCodeAction()
         }
         .width('100%')
         .constraintSize({ minHeight: '100%' })
@@ -107,21 +105,6 @@ export struct ConnectAccountDevicePage {
     .width('100%').height(174)
     .padding({ left: 16, right: 16, top: 8, bottom: 8 })
     .backgroundColor(CARD).borderRadius(8).border({ width: 1, color: LINE })
-  }
-
-  @Builder
-  private ScanPairCodeAction() {
-    Row({ space: 12 }) {
-      SymbolGlyph($r('sys.symbol.link'))
-        .fontSize(20).fontColor([MUTED]).width(22).height(22).opacity(0.66)
-      Text(RemoteI18n.t('connect.scanPairCodeAction'))
-        .fontSize(MobileDesignTypography.bodyLarge.size).fontWeight(FontWeight.Medium).fontColor(INK).layoutWeight(1)
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(13).fontColor([MUTED]).opacity(0.44)
-    }
-    .width('100%').height(58).padding({ left: 16, right: 16 })
-    .backgroundColor(CARD).borderRadius(8).border({ width: 1, color: LINE })
-    .onClick(() => this.onOpenScanner())
   }
 
   @Builder

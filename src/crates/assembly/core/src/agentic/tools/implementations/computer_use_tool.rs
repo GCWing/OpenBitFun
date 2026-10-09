@@ -1529,7 +1529,7 @@ Before sending a message or another irreversible action, verify the intended tar
     }
 
     fn default_exposure(&self) -> ToolExposure {
-        ToolExposure::Deferred
+        ToolExposure::Direct
     }
 
     async fn description_with_context(
@@ -2717,9 +2717,17 @@ mod tests {
         ComputerScreenshot, ComputerUseForegroundApplication, ComputerUseHost,
         ComputerUsePermissionSnapshot, ComputerUseScreenshotParams, ComputerUseSessionSnapshot,
     };
-    use crate::agentic::tools::framework::{Tool, ToolResult, ToolUseContext};
+    use crate::agentic::tools::framework::{Tool, ToolExposure, ToolResult, ToolUseContext};
     use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
     use serde_json::{json, Value};
+
+    #[test]
+    fn computer_use_is_direct_by_default() {
+        assert_eq!(
+            ComputerUseTool::new().default_exposure(),
+            ToolExposure::Direct
+        );
+    }
 
     #[test]
     fn computer_use_permission_resource_identifies_action_and_safe_target() {

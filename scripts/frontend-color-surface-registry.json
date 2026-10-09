@@ -67,6 +67,19 @@
       "audit": {
         "engine": "theme",
         "baseline": "scripts/theme-color-governance-baseline.design-system-ui.json",
+        "excludePaths": ["src/brand/assets/subagent-egg.svg"],
+        "packageContracts": ["@openbitfun/design-tokens", "@openbitfun/theme-openbitfun"]
+      }
+    },
+    {
+      "id": "flow-chat-presentation",
+      "label": "Shared FlowChat presentation",
+      "kind": "canonical-web",
+      "owner": "@openbitfun/flow-chat-presentation consuming canonical tokens and injected renderer themes",
+      "root": "packages/flow-chat-presentation",
+      "audit": {
+        "engine": "theme",
+        "policy": "canonical-ui-zero",
         "packageContracts": ["@openbitfun/design-tokens", "@openbitfun/theme-openbitfun"]
       }
     },
@@ -399,7 +412,7 @@
   "generatedChecks": [
     {
       "id": "subagent-avatar-artwork",
-      "surfaceIds": ["web-ui"],
+      "surfaceIds": ["web-ui", "design-system-ui"],
       "command": ["node", "scripts/check-subagent-avatar-assets.mjs"]
     },
     {
@@ -431,6 +444,13 @@
     }
   ],
   "exclusions": [
+    {
+      "id": "subagent-hatch-artwork",
+      "path": "design-system/packages/ui/src/brand/assets/subagent-egg.svg",
+      "kind": "authored-vector-artwork",
+      "owner": "design-system/packages/ui/src/brand/assets/subagent-egg.palette.json",
+      "reason": "This exact egg master preserves the joystick character palette and cream shell material. The subagent asset check enforces its declared colors, anatomy and consumer; adjacent assets and styles retain the generic zero-growth audit."
+    },
     {
       "id": "subagent-avatar-artwork",
       "path": "src/web-ui/src/flow_chat/assets/subagent-avatars",

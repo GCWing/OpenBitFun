@@ -43,6 +43,7 @@ const TerminalScene: React.FC<TerminalSceneProps> = ({ isActive = true }) => {
           key={activeSessionId}
           sessionId={activeSessionId}
           autoFocus={isActive}
+          renderingActive={isActive}
           showToolbar
           showStatusBar
           onClose={handleClose}

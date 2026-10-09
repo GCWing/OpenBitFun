@@ -160,10 +160,8 @@ struct WelcomeHomeView: View {
                     }
                     VStack(spacing: MobileDesignGeometry.welcomeButtonGap) {
                         welcomeAction(model.accountUser == nil ? "登录账号" : "连接电脑", symbol: nil) {
-                            if model.accountUser == nil { model.accountSheetOpen = true }
-                            else { model.connectRemote() }
+                            model.connectRemote()
                         }
-                        welcomeAction("扫码连接电脑", symbol: "viewfinder") { model.scanRemote() }
                         MiniAppsButton(model: model).foregroundStyle(MobileDesignColors.welcomeButton)
                     }
                     .padding(.horizontal, MobileDesignGeometry.welcomeGutter)

@@ -49,7 +49,7 @@ export const chatInputAppearanceDescriptor: AppearanceSurfaceDescriptor = {
     { id: 'command', attribute: 'data-openbitfun-command', values: ['actions', 'all', 'skills', 'modes'] },
     { id: 'commandItemKind', attribute: 'data-openbitfun-command-item-kind', values: ['action', 'mode', 'skill', 'mcp'] },
     { id: 'action', attribute: 'data-openbitfun-action', values: ['cancel', 'continue-interrupted', 'retry', 'send', 'split'] },
-    { id: 'boostItemKind', attribute: 'data-openbitfun-boost-item-kind', values: ['directive', 'agent', 'context', 'skill', 'additional-mode', 'manage'] },
+    { id: 'boostItemKind', attribute: 'data-openbitfun-boost-item-kind', values: ['directive', 'agent', 'context', 'skill', 'additional-mode', 'manage', 'thread-goal'] },
   ],
   states: [
     { id: 'processing', selector: { kind: 'ancestorPart', part: 'root', suffix: '[data-openbitfun-state~="processing"]' } },

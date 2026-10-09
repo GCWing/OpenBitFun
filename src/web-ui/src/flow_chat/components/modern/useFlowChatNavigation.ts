@@ -18,7 +18,8 @@ import {
   type FlowChatFocusItemRequest,
 } from '../../events/flowchatNavigation';
 import type { VirtualMessageListRef } from './VirtualMessageList';
-import { resolveFlowChatFocusTarget, type ResolvedFocusTarget } from './flowChatFocusTarget';
+import { findFlowChatFocusElement, resolveFlowChatFocusTarget, type ResolvedFocusTarget } from './flowChatFocusTarget';
+import { highlightFlowChatFocusTarget } from './useFlowChatSearchPresentation';
 
 const log = createLogger('useFlowChatNavigation');
 
@@ -88,7 +89,8 @@ export function useFlowChatNavigation({
   useEffect(() => {
     let excerptGeneration = 0;
     let disposed = false;
-    const cancelExcerpt = () => { excerptGeneration++; };
+    let clearFocusHighlight: (() => void) | undefined;
+    const cancelExcerpt = () => { excerptGeneration++; clearFocusHighlight?.(); clearFocusHighlight = undefined; };
     window.addEventListener('wheel', cancelExcerpt, { passive: true });
     window.addEventListener('pointerdown', cancelExcerpt);
     window.addEventListener('keydown', cancelExcerpt);
@@ -104,6 +106,8 @@ export function useFlowChatNavigation({
         if (target) { dock.select(dockConversationKey(target)); dock.setOpen(true); return; }
       }
       const generation = ++excerptGeneration;
+      clearFocusHighlight?.();
+      clearFocusHighlight = undefined;
       const isCurrent = () => !disposed && generation === excerptGeneration && scope.isCurrent()
         && modernStore.getState().activeSession?.sessionId === sessionId;
 
@@ -215,8 +219,10 @@ export function useFlowChatNavigation({
           onExpandExploreGroupRef.current?.(currentTarget.expandExploreGroupId);
         }
         const focusItemId = currentTarget.focusItemId ?? itemId;
-        const element = containerRef.current?.querySelector<HTMLElement>(`[data-flow-item-id="${CSS.escape(focusItemId)}"]`);
-        if (!element || !virtualListRef.current?.focusFlowItem(focusItemId)) {
+        // The list materializes deferred group members before looking up their DOM.
+        const focused = virtualListRef.current?.focusFlowItem(focusItemId);
+        const element = containerRef.current && findFlowChatFocusElement(containerRef.current, focusItemId);
+        if (!focused || !element) {
           if (
             attempts % 12 === 0
             && !delegatedTurnNavigationAttempted
@@ -230,8 +236,7 @@ export function useFlowChatNavigation({
           return;
         }
 
-        element.classList.add('flowchat-flow-item--focused');
-        window.setTimeout(() => element.classList.remove('flowchat-flow-item--focused'), 1600);
+        clearFocusHighlight = highlightFlowChatFocusTarget(element);
       };
 
       /*
@@ -267,6 +272,7 @@ export function useFlowChatNavigation({
 
     return () => {
       disposed = true;
+      clearFocusHighlight?.();
       unsubscribe();
       window.removeEventListener('wheel', cancelExcerpt);
       window.removeEventListener('pointerdown', cancelExcerpt);

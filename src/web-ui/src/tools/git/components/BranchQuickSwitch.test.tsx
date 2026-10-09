@@ -41,6 +41,7 @@ vi.mock('@/infrastructure/i18n', () => ({
         'quickSwitch.conflict.retrySwitchAction': 'Retry switch',
         'quickSwitch.conflict.title': 'Commit changes to switch branch',
         'quickSwitch.menuLabel': 'Switch branch',
+        'quickSwitch.refresh': 'Refresh branches',
         'quickSwitch.searchLabel': 'Search branches',
       };
       return labels[key] ?? key;
@@ -219,15 +220,100 @@ describe('BranchQuickSwitch', () => {
     expect(document.activeElement).toBe(trigger);
   });
 
-  it('closes on Tab without cancelling the page tab sequence', async () => {
+  it('tabs from search to refresh before resuming the page tab sequence', async () => {
     await act(async () => root.render(<Harness />));
     const search = document.querySelector<HTMLInputElement>('input[type="search"]')!;
     const trigger = container.querySelector<HTMLButtonElement>('[data-testid="branch-trigger"]')!;
     const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
     act(() => search.dispatchEvent(event));
     expect(event.defaultPrevented).toBe(false);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    const refresh = document.querySelector<HTMLButtonElement>('button[aria-label="Refresh branches"]')!;
+    act(() => {
+      refresh.focus();
+      refresh.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    });
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it('refreshes the scoped branch list without closing or clearing search', async () => {
+    await act(async () => root.render(<Harness />));
+    const search = document.querySelector<HTMLInputElement>('input[type="search"]')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'feature');
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    let resolve!: (value: typeof branches) => void;
+    mocks.getBranches.mockReturnValueOnce(new Promise<typeof branches>(done => { resolve = done; }));
+    const refresh = document.querySelector<HTMLButtonElement>('button[aria-label="Refresh branches"]')!;
+    act(() => refresh.click());
+    expect(refresh.disabled).toBe(true);
+    expect(refresh.getAttribute('aria-busy')).toBe('true');
+    expect(mocks.getBranches).toHaveBeenLastCalledWith(
+      { workspaceId: 'workspace-1' }, true, { throwOnError: true },
+    );
+    act(() => refresh.click());
+    expect(mocks.getBranches).toHaveBeenCalledTimes(2);
+    await act(async () => resolve([...branches, { ...branches[1], name: 'feature-new' }]));
+    expect(search.value).toBe('feature');
+    expect(document.querySelector('[data-testid="branch-quick-switch-option-feature-new"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="branch-quick-switch-option-main"]')).toBeNull();
+    expect(refresh.disabled).toBe(false);
+    expect(container.querySelector('[data-testid="branch-trigger"]')?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('keeps the previous list on refresh failure and allows retry', async () => {
+    await act(async () => root.render(<Harness />));
+    mocks.getBranches.mockRejectedValueOnce(new Error('Host offline'));
+    const refresh = document.querySelector<HTMLButtonElement>('button[aria-label="Refresh branches"]')!;
+    await act(async () => refresh.click());
+    expect(document.querySelector('[data-testid="branch-quick-switch-option-feature"]')).not.toBeNull();
+    expect(document.querySelector('[role="status"]')?.textContent).toBe('quickSwitch.errors.refreshFailed');
+    expect(refresh.disabled).toBe(false);
+    await act(async () => refresh.click());
+    expect(document.querySelector('[role="status"]')).toBeNull();
+  });
+
+  it('reports initial load failure instead of presenting an empty repository', async () => {
+    mocks.getState.mockReturnValue(undefined);
+    mocks.getBranches.mockRejectedValueOnce(new Error('Host offline'));
+    await act(async () => root.render(<Harness />));
+    expect(document.querySelector('[role="status"]')?.textContent).toBe('quickSwitch.errors.loadFailed');
+    const refresh = document.querySelector<HTMLButtonElement>('button[aria-label="Refresh branches"]')!;
+    await act(async () => refresh.click());
+    expect(document.querySelector('[data-testid="branch-quick-switch-option-main"]')).not.toBeNull();
+  });
+
+  it('does not check out the keyboard-highlighted branch when Enter activates refresh', async () => {
+    await act(async () => root.render(<Harness />));
+    const search = document.querySelector<HTMLInputElement>('input[type="search"]')!;
+    const refresh = document.querySelector<HTMLButtonElement>('button[aria-label="Refresh branches"]')!;
+    act(() => search.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+    await act(async () => {
+      refresh.focus();
+      refresh.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      refresh.click();
+    });
+    expect(mocks.checkoutBranch).not.toHaveBeenCalled();
+    expect(mocks.getBranches).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores a previous workspace request after switching workspaces', async () => {
+    const anchorRef = { current: document.createElement('button') };
+    let resolveOld!: (value: typeof branches) => void;
+    mocks.getBranches.mockReturnValueOnce(new Promise<typeof branches>(done => { resolveOld = done; }));
+    await act(async () => root.render(<BranchQuickSwitch isOpen onClose={vi.fn()}
+      repositoryPath={{ workspaceId: 'old', repositoryPath: '/remote/old' }} currentBranch="main" anchorRef={anchorRef} />));
+    mocks.getBranches.mockResolvedValueOnce([{ ...branches[0], name: 'new-main' }]);
+    await act(async () => root.render(<BranchQuickSwitch isOpen onClose={vi.fn()}
+      repositoryPath={{ workspaceId: 'new', repositoryPath: '/remote/new' }} currentBranch="new-main" anchorRef={anchorRef} />));
+    await act(async () => resolveOld(branches));
+    expect(document.querySelector('[data-testid="branch-quick-switch-option-new-main"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="branch-quick-switch-option-main"]')).toBeNull();
+    expect(mocks.getBranches).toHaveBeenLastCalledWith(
+      { workspaceId: 'new', repositoryPath: '/remote/new' }, true, { throwOnError: true },
+    );
   });
 
   describe('motion lifecycle', () => {

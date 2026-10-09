@@ -3,20 +3,22 @@
 id: setting.application.input
 kind: setting
 category: application
-title_zh: "语音"
-title_en: "Voice"
+title_zh: "输入与交互"
+title_en: "Input & interaction"
 ---
 
-# 语音 / Voice
+# 输入与交互 / Input & interaction
 
 > 设置 / Setting
 
-配置语音输入、麦克风、识别语言、本地模型与实时语音通话。
+配置对话文本选择操作、语音输入、麦克风、识别语言与本地模型。
 
-Configure voice input, microphones, recognition language, local models, and realtime voice calls.
+Configure conversation text selection actions, voice input, microphones, recognition language, and local models.
 
 ## 完整功能清单 / Everything included
 
+- **智能体可直接控制 / Direct Agent control** · 开启或关闭选中对话文本后的自动操作栏
+  - Enable or disable automatic actions after selecting conversation text
 - **智能体可直接控制 / Direct Agent control** · 在聊天输入框启用或停用语音输入
   - Enable or disable voice input in the chat composer
 - **智能体可直接控制 / Direct Agent control** · 选择自动检测或中文、粤语、英文、日文等识别语言
@@ -32,8 +34,8 @@ Configure voice input, microphones, recognition language, local models, and real
 
 1. 打开设置
    Open Settings
-2. 进入“应用与界面 > 语音”
-   Go to App & Interface > Voice
+2. 进入“应用与界面 > 输入与交互”
+   Go to App & Interface > Input & Interaction
 
 入口 / Entry: OpenBitFun 设置
 
@@ -47,6 +49,7 @@ Configure voice input, microphones, recognition language, local models, and real
 
 | 选项 / Option | 可用值 / Values | 中文说明 | English description |
 | --- | --- | --- | --- |
+| 自动显示选中文字操作栏 / Automatically show text selection actions | `boolean` | 选中对话文本后自动显示批注和提问操作；关闭后仍可使用右键菜单和提问快捷键。 | Automatically show annotation and question actions after selecting conversation text; right-click actions and the question shortcut remain available when disabled. |
 | 启用语音输入 / Enable voice input | `boolean` | 在聊天输入框显示并启用录音入口。 | Show and enable recording in the chat composer. |
 | 默认识别语言 / Default recognition language | `auto` / `zh` / `en` / `ja` / `yue` | 选择自动检测、中文、英文、日文或粤语。 | Choose automatic detection, Chinese, English, Japanese, or Cantonese. |
 | 最长录音时间 / Maximum recording duration | `integer` (10–600) | 单次语音输入允许的最长秒数。 | Maximum seconds allowed for one voice input. |

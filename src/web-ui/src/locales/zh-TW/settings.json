@@ -5,102 +5,108 @@
       "empty": "沒有匹配的設定"
     },
     "categories": {
-      "application": "應用與介面",
-      "ai": "AI 與模型",
-      "workspace": "會話與工作區",
+      "application": "應用程式與介面",
+      "ai": "模型與智慧體",
+      "development": "程式設計與開發",
       "tools": "工具與整合",
       "data": "資料與維護"
     },
     "pages": {
       "general": {
-        "label": "通用",
-        "description": "啟動、更新、視窗、休眠與通知。"
+        "label": "一般",
+        "description": "調整介面語言、啟動、更新、休眠、視窗與通知行為"
       },
       "appearance": {
         "label": "外觀",
-        "description": "語言、主題、動效、外觀包與介面字體。"
+        "description": "調整主題、外觀套件與字型"
       },
       "pet": {
-        "label": "寵物",
-        "description": "顯示位置、角色包、匯入與預覽。"
-      },
-      "voice": {
-        "label": "語音",
-        "description": "語音輸入、本機辨識模型與即時語音通話。"
-      },
-      "shortcuts": {
-        "label": "快捷鍵",
-        "description": "檢視、自訂與重設鍵盤快捷鍵。"
+        "label": "寵物與助手",
+        "description": "選擇寵物形象，設定助手即時語音通話"
       },
       "terminal": {
         "label": "終端",
-        "description": "預設 Shell。"
+        "description": "選擇新建終端機與本機工作區命令使用的 Shell"
       },
       "editor": {
         "label": "編輯器",
-        "description": "程式碼編輯器的外觀、縮排、顯示與格式化。"
+        "description": "調整程式碼的顯示、縮排與自動格式化"
       },
       "models": {
         "label": "模型",
-        "description": "預設模型、模型服務、訂閱帳戶、模型目錄與網路代理。"
-      },
-      "memory": {
-        "label": "記憶",
-        "description": "記憶生成、使用、提取與整理。"
-      },
-      "sessionWorkspace": {
-        "label": "會話與工作區",
-        "description": "預設執行框架、會話標題與目前工作區搜尋。"
-      },
-      "worktrees": {
-        "label": "Worktrees",
-        "description": "Git Worktree 隔離與平行會話預設值。"
+        "description": "連線模型服務，並選擇各類任務使用的模型"
       },
       "execution": {
-        "label": "執行與權限",
-        "description": "工具權限、執行參數、Review 與容錯設定。"
+        "label": "執行與協作",
+        "description": "設定工具執行時限、智慧體並行方式與審核容量"
       },
       "browserDesktopControl": {
         "label": "瀏覽器與桌面控制",
-        "description": "設定瀏覽器連線、桌面操作及所需的系統權限。"
+        "description": "連線瀏覽器，授權螢幕查看與桌面操作"
       },
       "automation": {
         "label": "自動化",
-        "description": "快捷動作與智能體生命週期 Hooks。"
+        "description": "設定常用 AI 指令與事件觸發的自動命令"
       },
       "webSearch": {
         "label": "網頁搜尋",
-        "description": "選擇 WebSearch 服務、端點與裝置本機憑據。"
+        "description": "選擇智能體上網查找資料時使用的搜尋服務"
       },
       "mcp": {
         "label": "MCP",
-        "description": "管理 MCP 伺服器、連線與對外提供的工具。"
+        "description": "連線 MCP 服務，為智能體提供外部工具與資料來源"
       },
       "acp": {
-        "label": "ACP 智能體",
-        "description": "設定透過 Agent Client Protocol 接入的外部智能體。"
+        "label": "外部智慧體",
+        "description": "透過 ACP 接入本機或 SSH 主機上的外部智慧體"
       },
       "usage": {
         "label": "調用統計",
-        "description": "模型請求數、Token 用量與快取命中率。"
+        "description": "檢視模型請求數、Token 用量與快取命中率"
       },
       "archivedSessions": {
         "label": "已歸檔會話",
-        "description": "檢視、恢復或永久刪除已歸檔的會話。"
+        "description": "檢視、還原或永久刪除已封存的會話"
       },
       "diagnostics": {
         "label": "日誌與診斷",
-        "description": "日誌層級、執行資訊與故障排查。"
+        "description": "調整日誌記錄，匯出疑難排解資訊"
+      },
+      "input": {
+        "label": "輸入與互動",
+        "description": "設定文字選取操作、語音轉文字與鍵盤快速鍵"
+      },
+      "sessionMemory": {
+        "label": "工作階段與記憶",
+        "description": "設定新工作階段的執行框架、標題產生與記憶策略"
+      },
+      "permissions": {
+        "label": "權限規則",
+        "description": "設定新工作階段的核准模式與全域工具權限規則"
+      },
+      "workspaceGit": {
+        "label": "工作區與 Git",
+        "description": "設定檔案搜尋、Git 提交署名與 Worktree，管理隔離工作目錄"
       }
     },
     "views": {
-      "common": "常用",
-      "advanced": "進階",
       "local": "本機",
       "ssh": "SSH",
-      "json": "進階 JSON",
+      "json": "進階 JSON"
+    },
+    "sections": {
+      "text-selection": "文字選取",
+      "voice": "語音",
+      "shortcuts": "快捷鍵",
+      "session": "工作階段預設行為",
+      "memory": "記憶",
+      "workspace-search": "工作區搜尋",
+      "worktrees": "Worktrees",
+      "git": "Git 提交",
       "quick-actions": "快捷動作",
-      "hooks": "Hooks"
+      "hooks": "事件 Hooks",
+      "pet": "寵物",
+      "voice-call": "即時語音通話"
     }
   },
   "changeGuard": {
@@ -230,7 +236,7 @@
   },
   "keyboard": {
     "title": "快捷鍵",
-    "description": "在此查看並修改快捷鍵。",
+    "description": "檢視及自訂各操作的鍵盤快捷鍵",
     "search": "搜尋快捷鍵或鍵位…",
     "apply": "應用",
     "saving": "儲存中…",
@@ -323,6 +329,15 @@
         "push": "推送",
         "pull": "拉取"
       }
+    },
+    "scopeDescriptions": {
+      "app": "在 OpenBitFun 視窗內使用；部分操作在輸入文字時不觸發",
+      "chat": "會話區域取得焦點時生效",
+      "editor": "程式碼文字取得焦點時生效，也可使用編輯器畫布的快捷鍵",
+      "terminal": "終端機區域取得焦點時生效",
+      "canvas": "編輯器畫布及其中的程式碼編輯器取得焦點時生效",
+      "filetree": "檔案樹取得焦點時生效",
+      "git": "Git 面板取得焦點時生效"
     }
   },
   "advanced": {
@@ -595,5 +610,8 @@
       "import": "匯入外觀",
       "export": "導出目前外觀"
     }
+  },
+  "archivedSessions": {
+    "sectionDescription": "依工作區分組；還原後可繼續原會話，永久刪除無法復原"
   }
 }

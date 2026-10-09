@@ -31,9 +31,12 @@ Use these tables to select tools for the user's tasks, then put their exact name
 
 | Tool name | Purpose |
 | --- | --- |
-| `Task` | Delegate work to a subagent task and collect its result. |
-| `ListModels` | List enabled OpenBitFun model configurations. |
+| `AgentSpawn` | Launch an agent to work independently in the background. |
+| `AgentSendInput` | Send an instruction to an existing agent. |
 | `AgentWait` | Wait for selected background agent results. |
+| `AgentList` | List direct child agents and their status. |
+| `AgentControl` | Interrupt or delete agent subtrees recursively. |
+| `ListModels` | List enabled OpenBitFun model configurations. |
 | `Skill` | Discover and load reusable skills for specialized workflows. |
 
 ## Web access
@@ -106,15 +109,11 @@ Use these tables to select tools for the user's tasks, then put their exact name
 | `ReadMCPResource` | Read a connected MCP server's resource by URI. |
 | `ListMCPPrompts` | List prompt templates exposed by a connected MCP server. |
 | `GetMCPPrompt` | Fetch and render a named prompt template from a connected MCP server. |
-| `SessionControl` | Create, list, rename, cancel, and delete persisted agent sessions. |
+| `ListWorkspaces` | Discover registered local, assistant, and remote workspace IDs on the runtime host without activating them. |
+| `SessionControl` | Create or list sessions by workspace ID or caller-scoped absolute path; rename, cancel, or delete by session ID. |
 | `SessionMessage` | Send a message to another agent session and receive its result asynchronously. |
 | `SessionHistory` | Export an agent session transcript and index for targeted history reads. |
 | `PortForward` | Forward a port from an SSH host to the user's machine. |
 | `PagePublish` | Upload, save a version of, and deploy an OpenBitFun Page. |
 | `PageDeploy` | Deploy a saved OpenBitFun Page version to production. |
 | `GetTime` | Return the current time, weekday, and Unix timestamp. |
-| `AgentSpawn` | Launch an agent to work independently in the background. |
-| `AgentSendInput` | Send an instruction to an existing agent. |
-| `AgentInterrupt` | Interrupt an agent's active background work. |
-| `AgentList` | List direct child agents and their status. |
-| `AgentDelete` | Permanently delete direct child agent subtrees. |

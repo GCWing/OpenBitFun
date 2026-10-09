@@ -8,6 +8,7 @@
 
 import { useState, useMemo, useCallback } from 'react';
 import type { VirtualItem } from '../../store/modernFlowChatStore';
+import { buildInlineFlowGroupData, getProjectedModelRoundGroups } from '../../grouping/roundGroups';
 
 interface SearchableFlowItem {
   id?: string;
@@ -76,7 +77,9 @@ function getVirtualItemSearchSources(item: VirtualItem): SearchableSource[] {
     return [{ content: item.data?.content ?? '' }];
   }
   if (item.type === 'model-round') {
-    return flowItemSearchSources(item.data.items);
+    return getProjectedModelRoundGroups(item).flatMap(group => group.type !== 'critical'
+      ? flowItemSearchSources(group.items, buildInlineFlowGroupData(item.data.id, group).groupId)
+      : flowItemSearchSources([group.item]));
   }
   if (item.type === 'explore-group') {
     return flowItemSearchSources(item.data.allItems, item.data.groupId);

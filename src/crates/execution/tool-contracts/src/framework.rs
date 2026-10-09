@@ -91,7 +91,7 @@ impl fmt::Display for DeferredToolUsageError {
                 get_tool_spec_tool_name,
             } => write!(
                 formatter,
-                "Tool '{tool_name}' is deferred. Call {get_tool_spec_tool_name} first with {{\"tool_name\":\"{tool_name}\"}} to read its full usage instructions and input schema before invoking it."
+                "Tool '{tool_name}' has no loaded definition in the current context. Call {get_tool_spec_tool_name} with {{\"tool_name\":\"{tool_name}\"}} to read its full usage instructions and input schema before invoking it. If compaction removed an earlier definition, reload it even if the summary says it was loaded."
             ),
             Self::StaleSpec {
                 tool_name,
@@ -371,7 +371,8 @@ pub fn get_tool_spec_short_description() -> String {
 pub fn build_get_tool_spec_description() -> String {
     r#"Read the full schema before first calling a deferred tool through CallDeferredTool.
 
-Do not call GetToolSpec again for a tool whose definition is already loaded in the current conversation."#
+Do not call GetToolSpec again while its successful result with the full definition is still visible in the current context.
+If compaction or truncation removed that result, call GetToolSpec again before using CallDeferredTool. A summary mentioning a previously loaded tool or a past successful call does not load its definition. Reload also when the runtime reports a stale definition."#
         .to_string()
 }
 
@@ -439,7 +440,7 @@ pub fn validate_get_tool_spec_input(input: &Value) -> ValidationResult {
 
 pub fn build_get_tool_spec_duplicate_load_hint(tool_name: &str) -> String {
     format!(
-        "Tool '{}' is already loaded in the current conversation. Do not call GetToolSpec again for it. Use CallDeferredTool with tool_name '{}' and put the tool arguments inside args.",
+        "Tool '{}' is already loaded in the current context. Use CallDeferredTool with tool_name '{}' and put the tool arguments inside args. Reload with GetToolSpec only if its full definition leaves the context or the runtime reports it stale.",
         tool_name, tool_name
     )
 }
@@ -638,7 +639,10 @@ fn escape_get_tool_spec_xml_text(value: &str) -> String {
 
 pub fn tool_manifest_sort_rank(tool_name: &str) -> usize {
     match tool_name {
-        "Task" => 1,
+        "AgentSpawn" => 1,
+        "AgentSendInput" => 1,
+        "AgentControl" => 1,
+        "AgentWait" => 1,
         "ExecCommand" => 2,
         "Glob" => 4,
         "Grep" => 5,
@@ -2338,6 +2342,10 @@ pub fn miniapp_headless_agent_tool_restrictions() -> ToolRuntimeRestrictions {
             "Cron is unavailable in MiniApp headless agent runs.",
         ),
         (
+            "ListWorkspaces",
+            "ListWorkspaces is unavailable in MiniApp headless agent runs.",
+        ),
+        (
             "SessionControl",
             "SessionControl is unavailable in MiniApp headless agent runs.",
         ),
@@ -2430,7 +2438,7 @@ pub fn tool_restrictions_for_delegation_policy(
 ) -> ToolRuntimeRestrictions {
     let mut restrictions = ToolRuntimeRestrictions::default();
     if !delegation_policy.allow_subagent_spawn {
-        for tool_name in ["Task", "AgentSpawn"] {
+        for tool_name in ["AgentSpawn"] {
             restrictions.denied_tool_names.insert(tool_name.to_string());
             restrictions.denied_tool_messages.insert(
                 tool_name.to_string(),
@@ -2653,7 +2661,7 @@ mod tests {
     #[tokio::test]
     async fn contextual_manifest_omits_unavailable_tools_from_model_definitions() {
         let task = Arc::new(TestTool {
-            name: "Task",
+            name: "AgentSpawn",
             available: false,
         });
         let read = Arc::new(TestTool {
@@ -2661,7 +2669,7 @@ mod tests {
             available: true,
         });
         let tools: Vec<Arc<TestTool>> = vec![task, read];
-        let allowed_tools = vec!["Task".to_string(), "Read".to_string()];
+        let allowed_tools = vec!["AgentSpawn".to_string(), "Read".to_string()];
 
         let manifest = resolve_contextual_tool_manifest(
             &tools,
@@ -2675,7 +2683,7 @@ mod tests {
         assert!(!manifest
             .tool_definitions
             .iter()
-            .any(|definition| definition.name == "Task"));
+            .any(|definition| definition.name == "AgentSpawn"));
         assert!(manifest
             .tool_definitions
             .iter()
@@ -2688,6 +2696,10 @@ mod tests {
 
         assert!(description.contains("Read the full schema"));
         assert!(description.contains("Do not call GetToolSpec again"));
+        assert!(description.contains("full definition is still visible in the current context"));
+        assert!(description
+            .contains("If compaction or truncation removed that result, call GetToolSpec again"));
+        assert!(description.contains("does not load its definition"));
     }
 
     #[test]
@@ -2715,12 +2727,12 @@ mod tests {
         let restrictions =
             tool_restrictions_for_delegation_policy(DelegationPolicy::top_level().spawn_child());
 
-        assert!(!restrictions.is_tool_allowed("Task"));
+        assert!(!restrictions.is_tool_allowed("AgentSpawn"));
         assert!(restrictions.is_tool_allowed("Read"));
         assert_eq!(
             restrictions
-                .ensure_tool_allowed("Task")
-                .expect_err("Task should be blocked")
+                .ensure_tool_allowed("AgentSpawn")
+                .expect_err("AgentSpawn should be blocked")
                 .to_string(),
             "Recursive subagent delegation is blocked. Use direct tools instead."
         );
@@ -2733,7 +2745,7 @@ mod tests {
         assert!(!restrictions.is_tool_allowed("AskUserQuestion"));
         assert!(!restrictions.is_tool_allowed("ControlHub"));
         assert!(!restrictions.is_tool_allowed("Cron"));
-        assert!(restrictions.is_tool_allowed("Task"));
+        assert!(restrictions.is_tool_allowed("AgentSpawn"));
         assert!(restrictions.is_tool_allowed("WebSearch"));
     }
 
@@ -2774,9 +2786,9 @@ mod tests {
     #[test]
     fn custom_deny_message_overrides_generic_runtime_error() {
         let restrictions = ToolRuntimeRestrictions {
-            denied_tool_names: ["Task"].into_iter().map(str::to_string).collect(),
+            denied_tool_names: ["AgentSpawn"].into_iter().map(str::to_string).collect(),
             denied_tool_messages: [(
-                "Task".to_string(),
+                "AgentSpawn".to_string(),
                 "Recursive subagent delegation is blocked. Use direct tools instead.".to_string(),
             )]
             .into_iter()
@@ -2785,7 +2797,7 @@ mod tests {
         };
 
         let error = restrictions
-            .ensure_tool_allowed("Task")
+            .ensure_tool_allowed("AgentSpawn")
             .expect_err("custom deny message should be used");
         assert_eq!(
             error.to_string(),
@@ -2843,7 +2855,7 @@ mod tests {
         assert!(restrictions.is_tool_allowed("GetToolSpec"));
         assert!(restrictions.path_policy.read_roots.is_empty());
 
-        for denied in ["Write", "Edit", "ExecCommand", "Task", "Skill"] {
+        for denied in ["Write", "Edit", "ExecCommand", "AgentSpawn", "Skill"] {
             assert!(
                 !restrictions.is_tool_allowed(denied),
                 "{denied} must stay closed for marketplace MiniApp agent runs"

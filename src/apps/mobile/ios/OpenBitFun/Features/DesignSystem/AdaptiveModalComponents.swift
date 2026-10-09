@@ -87,15 +87,11 @@ struct OpenBitFunModalCard<Content: View>: View {
 }
 
 /// One signed-out connection decision, reused wherever the user can enter the
-/// remote product. Keeping the order and treatment here prevents the sidebar
-/// and pairing sheet from drifting into two different connection flows.
+/// remote product. Native apps connect only through the signed-in account, so
+/// the single action is account sign-in.
 struct SignedOutConnectionActions: View {
-    let scanTitle: String
     let accountTitle: String
-    let onScan: () -> Void
     let onOpenAccount: () -> Void
-    var showScan = true
-    var primaryScan = false
     var enabled = true
     var buttonHeight: CGFloat = 48
     var spacing: CGFloat = 10
@@ -103,26 +99,13 @@ struct SignedOutConnectionActions: View {
 
     var body: some View {
         VStack(spacing: spacing) {
-            if showScan {
-                Button(action: onScan) {
-                    Text(scanTitle)
-                        .font(.system(size: fontSize, weight: .bold))
-                        .foregroundStyle(primaryScan ? OpenBitFunTheme.contentOnAction : OpenBitFunTheme.ink)
-                        .frame(maxWidth: .infinity, minHeight: buttonHeight)
-                        .background(primaryScan ? MobileDesignColors.primaryAction : OpenBitFunTheme.card)
-                        .overlay(Capsule().stroke(OpenBitFunTheme.line, lineWidth: 1))
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(!enabled)
-            }
             Button(action: onOpenAccount) {
                 Text(accountTitle)
                     .font(.system(size: fontSize, weight: .bold))
-                    .foregroundStyle(primaryScan ? OpenBitFunTheme.ink : OpenBitFunTheme.contentOnAction)
+                    .foregroundStyle(OpenBitFunTheme.contentOnAction)
                     .frame(maxWidth: .infinity, minHeight: buttonHeight)
-                    .background(primaryScan ? OpenBitFunTheme.card : MobileDesignColors.primaryAction)
-                    .overlay(Capsule().stroke(primaryScan ? OpenBitFunTheme.line : MobileDesignColors.primaryAction, lineWidth: 1))
+                    .background(MobileDesignColors.primaryAction)
+                    .overlay(Capsule().stroke(MobileDesignColors.primaryAction, lineWidth: 1))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)

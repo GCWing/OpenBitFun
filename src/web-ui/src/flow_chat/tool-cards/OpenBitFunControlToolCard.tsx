@@ -1,11 +1,13 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Icon, OverflowText } from '@openbitfun/ui';
+import { Button, Icon, OverflowText, ScrollArea } from '@openbitfun/ui';
 import {
   AmbientToolCard, AmbientToolCardHeader, ProminentToolCard, ProminentToolCardSummary, ToolCardStatusSlot,
 } from '@openbitfun/ui/flow-chat';
 import { useI18n } from '@/infrastructure/i18n';
 import type { ToolCardProps } from '../types/flow-chat';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
+import { getToolCardStatusDescription } from './toolCardStatus';
 import { useOpenBitFunControlDiscovery } from './useOpenBitFunControlDiscovery';
 import {
   buildOpenBitFunControlCardModel, controlDescription, controlTitle, isOpenBitFunControlDiscovery,
@@ -14,7 +16,7 @@ import './OpenBitFunControlToolCard.scss';
 
 export const OpenBitFunControlToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpand }) => {
   const { t, currentLanguage, formatNumber } = useI18n('flow-chat');
-  const [isExpanded, setExpanded] = useState(false);
+  const [isExpanded, setExpanded] = useToolCardDisclosure('isExpanded');
   const [localCapability, setLocalCapability] = useState<unknown>();
   const model = useMemo(() => buildOpenBitFunControlCardModel(toolItem, currentLanguage, localCapability),
     [toolItem, currentLanguage, localCapability]);
@@ -57,11 +59,23 @@ export const OpenBitFunControlToolCard: React.FC<ToolCardProps> = ({ toolItem, o
     toolItem.requiresConfirmation && !toolItem.userConfirmed
     && !['completed', 'error', 'cancelled', 'rejected'].includes(model.status),
   );
-  const summary = [actionLabel, model.query ?? model.target].filter(Boolean).join(' · ');
-  const icon = <Icon name="settings" size="sm" />;
+  const configuredValue = model.action === 'configure'
+    ? model.confirmed && model.effectiveValue !== undefined ? model.effectiveValue : model.requestedValue
+    : undefined;
+  const targetLabel = model.query ?? model.target;
+  const configurationLabel = configuredValue !== undefined
+    ? `${model.confirmed ? t('toolCards.openBitFunControl.effectiveValue') : t('toolCards.openBitFunControl.requestedValue')}: ${valueText(configuredValue)}`
+    : undefined;
+  const summary = [targetLabel, configurationLabel].filter(Boolean).join(' · ');
+  const isDiscovery = isOpenBitFunControlDiscovery(model.input);
+  const icon = <Icon name="mouse-pointer" size="sm" />;
   const statusIcon = (model.status === 'completed' && !model.confirmed) || waitingForApproval
     ? icon
-    : <ToolCardStatusSlot status={model.status === 'confirmed' ? 'preparing' : model.status} toolIcon={icon} />;
+    : <ToolCardStatusSlot
+      defaultIcon={isDiscovery ? undefined : ['completed', 'error', 'cancelled', 'rejected'].includes(model.status) ? 'tool' : 'status'}
+      status={model.status === 'confirmed' ? 'preparing' : model.status}
+      toolIcon={icon}
+    />;
   const fields = [
     model.target && { label: t('toolCards.openBitFunControl.target'), value: model.target },
     model.query && { label: t('toolCards.openBitFunControl.query'), value: model.query },
@@ -99,12 +113,14 @@ export const OpenBitFunControlToolCard: React.FC<ToolCardProps> = ({ toolItem, o
       {hasDiscoveryResults && (
         <div className="openbitfun-control-card__results" data-openbitfun-component="openbitfun-control-tool-card" data-openbitfun-part="results">
           {discovery.items.length === 0 ? (!discovery.loading && !discovery.error && <p data-openbitfun-component="openbitfun-control-tool-card" data-openbitfun-part="description">{t('toolCards.openBitFunControl.noResults')}</p>) : (
+            <ScrollArea className="openbitfun-control-card__viewport" edgeFade="vertical" overscrollBehaviorY="auto">
             <ul className="openbitfun-control-card__list" data-openbitfun-component="openbitfun-control-tool-card" data-openbitfun-part="list">
               {discovery.items.map((item, index) => <li className="openbitfun-control-card__result" data-openbitfun-component="openbitfun-control-tool-card" data-openbitfun-part="result" key={index} data-overflow-trigger>
                 <OverflowText>{controlTitle(item, currentLanguage) ?? String(item.capabilityId ?? item.id ?? '')}</OverflowText>
                 {controlDescription(item, currentLanguage) && <p data-openbitfun-component="openbitfun-control-tool-card" data-openbitfun-part="description">{controlDescription(item, currentLanguage)}</p>}
               </li>)}
             </ul>
+            </ScrollArea>
           )}
           {discovery.loading && <p role="status" className="openbitfun-control-card__description" data-openbitfun-component="openbitfun-control-tool-card" data-openbitfun-part="description">
             {t('toolCards.openBitFunControl.loadingAll')}
@@ -131,13 +147,14 @@ export const OpenBitFunControlToolCard: React.FC<ToolCardProps> = ({ toolItem, o
   };
 
   return <div ref={cardRootRef} data-openbitfun-adapter="openbitfun-control" data-tool-card-id={toolItem.id}>
-    {isOpenBitFunControlDiscovery(model.input) ? (
+    {isDiscovery ? (
       <AmbientToolCard {...common} onClick={hasDetails ? toggle : undefined}
-        header={<AmbientToolCardHeader action={t('toolCards.openBitFunControl.title')} content={summary}
+        header={<AmbientToolCardHeader action={actionLabel} content={summary || t('toolCards.openBitFunControl.allFeatures')}
+          statusDescription={getToolCardStatusDescription(model.status, t, model.error)}
           icon={statusIcon} />} />
     ) : (
       <ProminentToolCard {...common} allowExpandedWhenFailed onToggle={hasDetails ? toggle : undefined} requiresConfirmation={waitingForApproval}
-        summary={<ProminentToolCardSummary action={t('toolCards.openBitFunControl.title')} content={summary}
+        summary={<ProminentToolCardSummary action={actionLabel} content={summary}
           icon={statusIcon} />} />
     )}
   </div>;

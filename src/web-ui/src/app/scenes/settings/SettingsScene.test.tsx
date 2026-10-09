@@ -25,7 +25,8 @@ vi.mock('./settingsRegistry', () => {
     'tools.automation': {
       id: 'tools.automation',
       categoryId: 'tools',
-      component: ({ viewId }: { viewId?: string }) => <div data-testid="automation-page" data-view={viewId} />,
+      sections: [{ id: 'hooks' }],
+      component: ({ sectionId }: { sectionId?: string }) => <div data-testid="automation-page" data-section={sectionId} />,
     },
   };
   return {
@@ -56,6 +57,7 @@ describe('SettingsScene canonical page routing', () => {
     useSettingsStore.setState({
       activePageId: 'application.general',
       activeViewId: null,
+      activeSectionId: null,
       navigationRequestId: 0,
       pageTransitionTarget: null,
       pageTransitionMotion: 'instant',
@@ -76,13 +78,13 @@ describe('SettingsScene canonical page routing', () => {
     expect(container.querySelector('[data-settings-page="application.general"]')).not.toBeNull();
   });
 
-  it('passes an internal view destination without creating a sidebar page', async () => {
+  it('migrates an old internal view to an inline section without creating a sidebar page', async () => {
     useSettingsStore.getState().openDestination({
       pageId: 'tools.automation',
       viewId: 'hooks',
     });
     await act(async () => root.render(<SettingsScene />));
-    expect(container.querySelector('[data-testid="automation-page"]')?.getAttribute('data-view')).toBe('hooks');
+    expect(container.querySelector('[data-testid="automation-page"]')?.getAttribute('data-section')).toBe('hooks');
   });
 
   it('switches pages without retaining the outgoing page for instant navigation', async () => {

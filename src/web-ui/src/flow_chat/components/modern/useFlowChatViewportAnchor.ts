@@ -515,7 +515,7 @@ export function useFlowChatViewportAnchor({
       });
       return 'stood-down';
     }
-    const element = findRenderedTurnAnchorElement(scroller, anchor.turnId);
+    const element = findRenderedTurnAnchorElement(scroller, anchor.turnId, anchor.itemKey);
     /*
      * The anchored Turn can be absent from the rendered window, and one frame
      * of absence is not the same fact as the reader having left it behind.
@@ -730,7 +730,7 @@ export function useFlowChatViewportAnchor({
     const scroller = scrollerRef.current;
     if (source === 'resize' && scroller) {
       const anchor = anchorRef.current;
-      const element = anchor ? findRenderedTurnAnchorElement(scroller, anchor.turnId) : null;
+      const element = anchor ? findRenderedTurnAnchorElement(scroller, anchor.turnId, anchor.itemKey) : null;
       const geometry = JSON.stringify([
         scroller.scrollHeight, scroller.clientWidth, scroller.clientHeight,
         anchor?.turnId, element ? readTurnAnchorOffsetPx(scroller, element) + scroller.scrollTop : null,

@@ -153,6 +153,74 @@ describe('startup preload shell', () => {
     dom.window.close();
   });
 
+  it.each([
+    { maximized: true, fullscreen: false, showControls: true },
+    { maximized: false, fullscreen: true, showControls: true },
+    { maximized: true, fullscreen: true, showControls: true },
+    { maximized: true, fullscreen: false, showControls: false },
+  ])('guards pre-React dragging with maximized=$maximized/fullscreen=$fullscreen/controls=$showControls', async ({ maximized, fullscreen, showControls }) => {
+    const state = { maximized, fullscreen };
+    const invoke = vi.fn(async (command: string, payload: { request?: { action: string } }) => {
+      if (command === 'plugin:window|is_maximized') return state.maximized;
+      if (command === 'plugin:window|is_fullscreen') return state.fullscreen;
+      if (command === 'startup_window_control') {
+        if (payload.request?.action === 'toggle_maximize') state.maximized = !state.maximized;
+        return { isMaximized: state.maximized };
+      }
+      if (command === 'plugin:window|start_dragging') return;
+      throw new Error(`Unexpected window command: ${command}`);
+    });
+    const dom = new JSDOM(readIndexHtml(), {
+      url: 'http://localhost:1422/',
+      runScripts: 'dangerously',
+      beforeParse(window) {
+        Object.assign(window, {
+          __OPENBITFUN_SHOW_STARTUP_WINDOW_CONTROLS__: showControls,
+          __TAURI_INTERNALS__: { invoke, metadata: { currentWindow: { label: 'main' } } },
+        });
+      },
+    });
+    const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+    const dragCalls = () => invoke.mock.calls.filter(([command]) => command === 'plugin:window|start_dragging');
+    const overlay = dom.window.document.getElementById('openbitfun-startup-overlay')!;
+    const mouseDown = (target: Element, options: MouseEventInit = {}) => target.dispatchEvent(
+      new dom.window.MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, detail: 1, ...options }),
+    );
+
+    try {
+      expect(dom.window.document.getElementById('root')?.childElementCount).toBe(0);
+      expect(dom.window.document.querySelector('[data-tauri-drag-region]')).toBeNull();
+      mouseDown(overlay);
+      await flush();
+      expect(dragCalls()).toHaveLength(0);
+
+      // Restore through the static shell, without React or a cached resize update.
+      state.fullscreen = false;
+      state.maximized = true;
+      overlay.dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true, button: 0, detail: 2 }));
+      await flush();
+      expect(state.maximized).toBe(false);
+      mouseDown(overlay);
+      await flush();
+      expect(dragCalls()).toEqual([['plugin:window|start_dragging', { label: 'main' }]]);
+
+      mouseDown(overlay, { button: 1 });
+      mouseDown(overlay, { button: 2 });
+      mouseDown(overlay, { detail: 2 });
+      mouseDown(overlay.querySelector('[data-startup-window-action="toggle_maximize"] svg')!);
+      await flush();
+      expect(dragCalls()).toHaveLength(1);
+
+      // A pending state read must not start dragging after the startup handoff.
+      mouseDown(overlay);
+      overlay.setAttribute('inert', '');
+      await flush();
+      expect(dragCalls()).toHaveLength(1);
+    } finally {
+      dom.window.close();
+    }
+  });
+
   it('shows the independent pet preload for the companion window', () => {
     const html = readIndexHtml();
     const dom = new JSDOM(html, {

@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+const mockActivateMainSession = vi.hoisted(() => vi.fn());
+vi.mock('../sessionActivation', () => ({ activateMainSession: mockActivateMainSession }));
 import {
   cancelSessionTask,
   drainPendingQueue,
@@ -45,6 +47,20 @@ const mockPendingEnqueue = vi.fn();
 const mockPendingEnqueueForSurface = vi.fn();
 const mockPendingSetStatus = vi.fn();
 const mockPendingRemove = vi.fn();
+const mockHostQueueSupported = vi.fn(() => false);
+const mockHostQueueSubmit = vi.fn();
+const mockHostQueueAct = vi.fn();
+const mockSubmitSteering = vi.fn();
+
+vi.mock('../hostDialogQueue', () => ({
+  hostQueueSupported: (...args: unknown[]) => mockHostQueueSupported(...args),
+  hostDialogQueue: () => ({ submit: mockHostQueueSubmit, act: mockHostQueueAct }),
+  queueImageAttachments: () => [],
+}));
+
+vi.mock('../steeringSubmission', () => ({
+  submitSteeringMessage: (...args: unknown[]) => mockSubmitSteering(...args),
+}));
 
 vi.mock('../../state-machine', () => ({
   SessionExecutionEvent: {
@@ -229,6 +245,39 @@ describe('MessageModule session writer conflict', () => {
       .mockReturnValueOnce('notification-1')
       .mockReturnValueOnce('notification-2')
       .mockReturnValue('notification-3');
+  });
+
+  it.each([false, true])('rejects a fresh-only child before queue admission, host queue=%s', async hostQueue => {
+    const { context, session } = conflictContext('fresh-only');
+    Object.assign(session, { sessionKind: 'subagent', continuationPolicy: 'fresh_only' });
+    mockGetCurrentState.mockReturnValue('processing');
+    mockHostQueueSupported.mockReturnValue(hostQueue);
+    await expect(sendMessage(context, 'Follow up', session.sessionId)).rejects.toMatchObject({ reason: 'fresh_only' });
+    expect(mockPendingEnqueue).not.toHaveBeenCalled();
+    expect(mockHostQueueSubmit).not.toHaveBeenCalled();
+    expect(mockStartDialogTurn).not.toHaveBeenCalled();
+    expect(session.dialogTurns).toEqual([]);
+  });
+
+  it('rechecks capability after backend readiness without creating an optimistic turn', async () => {
+    const { context, session } = conflictContext('capability-race');
+    const readiness = deferred<void>();
+    mockEnsureBackendSession.mockReturnValue(readiness.promise);
+    const sending = sendMessage(context, 'Keep this draft', session.sessionId);
+    Object.assign(session, { persistedStatus: 'archived' });
+    readiness.resolve();
+    await expect(sending).rejects.toMatchObject({ reason: 'archived' });
+    expect(mockStartDialogTurn).not.toHaveBeenCalled();
+    expect(session.dialogTurns).toEqual([]);
+  });
+
+  it('rejects an observer child without attempting a local metadata lookup', async () => {
+    const { context, session } = conflictContext('dispatch-child');
+    Object.assign(session, { sessionKind: 'subagent', workspaceId: 'project', config: { dispatchJobId: 'job' } });
+    context.flowChatStore.ensurePersistedSessionMetadata = vi.fn();
+    await expect(sendMessage(context, 'Follow up', session.sessionId)).rejects.toMatchObject({ reason: 'unsupported_route' });
+    expect(context.flowChatStore.ensurePersistedSessionMetadata).not.toHaveBeenCalled();
+    expect(mockPendingEnqueue).not.toHaveBeenCalled();
   });
 
   it('keeps only the latest explicit retry for one conflicted session', async () => {
@@ -433,6 +482,76 @@ describe('MessageModule session writer conflict', () => {
     expect(mockPendingEnqueue).not.toHaveBeenCalled();
     expect(mockEnsureBackendSession).not.toHaveBeenCalled();
     expect(mockStartDialogTurn).not.toHaveBeenCalled();
+  });
+});
+
+describe('MessageModule first draft submission', () => {
+  function draftContext() {
+    let state: any = { activeSessionId: 'draft-first', sessions: new Map([['draft-first', {
+      sessionId: 'draft-first', mode: 'Standard', workspaceId: 'b', workspacePath: '/b',
+      dialogTurns: [], config: { modelName: 'primary' }, titleStatus: 'generated',
+      maxContextTokens: 32000, draft: { workspaceId: 'b', phase: 'ready', turnId: 'reserved-first-turn' },
+    }]]) };
+    const store = { getState: () => state, getSurfaceGeneration: () => 0,
+      setState: (update: any) => { state = update(state); },
+      updateSessionLastSubmittedMode: (id: string, mode: string) => {
+        state.sessions.set(id, { ...state.sessions.get(id), lastSubmittedMode: mode });
+      },
+      updateSessionModelName: vi.fn(), updateSessionMaxContextTokens: vi.fn(),
+      deleteDialogTurn: vi.fn(),
+    };
+    return { store, context: { flowChatStore: store, pendingHistoryLoads: new Map(),
+      processingManager: { registerStatus: vi.fn(), clearSessionStatus: vi.fn() },
+      contentBuffers: new Map(), activeTextItems: new Map(),
+    } as any };
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    activateSurface(LOCAL_SURFACE_ID);
+    mockGetCurrentState.mockReturnValue('idle');
+    mockPendingList.mockReturnValue([]);
+    mockEnsureBackendSession.mockResolvedValue(undefined);
+    mockHostQueueSupported.mockReturnValue(true);
+    mockHostQueueSubmit.mockResolvedValue({ receipt: { status: 'queued' } });
+    mockUpdateSessionModel.mockResolvedValue(undefined);
+    mockGetConfigs.mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    mockHostQueueSupported.mockReturnValue(false);
+  });
+
+  it('commits the draft and selects the target session only after the host accepts its first message', async () => {
+    const { context, store } = draftContext();
+    mockHostQueueSubmit.mockImplementation(async () => {
+      expect(store.getState().sessions.get('draft-first').draft.phase).toBe('submitting');
+      expect(mockActivateMainSession).not.toHaveBeenCalled();
+      return { receipt: { status: 'queued' } };
+    });
+    await sendMessage(context, 'First message', 'draft-first');
+    expect(mockHostQueueSubmit.mock.calls[0][2]).toBe('reserved-first-turn');
+    expect(store.getState().sessions.get('draft-first').draft).toBeUndefined();
+    expect(store.getState().sessions.get('draft-first').lastSubmittedMode).toBe('Standard');
+    expect(mockActivateMainSession).toHaveBeenCalledWith('draft-first', expect.any(Object));
+  });
+
+  it('preserves the first turn identity and locked target across an ambiguous acknowledgement', async () => {
+    const { context, store } = draftContext();
+    mockHostQueueSubmit.mockRejectedValueOnce(new Error('Connection lost'));
+    await expect(sendMessage(context, 'First message', 'draft-first')).rejects.toThrow('Connection lost');
+    expect(store.getState().sessions.get('draft-first').draft.phase).toBe('submitting');
+    await sendMessage(context, 'First message', 'draft-first');
+    expect(mockHostQueueSubmit.mock.calls.map(call => call[2])).toEqual(['reserved-first-turn', 'reserved-first-turn']);
+    expect(mockActivateMainSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fail an accepted submission when workspace navigation fails', async () => {
+    const { context, store } = draftContext();
+    mockActivateMainSession.mockRejectedValueOnce(new Error('Workspace activation failed'));
+    await expect(sendMessage(context, 'First message', 'draft-first')).resolves.toBeUndefined();
+    expect(store.getState().sessions.get('draft-first').draft).toBeUndefined();
+    expect(mockHostQueueSubmit).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -943,7 +1062,7 @@ describe('MessageModule detached dispatch', () => {
     expect(mockDispatchSubmit).toHaveBeenCalledTimes(1);
   });
 
-  it('steers a busy running dispatch instead of queueing the message', async () => {
+  it.each([false, true])('steers a busy running dispatch through its target owner (immediate: %s)', async (sendImmediately) => {
     const { context, session } = createDispatchContext('remote');
     session.config.dispatchJobState = 'running';
     // Busy state machine + non-empty queue would normally enqueue; a running
@@ -953,12 +1072,13 @@ describe('MessageModule detached dispatch', () => {
     mockPendingList.mockReturnValue([{ id: 'queued-1' }]);
 
     await expect(
-      sendMessage(context, 'steer the remote turn', 'dispatch-session'),
+      sendMessage(context, 'steer the remote turn', 'dispatch-session', undefined, undefined, undefined, { sendImmediately }),
     ).resolves.toBeUndefined();
 
     expect(mockDispatchAppend).toHaveBeenCalledTimes(1);
     expect(mockPendingEnqueue).not.toHaveBeenCalled();
     expect(mockDispatchSubmit).not.toHaveBeenCalled();
+    expect(mockSubmitSteering).not.toHaveBeenCalled();
   });
 
   it('reuses the append message id after an ambiguous transport failure', async () => {
@@ -980,6 +1100,101 @@ describe('MessageModule detached dispatch', () => {
     expect(mockDispatchAppend.mock.calls[1][3]).toBe(
       mockDispatchAppend.mock.calls[0][3],
     );
+  });
+});
+
+describe('MessageModule immediate follow-ups', () => {
+  function contextForFollowUp() {
+    const session = {
+      sessionId: 'answer-owner', mode: 'Standard', dialogTurns: [] as any[], config: {}, titleStatus: 'generated',
+    };
+    return {
+      flowChatStore: {
+        getSurfaceGeneration: () => 0,
+        getState: () => ({ activeSessionId: 'another-session', sessions: new Map([[session.sessionId, session]]) }),
+        addDialogTurn: vi.fn((_id: string, turn: any) => session.dialogTurns.push(turn)),
+        updateSessionLastSubmittedMode: vi.fn(),
+        updateSessionModelName: vi.fn(),
+        updateSessionMaxContextTokens: vi.fn(),
+      },
+      processingManager: { registerStatus: vi.fn(), clearSessionStatus: vi.fn() },
+      pendingHistoryLoads: new Map(), contentBuffers: new Map(), activeTextItems: new Map(),
+    } as any;
+  }
+  beforeEach(() => {
+    vi.resetAllMocks();
+    activateSurface(LOCAL_SURFACE_ID);
+    mockHostQueueSupported.mockReturnValue(false);
+    mockGetCurrentState.mockReturnValue('processing');
+    mockTransition.mockResolvedValue(true);
+    mockPendingList.mockReturnValue([]);
+    mockEnsureBackendSession.mockResolvedValue(undefined);
+    mockStartDialogTurn.mockResolvedValue(undefined);
+    mockGetStateMachine.mockReturnValue({ getContext: () => ({ currentDialogTurnId: 'running-turn' }) } as any);
+    mockSubmitSteering.mockResolvedValue(undefined);
+    mockHostQueueSubmit.mockResolvedValue({ receipt: { turnId: 'follow-up-turn', status: 'queued' } });
+    mockHostQueueAct.mockResolvedValue({});
+  });
+  afterEach(() => {
+    mockHostQueueSupported.mockReturnValue(false);
+    mockGetStateMachine.mockReturnValue(null);
+  });
+
+  it('promotes a host-accepted follow-up through the existing send-now action', async () => {
+    mockHostQueueSupported.mockReturnValue(true);
+    await sendMessage(contextForFollowUp(), 'Question\nAnswer', 'answer-owner', undefined, undefined, undefined, { sendImmediately: true });
+    expect(mockHostQueueSupported).toHaveBeenCalledWith('answer-owner');
+    expect(mockHostQueueSubmit).toHaveBeenCalledTimes(1);
+    expect(mockHostQueueAct).toHaveBeenCalledExactlyOnceWith({ turnId: 'follow-up-turn', status: 'queued' }, 'promote');
+    expect(mockPendingEnqueue).not.toHaveBeenCalled();
+    expect(mockSubmitSteering).not.toHaveBeenCalled();
+  });
+
+  it('does not resubmit a message when promotion fails after host acceptance', async () => {
+    mockHostQueueSupported.mockReturnValue(true);
+    mockHostQueueAct.mockRejectedValueOnce(new Error('too_late: message has already started'));
+    await expect(sendMessage(contextForFollowUp(), 'Question\nAnswer', 'answer-owner', undefined, undefined, undefined, { sendImmediately: true })).resolves.toBeUndefined();
+    expect(mockHostQueueSubmit).toHaveBeenCalledTimes(1);
+    expect(mockPendingEnqueue).not.toHaveBeenCalled();
+    expect(mockSubmitSteering).not.toHaveBeenCalled();
+  });
+
+  it('promotes an authoritative queued receipt even when the controller thinks the session is idle', async () => {
+    mockHostQueueSupported.mockReturnValue(true);
+    mockGetCurrentState.mockReturnValue('idle');
+    mockGetStateMachine.mockReturnValue(null);
+    await sendMessage(contextForFollowUp(), 'Question\nAnswer', 'answer-owner', undefined, undefined, undefined, { sendImmediately: true });
+    expect(mockHostQueueAct).toHaveBeenCalledExactlyOnceWith({ turnId: 'follow-up-turn', status: 'queued' }, 'promote');
+    expect(mockStartDialogTurn).not.toHaveBeenCalled();
+  });
+
+  it('uses legacy steering on the owning turn when host queues are unavailable', async () => {
+    await sendMessage(contextForFollowUp(), 'Question\nAnswer', 'answer-owner', undefined, undefined, undefined, { sendImmediately: true });
+    expect(mockSubmitSteering).toHaveBeenCalledExactlyOnceWith({
+      sessionId: 'answer-owner', dialogTurnId: 'running-turn', content: 'Question\nAnswer', displayContent: 'Question\nAnswer',
+      imageContexts: undefined, userMessageMetadata: undefined,
+    }, undefined);
+    expect(mockPendingEnqueue).not.toHaveBeenCalled();
+  });
+
+  it('starts a normal follow-up turn when the owning session is idle', async () => {
+    mockGetCurrentState.mockReturnValue('idle');
+    mockGetStateMachine.mockReturnValue(null);
+    await sendMessage(contextForFollowUp(), 'Question\nAnswer', 'answer-owner', undefined, undefined, undefined, { sendImmediately: true });
+    expect(mockStartDialogTurn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'answer-owner', userInput: 'Question\nAnswer' }));
+    expect(mockSubmitSteering).not.toHaveBeenCalled();
+    expect(mockPendingEnqueue).not.toHaveBeenCalled();
+  });
+
+  it('stops before promotion if the active surface changes during submission', async () => {
+    mockHostQueueSupported.mockReturnValue(true);
+    mockHostQueueSubmit.mockImplementationOnce(async () => {
+      activateSurface('other-device');
+      return { receipt: { turnId: 'follow-up-turn', status: 'queued' } };
+    });
+    await expect(sendMessage(contextForFollowUp(), 'Question\nAnswer', 'answer-owner', undefined, undefined, undefined, { sendImmediately: true })).rejects.toThrow();
+    expect(mockHostQueueAct).not.toHaveBeenCalled();
+    activateSurface(LOCAL_SURFACE_ID);
   });
 });
 

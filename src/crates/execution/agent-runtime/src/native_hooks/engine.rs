@@ -10,7 +10,9 @@
 //! - Any other exit code, spawn failure, or timeout: a non-blocking warning.
 
 use super::call::{HookCall, HookCallPayload};
-use super::handler::{HookHandler, HookHandlerResult, PluginHookCall};
+use super::handler::{
+    CommandHookOptions, HookHandler, HookHandlerResult, HookToolMapping, PluginHookCall,
+};
 use super::kind::RuntimeHookKind;
 use super::output::{non_empty, AgentHookOutcome, RawHookOutput};
 use super::payload::AgentHookPayload;
@@ -37,6 +39,7 @@ const MAX_CAPTURED_OUTPUT_BYTES: usize = 1024 * 1024;
 pub struct AgentHookEngine {
     registry: RuntimeHookRegistry,
     settings: Option<Arc<AgentHookSettings>>,
+    project_hooks_disabled: bool,
 }
 
 impl AgentHookEngine {
@@ -48,6 +51,7 @@ impl AgentHookEngine {
         Self {
             registry,
             settings: Some(Arc::new(settings)),
+            project_hooks_disabled: false,
         }
     }
 
@@ -55,7 +59,13 @@ impl AgentHookEngine {
         Self {
             registry,
             settings: None,
+            project_hooks_disabled: false,
         }
+    }
+
+    pub fn with_project_hooks_enabled(mut self, enabled: bool) -> Self {
+        self.project_hooks_disabled = !enabled;
+        self
     }
 
     pub fn is_empty(&self) -> bool {
@@ -74,6 +84,22 @@ impl AgentHookEngine {
         !self
             .registry
             .registrations_for_workspace(RuntimeHookKind::Lifecycle(event), workspace_scope)
+            .is_empty()
+    }
+
+    pub fn has_rules_for_session(
+        &self,
+        event: AgentHookEvent,
+        workspace_scope: Option<&str>,
+        session_id: &str,
+    ) -> bool {
+        !self
+            .registry
+            .registrations_for_session(
+                RuntimeHookKind::Lifecycle(event),
+                workspace_scope,
+                session_id,
+            )
             .is_empty()
     }
 
@@ -102,24 +128,75 @@ impl AgentHookEngine {
     ) -> AgentHookOutcome {
         let event = payload.event();
         let mut outcome = AgentHookOutcome::default();
-        let registrations = self
-            .registry
-            .registrations_for_workspace(RuntimeHookKind::Lifecycle(event), workspace_scope);
+        let registrations = self.registry.registrations_for_session(
+            RuntimeHookKind::Lifecycle(event),
+            workspace_scope,
+            &payload.common.session_id,
+        );
         if registrations.is_empty() {
             return outcome;
         }
         let matcher_value = payload.event.matcher_value();
-        let payload_json = payload.to_json().to_string();
+        let payload_value = payload.to_json();
         let call = lifecycle_call(payload, cwd);
         for registration in registrations.iter() {
-            if !registration.matcher.matches(matcher_value) {
+            if self.project_hooks_disabled && registration.requires_project_trust {
+                continue;
+            }
+            let options = &registration.command_options;
+            let mapping = options
+                .tool_mappings
+                .iter()
+                .find(|mapping| Some(mapping.runtime_name.as_str()) == matcher_value);
+            if !registration.matcher.matches(matcher_value)
+                && !mapping
+                    .is_some_and(|mapping| registration.matcher.matches(Some(&mapping.hook_name)))
+            {
+                continue;
+            }
+            let mut once = match &options.once {
+                Some(state) => Some(state.lock().await),
+                None => None,
+            };
+            if once.as_deref().copied().unwrap_or(false) || !registration.is_active() {
                 continue;
             }
             outcome.executed_handlers += 1;
             let finalized = match &registration.handler {
                 HookHandler::Command(handler) => {
-                    self.run_and_apply(event, handler, &payload_json, cwd, &mut outcome)
-                        .await
+                    let mut input = payload_value.clone();
+                    if let Some(mapping) = mapping {
+                        input["tool_name"] = Value::String(mapping.hook_name.clone());
+                        if let Err(reason) =
+                            translate_input_fields(&mut input["tool_input"], mapping, false)
+                        {
+                            outcome.block_reason = Some(reason);
+                            break;
+                        }
+                    }
+                    let input_json = input.to_string();
+                    let (finalized, succeeded) = tokio::select! {
+                        biased;
+                        _ = registration.cancelled() => {
+                            outcome.block_reason = Some("Session skill hooks were cleared during this event".into());
+                            break;
+                        },
+                        result = self.run_and_apply(
+                            event,
+                            handler,
+                            &input_json,
+                            cwd,
+                            options,
+                            mapping,
+                            &mut outcome,
+                        ) => result,
+                    };
+                    if succeeded {
+                        if let Some(state) = once.as_deref_mut() {
+                            *state = true;
+                        }
+                    }
+                    finalized
                 }
                 HookHandler::Builtin { executor } => {
                     apply_handler_result(executor.execute(&call).await, &mut outcome)
@@ -313,17 +390,18 @@ impl AgentHookEngine {
         result
     }
 
-    /// Run one handler and fold its result into `outcome`. Returns `true`
-    /// when the dispatch is finalized (blocked or denied) and remaining
-    /// handlers must not run.
+    /// Returns (dispatch finalized, command exited successfully). A failed or
+    /// cancelled once handler stays eligible for a later matching event.
     async fn run_and_apply(
         &self,
         event: AgentHookEvent,
         handler: &AgentHookHandler,
         payload_json: &str,
         cwd: &Path,
+        options: &CommandHookOptions,
+        mapping: Option<&HookToolMapping>,
         outcome: &mut AgentHookOutcome,
-    ) -> bool {
+    ) -> (bool, bool) {
         let command = handler.effective_command();
         let timeout = handler.effective_timeout(event);
         debug!(
@@ -332,8 +410,9 @@ impl AgentHookEngine {
             command,
             timeout.as_millis()
         );
-        let run = run_hook_command(command, payload_json, cwd, timeout).await;
-        match run {
+        let run = run_hook_command(command, payload_json, cwd, timeout, &options.environment).await;
+        let mut succeeded = false;
+        let finalized = match run {
             HookCommandRun::SpawnFailed(error) => {
                 outcome.warnings.push(format!(
                     "Hook '{command}' for {event} could not be started: {error}"
@@ -352,16 +431,35 @@ impl AgentHookEngine {
                 stdout,
                 stderr,
             } => match exit_code {
-                Some(0) => match serde_json::from_str::<RawHookOutput>(stdout.trim()) {
-                    Ok(output) => outcome.apply_output(output),
-                    Err(_) => {
-                        let text = stdout.trim();
-                        if !text.is_empty() && event.plain_stdout_is_context() {
-                            outcome.additional_context.push(truncate_model_output(text));
+                Some(0) => {
+                    succeeded = true;
+                    match serde_json::from_str::<RawHookOutput>(stdout.trim()) {
+                        Ok(mut output) => {
+                            if let Some(updated) = output
+                                .hook_specific_output
+                                .as_mut()
+                                .and_then(|specific| specific.updated_input.as_mut())
+                            {
+                                if let Some(mapping) = mapping {
+                                    if let Err(reason) =
+                                        translate_input_fields(updated, mapping, true)
+                                    {
+                                        outcome.block_reason = Some(reason);
+                                        return (true, succeeded);
+                                    }
+                                }
+                            }
+                            outcome.apply_output_with_ask(output, options.supports_ask)
                         }
-                        false
+                        Err(_) => {
+                            let text = stdout.trim();
+                            if !text.is_empty() && event.plain_stdout_is_context() {
+                                outcome.additional_context.push(truncate_model_output(text));
+                            }
+                            false
+                        }
                     }
-                },
+                }
                 Some(2) => {
                     let reason = non_empty(Some(stderr)).unwrap_or_else(|| {
                         format!("Hook '{command}' blocked this {event} event (exit code 2).")
@@ -384,8 +482,37 @@ impl AgentHookEngine {
                     false
                 }
             },
+        };
+        (finalized, succeeded)
+    }
+}
+
+fn translate_input_fields(
+    input: &mut Value,
+    mapping: &HookToolMapping,
+    reverse: bool,
+) -> Result<(), String> {
+    if let Some(adapter) = &mapping.input_adapter {
+        if reverse {
+            adapter.to_runtime(input)?;
+        } else {
+            adapter.to_hook(input)?;
         }
     }
+    let Some(fields) = input.as_object_mut() else {
+        return Ok(());
+    };
+    for (runtime, hook) in &mapping.input_fields {
+        let (from, to) = if reverse {
+            (hook, runtime)
+        } else {
+            (runtime, hook)
+        };
+        if let Some(value) = fields.remove(from) {
+            fields.insert(to.clone(), value);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -465,6 +592,7 @@ async fn run_hook_command(
     payload_json: &str,
     cwd: &Path,
     timeout: Duration,
+    environment: &std::collections::BTreeMap<String, String>,
 ) -> HookCommandRun {
     let mut process = if cfg!(windows) {
         let mut process = Command::new("cmd");
@@ -475,6 +603,7 @@ async fn run_hook_command(
         process.arg("-c").arg(command);
         process
     };
+    process.envs(environment);
     if let Some(cwd) = existing_dir(cwd) {
         process.current_dir(cwd);
     }

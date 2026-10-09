@@ -491,7 +491,7 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
             aria-label={t('flowChatHeader.backgroundCommandActions')}
             aria-haspopup="menu"
             aria-expanded={openBackgroundCommandMenuId === command.execSessionKey}
-            icon={<Icon name="more" size="lg" style={{ width: 13, height: 13 }} aria-hidden="true" />}
+            icon={<Icon name="more" size="sm" aria-hidden="true" />}
           />
         </Tooltip>
         {openBackgroundCommandMenuId === command.execSessionKey && backgroundCommandMenuPosition ? createOverlayPortal(
@@ -833,7 +833,7 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
                             disabled={displayBackgroundCommands.every(command => (
                               command.status !== 'running' || command.isStopping === true
                             ))}
-                            icon={<Icon name="more" size="lg" style={{ width: 13, height: 13 }} aria-hidden="true" />}
+                            icon={<Icon name="more" size="sm" aria-hidden="true" />}
                           />
                         </Tooltip>
                       ) : null}
@@ -987,7 +987,7 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
                           data-testid="flowchat-header-pull-request-item"
                         >
                           <OverflowText>#{pullRequest.number} {pullRequest.title}</OverflowText>
-                          <Icon name="chevron-right" size="lg" style={{ width: 13, height: 13 }} aria-hidden="true" />
+                          <Icon name="chevron-right" size="sm" aria-hidden="true" />
                         </button>
                       ))}
                     </div>

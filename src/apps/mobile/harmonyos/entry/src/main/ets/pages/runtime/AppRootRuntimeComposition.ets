@@ -41,7 +41,6 @@ import { LocaleController } from '../viewmodel/LocaleController';
 import { ConversationController } from '../viewmodel/ConversationController';
 import { RemoteLogger } from '../../services/RemoteLogger';
 import { RemoteModelController } from '../../services/RemoteModelController';
-import { DetectedUrlAction } from '../../services/ConnectScanDecisionPolicy';
 import { RemoteSessionController } from '../../services/RemoteSessionController';
 import { RemoteSessionListCache } from '../../services/RemoteSessionListCache';
 import { RemoteSessionListRdbStore } from '../../services/RemoteSessionListRdbStore';
@@ -51,11 +50,10 @@ import { RemoteWorkspaceCoordinator } from '../../services/RemoteWorkspaceCoordi
 import { RemoteConnectionCoordinator } from '../../services/RemoteConnectionCoordinator';
 import { RemoteToolActionController } from '../../services/RemoteToolActionController';
 import { AsyncLifecycleGate } from '../../services/AsyncLifecycleGate';
-import { QrScanService } from '../../services/QrScanService';
 import { RemoteUiState } from '../../services/RemoteUiState';
 import { VoiceInputLifecycleController } from '../../services/VoiceInputLifecycleController';
 import { VoiceInputService } from '../../services/VoiceInputService';
-import { ConversationIntent } from '../actions/ConversationIntent';
+import { ConversationIntent, MessageCopyScope } from '../actions/ConversationIntent';
 import { AppRootHostPort } from '../host/AppRootHostAdapter';
 import { AppRootPresentationActions } from '../actions/AppRootPresentationActions';
 import {
@@ -63,7 +61,7 @@ import {
   AppRoute,
   AppRouteContract
 } from '../navigation/AppRouteContract';
-import { AppShellState, CONNECT_INTENT_AUTO, CONNECT_INTENT_SCAN } from '../state/AppShellState';
+import { AppShellState } from '../state/AppShellState';
 import {
   RemoteConnectEntryKind,
   RemoteSurfaceEntryPolicy
@@ -123,12 +121,11 @@ export abstract class AppRootRuntimeComposition {
   abstract failRemoteConnection(err: Object): void;
   abstract handleNavigationBack(route: AppRoute): boolean;
   abstract hasRemoteBindingForResume(): boolean;
+  protected abstract startWatchProvisioning(): Promise<void>;
   abstract isRemoteConversationContext(sessionId: string): boolean;
   abstract mergeSessions(primary: RemoteSession[], extras: RemoteSession[]): RemoteSession[];
   abstract loadWorkspaceSessionsOnDevice(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string, workspaceId?: string): Promise<void>;
-  abstract openAddConnectionFromSettings(): void;
   abstract openAppSidebar(): void;
-  abstract openRemoteControlSettings(): void;
   abstract openWorkspacePickerOnDevice(deviceId: string): Promise<void>;
   abstract pickImages(): Promise<void>;
   abstract publishRemoteSessions(sessions: RemoteSession[], hasMore: boolean): void;
@@ -167,7 +164,6 @@ export abstract class AppRootRuntimeComposition {
   readonly filePreviewState: FilePreviewState = new FilePreviewState();
   readonly identityStore: MobileIdentityStore = new MobileIdentityStore();
   readonly clipboardService: ClipboardService = new ClipboardService();
-  readonly qrScanService: QrScanService = new QrScanService();
   readonly imagePickerService: ImagePickerService = new ImagePickerService();
   readonly remoteConnectionCoordinator: RemoteConnectionCoordinator =
     new RemoteConnectionCoordinator(
@@ -645,8 +641,6 @@ export abstract class AppRootRuntimeComposition {
       this.remoteSessionController,
       this.remoteModelController,
       this.remoteFileDownloadController,
-      this.clipboardService,
-      this.qrScanService,
       (sessionId: string): void => this.conversationController.resetRemoteTimeline(sessionId),
       (): void => this.conversationController.resetKnownRemoteState(),
       (): void => this.remoteActivityViewModel.startHeartbeat(),
@@ -671,8 +665,8 @@ export abstract class AppRootRuntimeComposition {
         hooks: {
           deviceId: (): string => this.remoteConnectionController.getDeviceId(),
           openAuthorization: async (url: string): Promise<boolean> => {
-            const localizedUrl = url.startsWith('https://auth.openbitfun.com/sign-in#')
-              ? url.replace('/sign-in#', `/sign-in?locale=${encodeURIComponent(RemoteI18n.language())}#`)
+            const localizedUrl = url.includes('https://auth.openbitfun.com/sign-in')
+              ? url.replace('/sign-in?', `/sign-in?locale=${encodeURIComponent(RemoteI18n.language())}&`)
               : url;
             return this.host.openExternalLink ? await this.host.openExternalLink(localizedUrl) : false;
           },
@@ -785,7 +779,9 @@ export abstract class AppRootRuntimeComposition {
       rename: async (title: string): Promise<void> => {
         await this.conversationController.renameVisibleSession(title);
       },
-      copy: async (text: string): Promise<void> => { await this.conversationController.copyRemoteMessage(text); },
+      copy: async (text: string, scope: MessageCopyScope): Promise<void> => {
+        await this.conversationController.copyRemoteMessage(text, scope);
+      },
       retry: async (text: string): Promise<void> => { await this.conversationController.retryVisibleMessage(text); },
       selectModel: async (id: string): Promise<void> => { await this.conversationController.selectVisibleModel(id); },
       pickImages: async (): Promise<void> => { await this.pickImages(); },
@@ -816,7 +812,6 @@ export abstract class AppRootRuntimeComposition {
       openSidebar: (): void => this.openAppSidebar(),
       connectWorkspace: (): void => this.openConnectSheet(),
       addConnection: (): void => this.openConnectSheet(),
-      openSettings: (): void => this.openRemoteControlSettings(),
       refresh: (): void => { this.remoteSessionViewModel.refreshSessions(); },
       showWorkspaces: (): void => { this.remoteWorkspaceViewModel.toggleRecentWorkspaces(); },
       showAssistants: (): void => { this.remoteWorkspaceViewModel.toggleAssistants(); },
@@ -866,10 +861,9 @@ export abstract class AppRootRuntimeComposition {
         await this.conversationController.createRemoteSession(agentType);
       },
       enterCode: (): void => { this.closeAppSidebar(); this.enterCodeEntry(); },
-      scanDesktop: (): void => { this.closeAppSidebar(); this.openConnectSheet(CONNECT_INTENT_SCAN); },
-      addDesktop: (): void => {
+      openAccountDevices: (): void => {
         this.closeAppSidebar();
-        this.openConnectSheet(CONNECT_INTENT_SCAN);
+        this.appShellState.openSettings('account');
       },
       refreshDevices: async (): Promise<void> => {
         await this.deviceDirectoryViewModel.refreshDevices(async (): Promise<void> => {
@@ -892,7 +886,7 @@ export abstract class AppRootRuntimeComposition {
     },
     onSettings: {
       close: (): void => this.appShellState.leaveSettings(),
-      addConnection: (): void => this.openAddConnectionFromSettings(),
+      accountSettled: (): void => this.appShellState.settleAccountSettings(),
       disconnect: (): void => { this.disconnect(false); },
       clearPairing: (): void => {
         this.appShellState.setSettingsVisible(false);
@@ -903,6 +897,9 @@ export abstract class AppRootRuntimeComposition {
       cloudCancelLogin: (): void => this.settingsController.cancelCloudLogin(),
       cloudLogin: async (): Promise<string> => {
         const user = await this.settingsController.loginCloudAccount();
+        // Returning from authorization can show the page before the account
+        // session is saved. Start listening after login completes as well.
+        await this.startWatchProvisioning();
         const pending = this.pendingAccountDeviceId;
         this.pendingAccountDeviceId = '';
         if (pending.length > 0) {
@@ -931,12 +928,6 @@ export abstract class AppRootRuntimeComposition {
         this.connect(false, password || '');
       },
       clearPairing: (): void => { this.appShellState.setConnectSheetVisible(false); this.disconnect(true); },
-      urlChanged: (url: string): void => { this.remotePageState.setRemoteUrl(url); },
-      userChanged: (user: string): void => this.remotePageState.setUserId(user),
-      detected: (url: string): string => this.handleDetectedRemoteUrl(url),
-      inputVisible: (visible: boolean): void => this.remotePageState.setRemoteUrlInputVisible(visible),
-      paste: (): void => { void this.remoteConnectionController.paste(this.host.context()); },
-      scan: (): void => { void this.scanRemotePairCode(); },
       cloudListDevices: (): Promise<CloudAccountDevice[]> => this.settingsController.listCloudAccountDevices(),
       cloudSelectDevice: (device: CloudAccountDevice): Promise<void> =>
         this.settingsController.selectCloudAccountDevice(device)
@@ -982,14 +973,12 @@ export abstract class AppRootRuntimeComposition {
     void this.enterRemoteSurfaceCompact();
   }
 
-  openConnectSheet(intent: string = CONNECT_INTENT_AUTO): void {
-    const kind = intent === CONNECT_INTENT_SCAN ?
-      RemoteConnectEntryKind.OpenScan : RemoteConnectEntryKind.OpenConnect;
-    if (!RemoteSurfaceEntryPolicy.shouldOpenConnectSheet(kind)) {
+  openConnectSheet(): void {
+    if (!RemoteSurfaceEntryPolicy.shouldOpenConnectSheet(RemoteConnectEntryKind.OpenConnect)) {
       this.enterRemoteSurface();
       return;
     }
-    this.appShellState.setConnectSheetVisible(true, intent);
+    this.appShellState.setConnectSheetVisible(true);
   }
 
   /**
@@ -1006,7 +995,7 @@ export abstract class AppRootRuntimeComposition {
   }
 
   refreshLocalizedRuntimeCopy(): void {
-    this.remotePageState.setStatusText(RemoteI18n.retranslateKnown(
+    this.remotePageState.setStatusText(RemoteI18n.retranslate(RemoteI18n.retranslateKnown(
       this.remotePageState.statusText,
       [
         ConnectionStatusPresenter.labelKey(this.remotePageState.connectionState),
@@ -1014,10 +1003,12 @@ export abstract class AppRootRuntimeComposition {
         'status.waitingConnection',
         'status.notConnected'
       ]
-    ));
+    )));
     this.remotePageState.setError(RemoteI18n.retranslate(this.remotePageState.sessionErrorText));
     this.remotePageState.setWorkspace(
-      RemoteI18n.retranslateKnown(this.remotePageState.workspaceName, ['status.notConnected']),
+      RemoteI18n.retranslateWorkspaceName(
+        this.remotePageState.workspaceName, this.remotePageState.workspacePath, this.remotePageState.workspaceId
+      ),
       this.remotePageState.workspacePath,
       this.remotePageState.assistantId,
       this.remotePageState.workspaceBranch,
@@ -1036,12 +1027,16 @@ export abstract class AppRootRuntimeComposition {
 
   private pendingAccountDeviceId: string = '';
 
-  handleDetectedRemoteUrl(url: string): string {
+  /**
+   * Retries a persisted legacy device link. New links are no longer captured on
+   * the phone; this only keeps an existing record usable after an upgrade.
+   */
+  handleDetectedRemoteUrl(url: string): void {
     const link = accountDeviceLink(url);
     if (!link) {
       this.remotePageState.setStatusText(RemoteI18n.t('connect.deviceLinkInvalid'));
       this.remotePageState.setConnectionState(ConnectionState.Failed);
-      return DetectedUrlAction.INVALID;
+      return;
     }
     const deviceId = link.deviceId;
     this.remotePageState.setRemoteUrl(url);
@@ -1052,10 +1047,9 @@ export abstract class AppRootRuntimeComposition {
       this.pendingAccountDeviceId = deviceId;
       this.appShellState.setConnectSheetVisible(false);
       this.appShellState.openSettings('account');
-      return DetectedUrlAction.SHOW_CLOUD_DEVICES;
+      return;
     }
     void this.connectAccountDeviceLink(deviceId);
-    return DetectedUrlAction.USE_CLOUD_DEVICE;
   }
 
   private async connectAccountDeviceLink(deviceId: string): Promise<void> {
@@ -1070,13 +1064,5 @@ export abstract class AppRootRuntimeComposition {
       this.remotePageState.setStatusText(ConnectionErrorPolicy.errorText(err));
       this.remotePageState.setConnectionState(ConnectionState.Failed);
     }
-  }
-
-  async scanRemotePairCode(): Promise<void> {
-    const text = await this.remoteConnectionController.scan(this.host.context());
-    if (text.length === 0) {
-      return;
-    }
-    const action = this.handleDetectedRemoteUrl(text);
   }
 }

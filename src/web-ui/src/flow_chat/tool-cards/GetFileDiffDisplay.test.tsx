@@ -99,7 +99,7 @@ describe('GetFileDiffDisplay', () => {
     expect(container.querySelector('[data-openbitfun-part="action"]')?.textContent).toBe('Diff:');
     expect(container.querySelector('[data-openbitfun-part="path"]')?.textContent).toBe('app.tsx');
     expect(container.querySelector('[data-openbitfun-part="path"]')?.getAttribute('data-path')).toBe('src/app.tsx');
-    expect(container.querySelector('[data-openbitfun-part="path"]')?.getAttribute('title')).toBe('src/app.tsx');
+    expect(container.querySelector('[data-openbitfun-part="path"]')?.getAttribute('data-overflow-text')).toBe('src/app.tsx');
     expect(container.querySelector('[data-openbitfun-part="changeSummary"]')?.textContent).toBe('+12-0');
     expect(container.querySelector('[data-openbitfun-part="changeSummary"]')?.getAttribute('aria-label')).toBe(
       '12 additions and 0 deletions',

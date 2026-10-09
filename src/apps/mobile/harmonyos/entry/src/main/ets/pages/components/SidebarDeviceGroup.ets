@@ -36,6 +36,7 @@ struct SidebarWorkspaceGroup {
   @Param connectionId: string = '';
   /** Stable record ID of this row; empty only for rows from pre-ID hosts. */
   @Param workspaceId: string = '';
+  @Param workspaceKind: string = 'normal';
   @Event onWorkspaceTools: (intent: WorkspaceToolsIntent) => void = (_intent: WorkspaceToolsIntent) => {};
   @Param deviceId: string = '';
   @Param path: string = '';
@@ -110,7 +111,7 @@ struct SidebarWorkspaceGroup {
           .hitTestBehavior(HitTestMode.None)
       }
       .width(24)
-      .height(46)
+      .height(54)
       .accessibilityText(this.expanded ?
         RemoteI18n.t('chat.showLess') : RemoteI18n.t('chat.showMore'))
       .onClick(() => {
@@ -124,18 +125,31 @@ struct SidebarWorkspaceGroup {
           .width(21)
           .height(21)
           .hitTestBehavior(HitTestMode.None)
-        Text(this.name || this.basename(this.path))
-          .fontSize(MobileDesignTypography.titleSmall.size)
-          .fontWeight(this.currentWorkspace ? FontWeight.Medium : FontWeight.Regular)
-          .fontColor(SIDEBAR_INK)
-          .layoutWeight(1)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .wordBreak(WordBreak.BREAK_ALL)
-          .hitTestBehavior(HitTestMode.None)
+        Column({ space: 2 }) {
+          Text(this.workspaceLabel())
+            .fontSize(MobileDesignTypography.titleSmall.size)
+            .fontWeight(this.currentWorkspace ? FontWeight.Medium : FontWeight.Regular)
+            .fontColor(SIDEBAR_INK)
+            .width('100%')
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .wordBreak(WordBreak.BREAK_ALL)
+            .hitTestBehavior(HitTestMode.None)
+          if (this.sshHost.trim().length > 0) {
+            Text(this.sshHost.trim())
+              .fontSize(MobileDesignTypography.bodySmall.size)
+              .fontColor(SIDEBAR_MUTED)
+              .width('100%')
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .hitTestBehavior(HitTestMode.None)
+          }
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
       }
       .layoutWeight(1)
-      .height(46)
+      .height(54)
       .alignItems(VerticalAlign.Center)
       .onClick(() => {
         void this.toggleExpanded();
@@ -174,7 +188,7 @@ struct SidebarWorkspaceGroup {
       })
     }
     .width('100%')
-    .height(46)
+    .height(54)
     .padding({ left: Math.max(0, this.bodyIndent - 4), right: 6 })
     .alignItems(VerticalAlign.Center)
     .borderRadius(10)
@@ -331,6 +345,20 @@ struct SidebarWorkspaceGroup {
     const index = normalized.lastIndexOf('/');
     return index >= 0 ? normalized.substring(index + 1) : normalized;
   }
+
+  private workspaceLabel(): string {
+    const path = this.path.trim();
+    if (path === '/' && this.workspaceKind.toLowerCase() === 'remote') {
+      return RemoteI18n.t('sidebar.browseRemoteRoot');
+    }
+    const value = this.name.trim();
+    const host = this.sshHost.trim();
+    const connection = this.connectionId.trim();
+    if (value.length > 0 && value !== host && value !== connection) {
+      return value;
+    }
+    return this.basename(path);
+  }
 }
 
 /**
@@ -405,10 +433,14 @@ export struct SidebarDeviceGroup {
             connectionId: this.currentWorkspace(row).remoteConnectionId || '',
             sshHost: this.currentWorkspace(row).remoteSshHost || '',
             workspaceId: this.currentWorkspace(row).workspaceId || '',
+            workspaceKind: this.currentWorkspace(row).workspaceKind || 'normal',
             onWorkspaceTools: this.onWorkspaceTools,
             deviceId: this.device.deviceId,
             path: this.currentWorkspace(row).path,
-            name: this.currentWorkspace(row).remoteSshHost?.trim() ? `${this.currentWorkspace(row).name} · ${(this.currentWorkspace(row).remoteSshHost || '').trim()}` : this.currentWorkspace(row).name,
+            // The device row already identifies the remote host. Keep the
+            // workspace row focused on the workspace name instead of appending
+            // an IP address to it.
+            name: this.currentWorkspace(row).name,
             sessions: this.sessionsFor(this.currentWorkspace(row)),
             selectedSessionId: this.selectedSessionId,
             runningSessionId: this.runningSessionId,

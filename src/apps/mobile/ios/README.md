@@ -1,6 +1,6 @@
 # OpenBitFun iOS
 
-Native SwiftUI client for local and remote conversations, account pairing,
+Native SwiftUI client for local and remote conversations, account device connection,
 workspace and session management, approvals, attachments, and file previews.
 It follows the HarmonyOS reference geometry: 76pt conversation header, 44pt
 circle controls, 16pt content margins, the 48pt connection strip, and the
@@ -12,8 +12,7 @@ floating composer with 52pt collapsed height.
 - `OpenBitFun/Features/Chat/`: conversation home, header, timeline bubbles, and composer.
 - `OpenBitFun/Features/Remote/`: remote conversation home surfaces.
 - `OpenBitFun/Features/Settings/`: app settings composition and reusable settings cards.
-- `OpenBitFun/Features/Pairing/`: pairing sheet flow.
-- `OpenBitFun/Features/Account/`: account settings and device rows.
+- `OpenBitFun/Features/Account/`: sign-in step, account device picker, and inline account sections embedded in settings.
 - `OpenBitFun/Features/Shell/`: theme tokens, drawer, shell layout, and remote supporting surfaces.
 - `OpenBitFun/Infrastructure/`: observable state, failure copy, and platform adapters.
 - `OpenBitFun/Presentation/Models/`: SwiftUI-facing presentation DTOs.
@@ -37,8 +36,9 @@ export DEVELOPER_DIR="$HOME/Downloads/Xcode.app/Contents/Developer"
 about transport or persistence. Local chat, pairing, and remote session state
 are supplied by the generated `OpenBitFunMobileCore` framework from
 `src/apps/mobile/shared/core-feature`; SwiftUI only maps the typed state to its
-presentation model. Pairing accepts the desktop connection URL through the
-connection sheet (the camera scanner remains a native adapter concern).
+presentation model. Desktops are connected through the signed-in account's
+device list; there is no QR scanner or manual link entry. Connections paired by
+older builds stay readable, reconnectable, and disconnectable.
 
 Run the platform-independent Swift infrastructure checks through the registered
 focused entry point. It compiles production helpers together with their local
@@ -69,10 +69,13 @@ workspace, chat, and settings sections. A connected preview exposes the
 remote empty home through the same conversation chrome.
 
 For repeatable simulator captures, pass `--remote`, `--connected`, `--drawer`,
-`--settings`, `--remote-settings`, `--remote-view-settings`, `--remote-view-density`, `--model-settings`, `--composer-model-picker`, `--pairing`, `--pairing-manual`, `--pairing-account`, `--remote-create`, `--remote-create-workspace-picker`, `--remote-chat-section`, `--project-create-menu`, `--file-preview`, `--plan-preview`, `--session-actions`, `--sidebar-actions`, `--local-actions`, and/or
+`--settings`, `--remote-settings`, `--remote-view-settings`, `--remote-view-density`, `--model-settings`, `--composer-model-picker`, `--device-picker` (legacy aliases `--pairing`, `--pairing-account`), `--remote-create`, `--remote-create-workspace-picker`, `--remote-chat-section`, `--project-create-menu`, `--file-preview`, `--plan-preview`, `--session-actions`, `--sidebar-actions`, `--local-actions`, and/or
 `--account-login` or `--account-profile` after the bundle identifier in `simctl launch`. The local
 actions flag can be combined with the session-actions flag; the account-login
-flag opens a deterministic signed-out surface without storing credentials. These launch flags
+flag opens a deterministic signed-out surface without storing credentials, and
+the account-profile flag opens Settings with a signed-in preview account inline.
+`--remote-settings` is an alias that opens the same single Settings page on the
+Remote surface; the permission mode section lives there. These launch flags
 select deterministic inspection states; normal launches use the live KMP
 pairing/session stores.
 

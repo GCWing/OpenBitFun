@@ -22,6 +22,8 @@ export interface CheckboxProps
   invalid?: boolean;
   label?: ReactNode;
   onCheckedChange?: (checked: boolean) => void;
+  /** Preserve the selection's contrast while preventing user input. */
+  readOnly?: boolean;
   size?: CheckboxSize;
 }
 
@@ -38,6 +40,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
   label,
   onChange,
   onCheckedChange,
+  readOnly = false,
   size = "md",
   ...props
 }, forwardedRef) {
@@ -58,6 +61,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
       data-disabled={disabled ? "true" : "false"}
       data-indeterminate={indeterminate ? "true" : "false"}
       data-invalid={invalid ? "true" : "false"}
+      data-readonly={readOnly ? "true" : "false"}
       data-size={size}
     >
       <span className={styles.control} data-openbitfun-part="control">
@@ -68,7 +72,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
           className={styles.input}
           defaultChecked={defaultChecked}
           data-openbitfun-part="input"
-          disabled={disabled}
+          disabled={disabled || readOnly}
           onChange={(event) => {
             onChange?.(event);
             if (!event.defaultPrevented) onCheckedChange?.(event.currentTarget.checked);

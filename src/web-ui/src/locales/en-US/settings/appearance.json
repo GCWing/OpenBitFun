@@ -1,9 +1,9 @@
 {
   "title": "Appearance",
-  "subtitle": "Interface language, appearance, and global font size",
+  "subtitle": "Choose the interface language, theme, and text size",
   "package": {
     "title": "Appearance",
-    "description": "Choose a built-in theme or an installed appearance package. Hover over a thumbnail to preview; assets stay on this device.",
+    "description": "Appearance packs are stored on this device; hover over a thumbnail to preview",
     "import": "Import package",
     "importSuccess": "Imported {{name}}",
     "importFailed": "Could not import the appearance package. Review the issue details.",
@@ -93,7 +93,7 @@
         "manual": {
           "open": "Upload package",
           "title": "Manual submission",
-          "hint": "Choose a local .openbitfun-appearance archive. OpenBitFun validates it before upload; the Skin server validates it again before review.",
+          "hint": "Upload a local .openbitfun-appearance file; it is validated before upload and before review",
           "package": "Appearance package",
           "packagePlaceholder": "Choose a .openbitfun-appearance file",
           "choose": "Choose file",

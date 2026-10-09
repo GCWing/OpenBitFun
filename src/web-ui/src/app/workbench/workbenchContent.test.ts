@@ -20,6 +20,7 @@ import { SCENE_TAB_REGISTRY } from '../scenes/registry';
 import { getSessionSceneTabId } from '../components/SceneBar/types';
 import { resolveSessionSceneTarget } from '../services/sessionSceneTarget';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
+import { openThinkingPanel } from '@/flow_chat/services/openThinkingPanel';
 import type { WorkspaceInfo } from '@/shared/types';
 
 vi.mock('@/infrastructure/services/business/workspaceManager', () => ({
@@ -133,6 +134,30 @@ describe('workbench content navigation', () => {
     switchAgentCanvasScope('session-a');
     switchAgentCanvasScope('session-a');
     expect(useAgentCanvasStore.getState().primaryGroup.tabs[0].id).toBe(canvas.primaryGroup.tabs[0].id);
+  });
+
+  it('keeps one thinking tab across different thoughts and projected child sessions', () => {
+    openSession();
+    const open = (id: string, sessionId = 'session-a') => openThinkingPanel({
+      title: 'Thinking', sessionId, workspaceId: 'project',
+      thinkingItem: { id, type: 'thinking', content: id, status: 'completed',
+        timestamp: 1, isStreaming: false, isCollapsed: true },
+      navigationTarget: { sessionId: 'session-a', turnId: 'turn-1', itemId: id },
+    });
+    open('thinking-1');
+    const first = useAgentCanvasStore.getState().primaryGroup.tabs[0];
+    createTab({ type: 'markdown-viewer', title: 'Note', data: '# Note', duplicateCheckKey: 'note' });
+    appManager.updateLayout({ rightPanelCollapsed: true });
+    open('thinking-2');
+    open('child-thinking', 'child-session');
+    const tabs = useAgentCanvasStore.getState().primaryGroup.tabs;
+    const readers = tabs.filter(tab => tab.content.type === 'thinking-detail');
+    expect(readers).toHaveLength(1);
+    expect(readers[0].id).toBe(first.id);
+    expect(readers[0].content.data.thinkingItem.id).toBe('child-thinking');
+    expect(readers[0].content.data.sessionId).toBe('child-session');
+    expect(tabs.some(tab => tab.content.type === 'markdown-viewer')).toBe(true);
+    expect(appManager.getState().layout.rightPanelCollapsed).toBe(false);
   });
 
   it('returns to an open session behind another top-level scene instead of a cached selection', () => {

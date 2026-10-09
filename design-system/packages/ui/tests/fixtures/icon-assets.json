@@ -34,5 +34,11 @@
     "node": "538:19950",
     "asset": "ultimate.svg",
     "sha256": "1b7c9329d2f6a870dc4a6734c012f1f40b8d4491ecf5e1dd9542b87b84da6143"
+  },
+  {
+    "name": "reasoning-auto",
+    "node": "user:model-settings-2026-10-04:reasoning-auto",
+    "asset": "reasoning-auto.svg",
+    "sha256": "2e4ffb3991c0d1cfb818ada92310cf08e8dd67bee9edaf18ae4e540ea9a326a6"
   }
 ]

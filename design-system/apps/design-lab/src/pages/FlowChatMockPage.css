@@ -1,0 +1,381 @@
+.flow-chat-mock-page > [role="tablist"] {
+  margin-block-end: var(--openbitfun-space-4);
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+.flow-chat-mock-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--openbitfun-space-2);
+}
+
+/* This is an in-place layout, not a second overlay or conversation tree. */
+html:has(.flow-chat-mock-page[data-fullscreen]) {
+  overflow: hidden;
+}
+
+.lab-shell:has(.flow-chat-mock-page[data-fullscreen]) {
+  display: block;
+  block-size: 100dvh;
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+.lab-shell:has(.flow-chat-mock-page[data-fullscreen]) .lab-workspace > :not(.lab-content),
+.lab-shell:has(.flow-chat-mock-page[data-fullscreen]) > .lab-sidebar-backdrop {
+  display: none;
+}
+
+.flow-chat-mock-page[data-fullscreen] {
+  display: flex;
+  flex-direction: column;
+  inline-size: 100%;
+  max-inline-size: none;
+  block-size: 100dvh;
+  min-block-size: 0;
+  margin: 0;
+  padding: var(--openbitfun-space-3);
+  overflow: hidden;
+}
+
+.flow-chat-mock-page[data-fullscreen] > .page-heading {
+  flex: none;
+  align-items: center;
+  max-inline-size: none;
+  margin-block-end: var(--openbitfun-space-2);
+}
+
+.flow-chat-mock-page[data-fullscreen] > .page-heading h1 {
+  margin: 0;
+  font-size: var(--openbitfun-type-heading-card-font-size);
+  line-height: var(--openbitfun-type-heading-card-line-height);
+}
+
+.flow-chat-mock-page[data-fullscreen] > .page-heading :is(.page-kicker, p),
+.flow-chat-mock-page[data-fullscreen] > :is(.flow-chat-mock-page__note, .flow-chat-mock__coverage-note) {
+  display: none;
+}
+
+.flow-chat-mock-page[data-fullscreen] > [role="tablist"] {
+  flex: none;
+  margin-block-end: var(--openbitfun-space-2);
+}
+
+.flow-chat-mock-page[data-fullscreen] > [role="tabpanel"],
+.flow-chat-mock-page[data-fullscreen] .flow-chat-mock-demo {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-block-size: 0;
+}
+
+.flow-chat-mock-page[data-fullscreen] .flow-chat-mock__toolbar,
+.flow-chat-mock-page[data-fullscreen] .flow-chat-mock__coverage-controls {
+  flex: none;
+}
+
+.flow-chat-mock-page[data-fullscreen] .flow-chat-mock {
+  flex: 1;
+  block-size: auto;
+  min-block-size: 0;
+}
+
+.flow-chat-mock {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  block-size: 75dvh;
+  overflow: hidden;
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  border-radius: var(--openbitfun-radius-lg);
+  background: var(--openbitfun-color-surface-scene);
+  color: var(--openbitfun-color-content-primary);
+}
+
+.flow-chat-mock__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-3);
+  padding-block: var(--openbitfun-space-2) var(--openbitfun-space-4);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+}
+
+.flow-chat-mock__toolbar > div:first-child {
+  display: grid;
+  flex: 1;
+  min-inline-size: 0;
+  gap: var(--openbitfun-space-1);
+}
+
+.flow-chat-mock__toolbar strong {
+  font-weight: var(--openbitfun-type-heading-card-font-weight);
+}
+
+.flow-chat-mock__toolbar > div > span,
+.flow-chat-mock-page__note {
+  font-size: var(--openbitfun-type-body-xs-font-size);
+  line-height: var(--openbitfun-type-body-xs-line-height);
+  color: var(--openbitfun-color-content-muted);
+}
+
+.flow-chat-mock__coverage-controls,
+.flow-chat-mock__coverage-note {
+  padding-inline: var(--openbitfun-control-flow-chat-content-padding-inline);
+  margin-block: 0 var(--openbitfun-control-flow-chat-flow-item-gap);
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+}
+
+.flow-chat-mock__coverage-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--openbitfun-space-3);
+}
+
+.flow-chat-mock__coverage-note code {
+  color: var(--openbitfun-color-content-muted);
+  overflow-wrap: anywhere;
+}
+
+.flow-chat-mock__transcript {
+  container: flow-chat-transcript / inline-size;
+  min-block-size: 0;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-block: var(--openbitfun-space-4) var(--openbitfun-space-6);
+}
+
+/* Match _transcript-layout.scss and UserMessageItem.scss. The Lab's layout
+   contract tests compare these values with their production owners. */
+.flow-chat-mock__timeline {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  max-width: var(--openbitfun-control-flow-chat-transcript-max-width);
+  margin-inline: auto;
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  font-weight: var(--openbitfun-type-flow-control-font-weight);
+  line-height: var(--openbitfun-type-flow-body-line-height);
+  overflow-wrap: anywhere;
+}
+
+@container flow-chat-transcript (min-width: 0px) {
+  .flow-chat-mock__timeline {
+    width: calc(100% - var(--openbitfun-control-flow-chat-turn-rail-offset) - var(--openbitfun-control-flow-chat-turn-rail-width) - var(--openbitfun-space-1) - var(--openbitfun-space-2));
+    margin-inline-start: max(calc(var(--openbitfun-control-flow-chat-turn-rail-offset) + var(--openbitfun-control-flow-chat-turn-rail-width) + var(--openbitfun-space-1)), calc((100% - var(--openbitfun-control-flow-chat-transcript-max-width)) / 2));
+  }
+}
+
+.flow-chat-mock__timeline p,
+.flow-chat-mock__timeline ul {
+  margin: 0;
+}
+
+.flow-chat-mock__user,
+.flow-chat-mock__assistant,
+.flow-chat-mock__runtime {
+  box-sizing: border-box;
+  padding-inline: var(--openbitfun-control-flow-chat-content-padding-inline);
+}
+
+.flow-chat-mock__user {
+  --_user-message-radius: var(--openbitfun-control-flow-chat-user-message-radius);
+  --_user-message-padding-inline: var(--_user-message-radius);
+  position: relative;
+  margin: var(--openbitfun-control-flow-chat-user-message-margin-block-start) 0 var(--openbitfun-control-flow-chat-flow-item-gap);
+}
+
+.flow-chat-mock__user[data-new-turn] {
+  padding-top: calc(var(--openbitfun-control-flow-chat-turn-gap) + var(--openbitfun-space-4));
+}
+
+.flow-chat-mock__user-bubble {
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: var(--openbitfun-control-flow-chat-user-message-max-width);
+  padding: var(--openbitfun-control-flow-chat-user-message-padding-block) var(--_user-message-padding-inline);
+  background: var(--openbitfun-color-action-quiet-hover);
+  border: none;
+  border-radius: var(--_user-message-radius);
+  margin-block: 0;
+  margin-inline: auto 0;
+  box-shadow: none;
+  position: relative;
+}
+
+.flow-chat-mock__user-content {
+  width: fit-content;
+  max-width: 100%;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.flow-chat-mock__assistant {
+  display: flow-root;
+  min-width: 0;
+  padding-block: 0;
+  margin-bottom: 0;
+}
+
+.flow-chat-mock__assistant > :is(p, ul, .flow-thinking-item, .flow-chat-mock__tool, [data-openbitfun-component="ask-user"]) {
+  margin: 0 0 var(--openbitfun-control-flow-chat-flow-item-gap) 0;
+}
+
+.flow-chat-mock__assistant strong {
+  font-weight: var(--openbitfun-type-label-lg-font-weight);
+}
+
+[data-color-scheme="light"][data-contrast="standard"] .flow-chat-mock__assistant > :is(p, ul) {
+  color: color-mix(in srgb, var(--openbitfun-color-content-on-light) 90%, transparent);
+}
+
+.flow-chat-mock__message-meta,
+.flow-chat-mock__result-meta {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  column-gap: var(--openbitfun-space-2);
+  row-gap: 0;
+  min-block-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  margin-inline-end: calc((var(--openbitfun-control-flow-chat-row-icon-size) - var(--openbitfun-control-flow-chat-metadata-action-size)) / 2);
+}
+
+.flow-chat-mock__message-meta {
+  padding-block: calc(var(--openbitfun-space-1) / 2) 0;
+}
+
+.flow-chat-mock__result-meta {
+  padding: var(--openbitfun-space-1) 0;
+  margin-top: var(--openbitfun-space-1);
+}
+
+.flow-chat-mock__copy {
+  inline-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  block-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  min-inline-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  min-block-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  padding: 0;
+  color: var(--openbitfun-color-content-secondary);
+  background: transparent;
+}
+
+.flow-chat-mock__message-meta > .flow-chat-mock__copy {
+  opacity: 0;
+}
+
+.flow-chat-mock__user:hover .flow-chat-mock__copy,
+.flow-chat-mock__user:focus-within .flow-chat-mock__copy {
+  opacity: 1;
+}
+
+.flow-chat-mock__timeline code,
+.flow-chat-mock__diff {
+  font-family: var(--openbitfun-type-code-sm-font-family);
+  font-size: var(--openbitfun-type-code-sm-font-size);
+  line-height: var(--openbitfun-type-code-sm-line-height);
+}
+
+.flow-chat-mock__diff {
+  margin: 0;
+  padding: var(--openbitfun-space-3);
+  overflow-x: auto;
+}
+
+.flow-chat-mock__composer {
+  box-sizing: border-box;
+  min-inline-size: 0;
+  inline-size: min(100%, var(--openbitfun-control-flow-chat-transcript-max-width));
+  margin-inline: auto;
+  padding: 0 var(--openbitfun-space-2) var(--openbitfun-space-6);
+}
+
+.flow-chat-mock__composer textarea {
+  display: block;
+  inline-size: 100%;
+  min-inline-size: 0;
+  border: 0;
+  outline: none;
+  margin: 0;
+  padding: 0;
+  resize: none;
+  background: transparent;
+  color: inherit;
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  line-height: var(--openbitfun-type-flow-body-line-height);
+}
+
+.flow-chat-mock__composer [data-openbitfun-layout="compact"] textarea {
+  /* typography-audit: allow -- matches the compact composer control track */
+  line-height: var(--openbitfun-control-chat-composer-compact-track-height);
+}
+
+.flow-chat-mock__composer textarea::placeholder {
+  color: var(--openbitfun-color-content-muted);
+}
+
+.flow-chat-mock__context {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  font-size: var(--openbitfun-type-flow-meta-font-size);
+  line-height: var(--openbitfun-type-flow-support-line-height);
+  color: var(--openbitfun-color-content-muted);
+}
+
+.flow-chat-mock__context > span:last-child {
+  margin-inline-start: auto;
+}
+
+.flow-chat-mock-page__note {
+  margin-block: var(--openbitfun-space-3) 0;
+}
+
+.flow-chat-mock__model {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--openbitfun-space-1);
+  height: var(--openbitfun-space-5);
+  padding: 0 var(--openbitfun-space-2);
+  border-radius: var(--openbitfun-radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  letter-spacing: var(--openbitfun-type-modifier-tracking-wide-letter-spacing);
+  cursor: pointer;
+  opacity: var(--openbitfun-control-flow-chat-model-idle-opacity);
+  white-space: nowrap;
+}
+
+.flow-chat-mock__model > span:last-child { color: var(--openbitfun-color-content-muted); }
+.flow-chat-mock__model > [data-openbitfun-component="overflow-text"] { max-width: var(--openbitfun-control-flow-chat-model-name-max-width); }
+.flow-chat-mock__model:hover {
+  background: var(--openbitfun-color-action-neutral-surface-hover);
+  color: var(--openbitfun-color-content-primary);
+  opacity: 1;
+}
+.flow-chat-mock__composer:focus-within .flow-chat-mock__model { opacity: 1; }
+
+@media (max-width: 768px) {
+  .flow-chat-mock__user,
+  .flow-chat-mock__assistant,
+  .flow-chat-mock__runtime {
+    padding-inline: var(--openbitfun-control-flow-chat-content-padding-inline-mobile);
+  }
+}
+
+@media (max-width: 720px) {
+  .flow-chat-mock__toolbar { flex-wrap: wrap; }
+  .flow-chat-mock__toolbar > div:first-child { flex-basis: 100%; }
+}

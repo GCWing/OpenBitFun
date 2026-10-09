@@ -1,8 +1,9 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * PageDeploy tool card — shows deploy slug / version result.
  */
-import React, { useCallback, useMemo, useState } from 'react';
-import { Button, Icon } from '@openbitfun/ui';
+import React, { useCallback, useMemo } from 'react';
+import { IconButton, Icon } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
 
 import type { ToolCardProps } from '../types/flow-chat';
@@ -24,7 +25,7 @@ async function openPage(slug: string, knownGeneration?: string) {
 export const PageDeployDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
   const { t } = useTranslation('flow-chat');
   const { status, toolResult, partialParams, isParamsStreaming, toolCall } = toolItem;
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
 
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
@@ -65,7 +66,7 @@ export const PageDeployDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
 
   const toggleExpanded = useCallback(() => {
     applyExpandedState(isExpanded, !isExpanded, setIsExpanded);
-  }, [applyExpandedState, isExpanded]);
+  }, [applyExpandedState, isExpanded, setIsExpanded]);
 
   const getErrorMessage = () => {
     if (toolResult && 'error' in toolResult && toolResult.error) {
@@ -100,25 +101,29 @@ export const PageDeployDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
         status={isFailed ? 'error' : status}
         isExpanded={isExpanded}
         onToggle={hasExpandableDetails ? toggleExpanded : undefined}
-        action={`${t('toolCards.pageDeploy.title')}:`}
+        action={status === 'completed' && success
+          ? t('toolCards.pageDeploy.deployedTitle') : t('toolCards.pageDeploy.title')}
         subject={commandText}
+        statusLabel={status === 'cancelled' ? t('toolCards.default.cancelled')
+          : status === 'rejected' ? t('toolCards.default.rejected')
+            : isFailed ? t('toolCards.default.failed') : undefined}
         version={deployedVersion || undefined}
         loading={isLoading}
         fields={fields}
         error={isFailed ? getErrorMessage() : undefined}
-        actions={urlPath ? (
-          <Button
+        actions={success && !isFailed && status === 'completed' && slug && urlPath ? (
+          <IconButton
             type="button"
-            variant="outline"
+            variant="quiet"
             size="sm"
-            leadingIcon={<Icon name="arrow-up-right" size="xs" />}
+            icon={<Icon name="arrow-up-right" size="sm" />}
+            aria-label={t('toolCards.pageDeploy.openProduction')}
+            title={t('toolCards.pageDeploy.openProduction')}
             data-testid="chat-page-deploy-open-btn"
             onClick={() => void openPage(slug, generation).catch(() => {
               notificationService.error(t('toolCards.pageDeploy.openFailed'));
             })}
-          >
-            {t('toolCards.pageDeploy.openProduction')}
-          </Button>
+          />
         ) : undefined}
       />
     </div>

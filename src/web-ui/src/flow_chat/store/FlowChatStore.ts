@@ -43,6 +43,7 @@ import { persistedMayWriteTurn } from '@/flow_chat/session-stream/SessionStream'
 import { SessionRecordReplica, type SessionRecord } from '@/flow_chat/session-stream/SessionRecordReplica';
 import { RelaySessionHistory } from '../services/RelaySessionHistory';
 import { stateMachineManager } from '../state-machine';
+import { estimateRetainedBytes, resourceBudget } from '@/shared/utils/resourceBudget';
 import { ProcessingPhase, SessionExecutionState } from '../state-machine/types';
 import { isTurnAwaitingRecovery } from '../utils/interruptedTurnRecovery';
 import { sessionActivityStore } from './sessionActivityStore';
@@ -1303,18 +1304,10 @@ function synchronizeRoundAttempts(round: ModelRound): ModelRound {
           }),
     };
   });
-  const disableExploreGrouping = sortedAttempts.length > 1;
-
   return {
     ...round,
     attempts: sortedAttempts,
     items: flattenRoundAttemptItems({ ...round, attempts: sortedAttempts }),
-    renderHints: disableExploreGrouping
-      ? {
-          ...(round.renderHints ?? {}),
-          disableExploreGrouping: true,
-        }
-      : round.renderHints,
   };
 }
 
@@ -1982,6 +1975,11 @@ export class FlowChatStore {
   private detachedSurfaceGeneration = 0;
   private fullHistoryHydrationRequests = new Map<string, FullHistoryHydrationRequest>();
   private sessionHistoryAccessClock = 0;
+  private readonly persistedHistoryTurns = new WeakSet<DialogTurn>();
+  private readonly historyTurnBytes = new WeakMap<DialogTurn, number>();
+  private readonly historyResidency = new Map<string, { key: object; turns: Set<DialogTurn>; lastUsedAt: number }>();
+  private readonly historyLeases = new Map<string, number>();
+  private historyBudgetTimer: ReturnType<typeof setTimeout> | undefined;
   private sessionTurnWindowRequests = new Map<string, Promise<LoadSessionTurnWindowResponse>>();
   /** Requested intervals remain protected until every deduplicated caller processes the response. */
   private sessionTurnWindowProtections = new Map<string, SessionTurnWindowProtection>();
@@ -2089,6 +2087,101 @@ export class FlowChatStore {
 
   public getState(): FlowChatState {
     return this.state;
+  }
+
+  /** A mounted transcript owns a lease; it never owns an inactive copy of its body. */
+  public retainSessionHistory(sessionId: string): () => void {
+    const key = this.surfaceKey(sessionId);
+    this.historyLeases.set(key, (this.historyLeases.get(key) ?? 0) + 1);
+    this.activeSurface.relaySessionHistory.get(sessionId)?.setVisible(true);
+    const resident = this.historyResidency.get(key);
+    if (resident) { resident.lastUsedAt = Date.now(); resourceBudget.touch(resident.key); }
+    let released = false;
+    const surface = this.activeSurface;
+    return () => {
+      if (released) return;
+      released = true;
+      const count = (this.historyLeases.get(key) ?? 1) - 1;
+      if (count > 0) this.historyLeases.set(key, count);
+      else { this.historyLeases.delete(key); surface.relaySessionHistory.get(sessionId)?.setVisible(false); }
+      const retained = this.historyResidency.get(key);
+      if (retained) { retained.lastUsedAt = Date.now(); resourceBudget.touch(retained.key); }
+      this.scheduleHistoryBudget();
+    };
+  }
+
+  private scheduleHistoryBudget(): void {
+    if (this.historyBudgetTimer !== undefined) return;
+    this.historyBudgetTimer = setTimeout(() => {
+      this.historyBudgetTimer = undefined;
+      this.updateHistoryResidency();
+    }, 500);
+  }
+
+  private updateHistoryResidency(): void {
+    const present = new Set<string>();
+    for (const surface of this.surfaceContainers.values()) {
+      for (const [sessionId, session] of surface.state.sessions) {
+        const id = surfaceScopedKey(surface.surfaceId, sessionId);
+        const view = surface.sessionHistoryViews.get(sessionId);
+        // Canonical tail and ranges alias the same Turns. Count their union.
+        const turns = new Set([...session.dialogTurns, ...(view?.loadedRanges.flatMap(range => range.turns) ?? [])]);
+        if (turns.size === 0) continue;
+        present.add(id);
+        let resident = this.historyResidency.get(id);
+        if (!resident) {
+          resident = { key: {}, turns, lastUsedAt: Date.now() };
+          this.historyResidency.set(id, resident);
+        } else if (turns.size !== resident.turns.size || [...turns].some(turn => !resident!.turns.has(turn))) {
+          resident.lastUsedAt = Date.now();
+          resident.turns = turns;
+        }
+        let bytes = 0;
+        for (const turn of turns) {
+          let size = this.historyTurnBytes.get(turn);
+          if (size === undefined) { size = estimateRetainedBytes(turn); this.historyTurnBytes.set(turn, size); }
+          bytes += size;
+        }
+        resourceBudget.set(resident.key, {
+          kind: 'history', bytes, lastUsedAt: resident.lastUsedAt,
+          protectedReason: () => {
+            const current = surface.state.sessions.get(sessionId);
+            if (!current) return undefined;
+            if (this.historyLeases.has(id)) return 'transcript';
+            if (surface.surfaceId === getActiveSurfaceId() && surface.state.activeSessionId === sessionId) return 'selected-session';
+            // Relay replicas and dispatch observers own live cursors, revisions
+            // and mailboxes. Their optional prefetch is bounded separately.
+            if (surface.surfaceId !== 'local' || dispatchObserverOwnsSession(sessionId, current)) return 'remote-owner';
+            if (current.historyState !== 'ready') return 'hydration';
+            const activity = sessionActivityStore.get(sessionId, surface.surfaceId)?.summary;
+            if (activity && (activity.execution !== 'idle' || activity.pendingApprovals > 0
+              || activity.pendingQuestions > 0)) return 'runtime-interaction';
+            if (surface.deferredFullHistoryProjections.has(sessionId) || surface.fullHistoryProjectionApplyRequests.has(sessionId)
+              || [...this.sessionTurnWindowProtections.values()].some(request => request.surfaceId === surface.surfaceId && request.sessionId === sessionId)
+              || [...this.fullHistoryHydrationRequests.values()].some(request => request.surfaceId === surface.surfaceId && request.sessionId === sessionId)) return 'history-request';
+            // Only exact objects produced by a persisted read are reconstructable.
+            // Editing, replay or a new turn creates a new identity and pins it.
+            if (current.dialogTurns.some(turn => !this.persistedHistoryTurns.has(turn))) return 'live-or-unsaved';
+            return undefined;
+          },
+          evict: () => {
+            this.historyResidency.delete(id);
+            const current = surface.state.sessions.get(sessionId);
+            if (!current) return;
+            surface.sessionHistoryViews.delete(sessionId);
+            surface.sessionHistoryTurnAccessTimes.delete(sessionId);
+            const sessions = new Map(surface.state.sessions);
+            sessions.set(sessionId, { ...current, dialogTurns: [], isHistorical: true,
+              historyState: 'metadata-only', isPartial: true, loadedTurnCount: 0 });
+            surface.state = { ...surface.state, sessions };
+            if (surface.surfaceId === getActiveSurfaceId()) this.notifyListeners();
+          },
+        });
+      }
+    }
+    for (const [id, resident] of this.historyResidency) {
+      if (!present.has(id)) { resourceBudget.delete(resident.key); this.historyResidency.delete(id); }
+    }
   }
 
   public getSessionHistoryViewState(sessionId: string): SessionHistoryViewState | undefined {
@@ -2215,6 +2308,55 @@ export class FlowChatStore {
     view.activeRange = nextRange;
     this.pruneSessionLoadedTurnRanges(sessionId, view);
     return { range: { ...nextRange }, turns: [...turns] };
+  }
+
+  /** Restore a scalar reader bookmark through the existing cache and transport owner. */
+  public async restoreSessionHistoryWindow(
+    sessionId: string,
+    range: ActiveTurnRenderRange,
+    canApply: () => boolean = () => true,
+  ): Promise<SessionHistoryPresentation | null> {
+    const scope = getActiveSurfaceScope();
+    if (!canApply()) return null;
+    const cached = this.reactivateSessionHistoryWindow(sessionId, range);
+    if (cached) return cached;
+    const count = range.endOrdinalExclusive - range.startOrdinal;
+    if (count <= 0 || range.mode !== 'history-window') return null;
+    const release = this.retainSessionTurnWindowProtection(
+      scope.key('reader-restore', sessionId, range.startOrdinal, range.endOrdinalExclusive),
+      { sessionId, startOrdinal: range.startOrdinal, endOrdinalExclusive: range.endOrdinalExclusive },
+    );
+    try {
+      // The normal reader caps each host request at 16 Turns; a remembered
+      // presentation can span 64. Fill every gap without changing that IO cap.
+      let cursor = range.startOrdinal;
+      while (cursor < range.endOrdinalExclusive) {
+        if (!canApply()) return null;
+        let loaded = this.sessionHistoryViews.get(sessionId)?.loadedRanges.find(candidate =>
+          candidate.startOrdinal <= cursor && candidate.endOrdinalExclusive > cursor);
+        if (!loaded) {
+          const result = await this.loadSessionTurnWindow(sessionId, cursor, {
+            before: 0, after: range.endOrdinalExclusive - cursor, source: 'prefetch',
+          });
+          scope.assertCurrent('restore reader history window');
+          if (!canApply()) return null;
+          if (result.status === 'unsupported' && result.fallbackRequested) {
+            await this.ensureSessionFullHistory(sessionId, 'restore-reader-window');
+            scope.assertCurrent('restore compatible reader history window');
+            if (!canApply()) return null;
+          }
+          loaded = this.sessionHistoryViews.get(sessionId)?.loadedRanges.find(candidate =>
+            candidate.startOrdinal <= cursor && candidate.endOrdinalExclusive > cursor);
+        }
+        // An unavailable/mutated range is an explicit restore failure, never
+        // a request loop or a silent jump back to the newest content.
+        if (!loaded) return null;
+        cursor = loaded.endOrdinalExclusive;
+      }
+      return this.reactivateSessionHistoryWindow(sessionId, range);
+    } finally {
+      release();
+    }
   }
 
   public extendSessionHistoryWindow(
@@ -2634,6 +2776,7 @@ export class FlowChatStore {
       );
     }
     this.pruneSessionLoadedTurnRanges(sessionId, view);
+    this.scheduleHistoryBudget();
     return view.loadedRanges.find(candidate =>
       candidate.startOrdinal <= preferredOrdinal
       && candidate.endOrdinalExclusive > preferredOrdinal
@@ -4008,6 +4151,7 @@ export class FlowChatStore {
   public setState(updater: (prevState: FlowChatState) => FlowChatState): void {
     const newState = updater(this.state);
     this.state = newState;
+    this.scheduleHistoryBudget();
     
     if (!this.silentMode) {
       // Notify plain listeners (backward compat)
@@ -4186,6 +4330,7 @@ export class FlowChatStore {
     remoteConnectionId?: string,
     remoteSshHost?: string,
     titleDescriptor?: SessionTitleDescriptor,
+    draft?: Session['draft'],
   ): void {
     import('../state-machine').then(({ stateMachineManager }) => {
       stateMachineManager.getOrCreate(sessionId);
@@ -4217,6 +4362,7 @@ export class FlowChatStore {
         mode: mode || 'Standard',
         lastUserDialogMode: undefined,
         lastSubmittedMode: undefined,
+        draft,
         workspacePath,
         projectWorkspacePath: config.projectWorkspacePath,
         workspaceId: config.workspaceId,
@@ -4227,6 +4373,7 @@ export class FlowChatStore {
         sessionKind: relationship.sessionKind,
         parentToolCallId: relationship.parentToolCallId,
         subagentType: relationship.subagentType,
+        continuationPolicy: relationship.continuationPolicy,
         btwThreads: [],
         btwOrigin: relationship.btwOrigin,
         isTransient: false,
@@ -4258,6 +4405,7 @@ export class FlowChatStore {
       btwOrigin?: Session['btwOrigin'];
       parentToolCallId?: string;
       subagentType?: string;
+      continuationPolicy?: Session['continuationPolicy'];
       isTransient?: boolean;
       agentBackedTransient?: boolean;
       deepReviewRunManifest?: Session['deepReviewRunManifest'];
@@ -4321,6 +4469,7 @@ export class FlowChatStore {
         sessionKind: relationship.sessionKind,
         parentToolCallId: relationship.parentToolCallId,
         subagentType: relationship.subagentType,
+        continuationPolicy: relationship.continuationPolicy,
         btwThreads: [],
         btwOrigin: relationship.btwOrigin,
         deepReviewRunManifest: meta?.deepReviewRunManifest,
@@ -5045,6 +5194,7 @@ export class FlowChatStore {
       sessionKind?: SessionKind;
       parentToolCallId?: string;
       subagentType?: string;
+      continuationPolicy?: Session['continuationPolicy'];
     }
   ): void {
     this.setState(prev => {
@@ -5063,6 +5213,7 @@ export class FlowChatStore {
           updates.subagentType !== undefined
             ? updates.subagentType
             : session.subagentType,
+        continuationPolicy: updates.continuationPolicy ?? session.continuationPolicy,
       });
       const next: Session = {
         ...session,
@@ -5070,6 +5221,7 @@ export class FlowChatStore {
         sessionKind: relationship.sessionKind,
         parentToolCallId: relationship.parentToolCallId,
         subagentType: relationship.subagentType,
+        continuationPolicy: relationship.continuationPolicy,
         btwOrigin: relationship.btwOrigin,
       };
 
@@ -5223,6 +5375,7 @@ export class FlowChatStore {
       const deleteResults = await Promise.allSettled(
         sessionIdsToDelete.map(async id => {
           const sess = this.state.sessions.get(id);
+          if (sess?.draft?.phase === 'editing') return;
           const workspacePath = sess ? sessionProjectWorkspacePath(sess) : undefined;
           if (!workspacePath) {
             throw new Error(`Workspace path not found for session ${id}`);
@@ -5368,6 +5521,7 @@ export class FlowChatStore {
   public async cancelRunningSessionsForWorkspace(
     workspace: Pick<WorkspaceInfo, 'id' | 'rootPath' | 'connectionId' | 'sshHost'>
   ): Promise<string[]> {
+    const scope = getActiveSurfaceScope();
     const runningSessions = Array.from(this.state.sessions.values())
       .filter(session => sessionMatchesWorkspace(session, workspace))
       .filter(session => {
@@ -5388,7 +5542,6 @@ export class FlowChatStore {
       return [];
     }
 
-    const { agentAPI } = await import('@/infrastructure/api/service-api/AgentAPI');
     await Promise.allSettled(
       runningSessions.map(async session => {
         const sessionId = session.sessionId;
@@ -5401,11 +5554,12 @@ export class FlowChatStore {
             error,
           });
         } finally {
-          this.cancelSessionTask(sessionId);
+          if (scope.isCurrent()) this.cancelSessionTask(sessionId);
         }
       })
     );
 
+    scope.assertCurrent('cancel workspace sessions');
     return runningSessionIds;
   }
 
@@ -5465,6 +5619,11 @@ export class FlowChatStore {
       ? Array.from(container.state.sessions.keys())
       : [];
     this.surfaceContainers.delete(surfaceId);
+    for (const [id, resident] of this.historyResidency) {
+      if (surfaceOfScopedKey(id) !== surfaceId) continue;
+      resourceBudget.delete(resident.key);
+      this.historyResidency.delete(id);
+    }
     sessionComposerStore.getState().removeSurfaceDrafts(surfaceId);
     askUserQuestionDraftStore.getState().removeSurfaceDrafts(surfaceId);
     this.forgetSurfaceMetadataRequests(surfaceId);
@@ -5903,6 +6062,7 @@ export class FlowChatStore {
             history?.close();
           }
         }, () => this.refreshRelayInteractionMailbox(sessionId));
+      history.setVisible(this.historyLeases.has(this.surfaceKey(sessionId)));
       surface.relaySessionHistory.set(sessionId, history);
     }
     try { await history.open(); }
@@ -6509,7 +6669,7 @@ export class FlowChatStore {
     sessionId: string, 
     tokenUsage: Pick<
       TokenUsage,
-      'inputTokens' | 'outputTokens' | 'totalTokens' | 'turnId' | 'source'
+      'inputTokens' | 'outputTokens' | 'cachedTokens' | 'totalTokens' | 'turnId' | 'source'
     >,
     dialogTurnId?: string
   ): void {
@@ -6520,6 +6680,7 @@ export class FlowChatStore {
       const nextTokenUsage: TokenUsage = {
         inputTokens: tokenUsage.inputTokens,
         outputTokens: tokenUsage.outputTokens,
+        cachedTokens: tokenUsage.cachedTokens,
         totalTokens: tokenUsage.totalTokens,
         timestamp: Date.now(),
         ...(tokenUsage.turnId ? { turnId: tokenUsage.turnId } : {}),
@@ -6541,6 +6702,10 @@ export class FlowChatStore {
           const accumulatedTurnUsage: TokenUsage = {
             inputTokens: (previousTurnUsage?.inputTokens ?? 0) + nextTokenUsage.inputTokens,
             outputTokens: accumulatedOutputTokens,
+            cachedTokens: previousTurnUsage
+              ? (typeof previousTurnUsage.cachedTokens === 'number' && typeof nextTokenUsage.cachedTokens === 'number'
+                ? previousTurnUsage.cachedTokens + nextTokenUsage.cachedTokens : undefined)
+              : nextTokenUsage.cachedTokens,
             totalTokens: (previousTurnUsage?.totalTokens ?? 0) + nextTokenUsage.totalTokens,
             timestamp: nextTokenUsage.timestamp,
           };
@@ -7171,7 +7336,8 @@ export class FlowChatStore {
         logPersistedDispatchMetadataOverlap(metadata, 'metadata-page');
         scope.assertCurrent('processPersistedSessionMetadata');
         const existingSession = this.state.sessions.get(metadata.sessionId);
-        if (existingSession?.workspaceId || existingSession?.config.workspaceId) {
+        if ((existingSession?.workspaceId || existingSession?.config.workspaceId)
+          && !(existingSession?.sessionKind === 'subagent' && existingSession.continuationPolicy === undefined)) {
           return;
         }
         if (!includeArchived && metadata.status === 'archived') {
@@ -7222,10 +7388,16 @@ export class FlowChatStore {
           if (!scope.isCurrent()) return prev;
           const existing = prev.sessions.get(metadata.sessionId);
           if (existing) {
-            if (existing.workspaceId || existing.config.workspaceId || !workspaceId) return prev;
+            const continuationPolicy = existing.continuationPolicy ?? relationship.continuationPolicy;
+            if (existing.workspaceId || existing.config.workspaceId || !workspaceId) {
+              if (continuationPolicy === existing.continuationPolicy) return prev;
+              const sessions = new Map(prev.sessions);
+              sessions.set(metadata.sessionId, { ...existing, continuationPolicy });
+              return { ...prev, sessions };
+            }
             const sessions = new Map(prev.sessions);
             sessions.set(metadata.sessionId, {
-              ...existing, workspaceId, projectWorkspaceId,
+              ...existing, workspaceId, projectWorkspaceId, continuationPolicy,
               workspacePath: metadata.workspacePath || workspacePath,
               projectWorkspacePath: metadata.projectWorkspacePath || workspacePath,
               ...remoteScope,
@@ -7289,6 +7461,7 @@ export class FlowChatStore {
             sessionKind: relationship.sessionKind,
             parentToolCallId: relationship.parentToolCallId,
             subagentType: relationship.subagentType,
+            continuationPolicy: relationship.continuationPolicy,
             btwThreads: [],
             btwOrigin: relationship.btwOrigin,
             hasUnreadCompletion: metadata.unreadCompletion,
@@ -7352,7 +7525,8 @@ export class FlowChatStore {
   ): Promise<boolean> {
     const scope = getActiveSurfaceScope();
     const existing = this.state.sessions.get(sessionId);
-    if (existing?.workspaceId || existing?.config.workspaceId) {
+    if ((existing?.workspaceId || existing?.config.workspaceId)
+      && !(existing?.sessionKind === 'subagent' && existing.continuationPolicy === undefined)) {
       return true;
     }
 
@@ -7738,6 +7912,7 @@ export class FlowChatStore {
               sessionKind: relationship.sessionKind,
               parentToolCallId: relationship.parentToolCallId,
               subagentType: relationship.subagentType,
+              continuationPolicy: relationship.continuationPolicy,
               btwThreads: [],
               btwOrigin: relationship.btwOrigin,
               hasUnreadCompletion: metadata.unreadCompletion,
@@ -8899,7 +9074,7 @@ export class FlowChatStore {
             : undefined;
       const rawTokenUsage = turn.tokenUsage ?? turn.token_usage;
 
-      return {
+      const converted = {
       id: turn.turnId,
       sessionId: turn.sessionId,
       kind: turn.kind || 'user_dialog',
@@ -9056,6 +9231,7 @@ export class FlowChatStore {
         ? {
             inputTokens: rawTokenUsage.inputTokens ?? rawTokenUsage.input_tokens,
             outputTokens: rawTokenUsage.outputTokens ?? rawTokenUsage.output_tokens,
+            cachedTokens: rawTokenUsage.cachedTokens ?? rawTokenUsage.cached_tokens,
             totalTokens: rawTokenUsage.totalTokens ?? rawTokenUsage.total_tokens,
             timestamp: rawTokenUsage.timestamp,
           }
@@ -9063,6 +9239,8 @@ export class FlowChatStore {
       storageTurnIndex: turn.turnIndex,
       backendTurnIndex: turn.turnIndex,
     };
+      if (!isLiveTurn) this.persistedHistoryTurns.add(converted);
+      return converted;
     });
   }
 

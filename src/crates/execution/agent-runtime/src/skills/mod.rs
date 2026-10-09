@@ -7,6 +7,7 @@
 
 #[cfg(feature = "agent-runtime")]
 mod catalog;
+mod hooks;
 #[cfg(feature = "agent-runtime")]
 mod keys;
 #[cfg(feature = "agent-runtime")]
@@ -14,6 +15,7 @@ mod policy;
 #[cfg(feature = "agent-runtime")]
 mod resolver;
 mod roots;
+pub use hooks::SkillHooks;
 #[cfg(feature = "agent-runtime")]
 mod selection;
 mod types;

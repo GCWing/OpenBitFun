@@ -1,3 +1,4 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * Plan display components.
  *
@@ -6,7 +7,8 @@
  */
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { OverflowText, Button, IconButton } from '@openbitfun/ui';
+import { OverflowText, Button, IconButton, ScrollArea } from '@openbitfun/ui';
+import { ToolCardActions } from '@openbitfun/ui/flow-chat';
 import { useTranslation } from 'react-i18next';
 import { ClipboardList, Loader2, PlayCircle, XCircle, ChevronsUpDown, ChevronsDownUp, FolderOpen, Save, AlertCircle } from 'lucide-react';
 import type { ToolCardProps } from '../types/flow-chat';
@@ -113,7 +115,7 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
   const [hasSavedToProject, setHasSavedToProject] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   
-  const [isTodosExpanded, setIsTodosExpanded] = useState(false);
+  const [isTodosExpanded, setIsTodosExpanded] = useToolCardDisclosure('isTodosExpanded');
   const toolCardId = cacheKey ?? planFilePath;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId: toolCardId,
@@ -412,7 +414,7 @@ Read the plan file before making changes and treat it as the source of truth. Do
 
   const handleToggleTodos = useCallback(() => {
     applyExpandedState(isTodosExpanded, !isTodosExpanded, setIsTodosExpanded);
-  }, [applyExpandedState, isTodosExpanded]);
+  }, [applyExpandedState, isTodosExpanded, setIsTodosExpanded]);
 
   const isLoading = status === 'preparing' || status === 'receiving' || status === 'streaming' || status === 'running';
   const revealPlanTooltip = isRevealPlanDisabled
@@ -436,8 +438,8 @@ Read the plan file before making changes and treat it as the source of truth. Do
             onClick={handleViewPlan}
           >
             <div className="header-left">
-              <div className="file-icon-wrapper"><AlertCircle size={14} /></div>
-              <OverflowText className="file-name">{planFileName}</OverflowText>
+              <div className="file-icon-wrapper"><Icon glyph={AlertCircle} size="sm" /></div>
+              <OverflowText className="file-name" title={planFilePath}>{planFileName}</OverflowText>
             </div>
           </button>
         </div>
@@ -479,6 +481,7 @@ Read the plan file before making changes and treat it as the source of truth. Do
         className={`create-plan-header${isLoading ? ' create-plan-header--loading-shimmer' : ''}`}
         data-openbitfun-component="create-plan-display"
         data-openbitfun-part="header"
+        data-tool-card-action-scope
       >
         <Tooltip content={t('toolCards.plan.clickToOpenPlan')}>
           <button data-overflow-trigger
@@ -490,13 +493,16 @@ Read the plan file before making changes and treat it as the source of truth. Do
           >
             <div className="header-left">
               <div className="file-icon-wrapper">
-                <ClipboardList size={14} />
+                <Icon glyph={ClipboardList} size="sm" />
               </div>
-              <OverflowText className="file-name">{planFileName}</OverflowText>
+              <OverflowText className="file-name" title={planFilePath}>{planData.name || planFileName}</OverflowText>
             </div>
           </button>
         </Tooltip>
-        <div className="create-plan-header-actions">
+        <ToolCardActions className="create-plan-header-actions" revealOnHover={!isSavingToProject && !hasSavedToProject}>
+          <IconButton size="sm" variant="quiet" onClick={handleViewPlan} disabled={!planFilePath}
+            aria-label={t('toolCards.plan.viewPlan')} title={t('toolCards.plan.viewPlan')}
+            icon={<Icon name="arrow-up-right" size="sm" />} />
           {storageKind === 'runtime-artifact' && (
             <Tooltip content={savePlanTooltip}>
               <span className="create-plan-header-folder-btn-wrapper">
@@ -508,7 +514,7 @@ Read the plan file before making changes and treat it as the source of truth. Do
                   onClick={handleSavePlanToProject}
                   disabled={!planFilePath || !currentWorkspace || isSavingToProject || hasSavedToProject}
                   aria-label={savePlanTooltip}
-                  icon={hasSavedToProject ? <Icon name="check-line" size="sm" /> : <Save size={14} />}
+                  icon={hasSavedToProject ? <Icon name="check-line" size="sm" /> : <Icon glyph={Save} size="sm" />}
                 />
               </span>
             </Tooltip>
@@ -518,19 +524,20 @@ Read the plan file before making changes and treat it as the source of truth. Do
               <IconButton
                 type="button"
                 size="sm"
+                variant="quiet"
                 onClick={handleRevealPlanInExplorer}
                 disabled={isRevealPlanDisabled}
                 aria-label={revealPlanTooltip}
-                icon={<FolderOpen size={14} />}
+                icon={<Icon glyph={FolderOpen} size="sm" />}
               />
             </span>
           </Tooltip>
-        </div>
+        </ToolCardActions>
       </div>
 
       <div className="create-plan-content" data-openbitfun-component="create-plan-display" data-openbitfun-part="content">
         <div className="plan-content-left" data-openbitfun-component="create-plan-display" data-openbitfun-part="overview">
-          <h3 className="plan-title">{planData.name}</h3>
+          <p className="plan-overview" title={planFilePath}>{planFileName}</p>
           <p className="plan-overview">{planData.overview}</p>
         </div>
         {planData.todos && planData.todos.length > 0 && (
@@ -540,7 +547,7 @@ Read the plan file before making changes and treat it as the source of truth. Do
               size="sm"
               onClick={handleToggleTodos}
               aria-label={t(isTodosExpanded ? 'toolCards.common.collapse' : 'toolCards.common.expand')}
-              icon={isTodosExpanded ? <ChevronsDownUp size={22} /> : <ChevronsUpDown size={22} />}
+              icon={<Icon glyph={isTodosExpanded ? ChevronsDownUp : ChevronsUpDown} size="lg" />}
             />
           </Tooltip>
         )}
@@ -548,7 +555,7 @@ Read the plan file before making changes and treat it as the source of truth. Do
 
       {planData.todos && planData.todos.length > 0 && isTodosExpanded && (
         <div className="create-plan-todos create-plan-todos--expanded" data-openbitfun-component="create-plan-display" data-openbitfun-part="todos" data-openbitfun-state="expanded">
-          <div className="todos-list">
+          <ScrollArea className="todos-list" edgeFade="vertical" overscrollBehaviorY="auto">
             {todoRenderItems.map(({ todo, key }) => (
               <div
                 key={key}
@@ -556,38 +563,35 @@ Read the plan file before making changes and treat it as the source of truth. Do
                 data-openbitfun-component="create-plan-display"
                 data-openbitfun-part="todo"
               >
-                {todo.status === 'completed' && (
-                  <Icon name="check-circle" size="xs" className="todo-icon todo-icon--completed" />
-                )}
-                {todo.status === 'in_progress' && (
-                  <PlayCircle size={12} className="todo-icon todo-icon--in-progress" />
-                )}
-                {(!todo.status || todo.status === 'pending') && (
-                  <Icon name="unselected" size="xs" className="todo-icon todo-icon--pending" />
-                )}
-                {todo.status === 'cancelled' && (
-                  <XCircle size={12} className="todo-icon todo-icon--cancelled" />
-                )}
+                <span className="todo-icon-slot" data-openbitfun-icon-slot="true" aria-hidden="true">
+                  {todo.status === 'completed' && (
+                    <Icon name="check-circle" size="xs" className="todo-icon todo-icon--completed" />
+                  )}
+                  {todo.status === 'in_progress' && (
+                    <Icon glyph={PlayCircle} size="xs" className="todo-icon todo-icon--in-progress" />
+                  )}
+                  {(!todo.status || todo.status === 'pending') && (
+                    <Icon name="unselected" size="xs" className="todo-icon todo-icon--pending" />
+                  )}
+                  {todo.status === 'cancelled' && (
+                    <Icon glyph={XCircle} size="xs" className="todo-icon todo-icon--cancelled" />
+                  )}
+                </span>
                 <span className="todo-content">{todo.content}</span>
               </div>
             ))}
-          </div>
+          </ScrollArea>
         </div>
       )}
 
       <div className={`create-plan-footer${isLoading ? ' create-plan-footer--generating-only' : ''}`} data-openbitfun-component="create-plan-display" data-openbitfun-part="footer">
-        {!isLoading && (
-          <Button variant="outline" size="sm" type="button" onClick={handleViewPlan}>
-            {t('toolCards.plan.viewPlan')}
-          </Button>
-        )}
         <Button
           type="button"
           variant="primary"
           size="sm"
           leadingIcon={
             buildStatus === 'building' || isLoading
-              ? <Loader2 size={14} className="animate-spin" />
+              ? <Icon glyph={Loader2} size="sm" className="animate-spin" />
               : buildStatus === 'built'
                 ? <Icon name="check-circle" size="sm" />
                 : undefined

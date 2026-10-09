@@ -5,11 +5,6 @@
 
 /* ========== Tool icon styles ========== */
 .code-review-card {
-  /* icon={null}: no left rail; a small nudge so title is not flush to the border. */
-  > [data-openbitfun-part='surface'] > [data-openbitfun-component='flow-chat-tool-card'][data-openbitfun-part='header'] {
-    padding-left: 10px;
-  }
-
   [data-openbitfun-part='iconGraphic'].code-review-icon {
     color: var(--openbitfun-color-accent-default);
   }
@@ -17,96 +12,24 @@
   .code-review-report-actions {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--openbitfun-space-1);
     margin-right: 2px;
   }
 
-  .code-review-report-actions__button {
-    flex-shrink: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--openbitfun-color-content-muted);
-    cursor: pointer;
-    transition:
-      background 160ms ease,
-      color 160ms ease;
-
-    // Preserve the report actions' feedback and the existing save spinner.
-    &::before { content: none; }
-
-    > [data-openbitfun-part='icon'] {
-      --openbitfun-opacity-icon-artwork: inherit;
-      display: contents;
-    }
-
-    > :where([data-openbitfun-part='icon']) > :where(svg) {
-      inline-size: 14px;
-      block-size: 14px;
-    }
-
-    > :where([data-openbitfun-part='icon']) > :where([data-openbitfun-component='icon']) {
-      inline-size: var(--openbitfun-control-icon-size-sm);
-      block-size: var(--openbitfun-control-icon-size-sm);
-    }
-
-    &:focus-visible {
-      outline: 2px solid color-mix(in srgb, var(--openbitfun-color-accent-default) 40%, transparent);
-      outline-offset: 2px;
-    }
-
-    &:hover:not(:disabled) {
-      background: var(--openbitfun-color-action-neutral-surface-hover);
-      color: var(--openbitfun-color-content-primary);
-    }
-
-    &:disabled {
-      cursor: default;
-      opacity: 0.65;
-    }
-  }
-}
-
-/* ========== preview-toggle-btn (consistent with FileOperationToolCard) ========== */
-.code-review-card .preview-toggle-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--openbitfun-color-content-muted);
-  cursor: pointer;
-  transition:
-    scale 120ms cubic-bezier(0.23, 1, 0.32, 1),
-    background-color 160ms ease,
-    color 160ms ease;
-  flex-shrink: 0;
-
-  &:hover {
-    background: var(--openbitfun-color-action-neutral-surface-hover);
-    color: var(--openbitfun-color-content-primary);
-  }
 }
 
 /* ========== Code review details (expanded content) ========== */
 .code-review-details {
+  min-inline-size: 0;
+  container: review-details / inline-size;
+  overflow-wrap: anywhere;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--openbitfun-space-3);
 
   .review-reliability-status {
     display: grid;
-    gap: 7px;
+    gap: var(--openbitfun-space-2);
     padding: 2px 0 8px;
     border-bottom: 1px dashed var(--openbitfun-color-border-default);
   }
@@ -120,16 +43,16 @@
   .review-reliability-status__items {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--openbitfun-space-2);
   }
 
   .review-reliability-status__item {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: start;
-    gap: 6px;
+    gap: var(--openbitfun-space-2);
     max-width: 100%;
-    padding: 6px 8px;
+    padding: var(--openbitfun-space-2);
     border-left: 2px solid var(--openbitfun-color-accent-default);
     border-radius: 4px;
     background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 70%, transparent);
@@ -172,44 +95,32 @@
 
   /* ---------- Summary section — vertical layout ---------- */
   .review-summary {
-    padding-bottom: 10px;
+    padding-block-end: var(--openbitfun-space-3);
     border-bottom: 1px dashed var(--openbitfun-color-border-default);
 
     .summary-header {
       font-size: var(--openbitfun-type-flow-control-font-size);
       font-weight: var(--openbitfun-type-label-selected-font-weight);
       color: var(--openbitfun-color-content-primary);
-      margin-bottom: 8px;
+      margin-block-end: var(--openbitfun-space-2);
     }
 
     .summary-rows {
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-      background: var(--openbitfun-color-surface-raised);
-      border: 1px solid var(--openbitfun-color-border-default);
-      border-radius: 6px;
-      overflow: hidden;
+      display: grid;
+      gap: var(--openbitfun-space-2);
     }
 
     .summary-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 7px 10px;
+      display: grid;
+      grid-template-columns: var(--openbitfun-control-tool-card-field-label-width) minmax(0, 1fr);
+      align-items: baseline;
+      gap: var(--openbitfun-space-2);
       font-size: var(--openbitfun-type-flow-control-font-size);
       line-height: var(--openbitfun-type-flow-support-line-height);
-      border-bottom: 1px dashed var(--openbitfun-color-border-default);
 
-      &:last-child {
-        border-bottom: none;
-      }
-
-      /* Rows that hold long text: stack label above value */
       &.summary-row--full {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 4px;
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--openbitfun-space-1);
       }
     }
 
@@ -217,9 +128,10 @@
       font-weight: var(--openbitfun-type-label-selected-font-weight);
       color: var(--openbitfun-color-content-muted);
       font-size: var(--openbitfun-type-flow-support-font-size);
-      white-space: nowrap;
+      white-space: normal;
+      overflow-wrap: anywhere;
       flex-shrink: 0;
-      min-width: 90px;
+      min-width: 0;
     }
 
     .summary-value {
@@ -232,7 +144,7 @@
         display: inline-flex;
         align-items: center;
         font-weight: var(--openbitfun-type-label-selected-font-weight);
-        gap: 4px;
+        gap: var(--openbitfun-space-1);
         white-space: nowrap;
       }
 
@@ -244,55 +156,18 @@
   }
 
   .review-report-section {
-    overflow: hidden;
-    border: 1px solid var(--openbitfun-color-border-default);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 82%, transparent);
-  }
-
-  .review-report-section__header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 9px 10px;
-    border: 0;
-    background: transparent;
-    color: var(--openbitfun-color-content-primary);
-    cursor: pointer;
-    text-align: left;
-
-    &:hover {
-      background: var(--openbitfun-color-action-neutral-surface-hover);
-    }
-  }
-
-  .review-report-section__title {
-    overflow: hidden;
-    font-size: var(--openbitfun-type-flow-control-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    white-space: nowrap;
-  }
-
-  .review-report-section__summary {
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-flow-support-font-size);
-    white-space: nowrap;
-  }
-
-  .review-report-section__body {
-    padding: 10px;
-    border-top: 1px dashed var(--openbitfun-color-border-default);
+    min-inline-size: 0;
+    padding-block-start: var(--openbitfun-space-2);
+    border-block-start: 1px solid var(--openbitfun-color-border-subtle);
   }
 
   .review-report-group {
     display: grid;
-    gap: 6px;
+    gap: var(--openbitfun-space-2);
 
     & + .review-report-group {
-      margin-top: 10px;
-      padding-top: 10px;
+      margin-block-start: var(--openbitfun-space-3);
+      padding-block-start: var(--openbitfun-space-3);
       border-top: 1px dashed var(--openbitfun-color-border-default);
     }
   }
@@ -301,21 +176,20 @@
     color: var(--openbitfun-color-content-primary);
     font-size: var(--openbitfun-type-flow-support-font-size);
     font-weight: var(--openbitfun-type-heading-page-font-weight);
-    letter-spacing: var(--openbitfun-type-modifier-tracking-wider-letter-spacing);
-    text-transform: uppercase;
+
   }
 
   .review-report-group__list {
     display: grid;
-    gap: 5px;
+    gap: var(--openbitfun-space-1);
     margin: 0;
-    padding-left: 18px;
+    padding-inline-start: var(--openbitfun-space-4);
     color: var(--openbitfun-color-content-secondary);
     font-size: var(--openbitfun-type-flow-control-font-size);
     line-height: var(--openbitfun-type-flow-support-line-height);
 
     li {
-      padding: 2px 4px;
+      padding-block: var(--openbitfun-space-1);
       border-radius: 3px;
       transition: background-color 0.15s ease;
 
@@ -337,7 +211,7 @@
   .review-decision-item {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--openbitfun-space-1);
   }
 
   .review-decision-item__question {
@@ -347,13 +221,13 @@
 
   .review-decision-item__options {
     margin: 0;
-    padding-left: 16px;
+    padding-inline-start: var(--openbitfun-space-4);
     color: var(--openbitfun-color-content-secondary);
     font-size: var(--openbitfun-type-flow-control-font-size);
     line-height: var(--openbitfun-type-flow-support-line-height);
 
     li {
-      padding: 1px 0;
+      padding-block: var(--openbitfun-space-1);
 
       &.is-recommended {
         color: var(--openbitfun-color-accent-default);
@@ -370,20 +244,20 @@
 
   .run-manifest {
     display: grid;
-    gap: 10px;
+    gap: var(--openbitfun-space-3);
   }
 
   .run-manifest__facts {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
+    gap: var(--openbitfun-space-2);
   }
 
   .run-manifest__fact {
     display: grid;
-    gap: 3px;
+    gap: var(--openbitfun-space-1);
     min-width: 0;
-    padding: 8px;
+    padding: var(--openbitfun-space-2);
     border: 1px solid var(--openbitfun-color-border-default);
     border-radius: 6px;
     background: var(--openbitfun-color-surface-raised);
@@ -404,7 +278,7 @@
 
   .run-manifest__group {
     display: grid;
-    gap: 6px;
+    gap: var(--openbitfun-space-2);
   }
 
   .run-manifest__group-title {
@@ -420,14 +294,14 @@
   .run-manifest__chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--openbitfun-space-2);
   }
 
   .run-manifest__chip {
     display: inline-grid;
     max-width: 100%;
     gap: 2px;
-    padding: 6px 8px;
+    padding: var(--openbitfun-space-2);
     border: 1px solid var(--openbitfun-color-border-default);
     border-radius: 6px;
     background: var(--openbitfun-color-surface-raised);
@@ -450,7 +324,7 @@
 
   .run-manifest__skipped-list {
     display: grid;
-    gap: 5px;
+    gap: var(--openbitfun-space-1);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -459,9 +333,9 @@
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
-      gap: 8px;
+      gap: var(--openbitfun-space-2);
       min-width: 0;
-      padding: 6px 8px;
+      padding: var(--openbitfun-space-2);
       border: 1px solid var(--openbitfun-color-border-default);
       border-radius: 6px;
       background: var(--openbitfun-color-surface-raised);
@@ -483,7 +357,8 @@
     }
   }
 
-  @media (max-width: 560px) {
+  @container review-details (max-width: 35rem) {
+    .review-remediation .remediation-detail-grid { grid-template-columns: minmax(0, 1fr); }
     .run-manifest__facts {
       grid-template-columns: 1fr;
     }
@@ -498,14 +373,21 @@
     }
   }
 
+  @container review-details (max-width: 22rem) {
+    .review-summary .summary-row {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--openbitfun-space-1);
+    }
+  }
+
   .team-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--openbitfun-space-2);
   }
 
   .reviewer-item {
-    padding: 10px;
+    padding: var(--openbitfun-space-3);
     border-radius: 6px;
     border: 1px solid var(--openbitfun-color-border-default);
     background: var(--openbitfun-color-surface-raised);
@@ -514,8 +396,8 @@
   .reviewer-topline {
     display: flex;
     justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 6px;
+    gap: var(--openbitfun-space-2);
+    margin-block-end: var(--openbitfun-space-2);
     flex-wrap: wrap;
   }
 
@@ -523,7 +405,7 @@
   .reviewer-metrics {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--openbitfun-space-2);
     flex-wrap: wrap;
   }
 
@@ -554,14 +436,14 @@
   .issues-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--openbitfun-space-2);
   }
 
   .issues-list .review-issue-item {
-    background: var(--openbitfun-color-surface-raised);
-    border: 1px solid var(--openbitfun-color-border-default);
-    border-radius: 6px;
-    padding: 10px;
+    background: transparent;
+    border: 1px solid var(--openbitfun-color-border-subtle);
+    border-radius: var(--openbitfun-radius-sm);
+    padding: var(--openbitfun-space-3);
     font-size: var(--openbitfun-type-flow-control-font-size);
     line-height: var(--openbitfun-type-flow-support-line-height);
     transition:
@@ -599,15 +481,16 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 6px;
+      margin-block-end: var(--openbitfun-space-2);
       flex-wrap: wrap;
-      gap: 4px;
+      gap: var(--openbitfun-space-1);
     }
 
     .issue-left {
+      flex-wrap: wrap;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: var(--openbitfun-space-2);
       flex: 1;
       min-width: 0;
     }
@@ -615,22 +498,12 @@
     .issue-category {
       font-weight: var(--openbitfun-type-label-selected-font-weight);
       color: var(--openbitfun-color-content-secondary);
-      flex-shrink: 0;
-      font-size: var(--openbitfun-type-flow-micro-font-size);
-      padding: 1px 5px;
-      background: var(--openbitfun-color-surface-raised);
-      border-radius: 3px;
-      border: 1px solid var(--openbitfun-color-border-default);
+      font-size: var(--openbitfun-type-flow-support-font-size);
     }
 
     .issue-source {
-      font-size: var(--openbitfun-type-flow-micro-font-size);
-      color: var(--openbitfun-color-accent-default);
-      border: 1px solid color-mix(in srgb, var(--openbitfun-color-accent-default) 35%, transparent);
-      background: color-mix(in srgb, var(--openbitfun-color-accent-default) 10%, transparent);
-      border-radius: 999px;
-      padding: 1px 6px;
-      white-space: nowrap;
+      font-size: var(--openbitfun-type-flow-support-font-size);
+      color: var(--openbitfun-color-content-muted);
     }
 
     .issue-location {
@@ -641,14 +514,9 @@
     }
 
     .issue-certainty {
-      font-size: var(--openbitfun-type-flow-micro-font-size);
+      font-size: var(--openbitfun-type-flow-support-font-size);
       color: var(--openbitfun-color-content-muted);
-      background: var(--openbitfun-color-surface-raised);
-      padding: 1px 6px;
-      border-radius: 3px;
       white-space: nowrap;
-      flex-shrink: 0;
-      border: 1px solid var(--openbitfun-color-border-default);
     }
 
     .issue-title {
@@ -660,34 +528,29 @@
 
     .issue-description {
       color: var(--openbitfun-color-content-secondary);
-      margin-bottom: 6px;
+      margin-block-end: var(--openbitfun-space-2);
       line-height: var(--openbitfun-type-flow-support-line-height);
     }
 
     .issue-validation-note {
       color: var(--openbitfun-color-content-muted);
-      margin-bottom: 6px;
-      padding: 6px 8px;
-      border-radius: 4px;
-      background: color-mix(in srgb, var(--openbitfun-color-accent-hover) 8%, transparent);
-      border: 1px solid color-mix(in srgb, var(--openbitfun-color-accent-hover) 16%, transparent);
+      margin-block: var(--openbitfun-space-2);
       font-size: var(--openbitfun-type-flow-support-font-size);
     }
 
     .issue-suggestion {
-      background: color-mix(in srgb, var(--openbitfun-color-status-success-content) 6%, transparent);
-      border: 1px solid var(--openbitfun-color-status-success-surface);
-      border-radius: 4px;
-      padding: 8px;
-      display: flex;
-      align-items: flex-start;
-      gap: 6px;
-      margin-top: 6px;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: baseline;
+      gap: var(--openbitfun-space-2);
+      padding-block-start: var(--openbitfun-space-2);
+      border-block-start: 1px solid var(--openbitfun-color-border-subtle);
+      margin-block-start: var(--openbitfun-space-2);
     }
 
     .suggestion-label {
       font-weight: var(--openbitfun-type-label-selected-font-weight);
-      color: var(--openbitfun-color-status-success-content);
+      color: var(--openbitfun-color-content-muted);
       flex-shrink: 0;
       font-size: var(--openbitfun-type-flow-support-font-size);
     }
@@ -699,242 +562,17 @@
     }
   }
 
-  .review-team {
-    margin-bottom: 12px;
-
-    .team-header {
-      font-size: var(--openbitfun-type-flow-control-font-size);
-      font-weight: var(--openbitfun-type-label-selected-font-weight);
-      color: var(--openbitfun-color-content-primary);
-      margin-bottom: 8px;
-    }
-
-    .team-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .reviewer-item {
-      padding: 10px;
-      border-radius: 6px;
-      border: 1px solid var(--openbitfun-color-border-default);
-      background: var(--openbitfun-color-surface-raised);
-    }
-
-    .reviewer-topline {
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 6px;
-      flex-wrap: wrap;
-    }
-
-    .reviewer-identity,
-    .reviewer-metrics {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-
-    .reviewer-name {
-      font-size: var(--openbitfun-type-flow-control-font-size);
-      font-weight: var(--openbitfun-type-label-selected-font-weight);
-      color: var(--openbitfun-color-content-primary);
-    }
-
-    .reviewer-specialty,
-    .reviewer-status,
-    .reviewer-issues {
-      font-size: var(--openbitfun-type-flow-micro-font-size);
-      color: var(--openbitfun-color-content-muted);
-      border: 1px solid var(--openbitfun-color-border-default);
-      background: var(--openbitfun-color-surface-raised);
-      border-radius: 999px;
-      padding: 2px 6px;
-      white-space: nowrap;
-    }
-
-    .reviewer-summary {
-      font-size: var(--openbitfun-type-flow-control-font-size);
-      line-height: var(--openbitfun-type-flow-support-line-height);
-      color: var(--openbitfun-color-content-secondary);
-    }
-  }
-
   /* ---------- Issues section ---------- */
-  .review-issues {
-    margin-bottom: 12px;
-
-    .issues-header {
-      display: flex;
-      align-items: center;
-      font-size: var(--openbitfun-type-flow-control-font-size);
-      font-weight: var(--openbitfun-type-label-selected-font-weight);
-      color: var(--openbitfun-color-content-primary);
-      margin-bottom: 8px;
-    }
-
-    .issues-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-
-      .review-issue-item {
-        background: var(--openbitfun-color-surface-raised);
-        border: 1px solid var(--openbitfun-color-border-default);
-        border-radius: 6px;
-        padding: 10px;
-        font-size: var(--openbitfun-type-flow-control-font-size);
-        line-height: var(--openbitfun-type-flow-support-line-height);
-        transition:
-          background-color 160ms ease,
-          border-color 160ms ease;
-        position: relative;
-        overflow: hidden;
-
-        &:hover {
-          background: var(--openbitfun-color-action-neutral-surface-hover);
-          border-color: var(--openbitfun-color-field-border-hover);
-        }
-
-        /* Severity left-border indicators */
-        &.severity-critical {
-          border-left: 3px solid var(--openbitfun-color-status-danger-content);
-        }
-
-        &.severity-high {
-          border-left: 3px solid color-mix(in srgb, var(--openbitfun-color-status-warning-content) 55%, var(--openbitfun-color-status-danger-content));
-        }
-
-        &.severity-medium {
-          border-left: 3px solid color-mix(in srgb, var(--openbitfun-color-accent-default) 40%, transparent);
-        }
-
-        &.severity-low {
-          border-left: 3px solid var(--openbitfun-color-status-info-content);
-        }
-
-        &.severity-info {
-          border-left: 3px solid var(--openbitfun-color-action-secondary-pressed);
-        }
-
-        .issue-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 6px;
-          flex-wrap: wrap;
-          gap: 4px;
-
-          .issue-left {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            flex: 1;
-            min-width: 0;
-
-            .issue-category {
-              font-weight: var(--openbitfun-type-label-selected-font-weight);
-              color: var(--openbitfun-color-content-secondary);
-              flex-shrink: 0;
-              font-size: var(--openbitfun-type-flow-micro-font-size);
-              padding: 1px 5px;
-              background: var(--openbitfun-color-surface-raised);
-              border-radius: 3px;
-              border: 1px solid var(--openbitfun-color-border-default);
-            }
-
-            .issue-source {
-              font-size: var(--openbitfun-type-flow-micro-font-size);
-              color: var(--openbitfun-color-accent-default);
-              border: 1px solid color-mix(in srgb, var(--openbitfun-color-accent-default) 35%, transparent);
-              background: color-mix(in srgb, var(--openbitfun-color-accent-default) 10%, transparent);
-              border-radius: 999px;
-              padding: 1px 6px;
-              white-space: nowrap;
-            }
-
-            .issue-location {
-              color: var(--openbitfun-color-content-muted);
-              font-size: var(--openbitfun-type-flow-support-font-size);
-              white-space: nowrap;
-              overflow: hidden;
-            }
-          }
-
-          .issue-certainty {
-            font-size: var(--openbitfun-type-flow-micro-font-size);
-            color: var(--openbitfun-color-content-muted);
-            background: var(--openbitfun-color-surface-raised);
-            padding: 1px 6px;
-            border-radius: 3px;
-            white-space: nowrap;
-            flex-shrink: 0;
-            border: 1px solid var(--openbitfun-color-border-default);
-          }
-        }
-
-        .issue-title {
-          font-weight: var(--openbitfun-type-label-selected-font-weight);
-          color: var(--openbitfun-color-content-primary);
-          margin-bottom: 4px;
-          font-size: var(--openbitfun-type-flow-control-font-size);
-        }
-
-        .issue-description {
-          color: var(--openbitfun-color-content-secondary);
-          margin-bottom: 6px;
-          line-height: var(--openbitfun-type-flow-support-line-height);
-        }
-
-        .issue-validation-note {
-          color: var(--openbitfun-color-content-muted);
-          margin-bottom: 6px;
-          padding: 6px 8px;
-          border-radius: 4px;
-          background: color-mix(in srgb, var(--openbitfun-color-accent-hover) 8%, transparent);
-          border: 1px solid color-mix(in srgb, var(--openbitfun-color-accent-hover) 16%, transparent);
-          font-size: var(--openbitfun-type-flow-support-font-size);
-        }
-
-        .issue-suggestion {
-          background: color-mix(in srgb, var(--openbitfun-color-status-success-content) 6%, transparent);
-          border: 1px solid var(--openbitfun-color-status-success-surface);
-          border-radius: 4px;
-          padding: 8px;
-          display: flex;
-          align-items: flex-start;
-          gap: 6px;
-          margin-top: 6px;
-
-          .suggestion-label {
-            font-weight: var(--openbitfun-type-label-selected-font-weight);
-            color: var(--openbitfun-color-status-success-content);
-            flex-shrink: 0;
-            font-size: var(--openbitfun-type-flow-support-font-size);
-          }
-
-          .suggestion-text {
-            color: var(--openbitfun-color-content-primary);
-            flex: 1;
-            line-height: var(--openbitfun-type-flow-support-line-height);
-          }
-        }
-      }
-    }
-  }
 
   .review-remediation {
-    margin-bottom: 12px;
+    margin-block-end: var(--openbitfun-space-3);
 
     .remediation-header-row {
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 8px;
+      gap: var(--openbitfun-space-3);
+      margin-block-end: var(--openbitfun-space-2);
     }
 
     .remediation-header {
@@ -957,26 +595,24 @@
     .remediation-list {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: var(--openbitfun-space-2);
     }
 
     .remediation-item {
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      padding: 10px;
+      gap: var(--openbitfun-space-2);
+      padding: var(--openbitfun-space-3);
       border: 1px solid var(--openbitfun-color-border-default);
-      border-radius: 10px;
-      background: var(--openbitfun-color-surface-raised);
+      border-radius: var(--openbitfun-radius-sm);
+      background: transparent;
       color: var(--openbitfun-color-content-primary);
       font-size: var(--openbitfun-type-flow-control-font-size);
       line-height: var(--openbitfun-type-flow-support-line-height);
 
       &.is-selected {
         border-color: color-mix(in srgb, var(--openbitfun-color-accent-default) 34%, var(--openbitfun-color-border-default));
-        background:
-          linear-gradient(90deg, color-mix(in srgb, var(--openbitfun-color-accent-default) 8%, transparent), transparent 80%),
-          var(--openbitfun-color-surface-raised);
+        background: var(--openbitfun-color-action-neutral-surface);
       }
     }
 
@@ -984,7 +620,7 @@
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
-      gap: 10px;
+      gap: var(--openbitfun-space-3);
     }
 
     .remediation-item__checkbox {
@@ -995,7 +631,7 @@
     .remediation-item__label {
       display: inline-flex;
       align-items: flex-start;
-      gap: 8px;
+      gap: var(--openbitfun-space-2);
       min-width: 0;
       color: var(--openbitfun-color-content-primary);
     }
@@ -1018,7 +654,7 @@
     .remediation-item__expand {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: var(--openbitfun-space-1);
       flex-shrink: 0;
       padding: 3px 7px;
       border: 1px solid var(--openbitfun-color-border-subtle);
@@ -1040,13 +676,11 @@
     }
 
     .remediation-item__details {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 10px;
-      border-radius: 8px;
-      border: 1px solid color-mix(in srgb, var(--openbitfun-color-border-subtle) 84%, var(--openbitfun-color-accent-default) 16%);
-      background: color-mix(in srgb, var(--openbitfun-color-surface-canvas) 72%, transparent);
+      display: grid;
+      min-inline-size: 0;
+      gap: var(--openbitfun-space-2);
+      padding-block-start: var(--openbitfun-space-2);
+      border-block-start: 1px solid var(--openbitfun-color-border-subtle);
       color: var(--openbitfun-color-content-secondary);
 
       p {
@@ -1057,14 +691,12 @@
 
     .remediation-detail-row {
       display: grid;
-      gap: 3px;
+      gap: var(--openbitfun-space-1);
 
       span {
         color: var(--openbitfun-color-content-muted);
         font-size: var(--openbitfun-type-flow-micro-font-size);
-        font-weight: var(--openbitfun-type-heading-page-font-weight);
-        letter-spacing: var(--openbitfun-type-modifier-tracking-widest-letter-spacing);
-        text-transform: uppercase;
+        font-weight: var(--openbitfun-type-label-selected-font-weight);
       }
 
       strong {
@@ -1076,15 +708,13 @@
     .remediation-detail-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
+      gap: var(--openbitfun-space-2);
 
       div {
         display: grid;
         gap: 2px;
         min-width: 0;
-        padding: 7px 8px;
-        border-radius: 7px;
-        background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 78%, transparent);
+
       }
 
       span {
@@ -1103,74 +733,22 @@
 
     .remediation-item__suggestion,
     .remediation-item__validation {
-      padding: 8px;
-      border-radius: 7px;
+      min-inline-size: 0;
     }
 
     .remediation-item__suggestion {
       display: flex;
-      gap: 6px;
-      background: color-mix(in srgb, var(--openbitfun-color-status-success-content) 8%, transparent);
-      border: 1px solid color-mix(in srgb, var(--openbitfun-color-status-success-content) 16%, transparent);
+      flex-wrap: wrap;
+      gap: var(--openbitfun-space-2);
 
       span {
-        color: var(--openbitfun-color-status-success-content);
+        color: var(--openbitfun-color-content-muted);
         font-weight: var(--openbitfun-type-label-selected-font-weight);
-        flex-shrink: 0;
       }
     }
 
     .remediation-item__validation {
-      background: color-mix(in srgb, var(--openbitfun-color-accent-default) 8%, transparent);
-      border: 1px solid color-mix(in srgb, var(--openbitfun-color-accent-default) 16%, transparent);
       color: var(--openbitfun-color-content-muted);
-    }
-  }
-
-  .review-remediation-actions {
-    position: sticky;
-    bottom: 14px;
-    z-index: 8;
-    margin: 12px 0 2px;
-    padding: 12px;
-    border: 1px solid color-mix(in srgb, var(--openbitfun-color-accent-default) 24%, var(--openbitfun-color-border-default));
-    border-radius: 12px;
-    background:
-      linear-gradient(180deg, color-mix(in srgb, var(--openbitfun-color-surface-raised) 94%, transparent), color-mix(in srgb, var(--openbitfun-color-surface-canvas) 90%, transparent)),
-      color-mix(in srgb, var(--openbitfun-color-accent-default) 8%, var(--openbitfun-color-surface-raised));
-    backdrop-filter: blur(16px) saturate(1.15);
-    -webkit-backdrop-filter: blur(16px) saturate(1.15);
-    box-shadow:
-      0 14px 34px color-mix(in srgb, var(--openbitfun-color-content-on-light) 24%, transparent),
-      inset 0 1px 0 color-mix(in srgb, var(--openbitfun-color-content-on-dark) 10%, transparent);
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-
-    &__title {
-      font-size: var(--openbitfun-type-flow-control-font-size);
-      font-weight: var(--openbitfun-type-heading-page-font-weight);
-      color: var(--openbitfun-color-content-primary);
-      margin-bottom: 3px;
-    }
-
-    &__hint {
-      font-size: var(--openbitfun-type-flow-support-font-size);
-      line-height: var(--openbitfun-type-flow-support-line-height);
-      color: var(--openbitfun-color-content-muted);
-    }
-
-    &__buttons {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    &__empty-selection {
-      margin-top: 10px;
-      color: color-mix(in srgb, var(--openbitfun-color-status-warning-content) 80%, var(--openbitfun-color-content-secondary));
-      font-size: var(--openbitfun-type-flow-support-font-size);
-      line-height: var(--openbitfun-type-flow-support-line-height);
     }
   }
 
@@ -1180,7 +758,7 @@
       font-size: var(--openbitfun-type-flow-control-font-size);
       font-weight: var(--openbitfun-type-label-selected-font-weight);
       color: var(--openbitfun-color-status-success-content);
-      margin-bottom: 8px;
+      margin-block-end: var(--openbitfun-space-2);
       padding-bottom: 6px;
       border-bottom: 1px dashed var(--openbitfun-color-border-default);
     }
@@ -1188,16 +766,16 @@
     .positive-list {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: var(--openbitfun-space-1);
 
       .positive-item {
         display: flex;
         align-items: flex-start;
-        gap: 8px;
+        gap: var(--openbitfun-space-2);
         color: var(--openbitfun-color-content-primary);
         font-size: var(--openbitfun-type-flow-control-font-size);
         line-height: var(--openbitfun-type-flow-support-line-height);
-        padding: 6px 8px;
+        padding: var(--openbitfun-space-2);
         background: var(--openbitfun-color-surface-raised);
         border-radius: 4px;
         border: 1px solid var(--openbitfun-color-border-default);

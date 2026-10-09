@@ -205,7 +205,6 @@
       "debugging": "Debugging",
       "coordination": "Coordination",
       "planning": "Planning",
-      "gstack": "gstack",
       "other": "Other"
     },
     "skillGroupPicker": {
@@ -304,7 +303,7 @@
       "descPlaceholder": "Briefly describe what this agent does",
       "descRequired": "Description is required",
       "prompt": "System Prompt",
-      "promptPlaceholder": "Enter the system prompt that defines this agent's behavior...\n\nSupported placeholders\n{PERSONA}: SOUL.md/USER.md/IDENTITY.md\n{LANGUAGE_PREFERENCE}: Language preference",
+      "promptPlaceholder": "Enter the system prompt that defines this agent's behavior...\n\nSupported placeholders\n{PERSONA}: SOUL.md/USER.md/IDENTITY.md\n{LANGUAGE_PREFERENCE}: Language preference\n{FILE_REFERENCES}: File and image reference guidance",
       "promptRequired": "System prompt is required",
       "readonly": "Readonly mode",
       "model": "Model",
@@ -372,7 +371,6 @@
     "Explore": "Explore SubAgent: quickly browse the codebase to understand project structure and key files",
     "CodeReview": "Code review SubAgent: perform quality checks and provide improvement suggestions",
     "DeepReview": "Strict Review compatibility SubAgent: supports review workflows in historical sessions and commands.",
-    "GenerateDoc": "Documentation SubAgent: automatically generate code documentation and explanations",
     "Init": "Init agent: help set up project structure and initial configuration",
     "ReviewFixer": "Review fixer SubAgent: automatically fix code issues based on review results",
     "Claw": "Personal assistant: help with daily tasks using your preferences and context.",

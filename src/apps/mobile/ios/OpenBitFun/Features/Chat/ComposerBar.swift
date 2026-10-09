@@ -52,7 +52,7 @@ struct ComposerBar: View {
     }
 
     private var showsSupplementalVoice: Bool {
-        hasContent && !speech.isListening && !model.isSending
+        hasContent && !speech.isListening
     }
 
     var body: some View {
@@ -214,7 +214,7 @@ struct ComposerBar: View {
             if !model.modelOptions.isEmpty {
                 Button { modelSelectorOpen = true } label: {
                     HStack(spacing: 3) {
-                        Text(selectedModel?.primaryLabel ?? model.localized("模型"))
+                        Text(selectedModel.map(optionTitle) ?? model.localized("模型"))
                             .font(MobileDesignTypography.labelMedium.font)
                             .foregroundStyle(OpenBitFunTheme.ink)
                             .lineLimit(1)
@@ -227,6 +227,8 @@ struct ComposerBar: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text(model.localized("选择模型")))
+                .accessibilityValue(Text(selectedModel.map(optionTitle) ?? model.localized("模型")))
+                .accessibilityIdentifier("composer.modelControl")
                 .anchorPreference(key: ComposerModelSelectorAnchorKey.self, value: .bounds) { $0 }
             }
             Spacer(minLength: 0)
@@ -244,27 +246,35 @@ struct ComposerBar: View {
             if speech.isListening {
                 ListeningWave()
             }
-            TextField(
-                "",
-                text: $model.draft,
-                prompt: Text(speech.isListening ? model.localized("正在聆听") : placeholder)
-                    .foregroundColor(speech.isListening ? OpenBitFunTheme.statusSuccess : OpenBitFunTheme.muted),
-                axis: .vertical
-            )
-            .font(MobileDesignTypography.bodyLarge.font)
-            .foregroundStyle(OpenBitFunTheme.ink)
-            .lineLimit(1...maxLines)
-            .focused($focused)
-            // Expand from the tap itself; keyboard/first-responder startup is
-            // independent and must not gate the local composer affordances.
-            .simultaneousGesture(TapGesture().onEnded { inputExpansionRequested = true })
-            .accessibilityIdentifier("composer.input")
-            .submitLabel(.send)
-            .onSubmit {
-                if canSend { submitMessage() }
-            }
-            if showsSupplementalVoice, !expanded {
-                supplementalVoiceAction
+            ZStack(alignment: .leading) {
+                TextField(
+                    "",
+                    text: $model.draft,
+                    prompt: Text(speech.isListening ? model.localized("正在聆听") : placeholder)
+                        .foregroundColor(speech.isListening ? OpenBitFunTheme.statusSuccess : OpenBitFunTheme.muted),
+                    axis: .vertical
+                )
+                .font(MobileDesignTypography.bodyLarge.font)
+                .foregroundStyle(!expanded && !model.draft.isEmpty ? OpenBitFunTheme.transparent : OpenBitFunTheme.ink)
+                .lineLimit(1...maxLines)
+                .focused($focused)
+                // Expand from the tap itself; keyboard/first-responder startup is
+                // independent and must not gate the local composer affordances.
+                .simultaneousGesture(TapGesture().onEnded { inputExpansionRequested = true })
+                .accessibilityIdentifier("composer.input")
+                .submitLabel(.send)
+                .onSubmit {
+                    if canSend { submitMessage() }
+                }
+                if !expanded && !model.draft.isEmpty {
+                    Text(model.draft)
+                        .font(MobileDesignTypography.bodyLarge.font)
+                        .foregroundStyle(OpenBitFunTheme.ink)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
             }
         }
         .padding(.leading, speech.isListening ? 12 : 4)
@@ -452,6 +462,10 @@ struct ComposerBar: View {
             ScrollView(showsIndicators: false) {
                 LazyVStack(spacing: MobileDesignGeometry.composerModelSelectorRowGap) {
                     ForEach(selectorModels) { option in
+                        if option.id == selectorModels.first(where: { $0.role == nil })?.id,
+                           selectorModels.contains(where: { $0.role != nil }) {
+                            Divider().overlay(OpenBitFunTheme.line)
+                        }
                         Button {
                             modelSelectorOpen = false
                             model.selectModel(option.id)
@@ -462,16 +476,25 @@ struct ComposerBar: View {
                                     .foregroundStyle(option.selected ? OpenBitFunTheme.ink : OpenBitFunTheme.transparent)
                                     .frame(width: 20, height: 20)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(option.primaryLabel)
+                                    Text(optionTitle(option))
                                         .font(MobileDesignTypography.labelMedium.font)
                                         .foregroundStyle(OpenBitFunTheme.ink)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    Text(option.secondaryLabel)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                    Text(optionSubtitle(option))
                                         .font(MobileDesignTypography.bodySmall.font)
                                         .foregroundStyle(OpenBitFunTheme.muted)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                                 Spacer(minLength: 0)
+                                ForEach(option.roles, id: \.self) { role in
+                                    Text(model.localized(role == "PRIMARY" ? "主力" : "快速"))
+                                        .font(MobileDesignTypography.labelSmall.font)
+                                        .foregroundStyle(OpenBitFunTheme.muted)
+                                        .padding(.horizontal, 6).padding(.vertical, 1)
+                                        .background(OpenBitFunTheme.soft)
+                                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                                }
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
@@ -484,6 +507,7 @@ struct ComposerBar: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("composer.model.\(option.id)")
                     }
                 }
             }
@@ -497,7 +521,21 @@ struct ComposerBar: View {
     }
 
     private var selectorModels: [ComposerModelOption] {
-        model.modelOptions.filter(\.selected) + model.modelOptions.filter { !$0.selected }
+        model.modelOptions.filter { $0.role != nil } +
+            model.modelOptions.filter { $0.role == nil && $0.selected } +
+            model.modelOptions.filter { $0.role == nil && !$0.selected }
+    }
+
+    private func optionTitle(_ option: ComposerModelOption) -> String {
+        switch option.role {
+        case "PRIMARY": return model.localized("主力模型")
+        case "FAST": return model.localized("快速模型")
+        default: return option.primaryLabel
+        }
+    }
+
+    private func optionSubtitle(_ option: ComposerModelOption) -> String {
+        option.fallsBackToPrimary ? model.localized("未配置快速模型，使用主力模型") : option.secondaryLabel
     }
 
     private func modelSelectorHeight(asSheet: Bool) -> CGFloat {

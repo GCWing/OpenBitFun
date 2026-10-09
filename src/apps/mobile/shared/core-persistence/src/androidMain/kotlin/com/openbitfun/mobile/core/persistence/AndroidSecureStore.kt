@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.util.Log
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -31,11 +32,17 @@ private class AndroidSecureStore(
     }
 
     override fun write(key: String, value: ByteArray) {
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
-        val packed = Base64.encodeToString(cipher.iv, Base64.NO_WRAP) + "." +
-            Base64.encodeToString(cipher.doFinal(value), Base64.NO_WRAP)
-        check(preferences.edit().putString(key, packed).commit()) { "Secure value could not be persisted." }
+        try {
+            writeWithKey(key, value)
+        } catch (cause: Throwable) {
+            // Android may retain a Keystore alias while uninstalling the app
+            // clears SharedPreferences. Replacing the alias is safe only when
+            // this namespace has no encrypted records to preserve.
+            if (preferences.all.isNotEmpty()) throw cause
+            Log.w(TAG, "Secure store key failed on a fresh install; recreating it", cause)
+            deleteKeyAlias()
+            writeWithKey(key, value)
+        }
     }
 
     override fun delete(key: String) {
@@ -59,9 +66,23 @@ private class AndroidSecureStore(
         return generator.generateKey()
     }
 
+    private fun writeWithKey(key: String, value: ByteArray) {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
+        val packed = Base64.encodeToString(cipher.iv, Base64.NO_WRAP) + "." +
+            Base64.encodeToString(cipher.doFinal(value), Base64.NO_WRAP)
+        check(preferences.edit().putString(key, packed).commit()) { "Secure value could not be persisted." }
+    }
+
+    private fun deleteKeyAlias() {
+        val keyStore = KeyStore.getInstance(KEY_STORE).also { it.load(null) }
+        if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)
+    }
+
     companion object {
         private const val KEY_STORE = "AndroidKeyStore"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
+        private const val TAG = "OpenBitFunSecureStore"
     }
 }
 

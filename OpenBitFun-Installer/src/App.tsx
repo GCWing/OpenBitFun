@@ -3,7 +3,7 @@ import { DesignSystemProvider, Select } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
 import { WindowControls } from './components/WindowControls';
 import { StepIndicator } from './components/StepIndicator';
-import appIcon from './assets/openbitfun-app-icon-16.png';
+import { OpenBitFunAppIcon } from '@openbitfun/ui/brand';
 import { LanguageSelect } from './pages/LanguageSelect';
 import { Options } from './pages/Options';
 import { ModelSetup } from './pages/ModelSetup';
@@ -128,7 +128,7 @@ function App() {
       <div className="installer-app">
         <div className="titlebar" data-tauri-drag-region>
           <div className="titlebar-brand" data-tauri-drag-region>
-            <img src={appIcon} width={16} height={16} alt="" data-tauri-drag-region />
+            <OpenBitFunAppIcon size={16} data-tauri-drag-region />
             <span className="titlebar-title" data-tauri-drag-region>{t('shared.product.name')}</span>
           </div>
           {installer.previewOnly && (

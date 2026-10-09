@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,7 +29,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openbitfun.mobile.app.R
-import com.openbitfun.mobile.app.ui.common.SignedOutConnectionActions
 import com.openbitfun.mobile.app.ui.theme.openBitFunColors
 
 internal const val SIDEBAR_NEW_CHAT_TEST_TAG: String = "app-sidebar-new-chat"
@@ -87,19 +87,26 @@ internal fun SidebarAuthenticatedFooter(onOpenTools: () -> Unit, onOpenSettings:
  * draws it. Filled rather than carded because it is the only thing to press here.
  */
 @Composable
-internal fun SidebarSignedOutFooter(
-    showScan: Boolean,
-    onScanDesktop: () -> Unit,
-    onOpenAccount: () -> Unit,
-) {
-    SignedOutConnectionActions(
-        scanLabel = stringResource(R.string.sidebar_scan_to_connect),
-        accountLabel = stringResource(R.string.sidebar_sign_in),
-        onScan = onScanDesktop,
-        onOpenAccount = onOpenAccount,
-        showScan = showScan,
-        quietBackground = openBitFunColors.sidebar.raised,
-        quietBorder = openBitFunColors.sidebar.line,
-        quietContent = openBitFunColors.sidebar.ink,
-    )
+internal fun SidebarSignedOutFooter(onOpenAccount: () -> Unit) {
+    val label = stringResource(R.string.sidebar_sign_in)
+    val shape = RoundedCornerShape(24.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.primary)
+            .clickable(role = Role.Button, onClick = onOpenAccount)
+            .semantics(mergeDescendants = true) {
+                contentDescription = label
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onPrimary,
+        )
+    }
 }

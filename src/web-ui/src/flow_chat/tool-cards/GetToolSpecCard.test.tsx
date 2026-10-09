@@ -127,8 +127,8 @@ describe('GetToolSpecCard', () => {
       );
     });
 
-    expect(container.textContent).toContain('Tool Spec');
-    expect(container.textContent).toContain('Loaded spec for Worktree');
+    expect(container.textContent).toContain('Read tool documentation');
+    expect(container.textContent).toContain('Worktree');
     expect(container.textContent).not.toContain('Inspect and operate on the Git repository.');
     expect(container.textContent).not.toContain('"command"');
 
@@ -149,7 +149,8 @@ describe('GetToolSpecCard', () => {
       );
     });
 
-    expect(container.textContent).toContain('WebFetch is already loaded');
+    expect(container.textContent).toContain('Read tool documentation: WebFetch');
+    expect(container.textContent).not.toContain('already loaded');
     const card = container.querySelector(
       '[data-openbitfun-component="flow-chat-tool-card"][data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]',
     );

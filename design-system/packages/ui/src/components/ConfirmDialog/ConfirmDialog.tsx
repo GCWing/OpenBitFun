@@ -44,6 +44,8 @@ export interface ConfirmDialogProps {
   open: boolean;
   pendingAction?: "confirm" | "secondary" | null;
   preview?: ReactNode;
+  /** Place an alternative action at the start, separate from cancel and confirm. */
+  secondaryActionPlacement?: "inline" | "start";
   secondaryText?: ReactNode;
   showCancel?: boolean;
   showCloseButton?: boolean;
@@ -75,6 +77,7 @@ export const ConfirmDialog = forwardRef<HTMLDivElement, ConfirmDialogProps>(
     open,
     pendingAction: controlledPendingAction,
     preview,
+    secondaryActionPlacement = "inline",
     secondaryText,
     showCancel = true,
     showCloseButton = false,
@@ -91,6 +94,8 @@ export const ConfirmDialog = forwardRef<HTMLDivElement, ConfirmDialogProps>(
     const resolvedIcon = icon === false ? null : icon ?? defaultIcons[type];
     const hasMessage = message !== undefined && message !== null && message !== "";
     const hasPreview = preview !== undefined && preview !== null && preview !== "";
+    const hasSecondary = secondaryText !== undefined && secondaryText !== null;
+    const secondaryAtStart = hasSecondary && secondaryActionPlacement === "start";
     const resolvedCancelText = cancelText ?? designSystem.messages.confirmCancel;
     const resolvedConfirmText = confirmText ?? designSystem.messages.confirmAction;
 
@@ -124,6 +129,35 @@ export const ConfirmDialog = forwardRef<HTMLDivElement, ConfirmDialogProps>(
       if (busy) return;
       onOpenChange(false, reason);
     }, [busy, onOpenChange]);
+
+    const cancelButton = showCancel ? (
+      <Button disabled={busy} onClick={() => requestClose("cancel-button")} variant="fill">
+        {resolvedCancelText}
+      </Button>
+    ) : null;
+    const secondaryButton = hasSecondary ? (
+      <Button
+        disabled={busy}
+        labelBehavior={secondaryAtStart ? "static" : undefined}
+        loading={pendingAction === "secondary"}
+        onClick={() => void runAction("secondary", onSecondary)}
+        variant={secondaryAtStart ? "text" : "outline"}
+      >
+        {secondaryText}
+      </Button>
+    ) : null;
+    const confirmButton = (
+      <Button
+        disabled={busy}
+        loading={pendingAction === "confirm"}
+        onClick={() => void runAction("confirm", onConfirm)}
+        ref={confirmButtonRef}
+        tone={confirmDanger || type === "error" ? "danger" : "neutral"}
+        variant="primary"
+      >
+        {resolvedConfirmText}
+      </Button>
+    );
 
     return (
       <Dialog
@@ -186,31 +220,29 @@ export const ConfirmDialog = forwardRef<HTMLDivElement, ConfirmDialogProps>(
           </DialogBody>
         ) : null}
         <DialogFooter>
-          {showCancel ? (
-            <Button disabled={busy} onClick={() => requestClose("cancel-button")} variant="fill">
-              {resolvedCancelText}
-            </Button>
-          ) : null}
-          {secondaryText !== undefined && secondaryText !== null ? (
-            <Button
-              disabled={busy}
-              loading={pendingAction === "secondary"}
-              onClick={() => void runAction("secondary", onSecondary)}
-              variant="outline"
+          {secondaryAtStart ? (
+            <div
+              className={styles.splitActions}
+              data-openbitfun-component="confirm-dialog"
+              data-openbitfun-part="actions"
             >
-              {secondaryText}
-            </Button>
-          ) : null}
-          <Button
-            disabled={busy}
-            loading={pendingAction === "confirm"}
-            onClick={() => void runAction("confirm", onConfirm)}
-            ref={confirmButtonRef}
-            tone={confirmDanger || type === "error" ? "danger" : "neutral"}
-            variant="primary"
-          >
-            {resolvedConfirmText}
-          </Button>
+              {secondaryButton}
+              <div
+                className={styles.actionGroup}
+                data-openbitfun-component="confirm-dialog"
+                data-openbitfun-part="actionGroup"
+              >
+                {cancelButton}
+                {confirmButton}
+              </div>
+            </div>
+          ) : (
+            <>
+              {cancelButton}
+              {secondaryButton}
+              {confirmButton}
+            </>
+          )}
         </DialogFooter>
       </Dialog>
     );

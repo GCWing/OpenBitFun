@@ -179,6 +179,48 @@ the same backend and keeps `/hooks_external` and `/hooks-external` as aliases
 for the unified `/hooks` management view. `reset` is available only as explicit
 recovery for a corrupt OpenBitFun-managed index and never changes source files.
 
+## Hooks declared by skills
+
+Invoking a Claude-format skill through `Skill` registers its validated synchronous
+`type: "command"` handlers in the existing Hook engine for that session. Discovery,
+listing, and importing do not register or execute them. Imported Claude skills
+retain their source dialect. The external Hook catalog remains read-only.
+
+Skill hooks use the supported lifecycle events listed above, regular-expression
+matchers, stdin JSON, exit-code blocking, and `updatedInput`. They run after the
+configured command layers. Registration is idempotent; invoking a changed hook
+declaration in the same session returns an error instead of replacing active rules.
+`once: true` is consumed after exit code 0, atomically across concurrent dispatches;
+exit 2, other failures, and timeouts leave it eligible. A skill loaded mid-batch is
+a preflight barrier: later calls see its hooks even within the same model response.
+
+The Claude adapter maps `Bash` to `ExecCommand` and `command` to `cmd`. For `Write`,
+it translates the path-first `payload` into `file_path`/`content` and converts
+`updatedInput` back before normal input validation. An ambiguous Write destination
+is blocked while a matching skill hook is active. `Edit` keeps its existing fields.
+The command receives `CLAUDE_SKILL_DIR`, `CLAUDE_SESSION_ID`, and
+`CLAUDE_PROJECT_DIR`; this does not expand variables in the skill's prose.
+
+Skill `PreToolUse` hooks also support Claude's `permissionDecision: "ask"` through
+the existing session permission mailbox. An ask requires a fresh reply even in
+bypass mode; a policy deny still wins. The hook reason is included in the approval
+metadata. Native `hooks.json` keeps its Codex decision contract.
+
+The master `app.hooks.enabled` gate applies. Project skills additionally require
+`app.hooks.project_hooks_enabled`, including on subsequent dispatch. Activation
+without a session/local workspace, or in an SSH/remote workspace, returns an
+explicit error; no controller-local fallback executes. Remote control, Peer Device,
+and Detached Dispatch reuse their target runtime's session and permission owners;
+this change does not introduce a separate client-side hook runner.
+
+Registrations survive ordinary turns and idle in-process session unloading. Session
+end/delete/discard removes them and cancels running handlers; cancelled SessionEnd
+dispatch also clears them. They are process-local and are not restored after a
+runtime restart: invoke the skill again. Unknown events, asynchronous handlers,
+`prompt`/`agent` handlers, and unknown execution fields reject the entire skill
+rather than silently dropping constraints. Script files remain live dependencies,
+as for native command hooks; the declaration fingerprint does not snapshot scripts.
+
 ## Quick start
 
 Create `<user config dir>/config/hooks.json`:

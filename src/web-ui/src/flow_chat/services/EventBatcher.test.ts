@@ -208,6 +208,20 @@ describe('EventBatcher dual latency', () => {
     batcher.destroy();
   });
 
+  it('commits accumulated facts when a minimized window stops delivering frames', async () => {
+    const onFlush = vi.fn();
+    const batcher = new EventBatcher({ onFlush });
+    batcher.add('text', 'a', 'accumulate', (a, b) => a + b, { maxLatencyMs: TEXT_CHUNK_MAX_LATENCY_MS });
+    await vi.advanceTimersByTimeAsync(TEXT_CHUNK_MAX_LATENCY_MS);
+    batcher.add('text', 'b', 'accumulate', (a, b) => a + b, { maxLatencyMs: TEXT_CHUNK_MAX_LATENCY_MS });
+    await vi.advanceTimersByTimeAsync(TEXT_CHUNK_MAX_LATENCY_MS);
+    expect(onFlush).toHaveBeenCalledExactlyOnceWith([{ key: 'text', payload: 'ab' }]);
+    await drainAnimationFrames();
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    batcher.destroy();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('reschedules earlier when a text event arrives after a tool event', async () => {
     const onFlush = vi.fn();
     const batcher = new EventBatcher({ onFlush });

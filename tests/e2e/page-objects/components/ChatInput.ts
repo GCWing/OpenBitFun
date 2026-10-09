@@ -163,7 +163,7 @@ export class ChatInput extends BasePage {
         await input.click();
         await browser.pause(50);
         await browser.execute((element: HTMLElement) => {
-          element.focus();
+          element.focus({ preventScroll: true });
           element.textContent = '';
           const inputEvent = typeof InputEvent !== 'undefined'
             ? new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward', data: null })

@@ -40,6 +40,97 @@ async fn fixture() -> (
 }
 
 #[tokio::test]
+async fn host_queue_subagent_conversation_admission_precedes_receipts_and_queue_mutation() {
+    use openbitfun_core_types::{SessionContinuationPolicy, SessionKind};
+    for policy in [
+        SessionContinuationPolicy::FreshOnly,
+        SessionContinuationPolicy::Reusable,
+    ] {
+        let (scheduler, sessions, _, root) = test_scheduler();
+        let workspace = fixture_workspace_dir(root.path().join("conversation-admission"));
+        sessions
+            .create_session_with_id_and_details(
+                Some("host-queue-session".into()),
+                "Child".into(),
+                "Standard".into(),
+                SessionConfig {
+                    workspace_path: Some(workspace.to_string_lossy().into_owned()),
+                    continuation_policy: policy,
+                    ..Default::default()
+                },
+                None,
+                SessionKind::Subagent,
+            )
+            .await
+            .unwrap();
+        sessions
+            .update_session_state(
+                "host-queue-session",
+                SessionState::Processing {
+                    current_turn_id: "active-turn".into(),
+                    phase: ProcessingPhase::Thinking,
+                },
+            )
+            .await
+            .unwrap();
+        scheduler.active_turns.insert(
+            "host-queue-session".into(),
+            desktop_active_turn("active-turn"),
+        );
+        let snapshot = scheduler
+            .manage_host_queue(request(None, Action::List))
+            .await
+            .unwrap();
+        let result = scheduler
+            .manage_host_queue(request(
+                Some(&snapshot.queue_epoch),
+                Action::Submit {
+                    message: message("follow-up"),
+                },
+            ))
+            .await;
+        if policy == SessionContinuationPolicy::FreshOnly {
+            assert!(result
+                .unwrap_err()
+                .message
+                .contains("subagent_follow_up_unsupported"));
+            let snapshot = scheduler
+                .manage_host_queue(request(None, Action::List))
+                .await
+                .unwrap();
+            assert!(snapshot.items.is_empty());
+            assert_eq!(snapshot.used, 0);
+            let direct = scheduler
+                .submit(
+                    "host-queue-session".into(),
+                    "Direct follow-up".into(),
+                    None,
+                    Some("direct".into()),
+                    "Standard".into(),
+                    None,
+                    None,
+                    None,
+                    DialogSubmissionPolicy::for_source(DialogTriggerSource::DesktopUi),
+                    None,
+                    None,
+                    None,
+                )
+                .await;
+            assert!(direct
+                .unwrap_err()
+                .contains("subagent_follow_up_unsupported"));
+            assert_eq!(scheduler.queue_depth("host-queue-session"), 0);
+        } else {
+            assert_eq!(result.unwrap().receipt.unwrap().status, Status::Queued);
+            assert_eq!(scheduler.queue_depth("host-queue-session"), 1);
+        }
+        assert!(scheduler
+            .active_turns
+            .matches_turn("host-queue-session", "active-turn"));
+    }
+}
+
+#[tokio::test]
 async fn host_queue_duplicate_and_conflicting_submissions() {
     let (scheduler, _, _root, epoch) = fixture().await;
     let submit = request(

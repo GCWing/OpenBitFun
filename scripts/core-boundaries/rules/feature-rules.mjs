@@ -146,7 +146,7 @@ export const optionalDependencyFeatureOwnerRules = [
       { depName: 'log', ownerFeatures: ['agent-runtime', 'native-hook-runtime'] },
       { depName: 'regex', ownerFeatures: ['agent-runtime', 'definition-contracts', 'native-hook-settings'] },
       { depName: 'serde', ownerFeatures: ['agent-runtime', 'definition-contracts', 'native-hook-runtime'] },
-      { depName: 'serde_json', ownerFeatures: ['agent-runtime', 'native-hook-runtime', 'native-hook-settings'] },
+      { depName: 'serde_json', ownerFeatures: ['agent-runtime', 'definition-contracts', 'native-hook-runtime', 'native-hook-settings'] },
       { depName: 'serde_yaml', ownerFeatures: ['agent-runtime', 'definition-contracts'] },
       { depName: 'sha2', ownerFeatures: ['agent-runtime'] },
       { depName: 'thiserror', ownerFeatures: ['agent-runtime', 'definition-contracts', 'native-hook-runtime'] },
@@ -604,9 +604,12 @@ export const capabilityContractDependencyRules = [
     featureProfiles: {
       default: [],
       'definition-contracts': [
+        // Skill declarations reuse pure hook validation without process support.
+        'native-hook-settings',
         'dep:openbitfun-core-types',
         'dep:regex',
         'dep:serde',
+        'dep:serde_json',
         'dep:serde_yaml',
         'dep:thiserror',
       ],
@@ -623,6 +626,8 @@ export const capabilityContractDependencyRules = [
         'tokio/macros',
         'tokio/process',
         'tokio/rt',
+        // Session hook once guards and cancellation watchers.
+        'tokio/sync',
         'tokio/time',
       ],
       'agent-runtime': [
