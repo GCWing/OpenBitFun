@@ -13,7 +13,10 @@ import { RemoteChatPollingCursor, RemoteChatPollingSnapshot } from '../../servic
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { RemoteLogger } from '../../services/RemoteLogger';
 import { RemoteUiState } from '../../services/RemoteUiState';
-import { MessageCopyScope } from '../actions/ConversationIntent';
+import { RollbackFailureKind, RollbackOutcomePolicy } from '../../services/RollbackOutcomePolicy';
+import { MessageCopyScope, SessionRollbackRequest } from '../actions/ConversationIntent';
+import { RollbackPresentationPolicy } from '../policy/RollbackPresentationPolicy';
+import { SessionRollbackEventType } from '../policy/SessionRollbackPolicy';
 import { RemotePageState } from '../state/RemotePageState';
 import {
   RemoteConversationDependencies,
@@ -115,6 +118,10 @@ export class RemoteTranscriptController {
       !runtime.connection.ensureAvailable()) {
       return;
     }
+    // A new message is the conversation moving on from the point a rollback left
+    // it at, so the hint row describing that rollback stops being the last thing
+    // that happened. It is cleared only here and on a session change.
+    this.remote.clearRollbackNotice();
     const queuedBehindRunningTurn = this.hasRunningRemoteTurn();
     const activeTurnId = this.remoteActiveTurnId();
     const canSteerRunningTurn = queuedBehindRunningTurn && activeTurnId.length > 0 &&
@@ -264,6 +271,86 @@ export class RemoteTranscriptController {
       this.remote.isBusy,
       runtime.connection.ensureAvailable()
     );
+  }
+
+  /**
+   * Runs one staged rollback, then optionally sends the text it was staged with.
+   *
+   * This is the end of the chain the staged preview leaves open: the pane decides
+   * *that* a rollback happens and leaves staging before the host answers, so the
+   * answer has to come back somewhere that still exists — here, as an outcome on
+   * the page state.
+   *
+   * The two steps are one call on purpose. `sendText` is the send-while-staging
+   * exit, and the order between the steps is the contract: the host has to retire
+   * the turn before a message may be appended to it. A rollback that succeeded and
+   * a send that failed is recoverable — the draft is left in the composer — so the
+   * draft is only handed to the send path, never cleared here.
+   *
+   * After a success the transcript is refetched. The host answers the poll with
+   * the rewritten snapshot, but this client reads `historyRewritten` as false and
+   * only compares message counts, so nothing tells the store its persisted rows
+   * were replaced; asking for the transcript is what actually removes them.
+   */
+  async rollbackRemoteSession(request: SessionRollbackRequest): Promise<void> {
+    const runtime = requireRemoteRuntime(this.remoteRuntime);
+    const sessionId = this.remote.activeSession.sessionId || '';
+    const targetTurnId = request.targetTurnId.trim();
+    if (sessionId.length === 0 || targetTurnId.length === 0) {
+      // Nothing addressable reached this layer, so nothing can succeed. Say so
+      // rather than returning quietly: the pane has already left staging.
+      RemoteLogger.info(`rollback skipped session=${shortSessionId(sessionId)} target_len=${targetTurnId.length}`);
+      this.remote.reportRollbackOutcome(SessionRollbackEventType.RollbackFailed);
+      return;
+    }
+    try {
+      const result = await runtime.chat.rollbackSessionToTurn(sessionId, targetTurnId);
+      RemoteLogger.info(
+        `rollback projected retired=${result.retiredTurnIds.length} restored=${result.restoredFiles.length} ` +
+          `changed=${result.changed ? '1' : '0'}`
+      );
+      const notice = RemoteI18n.f2(
+        RollbackPresentationPolicy.ROLLED_BACK_NOTICE_KEY,
+        `${result.retiredTurnIds.length}`,
+        `${result.restoredFiles.length}`
+      );
+      const sendText = request.sendText.trim();
+      if (sendText.length > 0) {
+        // Sending runs the ordinary path, so the message is owned, acknowledged
+        // and failed exactly like any other one: a send that does not go out
+        // restores the draft and marks its own row, which is the recoverable
+        // state the frozen interaction asks for. It also retires any earlier
+        // notice, so this one is set after it.
+        this.remote.setChatInput(sendText);
+        await this.sendRemoteMessage();
+      }
+      this.remote.setRollbackNotice(notice);
+      this.rebuildRemoteTranscript(sessionId);
+    } catch (err) {
+      const kind = RollbackOutcomePolicy.failureKind(err);
+      RemoteLogger.info(
+        `rollback refused session=${shortSessionId(sessionId)} target=${shortSessionId(targetTurnId)} ` +
+          `kind=${kind} message=${RollbackOutcomePolicy.messageOf(err)}`
+      );
+      this.remote.reportRollbackOutcome(
+        kind === RollbackFailureKind.StaleView ?
+          SessionRollbackEventType.StaleViewDetected : SessionRollbackEventType.RollbackFailed
+      );
+    }
+  }
+
+  /**
+   * Refetches the transcript after a rollback this client could not repair.
+   *
+   * A stale or refused rollback leaves the local rows describing history the host
+   * no longer has, so the authoritative transcript is what the pane returns to.
+   */
+  resyncAfterRollback(): void {
+    const sessionId = this.remote.activeSession.sessionId || '';
+    if (sessionId.length === 0) {
+      return;
+    }
+    this.rebuildRemoteTranscript(sessionId);
   }
 
   retryRemoteMessage(text: string): void {

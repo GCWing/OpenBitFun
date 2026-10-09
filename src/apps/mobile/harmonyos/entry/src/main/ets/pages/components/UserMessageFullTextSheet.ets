@@ -1,6 +1,7 @@
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
+import { RollbackSelectionMenu } from './RollbackSelectionMenu';
 import { SheetCloseHeader } from './SheetCloseHeader';
 import { SHEET_HORIZONTAL_PADDING, SHEET_TOP_RADIUS } from './SheetLayout';
 import { INK, PAGE_BG } from './Theme';
@@ -15,11 +16,18 @@ import { INK, PAGE_BG } from './Theme';
  * it was opened from deliberately does not. Nothing else lives here — the
  * sheet's placement, scrim and drag bar belong to the adaptive sheet contract
  * the conversation binds it with.
+ *
+ * The panel also carries the rollback entry, on the same system selection menu
+ * the short bubble uses and through the same shared item: a message too long to
+ * read in its bubble is exactly the one a reader goes looking for that entry on.
+ * The panel closes as staging begins — the pane that owns the staging state is
+ * the conversation behind this sheet, and the preview belongs to it.
  */
 @ComponentV2
 export struct UserMessageFullTextSheet {
   @Param text: string = '';
   @Event onClose: () => void = () => {};
+  @Event onRollback: () => void = () => {};
   // The sheet is a bottom sheet under the immersive shell, so it reads the
   // navigation-bar strip itself and ends in a tail that rests the text above it.
   @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
@@ -49,6 +57,9 @@ export struct UserMessageFullTextSheet {
           .lineHeight(MobileDesignTypography.bodyLarge.lineHeight)
           .fontColor(INK)
           .copyOption(CopyOptions.LocalDevice)
+          .editMenuOptions(RollbackSelectionMenu.options(() => {
+            this.onRollback();
+          }))
           .padding({
             left: SHEET_HORIZONTAL_PADDING,
             right: SHEET_HORIZONTAL_PADDING,

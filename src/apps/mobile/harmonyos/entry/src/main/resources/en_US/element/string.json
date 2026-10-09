@@ -2269,6 +2269,34 @@
       "value": "Copy plain text"
     },
     {
+      "name": "chat_rollbackTo",
+      "value": "Roll back to"
+    },
+    {
+      "name": "chat_rollbackItem",
+      "value": "Roll back to this message"
+    },
+    {
+      "name": "chat_rolledBackNotice",
+      "value": "Rolled back %1$s messages · %2$s files restored"
+    },
+    {
+      "name": "chat_rollbackUnsupported",
+      "value": "This host version does not support rollback"
+    },
+    {
+      "name": "chat_rollbackSessionBusy",
+      "value": "Session is busy, try again later"
+    },
+    {
+      "name": "chat_rollbackDispatchDenied",
+      "value": "Rollback is not supported for this session"
+    },
+    {
+      "name": "chat_rollbackFailed",
+      "value": "Rollback failed, try again"
+    },
+    {
       "name": "status_waitingConnection",
       "value": "Waiting to connect"
     },

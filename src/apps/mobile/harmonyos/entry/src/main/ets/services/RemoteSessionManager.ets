@@ -2,7 +2,7 @@ import { WorkspaceCatalog, projectWorkspaceCatalog } from './WorkspaceCatalog';
 import { RuntimeFileLocation } from '../model/RemoteModels';
 import { HostSessionCallbacks, HostSessionStream, REMOTE_CAPABILITY_HOST_STREAM_V1 } from './HostSessionStream';
 import { SavedRuntimeConnection, SavedRuntimeConnectionsResponse } from '../model/RemoteModels';
-import { AssistantEntry, AssistantListResponse, ChatMessageItemResponse, ChatMessageResponse, CommandStatusResponse, CreateSessionOptions, CreateSessionResponse, FileInfo, FileInfoResponse, InitialSyncResult, ModelCatalogResponse, PermissionModeResponse, PollSessionResponse, PollSessionResult, ReadFileChunkResponse, ReadFileChunkResult, ReadFileResult, RecentWorkspaceEntry, RecentWorkspaceListResponse, RemoteCommand, RemoteImageContext, RemoteModelCatalog, RemotePermissionMode, RemoteQuestionAnswerPayload, RemoteSession, RemoteWorkspaceIdentity, REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1, SendMessageResponse, SessionListResponse, SessionListResult, SessionMessagesResponse, SessionMessagesResult, SessionSummary, SetAssistantResponse, SetSessionModelResponse, SetWorkspaceResponse, SteerTurnResponse, SteerTurnResult, WorkspaceInfo, WorkspaceInfoResponse } from '../model/RemoteModels';
+import { AssistantEntry, AssistantListResponse, ChatMessageItemResponse, ChatMessageResponse, CommandStatusResponse, CreateSessionOptions, CreateSessionResponse, FileInfo, FileInfoResponse, InitialSyncResult, ModelCatalogResponse, PermissionModeResponse, PollSessionResponse, PollSessionResult, ReadFileChunkResponse, ReadFileChunkResult, ReadFileResult, RecentWorkspaceEntry, RecentWorkspaceListResponse, RemoteCommand, RemoteImageContext, RemoteModelCatalog, RemotePermissionMode, RemoteQuestionAnswerPayload, RemoteSession, RemoteWorkspaceIdentity, REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1, SendMessageResponse, SessionListResponse, SessionListResult, SessionMessagesResponse, SessionMessagesResult, SessionRolledBackResponse, SessionRolledBackResult, SessionSummary, SetAssistantResponse, SetSessionModelResponse, SetWorkspaceResponse, SteerTurnResponse, SteerTurnResult, WorkspaceInfo, WorkspaceInfoResponse } from '../model/RemoteModels';
 import { Encoding } from './Encoding';
 import { CloudAccountClient, CloudAccountRequestError, CloudAccountSession } from './CloudAccountClient';
 import { RemoteI18n } from '../i18n/RemoteI18n';
@@ -482,6 +482,34 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
 
   async cancelTask(sessionId: string, turnId?: string): Promise<void> {
     await this.send<CommandStatusResponse>(RemoteCommandFactory.cancelTask(sessionId, turnId));
+  }
+
+  /**
+   * Retires one turn and everything the host recorded after it.
+   *
+   * The reply is decoded through the mapper rather than read off the response, so
+   * a host that answers with something other than `session_rolled_back` — an older
+   * build replying with a generic error, say — throws instead of arriving here as
+   * an empty success. The stale-view guard is deliberately not sent: this client
+   * has no storage index for the turn, and inventing one would only widen the race
+   * window without changing which turn is addressed.
+   */
+  async rollbackSessionToTurn(sessionId: string, targetTurnId: string): Promise<SessionRolledBackResult> {
+    const startedAt = Date.now();
+    RemoteLogger.info(
+      `rollback_session_to_turn start session=${RemoteSessionManager.shortId(sessionId)} ` +
+        `target=${RemoteSessionManager.shortId(targetTurnId)}`
+    );
+    const response = await this.send<SessionRolledBackResponse>(
+      RemoteCommandFactory.rollbackSessionToTurn(sessionId, targetTurnId)
+    );
+    const result = RemoteResponseMapper.sessionRolledBack(response);
+    RemoteLogger.info(
+      `rollback_session_to_turn done session=${RemoteSessionManager.shortId(result.sessionId)} ` +
+        `retired=${result.retiredTurnIds.length} restored=${result.restoredFiles.length} ` +
+        `changed=${result.changed ? '1' : '0'} ms=${Date.now() - startedAt}`
+    );
+    return result;
   }
 
   async renameSession(sessionId: string, title: string): Promise<void> {
