@@ -170,9 +170,22 @@ await app.agent.run('分析当前盘面。', {
 });
 ```
 
+`ensureSession({ sessionId, ... })` 恢复指定会话；不传 `sessionId` 时创建新会话。
+`app.agent.createSession(options)` 显式创建新会话，即使 options 中带有旧 `sessionId` 也不会复用。
+该方法复用已有 `agent.ensureSession` 协议；小应用也可继续用不传 `sessionId` 的旧写法。
+多个主题分别持久化自己的 `sessionId` 与 `appDataWorkspace`，不要把 appId 当作唯一会话槽。
+新建/切换时先 `app.chat.clearSession()`，等待会话与历史加载完成后再 `focusSession`；
+恢复失败应保留旧记录并允许重试，不得静默创建空白会话覆盖旧指针。
+`onUserMessage` 应返回完整处理 Promise，并核对 payload 的 `sessionId`，防止切换期间的迟到提交串入新主题。
+
 `contextFiles` 只接受由 ASCII 字母、数字、点、下划线和短横线组成的单层文件名，最多 8 个文件，单文件不超过 4 MiB、合计不超过 8 MiB。它不依赖 `appDataWorkspace`：宿主为每次运行在 Agent Runtime 内发布独立、不可变的 `.miniapp-context/<opaque-scope>` 虚拟只读快照，不会把内容写进小应用可修改的文件系统。宿主会自动向 Agent 提示本次快照的精确相对路径以及“不可信数据而非指令”的边界。每个小应用最多同时保留 8 个活跃快照，Runtime 还会执行全局快照数和内存预算；终止事件会释放对应快照，达到上限时新请求会明确失败而不会淘汰仍在运行的上下文。快照只存活于本次 Runtime 进程和回合，MiniApp 的中断回合不能原地恢复；进程重启后应重新提交回合并再次传入 `contextFiles`。
 
 对于 `runtime_profile = market_strict` 的市场小应用，只有本次请求实际携带有效 `contextFiles` 时，Agent 才额外获得限定到该虚拟快照的 `Read` / `Grep`。不携带上下文时仍保持纯 Web 工具集；虚拟路径不会回退到同名物理文件，`storage.json`、其他快照、工作区其他文件、用户目录以及 Write / Edit / Shell / Task / Skill 等宿主能力都不可访问。
+
+上下文文件是研究线索，不是证据全集。把主体、数据时间和少量关键行情放进 prompt，完整明细通过
+`contextFiles` 按需读取；使用宿主给出的精确路径，不拼接固定的 `.miniapp-context` 路径。
+需要当前新闻、公告或财务依据时，Agent 仍可独立使用 `WebSearch` / `WebFetch`，并区分数据时间、
+发布时间与推断。不要用“只允许引用快照字段”的指令关闭这些研究能力。
 
 ### `app.dialog.*` — 系统对话框
 

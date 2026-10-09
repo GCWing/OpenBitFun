@@ -34,7 +34,6 @@ import {
 import { shouldOpenMiniAppAgentRunInMainScene } from './miniAppAgentVisibility';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
-import { createLogger } from '@/shared/utils/logger';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { beginMiniAppOperation, isMiniAppClosing, trackMiniAppStream } from '../miniAppLifecycle';
 
@@ -54,7 +53,6 @@ interface AiStreamPayload {
 
 /** Distinguishes runners of the same app (installed app vs. draft preview). */
 let composerTokenSeq = 0;
-const log = createLogger('useMiniAppBridge');
 
 export function useMiniAppBridge(
   iframeRef: RefObject<HTMLIFrameElement>,
@@ -108,6 +106,7 @@ export function useMiniAppBridge(
   // Hidden agent sessions started by this iframe; used to filter the global
   // agentic:// event stream before forwarding events into the iframe.
   const agentSessionIdsRef = useRef<Set<string>>(new Set());
+  const hydratedAgentSessionIdsRef = useRef<Set<string>>(new Set());
 
   // This runner's identity for bubble composer claims.
   const composerTokenRef = useRef<string>('');
@@ -352,7 +351,6 @@ export function useMiniAppBridge(
               model: typeof params.model === 'string' ? params.model : undefined,
             });
             surfaceScope.assertCurrent('bind MiniApp session');
-            agentSessionIdsRef.current.add(result.sessionId);
             const sessionWasRegistered = flowChatStore
               .getState()
               .sessions
@@ -372,20 +370,16 @@ export function useMiniAppBridge(
                   workspaceId: result.workspaceId,
                 },
               );
-              if (!result.created) {
-                try {
-                  await flowChatStore.loadSessionHistory(result.sessionId, { includeInternal: true });
-                } catch (error) {
-                  // The binding is still valid even if UI history hydration
-                  // fails; keep the bubble on the exact topic session.
-                  log.warn('Failed to hydrate restored MiniApp agent session', {
-                    appId,
-                    sessionId: result.sessionId,
-                    error,
-                  });
-                }
-              }
             }
+            if (!result.created && !hydratedAgentSessionIdsRef.current.has(result.sessionId)) {
+              // A failed restore must be retryable even after the transient UI
+              // session was registered. Never acknowledge an empty history as
+              // a successful topic restore or overwrite its durable pointer.
+              await flowChatStore.loadSessionHistory(result.sessionId, { includeInternal: true });
+              surfaceScope.assertCurrent('restore MiniApp session history');
+            }
+            hydratedAgentSessionIdsRef.current.add(result.sessionId);
+            agentSessionIdsRef.current.add(result.sessionId);
             reply(result);
             return;
           }
@@ -711,6 +705,17 @@ export function useMiniAppBridge(
         return;
       }
       if (typeof detail.text !== 'string') return;
+      const currentClaim = useMiniAppStore.getState().composerClaims[app.id];
+      if (detail.sessionId && currentClaim?.sessionId !== detail.sessionId) {
+        if (detail.requestId) {
+          completeMiniAppComposerMessage(
+            composerTokenRef.current,
+            detail.requestId,
+            'The MiniApp conversation changed before the message was delivered',
+          );
+        }
+        return;
+      }
       const payload = {
         text: detail.text,
         ...(detail.displayText !== undefined ? { displayText: detail.displayText } : {}),

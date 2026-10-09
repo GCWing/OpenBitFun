@@ -36,7 +36,12 @@ export function syncMiniAppConversations(surfaceId = getActiveSurfaceId()): void
   for (const entry of dock.entries) {
     if (entry.surfaceId !== surfaceId || entry.kind !== 'miniapp') continue;
     const claim = claims[entry.appId!];
-    if (!claim || claim.surfaceId !== surfaceId || !claim.sessionId) dock.remove(dockConversationKey(entry));
+    // clearSession is the start of a topic switch, not an app close. Keep its
+    // dock position while the new session is prepared; the view disables the
+    // old composer and shows a pending state. Removing it here would move the
+    // active conversation to an unrelated tab and lose that selection on bind.
+    if (!claim || claim.surfaceId !== surfaceId
+      || (!claim.sessionId && claim.token !== entry.claimToken)) dock.remove(dockConversationKey(entry));
   }
   for (const appId of Object.keys(claims)) {
     if (dock.hiddenMiniApps[miniAppDockKey(surfaceId, appId)]) continue;

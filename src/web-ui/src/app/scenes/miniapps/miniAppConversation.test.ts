@@ -67,6 +67,41 @@ describe('MiniApp and conversation navigation', () => {
     expect(useConversationDockStore.getState().entries[0].claimToken).toBe('slides#2');
   });
 
+  it('keeps the selected app in place while a new topic clears and replaces its binding', () => {
+    bind('slides', 'first-deck');
+    bind('chart');
+    syncMiniAppConversations();
+    openMiniAppConversation('slides');
+    const oldKey = dockConversationKey(resolveMiniAppConversation('slides')!);
+    useConversationDockStore.getState().setDraft(oldKey, 'A draft for the first deck');
+    useMiniAppStore.getState().clearComposerSession('slides', 'slides#1');
+    syncMiniAppConversations();
+    expect(resolveMiniAppConversation('slides')).toBeUndefined();
+    expect(useConversationDockStore.getState().activeBySurface.local).toBe(oldKey);
+    expect(useConversationDockStore.getState().entries.map(entry => entry.appId)).toEqual(['slides', 'chart']);
+
+    bind('slides', 'second-deck');
+    syncMiniAppConversations();
+    const secondKey = dockConversationKey(resolveMiniAppConversation('slides')!);
+    expect(useConversationDockStore.getState().activeBySurface.local).toBe(secondKey);
+    expect(useConversationDockStore.getState().drafts[secondKey]).toBeUndefined();
+    expect(useConversationDockStore.getState().drafts[oldKey].text).toBe('A draft for the first deck');
+    expect(fixture.sessions.has('first-deck')).toBe(true);
+
+    bind('slides', 'first-deck');
+    syncMiniAppConversations();
+    expect(useConversationDockStore.getState().activeBySurface.local).toBe(oldKey);
+    expect(useConversationDockStore.getState().entries).toHaveLength(2);
+  });
+
+  it('does not retain an old topic when a different runner claims the app without a binding', () => {
+    bind('slides');
+    openMiniAppConversation('slides');
+    useMiniAppStore.getState().claimComposer('slides', { token: 'slides#replacement', surfaceId: 'local' });
+    syncMiniAppConversations();
+    expect(useConversationDockStore.getState().entries).toEqual([]);
+  });
+
   it('follows main app navigation only from an expanded MiniApp conversation', () => {
     bind('slides'); bind('chart'); syncMiniAppConversations(); openMiniAppConversation('slides');
     const slides = dockConversationKey(resolveMiniAppConversation('slides')!);
