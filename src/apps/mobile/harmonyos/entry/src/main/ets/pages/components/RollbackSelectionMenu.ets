@@ -14,6 +14,12 @@ import { RollbackPresentationPolicy } from '../policy/RollbackPresentationPolicy
  * keeps copy and select-all intact; `onMenuItemClick` claims only its own id and
  * returns false for everything else, so the system runs its own logic untouched
  * (`Text.editMenuOptions`, API 12+).
+ *
+ * The item closes the menu it was tapped in before it asks for the rollback.
+ * Measured on device, an extended item that only returns true leaves the system
+ * overlay open over the staged preview it just asked for — the tap cannot dismiss
+ * a menu the app does not own — so the surface's own `TextController` does it
+ * here, once, for every surface that raises this menu.
  */
 export class RollbackSelectionMenu {
   /**
@@ -24,8 +30,13 @@ export class RollbackSelectionMenu {
    */
   private static readonly ITEM_ID: string = 'openbitfun_rollback_to_message';
 
-  /** Options for one surface's `Text`. */
-  static options(onRollback: () => void): EditMenuOptions {
+  /**
+   * Options for one surface's `Text`.
+   *
+   * `controller` is the controller that `Text` was built with: dismissing the
+   * menu needs the component the menu belongs to.
+   */
+  static options(controller: TextController, onRollback: () => void): EditMenuOptions {
     return {
       onCreateMenu: (menuItems: Array<TextMenuItem>): Array<TextMenuItem> => {
         const items: Array<TextMenuItem> = menuItems.slice();
@@ -39,6 +50,7 @@ export class RollbackSelectionMenu {
         if (!menuItem.id.equals(TextMenuItemId.of(RollbackSelectionMenu.ITEM_ID))) {
           return false;
         }
+        controller.closeSelectionMenu();
         onRollback();
         return true;
       }

@@ -120,6 +120,11 @@ export struct ChatUserMessageBubble {
    */
   @Event onRollbackMessage: (turnId: string, text: string) => void =
     (_turnId: string, _text: string) => {};
+  /**
+   * The bubble's own text controller, so the rollback item can dismiss the system
+   * selection menu it was tapped in (see `RollbackSelectionMenu`).
+   */
+  private readonly selectionController: TextController = new TextController();
 
   build() {
     Row() {
@@ -173,12 +178,12 @@ export struct ChatUserMessageBubble {
    */
   @Builder
   private PlainText() {
-    Text(this.visibleText())
+    Text(this.visibleText(), { controller: this.selectionController })
       .fontSize(MobileDesignTypography.bodyLarge.size)
       .lineHeight(MobileDesignTypography.bodyLarge.lineHeight)
       .fontColor(this.ghost ? MUTED : INK)
       .copyOption(CopyOptions.LocalDevice)
-      .editMenuOptions(RollbackSelectionMenu.options(() => {
+      .editMenuOptions(RollbackSelectionMenu.options(this.selectionController, () => {
         this.requestRollback();
       }))
   }

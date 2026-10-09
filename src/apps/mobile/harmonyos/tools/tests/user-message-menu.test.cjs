@@ -72,6 +72,32 @@ test('each call hands back its own list', () => {
   assert.equal(UserMessageMenuPolicy.items().length, 2);
 });
 
+test('the system selection menu is dismissed before the rollback it asked for', () => {
+  // Measured on device: a tap on the extended item left the system selection menu
+  // open over the staged preview it had just asked for, and a second tap was
+  // needed to dismiss it. The item now closes the menu through the controller of
+  // the surface that raised it, before it asks for the rollback.
+  const menu = fs.readFileSync(path.join(etsRoot, 'pages/components/RollbackSelectionMenu.ets'), 'utf8');
+  assert.ok(/closeSelectionMenu\(\);\s*\n\s*onRollback\(\);/.test(menu),
+    'the menu item must dismiss the selection menu before it asks for the rollback');
+  assert.ok(/static options\(controller: TextController, onRollback/.test(menu),
+    'the item needs the controller of the Text the menu belongs to');
+  for (const surface of [
+    'pages/components/ChatMessageChrome.ets',
+    'pages/components/UserMessageFullTextSheet.ets'
+  ]) {
+    const source = fs.readFileSync(path.join(etsRoot, surface), 'utf8');
+    assert.ok(/new TextController\(\)/.test(source),
+      `${surface} must own the controller its selection menu is dismissed through`);
+    assert.ok(/Text\([\s\S]{0,60}\{ controller: this\.\w+ \}\)/.test(source),
+      `${surface} must build its Text with that controller, or the dismissal goes nowhere`);
+    assert.ok(/editMenuOptions\(RollbackSelectionMenu\.options\(this\.\w+, \(\) => \{/.test(source),
+      `${surface} must hand its own controller to the shared menu item`);
+    assert.equal(source.includes('RollbackSelectionMenu.options(() =>'), false,
+      `${surface} must not build the menu item without a controller`);
+  }
+});
+
 test('this package adds its copy to every locale catalog', () => {
   const expected = {
     chat_fullText: { 'en_US': 'Full text', 'zh_CN': '全文' },

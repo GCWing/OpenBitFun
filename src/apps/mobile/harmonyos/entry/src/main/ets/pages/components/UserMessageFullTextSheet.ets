@@ -28,6 +28,12 @@ export struct UserMessageFullTextSheet {
   @Param text: string = '';
   @Event onClose: () => void = () => {};
   @Event onRollback: () => void = () => {};
+  /**
+   * The panel's own text controller, so the rollback item dismisses the system
+   * selection menu it was tapped in instead of leaving it over the conversation the
+   * staging belongs to (see `RollbackSelectionMenu`).
+   */
+  private readonly selectionController: TextController = new TextController();
   // The sheet is a bottom sheet under the immersive shell, so it reads the
   // navigation-bar strip itself and ends in a tail that rests the text above it.
   @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
@@ -51,13 +57,13 @@ export struct UserMessageFullTextSheet {
         onClose: this.onClose
       })
       Scroll() {
-        Text(this.text)
+        Text(this.text, { controller: this.selectionController })
           .width('100%')
           .fontSize(MobileDesignTypography.bodyLarge.size)
           .lineHeight(MobileDesignTypography.bodyLarge.lineHeight)
           .fontColor(INK)
           .copyOption(CopyOptions.LocalDevice)
-          .editMenuOptions(RollbackSelectionMenu.options(() => {
+          .editMenuOptions(RollbackSelectionMenu.options(this.selectionController, () => {
             this.onRollback();
           }))
           .padding({
