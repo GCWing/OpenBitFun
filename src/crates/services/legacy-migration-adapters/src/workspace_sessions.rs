@@ -1139,6 +1139,15 @@ fn migrate_session_workspace_state(
     };
 
     let mut changed = false;
+    if let Some(model_id) = config.get_mut("model_id") {
+        if model_id
+            .as_str()
+            .is_some_and(|id| metadata.compatible_model_selector(id) != id)
+        {
+            *model_id = serde_json::Value::String("primary".to_string());
+            changed = true;
+        }
+    }
     for key in ["workspace_path", "project_workspace_path"] {
         if let Some(value) = config.get_mut(key) {
             changed |= relocate_json_path(value, relocations);
@@ -1340,6 +1349,7 @@ fn plan_sessions(
                     conflicts.push(MigrationConflict { domain: MigrationDomainId::WorkspaceSessions, code: "session_turns_recovered".into(), source_summary: session_id.clone(), target_summary: "Only readable, unambiguous Turns will be imported; inspect the original Session for omitted content.".into(), resolution: ConflictResolution::ItemSkipped });
                 }
                 let mut session_metadata = metadata_file.metadata;
+                session_metadata.normalize_legacy_model_selector();
                 // Legacy metadata counters can lag persisted Turns. Rebuild the
                 // derived count in the import copy without changing the source.
                 session_metadata.turn_count = turns.len();
@@ -2484,6 +2494,54 @@ mod tests {
         }
     }
 
+    #[test]
+    fn legacy_auto_state_conversion_preserves_external_selectors_and_unknown_fields() {
+        let temp = test_tempdir("legacy-auto");
+        let path = temp.path().join("state.json");
+        for (agent, provider, selector, expected) in [
+            ("Standard", None, Some("auto"), Some("primary")),
+            ("Standard", None, None, None),
+            (
+                "Standard",
+                None,
+                Some("removed-model"),
+                Some("removed-model"),
+            ),
+            ("acp:codex", None, Some("auto"), Some("auto")),
+            ("Standard", Some("acp"), Some("auto"), Some("auto")),
+        ] {
+            let mut metadata = SessionMetadata::new(
+                "session-1".into(),
+                "Legacy".into(),
+                agent.into(),
+                "auto".into(),
+            );
+            metadata.custom_metadata = provider.map(|value| serde_json::json!({"provider": value}));
+            let source = serde_json::json!({
+                "config": {"model_id": selector, "unknown_future_field": "preserved"},
+                "history": {"model": "auto"}
+            });
+            atomic_write_json(&path, &source).unwrap();
+            let original = fs::read(&path).unwrap();
+            let converted = migrate_session_workspace_state(
+                temp.path(),
+                &path,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &HashMap::new(),
+                &metadata,
+            )
+            .unwrap();
+            assert_eq!(converted.is_some(), selector != expected);
+            let value: serde_json::Value =
+                serde_json::from_slice(converted.as_deref().unwrap_or(&original)).unwrap();
+            assert_eq!(value["config"]["model_id"].as_str(), expected);
+            assert_eq!(value["config"]["unknown_future_field"], "preserved");
+            assert_eq!(value["history"]["model"], "auto");
+            assert_eq!(fs::read(&path).unwrap(), original);
+        }
+    }
+
     fn assert_personal_assistant_rehomed(metadata_has_id: bool, state_has_id: bool) {
         let temp = test_tempdir("personal-assistant");
         let roots = fixture_roots(temp.path());
@@ -2536,6 +2594,7 @@ mod tests {
         let mut metadata: StoredSessionMetadataFile =
             serde_json::from_slice(&fs::read(&metadata_path).unwrap()).unwrap();
         let source_display = source_assistant.to_string_lossy().into_owned();
+        metadata.metadata.model_name = "auto".to_string();
         metadata.metadata.workspace_path = Some(source_display.clone());
         metadata.metadata.project_workspace_path = Some(source_display.clone());
         metadata.metadata.execution_target =
@@ -2551,6 +2610,7 @@ mod tests {
             &serde_json::json!({
                 "schema_version": 1,
                 "config": {
+                    "model_id": "auto",
                     "workspace_id": state_has_id.then_some("assistant-legacy"),
                     "project_workspace_id": state_has_id.then_some("assistant-legacy"),
                     "workspace_path": source_display.clone(),
@@ -2729,6 +2789,8 @@ mod tests {
                 .unwrap();
         let imported_state: serde_json::Value =
             serde_json::from_slice(&fs::read(imported_root.join("state.json")).unwrap()).unwrap();
+        assert_eq!(imported_metadata.metadata.model_name, "primary");
+        assert_eq!(imported_state["config"]["model_id"], "primary");
         let imported_registry: WorkspacePersistenceData =
             serde_json::from_slice(&fs::read(target_workspace_data_path(&roots)).unwrap()).unwrap();
         for id in [

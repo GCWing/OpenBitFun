@@ -15231,6 +15231,89 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn legacy_auto_restore_session_view_uses_primary_without_writing_history() {
+        let workspace = TestWorkspace::new();
+        let paths = workspace.path_manager();
+        let persistence = Arc::new(PersistenceManager::new(paths.clone()).unwrap());
+        let manager = test_manager(persistence.clone());
+        for (metadata_model, state_model, agent, expected) in [
+            ("auto", Some("auto"), "Standard", "primary"),
+            ("auto", None, "Standard", "primary"),
+            ("auto", Some("fast"), "Standard", "fast"),
+            ("fast", Some("auto"), "Standard", "primary"),
+            ("auto", Some("auto"), "acp:codex", "auto"),
+            (
+                "removed-model",
+                Some("removed-model"),
+                "Standard",
+                "removed-model",
+            ),
+        ] {
+            let id = Uuid::new_v4().to_string();
+            let session = Session::new_with_id(
+                id.clone(),
+                "Legacy model".into(),
+                agent.into(),
+                SessionConfig {
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    model_id: Some(metadata_model.into()),
+                    ..Default::default()
+                },
+            );
+            persistence
+                .save_session(workspace.path(), &session)
+                .await
+                .unwrap();
+            let directory = paths.project_sessions_dir(workspace.path()).join(&id);
+            let metadata_path = directory.join("metadata.json");
+            let state_path = directory.join("state.json");
+            if let Some(model) = state_model {
+                let mut state: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+                state["config"]["model_id"] = serde_json::json!(model);
+                state["config"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("model_binding_policy");
+                std::fs::write(&state_path, serde_json::to_vec(&state).unwrap()).unwrap();
+            } else {
+                std::fs::remove_file(&state_path).unwrap();
+            }
+            let metadata_bytes = std::fs::read(&metadata_path).unwrap();
+            let state_bytes = std::fs::read(&state_path).ok();
+            for restored in [
+                manager
+                    .restore_session_view(workspace.path(), &id)
+                    .await
+                    .unwrap()
+                    .0,
+                manager
+                    .restore_session_view_tail(workspace.path(), &id, 1)
+                    .await
+                    .unwrap()
+                    .0,
+            ] {
+                assert_eq!(restored.config.model_id.as_deref(), Some(expected));
+            }
+            assert!(manager.get_session(&id).is_none());
+            assert_eq!(std::fs::read(&metadata_path).unwrap(), metadata_bytes);
+            assert_eq!(std::fs::read(&state_path).ok(), state_bytes);
+            // A normal save persists the compatible selector for subsequent readers.
+            let restored = persistence
+                .load_session(workspace.path(), &id)
+                .await
+                .unwrap();
+            persistence
+                .save_session(workspace.path(), &restored)
+                .await
+                .unwrap();
+            let state: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+            assert_eq!(state["config"]["model_id"], expected);
+        }
+    }
+
+    #[tokio::test]
     async fn start_dialog_turn_with_existing_context_persists_turn_and_snapshot() {
         let workspace = TestWorkspace::new();
         let persistence_manager =

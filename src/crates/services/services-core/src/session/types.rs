@@ -1142,6 +1142,28 @@ pub struct SessionLastTurn {
 }
 
 impl SessionMetadata {
+    /// Translate the retired native selector without changing external agents' IDs.
+    pub fn compatible_model_selector<'a>(&self, selector: &'a str) -> &'a str {
+        let external_provider = self
+            .custom_metadata
+            .as_ref()
+            .and_then(|custom| custom.get(openbitfun_core_types::SESSION_PROVIDER_METADATA_KEY))
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|provider| !provider.is_empty());
+        if selector == "auto" && !self.agent_type.starts_with("acp:") && !external_provider {
+            "primary"
+        } else {
+            selector
+        }
+    }
+
+    /// Apply read compatibility in memory; reading history must not rewrite files.
+    pub fn normalize_legacy_model_selector(&mut self) {
+        if self.compatible_model_selector(&self.model_name) != self.model_name {
+            self.model_name = "primary".to_string();
+        }
+    }
+
     pub fn needs_last_turn_backfill(&self) -> bool {
         self.turn_count > 0
             && self.last_turn.as_ref().is_none_or(|last| {

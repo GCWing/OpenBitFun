@@ -2584,6 +2584,11 @@ impl PersistenceManager {
         if config.model_id.is_none() && !metadata.model_name.is_empty() {
             config.model_id = Some(metadata.model_name.clone());
         }
+        if let Some(model_id) = config.model_id.as_mut() {
+            if metadata.compatible_model_selector(model_id) != model_id.as_str() {
+                *model_id = "primary".to_string();
+            }
+        }
 
         let compression_state = stored_state
             .as_ref()
