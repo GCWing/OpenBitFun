@@ -18,6 +18,15 @@ portable stream contracts.
   orchestration behavior here.
 - Stream contract changes must preserve ordering, tool-call reconstruction,
   reasoning/thinking fields, usage accounting, and malformed-chunk handling.
+- Tool argument syntax repair uses upstream `jsonrepair-rs` with
+  `preserve_comment_markers` and `decode_unquoted_escapes` enabled. Keep repair
+  gated by the setting and a confirmed normal tool-use completion, then parse
+  and validate the candidate through the existing pipeline. Schema-guided
+  correction is not enabled. Write close-only recovery remains separate.
+- Escape decoding preserves the existing model-argument policy: an unquoted
+  literal Windows path containing `\n` or `\t` is ambiguous and will decode
+  those escapes. Use properly escaped JSON paths; do not infer path semantics
+  from the controller OS, since the runtime and workspace may be remote.
 
 ## Verification
 

@@ -4598,6 +4598,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonrepair-rs"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69f68e68ccddaba9e4ff2d1f151ec1bb62e8475eb574c252ba86c844b8590aff"
+
+[[package]]
 name = "jsonrpcmsg"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6034,11 +6040,11 @@ dependencies = [
  "anyhow",
  "async-trait",
  "futures",
+ "jsonrepair-rs",
  "log",
  "openbitfun-agent-tools",
  "openbitfun-core-types",
  "openbitfun-events",
- "openbitfun-tool-call-jsonrepair",
  "serde",
  "serde_json",
  "tokio",
@@ -7010,14 +7016,6 @@ dependencies = [
  "sha2",
  "tempfile",
  "toml 0.9.12+spec-1.1.0",
-]
-
-[[package]]
-name = "openbitfun-tool-call-jsonrepair"
-version = "1.0.5"
-dependencies = [
- "serde",
- "serde_json",
 ]
 
 [[package]]

@@ -198,7 +198,7 @@ block-beta
 | Assembly | `src/crates/assembly/*` | `agent-content`、`core`、`external-sources`、`product-capabilities` |
 | Adapters | `src/crates/adapters/*` | `agent-runtime-ipc`、`ai-adapters`、`claude-code-adapter`、`codex-adapter`、`dsh-adapter`、`opencode-adapter`、`static-hook-support`、`transport`、`webdriver` |
 | Services | `src/crates/services/*` | `services-core`、`services-integrations`、`miniapp-market-service`、`skin-market-service`、`relay-service`、`page-function-runtime`、`terminal` |
-| Execution | `src/crates/execution/*` | `agent-runtime`、`agent-workflows`、`agent-stream`、`plugin-runtime-client`、`runtime-services`、`tool-contracts`、`tool-provider-groups`、`tool-execution`、`tool-call-jsonrepair` |
+| Execution | `src/crates/execution/*` | `agent-runtime`、`agent-workflows`、`agent-stream`、`plugin-runtime-client`、`runtime-services`、`tool-contracts`、`tool-provider-groups`、`tool-execution` |
 | Contracts | `src/crates/contracts/*` | `core-types`、`events`、`runtime-ports`、`product-domains` |
 
 Installer、E2E 以及 MiniApp/Skin market server 和对应 service 在 Level 0 图中分别归入交付入口、测试范围或 Services 家族，不作为独立架构模块。

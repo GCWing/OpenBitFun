@@ -16,7 +16,6 @@
 | `runtime-services` | Typed runtime service assembly 和 service availability facts | [AGENTS.md](runtime-services/AGENTS.md) |
 | `tool-provider-groups` | Tool provider group facts 和 product-full tool group composition；Cargo package 仍为 `openbitfun-tool-packs` | [AGENTS.md](tool-provider-groups/AGENTS.md) |
 | `tool-execution` | 底层 file/search/tool IO helper、ExecCommand presentation facts、Computer Use loop/retry policy、prompt-safe tool context facts 和 provider-neutral tool runtime policy；Cargo package 仍为 `tool-runtime` | [AGENTS.md](tool-execution/AGENTS.md) |
-| `tool-call-jsonrepair` | 流式 tool-call 参数的有界 JSON 修复（`jsonrepair-rs` 本地 fork，采用不把 `#`/`//`/`/* */` 视为注释的 tool-argument profile）；Cargo package 仍为 `openbitfun-tool-call-jsonrepair` | [README.md](tool-call-jsonrepair/README.md) |
 
 ## 放置规则
 
