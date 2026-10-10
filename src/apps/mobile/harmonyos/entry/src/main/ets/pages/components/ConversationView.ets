@@ -55,6 +55,18 @@ import {
   TRANSPARENT,
 } from './Theme';
 
+/**
+ * The overlay sheets the conversation can present, one at a time.
+ *
+ * The root node carries a single sheet binding, so which sheet is up has to be
+ * named rather than counted: a second `bindSheet` on the same node is dropped,
+ * and with it every sheet that node was meant to open.
+ */
+const CONVERSATION_SHEET_NONE: string = '';
+const CONVERSATION_SHEET_FULL_TEXT: string = 'full_text';
+const CONVERSATION_SHEET_SKILLS: string = 'skills';
+const CONVERSATION_SHEET_USAGE: string = 'usage';
+
 @ComponentV2
 export struct ConversationView {
   @Param state: ConversationViewState = new ConversationViewState();
@@ -63,25 +75,24 @@ export struct ConversationView {
   @Event onRestoreSidebar: () => void = () => {};
   @Local showHeaderActions: boolean = false;
   /**
-   * The user message whose full text is open, as a panel over the conversation.
+   * Which overlay sheet this pane is presenting, and whether one is up.
    *
-   * One panel at a time is the whole reason this is state of the conversation
-   * rather than of the row that was long-pressed: the rows are virtualized and
-   * reused, and a sheet bound per row would fight the pool instead of the
-   * message it belongs to. It is view state, so it never becomes a projected
-   * field or an intent: nothing outside this pane reads it.
+   * A node carries exactly one sheet binding, so the three sheets the
+   * conversation can open take turns on the root's single `bindSheet` rather
+   * than each adding a binding beside it: a second binding on the same node is
+   * dropped, which silently costs every sheet on it. The kind is what the
+   * content and the options switch on, and the flag is what the framework
+   * writes back when the user drags the sheet away.
+   *
+   * This is state of the conversation rather than of the row that was
+   * long-pressed: the rows are virtualized and reused, and a sheet bound per row
+   * would fight the pool instead of the message it belongs to. It is view state,
+   * so it never becomes a projected field or an intent: nothing outside this pane
+   * reads it.
    */
-  @Local showFullText: boolean = false;
+  @Local activeSheet: string = CONVERSATION_SHEET_NONE;
+  @Local sheetPresented: boolean = false;
   @Local fullTextMessage: string = '';
-  /**
-   * The two command-row sheets, opened from the 技能 and 用量 chips.
-   *
-   * Same reasoning as the full-text panel below: they are view state of this
-   * pane, not projected fields, because nothing outside it reads whether a sheet
-   * happens to be open.
-   */
-  @Local showSkillPicker: boolean = false;
-  @Local showUsageReport: boolean = false;
   /**
    * How much of the pane the two floating layers cover, measured rather than
    * assumed: the composer grows with multiline text and attachments, and the
@@ -137,27 +148,71 @@ export struct ConversationView {
     .width('100%')
     .height('100%')
     .backgroundColor(PAGE_BG)
-    .bindSheet($$this.showFullText, this.FullTextSheet(), this.fullTextSheetOptions())
-    .bindSheet($$this.showSkillPicker, this.SkillPickerSheetSurface(), this.skillPickerSheetOptions())
-    .bindSheet($$this.showUsageReport, this.UsageReportSheetSurface(), this.usageReportSheetOptions())
+    .bindSheet($$this.sheetPresented, this.ActiveSheet(), this.activeSheetOptions())
   }
 
+  /**
+   * The sheet that is up, built from the same kind the flag was opened with.
+   *
+   * Every branch closes by clearing the flag, because the sheet is dismissed by
+   * the framework and by its own affordances both.
+   */
   @Builder
-  private FullTextSheet() {
-    UserMessageFullTextSheet({
-      text: this.fullTextMessage,
-      onClose: () => {
-        this.showFullText = false;
-      }
-    })
+  private ActiveSheet() {
+    if (this.activeSheet === CONVERSATION_SHEET_FULL_TEXT) {
+      UserMessageFullTextSheet({
+        text: this.fullTextMessage,
+        onClose: () => {
+          this.closeSheet();
+        }
+      })
+    } else if (this.activeSheet === CONVERSATION_SHEET_SKILLS) {
+      SkillPickerSheet({
+        palette: this.commandPalette,
+        onSelect: (skillId: string) => {
+          this.closeSheet();
+          this.onIntent(ConversationIntents.commandPalette(
+            new CommandPaletteRequest(CommandPaletteAction.SelectSkill, skillId)));
+        },
+        onRefresh: () => {
+          this.onIntent(ConversationIntents.commandPalette(
+            new CommandPaletteRequest(CommandPaletteAction.RefreshCatalog)));
+        },
+        onClose: () => {
+          this.closeSheet();
+        }
+      })
+    } else if (this.activeSheet === CONVERSATION_SHEET_USAGE) {
+      UsageReportSheet({
+        palette: this.commandPalette,
+        onRetry: () => {
+          this.onIntent(ConversationIntents.commandPalette(
+            new CommandPaletteRequest(CommandPaletteAction.RetryUsage)));
+        },
+        onClose: () => {
+          this.closeSheet();
+        }
+      })
+    }
   }
 
-  private skillPickerSheetOptions(): SheetOptions {
-    return this.adaptiveSheetOptions(this.skillPickerSheetPlacement);
-  }
-
-  private usageReportSheetOptions(): SheetOptions {
+  private activeSheetOptions(): SheetOptions {
+    if (this.activeSheet === CONVERSATION_SHEET_FULL_TEXT) {
+      return this.adaptiveSheetOptions(this.fullTextSheetPlacement);
+    }
+    if (this.activeSheet === CONVERSATION_SHEET_SKILLS) {
+      return this.adaptiveSheetOptions(this.skillPickerSheetPlacement);
+    }
     return this.adaptiveSheetOptions(this.usageReportSheetPlacement);
+  }
+
+  private openSheet(kind: string): void {
+    this.activeSheet = kind;
+    this.sheetPresented = true;
+  }
+
+  private closeSheet(): void {
+    this.sheetPresented = false;
   }
 
   /**
@@ -575,44 +630,11 @@ export struct ConversationView {
    */
   private onCommandPaletteRequest(request: CommandPaletteRequest): void {
     if (request.action === CommandPaletteAction.OpenSkills) {
-      this.showSkillPicker = true;
+      this.openSheet(CONVERSATION_SHEET_SKILLS);
     } else if (request.action === CommandPaletteAction.OpenUsage) {
-      this.showUsageReport = true;
+      this.openSheet(CONVERSATION_SHEET_USAGE);
     }
     this.onIntent(ConversationIntents.commandPalette(request));
-  }
-
-  @Builder
-  private SkillPickerSheetSurface() {
-    SkillPickerSheet({
-      palette: this.commandPalette,
-      onSelect: (skillId: string) => {
-        this.showSkillPicker = false;
-        this.onIntent(ConversationIntents.commandPalette(
-          new CommandPaletteRequest(CommandPaletteAction.SelectSkill, skillId)));
-      },
-      onRefresh: () => {
-        this.onIntent(ConversationIntents.commandPalette(
-          new CommandPaletteRequest(CommandPaletteAction.RefreshCatalog)));
-      },
-      onClose: () => {
-        this.showSkillPicker = false;
-      }
-    })
-  }
-
-  @Builder
-  private UsageReportSheetSurface() {
-    UsageReportSheet({
-      palette: this.commandPalette,
-      onRetry: () => {
-        this.onIntent(ConversationIntents.commandPalette(
-          new CommandPaletteRequest(CommandPaletteAction.RetryUsage)));
-      },
-      onClose: () => {
-        this.showUsageReport = false;
-      }
-    })
   }
 
   private adaptiveSheetOptions(placement: SettingsPlacement): SheetOptions {
@@ -829,13 +851,7 @@ export struct ConversationView {
       return;
     }
     this.fullTextMessage = text;
-    this.showFullText = true;
-  }
-  private fullTextSheetOptions(): SheetOptions {
-    // The same adaptive contract as the other overlay sheets: the content draws
-    // the surface, the sheet supplies transparency, the scrim, and a drag bar
-    // wherever the placement resolves to a bottom sheet.
-    return AdaptiveSheetOptions.fromPlacement(this.fullTextSheetPlacement, true);
+    this.openSheet(CONVERSATION_SHEET_FULL_TEXT);
   }
   private onOpenFilePreview(path: string, label: string): void {
     this.onIntent(ConversationIntents.openFilePreview(path, label));

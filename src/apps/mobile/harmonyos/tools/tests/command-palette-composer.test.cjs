@@ -161,6 +161,27 @@ test('a host command with no argument is not sendable from the row either', () =
   assert.equal(Policy.blocksSend('/goal fix login'), false);
 });
 
+test('the conversation keeps one sheet binding and names the sheet instead', () => {
+  // Found on device: a second `bindSheet` on the same node is dropped, and with
+  // it every sheet that node was meant to open. All three of the conversation's
+  // sheets therefore take turns on the root's single binding.
+  const bindings = [...conversationSource.matchAll(/\.bindSheet\(/g)];
+  assert.equal(bindings.length, 1,
+    'a node carries exactly one sheet binding, so a second one costs every sheet on it');
+  assert.match(conversationSource, /\.bindSheet\(\$\$this\.sheetPresented, this\.ActiveSheet\(\)/);
+  for (const kind of ["'full_text'", "'skills'", "'usage'"]) {
+    assert.ok(conversationSource.includes(`= ${kind};`), `the sheet kind ${kind} must stay named`);
+  }
+  const surface = memberBody(conversationSource, 'ActiveSheet');
+  assert.match(surface, /if \(this\.activeSheet === CONVERSATION_SHEET_FULL_TEXT\)/);
+  assert.match(surface, /else if \(this\.activeSheet === CONVERSATION_SHEET_SKILLS\)/);
+  assert.match(surface, /else if \(this\.activeSheet === CONVERSATION_SHEET_USAGE\)/);
+  const options = memberBody(conversationSource, 'activeSheetOptions');
+  assert.match(options, /this\.skillPickerSheetPlacement/,
+    'each sheet keeps its own placement through the shared binding');
+  assert.match(options, /this\.usageReportSheetPlacement/);
+});
+
 test('the conversation hands the composer both inputs from one projection', () => {
   const composer = conversationSource.slice(conversationSource.indexOf('ComposerBar({'));
   assert.match(composer.slice(0, composer.indexOf('})') + 2),

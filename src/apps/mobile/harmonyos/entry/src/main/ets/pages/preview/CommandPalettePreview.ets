@@ -137,6 +137,7 @@ export struct CommandPalettePreview {
   @Local draft: string = '';
   @Local showSkillPicker: boolean = false;
   @Local showUsageReport: boolean = false;
+  @Local sheetPresented: boolean = false;
   @Local wide: boolean = false;
   /**
    * Bumped by every state transition.
@@ -196,14 +197,16 @@ export struct CommandPalettePreview {
     this.client.failCompact = variant === 'failed';
     this.client.holdCompact = variant === 'busy';
     this.draft = variant === 'token' ? '' : 'Check the redirect handler';
-    if (variant === 'sheet' || variant === 'degraded') {
-      this.showSkillPicker = true;
-    }
-    if (variant === 'usage') {
-      this.showUsageReport = true;
-    }
     if (variant === 'token' || variant === 'busy') {
       this.palette.setSkill('plan');
+    }
+    // Both sheets open before the first frame, the way the settings preview
+    // opens its own: the scenario id is only known once the page is appearing.
+    if (variant === 'sheet' || variant === 'degraded') {
+      this.openSheet(true);
+    }
+    if (variant === 'usage') {
+      this.openSheet(false);
     }
     // The catalog read is also the probe, so this is the same first move a
     // session entry makes: one read decides whether the row may run anything.
@@ -218,6 +221,18 @@ export struct CommandPalettePreview {
   }
 
   build() {
+    this.Body()
+  }
+
+  /**
+   * The fixture's one screen, in a builder rather than in `build()`.
+   *
+   * A sheet binds to the node it is attached to, and the root of `build()` is
+   * the node a parent can re-address; the app's own sheet hosts attach theirs
+   * inside a builder for the same reason.
+   */
+  @Builder
+  private Body() {
     Column({ space: 8 }) {
       Text(`command-palette · ${this.variant()} · r${this.revision}`)
         .fontSize(MobileDesignTypography.labelSmall.size)
@@ -281,43 +296,56 @@ export struct CommandPalettePreview {
     .height('100%')
     .padding({ left: 12, right: 12, top: 12 })
     .backgroundColor(PAGE_BG)
-    .bindSheet($$this.showSkillPicker, this.SkillPickerSurface(), AdaptiveSheetOptions.fromPlacement(
-      SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SkillPicker), true))
-    .bindSheet($$this.showUsageReport, this.UsageReportSurface(), AdaptiveSheetOptions.fromPlacement(
-      SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UsageReport), true))
+    // One node carries one sheet binding, so the picker and the report take
+    // turns on it exactly as they do in the conversation pane.
+    .bindSheet($$this.sheetPresented, this.ActiveSheet(), this.activeSheetOptions())
     .onAreaChange((_old: Area, area: Area) => {
       this.wide = Number(area.width) >= 600;
     })
   }
 
   @Builder
-  private SkillPickerSurface() {
-    SkillPickerSheet({
-      palette: this.presentation(),
-      onSelect: (skillId: string) => {
-        this.showSkillPicker = false;
-        this.dispatch(new CommandPaletteRequest(CommandPaletteAction.SelectSkill, skillId));
-      },
-      onRefresh: () => {
-        void this.controller.loadCatalog('preview-session', 'agentic', true, this.canApply());
-      },
-      onClose: () => {
-        this.showSkillPicker = false;
-      }
-    })
+  private ActiveSheet() {
+    if (this.showSkillPicker) {
+      SkillPickerSheet({
+        palette: this.presentation(),
+        onSelect: (skillId: string) => {
+          this.closeSheet();
+          this.dispatch(new CommandPaletteRequest(CommandPaletteAction.SelectSkill, skillId));
+        },
+        onRefresh: () => {
+          void this.controller.loadCatalog('preview-session', 'agentic', true, this.canApply());
+        },
+        onClose: () => {
+          this.closeSheet();
+        }
+      })
+    } else {
+      UsageReportSheet({
+        palette: this.presentation(),
+        onRetry: () => {
+          void this.controller.loadUsageReport('preview-session', this.scope, this.canApply());
+        },
+        onClose: () => {
+          this.closeSheet();
+        }
+      })
+    }
   }
 
-  @Builder
-  private UsageReportSurface() {
-    UsageReportSheet({
-      palette: this.presentation(),
-      onRetry: () => {
-        void this.controller.loadUsageReport('preview-session', this.scope, this.canApply());
-      },
-      onClose: () => {
-        this.showUsageReport = false;
-      }
-    })
+  private activeSheetOptions(): SheetOptions {
+    return AdaptiveSheetOptions.fromPlacement(SettingsPlacementPolicy.compactBottom(
+      this.showSkillPicker ? SettingsSheetKind.SkillPicker : SettingsSheetKind.UsageReport), true);
+  }
+
+  private openSheet(skills: boolean): void {
+    this.showSkillPicker = skills;
+    this.showUsageReport = !skills;
+    this.sheetPresented = true;
+  }
+
+  private closeSheet(): void {
+    this.sheetPresented = false;
   }
 
   /**
@@ -348,13 +376,13 @@ export struct CommandPalettePreview {
     }
     if (request.action === CommandPaletteAction.OpenUsage ||
       request.action === CommandPaletteAction.RetryUsage) {
-      this.showUsageReport = true;
+      this.openSheet(false);
       void this.controller.loadUsageReport('preview-session', this.scope, this.canApply());
       return;
     }
     if (request.action === CommandPaletteAction.OpenSkills ||
       request.action === CommandPaletteAction.RefreshCatalog) {
-      this.showSkillPicker = true;
+      this.openSheet(true);
       void this.controller.loadCatalog('preview-session', 'agentic',
         request.action === CommandPaletteAction.RefreshCatalog, this.canApply());
       return;
