@@ -1,6 +1,12 @@
 {
   "title": "Appearance",
   "subtitle": "Choose the interface language, theme, and text size",
+  "sessionPanel": {
+    "title": "Session panel",
+    "displayMode": "Panel layout",
+    "split": "Side by side",
+    "overlay": "Overlay"
+  },
   "package": {
     "title": "Appearance",
     "description": "Appearance packs are stored on this device; hover over a thumbnail to preview",

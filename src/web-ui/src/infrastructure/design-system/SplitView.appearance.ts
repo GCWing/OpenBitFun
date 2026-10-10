@@ -6,6 +6,7 @@ export const splitViewAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   parts: [
     { id: 'root', propertyProfile: 'layout' },
     { id: 'primary', propertyProfile: 'layout' },
+    { id: 'primaryDock', propertyProfile: 'layout' },
     { id: 'secondary', propertyProfile: 'layout' },
     { id: 'divider', propertyProfile: 'layout' },
     { id: 'resizeHandle', propertyProfile: 'layout' },

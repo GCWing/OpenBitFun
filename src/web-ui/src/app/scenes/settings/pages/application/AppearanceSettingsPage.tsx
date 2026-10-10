@@ -7,6 +7,7 @@ import {
   ConfigPageSectionStack
 } from '@/infrastructure/config/components/common';
 import { FontPreferencePanel } from '@/infrastructure/font-preference';
+import SessionPanelSettingsSection from './SessionPanelSettingsSection';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -28,6 +29,7 @@ const AppearanceSettingsPage: React.FC = () => {
         <ConfigPageSectionStack data-testid="appearance-settings">
           <AppearancePackageConfigSection />
           <FontPreferencePanel />
+          <SessionPanelSettingsSection />
         </ConfigPageSectionStack>
       </ConfigPageContent>
     </ConfigPageLayout>

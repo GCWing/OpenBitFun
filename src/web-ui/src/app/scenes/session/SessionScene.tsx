@@ -65,7 +65,7 @@ const SessionScene: React.FC<SessionSceneProps> = ({ workspacePath, isEntering =
       frame = requestAnimationFrame(() => setIsContentSettling(false));
     });
     return () => cancelAnimationFrame(frame);
-  }, [pane.mode, pane.contentSide, pane.preferredRightPaneWidth]);
+  }, [pane.mode, pane.contentSide, pane.displayMode, pane.preferredRightPaneWidth, pane.preferredOverlayWidth]);
 
   useLayoutEffect(() => {
     const element = bottomTerminalPaneElementRef.current;
@@ -198,6 +198,7 @@ const SessionScene: React.FC<SessionSceneProps> = ({ workspacePath, isEntering =
       className={[
         'openbitfun-session-scene', isDragging && 'openbitfun-session-scene--dragging',
         isDraggingBottom && 'openbitfun-session-scene--dragging-bottom',
+        pane.displayMode === 'overlay' && 'openbitfun-session-scene--overlay',
         isTerminalDockedBottom && 'openbitfun-session-scene--terminal-bottom', isEntering && 'layout-entering',
       ].filter(Boolean).join(' ')}
       data-testid="session-scene" data-openbitfun-scene="session" data-openbitfun-part="root"
@@ -206,13 +207,14 @@ const SessionScene: React.FC<SessionSceneProps> = ({ workspacePath, isEntering =
       <div className="openbitfun-session-scene__main-row" data-openbitfun-scene="session" data-openbitfun-part="main">
         <SplitView
           mode={pane.mode === 'chat-only' ? 'primary' : pane.mode === 'content-only' ? 'secondary' : 'split'}
+          layout={pane.displayMode}
           secondarySide={pane.contentSide}
-          rightSize={pane.preferredRightPaneWidth}
+          rightSize={pane.displayMode === 'overlay' ? pane.preferredOverlayWidth : pane.preferredRightPaneWidth}
           minLeftSize={PANEL_COMMON_CONFIG.MIN_CENTER_WIDTH}
           minRightSize={RIGHT_PANEL_CONFIG.COMPACT_WIDTH}
           maxRightSize={RIGHT_PANEL_CONFIG.MAX_WIDTH}
           defaultRightSize={RIGHT_PANEL_CONFIG.COMFORTABLE_DEFAULT}
-          onRightSizeChange={pane.resizeRightPane}
+          onRightSizeChange={pane.displayMode === 'overlay' ? pane.resizeOverlay : pane.resizeRightPane}
           onResizeStateChange={setIsDraggingContent}
           dividerLabel={tPane('canvas.resizePanes')}
           primaryPaneProps={{ 'aria-label': tPane('canvas.chatPane') }}

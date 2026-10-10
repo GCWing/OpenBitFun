@@ -1,5 +1,6 @@
 @layer openbitfun.components {
   .root {
+    position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr) var(--openbitfun-border-width-default) minmax(0, var(--_split-view-right-size));
     grid-template-areas: "primary divider secondary";
@@ -16,6 +17,60 @@
 
   .root[data-mode="primary"] { grid-template-columns: minmax(0, 1fr); grid-template-areas: "primary"; }
   .root[data-mode="secondary"] { grid-template-columns: minmax(0, 1fr); grid-template-areas: "secondary"; }
+
+  /* Overlay is local pane geometry, retaining the same mounted content hosts. */
+  .root[data-layout="overlay"]:not([data-mode="secondary"]) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "primary";
+  }
+
+  .root[data-layout="overlay"] .primary { isolation: isolate; }
+
+  .primaryDock {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    inline-size: 100%;
+    min-inline-size: 0;
+    pointer-events: none;
+  }
+
+  .root[data-layout="overlay"][data-mode="split"] > .primary .primaryDock {
+    inline-size: max(0px, calc(100% - var(--_split-view-right-size) - var(--openbitfun-border-width-default)));
+  }
+
+  .root[data-layout="overlay"][data-mode="split"][data-secondary-side="left"] > .primary .primaryDock {
+    inset-inline-start: calc(var(--_split-view-right-size) + var(--openbitfun-border-width-default));
+  }
+
+  .root[data-layout="overlay"][data-mode="split"] .secondary {
+    grid-area: auto;
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    inline-size: var(--_split-view-right-size);
+    isolation: isolate;
+    background: var(--openbitfun-color-surface-raised);
+    box-shadow: var(--openbitfun-shadow-overlay);
+  }
+
+  .root[data-layout="overlay"][data-mode="split"] .divider {
+    grid-area: auto;
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: var(--_split-view-right-size);
+    inline-size: var(--openbitfun-border-width-default);
+  }
+
+  .root[data-layout="overlay"][data-secondary-side="left"] .secondary {
+    inset-inline-start: 0;
+    inset-inline-end: auto;
+  }
+
+  .root[data-layout="overlay"][data-secondary-side="left"] .divider {
+    inset-inline-start: var(--_split-view-right-size);
+    inset-inline-end: auto;
+  }
 
   .pane {
     display: flex;

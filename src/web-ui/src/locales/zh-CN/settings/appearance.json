@@ -1,6 +1,12 @@
 {
   "title": "外观",
   "subtitle": "调整界面语言、主题与字体大小",
+  "sessionPanel": {
+    "title": "会话侧边面板",
+    "displayMode": "面板布局",
+    "split": "并排",
+    "overlay": "覆盖"
+  },
   "package": {
     "title": "外观",
     "description": "外观包保存在当前设备；悬停缩略图可预览",

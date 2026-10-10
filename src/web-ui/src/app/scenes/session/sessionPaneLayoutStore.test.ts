@@ -8,6 +8,39 @@ function preferences(values: Record<string, string> = {}) {
 }
 
 describe('session pane layout', () => {
+  it('applies the local display preference immediately, retaining session modes and separate widths', () => {
+    const storage = preferences({ [STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH]: '640' });
+    const store = createSessionPaneLayoutStore(storage);
+    const pane = store.getState();
+    expect(pane.displayMode).toBe('split');
+    pane.activate('local', 'a');
+    pane.showContent();
+    pane.setDisplayMode('overlay');
+    pane.resizeOverlay(720);
+    pane.swapPanes();
+    pane.maximizeContent();
+    pane.setDisplayMode('split');
+    expect(selectSessionPaneMode(store.getState())).toBe('content-only');
+    expect(store.getState()).toMatchObject({ preferredRightPaneWidth: 640, preferredOverlayWidth: 720, contentSide: 'left' });
+    pane.activate('peer', 'a');
+    expect(store.getState().displayMode).toBe('split');
+    pane.setDisplayMode('overlay');
+    const reopened = createSessionPaneLayoutStore(storage).getState();
+    expect(reopened).toMatchObject({ displayMode: 'overlay', preferredRightPaneWidth: 640, preferredOverlayWidth: 720 });
+    expect(selectSessionPaneMode(reopened)).toBe('chat-only');
+    expect(storage.setItem.mock.calls.some(([key]) => key === STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH)).toBe(false);
+  });
+
+  it('falls back for unknown layout preferences without rewriting them', () => {
+    const storage = preferences({ 'openbitfun:sessionPaneDisplayMode': 'future', 'openbitfun:sessionOverlayWidth': 'invalid' });
+    const store = createSessionPaneLayoutStore(storage);
+    expect(store.getState().displayMode).toBe('split');
+    expect(store.getState().preferredOverlayWidth).toBeGreaterThan(0);
+    store.getState().resizeOverlay(Number.NaN);
+    store.getState().resizeOverlay(-1);
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
   it('swaps content without moving the divider, including hide and fullscreen round trips', () => {
     const storage = preferences({ [STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH]: '640' });
     const store = createSessionPaneLayoutStore(storage);
@@ -101,6 +134,8 @@ describe('session pane layout', () => {
     store.getState().showContent();
     store.getState().swapPanes();
     store.getState().resizeRightPane(620);
-    expect(store.getState()).toMatchObject({ contentSide: 'left', preferredRightPaneWidth: 620 });
+    store.getState().setDisplayMode('overlay');
+    store.getState().resizeOverlay(700);
+    expect(store.getState()).toMatchObject({ contentSide: 'left', preferredRightPaneWidth: 620, displayMode: 'overlay', preferredOverlayWidth: 700 });
   });
 });

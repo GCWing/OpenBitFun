@@ -18,6 +18,31 @@ export function Example() {
 
 The package owns component anatomy, behavior, accessibility, and stable variants. It does not own theme selection persistence, product state, routes, locale resources, or platform APIs.
 
+## Pane layouts
+
+`SplitView` retains its primary and secondary content hosts across placement,
+visibility and `layout="split" | "overlay"` changes. Split layout is the default:
+`rightSize` controls the physical right slot. In overlay layout, `rightSize`
+controls the secondary pane on `secondarySide`, while the primary pane fills the
+container. `minLeftSize` reserves uncovered space in overlay layout; use zero
+when the secondary pane may cover the full width. The resize handle follows the
+secondary pane's inner edge and keeps keyboard and pointer directions aligned.
+
+This is a persistent, non-modal pane layout inside the component's isolated
+stacking context. It does not add a backdrop, focus trap or outside-click
+dismissal. Floating menus and dialogs within either pane continue to use the
+document overlay coordinator. Owners control visibility with `mode` and persist
+split and overlay sizes independently when those preferences differ.
+
+Place `SplitViewPrimaryDock` inside the primary content's positioned container
+for an absolute input or toolbar that must avoid the secondary overlay. Its
+width and placement follow the displayed pane size, including pointer drags and
+container clamping, without resizing the primary pane. The dock passes pointer
+events through; interactive children must enable pointer events. Keep
+`minLeftSize` large enough for the dock's controls; on narrow containers this
+reservation shrinks to half the available width. Dock contents stay mounted
+when visibility or placement changes.
+
 Floating dialog/sheet overlays, menu popovers, select/combobox popups and tooltips declare
 `data-openbitfun-native-webview-occlusion` on their rendered floating surface.
 Native hosts use its visible bounds to temporarily hide overlapping child views;
