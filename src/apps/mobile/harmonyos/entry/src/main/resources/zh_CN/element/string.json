@@ -2735,6 +2735,306 @@
     {
       "name": "time_daysAgo",
       "value": "%1$s 天前"
+    },
+    {
+      "name": "commands_compact",
+      "value": "压缩会话"
+    },
+    {
+      "name": "commands_init",
+      "value": "生成 AGENTS.md"
+    },
+    {
+      "name": "commands_goal",
+      "value": "会话目标"
+    },
+    {
+      "name": "commands_usage",
+      "value": "会话用量"
+    },
+    {
+      "name": "commands_skills",
+      "value": "技能"
+    },
+    {
+      "name": "commands_upgradeBadge",
+      "value": "升级"
+    },
+    {
+      "name": "commands_degradedReason",
+      "value": "桌面端版本过旧，无法提供技能列表。请升级该设备上的 OpenBitFun；本会话仍可正常发送消息。"
+    },
+    {
+      "name": "commands_busyReason",
+      "value": "请等待当前会话空闲后再使用该命令。"
+    },
+    {
+      "name": "commands_sessionReason",
+      "value": "打开一个会话后即可使用命令行。"
+    },
+    {
+      "name": "commands_goalHint",
+      "value": "在 /goal 后补充目标描述，然后发送。"
+    },
+    {
+      "name": "commands_skillToken",
+      "value": "技能"
+    },
+    {
+      "name": "commands_compactRunning",
+      "value": "正在压缩上下文…"
+    },
+    {
+      "name": "commands_compactDone",
+      "value": "会话已压缩"
+    },
+    {
+      "name": "commands_compactFailed",
+      "value": "会话压缩失败"
+    },
+    {
+      "name": "commands_initRunning",
+      "value": "正在生成 AGENTS.md…"
+    },
+    {
+      "name": "commands_initDone",
+      "value": "AGENTS.md 已生成"
+    },
+    {
+      "name": "commands_initFailed",
+      "value": "生成 AGENTS.md 失败"
+    },
+    {
+      "name": "commands_skills_title",
+      "value": "技能"
+    },
+    {
+      "name": "commands_skills_searchPlaceholder",
+      "value": "搜索技能"
+    },
+    {
+      "name": "commands_skills_sectionBuiltin",
+      "value": "内置"
+    },
+    {
+      "name": "commands_skills_sectionCustom",
+      "value": "自定义"
+    },
+    {
+      "name": "commands_skills_filterAll",
+      "value": "全部"
+    },
+    {
+      "name": "commands_skills_filterBuiltin",
+      "value": "内置"
+    },
+    {
+      "name": "commands_skills_filterCustom",
+      "value": "自定义"
+    },
+    {
+      "name": "commands_skills_noMatch",
+      "value": "没有匹配的技能。"
+    },
+    {
+      "name": "commands_skills_empty",
+      "value": "当前会话没有可调用的技能。"
+    },
+    {
+      "name": "commands_skills_recheck",
+      "value": "重新检查"
+    },
+    {
+      "name": "commands_skills_unavailableTitle",
+      "value": "技能暂不可用"
+    },
+    {
+      "name": "commands_skills_unavailableBody",
+      "value": "桌面端没有响应技能列表请求。请检查与该设备的连接后重试。"
+    },
+    {
+      "name": "commands_skills_degradedTitle",
+      "value": "技能需要更新的桌面端"
+    },
+    {
+      "name": "commands_skills_degradedBody",
+      "value": "已连接的桌面端版本过旧，无法读取技能列表。请升级该设备上的 OpenBitFun 后重新检查。"
+    },
+    {
+      "name": "commands_skills_footer",
+      "value": "选择技能只写入草稿，不会直接发送。"
+    },
+    {
+      "name": "commands_skills_footerUnavailable",
+      "value": "技能不可用期间草稿不会被修改。"
+    },
+    {
+      "name": "usage_title",
+      "value": "会话用量"
+    },
+    {
+      "name": "usage_sectionOverview",
+      "value": "概览"
+    },
+    {
+      "name": "usage_sectionTime",
+      "value": "耗时"
+    },
+    {
+      "name": "usage_sectionTokens",
+      "value": "Tokens"
+    },
+    {
+      "name": "usage_sectionModels",
+      "value": "模型"
+    },
+    {
+      "name": "usage_sectionTools",
+      "value": "工具"
+    },
+    {
+      "name": "usage_sectionFiles",
+      "value": "文件"
+    },
+    {
+      "name": "usage_sectionCompression",
+      "value": "压缩"
+    },
+    {
+      "name": "usage_sectionErrors",
+      "value": "错误"
+    },
+    {
+      "name": "usage_scopeTurns",
+      "value": "轮次"
+    },
+    {
+      "name": "usage_scopeSubagents",
+      "value": "含子代理"
+    },
+    {
+      "name": "usage_coverageLevel",
+      "value": "数据完整度"
+    },
+    {
+      "name": "usage_coverageMissing",
+      "value": "未上报"
+    },
+    {
+      "name": "usage_workspace",
+      "value": "项目"
+    },
+    {
+      "name": "usage_timeSpan",
+      "value": "会话跨度"
+    },
+    {
+      "name": "usage_timeTurns",
+      "value": "已记录轮次耗时"
+    },
+    {
+      "name": "usage_timeModel",
+      "value": "模型耗时"
+    },
+    {
+      "name": "usage_timeTools",
+      "value": "工具耗时"
+    },
+    {
+      "name": "usage_tokensInput",
+      "value": "输入"
+    },
+    {
+      "name": "usage_tokensOutput",
+      "value": "输出"
+    },
+    {
+      "name": "usage_tokensTotal",
+      "value": "合计"
+    },
+    {
+      "name": "usage_tokensCached",
+      "value": "缓存"
+    },
+    {
+      "name": "usage_modelRow",
+      "value": "模型"
+    },
+    {
+      "name": "usage_toolRow",
+      "value": "工具"
+    },
+    {
+      "name": "usage_filesChanged",
+      "value": "变更文件"
+    },
+    {
+      "name": "usage_filesAdded",
+      "value": "新增行"
+    },
+    {
+      "name": "usage_filesDeleted",
+      "value": "删除行"
+    },
+    {
+      "name": "usage_compactionCount",
+      "value": "压缩次数"
+    },
+    {
+      "name": "usage_compactionSaved",
+      "value": "节省 Tokens"
+    },
+    {
+      "name": "usage_errorsTotal",
+      "value": "错误"
+    },
+    {
+      "name": "usage_errorsTools",
+      "value": "工具错误"
+    },
+    {
+      "name": "usage_errorsModels",
+      "value": "模型错误"
+    },
+    {
+      "name": "usage_partialNote",
+      "value": "部分指标没有被当前会话或服务商上报。"
+    },
+    {
+      "name": "usage_yes",
+      "value": "是"
+    },
+    {
+      "name": "usage_no",
+      "value": "否"
+    },
+    {
+      "name": "usage_loadFailed",
+      "value": "无法加载用量报告"
+    },
+    {
+      "name": "usage_empty",
+      "value": "当前会话没有可展示的用量数据。"
+    },
+    {
+      "name": "commands_probeWaitReason",
+      "value": "正在读取技能列表…"
+    },
+    {
+      "name": "commands_probeRefusedReason",
+      "value": "桌面端拒绝提供技能列表。"
+    },
+    {
+      "name": "commands_probeUnreachableReason",
+      "value": "桌面端没有响应技能列表请求。"
+    },
+    {
+      "name": "commands_skills_refusedTitle",
+      "value": "技能列表被拒绝"
+    },
+    {
+      "name": "commands_skills_refusedBody",
+      "value": "桌面端有响应，但拒绝了请求。下方是桌面端的原文；请检查会话后重试。"
     }
   ]
 }

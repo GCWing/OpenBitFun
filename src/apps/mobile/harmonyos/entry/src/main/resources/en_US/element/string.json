@@ -2735,6 +2735,306 @@
     {
       "name": "time_daysAgo",
       "value": "%1$s days ago"
+    },
+    {
+      "name": "commands_compact",
+      "value": "Compact session"
+    },
+    {
+      "name": "commands_init",
+      "value": "Generate AGENTS.md"
+    },
+    {
+      "name": "commands_goal",
+      "value": "Session goal"
+    },
+    {
+      "name": "commands_usage",
+      "value": "Session usage"
+    },
+    {
+      "name": "commands_skills",
+      "value": "Skills"
+    },
+    {
+      "name": "commands_upgradeBadge",
+      "value": "Upgrade"
+    },
+    {
+      "name": "commands_degradedReason",
+      "value": "The connected desktop is too old to list skills. Upgrade OpenBitFun on that device; messages still send in this session."
+    },
+    {
+      "name": "commands_busyReason",
+      "value": "Wait for the session to be idle before using this command."
+    },
+    {
+      "name": "commands_sessionReason",
+      "value": "Open a session to use the command row."
+    },
+    {
+      "name": "commands_goalHint",
+      "value": "Add the objective after /goal, then send."
+    },
+    {
+      "name": "commands_skillToken",
+      "value": "Skill"
+    },
+    {
+      "name": "commands_compactRunning",
+      "value": "Compacting the context…"
+    },
+    {
+      "name": "commands_compactDone",
+      "value": "Session compacted"
+    },
+    {
+      "name": "commands_compactFailed",
+      "value": "Session compaction failed"
+    },
+    {
+      "name": "commands_initRunning",
+      "value": "Generating AGENTS.md…"
+    },
+    {
+      "name": "commands_initDone",
+      "value": "AGENTS.md generated"
+    },
+    {
+      "name": "commands_initFailed",
+      "value": "Could not generate AGENTS.md"
+    },
+    {
+      "name": "commands_skills_title",
+      "value": "Skills"
+    },
+    {
+      "name": "commands_skills_searchPlaceholder",
+      "value": "Search skills"
+    },
+    {
+      "name": "commands_skills_sectionBuiltin",
+      "value": "Built-in"
+    },
+    {
+      "name": "commands_skills_sectionCustom",
+      "value": "Custom"
+    },
+    {
+      "name": "commands_skills_filterAll",
+      "value": "All"
+    },
+    {
+      "name": "commands_skills_filterBuiltin",
+      "value": "Built-in"
+    },
+    {
+      "name": "commands_skills_filterCustom",
+      "value": "Custom"
+    },
+    {
+      "name": "commands_skills_noMatch",
+      "value": "No skill matches this search."
+    },
+    {
+      "name": "commands_skills_empty",
+      "value": "This session has no skill you can invoke."
+    },
+    {
+      "name": "commands_skills_recheck",
+      "value": "Check again"
+    },
+    {
+      "name": "commands_skills_unavailableTitle",
+      "value": "Skills are unavailable"
+    },
+    {
+      "name": "commands_skills_unavailableBody",
+      "value": "The connected desktop did not answer the skill list. Check the connection to that device, then check again."
+    },
+    {
+      "name": "commands_skills_degradedTitle",
+      "value": "Skills need a newer desktop"
+    },
+    {
+      "name": "commands_skills_degradedBody",
+      "value": "The connected desktop is too old for the skill list. Upgrade OpenBitFun on that device, then check again."
+    },
+    {
+      "name": "commands_skills_footer",
+      "value": "Picking a skill writes the draft; it never sends."
+    },
+    {
+      "name": "commands_skills_footerUnavailable",
+      "value": "The draft is unchanged while skills are unavailable."
+    },
+    {
+      "name": "usage_title",
+      "value": "Session Usage"
+    },
+    {
+      "name": "usage_sectionOverview",
+      "value": "Overview"
+    },
+    {
+      "name": "usage_sectionTime",
+      "value": "Time"
+    },
+    {
+      "name": "usage_sectionTokens",
+      "value": "Tokens"
+    },
+    {
+      "name": "usage_sectionModels",
+      "value": "Models"
+    },
+    {
+      "name": "usage_sectionTools",
+      "value": "Tools"
+    },
+    {
+      "name": "usage_sectionFiles",
+      "value": "Files"
+    },
+    {
+      "name": "usage_sectionCompression",
+      "value": "Compaction"
+    },
+    {
+      "name": "usage_sectionErrors",
+      "value": "Errors"
+    },
+    {
+      "name": "usage_scopeTurns",
+      "value": "Turns"
+    },
+    {
+      "name": "usage_scopeSubagents",
+      "value": "Includes subagents"
+    },
+    {
+      "name": "usage_coverageLevel",
+      "value": "Data coverage"
+    },
+    {
+      "name": "usage_coverageMissing",
+      "value": "Not reported"
+    },
+    {
+      "name": "usage_workspace",
+      "value": "Workspace"
+    },
+    {
+      "name": "usage_timeSpan",
+      "value": "Session span"
+    },
+    {
+      "name": "usage_timeTurns",
+      "value": "Recorded turn time"
+    },
+    {
+      "name": "usage_timeModel",
+      "value": "Model time"
+    },
+    {
+      "name": "usage_timeTools",
+      "value": "Tool time"
+    },
+    {
+      "name": "usage_tokensInput",
+      "value": "Input"
+    },
+    {
+      "name": "usage_tokensOutput",
+      "value": "Output"
+    },
+    {
+      "name": "usage_tokensTotal",
+      "value": "Total"
+    },
+    {
+      "name": "usage_tokensCached",
+      "value": "Cached"
+    },
+    {
+      "name": "usage_modelRow",
+      "value": "Model"
+    },
+    {
+      "name": "usage_toolRow",
+      "value": "Tool"
+    },
+    {
+      "name": "usage_filesChanged",
+      "value": "Files changed"
+    },
+    {
+      "name": "usage_filesAdded",
+      "value": "Lines added"
+    },
+    {
+      "name": "usage_filesDeleted",
+      "value": "Lines deleted"
+    },
+    {
+      "name": "usage_compactionCount",
+      "value": "Compactions"
+    },
+    {
+      "name": "usage_compactionSaved",
+      "value": "Tokens saved"
+    },
+    {
+      "name": "usage_errorsTotal",
+      "value": "Errors"
+    },
+    {
+      "name": "usage_errorsTools",
+      "value": "Tool errors"
+    },
+    {
+      "name": "usage_errorsModels",
+      "value": "Model errors"
+    },
+    {
+      "name": "usage_partialNote",
+      "value": "Some metrics were not reported by this session or provider."
+    },
+    {
+      "name": "usage_yes",
+      "value": "Yes"
+    },
+    {
+      "name": "usage_no",
+      "value": "No"
+    },
+    {
+      "name": "usage_loadFailed",
+      "value": "Could not load the usage report"
+    },
+    {
+      "name": "usage_empty",
+      "value": "No usage was reported for this session."
+    },
+    {
+      "name": "commands_probeWaitReason",
+      "value": "Reading the skill list…"
+    },
+    {
+      "name": "commands_probeRefusedReason",
+      "value": "The connected desktop refused to list skills."
+    },
+    {
+      "name": "commands_probeUnreachableReason",
+      "value": "The connected desktop did not answer the skill list."
+    },
+    {
+      "name": "commands_skills_refusedTitle",
+      "value": "Skills were refused"
+    },
+    {
+      "name": "commands_skills_refusedBody",
+      "value": "The connected desktop answered, and its answer was a refusal. The desktop text below is what it said; check the session and try again."
     }
   ]
 }

@@ -3,7 +3,7 @@ import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { SavedRuntimeConnection, RecentWorkspaceEntry, RemoteWorkspaceIdentity } from '../../model/RemoteModels';
 import { remoteWorkspaceIdentityMatches, remoteWorkspaceKey } from '../../services/RemoteSessionIdentity';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
-import { CARD, CONTENT_ON_ACTION, INK, LINE, MUTED, PAGE_BG, PRIMARY_ACTION, SOFT, TRANSPARENT } from './Theme';
+import { CARD, CONTENT_ON_ACTION, CONTENT_ON_INK, INK, LINE, MUTED, PAGE_BG, PRIMARY_ACTION, SOFT, TRANSPARENT } from './Theme';
 import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 
 @ComponentV2
@@ -245,7 +245,7 @@ export struct SidebarWorkspacePicker {
           this.onBrowse({ type: 'browse-workspace', path: current.slice(0, current.lastIndexOf('/')) || '/', text: this.connectionId });
         })
         Button(RemoteI18n.t('workspaceTools.selectFolder'))
-          .fontColor(CONTENT_ON_ACTION).fontSize(MobileDesignTypography.labelSmall.size).height(40).layoutWeight(1)
+          .fontColor(CONTENT_ON_INK).fontSize(MobileDesignTypography.labelSmall.size).height(40).layoutWeight(1)
           .backgroundColor(INK).borderRadius(12)
           .onClick(() => { this.targetPath = this.tools.browsePath; this.browsing = false; })
       }.enabled(!this.tools.browseBusy && this.tools.browseError.length === 0 && this.tools.browsePath.length > 0)

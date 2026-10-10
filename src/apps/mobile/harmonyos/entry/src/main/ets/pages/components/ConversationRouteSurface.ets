@@ -37,6 +37,10 @@ export struct ConversationRouteSurface {
   @Param hoverOperateMode: boolean = false;
   @Param fullTextSheetPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UserMessageFullText);
+  @Param skillPickerSheetPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SkillPicker);
+  @Param usageReportSheetPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UsageReport);
   @Event onRestoreSidebar: () => void = () => {};
 
   build() {
@@ -68,6 +72,8 @@ export struct ConversationRouteSurface {
           composerInputId: 'conversation-composer-input',
           hoverOperateMode: this.hoverOperateMode,
           fullTextSheetPlacement: this.fullTextSheetPlacement,
+          skillPickerSheetPlacement: this.skillPickerSheetPlacement,
+          usageReportSheetPlacement: this.usageReportSheetPlacement,
           onRestoreSidebar: this.onRestoreSidebar,
           onIntent: (intent: ConversationIntent) => this.dispatchConversationIntent(intent)
         })
