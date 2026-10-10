@@ -59,12 +59,6 @@ jobs:
     name: Android package
     needs: prepare
     runs-on: ubuntu-latest
-    env:
-      USE_DEBUG_SIGNING: ${{ github.repository != 'GCWing/OpenBitFun' && 'true' || 'false' }}
-      OPENBITFUN_ANDROID_KEYSTORE_B64: ${{ secrets.OPENBITFUN_ANDROID_KEYSTORE_B64 }}
-      OPENBITFUN_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.OPENBITFUN_ANDROID_KEYSTORE_PASSWORD }}
-      OPENBITFUN_ANDROID_KEY_ALIAS: ${{ secrets.OPENBITFUN_ANDROID_KEY_ALIAS }}
-      OPENBITFUN_ANDROID_KEY_PASSWORD: ${{ secrets.OPENBITFUN_ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -75,30 +69,13 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Configure Android release signing
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$USE_DEBUG_SIGNING" == "true" ]]; then
-            echo "Fork build: using the runner-generated Android debug keystore."
-            exit 0
-          fi
-          for value in \
-            OPENBITFUN_ANDROID_KEYSTORE_B64 \
-            OPENBITFUN_ANDROID_KEYSTORE_PASSWORD \
-            OPENBITFUN_ANDROID_KEY_ALIAS \
-            OPENBITFUN_ANDROID_KEY_PASSWORD; do
-            if [[ -z "${!value:-}" ]]; then
-              echo "Missing required Android signing secret: $value" >&2
-              exit 1
-            fi
-          done
-          KEYSTORE_PATH="$RUNNER_TEMP/openbitfun-release.keystore"
-          printf '%s' "$OPENBITFUN_ANDROID_KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
-          echo "OPENBITFUN_ANDROID_KEYSTORE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          echo "Using the runner-generated Android debug keystore for this mobile prerelease."
 
       - name: Build signed Android package
         working-directory: src/apps/mobile/android
@@ -108,14 +85,10 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
-          DEBUG_SIGNING: ${{ github.repository != 'GCWing/OpenBitFun' && 'true' || 'false' }}
         run: |
           set -euo pipefail
           mkdir -p mobile-release-assets
-          suffix=''
-          if [[ "$DEBUG_SIGNING" == "true" ]]; then
-            suffix='-debug'
-          fi
+          suffix='-debug'
           cp src/apps/mobile/android/app/build/outputs/apk/release/app-release.apk \
             "mobile-release-assets/OpenBitFun-Mobile-${VERSION}-android${suffix}.apk"
           (cd mobile-release-assets && sha256sum ./*.apk > SHA256SUMS)
@@ -146,15 +119,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
           VERSION: ${{ needs.prepare.outputs.version }}
-          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
-          FORK_DEBUG_BUILD: ${{ github.repository != 'GCWing/OpenBitFun' && 'true' || 'false' }}
+          PRERELEASE: true
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$FORK_DEBUG_BUILD" == "true" ]]; then
-            PRERELEASE=true
-            VERSION="$VERSION (fork debug signing)"
-          fi
+          VERSION="$VERSION (debug signing)"
           gh release create "$TAG_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
