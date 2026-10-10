@@ -53,6 +53,7 @@ const {
   COMMAND_CATALOG_FILTER_BUILTIN,
   COMMAND_CATALOG_FILTER_CUSTOM
 } = load('services/CommandCatalogProjection.ets');
+const { CommandPalettePolicy } = load('services/CommandPalettePolicy.ets');
 const models = load('model/RemoteModels.ets');
 const managerSource = fs.readFileSync(path.join(ETS_ROOT, 'services/RemoteSessionManager.ets'), 'utf8');
 
@@ -174,10 +175,11 @@ test('only the skill the host offered to the user is offered by the picker', () 
   assert.deepEqual(ids(catalog), ['plan']);
 });
 
-test('an older host that omits the flags cannot silently hide the catalog', () => {
-  // `allow_user_invocation` defaults to true in the contract, so its absence must
-  // not read as a refusal; the availability flags have no such default and are
-  // read as `false` until the host says otherwise.
+test('a host that omits the availability flags offers nothing it did not state', () => {
+  // The three availability flags have no contract default, so an absent one reads
+  // as `false`: a half-instrumented host yields rows without claiming they are
+  // reachable. `allow_user_invocation` is the one flag whose default is `true`,
+  // because its absence is the browser-compatible shape rather than a refusal.
   const catalog = Projection.parseHostCatalog([
     {key: 'valid', selected_for_runtime: true, effective_enabled: true, globally_enabled: true},
     {key: 'unstated', name: 'Unstated'}
@@ -186,7 +188,10 @@ test('an older host that omits the flags cannot silently hide the catalog', () =
   const unstated = catalog.skills.find((entry) => entry.id === 'unstated');
   assert.equal(valid.allowUserInvocation, true);
   assert.equal(Projection.invocable(valid), true);
-  assert.equal(unstated.selectedForRuntime, false);
+  assert.equal(unstated.selectedForRuntime, false, 'an unstated flag is not a stated yes');
+  assert.equal(unstated.effectiveEnabled, false);
+  assert.equal(unstated.globallyEnabled, false);
+  assert.equal(unstated.allowUserInvocation, true, 'the one flag with a true default');
   assert.equal(Projection.invocable(unstated), false);
 });
 
@@ -323,10 +328,29 @@ test('an empty catalog is distinguishable from a filtered-out one', () => {
 });
 
 test('the token label the picker hints at is the one the message carries', () => {
-  const catalog = Projection.parseHostCatalog([builtinRow('plan', 'workflow')]);
+  // The hint and the message's token are the same string built by the same rule:
+  // the desktop inserts `[$\u003cname\u003e]`, so a row hinted at its key would promise
+  // text the message does not contain.
+  const catalog = Projection.parseHostCatalog([builtinRow('plan', 'workflow', 'Plan')]);
   const entry = Projection.rows(catalog)[0];
-  assert.equal(entry.insertHint, '$plan');
+  assert.equal(entry.name, 'Plan');
+  assert.equal(entry.insertHint, CommandPalettePolicy.skillTokenLabel(entry.name));
+  assert.equal(entry.insertHint, '[$Plan]');
   assert.equal(entry.isBuiltin, true, 'the row draws its built-in icon from this');
+
+  const composed = CommandPalettePolicy.composeSubmissionText('fix the login', entry.name);
+  assert.ok(composed.startsWith(entry.insertHint),
+    'the message must open with exactly the token the row hinted at');
+  assert.notEqual(entry.insertHint, CommandPalettePolicy.skillTokenLabel(entry.id),
+    'the key is not what the user sees, which is why this test compares the name');
+});
+
+test('a row the host never named still yields a token that can be sent', () => {
+  const catalog = Projection.parseHostCatalog([{key: 'plan.sub', selectedForRuntime: true,
+    effectiveEnabled: true, globallyEnabled: true}]);
+  const entry = Projection.rows(catalog)[0];
+  assert.equal(entry.name, 'plan.sub', 'the key stands in for a missing name');
+  assert.equal(entry.insertHint, '[$plan.sub]');
 });
 
 test('hostInvoke unwraps the bridge envelope instead of the command value', () => {
@@ -338,10 +362,24 @@ test('hostInvoke unwraps the bridge envelope instead of the command value', () =
   assert.match(hostInvoke, /command: command/);
   assert.match(hostInvoke, /args: args/);
   assert.match(hostInvoke, /if \(!response\.ok\)/);
-  assert.match(hostInvoke, /throw new Error\(response\.error/,
-    'a refused command must reject so the caller can surface the host text');
+  assert.match(hostInvoke, /throw new HostInvokeRefusal\(command, response\.error \|\| ''\)/,
+    'a refused command must reject as a typed refusal so the caller can tell the host answering from the wire breaking');
   assert.match(hostInvoke, /return response\.value as T/);
   assert.match(managerSource, /ok: boolean; value\?: T; error\?: string;/);
+  assert.match(managerSource, /import \{ HostInvokeRefusal \} from '\.\/HostInvokeRefusal';/);
+});
+
+test('a refusal carries the host words and a broken wire does not pretend to', () => {
+  // The type is the whole distinction: `host_invoke` sets `ok: false` when the
+  // host received the command and declined it, and nothing else on that wire ever
+  // reached a host.
+  const refusalSource = fs.readFileSync(path.join(ETS_ROOT, 'services/HostInvokeRefusal.ets'), 'utf8');
+  assert.match(refusalSource, /export class HostInvokeRefusal extends Error/);
+  assert.match(refusalSource, /readonly hostText: string;/);
+  assert.match(refusalSource, /readonly command: string;/);
+  assert.match(refusalSource, /export function isHostInvokeRefusal\(err: Object\): boolean \{[\s\S]*?err instanceof HostInvokeRefusal/);
+  assert.match(refusalSource, /export function hostInvokeRefusalText\(err: Object\): string \{[\s\S]*?hostText/,
+    'the host text is kept as it was sent rather than reworded by the connection policy');
 });
 
 test('each palette verb sends the arguments its own Rust handler declares', () => {

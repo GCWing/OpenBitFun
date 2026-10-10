@@ -17,15 +17,19 @@ function load(relativePath) {
 const {
   CommandPalettePolicy: Policy,
   CommandPaletteAvailability,
+  CommandPaletteCatalogStatus,
   CommandPaletteChipKind,
   CommandPaletteChipState,
-  CommandPaletteNoticeKind
+  CommandPaletteNoticeKind,
+  CommandPaletteProbeFailure,
+  commandPaletteProbeReady
 } = load('entry/src/main/ets/services/CommandPalettePolicy.ets');
 
-// A session with the probe answered and nothing running: the row's baseline.
+// A session whose skill read answered and which is idle: the row's baseline.
 function available(overrides = {}) {
   return new CommandPaletteAvailability(
-    overrides.probeReady ?? true,
+    overrides.probeStatus ?? CommandPaletteCatalogStatus.Ready,
+    overrides.probeFailure ?? CommandPaletteProbeFailure.None,
     overrides.hasSession ?? true,
     overrides.isBusy ?? false,
     overrides.runningCommand ?? '',
@@ -33,13 +37,17 @@ function available(overrides = {}) {
   );
 }
 
+// The session verbs, which no skill read may gate.
+const HOST_VERBS = [CommandPaletteChipKind.Compact, CommandPaletteChipKind.Init,
+  CommandPaletteChipKind.Usage];
+
 function chip(policyChips, kind) {
   const found = policyChips.find((entry) => entry.kind === kind);
   assert.ok(found, `the row must always carry the ${kind} chip`);
   return found;
 }
 
-test('an answered probe enables the verbs and keeps the skills chip opening', () => {
+test('an answered read enables the picker and leaves the verbs alone', () => {
   const chips = Policy.chips(available());
   for (const kind of [CommandPaletteChipKind.Compact, CommandPaletteChipKind.Init,
     CommandPaletteChipKind.Usage, CommandPaletteChipKind.Skills]) {
@@ -54,35 +62,89 @@ test('an answered probe enables the verbs and keeps the skills chip opening', ()
     'a healthy row must not explain itself');
 });
 
-test('a refused probe degrades the row and badges it as needing an upgrade', () => {
-  // The probe is the skill catalog read; a host that will not serve it will not
-  // serve the verbs either. The row stays on screen and stays explainable.
-  const state = available({probeReady: false, runningCommand: ''});
-  const chips = Policy.chips(state);
-  for (const kind of [CommandPaletteChipKind.Compact, CommandPaletteChipKind.Init,
-    CommandPaletteChipKind.Usage]) {
-    assert.equal(chip(chips, kind).state, CommandPaletteChipState.Dimmed, `${kind} must grey out`);
-    assert.equal(chip(chips, kind).runsAction, false, `${kind} must not reach the host`);
-    assert.equal(chip(chips, kind).badgeKey, Policy.upgradeBadgeKey, `${kind} must carry the badge`);
-    assert.equal(chip(chips, kind).reasonKey, Policy.degradedReasonKey, `${kind} must carry the reason`);
+test('a failed skill read greys the picker and nothing else', () => {
+  // The three session verbs exist on every host this app can reach, and each
+  // answers for itself when it runs: refusing them in advance would take away
+  // working commands on the strength of a read none of them needed.
+  for (const failure of [CommandPaletteProbeFailure.VersionGap, CommandPaletteProbeFailure.Refused,
+    CommandPaletteProbeFailure.Unreachable]) {
+    const state = available({probeStatus: CommandPaletteCatalogStatus.Failed, probeFailure: failure});
+    const chips = Policy.chips(state);
+    for (const kind of HOST_VERBS) {
+      assert.equal(chip(chips, kind).state, CommandPaletteChipState.Ready,
+        `${kind} must keep working when the skill read fails (${failure})`);
+      assert.equal(chip(chips, kind).runsAction, true, `${kind} must still reach the host`);
+      assert.equal(chip(chips, kind).badgeKey, '', `${kind} is not the chip that failed`);
+    }
+    const goal = chip(chips, CommandPaletteChipKind.Goal);
+    assert.equal(goal.state, CommandPaletteChipState.Ready, 'the goal chip is message text');
+    const skills = chip(chips, CommandPaletteChipKind.Skills);
+    assert.equal(skills.state, CommandPaletteChipState.Dimmed, 'the picker chip greys');
+    assert.equal(skills.runsAction, true, 'the picker must still open: it explains and re-checks');
+    assert.equal(Policy.rowReasonKey(state), '',
+      'one chip is not a degraded row, and saying so under four working chips would be wrong');
   }
-  // The picker is where the reason, the host's own text and the re-check live, so
-  // its chip is the one control that keeps working on a degraded row.
-  const skills = chip(chips, CommandPaletteChipKind.Skills);
-  assert.equal(skills.state, CommandPaletteChipState.Dimmed, 'the skills chip still reads grey');
-  assert.equal(skills.runsAction, true, 'the skills chip must still open the picker');
-  assert.equal(skills.badgeKey, Policy.upgradeBadgeKey, 'the skills chip carries the same badge');
-  assert.equal(Policy.rowReasonKey(state), Policy.degradedReasonKey,
-    'the row must say why it is grey');
+});
+
+test('only a host that named the version gap earns the upgrade badge', () => {
+  // The badge sends the user to update a desktop. A refusal for another reason
+  // and a connection that never answered are both real failures and neither is
+  // evidence about the desktop's version.
+  const gap = Policy.chips(available({
+    probeStatus: CommandPaletteCatalogStatus.Failed,
+    probeFailure: CommandPaletteProbeFailure.VersionGap
+  }));
+  assert.equal(chip(gap, CommandPaletteChipKind.Skills).badgeKey, Policy.upgradeBadgeKey);
+  assert.equal(chip(gap, CommandPaletteChipKind.Skills).reasonKey, Policy.degradedReasonKey);
+
+  const refused = Policy.chips(available({
+    probeStatus: CommandPaletteCatalogStatus.Failed,
+    probeFailure: CommandPaletteProbeFailure.Refused
+  }));
+  assert.equal(chip(refused, CommandPaletteChipKind.Skills).badgeKey, '',
+    'a refusal the host did not tie to a version is not an upgrade');
+  assert.equal(chip(refused, CommandPaletteChipKind.Skills).reasonKey, Policy.probeRefusedReasonKey);
+
+  const unreachable = Policy.chips(available({
+    probeStatus: CommandPaletteCatalogStatus.Failed,
+    probeFailure: CommandPaletteProbeFailure.Unreachable
+  }));
+  assert.equal(chip(unreachable, CommandPaletteChipKind.Skills).badgeKey, '',
+    'a timeout is not a version problem');
+  assert.equal(chip(unreachable, CommandPaletteChipKind.Skills).reasonKey, Policy.probeUnreachableReasonKey);
+});
+
+test('a read still in flight waits without claiming anything', () => {
+  // The one round trip between opening a session and the host's answer must not
+  // read as a degradation while the verbs beside it stay lit.
+  for (const status of [CommandPaletteCatalogStatus.Idle, CommandPaletteCatalogStatus.Loading]) {
+    const state = available({probeStatus: status});
+    const chips = Policy.chips(state);
+    const skills = chip(chips, CommandPaletteChipKind.Skills);
+    assert.equal(skills.state, CommandPaletteChipState.Dimmed, 'the picker chip waits');
+    assert.equal(skills.badgeKey, '', 'waiting is not a version problem');
+    assert.equal(skills.reasonKey, Policy.probeWaitReasonKey, 'it says what it is waiting for');
+    assert.equal(skills.runsAction, false, 'there is nothing to open until the answer lands');
+    assert.equal(skills.showsChevron, true, 'the chip keeps the affordance it will offer');
+    for (const kind of HOST_VERBS) {
+      assert.equal(chip(chips, kind).runsAction, true, `${kind} does not wait for the skill read`);
+    }
+    assert.notEqual(skills.reasonKey, Policy.degradedReasonKey,
+      'no sentence about the desktop before the desktop has spoken');
+  }
 });
 
 test('a greyed chip still explains itself when tapped', () => {
   // "Nothing happened" is not an answer: every chip that cannot run has to carry
   // the sentence the row shows for it.
-  const degraded = Policy.chips(available({probeReady: false}));
+  const waiting = Policy.chips(available({probeStatus: CommandPaletteCatalogStatus.Loading}));
   const busy = Policy.chips(available({isBusy: true}));
   const sessionless = Policy.chips(available({hasSession: false}));
-  for (const chips of [degraded, busy, sessionless]) {
+  const failed = Policy.chips(available({
+    probeStatus: CommandPaletteCatalogStatus.Failed,
+    probeFailure: CommandPaletteProbeFailure.Refused
+  }));
+  for (const chips of [waiting, busy, sessionless, failed]) {
     for (const entry of chips) {
       if (entry.runsAction) {
         continue;
@@ -97,8 +159,7 @@ test('a busy session gates the verbs but never the draft', () => {
   // holds them back. Picking a skill only edits the draft, and the goal chip
   // writes `/goal ` locally, so neither waits for the session.
   const chips = Policy.chips(available({isBusy: true}));
-  for (const kind of [CommandPaletteChipKind.Compact, CommandPaletteChipKind.Init,
-    CommandPaletteChipKind.Usage]) {
+  for (const kind of HOST_VERBS) {
     assert.equal(chip(chips, kind).state, CommandPaletteChipState.Dimmed, `${kind} must wait`);
     assert.equal(chip(chips, kind).runsAction, false, `${kind} must not start while busy`);
     assert.equal(chip(chips, kind).reasonKey, Policy.busyReasonKey, `${kind} must say the session is busy`);
@@ -128,12 +189,15 @@ test('a verb in flight owns its chip and holds the others back', () => {
     'the picker does not collide with a running verb');
 });
 
-test('the goal chip is not gated by the probe or by a capability', () => {
+test('the goal chip is not gated by the skill read or by a capability', () => {
   // `/goal <objective>` is plain message text the desktop already parses on its
-  // send path, so this chip is honest about working on a host whose verbs this
-  // app cannot call. It is the one chip that stays lit on a degraded row.
-  const degraded = Policy.chips(available({probeReady: false}));
-  const goal = chip(degraded, CommandPaletteChipKind.Goal);
+  // send path, so this chip is honest about working on a host whose skill list
+  // this app cannot read. It is one of the chips that stays lit throughout.
+  const failed = Policy.chips(available({
+    probeStatus: CommandPaletteCatalogStatus.Failed,
+    probeFailure: CommandPaletteProbeFailure.Unreachable
+  }));
+  const goal = chip(failed, CommandPaletteChipKind.Goal);
   assert.equal(goal.state, CommandPaletteChipState.Ready, 'the goal chip must stay lit');
   assert.equal(goal.runsAction, true, 'the goal chip must still toggle its prefill');
   assert.equal(goal.badgeKey, '', 'a goal is not a version problem');
@@ -233,8 +297,8 @@ test('the goal prefill only ever fills an empty draft', () => {
 });
 
 test('a skill token survives the operator keeping or replacing it', () => {
-  assert.equal(Policy.skillTokenLabel('plan'), '[$plan]');
-  assert.equal(Policy.skillTokenLabel('  plan  '), '[$plan]');
+  assert.equal(Policy.skillTokenLabel('Plan'), '[$Plan]');
+  assert.equal(Policy.skillTokenLabel('  Plan  '), '[$Plan]');
   assert.equal(Policy.skillTokenLabel(''), '', 'no pick draws no token');
   assert.equal(Policy.applySkillSelection('', 'plan'), 'plan');
   assert.equal(Policy.applySkillSelection('plan', 'review'), 'review',
@@ -244,14 +308,62 @@ test('a skill token survives the operator keeping or replacing it', () => {
     'an empty pick must not clear the token it did not ask to change');
 });
 
+test('the picker row hints at the token the message will carry', () => {
+  // One rule serves both: the row's hint comes from the same call the send path
+  // composes the message with, so a hint can never describe a token the message
+  // does not use. The name is what the desktop inserts, hence the name here.
+  const token = Policy.skillTokenLabel('Plan');
+  assert.equal(token, '[$Plan]');
+  assert.equal(Policy.composeSubmissionText('draft', 'Plan'), `${token} draft`);
+  assert.equal(Policy.composeSubmissionText('/goal ship it', 'Plan'),
+    `/goal ship it ${token}`, 'a host command keeps the head it is parsed from');
+});
+
+test('a failed skill read is classified by whether the host answered', () => {
+  // The classification is the only thing standing between a timeout and a claim
+  // that the user's desktop is out of date.
+  assert.equal(Policy.probeFailure(false, 'anything'),
+    CommandPaletteProbeFailure.Unreachable, 'nothing answered, so nothing is claimed');
+  assert.equal(Policy.probeFailure(false, ''),
+    CommandPaletteProbeFailure.Unreachable, 'an empty transport error is still a transport error');
+  assert.equal(Policy.probeFailure(true, "command 'get_mode_skill_configs' is unknown to this " +
+    'OpenBitFun desktop peer host version; upgrade the peer host or check the command name'),
+  CommandPaletteProbeFailure.VersionGap,
+  "the host's own version-gap sentence is the one thing that licenses the badge");
+  assert.equal(Policy.probeFailure(true, 'Command not found: get_mode_skill_configs'),
+    CommandPaletteProbeFailure.VersionGap,
+    "the desktop's command registry says the same thing in its own words");
+  assert.equal(Policy.probeFailure(true, 'workspace not found'),
+    CommandPaletteProbeFailure.Refused,
+    'a refusal about something else keeps the host text without claiming a version');
+
+  // Every kind has copy of its own, and only the version gap points at an update.
+  const kinds = [CommandPaletteProbeFailure.VersionGap, CommandPaletteProbeFailure.Refused,
+    CommandPaletteProbeFailure.Unreachable];
+  assert.deepEqual(kinds.map((kind) => Policy.probeBadgeKey(kind)),
+    [Policy.upgradeBadgeKey, '', '']);
+  assert.deepEqual(kinds.map((kind) => Policy.probeReasonKey(kind)),
+    [Policy.degradedReasonKey, Policy.probeRefusedReasonKey, Policy.probeUnreachableReasonKey]);
+  assert.equal(new Set(kinds.map((kind) => Policy.probeTitleKey(kind))).size, 3,
+    'each failure kind says its own thing');
+  assert.equal(new Set(kinds.map((kind) => Policy.probeBodyKey(kind))).size, 3);
+  for (const key of kinds.map((kind) => Policy.probeTitleKey(kind))
+    .concat(kinds.map((kind) => Policy.probeBodyKey(kind)))) {
+    assert.ok(key.startsWith('commands.'), `${key} must stay in the palette's namespace`);
+  }
+  assert.equal(commandPaletteProbeReady(CommandPaletteCatalogStatus.Ready), true);
+  assert.equal(commandPaletteProbeReady(CommandPaletteCatalogStatus.Failed), false);
+  assert.equal(commandPaletteProbeReady(CommandPaletteCatalogStatus.Loading), false);
+});
+
 test('the token becomes message content in front of free text', () => {
-  assert.equal(Policy.composeSubmissionText('fix login', 'plan'), '[$plan] fix login');
-  assert.equal(Policy.composeSubmissionText('  fix login  ', 'plan'), '[$plan] fix login');
-  assert.equal(Policy.composeSubmissionText('', 'plan'), '[$plan]',
+  assert.equal(Policy.composeSubmissionText('fix login', 'Plan'), '[$Plan] fix login');
+  assert.equal(Policy.composeSubmissionText('  fix login  ', 'Plan'), '[$Plan] fix login');
+  assert.equal(Policy.composeSubmissionText('', 'Plan'), '[$Plan]',
     'a token with no draft is the whole message');
   assert.equal(Policy.composeSubmissionText('fix login', ''), 'fix login',
     'no token leaves the draft exactly as typed');
-  assert.equal(Policy.composeSubmissionText('[$plan] fix login', 'plan'), '[$plan] fix login',
+  assert.equal(Policy.composeSubmissionText('[$Plan] fix login', 'Plan'), '[$Plan] fix login',
     'the token is written once, so a repeated pick cannot stack it');
   assert.equal(Policy.composeSubmissionText('', ''), '');
 });
@@ -267,10 +379,10 @@ test('a host command keeps the head of the message', () => {
   assert.equal(Policy.startsWithHostCommand('/goals'), false);
   assert.equal(Policy.startsWithHostCommand('fix login'), false);
 
-  assert.equal(Policy.composeSubmissionText('/goal fix login', 'plan'),
-    '/goal fix login [$plan]');
-  assert.equal(Policy.composeSubmissionText('  /goal fix login  ', 'plan'),
-    '/goal fix login [$plan]');
-  assert.equal(Policy.composeSubmissionText('/goal', 'plan'), '/goal [$plan]',
+  assert.equal(Policy.composeSubmissionText('/goal fix login', 'Plan'),
+    '/goal fix login [$Plan]');
+  assert.equal(Policy.composeSubmissionText('  /goal fix login  ', 'Plan'),
+    '/goal fix login [$Plan]');
+  assert.equal(Policy.composeSubmissionText('/goal', 'Plan'), '/goal [$Plan]',
     'a bare command is never sent on its own; if it ever reached here the token must not become the objective head');
 });

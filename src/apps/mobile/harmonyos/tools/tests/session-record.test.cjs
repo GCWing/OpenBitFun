@@ -413,8 +413,9 @@ test('after host restart the same conversation sends a new turn instead of steer
     connectionState:'connected', activeSession:{sessionId:'session',agentType:'code'}, activeTurnMessage:timeline.activeTurnOrEmpty(),
     supportsHostCapability:()=>true,
     // The send path composes the draft with the command row's skill token, so the
-    // page state it reads carries one; an empty id is the no-token case.
-    commandPalette:{skillId:''} };
+    // page state it reads carries one; an empty pick is the no-token case, which
+    // means both the row's key and the name its token would be built from.
+    commandPalette:{skillId:'', skillLabel:''} };
   const controller = new RemoteTranscriptController(remote, {
     timeline, chat:command, connection:{ensureAvailable:()=>true}, polling:{nudge(){}}, hooks:{}
   }, ()=>{});
