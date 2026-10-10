@@ -50,6 +50,60 @@ function memberBody(source, name) {
   throw new Error(`unbalanced ${name}() body`);
 }
 
+// Reads the index of the paren that closes the call opening at `open`.
+function callEnd(source, open) {
+  let depth = 0;
+  for (let index = open; index < source.length; index++) {
+    if (source[index] === '(') {
+      depth += 1;
+    } else if (source[index] === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+  throw new Error('unbalanced call');
+}
+
+// Every `Button` in a source file with its modifier chain collapsed to one line,
+// so an assertion can name the button and every fill/ink pair on it. The scan
+// stops at the call's own close paren and skips a builder body, so a label call
+// such as RemoteI18n.t('x') neither leaks into the chain nor merges two buttons.
+function buttonChains(source) {
+  const chains = [];
+  const marker = /(^|[^\w.])Button\(/g;
+  for (let match = marker.exec(source); match !== null; match = marker.exec(source)) {
+    let cursor = callEnd(source, match.index + match[1].length + 'Button'.length) + 1;
+    let chain = 'Button';
+    for (;;) {
+      while (/\s/.test(source[cursor] ?? '')) {
+        cursor += 1;
+      }
+      if (source[cursor] === '{') {
+        let depth = 0;
+        for (; cursor < source.length; cursor++) {
+          if (source[cursor] === '{') depth += 1;
+          else if (source[cursor] === '}' && --depth === 0) break;
+        }
+        cursor += 1;
+        continue;
+      }
+      const modifier = /^\.(\w+)\(/.exec(source.slice(cursor));
+      if (modifier === null) {
+        break;
+      }
+      const open = cursor + modifier[0].length - 1;
+      const close = callEnd(source, open);
+      chain += `.${modifier[1]}${source.slice(open, close + 1).replace(/\s+/g, ' ')}`;
+      cursor = close + 1;
+    }
+    chains.push(chain);
+    marker.lastIndex = cursor;
+  }
+  return chains;
+}
+
 const policy = load('entry/src/main/ets/services/CommandPalettePolicy.ets');
 const {
   CommandPalettePolicy: Policy,
@@ -72,6 +126,7 @@ const composerSource = read('entry/src/main/ets/pages/components/ComposerBar.ets
 const conversationSource = read('entry/src/main/ets/pages/components/ConversationView.ets');
 const skillSheetSource = read('entry/src/main/ets/pages/components/SkillPickerSheet.ets');
 const chipRowSource = read('entry/src/main/ets/pages/components/CommandChipRow.ets');
+const toolsPanelSource = read('entry/src/main/ets/pages/components/WorkspaceToolsPanel.ets');
 const themeSource = read('entry/src/main/ets/pages/components/Theme.ets');
 const transcriptSource = read('entry/src/main/ets/pages/viewmodel/RemoteTranscriptController.ets');
 
@@ -384,4 +439,29 @@ test('an ink-filled chip takes its content from the ink-inverse, not from the ac
     assert.ok(!/\bCONTENT_ON_ACTION\b/.test(themeImport[1]),
       `${name} no longer needs CONTENT_ON_ACTION, which will not invert with an ink fill`);
   }
+});
+
+test('the workspace tools panel words its ink-filled actions with the ink inverse', () => {
+  // The same root cause as the chip pin above, on the other ink surfaces seen on
+  // device in dark mode: the file-action submit, the editor's save and the
+  // terminal empty state's create button all fill with INK, so white-on-near-white
+  // is what CONTENT_ON_ACTION produces there. Every ink fill in this panel has to
+  // resolve its content through the token that inverts with INK.
+  const inkFilled = buttonChains(toolsPanelSource)
+    .filter((chain) => chain.includes('.backgroundColor(INK)'));
+  assert.equal(inkFilled.length, 3,
+    'the three ink-filled actions, one per panel, are what this pin covers');
+  for (const chain of inkFilled) {
+    assert.match(chain, /\.fontColor\(CONTENT_ON_INK\)/,
+      `an ink-filled action must take its content from the ink inverse: ${chain.slice(0, 72)}`);
+    assert.ok(!chain.includes('CONTENT_ON_ACTION'),
+      'the action color does not invert with INK, so it cannot word an ink-filled button');
+  }
+
+  const themeImport = /import \{([\s\S]*?)\} from '\.\/Theme';/.exec(toolsPanelSource);
+  assert.notEqual(themeImport, null, 'the panel must import from the theme');
+  assert.ok(/\bCONTENT_ON_INK\b/.test(themeImport[1]),
+    'the panel must import CONTENT_ON_INK from the theme');
+  assert.ok(!/\bCONTENT_ON_ACTION\b/.test(themeImport[1]),
+    'the panel no longer needs CONTENT_ON_ACTION, which will not invert with an ink fill');
 });
