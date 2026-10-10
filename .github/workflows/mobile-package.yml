@@ -60,6 +60,7 @@ jobs:
     needs: prepare
     runs-on: ubuntu-latest
     env:
+      USE_DEBUG_SIGNING: ${{ github.repository != 'GCWing/OpenBitFun' && 'true' || 'false' }}
       OPENBITFUN_ANDROID_KEYSTORE_B64: ${{ secrets.OPENBITFUN_ANDROID_KEYSTORE_B64 }}
       OPENBITFUN_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.OPENBITFUN_ANDROID_KEYSTORE_PASSWORD }}
       OPENBITFUN_ANDROID_KEY_ALIAS: ${{ secrets.OPENBITFUN_ANDROID_KEY_ALIAS }}
@@ -86,6 +87,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "$USE_DEBUG_SIGNING" == "true" ]]; then
+            echo "Fork build: using the runner-generated Android debug keystore."
+            exit 0
+          fi
           for value in \
             OPENBITFUN_ANDROID_KEYSTORE_B64 \
             OPENBITFUN_ANDROID_KEYSTORE_PASSWORD \
@@ -108,11 +113,16 @@ jobs:
         shell: bash
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
+          DEBUG_SIGNING: ${{ github.repository != 'GCWing/OpenBitFun' && 'true' || 'false' }}
         run: |
           set -euo pipefail
           mkdir -p mobile-release-assets
+          suffix=''
+          if [[ "$DEBUG_SIGNING" == "true" ]]; then
+            suffix='-debug'
+          fi
           cp src/apps/mobile/android/app/build/outputs/apk/release/app-release.apk \
-            "mobile-release-assets/OpenBitFun-Mobile-${VERSION}-android.apk"
+            "mobile-release-assets/OpenBitFun-Mobile-${VERSION}-android${suffix}.apk"
           (cd mobile-release-assets && sha256sum ./*.apk > SHA256SUMS)
 
       - uses: actions/upload-artifact@v6
@@ -142,9 +152,14 @@ jobs:
           TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
           VERSION: ${{ needs.prepare.outputs.version }}
           PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+          FORK_DEBUG_BUILD: ${{ github.repository != 'GCWing/OpenBitFun' && 'true' || 'false' }}
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "$FORK_DEBUG_BUILD" == "true" ]]; then
+            PRERELEASE=true
+            VERSION="$VERSION (fork debug signing)"
+          fi
           gh release create "$TAG_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
