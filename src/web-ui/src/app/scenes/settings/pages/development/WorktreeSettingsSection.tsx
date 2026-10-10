@@ -267,7 +267,7 @@ const WorktreeSettingsSection: React.FC = () => {
       }
       void loadProjects();
     });
-  }, [loadProjects, loadSettings]);
+  }, [loadProjects, loadSettings, seed.loaded]);
 
   const save = async (): Promise<boolean> => {
     if (!trustedSettings || !settingsDirty) {

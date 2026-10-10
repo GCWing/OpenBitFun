@@ -334,7 +334,7 @@ function WindowBehaviorSetting() {
     } finally {
       setLoading(false);
     }
-  }, [isTauri]);
+  }, [isTauri, seed.loaded]);
 
   useEffect(() => {
     if (!isTauri) {
@@ -342,7 +342,7 @@ function WindowBehaviorSetting() {
       return;
     }
     if (!seed.loaded) void loadData();
-  }, [isTauri, loadData]);
+  }, [isTauri, loadData, seed.loaded]);
 
   const handleChange = useCallback(
     async (value: string) => {
@@ -432,11 +432,11 @@ function NotificationSettings() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [seed.loaded]);
 
   useEffect(() => {
     if (!seed.loaded) void loadData();
-  }, [loadData]);
+  }, [loadData, seed.loaded]);
 
   const handleDialogNotifyToggle = async (checked: boolean) => {
     setSaving(true);

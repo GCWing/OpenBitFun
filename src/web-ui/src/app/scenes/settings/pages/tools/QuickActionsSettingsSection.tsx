@@ -290,7 +290,7 @@ const QuickActionsSettingsSection: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [cachedSettings]);
 
   useEffect(() => { if (!cachedSettings) void load(); }, [load, cachedSettings]);
 

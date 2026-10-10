@@ -389,7 +389,7 @@ const McpToolsConfig: React.FC = () => {
         setJsonRefreshing(false);
       }
     }
-  }, [capabilityIsCurrent, currentCapabilityEpoch]);
+  }, [capabilityIsCurrent, currentCapabilityEpoch, setJsonConfig]);
 
   function stopOAuthPolling() {
     if (oauthPollTimerRef.current !== null) {
@@ -574,7 +574,7 @@ const McpToolsConfig: React.FC = () => {
   const discardJsonChanges = useCallback(() => {
     setJsonConfig(jsonSavedConfig);
     setShowJsonEditor(false);
-  }, [jsonSavedConfig]);
+  }, [jsonSavedConfig, setJsonConfig]);
 
   const requestCloseJsonEditor = () => {
     requestSettingsDraftExit(['mcp-json-config'], () => setShowJsonEditor(false));

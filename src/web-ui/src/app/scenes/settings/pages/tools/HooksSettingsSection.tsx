@@ -115,7 +115,7 @@ const HooksSettingsSection: React.FC = () => {
       setImportError(t('imports.loadFailed'));
     }
     setLoading(false);
-  }, [remoteWorkspace, t, workspace?.id]);
+  }, [remoteWorkspace, seed.loaded, t, workspace?.id]);
 
   useEffect(() => {
     mountedRef.current = true;

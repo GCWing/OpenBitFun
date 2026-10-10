@@ -291,7 +291,7 @@ const EditorSettingsPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [seed.loaded]);
 
   useEffect(() => {
     if (!seed.loaded) void loadConfig();

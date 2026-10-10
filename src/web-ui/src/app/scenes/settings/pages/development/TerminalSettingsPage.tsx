@@ -64,7 +64,7 @@ function TerminalSection() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     loadData();

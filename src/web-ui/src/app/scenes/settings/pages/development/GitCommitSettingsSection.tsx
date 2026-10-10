@@ -33,7 +33,7 @@ export default function GitCommitSettingsSection() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [cachedSettings]);
   useEffect(() => { if (!cachedSettings) void load(); }, [load, cachedSettings]);
 
   const handleCommitCoauthorToggle = async (enabled: boolean) => {

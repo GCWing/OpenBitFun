@@ -300,7 +300,7 @@ const ExecutionSettingsPage: React.FC = () => {
   useEffect(() => {
 
     if (!seed.loaded) void loadPageData();
-  }, [loadPageData]);
+  }, [loadPageData, seed.loaded]);
 
   if (!subagentModelOptions.some(option => option.value === subagentModelValue)) {
     subagentModelOptions.push({

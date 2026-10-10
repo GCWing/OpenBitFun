@@ -128,7 +128,7 @@ const MemorySettingsSection: React.FC = () => {
 
   useEffect(() => {
     if (!seed.loaded) void loadData();
-  }, [loadData]);
+  }, [loadData, seed.loaded]);
 
   const enabledModels = useMemo(() => models.filter((model) => model.enabled && model.id), [models]);
 

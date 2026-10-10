@@ -75,7 +75,7 @@ export const SessionTitleSection: React.FC = () => {
       unwatchTaskModels();
       unwatchSettings();
     };
-  }, [loadData]);
+  }, [cachedSettings, loadData, seed.loaded]);
 
   const enabledModels = models.filter((model) => model.enabled);
   const selectionValue = (selection: TaskModelSelection): string => (

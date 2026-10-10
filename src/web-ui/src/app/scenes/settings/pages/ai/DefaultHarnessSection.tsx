@@ -57,7 +57,7 @@ export function DefaultHarnessSection(): React.ReactElement {
         setLoading(false);
       }
     }
-  }, []);
+  }, [seed.loaded]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -83,7 +83,7 @@ export function DefaultHarnessSection(): React.ReactElement {
       loadGenerationRef.current += 1;
       unsubscribe();
     };
-  }, [loadPreference]);
+  }, [loadPreference, seed.loaded]);
 
   const labelForMode = useCallback((modeId: string | null | undefined): string => {
     const profile = canonicalHarnessId(modeId);

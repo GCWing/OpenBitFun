@@ -167,7 +167,7 @@ const PermissionsSettingsPage: React.FC = () => {
   useEffect(() => {
 
     if (!seed.loaded) void loadPageData();
-  }, [loadPageData]);
+  }, [loadPageData, seed.loaded]);
 
   return (
     <SettingsPage pageId="ai.permissions" className="openbitfun-runtime-settings" data-openbitfun-component="runtime-settings" data-openbitfun-part="root" data-openbitfun-view="permissions">
