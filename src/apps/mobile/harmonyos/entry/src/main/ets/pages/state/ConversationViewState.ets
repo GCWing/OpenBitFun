@@ -22,6 +22,7 @@ import { AppRoute } from '../navigation/AppRouteContract';
 import { ConversationCoreState } from './ConversationCoreState';
 import { GeneralChatPageState } from './GeneralChatPageState';
 import { RemotePageState } from './RemotePageState';
+import { CommandPalettePresentation, commandPaletteProbeReady } from './CommandPaletteState';
 
 /** Immutable presentation state consumed by ConversationView. */
 export class ConversationViewState {
@@ -53,6 +54,11 @@ export class ConversationViewState {
   selectedImages: ConversationUiSelectedImage[] = [];
   isVoiceListening: boolean = false;
   chatInput: string = '';
+  /**
+   * The composer's command row. Hidden on the general surface and whenever the
+   * conversation has no session, so the row can never act on a stale target.
+   */
+  commandPalette: CommandPalettePresentation = CommandPalettePresentation.hidden();
 
   static project(
     route: AppRoute,
@@ -86,6 +92,11 @@ export class ConversationViewState {
     state.downloadedFilePath = remote.downloadedFilePath;
     state.fileDownloadStatus = remote.fileDownloadStatus;
     state.interactionMailbox = remote.interactionMailbox;
+    state.commandPalette = CommandPalettePresentation.project(
+      remote.commandPalette,
+      commandPaletteProbeReady(remote.commandPalette.catalogStatus),
+      state.activeSession.sessionId.length > 0,
+      state.isBusy);
     return state;
   }
 

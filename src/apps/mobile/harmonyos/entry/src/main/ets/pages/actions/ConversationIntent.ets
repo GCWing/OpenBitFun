@@ -26,9 +26,45 @@ export enum ConversationIntentType {
   OpenFilePreview = 'open_file_preview',
   DownloadFile = 'download_file',
   BuildPlan = 'build_plan',
+  CommandPalette = 'command_palette',
   Send = 'send',
   VoiceInput = 'voice_input',
   ChatInputChanged = 'chat_input_changed'
+}
+
+/**
+ * What one tap in the composer command row asks for.
+ *
+ * The row is a single funnel by construction: the two verbs keep their wire ids,
+ * and everything else is a local decision about the draft or a sheet. None of
+ * these carry a session — the active conversation is resolved once, where the
+ * command is sent.
+ */
+export enum CommandPaletteAction {
+  Compact = 'compact',
+  InitAgentsMd = 'init_agents_md',
+  ToggleGoal = 'toggle_goal',
+  OpenUsage = 'open_usage',
+  RetryUsage = 'retry_usage',
+  OpenSkills = 'open_skills',
+  RefreshCatalog = 'refresh_catalog',
+  SelectSkill = 'select_skill',
+  ClearSkill = 'clear_skill',
+  RetryCommand = 'retry_command'
+}
+
+export class CommandPaletteRequest {
+  readonly action: CommandPaletteAction;
+  /** The picked skill, for `SelectSkill`; empty otherwise. */
+  readonly skillId: string;
+  /** The verb a `RetryCommand` repeats, empty otherwise. */
+  readonly wireAction: string;
+
+  constructor(action: CommandPaletteAction, skillId: string = '', wireAction: string = '') {
+    this.action = action;
+    this.skillId = skillId;
+    this.wireAction = wireAction;
+  }
 }
 
 export class PlanBuildRequest {
@@ -66,6 +102,7 @@ export class ConversationIntent {
   readonly filePreviewRequest?: FilePreviewRequest;
   readonly planBuildRequest?: PlanBuildRequest;
   readonly copyScope: MessageCopyScope;
+  readonly commandPaletteRequest?: CommandPaletteRequest;
   mailboxAction?: InteractionMailboxAction;
 
   constructor(
@@ -76,7 +113,8 @@ export class ConversationIntent {
     answers?: ConversationUiQuestionAnswer,
     filePreviewRequest?: FilePreviewRequest,
     planBuildRequest?: PlanBuildRequest,
-    copyScope: MessageCopyScope = MessageCopyScope.Plain
+    copyScope: MessageCopyScope = MessageCopyScope.Plain,
+    commandPaletteRequest?: CommandPaletteRequest
   ) {
     this.type = type;
     this.value = value;
@@ -86,6 +124,7 @@ export class ConversationIntent {
     this.filePreviewRequest = filePreviewRequest;
     this.planBuildRequest = planBuildRequest;
     this.copyScope = copyScope;
+    this.commandPaletteRequest = commandPaletteRequest;
   }
 }
 
@@ -152,6 +191,21 @@ export class ConversationIntents {
       undefined,
       undefined,
       new PlanBuildRequest(path, name)
+    );
+  }
+
+  /** One tap in the composer command row, as a typed request rather than a parameter list. */
+  static commandPalette(request: CommandPaletteRequest): ConversationIntent {
+    return new ConversationIntent(
+      ConversationIntentType.CommandPalette,
+      '',
+      '',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      MessageCopyScope.Plain,
+      request
     );
   }
 }

@@ -13,8 +13,10 @@ import {
   SessionSummary
 } from '../../model/RemoteModels';
 import { ChatTimelineItem, ObservableChatTimelineItem } from '../../model/ChatTimelineModels';
+import { ComposerSubmission } from '../../model/ComposerSubmission';
 import { RemoteUiState } from '../../services/RemoteUiState';
 import { ConversationCoreState } from './ConversationCoreState';
+import { CommandPaletteState } from './CommandPaletteState';
 
 /**
  * Observable projection for the Remote home page.
@@ -24,6 +26,11 @@ import { ConversationCoreState } from './ConversationCoreState';
 export class RemotePageState {
   @Trace interactionMailbox: InteractionMailboxState = new InteractionMailboxState();
   readonly workspaceTools: WorkspaceToolsState = new WorkspaceToolsState();
+  /**
+   * The composer command palette. Session-scoped, so it is dropped with the
+   * conversation it belongs to rather than outliving it.
+   */
+  readonly commandPalette: CommandPaletteState = new CommandPaletteState();
   @Trace conversation: ConversationCoreState = new ConversationCoreState('code');
   @Trace desktopName: string = '';
   @Trace desktopId: string = '';
@@ -254,12 +261,19 @@ export class RemotePageState {
   }
 
   setActiveSession(session: SessionSummary): void {
-    if (this.conversation.activeSession.sessionId !== session.sessionId) this.interactionMailbox = new InteractionMailboxState();
+    if (this.conversation.activeSession.sessionId !== session.sessionId) {
+      this.interactionMailbox = new InteractionMailboxState();
+      // A skill catalog, a usage report and a lit goal chip all belong to the
+      // session that produced them. Carrying them into another conversation
+      // would show one session's numbers over another's messages.
+      this.commandPalette.reset();
+    }
     this.conversation.setActiveSession(session);
   }
 
   clearActiveSession(): void {
     this.interactionMailbox = new InteractionMailboxState();
+    this.commandPalette.reset();
     this.conversation.clearActiveSession();
     this.isLoadingConversation = false;
     this.isLoadingTranscript = false;
@@ -337,6 +351,37 @@ export class RemotePageState {
     this.conversation.clearComposer();
   }
 
+  /**
+   * Draft ownership for a send, including the palette's skill token.
+   *
+   * The token is a chip beside the field rather than text inside it, so it has
+   * to travel with the same ownership rules as the draft: consumed by the commit
+   * that the host accepted, and put back by the rollback that it did not.
+   */
+  prepareComposerSubmission(
+    sessionId: string,
+    text: string,
+    images: SelectedImageAttachment[]
+  ): ComposerSubmission {
+    const inner = this.conversation.prepareComposerSubmission(sessionId, text, images);
+    const skillId = this.commandPalette.skillId;
+    return {
+      commit: (): void => {
+        const hadSkill = this.commandPalette.skillId.length > 0;
+        inner.commit();
+        if (hadSkill) {
+          this.commandPalette.clearSkill();
+        }
+      },
+      rollback: (): void => {
+        inner.rollback();
+        if (skillId.length > 0 && this.commandPalette.skillId.length === 0) {
+          this.commandPalette.setSkill(skillId);
+        }
+      }
+    };
+  }
+
   setVoiceListening(isVoiceListening: boolean): void {
     this.conversation.setVoiceListening(isVoiceListening);
   }
@@ -382,6 +427,7 @@ export class RemotePageState {
   /** Clears every conversation-scoped value when its remote identity ends. */
   resetConversationContext(): void {
     this.interactionMailbox = new InteractionMailboxState();
+    this.commandPalette.reset();
     this.conversation.reset();
     this.hasMoreSessions = false;
     this.isLoadingSessions = false;

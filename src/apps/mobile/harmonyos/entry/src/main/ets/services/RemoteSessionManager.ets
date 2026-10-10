@@ -2,7 +2,7 @@ import { WorkspaceCatalog, projectWorkspaceCatalog } from './WorkspaceCatalog';
 import { RuntimeFileLocation } from '../model/RemoteModels';
 import { HostSessionCallbacks, HostSessionStream, REMOTE_CAPABILITY_HOST_STREAM_V1 } from './HostSessionStream';
 import { SavedRuntimeConnection, SavedRuntimeConnectionsResponse } from '../model/RemoteModels';
-import { AssistantEntry, AssistantListResponse, ChatMessageItemResponse, ChatMessageResponse, CommandStatusResponse, CreateSessionOptions, CreateSessionResponse, FileInfo, FileInfoResponse, InitialSyncResult, ModelCatalogResponse, PermissionModeResponse, PollSessionResponse, PollSessionResult, ReadFileChunkResponse, ReadFileChunkResult, ReadFileResult, RecentWorkspaceEntry, RecentWorkspaceListResponse, RemoteCommand, RemoteImageContext, RemoteModelCatalog, RemotePermissionMode, RemoteQuestionAnswerPayload, RemoteSession, RemoteWorkspaceIdentity, REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1, SendMessageResponse, SessionListResponse, SessionListResult, SessionMessagesResponse, SessionMessagesResult, SessionSummary, SetAssistantResponse, SetSessionModelResponse, SetWorkspaceResponse, SteerTurnResponse, SteerTurnResult, WorkspaceInfo, WorkspaceInfoResponse } from '../model/RemoteModels';
+import { AssistantEntry, AssistantListResponse, ChatMessageItemResponse, ChatMessageResponse, CommandStatusResponse, CreateSessionOptions, CreateSessionResponse, FileInfo, FileInfoResponse, InitialSyncResult, ModelCatalogResponse, PermissionModeResponse, PollSessionResponse, PollSessionResult, ReadFileChunkResponse, ReadFileChunkResult, ReadFileResult, RecentWorkspaceEntry, RecentWorkspaceListResponse, RemoteCommand, RemoteCommandCatalog, RemoteImageContext, RemoteModeSkillRow, RemoteModelCatalog, RemotePermissionMode, RemoteQuestionAnswerPayload, RemoteSession, RemoteSessionUsageReport, RemoteTurnAcceptedValue, RemoteWorkspaceIdentity, REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1, SendMessageResponse, SessionListResponse, SessionListResult, SessionMessagesResponse, SessionMessagesResult, SessionSummary, SetAssistantResponse, SetSessionModelResponse, SetWorkspaceResponse, SteerTurnResponse, SteerTurnResult, WorkspaceInfo, WorkspaceInfoResponse } from '../model/RemoteModels';
 import { Encoding } from './Encoding';
 import { CloudAccountClient, CloudAccountRequestError, CloudAccountSession } from './CloudAccountClient';
 import { RemoteI18n } from '../i18n/RemoteI18n';
@@ -16,6 +16,8 @@ import { RemoteChatCommandClient } from './RemoteChatCommandController';
 import { RemoteFileDownloadClient } from './RemoteFileDownloadController';
 import { RemoteLogger } from './RemoteLogger';
 import { RemoteModelClient } from './RemoteModelController';
+import { RemoteCommandPaletteClient, RemoteCommandPaletteScope, RemoteSkillCatalogQuery } from './RemoteCommandPaletteController';
+import { CommandCatalogProjection } from './CommandCatalogProjection';
 import { RemoteResponseMapper } from './RemoteResponseMapper';
 import { stampRemoteSessionsWorkspace } from './RemoteSessionIdentity';
 import { TranscriptIntegrityPolicy } from './TranscriptIntegrityPolicy';
@@ -38,7 +40,42 @@ const ACCOUNT_HANDSHAKE_TIMEOUT_MS: number = 15000;
 interface PermissionReplyArgs { request: PermissionReplyRequest; }
 interface PermissionReplyRequest { requestId: string; reply: string; feedback?: string; updatedInput?: Object; }
 
-export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFileDownloadClient, RemoteModelClient, RemoteSessionClient, RemoteToolActionClient {
+/**
+ * HostInvoke arguments for the composer palette's verbs.
+ *
+ * Shapes are per-command, not a shared envelope: `get_mode_skill_configs` takes
+ * flat arguments, and the three session verbs take a `request` object whose
+ * field spelling differs between their two Rust structs.
+ */
+interface ModeSkillConfigArgs {
+  modeId: string;
+  forceRefresh?: boolean;
+  workspaceId?: string;
+  workspacePath?: string;
+}
+
+interface SessionRequest {
+  sessionId: string;
+  workspaceId?: string;
+  workspacePath?: string;
+  remoteConnectionId?: string;
+  remoteSshHost?: string;
+}
+
+interface SessionRequestArgs { request: SessionRequest; }
+
+/** `GetSessionUsageReportRequest` is declared without `rename_all`. */
+interface SessionUsageRequest {
+  session_id: string;
+  workspace_id?: string;
+  workspace_path?: string;
+  remote_connection_id?: string;
+  remote_ssh_host?: string;
+}
+
+interface SessionUsageArgs { request: SessionUsageRequest; }
+
+export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFileDownloadClient, RemoteModelClient, RemoteSessionClient, RemoteToolActionClient, RemoteCommandPaletteClient {
   private transport?: RemoteCommandTransport;
   private transportGeneration: number = 0;
   private workspace?: WorkspaceInfo;
@@ -445,6 +482,93 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
   async setSessionModel(sessionId: string, modelId: string): Promise<string> {
     const response = await this.send<SetSessionModelResponse>(RemoteCommandFactory.setSessionModel(sessionId, modelId));
     return response.model_id || modelId;
+  }
+
+  /**
+   * The skill catalog the palette's picker shows.
+   *
+   * `get_mode_skill_configs` takes flat arguments and answers with the mode's
+   * skill rows; without `includeDiagnostics` the value is that rows array, which
+   * the projection turns into palette entries. A host that does not serve the
+   * command rejects the invoke, and that rejection is the palette's probe.
+   */
+  async skillCatalog(query: RemoteSkillCatalogQuery): Promise<RemoteCommandCatalog> {
+    const args: ModeSkillConfigArgs = {
+      modeId: query.modeId,
+      forceRefresh: query.forceRefresh
+    };
+    if (query.workspaceId) {
+      args.workspaceId = query.workspaceId;
+    }
+    if (query.workspacePath) {
+      args.workspacePath = query.workspacePath;
+    }
+    const rows = await this.hostInvoke<RemoteModeSkillRow[]>('get_mode_skill_configs', args);
+    return CommandCatalogProjection.parseHostCatalog(rows);
+  }
+
+  /**
+   * `compact_session`, whose handler answers with the turn it started.
+   *
+   * The workspace locator is an upgrade projection: a host that still has the
+   * session in memory ignores it, and one that does not needs it to restore the
+   * session before compacting.
+   */
+  async compactSession(query: RemoteCommandPaletteScope): Promise<string> {
+    const args: SessionRequestArgs = { request: RemoteSessionManager.sessionRequest(query) };
+    const value = await this.hostInvoke<RemoteTurnAcceptedValue>('compact_session', args);
+    RemoteLogger.info(
+      `compact_session accepted session=${RemoteSessionManager.shortId(query.sessionId)}`);
+    return value?.message || '';
+  }
+
+  async runInitAgentsMd(query: RemoteCommandPaletteScope): Promise<string> {
+    const args: SessionRequestArgs = { request: RemoteSessionManager.sessionRequest(query) };
+    const value = await this.hostInvoke<RemoteTurnAcceptedValue>('run_init_agents_md', args);
+    RemoteLogger.info(
+      `run_init_agents_md accepted session=${RemoteSessionManager.shortId(query.sessionId)}`);
+    return value?.message || '';
+  }
+
+  /**
+   * `get_session_usage_report`, whose request keeps its snake_case spelling.
+   *
+   * Unlike the two turn verbs this struct carries no `rename_all`, so its fields
+   * travel exactly as the desktop declares them.
+   */
+  async sessionUsageReport(query: RemoteCommandPaletteScope): Promise<RemoteSessionUsageReport | undefined> {
+    const request: SessionUsageRequest = { session_id: query.sessionId };
+    if (query.workspaceId) {
+      request.workspace_id = query.workspaceId;
+    }
+    if (query.workspacePath) {
+      request.workspace_path = query.workspacePath;
+    }
+    if (query.remoteConnectionId) {
+      request.remote_connection_id = query.remoteConnectionId;
+    }
+    if (query.remoteSshHost) {
+      request.remote_ssh_host = query.remoteSshHost;
+    }
+    const args: SessionUsageArgs = { request };
+    return await this.hostInvoke<RemoteSessionUsageReport>('get_session_usage_report', args);
+  }
+
+  private static sessionRequest(query: RemoteCommandPaletteScope): SessionRequest {
+    const request: SessionRequest = { sessionId: query.sessionId };
+    if (query.workspaceId) {
+      request.workspaceId = query.workspaceId;
+    }
+    if (query.workspacePath) {
+      request.workspacePath = query.workspacePath;
+    }
+    if (query.remoteConnectionId) {
+      request.remoteConnectionId = query.remoteConnectionId;
+    }
+    if (query.remoteSshHost) {
+      request.remoteSshHost = query.remoteSshHost;
+    }
+    return request;
   }
 
   async pollSession(

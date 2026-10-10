@@ -6,6 +6,8 @@ import {
 } from '../../model/RemoteModels';
 import { ChatTimelineItem } from '../../model/ChatTimelineModels';
 import { ChatTimelineState, ChatTimelineStore } from '../../services/ChatTimelineStore';
+import { CommandPalettePolicy } from '../../services/CommandPalettePolicy';
+import { RemoteCommandPaletteScope } from '../../services/RemoteCommandPaletteController';
 import { ConnectionErrorPolicy } from '../../services/ConnectionErrorPolicy';
 import { Encoding } from '../../services/Encoding';
 import { MarkdownHtmlSerializer } from '../../services/MarkdownHtmlSerializer';
@@ -13,7 +15,7 @@ import { RemoteChatPollingCursor, RemoteChatPollingSnapshot } from '../../servic
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { RemoteLogger } from '../../services/RemoteLogger';
 import { RemoteUiState } from '../../services/RemoteUiState';
-import { MessageCopyScope } from '../actions/ConversationIntent';
+import { MessageCopyScope, CommandPaletteAction, CommandPaletteRequest } from '../actions/ConversationIntent';
 import { RemotePageState } from '../state/RemotePageState';
 import {
   RemoteConversationDependencies,
@@ -75,10 +77,114 @@ export class RemoteTranscriptController {
 
   async loadRemoteMessages(): Promise<void> {
     const runtime = requireRemoteRuntime(this.remoteRuntime);
+    const sessionId = this.remote.activeSession.sessionId || '';
     await runtime.chat.loadMessages(
-      this.remote.activeSession.sessionId || '',
+      sessionId,
       runtime.hooks.isConversationContext
     );
+    // Read the skill catalog behind the transcript. This is also the palette's
+    // behavior probe — a host that does not serve the read is what greys the row
+    // — and it is cached per session, so opening a session pays for it once.
+    void runtime.commandPalette.loadCatalog(
+      sessionId,
+      this.commandPaletteModeId(),
+      false,
+      this.commandPaletteScope()
+    );
+  }
+
+  /**
+   * One tap in the composer's command row.
+   *
+   * Everything the palette can do lands here, because this controller owns what
+   * "the active conversation" means: the session id, the draft, the workspace
+   * that owns the session, and whether the probe has answered yet.
+   */
+  async dispatchCommandPalette(request: CommandPaletteRequest): Promise<void> {
+    const runtime = requireRemoteRuntime(this.remoteRuntime);
+    const sessionId = this.remote.activeSession.sessionId || '';
+    const palette = this.remote.commandPalette;
+    if (request.action === CommandPaletteAction.ToggleGoal) {
+      // Goals are plain message text, so this works on any host that can send.
+      const toggled = CommandPalettePolicy.toggleGoal(this.remote.chatInput, palette.goalPending);
+      this.remote.setChatInput(toggled.draft);
+      palette.setGoalPending(toggled.pending);
+      return;
+    }
+    if (request.action === CommandPaletteAction.SelectSkill) {
+      palette.setSkill(request.skillId);
+      return;
+    }
+    if (request.action === CommandPaletteAction.ClearSkill) {
+      palette.clearSkill();
+      return;
+    }
+    const canApply = this.commandPaletteScope();
+    if (sessionId.length === 0 || !canApply(sessionId)) {
+      RemoteLogger.info(
+        `command palette ignored action=${request.action} session=${shortSessionId(sessionId)}`);
+      return;
+    }
+    const scope = this.commandPaletteCommandScope(sessionId);
+    if (request.action === CommandPaletteAction.Compact ||
+      request.action === CommandPaletteAction.InitAgentsMd ||
+      request.action === CommandPaletteAction.RetryCommand) {
+      const wireAction = request.action === CommandPaletteAction.RetryCommand ? request.wireAction : request.action;
+      if (!CommandPalettePolicy.isRunnable(wireAction)) {
+        return;
+      }
+      await runtime.commandPalette.runCommand(sessionId, wireAction, scope, canApply);
+      return;
+    }
+    if (request.action === CommandPaletteAction.OpenUsage ||
+      request.action === CommandPaletteAction.RetryUsage) {
+      await runtime.commandPalette.loadUsageReport(sessionId, scope, canApply);
+      return;
+    }
+    if (request.action === CommandPaletteAction.OpenSkills ||
+      request.action === CommandPaletteAction.RefreshCatalog) {
+      await runtime.commandPalette.loadCatalog(
+        sessionId,
+        this.commandPaletteModeId(),
+        request.action === CommandPaletteAction.RefreshCatalog,
+        canApply);
+    }
+  }
+
+  /**
+   * The host's mode id for the palette's catalog read.
+   *
+   * It is the session's own agent type: the picker must show the skills that
+   * mode would actually run, and a session that has not named one yet falls back
+   * to the desktop's default harness rather than an empty mode.
+   */
+  private commandPaletteModeId(): string {
+    const agentType = (this.remote.activeSession.agentType || '').trim();
+    return agentType.length > 0 ? agentType : 'agentic';
+  }
+
+  /** The workspace that owns the active session, as the verbs expect it. */
+  private commandPaletteCommandScope(sessionId: string): RemoteCommandPaletteScope {
+    const scope: RemoteCommandPaletteScope = { sessionId };
+    if (this.remote.workspaceId.length > 0) {
+      scope.workspaceId = this.remote.workspaceId;
+    }
+    if (this.remote.workspacePath.length > 0) {
+      scope.workspacePath = this.remote.workspacePath;
+    }
+    if (this.remote.workspaceConnectionId.length > 0) {
+      scope.remoteConnectionId = this.remote.workspaceConnectionId;
+    }
+    if (this.remote.workspaceSshHost.length > 0) {
+      scope.remoteSshHost = this.remote.workspaceSshHost;
+    }
+    return scope;
+  }
+
+  /** Reads stay pinned to the session they were asked for. */
+  private commandPaletteScope(): (sessionId: string) => boolean {
+    return (sessionId: string): boolean =>
+      sessionId.length > 0 && this.remote.activeSession.sessionId === sessionId;
   }
 
   async selectRemoteModel(modelId: string): Promise<void> {
@@ -108,7 +214,16 @@ export class RemoteTranscriptController {
     }
     const rawText = this.remote.chatInput.trim();
     const images = this.remote.selectedImages.slice();
-    const text = rawText.length > 0 ? rawText :
+    // A bare `/goal` is a command with its argument still missing, so it is not
+    // a message yet: the composer already drew it as SendBlocked, and anything
+    // that reaches the send path another way stops here too.
+    if (CommandPalettePolicy.blocksSend(rawText)) {
+      return;
+    }
+    // The skill token is a chip beside the field, so this is where it becomes
+    // message content — once, and only for the draft being sent.
+    const skillId = this.remote.commandPalette.skillId;
+    const text = rawText.length > 0 ? CommandPalettePolicy.composeSubmissionText(rawText, skillId) :
       (images.length > 0 ? RemoteI18n.t('chat.analyzeImageDefault') : '');
     const sessionId = this.remote.activeSession.sessionId || '';
     if ((!text && images.length === 0) || !sessionId || this.remote.isBusy || this.remote.connectionState !== 'connected' ||
