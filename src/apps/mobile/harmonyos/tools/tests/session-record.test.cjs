@@ -406,11 +406,15 @@ test('after host restart the same conversation sends a new turn instead of steer
     '../../services/ChatTimelineStore': { ChatTimelineStore }, '../../services/RemoteUiState': ui,
     '../../services/RemoteLogger': logger, '../../i18n/RemoteI18n': i18n,
     '../../services/Encoding': { Encoding: { randomId: () => 'new-turn' } },
+    '../../services/CommandPalettePolicy': load('CommandPalettePolicy'),
     './ConversationRuntime': { requireRemoteRuntime: value => value, shortSessionId: value => value }
   });
   const remote = { chatInput:'continue after restart', selectedImages:[], isBusy:false, isVoiceListening:false,
     connectionState:'connected', activeSession:{sessionId:'session',agentType:'code'}, activeTurnMessage:timeline.activeTurnOrEmpty(),
-    supportsHostCapability:()=>true };
+    supportsHostCapability:()=>true,
+    // The send path composes the draft with the command row's skill token, so the
+    // page state it reads carries one; an empty id is the no-token case.
+    commandPalette:{skillId:''} };
   const controller = new RemoteTranscriptController(remote, {
     timeline, chat:command, connection:{ensureAvailable:()=>true}, polling:{nudge(){}}, hooks:{}
   }, ()=>{});
