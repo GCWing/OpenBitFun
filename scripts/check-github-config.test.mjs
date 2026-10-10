@@ -1103,6 +1103,21 @@ test('stages unique release asset names before publishing', () => {
   assert.match(steps[uploadIndex].run, /--clobber release-upload-assets\/\*/);
 });
 
+test('Desktop release notes link the separately published Android prerelease', () => {
+  const workflow = yaml.parse(
+    readFileSync(
+      path.join(repoRoot, '.github/workflows/desktop-package.yml'),
+      'utf8',
+    ),
+  );
+  const uploadStep = workflow.jobs['upload-release-assets'].steps.find(
+    (step) => step.name === 'Upload to release',
+  );
+  assert.match(uploadStep.run, /mobile-v\$\{MOBILE_VERSION\}/);
+  assert.match(uploadStep.run, /runner-generated debug signing key/);
+  assert.match(uploadStep.run, /--notes-file release-notes\.md/);
+});
+
 test('Mobile Package publishes Android assets from mobile-v tags', () => {
   const workflow = yaml.parse(
     readFileSync(path.join(repoRoot, '.github/workflows/mobile-package.yml'), 'utf8'),

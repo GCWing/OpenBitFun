@@ -34,9 +34,9 @@ without changing the mobile tag or release layout. Mobile Android versions are
 checked as a group across the Android, iOS, and HarmonyOS version files, but they
 do not need to equal the Desktop version.
 
-GitHub exposes one repository-wide `Latest` release. Link the Desktop and Mobile
-release pages separately from the project download page and the Desktop release
-notes.
+GitHub exposes one repository-wide `Latest` release. Desktop release notes also
+include the Android version and a link to the corresponding Mobile prerelease,
+while the Desktop release itself contains no Android APK assets.
 
 ## Legacy update isolation
 

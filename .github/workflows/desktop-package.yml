@@ -825,9 +825,25 @@ jobs:
           esac
           gh release upload "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" \
             --clobber release-upload-assets/*
+          MOBILE_VERSION="$(sed -nE 's/.*versionName = "([^"]+)".*/\1/p' \
+            src/apps/mobile/android/app/build.gradle.kts 2>/dev/null | head -n1 || true)"
+          MOBILE_VERSION="${MOBILE_VERSION:-$RELEASE_VERSION}"
+          gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --json body --jq .body > release-notes.md
+          if ! grep -q '<!-- openbitfun-mobile-release -->' release-notes.md; then
+            cat >> release-notes.md <<EOF
+
+          <!-- openbitfun-mobile-release -->
+          ### Android mobile
+
+          Android mobile version **${MOBILE_VERSION}** is published separately as a prerelease:
+          [Download the Android prerelease](https://github.com/${GITHUB_REPOSITORY}/releases/tag/mobile-v${MOBILE_VERSION}).
+          The current APK uses the runner-generated debug signing key.
+          EOF
+          fi
           gh release edit "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" \
-            --title "OpenBitFun ${RELEASE_VERSION}" --draft=false \
-            --prerelease="${RELEASE_PRERELEASE}" --latest="${RELEASE_LATEST}"
+            --title "OpenBitFun ${RELEASE_VERSION}" --notes-file release-notes.md \
+            --draft=false --prerelease="${RELEASE_PRERELEASE}" --latest="${RELEASE_LATEST}"
 
       - name: Verify published legacy update feeds
         if: needs.prepare.outputs.release_channel == 'stable'
