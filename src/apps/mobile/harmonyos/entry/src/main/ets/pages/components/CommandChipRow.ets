@@ -5,7 +5,7 @@ import { CommandPaletteNotice, CommandPalettePresentation } from '../state/Comma
 import { CommandPaletteAction, CommandPaletteRequest } from '../actions/ConversationIntent';
 import { ComposerPresentation } from './ComposerBar';
 import {
-  CONTENT_ON_ACTION,
+  CONTENT_ON_INK,
   INK,
   LINE,
   MUTED,
@@ -252,12 +252,12 @@ export struct CommandChipRow {
   }
 
   private chipLabelColor(chip: CommandPaletteChip): ResourceColor {
-    if (chip.state === CommandPaletteChipState.Pending) return CONTENT_ON_ACTION;
+    if (chip.state === CommandPaletteChipState.Pending) return CONTENT_ON_INK;
     return chip.state === CommandPaletteChipState.Dimmed ? MUTED : INK;
   }
 
   private chipGlyphColor(chip: CommandPaletteChip): ResourceColor {
-    if (chip.state === CommandPaletteChipState.Pending) return CONTENT_ON_ACTION;
+    if (chip.state === CommandPaletteChipState.Pending) return CONTENT_ON_INK;
     return chip.state === CommandPaletteChipState.Dimmed ? MUTED : INK;
   }
 

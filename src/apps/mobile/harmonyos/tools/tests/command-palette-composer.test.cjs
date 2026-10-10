@@ -71,6 +71,8 @@ const pageState = load('entry/src/main/ets/pages/state/RemotePageState.ets');
 const composerSource = read('entry/src/main/ets/pages/components/ComposerBar.ets');
 const conversationSource = read('entry/src/main/ets/pages/components/ConversationView.ets');
 const skillSheetSource = read('entry/src/main/ets/pages/components/SkillPickerSheet.ets');
+const chipRowSource = read('entry/src/main/ets/pages/components/CommandChipRow.ets');
+const themeSource = read('entry/src/main/ets/pages/components/Theme.ets');
 const transcriptSource = read('entry/src/main/ets/pages/viewmodel/RemoteTranscriptController.ets');
 
 test('the composer takes the token and the row as inputs, and gives the removal back', () => {
@@ -333,4 +335,53 @@ test('the row mounts once, above the composer, for every posture', () => {
   const composerSites = [...conversationSource.matchAll(/this\.Composer\(\)/g)];
   assert.ok(composerSites.length >= 2,
     'the same Composer() subtree is what the compact and half-folded panes both build');
+});
+
+test('an ink-filled chip takes its content from the ink-inverse, not from the action color', () => {
+  // Seen on device in dark mode: the selected filter chip painted white text on a
+  // near-white INK chip, because CONTENT_ON_ACTION is pinned to #FFFFFF in both
+  // themes while INK inverts. The two ink surfaces are the picker's selected
+  // filter chip and the palette row's pending chip, and both must resolve their
+  // content through the token that inverts with INK.
+  assert.match(themeSource,
+    /export const CONTENT_ON_INK: ResourceColor = \$r\('app\.color\.page_bg'\);/,
+    'the ink inverse must be the theme-aware page background, the resource INK inverts against');
+  assert.match(themeSource,
+    /export const INK: ResourceColor = \$r\('app\.color\.ink'\);/,
+    'the pin is only meaningful while INK stays the theme-inverting surface color');
+
+  // The selected filter chip: INK fill, so its label cannot come from the action color.
+  const filterChip = skillSheetSource.slice(
+    skillSheetSource.indexOf('Text(`${RemoteI18n.t(filter.labelKey)} ${filter.count}`)'),
+    skillSheetSource.indexOf('.onClick('));
+  assert.match(filterChip,
+    /\.fontColor\(this\.filterId === filter\.id \? CONTENT_ON_INK : MUTED\)/,
+    'the selected filter chip label takes the ink inverse');
+  assert.match(filterChip,
+    /\.backgroundColor\(this\.filterId === filter\.id \? INK : SOFT\)/,
+    'and the fill it contrasts with is still INK');
+  assert.ok(!filterChip.includes('CONTENT_ON_ACTION'),
+    'the action color does not invert with INK, so it cannot word an ink chip');
+
+  // The palette row's pending chip: same INK fill through chipBackgroundColor.
+  const background = memberBody(chipRowSource, 'chipBackgroundColor');
+  assert.match(background, /chip\.state === CommandPaletteChipState\.Pending \? INK : SOFT/,
+    'a pending chip is the row\'s ink surface');
+  for (const member of ['chipLabelColor', 'chipGlyphColor']) {
+    const body = memberBody(chipRowSource, member);
+    assert.match(body, /if \(chip\.state === CommandPaletteChipState\.Pending\) return CONTENT_ON_INK;/,
+      `${member}() must take the ink inverse for the pending state`);
+    assert.ok(!body.includes('CONTENT_ON_ACTION'),
+      `${member}() must not borrow the action color for a chip filled with INK`);
+  }
+
+  // Both files must carry the import, or the token above is a name nothing defines.
+  for (const [name, text] of [['SkillPickerSheet', skillSheetSource], ['CommandChipRow', chipRowSource]]) {
+    const themeImport = /import \{([\s\S]*?)\} from '\.\/Theme';/.exec(text);
+    assert.notEqual(themeImport, null, `${name} must import from the theme`);
+    assert.ok(/\bCONTENT_ON_INK\b/.test(themeImport[1]),
+      `${name} must import CONTENT_ON_INK from the theme`);
+    assert.ok(!/\bCONTENT_ON_ACTION\b/.test(themeImport[1]),
+      `${name} no longer needs CONTENT_ON_ACTION, which will not invert with an ink fill`);
+  }
 });

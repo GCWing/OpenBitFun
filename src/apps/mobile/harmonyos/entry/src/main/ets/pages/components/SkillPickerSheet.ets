@@ -24,7 +24,7 @@ import {
   SHEET_HORIZONTAL_PADDING,
   SHEET_TOP_RADIUS
 } from './SheetLayout';
-import { CARD, CONTENT_ON_ACTION, INK, LINE, MUTED, PAGE_BG, SOFT, SUBTLE, TRANSPARENT } from './Theme';
+import { CARD, CONTENT_ON_INK, INK, LINE, MUTED, PAGE_BG, SOFT, SUBTLE, TRANSPARENT } from './Theme';
 
 // The picker's own geometry, matching the approved design's half-sheet.
 const SKILL_SEARCH_HEIGHT: number = 42;
@@ -144,7 +144,7 @@ export struct SkillPickerSheet {
             .fontSize(MobileDesignTypography.labelSmall.size)
             .lineHeight(MobileDesignTypography.labelSmall.lineHeight)
             .fontWeight(FontWeight.Medium)
-            .fontColor(this.filterId === filter.id ? CONTENT_ON_ACTION : MUTED)
+            .fontColor(this.filterId === filter.id ? CONTENT_ON_INK : MUTED)
             .backgroundColor(this.filterId === filter.id ? INK : SOFT)
             .height(FILTER_CHIP_HEIGHT)
             .padding({ left: 12, right: 12 })
