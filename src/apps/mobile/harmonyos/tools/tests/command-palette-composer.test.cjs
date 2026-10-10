@@ -50,43 +50,63 @@ function memberBody(source, name) {
   throw new Error(`unbalanced ${name}() body`);
 }
 
-// Reads the index of the paren that closes the call opening at `open`.
-function callEnd(source, open) {
+const CLOSING_DELIMITER = { '(': ')', '{': '}', '[': ']' };
+
+// Reads the index of the delimiter that closes the `(`, `{` or `[` at `open`,
+// skipping strings and line comments so a label, a path or a nested call cannot
+// unbalance the scan.
+function matchEnd(source, open) {
+  const close = CLOSING_DELIMITER[source[open]];
+  assert.notEqual(close, undefined, `not an opening delimiter: ${source[open]}`);
   let depth = 0;
   for (let index = open; index < source.length; index++) {
-    if (source[index] === '(') {
+    const char = source[index];
+    if (char === "'" || char === '"' || char === '`') {
+      for (index += 1; index < source.length && source[index] !== char; index++) {
+        if (source[index] === '\\') {
+          index += 1;
+        }
+      }
+      continue;
+    }
+    if (char === '/' && source[index + 1] === '/') {
+      index = source.indexOf('\n', index);
+      if (index === -1) {
+        throw new Error('unterminated line comment');
+      }
+      continue;
+    }
+    if (char === source[open]) {
       depth += 1;
-    } else if (source[index] === ')') {
+    } else if (char === close) {
       depth -= 1;
       if (depth === 0) {
         return index;
       }
     }
   }
-  throw new Error('unbalanced call');
+  throw new Error(`unbalanced ${source[open]}`);
 }
 
-// Every `Button` in a source file with its modifier chain collapsed to one line,
-// so an assertion can name the button and every fill/ink pair on it. The scan
-// stops at the call's own close paren and skips a builder body, so a label call
-// such as RemoteI18n.t('x') neither leaks into the chain nor merges two buttons.
-function buttonChains(source) {
+// Every builder node in a source file with its own modifier chain collapsed onto
+// one line, so an assertion can name the node and every fill/content pair on it.
+// A capitalized call is a node wherever it appears; a `.modifier` is not, because
+// the `[^\w.]` guard keeps a chained call out of the marker. The chain stops at
+// the node's closing paren and skips its builder body, so a label call such as
+// RemoteI18n.t('x') neither leaks into the chain nor merges two nodes.
+function modifierChains(source) {
   const chains = [];
-  const marker = /(^|[^\w.])Button\(/g;
+  const marker = /(^|[^\w.])([A-Z]\w*)\(/g;
   for (let match = marker.exec(source); match !== null; match = marker.exec(source)) {
-    let cursor = callEnd(source, match.index + match[1].length + 'Button'.length) + 1;
-    let chain = 'Button';
+    const afterNode = marker.lastIndex - 1;
+    let cursor = matchEnd(source, afterNode) + 1;
+    let chain = match[2];
     for (;;) {
       while (/\s/.test(source[cursor] ?? '')) {
         cursor += 1;
       }
       if (source[cursor] === '{') {
-        let depth = 0;
-        for (; cursor < source.length; cursor++) {
-          if (source[cursor] === '{') depth += 1;
-          else if (source[cursor] === '}' && --depth === 0) break;
-        }
-        cursor += 1;
+        cursor = matchEnd(source, cursor) + 1;
         continue;
       }
       const modifier = /^\.(\w+)\(/.exec(source.slice(cursor));
@@ -94,14 +114,52 @@ function buttonChains(source) {
         break;
       }
       const open = cursor + modifier[0].length - 1;
-      const close = callEnd(source, open);
+      const close = matchEnd(source, open);
       chain += `.${modifier[1]}${source.slice(open, close + 1).replace(/\s+/g, ' ')}`;
       cursor = close + 1;
     }
     chains.push(chain);
-    marker.lastIndex = cursor;
+    // A node mounted inside a builder body is a node of its own, so the scan
+    // resumes at the node opening rather than after its chain.
+    marker.lastIndex = afterNode + 1;
   }
   return chains;
+}
+
+function buttonChains(source) {
+  return modifierChains(source).filter((chain) => chain.startsWith('Button'));
+}
+
+// The arguments of every `.name(...)` call on a collapsed chain.
+function callArguments(chain, name) {
+  const args = [];
+  const marker = new RegExp(`\\.${name}\\(`, 'g');
+  for (let match = marker.exec(chain); match !== null; match = marker.exec(chain)) {
+    const open = match.index + match[0].length - 1;
+    const close = matchEnd(chain, open);
+    args.push(chain.slice(open + 1, close));
+    marker.lastIndex = close + 1;
+  }
+  return args;
+}
+
+// The component layer's sources, keyed by their path under pages/components, so
+// a rule about theme pairs covers every component rather than the one file that
+// happened to expose the defect.
+function componentSources() {
+  const root = path.join(__dirname, '../..', 'entry/src/main/ets/pages/components');
+  const sources = new Map();
+  const walk = (directory, prefix) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        walk(path.join(directory, entry.name), `${prefix}${entry.name}/`);
+      } else if (entry.name.endsWith('.ets')) {
+        sources.set(`${prefix}${entry.name}`, fs.readFileSync(path.join(directory, entry.name), 'utf8'));
+      }
+    }
+  };
+  walk(root, '');
+  return sources;
 }
 
 const policy = load('entry/src/main/ets/services/CommandPalettePolicy.ets');
@@ -464,4 +522,49 @@ test('the workspace tools panel words its ink-filled actions with the ink invers
     'the panel must import CONTENT_ON_INK from the theme');
   assert.ok(!/\bCONTENT_ON_ACTION\b/.test(themeImport[1]),
     'the panel no longer needs CONTENT_ON_ACTION, which will not invert with an ink fill');
+});
+
+test('no ink-filled surface in the component layer is worded with the action color', () => {
+  // The class-wide form of the pins above. content_on_action is #FFFFFF in both
+  // themes, so it only ever words a fill that is also theme-stable — the action
+  // and accent surfaces. INK inverts, so a node painted with INK has to resolve
+  // its content through a token that inverts with it: CONTENT_ON_INK, or the
+  // page/card surfaces the same way. The palette chip, the workspace tools panel
+  // and the sidebar's browse confirm button were three sightings of one defect,
+  // and this is the net that has to catch the fourth.
+  const inkInverseContent = ['CONTENT_ON_INK', 'CARD', 'PAGE_BG'];
+  const violations = [];
+  let inkFilled = 0;
+
+  for (const [name, source] of componentSources()) {
+    for (const chain of new Set(modifierChains(source))) {
+      const fills = callArguments(chain, 'backgroundColor');
+      if (!fills.some((fill) => /\bINK\b/.test(fill))) {
+        continue;
+      }
+      inkFilled += 1;
+      // The fill is INK, so the action color cannot word or glyph this node in
+      // either theme — whichever arm of a state ternary it sits in.
+      if (/\bCONTENT_ON_ACTION\b/.test(chain)) {
+        violations.push(`${name}: the action color cannot word an ink fill: ${chain}`);
+      }
+      // A node that reads its content colour in place has to name an inverting
+      // token; a ternary or a glyph list is read at the node that owns it.
+      for (const content of callArguments(chain, 'fontColor')) {
+        if (/[?[]/.test(content)) {
+          continue;
+        }
+        if (!inkInverseContent.includes(content.trim())) {
+          violations.push(`${name}: ${content.trim()} does not invert with an ink fill: ${chain}`);
+        }
+      }
+    }
+  }
+
+  assert.deepEqual(violations, [],
+    `an ink-filled surface must take its content from the ink inverse:\n${violations.join('\n')}`);
+  // An empty tree, a broken scan or a renamed token would all leave the net above
+  // passing over nothing, so it has to keep seeing the ink fills it guards.
+  assert.ok(inkFilled >= 4,
+    `the scan must still see the component layer's ink fills (saw ${inkFilled})`);
 });
