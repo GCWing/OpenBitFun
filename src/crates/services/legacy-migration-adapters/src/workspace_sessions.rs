@@ -838,10 +838,12 @@ fn plan_workspace_sessions(roots: &MigrationRoots) -> LegacyMigrationResult<Work
     for workspace in &assistant_workspaces {
         assistant_path_relocations.insert(
             native_path_key(&workspace.source_path),
-            roots
-                .target_home_root
-                .join("personal_assistant")
-                .join(&workspace.relative_path),
+            canonical_workspace_destination(
+                &roots
+                    .target_home_root
+                    .join("personal_assistant")
+                    .join(&workspace.relative_path),
+            )?,
         );
     }
 
@@ -1259,28 +1261,37 @@ fn relocate_json_path(
 }
 
 fn assistant_session_runtime_relative(workspace_path: PathBuf) -> PathBuf {
-    // New destinations do not exist during planning. Resolve the existing
-    // parent and rebuild native separators so the slug hash matches the path
-    // Desktop will canonicalize after commit (including long Windows paths).
-    let mut parent = workspace_path.as_path();
-    let mut suffix = Vec::new();
-    while !parent.exists() {
-        let (Some(name), Some(next)) = (parent.file_name(), parent.parent()) else {
-            break;
-        };
-        suffix.push(name);
-        parent = next;
-    }
-    let mut canonical = dunce::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf());
-    for component in suffix.into_iter().rev() {
-        canonical.push(component);
-    }
+    let canonical = canonical_workspace_destination(&workspace_path).unwrap_or(workspace_path);
     let slug = build_project_runtime_slug(&canonical.to_string_lossy());
     PathBuf::from("projects").join(slug).join("sessions")
 }
 
+fn canonical_workspace_destination(path: &Path) -> LegacyMigrationResult<PathBuf> {
+    if !path.is_absolute() {
+        return Err(LegacyMigrationError::PathEscape(path.to_path_buf()));
+    }
+    // Resolve existing parents without creating the destination. Simplify only
+    // after appending the suffix: long Windows paths must keep the verbatim
+    // prefix that canonicalization will return once the directory exists.
+    let mut parent = path;
+    let mut suffix = Vec::new();
+    while !parent.exists() {
+        let (Some(name), Some(next)) = (parent.file_name(), parent.parent()) else {
+            return Err(LegacyMigrationError::PathEscape(path.to_path_buf()));
+        };
+        suffix.push(name);
+        parent = next;
+    }
+    let mut canonical = fs::canonicalize(parent).map_err(|error| io_error(parent, error))?;
+    for component in suffix.into_iter().rev() {
+        canonical.push(component);
+    }
+    Ok(dunce::simplified(&canonical).to_path_buf())
+}
+
 fn native_path_key(path: &Path) -> String {
-    let key = path
+    let canonical = canonical_workspace_destination(path).unwrap_or_else(|_| path.to_path_buf());
+    let key = canonical
         .to_string_lossy()
         .replace('\\', "/")
         .trim_end_matches('/')
@@ -2490,7 +2501,61 @@ mod tests {
         for (metadata_has_id, state_has_id) in
             [(false, true), (true, true), (false, false), (true, false)]
         {
-            assert_personal_assistant_rehomed(metadata_has_id, state_has_id);
+            let temp = test_tempdir("personal-assistant");
+            assert_personal_assistant_rehomed(temp.path(), metadata_has_id, state_has_id);
+        }
+    }
+
+    #[test]
+    fn personal_assistant_retries_are_idempotent_under_long_paths() {
+        let temp = test_tempdir("long-assistant");
+        let root = temp.path().join("a".repeat(96)).join("b".repeat(96));
+        fs::create_dir_all(&root).unwrap();
+        for (index, (metadata_has_id, state_has_id)) in
+            [(false, true), (true, true), (false, false), (true, false)]
+                .into_iter()
+                .enumerate()
+        {
+            assert_personal_assistant_rehomed(
+                &root.join(index.to_string()),
+                metadata_has_id,
+                state_has_id,
+            );
+        }
+    }
+
+    #[test]
+    fn personal_assistant_retries_are_idempotent_under_linked_parent() {
+        let temp = test_tempdir("linked-assistant");
+        let real = temp.path().join("real");
+        let alias = temp.path().join("alias");
+        fs::create_dir_all(&real).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real, &alias).unwrap();
+        #[cfg(windows)]
+        {
+            let output = openbitfun_services_core::process_manager::create_command("cmd.exe")
+                .args(["/C", "mklink", "/J"])
+                .arg(&alias)
+                .arg(&real)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "junction creation failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        for (index, (metadata_has_id, state_has_id)) in
+            [(false, true), (true, true), (false, false), (true, false)]
+                .into_iter()
+                .enumerate()
+        {
+            assert_personal_assistant_rehomed(
+                &alias.join(index.to_string()),
+                metadata_has_id,
+                state_has_id,
+            );
         }
     }
 
@@ -2542,9 +2607,8 @@ mod tests {
         }
     }
 
-    fn assert_personal_assistant_rehomed(metadata_has_id: bool, state_has_id: bool) {
-        let temp = test_tempdir("personal-assistant");
-        let roots = fixture_roots(temp.path());
+    fn assert_personal_assistant_rehomed(root: &Path, metadata_has_id: bool, state_has_id: bool) {
+        let roots = fixture_roots(root);
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../services/legacy-migration/tests/fixtures/v0.2.19");
         copy_tree(&fixture.join("user-root"), &roots.legacy_user_root).unwrap();
@@ -2559,9 +2623,12 @@ mod tests {
             b"<p>preserved</p>",
         )
         .unwrap();
-        let target_assistant = roots
-            .target_home_root
-            .join("personal_assistant/workspace-assistant");
+        let target_assistant = canonical_workspace_destination(
+            &roots
+                .target_home_root
+                .join("personal_assistant/workspace-assistant"),
+        )
+        .unwrap();
 
         let workspace_path = source_workspace_data_path(&roots);
         let mut workspace_data: serde_json::Value =
@@ -2793,6 +2860,13 @@ mod tests {
         assert_eq!(imported_state["config"]["model_id"], "primary");
         let imported_registry: WorkspacePersistenceData =
             serde_json::from_slice(&fs::read(target_workspace_data_path(&roots)).unwrap()).unwrap();
+        let (canonical_root, normalized_root) =
+            canonicalize_local_workspace_root(&target_assistant).unwrap();
+        assert_eq!(assistant.root_path, canonical_root);
+        assert_eq!(
+            assistant.id,
+            local_workspace_stable_storage_id(&normalized_root)
+        );
         for id in [
             imported_metadata.metadata.workspace_id.as_deref(),
             imported_metadata.metadata.project_workspace_id.as_deref(),
@@ -2814,6 +2888,16 @@ mod tests {
             .iter()
             .find(|entry| entry.bundle.metadata.session_id == session.bundle.metadata.session_id)
             .unwrap();
+        assert_eq!(retry.workspace_id_map, plan.workspace_id_map);
+        assert_eq!(retry_session.runtime_relative, session.runtime_relative);
+        assert_eq!(
+            serde_json::to_value(&retry_session.bundle.metadata).unwrap(),
+            serde_json::to_value(&session.bundle.metadata).unwrap()
+        );
+        assert_eq!(
+            retry_session.state_bytes_override,
+            session.state_bytes_override
+        );
         assert_eq!(retry_session.action, SessionImportAction::Duplicate);
         assert_eq!(retry_session.expected_hash, session.expected_hash);
     }
@@ -3038,7 +3122,10 @@ fn expected_persisted_local_workspace_id(root_path: &Path) -> Result<String, Str
         }
         normalized_root
     } else {
-        root_path.to_string_lossy().replace('\\', "/")
+        canonical_workspace_destination(root_path)
+            .map_err(|error| error.to_string())?
+            .to_string_lossy()
+            .replace('\\', "/")
     };
 
     Ok(local_workspace_stable_storage_id(&normalized_root))
