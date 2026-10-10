@@ -5,12 +5,14 @@ import {
   RemoteSkillCatalogQuery
 } from '../../services/RemoteCommandPaletteController';
 import { CommandCatalogProjection, RemoteModeSkillRow } from '../../services/CommandCatalogProjection';
-import { CommandPalettePolicy } from '../../services/CommandPalettePolicy';
 import {
-  CommandPalettePresentation,
-  CommandPaletteState,
+  CommandPaletteCatalogStatus,
+  CommandPalettePolicy,
+  CommandPaletteProbeFailure,
   commandPaletteProbeReady
-} from '../state/CommandPaletteState';
+} from '../../services/CommandPalettePolicy';
+import { HostInvokeRefusal } from '../../services/HostInvokeRefusal';
+import { CommandPalettePresentation, CommandPaletteState } from '../state/CommandPaletteState';
 import { CommandPaletteAction, CommandPaletteRequest } from '../actions/ConversationIntent';
 import { RemoteCommandCatalog, RemoteSessionUsageReport } from '../../model/RemoteModels';
 import { ComposerBar, ComposerPresentation } from '../components/ComposerBar';
@@ -80,20 +82,35 @@ const PREVIEW_USAGE: RemoteSessionUsageReport = {
 /**
  * The host, minus the network.
  *
- * Only the four `host_invoke` verbs are answered here; a refusal throws the way
- * the bridge does when a desktop does not know a command, and the held
- * compaction never settles until the fixture is asked to let it.
+ * Only the four `host_invoke` verbs are answered here, and the catalog read can
+ * fail in each of the three ways the app distinguishes: a host that names the
+ * version gap, a host that refuses for its own reason, and a wire that answers
+ * nothing at all. The held compaction never settles until the fixture releases
+ * it, which is how the running state is held still for a screenshot.
  */
 @ObservedV2
 class CommandPalettePreviewClient implements RemoteCommandPaletteClient {
-  refuseCatalog: boolean = false;
+  /** '' | 'version_gap' | 'refused' | 'unreachable' | 'pending'. */
+  catalogOutcome: string = '';
   failCompact: boolean = false;
   holdCompact: boolean = false;
   private release: () => void = () => {};
 
   async skillCatalog(_query: RemoteSkillCatalogQuery): Promise<RemoteCommandCatalog> {
-    if (this.refuseCatalog) {
-      throw new Error('Command not found: get_mode_skill_configs');
+    if (this.catalogOutcome === 'pending') {
+      // A read that has not answered yet: the row waits rather than degrading.
+      return new Promise<RemoteCommandCatalog>((): void => {});
+    }
+    if (this.catalogOutcome === 'version_gap') {
+      throw new HostInvokeRefusal('get_mode_skill_configs',
+        "command 'get_mode_skill_configs' is unknown to this OpenBitFun desktop peer host version; " +
+        'upgrade the peer host or check the command name');
+    }
+    if (this.catalogOutcome === 'refused') {
+      throw new HostInvokeRefusal('get_mode_skill_configs', 'workspace not found for this session');
+    }
+    if (this.catalogOutcome === 'unreachable') {
+      throw new Error('request timed out');
     }
     return CommandCatalogProjection.parseHostCatalog(PREVIEW_SKILL_ROWS);
   }
@@ -160,8 +177,8 @@ export struct CommandPalettePreview {
         this.palette.setCatalogReady(catalog);
         this.stateChanged();
       },
-      onCatalogFailed: (_sessionId: string, errorText: string): void => {
-        this.palette.setCatalogFailed(errorText);
+      onCatalogFailed: (_sessionId: string, errorText: string, failure: string): void => {
+        this.palette.setCatalogFailed(errorText, failure);
         this.stateChanged();
       },
       onCommandStarted: (_sessionId: string, wireAction: string): void => {
@@ -193,23 +210,36 @@ export struct CommandPalettePreview {
 
   aboutToAppear(): void {
     const variant = this.variant();
-    this.client.refuseCatalog = variant === 'degraded';
+    this.client.catalogOutcome = CommandPalettePreview.catalogOutcomeFor(variant);
     this.client.failCompact = variant === 'failed';
     this.client.holdCompact = variant === 'busy';
-    this.draft = variant === 'token' ? '' : 'Check the redirect handler';
+    this.draft = variant === 'token' || variant === 'goal' ? '' : 'Check the redirect handler';
     if (variant === 'token' || variant === 'busy') {
-      this.palette.setSkill('plan');
+      this.palette.setSkill('plan', 'Plan');
+    }
+    // The two halves of the goal chip's ownership rule: lit with its prefill in
+    // the draft, and the state the commit that consumes that draft leaves behind.
+    // The rule itself lives in `RemotePageState.prepareComposerSubmission` and is
+    // pinned by `command-palette-composer.test.cjs`; this fixture only frames it.
+    if (variant === 'goal') {
+      const toggled = CommandPalettePolicy.toggleGoal(this.draft, false);
+      this.draft = toggled.draft;
+      this.palette.setGoalPending(toggled.pending);
+    }
+    if (variant === 'goal-sent') {
+      this.draft = '';
+      this.palette.setGoalPending(false);
     }
     // Both sheets open before the first frame, the way the settings preview
     // opens its own: the scenario id is only known once the page is appearing.
-    if (variant === 'sheet' || variant === 'degraded') {
+    if (variant === 'sheet' || CommandPalettePreview.isSkillsSheetVariant(variant)) {
       this.openSheet(true);
     }
     if (variant === 'usage') {
       this.openSheet(false);
     }
     // The catalog read is also the probe, so this is the same first move a
-    // session entry makes: one read decides whether the row may run anything.
+    // session entry makes: one read decides whether the picker may list anything.
     void this.controller.loadCatalog('preview-session', 'agentic', false, this.canApply());
     if (variant === 'busy' || variant === 'failed') {
       void this.controller.runCommand('preview-session', CommandPalettePolicy.compactWireAction,
@@ -218,6 +248,38 @@ export struct CommandPalettePreview {
     if (variant === 'usage') {
       void this.controller.loadUsageReport('preview-session', this.scope, this.canApply());
     }
+  }
+
+  /**
+   * The catalog read each variant stands for.
+   *
+   * The three failure kinds are the three the app tells apart, so a screenshot
+   * can be read against the words a person would actually get: the host naming
+   * the version gap, the host refusing for a reason of its own, and a wire that
+   * answered nothing.
+   */
+  private static catalogOutcomeFor(variant: string): string {
+    if (variant === 'degraded' || variant === 'gap') {
+      return 'version_gap';
+    }
+    if (variant === 'refused') {
+      return 'refused';
+    }
+    if (variant === 'unreachable') {
+      return 'unreachable';
+    }
+    return variant === 'loading' ? 'pending' : '';
+  }
+
+  /**
+   * The variants that are showing the picker rather than the row alone.
+   *
+   * The waiting variant keeps its sheet shut on purpose: what it is there to
+   * show is the row's own waiting chip, which a sheet would cover.
+   */
+  private static isSkillsSheetVariant(variant: string): boolean {
+    return variant === 'degraded' || variant === 'gap' ||
+      variant === 'refused' || variant === 'unreachable';
   }
 
   build() {
@@ -262,7 +324,7 @@ export struct CommandPalettePreview {
         Button('Token')
           .id('palette-token')
           .onClick(() => {
-            this.dispatch(new CommandPaletteRequest(CommandPaletteAction.SelectSkill, 'plan'));
+            this.dispatch(new CommandPaletteRequest(CommandPaletteAction.SelectSkill, 'plan', '', 'Plan'));
           })
         Button('Release')
           .id('palette-release')
@@ -283,6 +345,7 @@ export struct CommandPalettePreview {
         presentation: this.wide ? ComposerPresentation.Floating : ComposerPresentation.Compact,
         chatInput: this.draft,
         skillId: this.palette.skillId,
+        skillLabel: this.palette.skillLabel,
         commandRowActive: true,
         onChatInputChange: (value: string) => {
           this.draft = value;
@@ -309,9 +372,9 @@ export struct CommandPalettePreview {
     if (this.showSkillPicker) {
       SkillPickerSheet({
         palette: this.presentation(),
-        onSelect: (skillId: string) => {
+        onSelect: (skillId: string, skillLabel: string) => {
           this.closeSheet();
-          this.dispatch(new CommandPaletteRequest(CommandPaletteAction.SelectSkill, skillId));
+          this.dispatch(new CommandPaletteRequest(CommandPaletteAction.SelectSkill, skillId, '', skillLabel));
         },
         onRefresh: () => {
           void this.controller.loadCatalog('preview-session', 'agentic', true, this.canApply());
@@ -365,7 +428,7 @@ export struct CommandPalettePreview {
       return;
     }
     if (request.action === CommandPaletteAction.SelectSkill) {
-      this.palette.setSkill(request.skillId);
+      this.palette.setSkill(request.skillId, request.skillLabel);
       this.stateChanged();
       return;
     }
@@ -406,25 +469,25 @@ export struct CommandPalettePreview {
   }
 
   private presentation(): CommandPalettePresentation {
-    return CommandPalettePresentation.project(
-      this.palette,
-      commandPaletteProbeReady(this.palette.catalogStatus),
-      true,
-      false
-    );
+    return CommandPalettePresentation.project(this.palette, true, false);
   }
 
   private stateChanged(): void {
     this.revision += 1;
   }
 
-  /** What the fixture is showing: the probe's verdict and the row's own line. */
+  /** What the fixture is showing: the read's verdict and the row's own line. */
   private stateLine(): string {
     const probe = commandPaletteProbeReady(this.palette.catalogStatus) ? 'probe ok' : 'probe refused';
+    const failure = this.palette.catalogFailure.length > 0 ?
+      ` · ${this.palette.catalogFailure}` : '';
+    const goal = this.palette.goalPending ? ' · goal pending' : '';
     const notice = this.palette.notice;
     const running = this.palette.runningCommand.length > 0 ?
       ` · running ${this.palette.runningCommand}` : '';
-    return notice.visible ? `${probe}${running} · ${RemoteI18n.t(notice.labelKey)}` : `${probe}${running}`;
+    return notice.visible ?
+      `${probe}${failure}${goal}${running} · ${RemoteI18n.t(notice.labelKey)}` :
+      `${probe}${failure}${goal}${running}`;
   }
 
   private variant(): string {
