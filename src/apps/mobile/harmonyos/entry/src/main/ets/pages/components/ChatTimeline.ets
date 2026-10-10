@@ -14,6 +14,7 @@ import {
   ObservableChatTimelineItem
 } from '../../model/ChatTimelineModels';
 import { ChatSurface } from '../state/ChatSurface';
+import { SubagentBranchExpansionState } from '../state/SubagentBranchExpansionState';
 import { MessageCopyScope } from '../actions/ConversationIntent';
 import {
   CARD,
@@ -65,6 +66,10 @@ struct ChatAssistantTimelineRow {
   @Event onOpenFilePreview: (path: string, label: string) => void = (_path: string, _label: string) => {};
   @Event onBuildPlan: (path: string, name: string) => void = (_path: string, _name: string) => {};
   @Event onDownloadFile: (path: string) => void = (_path: string) => {};
+  /** Disclosure of this row's delegation cards, owned above the row. */
+  @Param subagentBranches: SubagentBranchExpansionState = new SubagentBranchExpansionState();
+  /** Raised when the reader opens a delegation card, so its worker is followed. */
+  @Event onBranchExpanded: (branchId: string) => void = (_branchId: string) => {};
 
   aboutToAppear(): void {
     this.synchronizeMessage();
@@ -97,6 +102,7 @@ struct ChatAssistantTimelineRow {
       fileDownloadStatus: this.fileDownloadStatus,
       activeFilePreviewPath: this.activeFilePreviewPath,
       activeFilePreviewLoading: this.activeFilePreviewLoading,
+      subagentBranches: this.subagentBranches,
       onApproveTool: this.onApproveTool,
       onRejectTool: this.onRejectTool,
       onCancelTool: this.onCancelTool,
@@ -107,7 +113,8 @@ struct ChatAssistantTimelineRow {
       onRetryMessage: this.onRetryMessage,
       onOpenFilePreview: this.onOpenFilePreview,
       onBuildPlan: this.onBuildPlan,
-      onDownloadFile: this.onDownloadFile
+      onDownloadFile: this.onDownloadFile,
+      onBranchExpanded: this.onBranchExpanded
     })
   }
 
@@ -155,6 +162,15 @@ export struct ChatTimeline {
   @Param activeFilePreviewLoading: boolean = false;
   @Param maxContentWidth: number = 0;
   /**
+   * Disclosure of the delegation cards in this transcript.
+   *
+   * A conversation projection passes the instance its state owns, so a card the
+   * reader opened stays open while the rows around it are rebuilt. A host that
+   * passes nothing — the previews — gets one per timeline, which is still wider
+   * than the row and the card it outlives.
+   */
+  @Param subagentBranches: SubagentBranchExpansionState = new SubagentBranchExpansionState();
+  /**
    * How much of the pane the floating header and composer cover. The list runs
    * the full height behind them, so without these the first and last messages
    * would sit under a capsule and never come out from under it.
@@ -176,6 +192,8 @@ export struct ChatTimeline {
   @Event onOpenFilePreview: (path: string, label: string) => void = (_path: string, _label: string) => {};
   @Event onBuildPlan: (path: string, name: string) => void = (_path: string, _name: string) => {};
   @Event onDownloadFile: (path: string) => void = (_path: string) => {};
+  /** Raised when the reader opens a delegation card, so its worker is followed. */
+  @Event onBranchExpanded: (branchId: string) => void = (_branchId: string) => {};
 
   // Says whether an open reuses this subtree or rebuilds it. A rebuild means
   // every bubble is constructed from nothing, and the cost of that is the
@@ -272,6 +290,7 @@ export struct ChatTimeline {
                     fileDownloadStatus: this.fileDownloadStatus,
                     activeFilePreviewPath: this.activeFilePreviewPath,
                     activeFilePreviewLoading: this.activeFilePreviewLoading,
+                    subagentBranches: this.subagentBranches,
                     onApproveTool: (toolId: string, updatedInput?: Object) => {
                       this.onApproveTool(toolId, updatedInput);
                     },
@@ -304,6 +323,9 @@ export struct ChatTimeline {
                     },
                     onDownloadFile: (path: string) => {
                       this.onDownloadFile(path);
+                    },
+                    onBranchExpanded: (branchId: string) => {
+                      this.onBranchExpanded(branchId);
                     }
                   })
                   .reuse({ reuseId: () => 'chat_assistant' })
@@ -333,6 +355,7 @@ export struct ChatTimeline {
                 fileDownloadStatus: this.fileDownloadStatus,
                 activeFilePreviewPath: this.activeFilePreviewPath,
                 activeFilePreviewLoading: this.activeFilePreviewLoading,
+                subagentBranches: this.subagentBranches,
                 onApproveTool: this.onApproveTool,
                 onRejectTool: this.onRejectTool,
                 onCancelTool: this.onCancelTool,
@@ -343,7 +366,8 @@ export struct ChatTimeline {
                 onRetryMessage: this.onRetryMessage,
                 onOpenFilePreview: this.onOpenFilePreview,
                 onBuildPlan: this.onBuildPlan,
-                onDownloadFile: this.onDownloadFile
+                onDownloadFile: this.onDownloadFile,
+                onBranchExpanded: this.onBranchExpanded
               })
             }
             .onAppear(() => {

@@ -26,6 +26,7 @@ export interface ConversationIntentDispatcherHooks {
   readonly openFilePreview: (route: AppRoute, request: FilePreviewRequest) => void;
   readonly downloadFile: (path: string) => void;
   readonly buildPlan: (path: string, name: string) => Promise<void>;
+  readonly branchExpanded: (branchId: string) => void;
   readonly send: () => Promise<void>;
   readonly voiceInput: () => Promise<void>;
   readonly inputChanged: (route: AppRoute, value: string) => void;
@@ -70,6 +71,7 @@ export class ConversationIntentDispatcher {
           void this.hooks.buildPlan(intent.planBuildRequest.path, intent.planBuildRequest.name);
         }
         return;
+      case ConversationIntentType.BranchExpanded: this.hooks.branchExpanded(intent.toolId); return;
       case ConversationIntentType.Send: void this.hooks.send(); return;
       case ConversationIntentType.VoiceInput: void this.hooks.voiceInput(); return;
       case ConversationIntentType.ChatInputChanged: this.hooks.inputChanged(route, intent.value); return;

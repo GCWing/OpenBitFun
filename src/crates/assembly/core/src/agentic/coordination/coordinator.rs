@@ -13035,6 +13035,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 subagent_session_id.clone(),
                 BackgroundSubagentCancelTarget::Scheduler(cancel_handle.clone()),
             );
+            self.stamp_subagent_link_on_parent_tool_item(
+                &subagent_parent_info,
+                &subagent_session_id,
+                &subagent_dialog_turn_id,
+            )
+            .await;
             let background_subagent_tasks = self.background_subagent_tasks.clone();
             let background_subagent_outcomes = self.background_subagent_outcomes.clone();
 
@@ -13143,6 +13149,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             subagent_session_id.clone(),
             BackgroundSubagentCancelTarget::Direct(background_cancel_token),
         );
+        self.stamp_subagent_link_on_parent_tool_item(
+            &subagent_parent_info,
+            &subagent_session_id,
+            &subagent_dialog_turn_id,
+        )
+        .await;
         let background_subagent_tasks = self.background_subagent_tasks.clone();
         let background_subagent_outcomes = self.background_subagent_outcomes.clone();
 
@@ -13174,6 +13186,51 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             bg_task_id,
             agent_id,
         })
+    }
+
+    /// Persist the child-Session link of a spawned subagent on the parent Turn's
+    /// tool item.
+    ///
+    /// A synchronous delegated command is stamped in memory before its synthetic
+    /// Turn is written. An asynchronous spawn instead returns a `started` result
+    /// while the child Session runs on, so the parent Turn needs the link on its
+    /// persisted tool item. It is written before this start returns, which is
+    /// before the spawning tool completion republishes the parent Turn, so
+    /// record-stream consumers see the link in the same resync they already get.
+    ///
+    /// The link is an annotation: a host that cannot resolve the parent Turn
+    /// keeps the spawn result rather than failing the tool call.
+    async fn stamp_subagent_link_on_parent_tool_item(
+        &self,
+        parent_info: &SubagentParentInfo,
+        subagent_session_id: &str,
+        subagent_dialog_turn_id: &str,
+    ) {
+        let subagent_model_id = self
+            .session_manager
+            .get_session(subagent_session_id)
+            .and_then(|session| session.config.model_id);
+        if let Err(error) = self
+            .session_manager
+            .link_subagent_session_on_parent_tool_item(
+                &parent_info.session_id,
+                &parent_info.dialog_turn_id,
+                &parent_info.tool_call_id,
+                subagent_session_id,
+                subagent_dialog_turn_id,
+                subagent_model_id,
+            )
+            .await
+        {
+            warn!(
+                "Failed to link spawned subagent Session on the parent tool item: parent_session_id={}, parent_dialog_turn_id={}, parent_tool_call_id={}, subagent_session_id={}, error={}",
+                parent_info.session_id,
+                parent_info.dialog_turn_id,
+                parent_info.tool_call_id,
+                subagent_session_id,
+                error
+            );
+        }
     }
 
     /// Clean up runtime-only subagent resources.
@@ -17787,6 +17844,149 @@ mod tests {
             .delete_session_by_id(&session.session_id)
             .await
             .expect("clean up persisted test session");
+    }
+
+    #[tokio::test]
+    async fn async_agent_spawn_links_the_child_session_on_the_parent_tool_item() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let (coordinator, session_manager) = test_persistent_coordinator();
+        let parent = session_manager
+            .create_session(
+                "Async delegation parent".to_string(),
+                "Ultimate".to_string(),
+                SessionConfig {
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create parent session");
+        let child = session_manager
+            .create_session(
+                "Async delegation child".to_string(),
+                "GeneralPurpose".to_string(),
+                SessionConfig {
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    model_id: Some("child-subagent-model".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create spawned child session");
+        let parent_turn_id = session_manager
+            .start_dialog_turn(
+                &parent.session_id,
+                "Ultimate".to_string(),
+                "delegate the audit".to_string(),
+                Some("turn-async-agent-spawn".to_string()),
+                None,
+                None,
+            )
+            .await
+            .expect("start parent turn");
+        let tool_call_id = "tool-call-agent-spawn".to_string();
+        let spawning_round = Message::assistant_with_tools(
+            String::new(),
+            vec![ToolCall {
+                tool_id: tool_call_id.clone(),
+                tool_name: "AgentSpawn".to_string(),
+                arguments: serde_json::json!({
+                    "prompt": "audit the widget",
+                    "agent_type": "GeneralPurpose",
+                    "run_in_background": true,
+                }),
+                raw_arguments: None,
+                is_error: false,
+                parse_error: None,
+                recovered_from_truncation: false,
+                repair_kind: Default::default(),
+            }],
+        )
+        .with_turn_id(parent_turn_id.clone())
+        .with_round_id("round-async-agent-spawn".to_string());
+        let started_result = Message::tool_result(crate::agentic::core::ToolResult {
+            tool_id: tool_call_id.clone(),
+            tool_name: "AgentSpawn".to_string(),
+            effective_tool_name: None,
+            result: serde_json::json!({
+                "context_mode": "isolated",
+                "status": "started",
+                "run_in_background": true,
+                "bg_task_id": "bg-task-1",
+                "agent_id": "agent-1",
+            }),
+            result_for_assistant: Some("Background agent started".to_string()),
+            is_error: false,
+            duration_ms: Some(4),
+            image_attachments: None,
+        })
+        .with_turn_id(parent_turn_id.clone())
+        .with_round_id("round-async-agent-spawn".to_string());
+        session_manager
+            .add_messages(&parent.session_id, vec![spawning_round, started_result])
+            .await
+            .expect("record the spawning round and its started result");
+
+        // An asynchronous spawn returns while the parent Turn is still running,
+        // so the link has to reach the parent Turn's persisted tool item.
+        coordinator
+            .stamp_subagent_link_on_parent_tool_item(
+                &SubagentParentInfo {
+                    tool_call_id: tool_call_id.clone(),
+                    session_id: parent.session_id.clone(),
+                    dialog_turn_id: parent_turn_id.clone(),
+                },
+                &child.session_id,
+                "turn-child-subagent",
+            )
+            .await;
+
+        let storage = session_manager
+            .effective_session_storage_path(&parent.session_id)
+            .await
+            .expect("parent session storage path");
+        let turns = coordinator
+            .load_relay_session_turns(&storage, &parent.session_id, Some(&parent_turn_id))
+            .await
+            .expect("relay read of the running parent turn");
+        let item = turns
+            .iter()
+            .flat_map(|turn| turn.model_rounds.iter())
+            .flat_map(|round| round.tool_items.iter())
+            .find(|item| item.id == tool_call_id)
+            .expect("the spawning tool item survives the relay read");
+        assert_eq!(
+            item.tool_name, "AgentSpawn",
+            "the link belongs to the spawning tool item"
+        );
+        assert_eq!(
+            item.subagent_session_id.as_deref(),
+            Some(child.session_id.as_str())
+        );
+        assert_eq!(
+            item.subagent_dialog_turn_id.as_deref(),
+            Some("turn-child-subagent")
+        );
+        assert_eq!(
+            item.subagent_model_id.as_deref(),
+            Some("child-subagent-model")
+        );
+        // The record stream serializes the persisted item as it is, so a remote
+        // consumer reads the link under its camelCase wire name.
+        assert_eq!(
+            serde_json::to_value(item).expect("item serializes")["subagentSessionId"],
+            serde_json::json!(child.session_id)
+        );
+
+        session_manager
+            .delete_session_by_id(&parent.session_id)
+            .await
+            .expect("clean up persisted parent session");
+        session_manager
+            .delete_session_by_id(&child.session_id)
+            .await
+            .expect("clean up persisted child session");
     }
 
     #[tokio::test]
