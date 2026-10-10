@@ -757,19 +757,17 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s globstar
+          # AppImage, deb, and rpm files are already copied into the
+          # canonical release-updater-assets directory above. Publishing the
+          # raw Tauri bundle names as well creates a second public copy of
+          # every Linux installer and doubles the signature count.
           node scripts/stage-github-release-assets.mjs \
             --out-dir release-upload-assets \
             release-updater-assets/* \
             release-manual-assets/*.exe \
             release-manual-assets/*.exe.sig \
-            release-assets/**/*.AppImage \
-            release-assets/**/*.AppImage.sig \
-            release-assets/**/*.deb \
-            release-assets/**/*.deb.sig \
             release-assets/**/*.dmg \
             release-assets/**/*.dmg.sig \
-            release-assets/**/*.rpm \
-            release-assets/**/*.rpm.sig \
             release-assets/minisign.pub \
             linux-release-assets/openbitfun-cli-*.tar.gz \
             linux-release-assets/openbitfun-cli-*.tar.gz.sha256 \

@@ -1094,8 +1094,29 @@ test('stages unique release asset names before publishing', () => {
       /release-assets\/\*\*\/\*\.sig(?:\s|\\)/,
       'raw updater signatures have colliding names across macOS architectures',
     );
+    assert.doesNotMatch(
+      steps[stagingIndex].run,
+      /release-assets\/\*\*\/\*(?:\.AppImage|\.deb|\.rpm)(?:\s|\\)/,
+      'raw Linux bundles must not duplicate canonical updater assets in the public release',
+    );
   }
   assert.match(steps[uploadIndex].run, /--clobber release-upload-assets\/\*/);
+});
+
+test('Mobile Package publishes Android assets from mobile-v tags', () => {
+  const workflow = yaml.parse(
+    readFileSync(path.join(repoRoot, '.github/workflows/mobile-package.yml'), 'utf8'),
+  );
+  assert.ok(workflow.on.push.tags.includes('mobile-v*'));
+  assert.match(
+    workflow.jobs.android.steps.find((step) => step.name === 'Build signed Android package').run,
+    /:app:assembleRelease/,
+  );
+  assert.equal(workflow.jobs.publish.needs.includes('android'), true);
+  assert.match(
+    workflow.jobs.publish.steps.find((step) => step.name === 'Create mobile release').run,
+    /gh release create/,
+  );
 });
 
 test('Desktop packaging installs Bun before preparing the OpenCode extension Host', () => {

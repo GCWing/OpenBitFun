@@ -1,0 +1,152 @@
+name: Mobile Package
+
+on:
+  push:
+    tags:
+      - 'mobile-v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Mobile release tag (for example mobile-v1.0.0).'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mobile-package-${{ github.event.release.tag_name || inputs.tag_name || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare mobile release
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag_name || github.ref_name }}
+          fetch-depth: 1
+
+      - name: Resolve mobile version
+        id: meta
+        shell: bash
+        env:
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG_NAME:-${REF_NAME}}"
+          case "$TAG" in
+            mobile-v*) ;;
+            *) echo "Expected a mobile-v* tag, got $TAG" >&2; exit 1 ;;
+          esac
+          VERSION="${TAG#mobile-v}"
+          node scripts/verify-release-version-sync.mjs --mobile-version "$VERSION"
+          if [[ "$VERSION" == *-* ]]; then
+            PRERELEASE=true
+          else
+            PRERELEASE=false
+          fi
+          printf 'tag_name=%s\nversion=%s\nprerelease=%s\n' \
+            "$TAG" "$VERSION" "$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+  android:
+    name: Android package
+    needs: prepare
+    runs-on: ubuntu-latest
+    env:
+      OPENBITFUN_ANDROID_KEYSTORE_B64: ${{ secrets.OPENBITFUN_ANDROID_KEYSTORE_B64 }}
+      OPENBITFUN_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.OPENBITFUN_ANDROID_KEYSTORE_PASSWORD }}
+      OPENBITFUN_ANDROID_KEY_ALIAS: ${{ secrets.OPENBITFUN_ANDROID_KEY_ALIAS }}
+      OPENBITFUN_ANDROID_KEY_PASSWORD: ${{ secrets.OPENBITFUN_ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.tag_name }}
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.18.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Configure Android release signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          for value in \
+            OPENBITFUN_ANDROID_KEYSTORE_B64 \
+            OPENBITFUN_ANDROID_KEYSTORE_PASSWORD \
+            OPENBITFUN_ANDROID_KEY_ALIAS \
+            OPENBITFUN_ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!value:-}" ]]; then
+              echo "Missing required Android signing secret: $value" >&2
+              exit 1
+            fi
+          done
+          KEYSTORE_PATH="$RUNNER_TEMP/openbitfun-release.keystore"
+          printf '%s' "$OPENBITFUN_ANDROID_KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
+          echo "OPENBITFUN_ANDROID_KEYSTORE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Build signed Android package
+        working-directory: src/apps/mobile/android
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Stage Android release assets
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p mobile-release-assets
+          cp src/apps/mobile/android/app/build/outputs/apk/release/app-release.apk \
+            "mobile-release-assets/OpenBitFun-Mobile-${VERSION}-android.apk"
+          (cd mobile-release-assets && sha256sum ./*.apk > SHA256SUMS)
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: openbitfun-mobile-${{ needs.prepare.outputs.tag_name }}-android
+          path: mobile-release-assets/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish mobile release
+    needs: [prepare, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.tag_name }}
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: openbitfun-mobile-${{ needs.prepare.outputs.tag_name }}-android
+          path: mobile-release-assets
+
+      - name: Create mobile release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "OpenBitFun Mobile $VERSION" \
+            --generate-notes \
+            --prerelease="$PRERELEASE" \
+            mobile-release-assets/*
