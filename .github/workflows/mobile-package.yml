@@ -75,8 +75,6 @@ jobs:
           java-version: '21'
 
       - uses: pnpm/action-setup@v5
-        with:
-          version: 10.15.0
 
       - uses: actions/setup-node@v5
         with:
