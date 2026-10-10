@@ -156,7 +156,7 @@ export class CommandCatalogProjection {
       const builtin = CommandCatalogProjection.flag(row.isBuiltin, row.is_builtin);
       parsed.push({
         id,
-        name: CommandCatalogProjection.name(row.name, id),
+        name: CommandCatalogProjection.rowName(row.name, id),
         description: CommandCatalogProjection.trimmed(row.description),
         // A user-authored skill has no host group of its own; the picker then
         // groups it by source, which is the only taxonomy it actually has.
@@ -368,7 +368,7 @@ export class CommandCatalogProjection {
     return left < right ? -1 : 1;
   }
 
-  private static name(name: string | undefined, fallback: string): string {
+  private static rowName(name: string | undefined, fallback: string): string {
     const resolved = CommandCatalogProjection.trimmed(name);
     return resolved.length > 0 ? resolved : fallback;
   }
