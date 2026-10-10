@@ -387,7 +387,12 @@ const WebSearchSettingsPage: React.FC = () => {
   }, [notifyError, notifySuccess, t]);
 
   if (loading) {
-    return <ConfigLoadingState label={t('messages.loading')} />;
+    return (
+      <ConfigPageLayout>
+        <ConfigPageHeader title={t('title')} subtitle={t('subtitle')} />
+        <ConfigPageContent><ConfigLoadingState label={t('messages.loading')} rows={5} /></ConfigPageContent>
+      </ConfigPageLayout>
+    );
   }
 
   if (loadFailed) {

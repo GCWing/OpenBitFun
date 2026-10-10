@@ -598,6 +598,9 @@ export interface WorkspaceConfig {
 }
 
 export interface IConfigManager {
+  /** Trusted snapshots for synchronous UI seeding, scoped to the active device. */
+  hasCachedConfig(path: string): boolean;
+  getCachedConfig<T>(path: string): T | undefined;
   getConfig<T = any>(path?: string): Promise<T>;
   getOptionalConfig<T = any>(path: string): Promise<T | undefined>;
   getConfigs(paths: string[]): Promise<Record<string, unknown>>;

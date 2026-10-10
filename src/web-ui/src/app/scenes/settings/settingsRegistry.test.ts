@@ -1,16 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerSettingsDraft, resetSettingsDraftRegistryForTests, getSettingsDraftSnapshot } from '@/infrastructure/config/settingsDraftRegistry';
 import { isLegacyEcosystemCompatibilityDestination, resolveSettingsDestination } from './settingsDestination';
-import { SETTINGS_CATEGORIES, SETTINGS_PAGE_MANIFESTS, getSettingsPageManifest, isSettingsPageId } from './settingsRegistry';
+import { SETTINGS_CATEGORIES, SETTINGS_PAGE_MANIFESTS, getSettingsPageManifest, isSettingsPageId, preloadSettingsPage, isSettingsPageReady } from './settingsRegistry';
 import { useSettingsStore } from './settingsStore';
+import { i18nService } from '@/infrastructure/i18n/core/I18nService';
 import migrations from './settingsDestinationMigrations.json';
 import type { SettingsDestinationInput } from './settingsDestination';
+
+vi.mock('./settingsDataPreload', () => ({ preloadSettingsData: vi.fn(async () => undefined) }));
 
 vi.mock('@/infrastructure/i18n/core/I18nService', () => ({
   i18nService: { loadNamespace: vi.fn(async () => undefined) },
 }));
 
 afterEach(() => {
+  vi.restoreAllMocks();
   resetSettingsDraftRegistryForTests();
   useSettingsStore.setState(useSettingsStore.getInitialState());
 });
@@ -120,5 +124,31 @@ describe('settings information architecture', () => {
     expect(getSettingsDraftSnapshot().pendingNavigation).not.toBeNull();
     expect(save).not.toHaveBeenCalled();
     expect(discard).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('settings page preparation', () => {
+  it('shares preparation and resolves warm pages without suspending through React.lazy', async () => {
+    const page = getSettingsPageManifest('application.appearance');
+    const component = () => null;
+    const load = vi.spyOn(page, 'load').mockResolvedValue({ default: component });
+    const first = preloadSettingsPage(page.id);
+    expect(preloadSettingsPage(page.id)).toBe(first);
+    await first;
+    expect(isSettingsPageReady(page.id)).toBe(true);
+    expect(page.resolvedComponent).toBe(component);
+    await preloadSettingsPage(page.id);
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps namespace failures retryable instead of marking the destination ready', async () => {
+    const page = getSettingsPageManifest('application.general');
+    vi.spyOn(page, 'load').mockResolvedValue({ default: () => null });
+    vi.mocked(i18nService.loadNamespace).mockRejectedValueOnce(new Error('offline'));
+    await expect(preloadSettingsPage(page.id)).rejects.toThrow('offline');
+    expect(isSettingsPageReady(page.id)).toBe(false);
+    await preloadSettingsPage(page.id);
+    expect(isSettingsPageReady(page.id)).toBe(true);
   });
 });

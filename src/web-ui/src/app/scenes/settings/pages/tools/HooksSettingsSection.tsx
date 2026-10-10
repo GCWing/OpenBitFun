@@ -1,3 +1,4 @@
+import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
 import {
   externalHooksAPI,
   type ExternalHookImportMutation,
@@ -66,9 +67,10 @@ const HooksSettingsSection: React.FC = () => {
   const remoteWorkspace = workspace?.workspaceKind === WorkspaceKind.Remote
     || Boolean(workspace?.connectionId);
 
-  const [loading, setLoading] = useState(true);
+  const seed = useConfigSeed(['app.hooks']);
+  const [loading, setLoading] = useState(!seed.loaded);
   const [configLoadFailed, setConfigLoadFailed] = useState(false);
-  const [config, setConfig] = useState<AgentHooksConfigShape>(DEFAULT_HOOKS_CONFIG);
+  const [config, setConfig] = useState<AgentHooksConfigShape>(() => normalizeHooksConfig(seed.get('app.hooks', DEFAULT_HOOKS_CONFIG)));
   const [savingKey, setSavingKey] = useState<keyof AgentHooksConfigShape | null>(null);
   const [importSnapshot, setImportSnapshot] = useState<ExternalHookImportSnapshot | null>(null);
   const [importLoading, setImportLoading] = useState(false);
@@ -83,11 +85,13 @@ const HooksSettingsSection: React.FC = () => {
   >(null);
   const [projectHooksEnableConfirmOpen, setProjectHooksEnableConfirmOpen] = useState(false);
   const requestSequence = useRef(0);
+  const configEditRevision = useRef(0);
   const mountedRef = useRef(true);
 
   const loadData = useCallback(async () => {
     const sequence = ++requestSequence.current;
-    setLoading(true);
+    const editRevision = configEditRevision.current;
+    setLoading(!seed.loaded);
     setConfigLoadFailed(false);
     setImportError(null);
     const [configResult, importResult] = await Promise.allSettled([
@@ -98,7 +102,7 @@ const HooksSettingsSection: React.FC = () => {
     ]);
     if (!mountedRef.current || sequence !== requestSequence.current) return;
     if (configResult.status === 'fulfilled') {
-      setConfig(normalizeHooksConfig(configResult.value));
+      if (editRevision === configEditRevision.current) setConfig(normalizeHooksConfig(configResult.value));
     } else {
       log.error('Failed to load hooks config', configResult.reason);
       setConfigLoadFailed(true);
@@ -151,7 +155,8 @@ const HooksSettingsSection: React.FC = () => {
       const previous = config;
       const next = { ...config, [key]: value };
       setSavingKey(key);
-      setConfig(next);
+      configEditRevision.current += 1;
+    setConfig(next);
       try {
         await configManager.setConfig('app.hooks', next);
         if (!mountedRef.current) return;

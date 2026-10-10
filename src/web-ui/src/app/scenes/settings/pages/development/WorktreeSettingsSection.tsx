@@ -1,7 +1,9 @@
+import { configManager } from '@/infrastructure/config/services/ConfigManager';
+import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
 import '@/app/scenes/settings/pages/development/WorktreeSettingsSection.scss';
 import { openAgentCompanionSession } from '@/app/services/openAgentCompanionSession';
 import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
-import { configAPI, worktreeAPI } from '@/infrastructure/api';
+import { worktreeAPI } from '@/infrastructure/api';
 import { resolveLegacySessionWorkspace } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
 import { sessionAPI } from '@/infrastructure/api/service-api/SessionAPI';
 import type {
@@ -152,9 +154,10 @@ function waitFor(ms: number): Promise<void> {
 
 const WorktreeSettingsSection: React.FC = () => {
   const { t } = useI18n('worktrees');
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
-  const [trustedSettings, setTrustedSettings] = useState<WorktreeSettings | null>(null);
-  const [settingsLoading, setSettingsLoading] = useState(true);
+  const seed = useConfigSeed(['app.worktrees']);
+  const [settings, setSettings] = useState(() => normalizeSettings(seed.get('app.worktrees', DEFAULT_SETTINGS)));
+  const [trustedSettings, setTrustedSettings] = useState<WorktreeSettings | null>(seed.loaded ? settings : null);
+  const [settingsLoading, setSettingsLoading] = useState(!seed.loaded);
   const [saving, setSaving] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState<PageMessage | null>(null);
   const [projects, setProjects] = useState<WorktreeProjectSummary[]>([]);
@@ -178,9 +181,7 @@ const WorktreeSettingsSection: React.FC = () => {
     setSettingsLoading(true);
     setSettingsMessage(null);
     try {
-      const configured = await configAPI.getConfig('app.worktrees', {
-        skipRetryOnNotFound: true,
-      });
+      const configured = await configManager.getOptionalConfig('app.worktrees');
       const nextSettings = normalizeSettings(configured);
       setSettings(nextSettings);
       setTrustedSettings(nextSettings);
@@ -257,7 +258,7 @@ const WorktreeSettingsSection: React.FC = () => {
   }, [commitProjectsLayoutChange, t]);
 
   useEffect(() => {
-    void loadSettings();
+    if (!seed.loaded) void loadSettings();
     void loadProjects();
     return worktreeAPI.onChanged(() => {
       if (worktreeMutationInFlightRef.current) {
@@ -301,7 +302,7 @@ const WorktreeSettingsSection: React.FC = () => {
         branchPrefix: settings.branchPrefix.trim(),
         autoDeleteLimit: Math.round(settings.autoDeleteLimit),
       };
-      await configAPI.setConfig('app.worktrees', normalized);
+      await configManager.setConfig('app.worktrees', normalized);
       setSettings(normalized);
       setTrustedSettings(normalized);
       setSettingsMessage({ type: 'success', text: t('settings.saved') });

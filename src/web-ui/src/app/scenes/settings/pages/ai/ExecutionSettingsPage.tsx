@@ -1,3 +1,4 @@
+import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
 import ReviewCapacitySection from '@/app/scenes/settings/pages/ai/ReviewCapacitySection';
 import ToolJsonRepairSection from '@/app/scenes/settings/pages/ai/ToolJsonRepairSection';
 import '@/app/scenes/settings/pages/shared/RuntimeSettings.scss';
@@ -62,28 +63,29 @@ const ExecutionSettingsPage: React.FC = () => {
 
   const { buildModelOption } = useModelSelectPresentation();
 
-  const [subagentDefaultModel, setSubagentDefaultModel] = useState<SubagentModelSelection>({ kind: 'fixed', model_id: 'fast' });
+  const seed = useConfigSeed(['ai.agent_model_defaults.subagents.default', 'ai.models', 'ai.enable_deferred_tool_loading', 'ai.subagent_max_concurrency', 'ai.swarm_max_concurrency', 'ai.tool_execution_timeout_secs', 'ai.subagent_batch_execution_policy', 'ai.user_question_timeout_secs']);
+  const [subagentDefaultModel, setSubagentDefaultModel] = useState<SubagentModelSelection>(seed.get<SubagentModelSelection | null>('ai.agent_model_defaults.subagents.default', null) ?? { kind: 'fixed', model_id: 'fast' });
 
-  const [configuredModels, setConfiguredModels] = useState<AIModelConfig[]>([]);
+  const [configuredModels, setConfiguredModels] = useState<AIModelConfig[]>(seed.get<AIModelConfig[] | null>('ai.models', null) ?? []);
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!seed.loaded);
 
   const [loadError, setLoadError] = useState(false);
 
-  const hasLoadedPageDataRef = useRef(false);
+  const hasLoadedPageDataRef = useRef(seed.loaded);
 
-  const [enableDeferredToolLoading, setEnableDeferredToolLoading] = useState(true);
+  const [enableDeferredToolLoading, setEnableDeferredToolLoading] = useState(seed.get('ai.enable_deferred_tool_loading', true) ?? true);
 
-  const [subagentMaxConcurrency, setSubagentMaxConcurrency] = useState(DEFAULT_SUBAGENT_MAX_CONCURRENCY);
+  const [subagentMaxConcurrency, setSubagentMaxConcurrency] = useState(seed.get<number | null>('ai.subagent_max_concurrency', null) ?? DEFAULT_SUBAGENT_MAX_CONCURRENCY);
 
-  const [swarmMaxConcurrency, setSwarmMaxConcurrency] = useState(DEFAULT_SWARM_MAX_CONCURRENCY);
+  const [swarmMaxConcurrency, setSwarmMaxConcurrency] = useState(seed.get<number | null>('ai.swarm_max_concurrency', null) ?? DEFAULT_SWARM_MAX_CONCURRENCY);
 
-  const [executionTimeout, setExecutionTimeout] = useState('');
+  const [executionTimeout, setExecutionTimeout] = useState(String(seed.get<number | null>('ai.tool_execution_timeout_secs', null) ?? ''));
 
-  const [userQuestionTimeout, setUserQuestionTimeout] = useState('180');
+  const [userQuestionTimeout, setUserQuestionTimeout] = useState(String(seed.get<number | null>('ai.user_question_timeout_secs', 180) ?? 0));
 
   const [subagentBatchExecutionPolicy, setSubagentBatchExecutionPolicy] =
-    useState<SubagentBatchExecutionPolicy>(DEFAULT_SUBAGENT_BATCH_EXECUTION_POLICY);
+    useState<SubagentBatchExecutionPolicy>(() => normalizeSubagentBatchExecutionPolicy(seed.get('ai.subagent_batch_execution_policy', DEFAULT_SUBAGENT_BATCH_EXECUTION_POLICY)));
 
   const [toolExecConfigLoading, setToolExecConfigLoading] = useState(false);
 
@@ -297,7 +299,7 @@ const ExecutionSettingsPage: React.FC = () => {
   }, []);
   useEffect(() => {
 
-    void loadPageData();
+    if (!seed.loaded) void loadPageData();
   }, [loadPageData]);
 
   if (!subagentModelOptions.some(option => option.value === subagentModelValue)) {

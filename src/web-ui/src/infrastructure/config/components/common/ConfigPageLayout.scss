@@ -6,7 +6,12 @@
 .openbitfun-config-page-layout {
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   height: 100%;
+  /* Keep short, long, and loading pages centered on the same available width. */
+  scrollbar-gutter: stable both-edges;
   background: var(--openbitfun-color-surface-scene);
   color: var(--openbitfun-color-content-primary);
   font-family:var(--openbitfun-type-body-sm-font-family);
@@ -32,6 +37,9 @@
    * This ensures the flex layout positions the scroll-end spacer AFTER
    * the actual content, not at the flex-allocated truncated position. */
   flex-shrink: 0;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   overflow: visible;
   /*
    * Page-specific class names are attached to this public wrapper. Keep its box
@@ -41,11 +49,7 @@
 }
 
 .openbitfun-config-page-content__inner {
-  width: min(
-    calc(100% - (2 * #{configLayout.$config-page-content-inline-padding})),
-    #{configLayout.$config-page-content-max-width}
-  );
-  margin-inline: auto;
+  @include configLayout.content-frame;
   display: flex;
   flex-direction: column;
   gap: var(--config-page-section-gap);
@@ -341,13 +345,6 @@
 
   .openbitfun-config-page-content {
     --config-page-section-gap: 36px;
-  }
-
-  .openbitfun-config-page-content__inner {
-    width: min(
-      calc(100% - (2 * #{configLayout.$config-page-content-inline-padding})),
-      #{configLayout.$config-page-content-max-width}
-    );
   }
 }
 

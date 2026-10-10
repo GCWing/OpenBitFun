@@ -20,6 +20,8 @@ const state = vi.hoisted(() => ({
   selectionIntent: vi.fn(),
 }));
 vi.mock('@/infrastructure/config/services/ConfigManager', () => ({ configManager: {
+  hasCachedConfig: () => false,
+  getCachedConfig: () => undefined,
   getOptionalConfig: state.getPreference,
   watch: (_path: string, callback: () => void) => {
     state.preferenceListeners.add(callback);

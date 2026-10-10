@@ -1,3 +1,4 @@
+import { createSettingsReadCache } from '@/infrastructure/config/services/SettingsReadCache';
 import {
   LOCAL_SENSEVOICE_SMALL_INT8_MODEL_ID,
   speechAPI,
@@ -81,6 +82,8 @@ function statusActionKey(status: VoiceInputStatus): string {
   }
 }
 
+const speechModelInventory = createSettingsReadCache<SpeechModelStatus[]>();
+
 const VoiceSettingsSection: React.FC = () => {
   const { t } = useTranslation('settings/voice-input');
   const speechRuntimeSupported = isTauriRuntime();
@@ -90,8 +93,10 @@ const VoiceSettingsSection: React.FC = () => {
     error: settingsError,
     reload: reloadSettings,
   } = useAIExperienceSettings();
-  const [models, setModels] = useState<SpeechModelStatus[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(speechRuntimeSupported);
+  const [cachedModels] = useState(() => speechRuntimeSupported ? speechModelInventory.peek() : undefined);
+  const hasLoadedModels = useRef(cachedModels !== undefined);
+  const [models, setModels] = useState<SpeechModelStatus[]>(cachedModels ?? []);
+  const [modelsLoading, setModelsLoading] = useState(speechRuntimeSupported && !hasLoadedModels.current);
   const [modelsLoadFailed, setModelsLoadFailed] = useState(false);
   const [voiceInputSaving, setVoiceInputSaving] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -131,10 +136,11 @@ const VoiceSettingsSection: React.FC = () => {
       return;
     }
     try {
-      setModelsLoading(true);
+      setModelsLoading(!hasLoadedModels.current);
       setModelsLoadFailed(false);
-      const response = await speechAPI.listModels();
-      setModels(response.models);
+      const loaded = await speechModelInventory.read(async () => (await speechAPI.listModels()).models);
+      setModels(loaded);
+      hasLoadedModels.current = true;
     } catch (error) {
       log.error('Failed to load local speech model status', { error });
       setModelsLoadFailed(true);
@@ -147,11 +153,13 @@ const VoiceSettingsSection: React.FC = () => {
     if (!speechRuntimeSupported) return undefined;
     void loadModels();
     const unsubscribeProgress = speechAPI.onModelProgress(event => {
+      speechModelInventory.invalidate();
       setModels(previous => previous.map(model =>
         model.modelId === event.status.modelId ? event.status : model
       ));
     });
     const unsubscribeStatus = speechAPI.onModelStatusChanged(status => {
+      speechModelInventory.invalidate();
       setModels(previous => previous.map(model =>
         model.modelId === status.modelId ? status : model
       ));
@@ -238,7 +246,7 @@ const VoiceSettingsSection: React.FC = () => {
     );
   }
 
-  if (settingsError || !settings || !voiceInput) {
+  if (!settings || !voiceInput) {
     return (
       <div id={sectionAnchor} className="voice-input-config" data-openbitfun-component="voice-input-config" data-openbitfun-part="root">
         <ConfigPageSectionStack>
@@ -289,6 +297,7 @@ const VoiceSettingsSection: React.FC = () => {
   return (
     <div id={sectionAnchor} className="voice-input-config" data-openbitfun-component="voice-input-config" data-openbitfun-part="root">
       <ConfigPageSectionStack className="voice-input-config__content">
+        {settingsError && <ConfigMessage message={{ type: 'error', text: t('messages.loadFailed') }} />}
         <ConfigPageSection
           title={t('sections.basic')}
           description={t('sections.basicDescription')}

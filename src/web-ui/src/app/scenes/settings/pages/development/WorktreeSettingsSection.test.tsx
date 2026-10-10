@@ -24,6 +24,15 @@ const translateMock = vi.hoisted(() => vi.fn(
   },
 ));
 
+vi.mock('@/infrastructure/config/services/ConfigManager', () => ({
+  configManager: {
+    hasCachedConfig: () => false,
+    getCachedConfig: () => undefined,
+    getOptionalConfig: getConfigMock,
+    setConfig: setConfigMock,
+  },
+}));
+
 vi.mock('@/infrastructure/api', () => ({
   configAPI: {
     getConfig: getConfigMock,

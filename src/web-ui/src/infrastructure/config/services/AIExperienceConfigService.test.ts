@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const configManagerMock = vi.hoisted(() => ({
+  hasCachedConfig: vi.fn(() => false),
+  getCachedConfig: vi.fn(),
   getConfig: vi.fn(),
   setConfig: vi.fn(),
   watch: vi.fn(),
@@ -42,6 +44,30 @@ describe('AIExperienceConfigService startup behavior', () => {
     vi.resetModules();
     vi.clearAllMocks();
     configManagerMock.watch.mockReturnValue(() => undefined);
+  });
+
+  it('exposes trusted data synchronously and retains it after a failed refresh', async () => {
+    configManagerMock.getConfig.mockResolvedValueOnce({ enable_agent_companion: false });
+    const { aiExperienceConfigService } = await import('./AIExperienceConfigService');
+    expect(aiExperienceConfigService.getCachedSettings()).toBeNull();
+    await aiExperienceConfigService.getSettingsAsync({ requireLoaded: true });
+    expect(aiExperienceConfigService.getCachedSettings()?.enable_agent_companion).toBe(false);
+    configManagerMock.getConfig.mockRejectedValueOnce(new Error('offline'));
+    await aiExperienceConfigService.reload();
+    expect(aiExperienceConfigService.getCachedSettings()?.enable_agent_companion).toBe(false);
+  });
+
+  it('cannot repopulate the cache from a previous device read', async () => {
+    const { activateSurface } = await import('@/infrastructure/peer-device/deviceSurface');
+    const { aiExperienceConfigService } = await import('./AIExperienceConfigService');
+    let finish!: (value: unknown) => void;
+    configManagerMock.getConfig.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const pending = aiExperienceConfigService.getSettingsAsync();
+    activateSurface('peer');
+    const rejected = expect(pending).rejects.toMatchObject({ isSurfaceChangedError: true });
+    finish({ enable_agent_companion: true });
+    await rejected;
+    expect(aiExperienceConfigService.getCachedSettings()).toBeNull();
   });
 
   it('does not read app.ai_experience during module import', async () => {

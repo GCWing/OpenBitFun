@@ -1,3 +1,4 @@
+import { createSettingsReadCache } from '@/infrastructure/config/services/SettingsReadCache';
 import '@/app/scenes/settings/pages/shared/RuntimeSettings.scss';
 import {
   ConfigLoadingState,
@@ -44,20 +45,25 @@ function getPetPreviewStyle(pet: AgentCompanionPetPackage): React.CSSProperties 
   } as React.CSSProperties;
 }
 
+const companionPetInventory = createSettingsReadCache<AgentCompanionPetPackage[]>();
+
 const PetSettingsSection: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
   const { t } = useI18n('settings/runtime');
 
   const notification = useNotification();
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [cachedSettings] = useState(() => aiExperienceConfigService.getCachedSettings());
+  const [cachedPets] = useState(() => companionPetInventory.peek());
+  const editRevision = useRef(0);
+  const [isLoading, setIsLoading] = useState(!cachedSettings || !cachedPets);
 
   const [loadError, setLoadError] = useState(false);
 
-  const hasLoadedPageDataRef = useRef(false);
+  const hasLoadedPageDataRef = useRef(Boolean(cachedSettings && cachedPets));
 
-  const [settings, setSettings] = useState<AIExperienceSettings | null>(null);
+  const [settings, setSettings] = useState<AIExperienceSettings | null>(cachedSettings);
 
-  const [companionPets, setCompanionPets] = useState<AgentCompanionPetPackage[]>([]);
+  const [companionPets, setCompanionPets] = useState<AgentCompanionPetPackage[]>(cachedPets ?? []);
 
   const [companionPetListExpanded, setCompanionPetListExpanded] = useState(false);
 
@@ -66,7 +72,7 @@ const PetSettingsSection: React.FC<{ isActive?: boolean }> = ({ isActive = true 
   const [companionPetDeletingPath, setCompanionPetDeletingPath] = useState<string | null>(null);
 
   const reloadCompanionPets = useCallback(async () => {
-    setCompanionPets(await listAgentCompanionPets());
+    setCompanionPets(await companionPetInventory.read(listAgentCompanionPets));
   }, []);
 
   const updateSetting = async <K extends keyof AIExperienceSettings>(
@@ -74,6 +80,7 @@ const PetSettingsSection: React.FC<{ isActive?: boolean }> = ({ isActive = true 
     value: AIExperienceSettings[K]
   ) => {
     if (!settings) return;
+    editRevision.current += 1;
     const newSettings = { ...settings, [key]: value };
     setSettings(newSettings);
     try {
@@ -175,13 +182,14 @@ const PetSettingsSection: React.FC<{ isActive?: boolean }> = ({ isActive = true 
 
   const loadPageData = useCallback(async () => {
     const isInitialLoad = !hasLoadedPageDataRef.current;
+    const revision = editRevision.current;
     if (isInitialLoad) { setIsLoading(true); setLoadError(false); }
     try {
       const [loadedSettings] = await Promise.all([
-        aiExperienceConfigService.getSettingsAsync(),
+        aiExperienceConfigService.getSettingsAsync({ requireLoaded: true }),
         reloadCompanionPets(),
       ]);
-      setSettings(loadedSettings);
+      if (revision === editRevision.current) setSettings(loadedSettings);
 
       hasLoadedPageDataRef.current = true;
     } catch (error) {

@@ -6,7 +6,7 @@ import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 import TextSelectionSettingsSection from './TextSelectionSettingsSection';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), error: vi.fn(), listeners: new Set<() => void>() }));
-vi.mock('@/infrastructure/config/services/ConfigManager', () => ({ configManager: {
+vi.mock('@/infrastructure/config/services/ConfigManager', () => ({ configManager: { hasCachedConfig: () => false, getCachedConfig: () => undefined,
   getOptionalConfig: mocks.get,
   setConfig: mocks.set,
   watch: (_path: string, listener: () => void) => {

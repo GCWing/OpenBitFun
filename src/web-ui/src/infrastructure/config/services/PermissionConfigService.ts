@@ -48,10 +48,11 @@ export function normalizeToolPermissionConfig(value: unknown): ToolPermissionCon
 }
 
 export class PermissionConfigService {
-  async getConfig(): Promise<ToolPermissionConfig> {
+  async getConfig(options?: { requireLoaded?: boolean }): Promise<ToolPermissionConfig> {
     try {
       return normalizeToolPermissionConfig(await configManager.getConfig<ToolPermissionConfig>(CONFIG_PATH));
     } catch (error) {
+      if (options?.requireLoaded) throw error;
       log.warn('Failed to load tool permission config, using safe defaults', error);
       return {
         policy: { preset: 'ask', rules: [] },

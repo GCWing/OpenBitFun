@@ -1,4 +1,5 @@
 import type { I18nNamespace } from '@/infrastructure/i18n/types';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { lazyWithRecovery, type RecoverableLazyComponent } from '@/shared/utils/lazyWithRecovery';
 import type { ComponentType } from 'react';
 import type {
@@ -42,6 +43,8 @@ export interface SettingsPageManifest {
   sections?: readonly SettingsSectionManifest[];
   load: () => Promise<SettingsPageModule>;
   component: RecoverableLazyComponent<ComponentType<SettingsPageProps>>;
+  /** Filled by preload so a warm destination does not suspend on React.lazy's first render. */
+  resolvedComponent?: ComponentType<SettingsPageProps>;
 }
 
 type SettingsPageDefinition = Omit<SettingsPageManifest, 'component'>;
@@ -459,6 +462,7 @@ export const DEFAULT_SETTINGS_PAGE_ID: SettingsPageId = 'application.general';
 
 const PAGE_BY_ID = new Map(SETTINGS_PAGE_MANIFESTS.map((page) => [page.id, page]));
 const readyPages = new Set<SettingsPageId>();
+const pendingPages = new Map<SettingsPageId, Promise<void>>();
 
 export function getSettingsPageManifest(pageId: SettingsPageId): SettingsPageManifest {
   return PAGE_BY_ID.get(pageId) ?? PAGE_BY_ID.get(DEFAULT_SETTINGS_PAGE_ID)!;
@@ -474,16 +478,36 @@ export function isSettingsPageReady(pageId: SettingsPageId): boolean {
 
 async function preloadNamespaces(namespaces: readonly I18nNamespace[]): Promise<void> {
   const { i18nService } = await import('@/infrastructure/i18n/core/I18nService');
-  await Promise.all(namespaces.map((namespace) => i18nService.loadNamespace(namespace).catch(() => undefined)));
+  await Promise.all(namespaces.map((namespace) => i18nService.loadNamespace(namespace)));
 }
 
 export function preloadSettingsShell(): Promise<void> {
   return preloadNamespaces(['settings']);
 }
 
-export async function preloadSettingsPage(pageId: SettingsPageId): Promise<void> {
-  if (readyPages.has(pageId)) return;
+export function preloadSettingsPage(pageId: SettingsPageId): Promise<void> {
+  const scope = getActiveSurfaceScope();
+  const prefetchData = () => {
+    void import('./settingsDataPreload').then(({ preloadSettingsData }) => {
+      if (scope.isCurrent()) return preloadSettingsData(pageId);
+    }).catch(() => undefined);
+  };
+  if (readyPages.has(pageId)) {
+    prefetchData();
+    return Promise.resolve();
+  }
+  const pending = pendingPages.get(pageId);
+  if (pending) return pending;
   const page = getSettingsPageManifest(pageId);
-  await Promise.all([page.load(), preloadNamespaces(page.namespaces)]);
-  readyPages.add(pageId);
+  const namespaces = preloadNamespaces(['settings', ...page.namespaces]);
+  // Legacy configuration projections can use translated labels while normalizing.
+  void namespaces.then(prefetchData).catch(() => undefined);
+  const request = Promise.all([page.load(), namespaces])
+    .then(([module]) => {
+      page.resolvedComponent = module.default;
+      readyPages.add(pageId);
+    })
+    .finally(() => { pendingPages.delete(pageId); });
+  pendingPages.set(pageId, request);
+  return request;
 }

@@ -1,3 +1,5 @@
+import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
+import { createSettingsReadCache } from '@/infrastructure/config/services/SettingsReadCache';
 import '@/app/scenes/settings/pages/shared/ApplicationSettings.scss';
 import { configAPI, workspaceAPI } from '@/infrastructure/api';
 import { ConfigLoadingState, ConfigMessage, ConfigPageRow, ConfigPageSection, ConfigRetryState } from '@/infrastructure/config/components/common';
@@ -9,17 +11,23 @@ import type {
 import { createLogger } from '@/shared/utils/logger';
 import { Alert, Button, ConfirmDialog, IconButton, Input, Select, Switch, Tooltip } from '@openbitfun/ui';
 import { Archive, FolderOpen } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SettingsPage } from '../shared/SettingsPage';
+const loggingRuntime = createSettingsReadCache<RuntimeLoggingInfo>();
+
 const log = createLogger('DiagnosticsSettingsPage');
 
 function LoggingSection() {
   const { t } = useTranslation('settings/application');
-  const [configLevel, setConfigLevel] = useState<BackendLogLevel>('info');
-  const [includeSensitiveDiagnostics, setIncludeSensitiveDiagnostics] = useState(false);
-  const [runtimeInfo, setRuntimeInfo] = useState<RuntimeLoggingInfo | null>(null);
-  const [loading, setLoading] = useState(true);
+  const seed = useConfigSeed(['app.logging.level', 'app.logging.include_sensitive_diagnostics']);
+  const [cachedRuntime] = useState(() => loggingRuntime.peek());
+  const editRevision = useRef(0);
+  const hasLoaded = useRef(seed.loaded && cachedRuntime !== undefined);
+  const [configLevel, setConfigLevel] = useState<BackendLogLevel>(seed.get<BackendLogLevel | null>('app.logging.level', null) ?? cachedRuntime?.effectiveLevel ?? 'info');
+  const [includeSensitiveDiagnostics, setIncludeSensitiveDiagnostics] = useState(seed.get('app.logging.include_sensitive_diagnostics', false) ?? false);
+  const [runtimeInfo, setRuntimeInfo] = useState<RuntimeLoggingInfo | null>(cachedRuntime ?? null);
+  const [loading, setLoading] = useState(!hasLoaded.current);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [openingFolder, setOpeningFolder] = useState(false);
@@ -45,22 +53,27 @@ function LoggingSection() {
   }, []);
 
   const loadData = useCallback(async () => {
+    const revision = editRevision.current;
     try {
-      setLoading(true);
+      setLoading(!hasLoaded.current);
       setLoadFailed(false);
 
       const [savedLevel, savedIncludeSensitiveDiagnostics, info] = await Promise.all([
         configManager.getConfig<BackendLogLevel>('app.logging.level'),
         configManager.getConfig<boolean>('app.logging.include_sensitive_diagnostics'),
-        configAPI.getRuntimeLoggingInfo(),
+        loggingRuntime.read(() => configAPI.getRuntimeLoggingInfo()),
       ]);
 
-      setConfigLevel(savedLevel || info.effectiveLevel || 'info');
-      setIncludeSensitiveDiagnostics(savedIncludeSensitiveDiagnostics ?? false);
+      if (revision === editRevision.current) {
+        setConfigLevel(savedLevel || info.effectiveLevel || 'info');
+        setIncludeSensitiveDiagnostics(savedIncludeSensitiveDiagnostics ?? false);
+      }
       setRuntimeInfo(info);
+      hasLoaded.current = true;
     } catch (error) {
       log.error('Failed to load logging config', error);
       setLoadFailed(true);
+      if (hasLoaded.current) setMessage({ type: 'error', text: t('logging.messages.loadFailed') });
     } finally {
       setLoading(false);
     }
@@ -72,6 +85,7 @@ function LoggingSection() {
 
   const handleLevelChange = useCallback(
     async (value: string) => {
+      editRevision.current += 1;
       const nextLevel = value as BackendLogLevel;
       const previousLevel = configLevel;
       setConfigLevel(nextLevel);
@@ -79,7 +93,6 @@ function LoggingSection() {
 
       try {
         await configManager.setConfig('app.logging.level', nextLevel);
-        configManager.clearCache();
 
         const info = await configAPI.getRuntimeLoggingInfo();
         setRuntimeInfo(info);
@@ -97,13 +110,13 @@ function LoggingSection() {
 
   const handleSensitiveDiagnosticsChange = useCallback(
     async (checked: boolean) => {
+      editRevision.current += 1;
       const previousValue = includeSensitiveDiagnostics;
       setIncludeSensitiveDiagnostics(checked);
       setSaving(true);
 
       try {
         await configManager.setConfig('app.logging.include_sensitive_diagnostics', checked);
-        configManager.clearCache();
         showMessage('success', t('logging.messages.sensitiveDiagnosticsUpdated'));
       } catch (error) {
         setIncludeSensitiveDiagnostics(previousValue);
@@ -153,7 +166,7 @@ function LoggingSection() {
     return <ConfigLoadingState label={t('logging.messages.loading')} />;
   }
 
-  if (loadFailed) {
+  if (loadFailed && !hasLoaded.current) {
     return (
       <ConfigRetryState
         message={t('logging.messages.loadFailed')}

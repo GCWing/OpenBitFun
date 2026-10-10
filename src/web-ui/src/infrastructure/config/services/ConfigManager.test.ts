@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 import { configManager } from './ConfigManager';
 
 const configApiMocks = vi.hoisted(() => ({
@@ -39,6 +40,50 @@ describe('ConfigManager', () => {
     vi.clearAllMocks();
     configManager.clearCache();
     delete globalThis.__OPENBITFUN_BOOTSTRAP_KEYBINDINGS__;
+  });
+
+  it('records successful optional absence without caching a failed read or fallback', async () => {
+    configApiMocks.getConfig.mockResolvedValueOnce(undefined);
+    await configManager.getOptionalConfig('app.worktrees');
+    expect(configManager.hasCachedConfig('app.worktrees')).toBe(true);
+    expect(configManager.getCachedConfig('app.worktrees')).toBeUndefined();
+    configApiMocks.getConfig.mockRejectedValueOnce(new Error('offline'));
+    await expect(configManager.getConfig('ai.models')).resolves.toEqual([]);
+    expect(configManager.hasCachedConfig('ai.models')).toBe(false);
+    configApiMocks.setConfig.mockResolvedValueOnce(undefined);
+    await configManager.setConfig('app.worktrees.enabled', true);
+    expect(configManager.hasCachedConfig('app.worktrees')).toBe(false);
+  });
+
+  it('invalidates synchronously on device activation and fences late reads without defaults', async () => {
+    configApiMocks.getConfig.mockResolvedValueOnce('local');
+    await configManager.getOptionalConfig('app.logging.level');
+    const read = createDeferred<unknown[]>();
+    configApiMocks.getConfig.mockReturnValueOnce(read.promise);
+    const pending = configManager.getConfig('ai.models');
+    activateSurface('peer');
+    expect(configManager.hasCachedConfig('app.logging.level')).toBe(false);
+    expect(configManager.getCachedConfig('app.logging.level')).toBeUndefined();
+    const rejection = expect(pending).rejects.toMatchObject({ isSurfaceChangedError: true });
+    read.resolve([]);
+    await rejection;
+    expect(configManager.hasCachedConfig('ai.models')).toBe(false);
+    activateSurface('local');
+  });
+
+  it('never sends a queued mutation to a newly activated host', async () => {
+    const write = createDeferred<void>();
+    configApiMocks.setConfig.mockReturnValueOnce(write.promise);
+    const first = configManager.setConfig('editor.theme', 'old');
+    const queued = configManager.setConfig('editor.theme', 'queued');
+    activateSurface('peer');
+    const firstRejection = expect(first).rejects.toMatchObject({ isSurfaceChangedError: true });
+    const queuedRejection = expect(queued).rejects.toMatchObject({ isSurfaceChangedError: true });
+    write.resolve();
+    await Promise.all([firstRejection, queuedRejection]);
+    expect(configApiMocks.setConfig).toHaveBeenCalledTimes(1);
+    expect(configManager.hasCachedConfig('editor.theme')).toBe(false);
+    activateSurface('local');
   });
 
   it('does not let a late legacy-model read overwrite an explicit save', async () => {

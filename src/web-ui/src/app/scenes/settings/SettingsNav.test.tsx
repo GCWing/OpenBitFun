@@ -46,6 +46,7 @@ vi.mock('@/shared/utils/motionPreference', () => ({
 }));
 
 import SettingsNav from './SettingsNav';
+import { preloadSettingsPage } from './settingsRegistry';
 import { useSettingsStore } from './settingsStore';
 import {
   registerSettingsDraft,
@@ -58,6 +59,7 @@ describe('SettingsNav shared component composition', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.mocked(preloadSettingsPage).mockReset().mockResolvedValue(undefined);
     resetSettingsDraftRegistryForTests();
     useSettingsStore.setState(useSettingsStore.getInitialState());
     container = document.createElement('div');
@@ -183,4 +185,35 @@ describe('SettingsNav shared component composition', () => {
     expect(useSettingsStore.getState().activePageId).toBe('application.pet');
     expect(useSettingsStore.getState().activeSectionId).toBeNull();
   });
+  it('marks a slow destination pending before showing its loading page', async () => {
+    vi.mocked(preloadSettingsPage).mockReturnValue(new Promise(() => {}));
+    const item = container.querySelector('[data-settings-page="application.appearance"]') as HTMLButtonElement;
+    await act(async () => item.click());
+    expect(item.getAttribute('aria-busy')).toBe('true');
+    expect(useSettingsStore.getState().activePageId).toBe('application.general');
+    await act(async () => vi.advanceTimersByTimeAsync(180));
+    expect(useSettingsStore.getState().activePageId).toBe('application.appearance');
+    expect(item.hasAttribute('aria-busy')).toBe(false);
+  });
+
+  it('ignores an earlier click when its preload completes after the latest selection', async () => {
+    let finishOld!: () => void;
+    vi.mocked(preloadSettingsPage).mockImplementation(pageId => pageId === 'application.appearance'
+      ? new Promise<void>(resolve => { finishOld = resolve; }) : Promise.resolve());
+    await act(async () => (container.querySelector('[data-settings-page="application.appearance"]') as HTMLButtonElement).click());
+    await act(async () => (container.querySelector('[data-settings-page="application.pet"]') as HTMLButtonElement).click());
+    await act(async () => finishOld());
+    await act(async () => vi.advanceTimersByTimeAsync(180));
+    expect(useSettingsStore.getState().activePageId).toBe('application.pet');
+  });
+
+  it('does not override a newer programmatic destination with a pending click', async () => {
+    let finish!: () => void;
+    vi.mocked(preloadSettingsPage).mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
+    await act(async () => (container.querySelector('[data-settings-page="application.appearance"]') as HTMLButtonElement).click());
+    await act(async () => useSettingsStore.getState().openPage('application.pet'));
+    await act(async () => finish());
+    expect(useSettingsStore.getState().activePageId).toBe('application.pet');
+  });
+
 });

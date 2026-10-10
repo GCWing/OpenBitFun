@@ -55,6 +55,7 @@ vi.mock('@/infrastructure/confirm-dialog', async () => {
 });
 vi.mock('../../api/service-api/MCPAPI', () => ({
   MCPAPI: {
+    getCachedServers: () => undefined,
     getServers: getServersMock,
     loadMCPJsonConfig: loadJsonConfigMock,
     saveMCPJsonConfig: saveJsonConfigMock,
@@ -114,6 +115,25 @@ describe('McpToolsConfig remote behavior', () => {
     await act(async () => root.unmount());
     container.remove();
     vi.useRealTimers();
+  });
+
+  it('keeps the JSON editor mounted and protects edits made while a refresh is pending', async () => {
+    peerState.active = false;
+    await act(async () => root.render(<McpToolsConfig />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="mcp-json-toggle"]')!.click());
+    const textarea = container.querySelector('textarea')!;
+    let finish!: (value: { jsonConfig: string; fingerprint: string }) => void;
+    loadJsonConfigMock.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    await act(async () => globalEventBus.emit(MCP_CONFIG_CHANGED, { surfaceId: 'local' }));
+    expect(container.querySelector('textarea')).toBe(textarea);
+    const edited = '{"mcpServers":{"draft":{"command":"draft"}}}';
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, edited);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => finish({ jsonConfig: '{"mcpServers":{}}', fingerprint: 'late' }));
+    expect(container.querySelector('textarea')).toBe(textarea);
+    expect(textarea.value).toBe(edited);
   });
 
   it('does not call desktop MCP management APIs during a remote connection', async () => {
@@ -446,6 +466,8 @@ describe('McpToolsConfig remote behavior', () => {
     }));
 
     await act(async () => root.render(<McpToolsConfig />));
+    expect(container.querySelector('[data-openbitfun-part="loadingState"][aria-busy="true"]')).not.toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(200));
     expect(container.textContent).toContain('loading');
     await act(async () => resolveServers([server]));
     const card = container.querySelector('[data-testid="mcp-server-item"]');

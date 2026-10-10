@@ -1,8 +1,15 @@
  
 
 import { api } from './ApiClient';
-import { notifyMcpConfigChanged } from '@/infrastructure/mcp/configEvents';
+import { globalEventBus } from '@/infrastructure/event-bus';
+import { MCP_CONFIG_CHANGED, type MCPConfigChanged, notifyMcpConfigChanged } from '@/infrastructure/mcp/configEvents';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { createSettingsReadCache } from '@/infrastructure/config/services/SettingsReadCache';
+
+const serverSnapshot = createSettingsReadCache<MCPServerInfo[]>();
+globalEventBus.on<MCPConfigChanged>(MCP_CONFIG_CHANGED, ({ surfaceId }) => {
+  if (surfaceId === getActiveSurfaceScope().surfaceId) serverSnapshot.invalidate();
+});
 
 function canonicalConfig(json: string): string {
   return JSON.stringify(JSON.parse(json), (_key, value) => {
@@ -286,6 +293,9 @@ export interface CancelMCPRemoteOAuthRequest {
 }
 
 export class MCPAPI {
+  static getCachedServers(): MCPServerInfo[] | undefined {
+    return serverSnapshot.peek();
+  }
 
   static async initializeServers(): Promise<void> {
     return api.invoke('initialize_mcp_servers');
@@ -298,7 +308,7 @@ export class MCPAPI {
 
    
   static async getServers(): Promise<MCPServerInfo[]> {
-    return api.invoke('get_mcp_servers');
+    return serverSnapshot.read(() => api.invoke('get_mcp_servers'));
   }
 
   static async listResources(request: ListMCPResourcesRequest): Promise<MCPResource[]> {

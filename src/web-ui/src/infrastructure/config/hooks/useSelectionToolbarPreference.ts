@@ -10,7 +10,10 @@ const log = createLogger('SelectionToolbarPreference');
 export function useSelectionToolbarPreference() {
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   const [snapshot, setSnapshot] = useState<{ epoch: number; enabled: boolean | null; error: Error | null }>({
-    epoch: scope.epoch, enabled: null, error: null,
+    epoch: scope.epoch,
+    enabled: configManager.hasCachedConfig(AUTO_SHOW_SELECTION_TOOLBAR_CONFIG_PATH)
+      ? configManager.getCachedConfig<boolean>(AUTO_SHOW_SELECTION_TOOLBAR_CONFIG_PATH) !== false : null,
+    error: null,
   });
   const requestId = useRef(0);
   const reload = useCallback(async () => {

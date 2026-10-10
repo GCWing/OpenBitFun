@@ -1,2 +1,13 @@
 $config-page-content-inline-padding: clamp(12px, 3vw, 20px);
 $config-page-content-max-width: 680px;
+
+// Headers, dividers, and content share one responsive frame on every page.
+@mixin content-frame {
+  box-sizing: border-box;
+  width: min(
+    calc(100% - (2 * #{$config-page-content-inline-padding})),
+    #{$config-page-content-max-width}
+  );
+  min-width: 0;
+  margin-inline: auto;
+}

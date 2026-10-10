@@ -49,7 +49,7 @@ describe('Runtime settings information architecture', () => {
     expect(source).toContain('<Disclosure');
     expect(source).toContain('open={isActive && companionPetListExpanded}');
     expect(source).toContain('className="openbitfun-runtime-settings__pet-summary"');
-    expect(source).toContain('const hasLoadedPageDataRef = useRef(false);');
+    expect(source).toContain('const hasLoadedPageDataRef = useRef(Boolean(cachedSettings && cachedPets));');
     expect(source).toContain('const reloadCompanionPets = useCallback(async () => {');
     expect(source).toContain("if (!isActive) return;");
     expect(source.match(/await reloadCompanionPets\(\);/g)).toHaveLength(2);

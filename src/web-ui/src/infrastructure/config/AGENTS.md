@@ -16,6 +16,15 @@ Follow `src/web-ui/AGENTS.md` for shared frontend rules.
 
 ## Focused verification
 
+For loading states, warm snapshots, asynchronous reads, and device isolation:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/settings src/infrastructure/config/components/common/ConfigLoadingState.test.tsx src/infrastructure/config/hooks/useConfigSeed.test.tsx src/infrastructure/config/hooks/useAIExperienceSettings.test.tsx src/infrastructure/config/hooks/useSelectionToolbarPreference.test.tsx src/infrastructure/config/services/ConfigManager.test.ts src/infrastructure/config/services/SettingsReadCache.test.ts src/infrastructure/config/services/AIExperienceConfigService.test.ts src/infrastructure/config/services/PermissionConfigService.test.ts
+```
+
+These tests simulate device activation and request ordering; they do not exercise
+an actual SSH, relay, peer host, or detached-dispatch connection.
+
 For settings selection sizing, run:
 
 ```bash

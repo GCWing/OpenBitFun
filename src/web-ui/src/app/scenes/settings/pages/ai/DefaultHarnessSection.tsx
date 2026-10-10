@@ -1,3 +1,4 @@
+import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
 import { HARNESS_IDS, canonicalHarnessId } from '@/shared/agents/identity';
 import { Select, type SelectOption } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -5,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import {
   chatInputModePreferenceService,
+  normalizeChatInputModePreference,
   withChatInputDefaultModeStrategy,
   withFixedChatInputDefaultMode,
   type ChatInputDefaultModeStrategy,
@@ -28,8 +30,9 @@ function selectValue(value: string | number | (string | number)[]): string {
 export function DefaultHarnessSection(): React.ReactElement {
   const { t } = useTranslation('settings/runtime');
   const { t: tFlowChat } = useTranslation('flow-chat');
-  const [preference, setPreference] = useState<ChatInputModePreference | null>(null);
-  const [loading, setLoading] = useState(true);
+  const seed = useConfigSeed(['app.flow_chat']);
+  const [preference, setPreference] = useState<ChatInputModePreference | null>(seed.loaded ? normalizeChatInputModePreference(seed.get('app.flow_chat', undefined)) : null);
+  const [loading, setLoading] = useState(!seed.loaded);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const mountedRef = useRef(false);
@@ -37,7 +40,7 @@ export function DefaultHarnessSection(): React.ReactElement {
 
   const loadPreference = useCallback(async () => {
     const generation = ++loadGenerationRef.current;
-    setLoading(true);
+    setLoading(!seed.loaded);
     setLoadFailed(false);
     try {
       const nextPreference = await chatInputModePreferenceService.getPreference();
@@ -58,7 +61,7 @@ export function DefaultHarnessSection(): React.ReactElement {
 
   useEffect(() => {
     mountedRef.current = true;
-    void loadPreference();
+    if (!seed.loaded) void loadPreference();
     const unsubscribe = chatInputModePreferenceService.subscribe(
       nextPreference => {
         if (!mountedRef.current) return;

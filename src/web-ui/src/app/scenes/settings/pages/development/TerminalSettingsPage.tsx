@@ -1,3 +1,5 @@
+import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
+import { createSettingsReadCache } from '@/infrastructure/config/services/SettingsReadCache';
 import '@/app/scenes/settings/pages/shared/ApplicationSettings.scss';
 import { ConfigLoadingState, ConfigMessage, ConfigPageRow, ConfigPageSection, ConfigRetryState } from '@/infrastructure/config/components/common';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
@@ -8,9 +10,11 @@ import { createLogger } from '@/shared/utils/logger';
 import { getTerminalService } from '@/tools/terminal/services';
 import type { ShellInfo } from '@/tools/terminal/types/session';
 import { Combobox, type ComboboxOption } from '@openbitfun/ui';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SettingsPage } from '../shared/SettingsPage';
+const shellInventory = createSettingsReadCache<ShellInfo[]>();
+
 const log = createLogger('TerminalSettingsPage');
 
 const AUTO_DETECT_SHELL_VALUE = '__auto_detect_shell__';
@@ -21,9 +25,13 @@ type TerminalShellOption = ComboboxOption & {
 
 function TerminalSection() {
   const { t } = useTranslation('settings/application');
-  const [defaultShell, setDefaultShell] = useState<string>('');
-  const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const seed = useConfigSeed(['terminal']);
+  const [cachedRuntime] = useState(() => shellInventory.peek());
+  const editRevision = useRef(0);
+  const hasLoaded = useRef(seed.loaded && cachedRuntime !== undefined);
+  const [defaultShell, setDefaultShell] = useState<string>(seed.get<TerminalSettings | null>('terminal', null)?.default_shell ?? '');
+  const [availableShells, setAvailableShells] = useState<ShellInfo[]>((cachedRuntime ?? []).filter(shell => shell.available));
+  const [loading, setLoading] = useState(!hasLoaded.current);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
@@ -34,22 +42,25 @@ function TerminalSection() {
   }, []);
 
   const loadData = useCallback(async () => {
+    const revision = editRevision.current;
     try {
-      setLoading(true);
+      setLoading(!hasLoaded.current);
       setLoadFailed(false);
 
       const [terminalConfig, shells] = await Promise.all([
         configManager.getConfig<TerminalSettings>('terminal'),
-        getTerminalService().getAvailableShells(),
+        shellInventory.read(() => getTerminalService().getAvailableShells()),
       ]);
 
-      setDefaultShell(terminalConfig?.default_shell || '');
+      if (revision === editRevision.current) setDefaultShell(terminalConfig?.default_shell || '');
 
       const availableOnly = shells.filter((s) => s.available);
       setAvailableShells(availableOnly);
+      hasLoaded.current = true;
     } catch (error) {
       log.error('Failed to load terminal config data', error);
       setLoadFailed(true);
+      if (hasLoaded.current) setMessage({ type: 'error', text: t('terminal.messages.loadFailed') });
     } finally {
       setLoading(false);
     }
@@ -61,6 +72,7 @@ function TerminalSection() {
 
   const handleShellChange = useCallback(
     async (value: string) => {
+      editRevision.current += 1;
       const previous = defaultShell;
       try {
         setSaving(true);
@@ -68,7 +80,6 @@ function TerminalSection() {
 
         await configManager.setConfig('terminal.default_shell', value);
 
-        configManager.clearCache();
 
         showMessage('success', t('terminal.messages.updated'));
       } catch (error) {
@@ -108,7 +119,7 @@ function TerminalSection() {
     return <ConfigLoadingState label={t('terminal.messages.loading')} />;
   }
 
-  if (loadFailed) {
+  if (loadFailed && !hasLoaded.current) {
     return (
       <ConfigRetryState
         message={t('terminal.messages.loadFailed')}

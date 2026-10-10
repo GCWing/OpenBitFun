@@ -53,6 +53,7 @@ describe('ModelSettingsPage independent loading', () => {
   });
 
   beforeEach(() => {
+    configManager.clearCache();
     reads = new Map([
       'ai.models', 'ai.default_models', 'ai.proxy',
       'ai.stream_idle_timeout_secs', 'ai.stream_ttft_timeout_secs',
@@ -77,6 +78,21 @@ describe('ModelSettingsPage independent loading', () => {
     act(() => root.unmount());
     container.remove();
     vi.restoreAllMocks();
+  });
+
+  it('renders a warm model pool immediately without starting a read that could overwrite edits', () => {
+    const values: Record<string, unknown> = {
+      'ai.models': [model], 'ai.default_models': { primary: model.id },
+      'ai.proxy': { enabled: false, url: '', username: '', password: '' },
+      'ai.stream_idle_timeout_secs': 120, 'ai.stream_ttft_timeout_secs': 60,
+    };
+    vi.spyOn(configManager, 'hasCachedConfig').mockImplementation(path => path in values);
+    vi.spyOn(configManager, 'getCachedConfig').mockImplementation(<T,>(path: string) => values[path] as T);
+    act(() => root.render(<ModelSettingsPage />));
+    expect(container.querySelector('[data-testid="settings-model-pool"]')?.textContent).toContain(model.model_name);
+    expect(selectors()[0].disabled).toBe(false);
+    expect(configManager.getOptionalConfig).not.toHaveBeenCalled();
+    expect(configManager.getConfig).not.toHaveBeenCalled();
   });
 
   it('shows stable content immediately and releases models without waiting for catalogs or network settings', async () => {
