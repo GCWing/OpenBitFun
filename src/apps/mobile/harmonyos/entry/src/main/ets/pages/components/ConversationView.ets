@@ -9,11 +9,22 @@ import { RemoteLogger } from '../../services/RemoteLogger';
 import { ChatComposerCapabilities } from '../state/ChatComposerCapabilities';
 import { ChatSurface } from '../state/ChatSurface';
 import { ConversationViewState } from '../state/ConversationViewState';
-import { ConversationIntent, ConversationIntents, ConversationIntentType, MessageCopyScope } from '../actions/ConversationIntent';
+import {
+  CommandPaletteAction,
+  CommandPaletteRequest,
+  ConversationIntent,
+  ConversationIntents,
+  ConversationIntentType,
+  MessageCopyScope
+} from '../actions/ConversationIntent';
+import { CommandPalettePresentation } from '../state/CommandPaletteState';
 import { SettingsPlacement } from '../policy/SettingsPlacementPolicy';
 import { AdaptiveSheetOptions } from './AdaptiveSheetOptions';
 import { ChatTimeline } from './ChatTimeline';
+import { CommandChipRow } from './CommandChipRow';
 import { ConversationLoadingState } from './ConversationLoadingState';
+import { SkillPickerSheet } from './SkillPickerSheet';
+import { UsageReportSheet } from './UsageReportSheet';
 import { UserMessageFullTextSheet } from './UserMessageFullTextSheet';
 import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 import {
@@ -62,6 +73,15 @@ export struct ConversationView {
    */
   @Local showFullText: boolean = false;
   @Local fullTextMessage: string = '';
+  /**
+   * The two command-row sheets, opened from the 技能 and 用量 chips.
+   *
+   * Same reasoning as the full-text panel below: they are view state of this
+   * pane, not projected fields, because nothing outside it reads whether a sheet
+   * happens to be open.
+   */
+  @Local showSkillPicker: boolean = false;
+  @Local showUsageReport: boolean = false;
   /**
    * How much of the pane the two floating layers cover, measured rather than
    * assumed: the composer grows with multiline text and attachments, and the
@@ -118,6 +138,8 @@ export struct ConversationView {
     .height('100%')
     .backgroundColor(PAGE_BG)
     .bindSheet($$this.showFullText, this.FullTextSheet(), this.fullTextSheetOptions())
+    .bindSheet($$this.showSkillPicker, this.SkillPickerSheetSurface(), this.skillPickerSheetOptions())
+    .bindSheet($$this.showUsageReport, this.UsageReportSheetSurface(), this.usageReportSheetOptions())
   }
 
   @Builder
@@ -128,6 +150,14 @@ export struct ConversationView {
         this.showFullText = false;
       }
     })
+  }
+
+  private skillPickerSheetOptions(): SheetOptions {
+    return this.adaptiveSheetOptions(this.skillPickerSheetPlacement);
+  }
+
+  private usageReportSheetOptions(): SheetOptions {
+    return this.adaptiveSheetOptions(this.usageReportSheetPlacement);
   }
 
   /**
@@ -479,12 +509,26 @@ export struct ConversationView {
   @Builder
   Composer() {
     Column() {
+      // The command row floats above the composer and is mounted here rather than
+      // in either layout, so the compact overlay, the half-folded pane and the
+      // wide detail pane all get the same row from the same subtree.
+      if (this.commandPalette.visible) {
+        CommandChipRow({
+          palette: this.commandPalette,
+          presentation: this.composerPresentation,
+          onRequest: (request: CommandPaletteRequest) => {
+            this.onCommandPaletteRequest(request);
+          }
+        })
+      }
       ComposerBar({
       presentation: this.composerPresentation,
       capabilities: this.composerCapabilities,
       inputId: this.composerInputId,
       chatInput: this.chatInput,
       selectedImages: this.selectedImages,
+      skillId: this.commandPalette.skillId,
+      commandRowActive: this.commandPalette.visible,
       isBusy: this.isBusy,
       canStop: this.canStop,
       connectionState: this.connectionState,
@@ -496,6 +540,10 @@ export struct ConversationView {
       },
       onRemoveImage: (imageId: string) => {
         this.onRemoveImage(imageId);
+      },
+      onRemoveSkillToken: () => {
+        this.onIntent(ConversationIntents.commandPalette(
+          new CommandPaletteRequest(CommandPaletteAction.ClearSkill)));
       },
       onSend: () => {
         this.onSend();
@@ -515,6 +563,63 @@ export struct ConversationView {
       })
     }
     .width('100%')
+  }
+
+  /**
+   * Hands one command-row tap to the conversation.
+   *
+   * The row's own sheets are view state, the way the full-text panel is: nothing
+   * outside this pane reads them, so opening one is a local decision. Everything
+   * else — the verbs, the catalog read, the draft edits — leaves as the one
+   * typed intent.
+   */
+  private onCommandPaletteRequest(request: CommandPaletteRequest): void {
+    if (request.action === CommandPaletteAction.OpenSkills) {
+      this.showSkillPicker = true;
+    } else if (request.action === CommandPaletteAction.OpenUsage) {
+      this.showUsageReport = true;
+    }
+    this.onIntent(ConversationIntents.commandPalette(request));
+  }
+
+  @Builder
+  private SkillPickerSheetSurface() {
+    SkillPickerSheet({
+      palette: this.commandPalette,
+      onSelect: (skillId: string) => {
+        this.showSkillPicker = false;
+        this.onIntent(ConversationIntents.commandPalette(
+          new CommandPaletteRequest(CommandPaletteAction.SelectSkill, skillId)));
+      },
+      onRefresh: () => {
+        this.onIntent(ConversationIntents.commandPalette(
+          new CommandPaletteRequest(CommandPaletteAction.RefreshCatalog)));
+      },
+      onClose: () => {
+        this.showSkillPicker = false;
+      }
+    })
+  }
+
+  @Builder
+  private UsageReportSheetSurface() {
+    UsageReportSheet({
+      palette: this.commandPalette,
+      onRetry: () => {
+        this.onIntent(ConversationIntents.commandPalette(
+          new CommandPaletteRequest(CommandPaletteAction.RetryUsage)));
+      },
+      onClose: () => {
+        this.showUsageReport = false;
+      }
+    })
+  }
+
+  private adaptiveSheetOptions(placement: SettingsPlacement): SheetOptions {
+    // The same adaptive contract as the full-text panel: the content draws the
+    // surface, the sheet supplies transparency, the scrim, and a drag bar
+    // wherever the placement resolves to a bottom sheet.
+    return AdaptiveSheetOptions.fromPlacement(placement, true);
   }
 
   @Builder
@@ -678,6 +783,7 @@ export struct ConversationView {
   private get selectedImages(): ConversationUiSelectedImage[] { return this.state.selectedImages; }
   private get isVoiceListening(): boolean { return this.state.isVoiceListening; }
   private get chatInput(): string { return this.state.chatInput; }
+  private get commandPalette(): CommandPalettePresentation { return this.state.commandPalette; }
   private get isSessionPinned(): boolean { return this.state.isSessionPinned; }
   private get activeFilePreviewPath(): string { return this.options.activeFilePreviewPath; }
   private get activeFilePreviewLoading(): boolean { return this.options.activeFilePreviewLoading; }
@@ -688,6 +794,8 @@ export struct ConversationView {
   private get composerInputId(): string { return this.options.composerInputId; }
   private get hoverOperateMode(): boolean { return this.options.hoverOperateMode; }
   private get fullTextSheetPlacement(): SettingsPlacement { return this.options.fullTextSheetPlacement; }
+  private get skillPickerSheetPlacement(): SettingsPlacement { return this.options.skillPickerSheetPlacement; }
+  private get usageReportSheetPlacement(): SettingsPlacement { return this.options.usageReportSheetPlacement; }
   private onOpenSidebar(): void { this.dispatchSimple(ConversationIntentType.OpenSidebar); }
   private onBack(): void { this.dispatchSimple(ConversationIntentType.Back); }
   private onTogglePinSession(): void { this.dispatchSimple(ConversationIntentType.TogglePin); }
