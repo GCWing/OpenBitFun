@@ -410,6 +410,17 @@ pub(crate) fn build_http_client(
     options: &SubscriptionHttpOptions,
     provider: &str,
 ) -> Result<reqwest::Client> {
+    build_http_client_builder(options, provider)?
+        .build()
+        .with_context(|| format!("build {provider} subscription http client"))
+}
+
+/// Shares TLS and host proxy configuration while allowing provider-specific
+/// transport restrictions before the client is built.
+pub(crate) fn build_http_client_builder(
+    options: &SubscriptionHttpOptions,
+    provider: &str,
+) -> Result<reqwest::ClientBuilder> {
     openbitfun_services_core::tls_provider::ensure_ring_crypto_provider();
     let mut builder = reqwest::Client::builder()
         .tls_backend_rustls()
@@ -435,9 +446,7 @@ pub(crate) fn build_http_client(
         builder = builder.no_proxy();
     }
 
-    builder
-        .build()
-        .with_context(|| format!("build {provider} subscription http client"))
+    Ok(builder)
 }
 
 /// Per-provider commit barrier for login cancellation/replacement and logout.
