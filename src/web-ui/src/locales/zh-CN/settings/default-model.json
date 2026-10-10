@@ -52,7 +52,7 @@
     "notConfigured": "未配置，将使用主力模型"
   },
   "empty": {
-    "noModels": "暂无可用模型，请先添加 API 模型或导入订阅服务"
+    "noModels": "暂无可用模型"
   },
   "messages": {
     "loadFailed": "加载配置失败",
