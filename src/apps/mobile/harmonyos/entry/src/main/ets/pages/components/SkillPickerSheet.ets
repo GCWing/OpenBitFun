@@ -101,32 +101,38 @@ export struct SkillPickerSheet {
 
   @Builder
   SearchBox() {
-    Row({ space: 8 }) {
-      SymbolGlyph($r('sys.symbol.magnifyingglass'))
-        .fontSize(16)
-        .fontColor([MUTED])
-      TextInput({ placeholder: RemoteI18n.t('commands.skills.searchPlaceholder'), text: this.query })
-        .layoutWeight(1)
-        .height(SKILL_SEARCH_HEIGHT)
-        .fontSize(MobileDesignTypography.bodySmall.size)
-        .fontColor(INK)
-        .placeholderColor(MUTED)
-        .backgroundColor(TRANSPARENT)
-        .padding(0)
-        .maxLines(1)
-        .enabled(!this.isUnavailable())
-        .onChange((value: string) => {
-          this.query = value;
-        })
+    Row() {
+      Row({ space: 8 }) {
+        SymbolGlyph($r('sys.symbol.magnifyingglass'))
+          .fontSize(16)
+          .fontColor([MUTED])
+        TextInput({ placeholder: RemoteI18n.t('commands.skills.searchPlaceholder'), text: this.query })
+          .layoutWeight(1)
+          .height(SKILL_SEARCH_HEIGHT)
+          .fontSize(MobileDesignTypography.bodySmall.size)
+          .fontColor(INK)
+          .placeholderColor(MUTED)
+          .backgroundColor(TRANSPARENT)
+          .padding(0)
+          .maxLines(1)
+          .enabled(!this.isUnavailable())
+          .onChange((value: string) => {
+            this.query = value;
+          })
+      }
+      .width('100%')
+      .height(SKILL_SEARCH_HEIGHT)
+      .padding({ left: 12, right: 12 })
+      .backgroundColor(CARD)
+      .border({ width: 1, color: LINE })
+      .borderRadius(SKILL_SEARCH_RADIUS)
+      .opacity(this.isUnavailable() ? SKILL_UNAVAILABLE_OPACITY : 1)
     }
+    // A 100%-width child cannot inset itself with margin (margin lands outside
+    // the border and overflows the parent), so the wrapper owns the inset and
+    // the bordered box fills what remains.
     .width('100%')
-    .height(SKILL_SEARCH_HEIGHT)
-    .padding({ left: 12, right: 12 })
-    .backgroundColor(CARD)
-    .border({ width: 1, color: LINE })
-    .borderRadius(SKILL_SEARCH_RADIUS)
-    .opacity(this.isUnavailable() ? SKILL_UNAVAILABLE_OPACITY : 1)
-    .margin({ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING, top: 12 })
+    .padding({ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING, top: 12 })
   }
 
   @Builder

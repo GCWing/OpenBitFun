@@ -70,6 +70,7 @@ const paletteState = load('entry/src/main/ets/pages/state/CommandPaletteState.et
 const pageState = load('entry/src/main/ets/pages/state/RemotePageState.ets');
 const composerSource = read('entry/src/main/ets/pages/components/ComposerBar.ets');
 const conversationSource = read('entry/src/main/ets/pages/components/ConversationView.ets');
+const skillSheetSource = read('entry/src/main/ets/pages/components/SkillPickerSheet.ets');
 const transcriptSource = read('entry/src/main/ets/pages/viewmodel/RemoteTranscriptController.ets');
 
 test('the composer takes the token and the row as inputs, and gives the removal back', () => {
@@ -271,6 +272,38 @@ test('the conversation keeps one sheet binding and names the sheet instead', () 
   assert.match(options, /this\.skillPickerSheetPlacement/,
     'each sheet keeps its own placement through the shared binding');
   assert.match(options, /this\.usageReportSheetPlacement/);
+});
+
+test('the picker insets its search box from a wrapper, never with a margin', () => {
+  // Found on device: the bordered box rendered flush against the sheet's edges.
+  // A 100%-width child that insets itself with a horizontal margin pushes its own
+  // border past the parent, so the margin lands outside the frame the user sees
+  // and the box bleeds to the sheet edges. The inset has to belong to a
+  // full-width wrapper, with the bordered box filling the width left inside it.
+  const box = memberBody(skillSheetSource, 'SearchBox');
+  assert.ok(!box.includes('.margin('),
+    'the bordered search box must not combine width 100% with a horizontal margin');
+  assert.match(box,
+    /\.width\('100%'\)\s*\n\s*\.padding\(\{ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING, top: 12 \}\)\s*\n\s*\}/,
+    'the full-width wrapper is the node that owns the sheet inset, from the sheet\'s own constant');
+  assert.equal(box.split('SHEET_HORIZONTAL_PADDING').length - 1, 2,
+    'the wrapper insets both sides and nothing else in the builder does');
+
+  // The box inside it keeps the search geometry and the border, and fills the
+  // content width the wrapper leaves rather than the sheet's full width.
+  const bordered = box.slice(box.indexOf('Row({ space: 8 })'));
+  assert.match(bordered,
+    /\.width\('100%'\)\s*\n\s*\.height\(SKILL_SEARCH_HEIGHT\)\s*\n\s*\.padding\(\{ left: 12, right: 12 \}\)/,
+    'the bordered box fills the width the wrapper left for it');
+  assert.match(bordered, /\.border\(\{ width: 1, color: LINE \}\)\s*\n\s*\.borderRadius\(SKILL_SEARCH_RADIUS\)/,
+    'the box keeps the border and radius the design calls for');
+  assert.equal(bordered.split('.border(').length - 1, 1,
+    'one bordered box in the builder, and the wrapper is not a second one');
+  // A parent's modifiers are written after the child they wrap, so the inset
+  // coming last is what makes it the wrapper's own padding and not the box's.
+  assert.ok(box.indexOf('.padding({ left: SHEET_HORIZONTAL_PADDING') >
+    box.indexOf('.border({ width: 1, color: LINE })'),
+    'the inset wraps the bordered box rather than sitting on it');
 });
 
 test('the conversation hands the composer both inputs from one projection', () => {
