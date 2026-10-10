@@ -380,7 +380,6 @@ impl Tool for OpenBitFunControlTool {
                 },
                 "value_null": {
                     "type": "boolean",
-                    "enum": [true],
                     "description": "Set a nullable option to null; pass true."
                 },
                 "cursor": {
@@ -848,7 +847,23 @@ mod tests {
         let schema = OpenBitFunControlTool::new().input_schema();
         assert_eq!(schema["properties"]["value_boolean"]["type"], "boolean");
         assert_eq!(schema["properties"]["value_integer"]["type"], "integer");
+        assert_eq!(schema["properties"]["value_null"]["type"], "boolean");
+        assert!(schema["properties"]["value_null"].get("enum").is_none());
         assert!(schema["properties"].get("value").is_none());
+    }
+
+    #[test]
+    fn null_value_requires_true() {
+        assert_eq!(
+            OpenBitFunControlTool::configure_value(&json!({ "value_null": true })),
+            Ok(Some(Value::Null))
+        );
+        for value in [json!(false), json!(null), json!("true"), json!(1)] {
+            assert_eq!(
+                OpenBitFunControlTool::configure_value(&json!({ "value_null": value })),
+                Err("value_null must be true when used".to_string())
+            );
+        }
     }
 
     #[tokio::test]
