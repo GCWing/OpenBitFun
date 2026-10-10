@@ -16,9 +16,11 @@ function load(relativePath, stubs = {}) {
     }
   }).outputText;
   const exported = {};
-  // ArkTS decorators are globals in the framework; here they only have to exist,
-  // and a class decorator must hand the class back or the class is replaced by it.
-  const decorator = (target) => target;
+  // ArkTS decorators are globals in the framework, and `__decorate` keeps the
+  // decorated member when a decorator returns nothing — which is what `@Trace`
+  // does. A class decorator returning nothing keeps its class for the same
+  // reason, so one stub serves both.
+  const decorator = () => undefined;
   new Function('require', 'exports', 'ObservedV2', 'Trace', js)(
     (id) => stubs[id] ?? {}, exported, decorator, decorator);
   return exported;

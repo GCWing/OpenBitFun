@@ -110,7 +110,10 @@ class CommandPalettePreviewClient implements RemoteCommandPaletteClient {
       throw new HostInvokeRefusal('get_mode_skill_configs', 'workspace not found for this session');
     }
     if (this.catalogOutcome === 'unreachable') {
-      throw new Error('request timed out');
+      // The bridge answering without reaching a command handler: `ok: false` on
+      // the wire, but no command was refused, so the row must not say one was.
+      throw new HostInvokeRefusal('get_mode_skill_configs',
+        "peer host invoke timed out after 120s for 'get_mode_skill_configs'");
     }
     return CommandCatalogProjection.parseHostCatalog(PREVIEW_SKILL_ROWS);
   }
@@ -255,8 +258,8 @@ export struct CommandPalettePreview {
    *
    * The three failure kinds are the three the app tells apart, so a screenshot
    * can be read against the words a person would actually get: the host naming
-   * the version gap, the host refusing for a reason of its own, and a wire that
-   * answered nothing.
+   * the version gap, the host refusing a command for a reason of its own, and
+   * the bridge answering without ever reaching a command handler.
    */
   private static catalogOutcomeFor(variant: string): string {
     if (variant === 'degraded' || variant === 'gap') {

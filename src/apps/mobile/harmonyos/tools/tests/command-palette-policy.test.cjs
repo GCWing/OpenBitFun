@@ -331,8 +331,8 @@ test('a failed skill read is classified by whether the host answered', () => {
   CommandPaletteProbeFailure.VersionGap,
   "the host's own version-gap sentence is the one thing that licenses the badge");
   assert.equal(Policy.probeFailure(true, 'Command not found: get_mode_skill_configs'),
-    CommandPaletteProbeFailure.VersionGap,
-    "the desktop's command registry says the same thing in its own words");
+    CommandPaletteProbeFailure.Refused,
+    "the desktop's command registry refusing by name is a command-level refusal");
   assert.equal(Policy.probeFailure(true, 'workspace not found'),
     CommandPaletteProbeFailure.Refused,
     'a refusal about something else keeps the host text without claiming a version');
@@ -354,6 +354,40 @@ test('a failed skill read is classified by whether the host answered', () => {
   assert.equal(commandPaletteProbeReady(CommandPaletteCatalogStatus.Ready), true);
   assert.equal(commandPaletteProbeReady(CommandPaletteCatalogStatus.Failed), false);
   assert.equal(commandPaletteProbeReady(CommandPaletteCatalogStatus.Loading), false);
+});
+
+test('the bridge failing to deliver is not the host refusing', () => {
+  // `host_invoke` answers `ok: false` both when a command is declined and when
+  // the bridge never reached a handler. The second kind must not borrow the
+  // refusal's copy — which says the desktop answered — nor its version verdict.
+  // The wordings are the ones `peer_host_invoke.rs:314-401` produces.
+  const bridgeFailures = [
+    "peer host invoke timed out after 120s for 'get_mode_skill_configs'",
+    'peer app handle not ready',
+    'peer host invoke channel closed',
+    'failed to emit peer host invoke request: window is gone',
+    'peer host invoke lock poisoned: poisoned'
+  ];
+  for (const text of bridgeFailures) {
+    assert.equal(Policy.probeFailure(true, text), CommandPaletteProbeFailure.Unreachable,
+      `"${text}" reached no command handler, so it is a connection to fix`);
+    assert.equal(Policy.probeBadgeKey(Policy.probeFailure(true, text)), '',
+      `"${text}" is no evidence about the desktop's version`);
+  }
+  // The refusal wording those failures sit beside still reads as one, and it
+  // earns no upgrade badge: only the sentence that names a version does.
+  assert.equal(Policy.probeFailure(true, 'Command not found: get_mode_skill_configs'),
+    CommandPaletteProbeFailure.Refused);
+  assert.equal(Policy.probeBadgeKey(Policy.probeFailure(true, 'Command not found: get_mode_skill_configs')), '',
+    'a missing command name is not the host telling the user to update');
+  // Non-answer markers are checked first, so a mixed sentence (synthetic: the
+  // two wordings never travel together) stays a connection problem.
+  assert.equal(Policy.probeFailure(true, 'peer host invoke timed out after 120s; peer host version'),
+    CommandPaletteProbeFailure.Unreachable);
+
+  // The copy that stays behind the refusal kind is the one that asserts an answer.
+  assert.notEqual(Policy.probeBodyKey(CommandPaletteProbeFailure.Refused),
+    Policy.probeBodyKey(CommandPaletteProbeFailure.Unreachable));
 });
 
 test('the token becomes message content in front of free text', () => {

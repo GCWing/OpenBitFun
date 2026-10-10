@@ -48,16 +48,34 @@ export function commandPaletteProbeReady(status: string): boolean {
 /**
  * The host's own wording when it does not have a command in this version.
  *
- * `PeerRefusal::UnknownToHost` is the peer-host registry's sentence and the
- * desktop's command registry answers `Command not found:` for a name it does not
- * carry. Both say the same thing about the command set, which is the only claim
- * the palette makes; every other refusal keeps the host's text without turning
- * it into a version verdict.
+ * `PeerRefusal::UnknownToHost` is the peer-host registry's sentence, and it is
+ * the only thing that names a version. The desktop's command registry answers
+ * `Command not found: <name>` for a name it does not carry, which is a refusal
+ * about the command rather than a statement about the build: it keeps the
+ * refusal copy and leaves the upgrade claim to the sentence that makes it.
  */
 const VERSION_GAP_MARKERS: string[] = [
   'unknown to this openbitfun',
-  'peer host version',
-  'command not found'
+  'peer host version'
+];
+
+/**
+ * The bridge's own wording when it never got to a command handler.
+ *
+ * `host_invoke` answers `ok: false` for two unrelated events: a command the host
+ * declined, and the bridge between the relay and the desktop failing to deliver
+ * it at all (`peer_host_invoke.rs`: the app handle is not up yet, the request
+ * could not be emitted, the channel closed, or the whole call timed out). The
+ * second kind is a connection that did not reach a command, so it must not be
+ * described as the desktop having answered — the refusal copy asserts an answer,
+ * and the version claim would be pure invention.
+ */
+const NON_ANSWER_MARKERS: string[] = [
+  'peer host invoke',
+  'peer app handle not ready',
+  'failed to emit',
+  'channel closed',
+  'lock poisoned'
 ];
 
 /** The five chips of the composer command row, in their on-screen order. */
@@ -340,16 +358,25 @@ export class CommandPalettePolicy {
   /**
    * Classifies a failed skill read.
    *
-   * `answered` is the part the app can be sure of: the host replied to this very
-   * command. Its wording then decides whether the reply was the version gap it
-   * names explicitly or a refusal for some other reason, and a read that never
-   * reached a host is neither.
+   * `answered` is what the wire says: the host's bridge replied to this very
+   * command with a refusal rather than the request never landing. That is still
+   * not enough to tell the user their desktop is out of date, so the text
+   * decides — the bridge failing to deliver is a connection problem whatever
+   * `answered` says, the host's version-gap sentence is the upgrade, and the
+   * rest is the host declining for a reason of its own.
    */
   static probeFailure(answered: boolean, hostText: string): string {
     if (!answered) {
       return CommandPaletteProbeFailure.Unreachable;
     }
     const text = hostText.toLowerCase();
+    // Checked before the version markers: a bridge that never reached a command
+    // handler has no opinion about the command set either.
+    for (const marker of NON_ANSWER_MARKERS) {
+      if (text.indexOf(marker) >= 0) {
+        return CommandPaletteProbeFailure.Unreachable;
+      }
+    }
     for (const marker of VERSION_GAP_MARKERS) {
       if (text.indexOf(marker) >= 0) {
         return CommandPaletteProbeFailure.VersionGap;

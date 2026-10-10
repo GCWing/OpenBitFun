@@ -4,13 +4,23 @@ const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
 
-function load(relativePath) {
+function load(relativePath, stubs = {}) {
   const source = fs.readFileSync(path.join(__dirname, '../..', relativePath), 'utf8');
   const js = ts.transpileModule(source, {
-    compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS}
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.CommonJS,
+      experimentalDecorators: true
+    }
   }).outputText;
   const exported = {};
-  new Function('require', 'exports', js)(() => ({}), exported);
+  // ArkTS decorators are globals in the framework, and `__decorate` keeps the
+  // decorated member when a decorator returns nothing — which is what `@Trace`
+  // does. Returning the target instead would freeze a copy of it onto the
+  // prototype and shadow every field the constructor never assigned.
+  const decorator = () => undefined;
+  new Function('require', 'exports', 'ObservedV2', 'Trace', js)(
+    (id) => stubs[id] ?? {}, exported, decorator, decorator);
   return exported;
 }
 
@@ -40,6 +50,7 @@ function memberBody(source, name) {
   throw new Error(`unbalanced ${name}() body`);
 }
 
+const policy = load('entry/src/main/ets/services/CommandPalettePolicy.ets');
 const {
   CommandPalettePolicy: Policy,
   CommandPaletteAvailability,
@@ -47,7 +58,16 @@ const {
   CommandPaletteChipKind,
   CommandPaletteChipState,
   CommandPaletteProbeFailure
-} = load('entry/src/main/ets/services/CommandPalettePolicy.ets');
+} = policy;
+// The page state and the palette state it owns, loaded for their behavior: the
+// draft-ownership test below drives the real method rather than its source.
+const paletteState = load('entry/src/main/ets/pages/state/CommandPaletteState.ets', {
+  '../../services/CommandPalettePolicy': policy,
+  '../policy/UsageReportPresentationPolicy': {
+    UsageReportPresentationPolicy: {present: () => ({sections: [], partial: false})}
+  }
+});
+const pageState = load('entry/src/main/ets/pages/state/RemotePageState.ets');
 const composerSource = read('entry/src/main/ets/pages/components/ComposerBar.ets');
 const conversationSource = read('entry/src/main/ets/pages/components/ConversationView.ets');
 const transcriptSource = read('entry/src/main/ets/pages/viewmodel/RemoteTranscriptController.ets');
@@ -139,19 +159,65 @@ test('an accepted send consumes the token and a refused one puts it back', () =>
     'a rollback must return the token the commit would have consumed');
 });
 
+/**
+ * The page state's draft-ownership method, driven directly.
+ *
+ * `prepareComposerSubmission` is the one place that consumes and restores the
+ * composer's local picks, and it only reaches into the conversation's own
+ * submission and the palette state it owns, so the test can call the production
+ * method with those two collaborators and no ArkUI around it.
+ */
+function draftOwnership() {
+  const inner = {commits: 0, rollbacks: 0};
+  const page = Object.create(pageState.RemotePageState.prototype);
+  page.conversation = {
+    prepareComposerSubmission: () => ({
+      commit: () => {
+        inner.commits += 1;
+      },
+      rollback: () => {
+        inner.rollbacks += 1;
+      }
+    })
+  };
+  page.commandPalette = new paletteState.CommandPaletteState();
+  return {page, inner};
+}
+
 test('a sent goal stops being pending, and a refused one goes back to pending', () => {
   // The lit chip says the argument is still missing. Leaving it lit over a
-  // `/goal` the host just accepted would contradict the conversation behind it.
-  const state = read('entry/src/main/ets/pages/state/RemotePageState.ets');
-  const prepare = state.slice(state.indexOf('prepareComposerSubmission('),
-    state.indexOf('setVoiceListening('));
-  assert.match(prepare, /const goalPending = this\.commandPalette\.goalPending;/);
-  assert.match(prepare, /if \(goalPending\) \{\s*\n\s*this\.commandPalette\.setGoalPending\(false\);\s*\n\s*\}/,
-    'the commit that consumed the draft consumes the lit chip');
-  assert.match(prepare, /if \(goalPending && !this\.commandPalette\.goalPending\) \{\s*\n\s*this\.commandPalette\.setGoalPending\(true\);\s*\n\s*\}/,
-    'a rollback puts the chip back exactly as the commit found it');
-  assert.ok(prepare.indexOf('setGoalPending(false)') < prepare.indexOf('rollback:'),
-    'the chip is cleared on commit and only restored by a rollback');
+  // `/goal` the host just accepted would contradict the conversation behind it,
+  // and a send the host refused must not take the chip away with it.
+  const accepted = draftOwnership();
+  accepted.page.commandPalette.setSkill('plan', 'Plan');
+  accepted.page.commandPalette.setGoalPending(true);
+
+  const submission = accepted.page.prepareComposerSubmission('session-a', '/goal ship it', []);
+  submission.commit();
+  assert.equal(accepted.inner.commits, 1, 'the draft it was given is the draft it commits');
+  assert.equal(accepted.page.commandPalette.goalPending, false, 'the accepted send consumed the chip');
+  assert.equal(accepted.page.commandPalette.skillId, '', 'and the token with it');
+  assert.equal(accepted.page.commandPalette.skillLabel, '');
+
+  const refused = draftOwnership();
+  refused.page.commandPalette.setSkill('plan', 'Plan');
+  refused.page.commandPalette.setGoalPending(true);
+  refused.page.prepareComposerSubmission('session-a', '/goal ship it', []).rollback();
+  assert.equal(refused.inner.rollbacks, 1, 'a refused send gives the draft back');
+  assert.equal(refused.page.commandPalette.goalPending, true, 'and the lit chip with it');
+  assert.equal(refused.page.commandPalette.skillId, 'plan');
+  assert.equal(refused.page.commandPalette.skillLabel, 'Plan',
+    'the restored token is the one that was taken, name included');
+});
+
+test('a goal with no skill still stops being pending when it is sent', () => {
+  // The two picks are consumed independently: the token is optional, the chip is
+  // not, and a goal send carries no token at all.
+  const ownership = draftOwnership();
+  ownership.page.commandPalette.setGoalPending(true);
+  ownership.page.prepareComposerSubmission('session-a', '/goal ship it', []).commit();
+  assert.equal(ownership.page.commandPalette.goalPending, false);
+  assert.equal(ownership.page.commandPalette.skillId, '');
 });
 
 test('the goal chip prefills the draft and takes it back on a second tap', () => {
