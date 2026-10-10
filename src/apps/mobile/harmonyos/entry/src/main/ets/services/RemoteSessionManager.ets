@@ -17,6 +17,7 @@ import { RemoteFileDownloadClient } from './RemoteFileDownloadController';
 import { RemoteLogger } from './RemoteLogger';
 import { RemoteModelClient } from './RemoteModelController';
 import { RemoteCommandPaletteClient, RemoteCommandPaletteScope, RemoteSkillCatalogQuery } from './RemoteCommandPaletteController';
+import { HostInvokeRefusal } from './HostInvokeRefusal';
 import { CommandCatalogProjection, RemoteModeSkillRow } from './CommandCatalogProjection';
 import { RemoteResponseMapper } from './RemoteResponseMapper';
 import { stampRemoteSessionsWorkspace } from './RemoteSessionIdentity';
@@ -101,9 +102,16 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
     return (this.hostCapabilities || []).indexOf(REMOTE_CAPABILITY_HOST_STREAM_V1) >= 0;
   }
 
+  /**
+   * Sends one product command through the host bridge.
+   *
+   * A refusal is thrown as `HostInvokeRefusal` rather than a bare `Error` so the
+   * caller can tell a host that answered from a connection that did not: only the
+   * first may be described to the user as the host's own decision.
+   */
   async hostInvoke<T>(command: string, args: Object): Promise<T> {
     const response = await this.send<HostInvokeResponse<T>>({ cmd: 'host_invoke', command: command, args: args });
-    if (!response.ok) throw new Error(response.error || 'Remote host operation failed');
+    if (!response.ok) throw new HostInvokeRefusal(command, response.error || '');
     return response.value as T;
   }
 

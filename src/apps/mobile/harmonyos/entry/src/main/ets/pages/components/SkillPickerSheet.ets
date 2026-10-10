@@ -8,7 +8,12 @@ import {
   SkillCatalogRow,
   SkillCatalogSection
 } from '../../services/CommandCatalogProjection';
-import { CommandPaletteCatalogStatus, CommandPalettePresentation } from '../state/CommandPaletteState';
+import {
+  CommandPaletteCatalogStatus,
+  CommandPalettePolicy,
+  CommandPaletteProbeFailure
+} from '../../services/CommandPalettePolicy';
+import { CommandPalettePresentation } from '../state/CommandPaletteState';
 import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 import { AppActionButton, AppActionStyle } from './AppActionButton';
 import { SheetCloseHeader } from './SheetCloseHeader';
@@ -42,7 +47,7 @@ const SKILL_UNAVAILABLE_OPACITY: number = 0.4;
 @ComponentV2
 export struct SkillPickerSheet {
   @Param palette: CommandPalettePresentation = CommandPalettePresentation.hidden();
-  @Event onSelect: (skillId: string) => void = (_skillId: string) => {};
+  @Event onSelect: (skillId: string, skillLabel: string) => void = (_skillId: string, _skillLabel: string) => {};
   @Event onRefresh: () => void = () => {};
   @Event onClose: () => void = () => {};
   @Local query: string = '';
@@ -265,7 +270,7 @@ export struct SkillPickerSheet {
     .borderRadius(12)
     .accessibilityText(`${row.name} · ${row.insertHint}`)
     .onClick(() => {
-      this.onSelect(row.id);
+      this.onSelect(row.id, row.name);
     })
   }
 
@@ -282,7 +287,15 @@ export struct SkillPickerSheet {
     .justifyContent(FlexAlign.Center)
   }
 
-  /** The catalog read answered nothing: say why, and offer the re-check. */
+  /**
+   * The read did not answer, so the sheet explains and offers the re-check.
+   *
+   * What it claims follows from how the read failed: a host that reported the
+   * version gap is an upgrade, a host that refused for its own reasons is quoted,
+   * and a read that never reached a host is a connection to look at. Claiming a
+   * version gap for a timeout would send the user to update a desktop that is
+   * already current.
+   */
   @Builder
   UnavailableState() {
     Column({ space: 10 }) {
@@ -402,10 +415,10 @@ export struct SkillPickerSheet {
   }
 
   /**
-   * The probe failed, or a chip was reached while it still had to wait.
+   * The read did not answer, so there is no list to show.
    *
-   * Both land on the same explanation because both mean "this desktop did not
-   * answer"; the difference is only which sentence says it.
+   * The row's own explanation counts too, because a chip can reach this sheet
+   * while the read that would fill it is still outstanding.
    */
   private isUnavailable(): boolean {
     if (this.palette.catalogStatus === CommandPaletteCatalogStatus.Failed) {
@@ -415,13 +428,24 @@ export struct SkillPickerSheet {
   }
 
   private unavailableTitleKey(): string {
-    return this.palette.rowReasonKey.length > 0 ?
-      'commands.skills.degradedTitle' : 'commands.skills.unavailableTitle';
+    return CommandPalettePolicy.probeTitleKey(this.failure());
   }
 
   private unavailableBodyKey(): string {
-    return this.palette.rowReasonKey.length > 0 ?
-      'commands.skills.degradedBody' : 'commands.skills.unavailableBody';
+    return CommandPalettePolicy.probeBodyKey(this.failure());
+  }
+
+  /**
+   * How the read failed, as this sheet tells it.
+   *
+   * A read that never failed — the row is explaining something else — is not a
+   * version claim either, so it takes the same wording as an unreachable host.
+   */
+  private failure(): string {
+    if (this.palette.catalogStatus !== CommandPaletteCatalogStatus.Failed) {
+      return CommandPaletteProbeFailure.Unreachable;
+    }
+    return this.palette.catalogFailure;
   }
 
   private rowTag(row: SkillCatalogRow): string {

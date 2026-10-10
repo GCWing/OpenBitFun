@@ -112,7 +112,7 @@ export class RemoteTranscriptController {
       return;
     }
     if (request.action === CommandPaletteAction.SelectSkill) {
-      palette.setSkill(request.skillId);
+      palette.setSkill(request.skillId, request.skillLabel);
       return;
     }
     if (request.action === CommandPaletteAction.ClearSkill) {
@@ -221,9 +221,10 @@ export class RemoteTranscriptController {
       return;
     }
     // The skill token is a chip beside the field, so this is where it becomes
-    // message content — once, and only for the draft being sent.
-    const skillId = this.remote.commandPalette.skillId;
-    const text = rawText.length > 0 ? CommandPalettePolicy.composeSubmissionText(rawText, skillId) :
+    // message content — once, and only for the draft being sent. It is built from
+    // the picked skill's name, which is the form the desktop's own picker writes.
+    const skillLabel = this.remote.commandPalette.skillLabel;
+    const text = rawText.length > 0 ? CommandPalettePolicy.composeSubmissionText(rawText, skillLabel) :
       (images.length > 0 ? RemoteI18n.t('chat.analyzeImageDefault') : '');
     const sessionId = this.remote.activeSession.sessionId || '';
     if ((!text && images.length === 0) || !sessionId || this.remote.isBusy || this.remote.connectionState !== 'connected' ||

@@ -2,8 +2,9 @@ import {
   RemoteCommandCatalog,
   RemoteSessionUsageReport
 } from '../model/RemoteModels';
-import { CommandPaletteNoticeKind, CommandPalettePolicy } from './CommandPalettePolicy';
+import { CommandPaletteNoticeKind, CommandPalettePolicy, CommandPaletteProbeFailure } from './CommandPalettePolicy';
 import { ConnectionErrorPolicy } from './ConnectionErrorPolicy';
+import { hostInvokeRefusalText, isHostInvokeRefusal } from './HostInvokeRefusal';
 import { RemoteLogger } from './RemoteLogger';
 
 /**
@@ -45,10 +46,11 @@ export interface RemoteCommandPaletteCallbacks {
   onCatalogLoading: (sessionId: string) => void;
   onCatalogReady: (sessionId: string, catalog: RemoteCommandCatalog) => void;
   /**
-   * The read failed. This is the probe's negative answer — the row degrades and
-   * the sheet offers 「重新检查」, which replays it.
+   * The read failed. `failure` is how it failed — a host that refused, or a
+   * connection that never reached one — and it is what decides whether the row
+   * may tell the user their desktop is out of date.
    */
-  onCatalogFailed: (sessionId: string, errorText: string) => void;
+  onCatalogFailed: (sessionId: string, errorText: string, failure: string) => void;
   onCommandStarted: (sessionId: string, wireAction: string) => void;
   /** A settled verb. `errorText` is empty on success, and the host's message is. */
   onCommandSettled: (sessionId: string, wireAction: string, errorText: string, message: string) => void;
@@ -62,10 +64,11 @@ export interface RemoteCommandPaletteCallbacks {
 /**
  * How far the palette's behavior probe has got for the active session.
  *
- * There is no capability handshake to consult, so the row reads this instead:
- * `Probed` is the only state whose chips may reach the host, `Unprobed` is where
- * every session starts (and reads like a busy row for one round trip), and
- * `Failed` is a desktop that refused the read and needs a re-check or an update.
+ * There is no capability handshake to consult, so the picker reads this instead:
+ * `Probed` is the state whose rows may be listed, `Unprobed` is where every
+ * session starts (and reads like a waiting chip for one round trip), and
+ * `Failed` is a read that did not answer — which is a reason to re-check, and
+ * only sometimes a reason to upgrade.
  */
 export enum CommandPaletteProbe {
   Unprobed = 'unprobed',
@@ -80,6 +83,8 @@ export class RemoteCommandPaletteController {
   private catalog?: RemoteCommandCatalog;
   /** The probe's answer for `catalogSessionId`. */
   private catalogProbe: string = CommandPaletteProbe.Unprobed;
+  /** How the read failed, for `catalogSessionId`. */
+  private catalogFailure: string = CommandPaletteProbeFailure.None;
   /** The host's own text for a failed probe, shown where the row explains itself. */
   private catalogErrorText: string = '';
   /** Wire id of the palette verb in flight, or '' when the row is idle. */
@@ -108,6 +113,11 @@ export class RemoteCommandPaletteController {
     return this.catalogSessionId === sessionId ? this.catalogProbe : CommandPaletteProbe.Unprobed;
   }
 
+  /** How this session's failed read failed, or `None` when it did not. */
+  catalogFailureFor(sessionId: string): string {
+    return this.catalogSessionId === sessionId ? this.catalogFailure : CommandPaletteProbeFailure.None;
+  }
+
   /** The host's refusal text for this session's failed probe, or ''. */
   catalogErrorFor(sessionId: string): string {
     return this.catalogSessionId === sessionId ? this.catalogErrorText : '';
@@ -119,6 +129,7 @@ export class RemoteCommandPaletteController {
     this.catalogSessionId = '';
     this.catalog = undefined;
     this.catalogProbe = CommandPaletteProbe.Unprobed;
+    this.catalogFailure = CommandPaletteProbeFailure.None;
     this.catalogErrorText = '';
     this.runningAction = '';
   }
@@ -133,8 +144,12 @@ export class RemoteCommandPaletteController {
    *
    * `force` is the user's 「重新检查」: it replays a read that failed, so a
    * desktop upgraded since the last attempt is picked up without restarting the
-   * app. A non-forced call with an answer already in hand does nothing, which is
-   * what keeps this off the render path.
+   * app. A non-forced call with an answer already in hand does not read again —
+   * that is what keeps this off the render path — but it does hand the answer
+   * back, because the cache outlives the state it was painted into. Re-entering a
+   * session drops the page's palette state while this controller keeps the
+   * answer, so a silent early return would draw a row that waits for an answer
+   * this controller already has.
    */
   async loadCatalog(
     sessionId: string,
@@ -147,10 +162,12 @@ export class RemoteCommandPaletteController {
     }
     if (!force && this.catalogSessionId === sessionId &&
       this.catalogProbe !== CommandPaletteProbe.Unprobed) {
+      this.republishProbeAnswer(sessionId);
       return;
     }
     this.catalogSessionId = sessionId;
     this.catalogProbe = CommandPaletteProbe.Unprobed;
+    this.catalogFailure = CommandPaletteProbeFailure.None;
     this.catalogErrorText = '';
     if (force) {
       this.catalog = undefined;
@@ -175,14 +192,36 @@ export class RemoteCommandPaletteController {
       if (!canApply(sessionId)) {
         return;
       }
-      // A host that does not serve the read is a degraded palette, not a hidden
-      // one: the row greys itself and the sheet says why, with a way to re-check.
+      // A read that did not answer leaves the picker's chip waiting for a
+      // re-check, and only a host that named the version gap gets the upgrade
+      // badge: "your desktop is too old" is not a thing to say about a timeout.
+      const answered = isHostInvokeRefusal(err);
+      const errorText = answered ? hostInvokeRefusalText(err) : ConnectionErrorPolicy.errorText(err);
       this.catalog = undefined;
       this.catalogProbe = CommandPaletteProbe.Failed;
-      this.catalogErrorText = ConnectionErrorPolicy.errorText(err);
+      this.catalogErrorText = errorText;
+      this.catalogFailure = CommandPalettePolicy.probeFailure(answered, errorText);
       RemoteLogger.warn(
-        `command catalog failed session=${RemoteCommandPaletteController.shortSessionId(sessionId)}: ${String(err)}`);
-      this.callbacks.onCatalogFailed(sessionId, this.catalogErrorText);
+        `command catalog failed session=${RemoteCommandPaletteController.shortSessionId(sessionId)} ` +
+          `failure=${this.catalogFailure}: ${String(err)}`);
+      this.callbacks.onCatalogFailed(sessionId, this.catalogErrorText, this.catalogFailure);
+    }
+  }
+
+  /**
+   * Hands the cached answer back to whoever is painting the row now.
+   *
+   * The controller owns the probe's answer and the page owns its presentation;
+   * re-publishing keeps one owner of the truth instead of letting the two drift
+   * apart across a session that is left and re-entered.
+   */
+  private republishProbeAnswer(sessionId: string): void {
+    if (this.catalogProbe === CommandPaletteProbe.Probed && this.catalog !== undefined) {
+      this.callbacks.onCatalogReady(sessionId, this.catalog);
+      return;
+    }
+    if (this.catalogProbe === CommandPaletteProbe.Failed) {
+      this.callbacks.onCatalogFailed(sessionId, this.catalogErrorText, this.catalogFailure);
     }
   }
 

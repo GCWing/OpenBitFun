@@ -352,11 +352,13 @@ export class RemotePageState {
   }
 
   /**
-   * Draft ownership for a send, including the palette's skill token.
+   * Draft ownership for a send, including the palette's two local picks.
    *
-   * The token is a chip beside the field rather than text inside it, so it has
-   * to travel with the same ownership rules as the draft: consumed by the commit
-   * that the host accepted, and put back by the rollback that it did not.
+   * The skill token and the lit goal chip are the composer's local state rather
+   * than text in the field, so each travels with the draft's own ownership rules:
+   * consumed by the commit the host accepted, and put back by the rollback that
+   * it did not. A goal chip left lit over a sent `/goal` would say the objective
+   * is still missing after it just went out.
    */
   prepareComposerSubmission(
     sessionId: string,
@@ -365,6 +367,8 @@ export class RemotePageState {
   ): ComposerSubmission {
     const inner = this.conversation.prepareComposerSubmission(sessionId, text, images);
     const skillId = this.commandPalette.skillId;
+    const skillLabel = this.commandPalette.skillLabel;
+    const goalPending = this.commandPalette.goalPending;
     return {
       commit: (): void => {
         const hadSkill = this.commandPalette.skillId.length > 0;
@@ -372,11 +376,17 @@ export class RemotePageState {
         if (hadSkill) {
           this.commandPalette.clearSkill();
         }
+        if (goalPending) {
+          this.commandPalette.setGoalPending(false);
+        }
       },
       rollback: (): void => {
         inner.rollback();
         if (skillId.length > 0 && this.commandPalette.skillId.length === 0) {
-          this.commandPalette.setSkill(skillId);
+          this.commandPalette.setSkill(skillId, skillLabel);
+        }
+        if (goalPending && !this.commandPalette.goalPending) {
+          this.commandPalette.setGoalPending(true);
         }
       }
     };

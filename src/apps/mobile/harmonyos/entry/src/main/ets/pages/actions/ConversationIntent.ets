@@ -55,15 +55,29 @@ export enum CommandPaletteAction {
 
 export class CommandPaletteRequest {
   readonly action: CommandPaletteAction;
-  /** The picked skill, for `SelectSkill`; empty otherwise. */
+  /** The picked skill's key, for `SelectSkill`; empty otherwise. */
   readonly skillId: string;
   /** The verb a `RetryCommand` repeats, empty otherwise. */
   readonly wireAction: string;
+  /**
+   * The picked skill's name, for `SelectSkill`; empty otherwise.
+   *
+   * It travels beside the key because the two are not the same string and the
+   * user sees only this one: the message carries `[$<name>]` while the row's
+   * identity, and every comparison the picker makes, stays the key.
+   */
+  readonly skillLabel: string;
 
-  constructor(action: CommandPaletteAction, skillId: string = '', wireAction: string = '') {
+  constructor(
+    action: CommandPaletteAction,
+    skillId: string = '',
+    wireAction: string = '',
+    skillLabel: string = ''
+  ) {
     this.action = action;
     this.skillId = skillId;
     this.wireAction = wireAction;
+    this.skillLabel = skillLabel;
   }
 }
 

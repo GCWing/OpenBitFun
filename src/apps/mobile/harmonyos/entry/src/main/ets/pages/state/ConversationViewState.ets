@@ -22,7 +22,7 @@ import { AppRoute } from '../navigation/AppRouteContract';
 import { ConversationCoreState } from './ConversationCoreState';
 import { GeneralChatPageState } from './GeneralChatPageState';
 import { RemotePageState } from './RemotePageState';
-import { CommandPalettePresentation, commandPaletteProbeReady } from './CommandPaletteState';
+import { CommandPalettePresentation } from './CommandPaletteState';
 
 /** Immutable presentation state consumed by ConversationView. */
 export class ConversationViewState {
@@ -94,7 +94,6 @@ export class ConversationViewState {
     state.interactionMailbox = remote.interactionMailbox;
     state.commandPalette = CommandPalettePresentation.project(
       remote.commandPalette,
-      commandPaletteProbeReady(remote.commandPalette.catalogStatus),
       state.activeSession.sessionId.length > 0,
       state.isBusy);
     return state;

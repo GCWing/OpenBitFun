@@ -2762,7 +2762,7 @@
     },
     {
       "name": "commands_degradedReason",
-      "value": "The connected desktop is too old for these commands. Upgrade OpenBitFun on that device; you can still send messages in this session."
+      "value": "The connected desktop is too old to list skills. Upgrade OpenBitFun on that device; messages still send in this session."
     },
     {
       "name": "commands_busyReason",
@@ -2850,7 +2850,7 @@
     },
     {
       "name": "commands_skills_unavailableBody",
-      "value": "The connected desktop did not answer the skill list. Upgrade OpenBitFun on that device, then check again."
+      "value": "The connected desktop did not answer the skill list. Check the connection to that device, then check again."
     },
     {
       "name": "commands_skills_degradedTitle",
@@ -3015,6 +3015,26 @@
     {
       "name": "usage_empty",
       "value": "No usage was reported for this session."
+    },
+    {
+      "name": "commands_probeWaitReason",
+      "value": "Reading the skill list…"
+    },
+    {
+      "name": "commands_probeRefusedReason",
+      "value": "The connected desktop refused to list skills."
+    },
+    {
+      "name": "commands_probeUnreachableReason",
+      "value": "The connected desktop did not answer the skill list."
+    },
+    {
+      "name": "commands_skills_refusedTitle",
+      "value": "Skills were refused"
+    },
+    {
+      "name": "commands_skills_refusedBody",
+      "value": "The connected desktop answered, and its answer was a refusal. The desktop text below is what it said; check the session and try again."
     }
   ]
 }

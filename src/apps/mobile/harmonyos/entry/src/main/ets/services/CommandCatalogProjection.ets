@@ -5,6 +5,7 @@ import {
   REMOTE_SKILL_SOURCE_PROJECT,
   REMOTE_SKILL_SOURCE_USER
 } from '../model/RemoteModels';
+import { CommandPalettePolicy } from './CommandPalettePolicy';
 
 /**
  * Turns the host's skill catalog into the rows the picker sheet renders.
@@ -28,9 +29,10 @@ export const COMMAND_CATALOG_FILTER_CUSTOM: string = 'custom';
  * One raw host row.
  *
  * Everything but the id is optional so a partially instrumented or older host
- * still yields entries instead of failing the whole read: `selectedForRuntime`
- * absent means "not stated", which the availability rule reads as reachable
- * only when the host said nothing that contradicts it.
+ * still yields entries instead of failing the whole read. Absent flags read as
+ * `false` — with `allow_user_invocation` the sole exception, whose contract
+ * default is `true` — so a host that stops serializing the availability flags
+ * hides nothing it meant to offer, and offers nothing it meant to hold back.
  */
 export interface RemoteModeSkillRow {
   key?: string;
@@ -60,7 +62,13 @@ export class SkillCatalogRow {
   readonly group: string;
   readonly source: string;
   readonly isBuiltin: boolean;
-  /** The text the row says it will insert, e.g. `$plan`. */
+  /**
+   * The exact token the message will carry, e.g. `[$Plan]`.
+   *
+   * Built from the skill's name rather than its key, because that is the token
+   * the desktop's own picker inserts; the key stays the row's identity, which is
+   * what the picker keys on and what the composer compares against.
+   */
   readonly insertHint: string;
 
   constructor(entry: RemoteSkillCatalogEntry, isBuiltin: boolean) {
@@ -70,7 +78,7 @@ export class SkillCatalogRow {
     this.group = entry.group;
     this.source = entry.source;
     this.isBuiltin = isBuiltin;
-    this.insertHint = `$${entry.id}`;
+    this.insertHint = CommandPalettePolicy.skillTokenLabel(entry.name);
   }
 }
 
@@ -368,6 +376,13 @@ export class CommandCatalogProjection {
     return left < right ? -1 : 1;
   }
 
+  /**
+   * The row's display name, falling back to its key.
+   *
+   * The fallback is the same string the token would carry, so a host row that
+   * never named its skill still yields a pick that can be sent rather than an
+   * empty `[$]`.
+   */
   private static rowName(name: string | undefined, fallback: string): string {
     const resolved = CommandCatalogProjection.trimmed(name);
     return resolved.length > 0 ? resolved : fallback;

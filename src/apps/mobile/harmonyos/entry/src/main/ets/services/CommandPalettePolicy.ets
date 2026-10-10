@@ -4,9 +4,61 @@
  *
  * Everything here answers one of three questions: which chip may be tapped
  * right now, what a tapped chip does to the draft, and what the draft becomes
- * when it is sent. The palette never guesses a session, never runs a verb before
- * the host has answered the probe, and never rewrites a draft the user owns.
+ * when it is sent. The palette never guesses a session, never opens the picker
+ * before the host has answered the skill read, and never rewrites a draft the
+ * user owns.
  */
+
+/** Lifecycle of the catalog read that doubles as the palette's behavior probe. */
+export enum CommandPaletteCatalogStatus {
+  /** No read yet: the picker's chip waits rather than acts. */
+  Idle = 'idle',
+  /** The read is in flight. */
+  Loading = 'loading',
+  /** The host answered; the picker has rows to offer. */
+  Ready = 'ready',
+  /** The read failed. The chip still opens the picker, which explains and re-checks. */
+  Failed = 'failed'
+}
+
+/**
+ * Why the skill read failed.
+ *
+ * The three cases are not interchangeable to the person holding the phone, and
+ * only one of them justifies telling them their desktop is out of date. A read
+ * that reached nothing is a connection to fix; a read the host refused without
+ * naming a version gap is the host saying no; only a host that reports the gap
+ * itself is an upgrade.
+ */
+export enum CommandPaletteProbeFailure {
+  None = '',
+  /** The host answered, and its own words name the version gap. */
+  VersionGap = 'version_gap',
+  /** The host answered and refused, for a reason it stated itself. */
+  Refused = 'refused',
+  /** Nothing answered: a transport, timeout or unusable-payload failure. */
+  Unreachable = 'unreachable'
+}
+
+/** Whether the probe's answer lets the picker offer rows. */
+export function commandPaletteProbeReady(status: string): boolean {
+  return status === CommandPaletteCatalogStatus.Ready;
+}
+
+/**
+ * The host's own wording when it does not have a command in this version.
+ *
+ * `PeerRefusal::UnknownToHost` is the peer-host registry's sentence and the
+ * desktop's command registry answers `Command not found:` for a name it does not
+ * carry. Both say the same thing about the command set, which is the only claim
+ * the palette makes; every other refusal keeps the host's text without turning
+ * it into a version verdict.
+ */
+const VERSION_GAP_MARKERS: string[] = [
+  'unknown to this openbitfun',
+  'peer host version',
+  'command not found'
+];
 
 /** The five chips of the composer command row, in their on-screen order. */
 export enum CommandPaletteChipKind {
@@ -30,11 +82,13 @@ export enum CommandPaletteChipState {
 /**
  * Why a chip is not ready, and therefore what the row says about it.
  *
- * There is no capability to consult: a failed probe is the only reason the whole
- * row degrades, and a busy session is the only reason a single chip does.
+ * A chip's own business is the only thing that holds it back. The skill read is
+ * the picker's business alone, so a failed read no longer greys the row: the
+ * verbs exist on every host this app can reach, and a host that refuses one says
+ * so when it is run.
  */
 export enum CommandPaletteDegradeReason {
-  /** The host did not answer the skill catalog read. */
+  /** The skill read has not answered, or answered with a failure. */
   Probe = 'probe',
   /** Another palette verb is still running. */
   Busy = 'busy',
@@ -51,8 +105,10 @@ export enum CommandPaletteNoticeKind {
 
 /** What the row is allowed to do, as a snapshot of the live surface. */
 export class CommandPaletteAvailability {
-  /** The host answered the skill catalog read, so its verbs are reachable. */
-  readonly probeReady: boolean;
+  /** The skill read's lifecycle, which gates the picker's chip and nothing else. */
+  readonly probeStatus: string;
+  /** Why the read failed, when it did; the badge and the copy follow from this. */
+  readonly probeFailure: string;
   readonly hasSession: boolean;
   readonly isBusy: boolean;
   /** Wire id of the palette verb currently in flight, or '' when idle. */
@@ -61,17 +117,23 @@ export class CommandPaletteAvailability {
   readonly goalPending: boolean;
 
   constructor(
-    probeReady: boolean,
+    probeStatus: string,
+    probeFailure: string,
     hasSession: boolean,
     isBusy: boolean,
     runningCommand: string = '',
     goalPending: boolean = false
   ) {
-    this.probeReady = probeReady;
+    this.probeStatus = probeStatus;
+    this.probeFailure = probeFailure;
     this.hasSession = hasSession;
     this.isBusy = isBusy;
     this.runningCommand = runningCommand;
     this.goalPending = goalPending;
+  }
+
+  get probeReady(): boolean {
+    return commandPaletteProbeReady(this.probeStatus);
   }
 }
 
@@ -130,6 +192,9 @@ export class CommandPalettePolicy {
   static readonly upgradeBadgeKey: string = 'commands.upgradeBadge';
   static readonly degradedReasonKey: string = 'commands.degradedReason';
   static readonly busyReasonKey: string = 'commands.busyReason';
+  static readonly probeWaitReasonKey: string = 'commands.probeWaitReason';
+  static readonly probeRefusedReasonKey: string = 'commands.probeRefusedReason';
+  static readonly probeUnreachableReasonKey: string = 'commands.probeUnreachableReason';
 
   /**
    * The internal ids of the two verbs that run on tap.
@@ -189,25 +254,14 @@ export class CommandPalettePolicy {
         availability.goalPending ? CommandPaletteChipState.Pending : CommandPaletteChipState.Ready,
         labelKey, '', false, '', true);
     }
-    if (!availability.probeReady) {
-      // The skills chip keeps opening, because the sheet is where the reason and
-      // the 「重新检查」 live; the verbs have nothing to run, so their taps only
-      // reveal the explanation the chip already carries.
-      return new CommandPaletteChip(
-        kind,
-        CommandPaletteChipState.Dimmed,
-        labelKey,
-        CommandPalettePolicy.upgradeBadgeKey,
-        chevron,
-        CommandPalettePolicy.degradedReasonKey,
-        kind === CommandPaletteChipKind.Skills);
-    }
-    // Picking a skill only edits the draft, so the sheet opens even while a turn
-    // or another palette verb is running.
+    // The picker is the one surface whose reach depends on the host's answer, so
+    // it is the one chip the skill read gates.
     if (kind === CommandPaletteChipKind.Skills) {
-      return new CommandPaletteChip(
-        kind, CommandPaletteChipState.Ready, labelKey, '', true, '', true);
+      return CommandPalettePolicy.skillsChip(availability, labelKey);
     }
+    // Compacting, initializing and the usage report exist on every host this app
+    // can reach, and each one answers for itself when it is run — refusing it is
+    // the host's message to give, not a verdict this row can reach in advance.
     const wireAction = CommandPalettePolicy.wireAction(kind);
     if (availability.runningCommand.length > 0 && availability.runningCommand === wireAction) {
       return new CommandPaletteChip(
@@ -222,6 +276,88 @@ export class CommandPalettePolicy {
       kind, CommandPaletteChipState.Ready, labelKey, '', false, '', true);
   }
 
+  /**
+   * The 技能 chip, which is where the skill read's answer shows.
+   *
+   * A read still in flight is neither a refusal nor a promise, so the chip waits
+   * and says so — no badge, and no sentence about the desktop's version. Only a
+   * host that reported the version gap itself gets the upgrade badge.
+   */
+  private static skillsChip(
+    availability: CommandPaletteAvailability,
+    labelKey: string
+  ): CommandPaletteChip {
+    const kind = CommandPaletteChipKind.Skills;
+    if (availability.probeStatus === CommandPaletteCatalogStatus.Failed) {
+      // The picker keeps opening: it is where the reason, the host's own text and
+      // the re-check live, so a dead chip would say strictly less.
+      return new CommandPaletteChip(
+        kind,
+        CommandPaletteChipState.Dimmed,
+        labelKey,
+        CommandPalettePolicy.probeBadgeKey(availability.probeFailure),
+        true,
+        CommandPalettePolicy.probeReasonKey(availability.probeFailure),
+        true);
+    }
+    if (availability.probeReady) {
+      return new CommandPaletteChip(kind, CommandPaletteChipState.Ready, labelKey, '', true, '', true);
+    }
+    return new CommandPaletteChip(
+      kind, CommandPaletteChipState.Dimmed, labelKey, '', true,
+      CommandPalettePolicy.probeWaitReasonKey, false);
+  }
+
+  /** The corner badge for a failed read: only a version gap is an upgrade. */
+  static probeBadgeKey(failure: string): string {
+    return failure === CommandPaletteProbeFailure.VersionGap ?
+      CommandPalettePolicy.upgradeBadgeKey : '';
+  }
+
+  /** The chip's own sentence for a failed read. */
+  static probeReasonKey(failure: string): string {
+    if (failure === CommandPaletteProbeFailure.VersionGap) {
+      return CommandPalettePolicy.degradedReasonKey;
+    }
+    return failure === CommandPaletteProbeFailure.Refused ?
+      CommandPalettePolicy.probeRefusedReasonKey : CommandPalettePolicy.probeUnreachableReasonKey;
+  }
+
+  /** The picker's heading for a failed read. */
+  static probeTitleKey(failure: string): string {
+    if (failure === CommandPaletteProbeFailure.VersionGap) return 'commands.skills.degradedTitle';
+    return failure === CommandPaletteProbeFailure.Refused ?
+      'commands.skills.refusedTitle' : 'commands.skills.unavailableTitle';
+  }
+
+  /** The picker's explanation for a failed read. */
+  static probeBodyKey(failure: string): string {
+    if (failure === CommandPaletteProbeFailure.VersionGap) return 'commands.skills.degradedBody';
+    return failure === CommandPaletteProbeFailure.Refused ?
+      'commands.skills.refusedBody' : 'commands.skills.unavailableBody';
+  }
+
+  /**
+   * Classifies a failed skill read.
+   *
+   * `answered` is the part the app can be sure of: the host replied to this very
+   * command. Its wording then decides whether the reply was the version gap it
+   * names explicitly or a refusal for some other reason, and a read that never
+   * reached a host is neither.
+   */
+  static probeFailure(answered: boolean, hostText: string): string {
+    if (!answered) {
+      return CommandPaletteProbeFailure.Unreachable;
+    }
+    const text = hostText.toLowerCase();
+    for (const marker of VERSION_GAP_MARKERS) {
+      if (text.indexOf(marker) >= 0) {
+        return CommandPaletteProbeFailure.VersionGap;
+      }
+    }
+    return CommandPaletteProbeFailure.Refused;
+  }
+
   static labelKey(kind: CommandPaletteChipKind): string {
     if (kind === CommandPaletteChipKind.Compact) return CommandPalettePolicy.compactLabelKey;
     if (kind === CommandPaletteChipKind.Init) return CommandPalettePolicy.initLabelKey;
@@ -234,11 +370,15 @@ export class CommandPalettePolicy {
     return 'commands.sessionReason';
   }
 
-  /** A degraded row always carries its explanation under the chips. */
+  /**
+   * The row's own line, which is now only ever about the session.
+   *
+   * A failed skill read is one chip's business and is explained there and in the
+   * picker; repeating it under a row of working chips would say the row is broken
+   * when it is not.
+   */
   static rowReasonKey(availability: CommandPaletteAvailability): string {
-    if (!availability.hasSession) return CommandPalettePolicy.sessionReasonKey();
-    if (!availability.probeReady) return CommandPalettePolicy.degradedReasonKey;
-    return '';
+    return availability.hasSession ? '' : CommandPalettePolicy.sessionReasonKey();
   }
 
   /** Whether the palette renders at all: one chip row needs a session to act on. */
@@ -325,7 +465,9 @@ export class CommandPalettePolicy {
    * Picking a skill.
    *
    * One token at a time: the newest pick replaces the previous one, and picking
-   * the token that is already there is a no-op rather than a duplicate.
+   * the token that is already there is a no-op rather than a duplicate. The
+   * comparison is on the skill's key, so re-picking a row whose display name has
+   * changed is still the same pick.
    */
   static applySkillSelection(currentSkillId: string, pickedSkillId: string): string {
     const picked = pickedSkillId.trim();
@@ -338,10 +480,17 @@ export class CommandPalettePolicy {
     return picked;
   }
 
-  /** The token as the composer draws it: the exact text the message will carry. */
-  static skillTokenLabel(skillId: string): string {
-    const id = skillId.trim();
-    return id.length === 0 ? '' : `[$${id}]`;
+  /**
+   * The token as the composer draws it: the exact text the message will carry.
+   *
+   * The label is the skill's own name, which is what the desktop puts in the
+   * token it inserts (`createSkillPromptReferenceToken(skillName)`), and the
+   * picker's row hint renders this same string so the two cannot describe
+   * different things.
+   */
+  static skillTokenLabel(skillLabel: string): string {
+    const label = skillLabel.trim();
+    return label.length === 0 ? '' : `[$${label}]`;
   }
 
   /** Whether the draft opens with a host command rather than free text. */
@@ -354,9 +503,9 @@ export class CommandPalettePolicy {
    * The message a skill token sends.
    *
    * The token is a chip in the composer rather than text in the field, so the
-   * send path is where it becomes content. It goes in front of free text, which
-   * is the position a reader expects and the one the host's skill reference
-   * parser accepts anywhere.
+   * send path is where it becomes content, built from the same label the chip
+   * drew. It goes in front of free text, which is the position a reader expects
+   * and the one the host's skill reference parser accepts anywhere.
    *
    * A draft that opens with a host command keeps the command first: `/goal` is
    * parsed by the desktop from the head of the message (`thread_goal.rs`:
@@ -365,10 +514,10 @@ export class CommandPalettePolicy {
    * ordinary message. The token is appended for those drafts instead.
    *
    * The token is written exactly once: a draft that already carries it keeps it,
-   * which is what stops a repeated pick from stacking `[$plan] [$plan]`.
+   * which is what stops a repeated pick from stacking `[$Plan] [$Plan]`.
    */
-  static composeSubmissionText(draft: string, skillId: string): string {
-    const token = CommandPalettePolicy.skillTokenLabel(skillId);
+  static composeSubmissionText(draft: string, skillLabel: string): string {
+    const token = CommandPalettePolicy.skillTokenLabel(skillLabel);
     const text = draft.trim();
     if (token.length === 0) {
       return draft;

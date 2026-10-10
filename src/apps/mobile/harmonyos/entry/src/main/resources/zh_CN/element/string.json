@@ -2762,7 +2762,7 @@
     },
     {
       "name": "commands_degradedReason",
-      "value": "已连接的桌面端版本过旧，无法使用这些命令。请升级该设备上的 OpenBitFun 后使用；当前会话仍可直接发消息。"
+      "value": "桌面端版本过旧，无法提供技能列表。请升级该设备上的 OpenBitFun；本会话仍可正常发送消息。"
     },
     {
       "name": "commands_busyReason",
@@ -2850,7 +2850,7 @@
     },
     {
       "name": "commands_skills_unavailableBody",
-      "value": "已连接的桌面端未返回技能列表。请升级该设备上的 OpenBitFun 后重新检查。"
+      "value": "桌面端没有响应技能列表请求。请检查与该设备的连接后重试。"
     },
     {
       "name": "commands_skills_degradedTitle",
@@ -3015,6 +3015,26 @@
     {
       "name": "usage_empty",
       "value": "当前会话没有可展示的用量数据。"
+    },
+    {
+      "name": "commands_probeWaitReason",
+      "value": "正在读取技能列表…"
+    },
+    {
+      "name": "commands_probeRefusedReason",
+      "value": "桌面端拒绝提供技能列表。"
+    },
+    {
+      "name": "commands_probeUnreachableReason",
+      "value": "桌面端没有响应技能列表请求。"
+    },
+    {
+      "name": "commands_skills_refusedTitle",
+      "value": "技能列表被拒绝"
+    },
+    {
+      "name": "commands_skills_refusedBody",
+      "value": "桌面端有响应，但拒绝了请求。下方是桌面端的原文；请检查会话后重试。"
     }
   ]
 }

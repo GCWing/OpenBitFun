@@ -77,8 +77,11 @@ export struct ComposerBar {
    *
    * It is a chip beside the draft rather than text in it, so the field stays
    * exactly what the user typed; the send path is what turns it into content.
+   * The key is the pick's identity and decides whether the strip is drawn; the
+   * label is the skill's name and is one half of the text the message will carry.
    */
   @Param skillId: string = '';
+  @Param skillLabel: string = '';
   /**
    * Whether the composer sits under the command row.
    *
@@ -162,7 +165,7 @@ export struct ComposerBar {
       // The token is not a thumbnail: it sits above the field with the images
       // because that is the only strip the composer has, and both are things the
       // next send will carry rather than text the user is still writing.
-      if (this.skillId.length > 0) {
+      if (this.hasSkillToken()) {
         this.CommandTokenStrip()
       }
       if (this.selectedImages.length > 0) {
@@ -701,7 +704,7 @@ export struct ComposerBar {
           .fontSize(12)
           .fontColor([INK])
           .opacity(0.7)
-        Text(CommandPalettePolicy.skillTokenLabel(this.skillId))
+        Text(CommandPalettePolicy.skillTokenLabel(this.skillLabel))
           .fontSize(MobileDesignTypography.labelSmall.size)
           .lineHeight(MobileDesignTypography.labelSmall.lineHeight)
           .fontWeight(FontWeight.Medium)
@@ -717,7 +720,7 @@ export struct ComposerBar {
       .backgroundColor(SOFT)
       .borderRadius(COMPOSER_TOKEN_HEIGHT / 2)
       .accessibilityText(`${RemoteI18n.t('commands.skillToken')} · ` +
-        `${CommandPalettePolicy.skillTokenLabel(this.skillId)}`)
+        `${CommandPalettePolicy.skillTokenLabel(this.skillLabel)}`)
       .onClick(() => {
         this.onRemoveSkillToken();
       })
@@ -806,12 +809,22 @@ export struct ComposerBar {
     );
   }
 
+  /**
+   * Whether the composer is carrying a skill token.
+   *
+   * The label is the token's own text, so the two cannot disagree: a pick with
+   * no name to write would draw an empty chip rather than nothing at all.
+   */
+  private hasSkillToken(): boolean {
+    return this.skillLabel.length > 0;
+  }
+
   // Attachments and the skill token live inside the card, so the card has to
   // grow to hold them.
   private composerHeight(): number {
     const base = this.isComposerExpanded() ? COMPOSER_EXPANDED_HEIGHT : this.collapsedComposerHeight();
     const attachmentBlock = this.selectedImages.length > 0 ? COMPOSER_IMAGE_STRIP_BLOCK : 0;
-    const tokenBlock = this.skillId.length > 0 ? COMPOSER_TOKEN_STRIP_BLOCK : 0;
+    const tokenBlock = this.hasSkillToken() ? COMPOSER_TOKEN_STRIP_BLOCK : 0;
     return base + attachmentBlock + tokenBlock;
   }
 
@@ -822,7 +835,7 @@ export struct ComposerBar {
 
   // The pill radius only reads as a pill while the card is one row tall.
   private composerRadius(): number {
-    if (this.isComposerExpanded() || this.selectedImages.length > 0 || this.skillId.length > 0) {
+    if (this.isComposerExpanded() || this.selectedImages.length > 0 || this.hasSkillToken()) {
       return MobileDesignGeometry.composerExpandedRadius;
     }
     return MobileDesignGeometry.composerCollapsedRadius;

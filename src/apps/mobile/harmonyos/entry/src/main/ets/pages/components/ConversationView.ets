@@ -169,10 +169,10 @@ export struct ConversationView {
     } else if (this.activeSheet === CONVERSATION_SHEET_SKILLS) {
       SkillPickerSheet({
         palette: this.commandPalette,
-        onSelect: (skillId: string) => {
+        onSelect: (skillId: string, skillLabel: string) => {
           this.closeSheet();
           this.onIntent(ConversationIntents.commandPalette(
-            new CommandPaletteRequest(CommandPaletteAction.SelectSkill, skillId)));
+            new CommandPaletteRequest(CommandPaletteAction.SelectSkill, skillId, '', skillLabel)));
         },
         onRefresh: () => {
           this.onIntent(ConversationIntents.commandPalette(
@@ -583,6 +583,7 @@ export struct ConversationView {
       chatInput: this.chatInput,
       selectedImages: this.selectedImages,
       skillId: this.commandPalette.skillId,
+      skillLabel: this.commandPalette.skillLabel,
       commandRowActive: this.commandPalette.visible,
       isBusy: this.isBusy,
       canStop: this.canStop,

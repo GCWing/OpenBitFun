@@ -1,39 +1,24 @@
 import { RemoteCommandCatalog, RemoteSessionUsageReport } from '../../model/RemoteModels';
 import {
   CommandPaletteAvailability,
+  CommandPaletteCatalogStatus,
   CommandPaletteChip,
   CommandPaletteChipKind,
   CommandPaletteChipState,
   CommandPaletteNoticeKind,
-  CommandPalettePolicy
+  CommandPalettePolicy,
+  CommandPaletteProbeFailure
 } from '../../services/CommandPalettePolicy';
 import {
   UsageReportPresentationPolicy,
   UsageReportSection
 } from '../policy/UsageReportPresentationPolicy';
 
-/** Lifecycle of the catalog read that doubles as the palette's behavior probe. */
-export enum CommandPaletteCatalogStatus {
-  /** No read yet: the row's chips wait rather than act. */
-  Idle = 'idle',
-  /** The probe is in flight. */
-  Loading = 'loading',
-  /** The host answered; its verbs are reachable. */
-  Ready = 'ready',
-  /** The host refused the read. The row degrades and the sheet offers a re-check. */
-  Failed = 'failed'
-}
-
 export enum CommandPaletteUsageStatus {
   Idle = 'idle',
   Loading = 'loading',
   Ready = 'ready',
   Failed = 'failed'
-}
-
-/** Whether the probe's answer lets the row act at all. */
-export function commandPaletteProbeReady(status: string): boolean {
-  return status === CommandPaletteCatalogStatus.Ready;
 }
 
 /**
@@ -83,11 +68,19 @@ export class CommandPaletteState {
   @Trace catalogStatus: string = CommandPaletteCatalogStatus.Idle;
   @Trace catalog: RemoteCommandCatalog | undefined = undefined;
   /**
-   * The host's own refusal text for a failed probe.
+   * Why the skill read failed, when it did.
    *
-   * A palette verb can fail for a reason the user can act on — a locked
-   * workspace, a session the desktop cannot find — and the host already said
-   * which. Restating that in this app's words would lose it.
+   * Kept beside the host's text because the two answer different questions: the
+   * kind decides whether this app may tell the user their desktop is out of
+   * date, and the text is the host's own account of what went wrong.
+   */
+  @Trace catalogFailure: string = CommandPaletteProbeFailure.None;
+  /**
+   * The host's own text for a failed read.
+   *
+   * A verb can fail for a reason the user can act on — a locked workspace, a
+   * session the desktop cannot find — and the host already said which. Restating
+   * that in this app's words would lose it.
    */
   @Trace catalogErrorText: string = '';
   @Trace runningCommand: string = '';
@@ -95,30 +88,43 @@ export class CommandPaletteState {
   @Trace usageStatus: string = CommandPaletteUsageStatus.Idle;
   @Trace usageReport: RemoteSessionUsageReport | undefined = undefined;
   @Trace usageErrorText: string = '';
-  /** The single selected skill token, or '' when the composer carries none. */
+  /** The key of the single selected skill, or '' when the composer carries none. */
   @Trace skillId: string = '';
+  /** The selected skill's name, which is the text its token carries. */
+  @Trace skillLabel: string = '';
   /** The goal chip is lit and its `/goal ` prefill is in the composer. */
   @Trace goalPending: boolean = false;
 
-  availability(probeReady: boolean, hasSession: boolean, isBusy: boolean): CommandPaletteAvailability {
+  /**
+   * The row's inputs, read from this state rather than passed in.
+   *
+   * The skill read's verdict belongs to whoever holds the answer, so the
+   * projection no longer takes a pre-computed `probeReady` that could disagree
+   * with the status sitting right beside it.
+   */
+  availability(hasSession: boolean, isBusy: boolean): CommandPaletteAvailability {
     return new CommandPaletteAvailability(
-      probeReady, hasSession, isBusy, this.runningCommand, this.goalPending);
+      this.catalogStatus, this.catalogFailure, hasSession, isBusy,
+      this.runningCommand, this.goalPending);
   }
 
   setCatalogLoading(): void {
     this.catalogStatus = CommandPaletteCatalogStatus.Loading;
+    this.catalogFailure = CommandPaletteProbeFailure.None;
     this.catalogErrorText = '';
   }
 
   setCatalogReady(catalog: RemoteCommandCatalog): void {
     this.catalog = catalog;
     this.catalogStatus = CommandPaletteCatalogStatus.Ready;
+    this.catalogFailure = CommandPaletteProbeFailure.None;
     this.catalogErrorText = '';
   }
 
-  setCatalogFailed(errorText: string): void {
+  setCatalogFailed(errorText: string, failure: string): void {
     this.catalog = undefined;
     this.catalogErrorText = errorText;
+    this.catalogFailure = failure;
     this.catalogStatus = CommandPaletteCatalogStatus.Failed;
   }
 
@@ -172,12 +178,21 @@ export class CommandPaletteState {
     this.usageStatus = CommandPaletteUsageStatus.Failed;
   }
 
-  setSkill(skillId: string): void {
-    this.skillId = CommandPalettePolicy.applySkillSelection(this.skillId, skillId);
+  /** Picks a skill. The key decides whether it is a new pick; the label is its token. */
+  setSkill(skillId: string, skillLabel: string): void {
+    const next = CommandPalettePolicy.applySkillSelection(this.skillId, skillId);
+    if (next === this.skillId && next.length > 0) {
+      // Re-picking the row that is already in the composer: the token stays the
+      // one already drawn rather than being rewritten under the user.
+      return;
+    }
+    this.skillId = next;
+    this.skillLabel = next.length > 0 ? skillLabel.trim() : '';
   }
 
   clearSkill(): void {
     this.skillId = '';
+    this.skillLabel = '';
   }
 
   setGoalPending(pending: boolean): void {
@@ -188,6 +203,7 @@ export class CommandPaletteState {
   reset(): void {
     this.catalogStatus = CommandPaletteCatalogStatus.Idle;
     this.catalog = undefined;
+    this.catalogFailure = CommandPaletteProbeFailure.None;
     this.catalogErrorText = '';
     this.runningCommand = '';
     this.notice = CommandPaletteNotice.none();
@@ -195,6 +211,7 @@ export class CommandPaletteState {
     this.usageReport = undefined;
     this.usageErrorText = '';
     this.skillId = '';
+    this.skillLabel = '';
     this.goalPending = false;
   }
 }
@@ -208,18 +225,23 @@ export class CommandPaletteState {
 export class CommandPalettePresentation {
   readonly visible: boolean;
   readonly chips: CommandPaletteChip[];
-  /** Persistent explanation under the row: a session-less or degraded surface. */
+  /** Persistent explanation under the row: a session-less surface. */
   readonly rowReasonKey: string;
   readonly notice: CommandPaletteNotice;
   readonly catalogStatus: string;
   readonly catalog?: RemoteCommandCatalog;
-  /** The host's refusal text for a failed probe, empty otherwise. */
+  /** Why the read failed, which is what the picker's copy follows. */
+  readonly catalogFailure: string;
+  /** The host's own text for a failed read, empty otherwise. */
   readonly catalogErrorText: string;
   readonly usageStatus: string;
   readonly usageSections: UsageReportSection[];
   readonly usagePartial: boolean;
   readonly usageErrorText: string;
+  /** The selected skill's key, which is what its row's check mark compares. */
   readonly skillId: string;
+  /** The selected skill's name, which is the text its token carries. */
+  readonly skillLabel: string;
 
   constructor(
     visible: boolean,
@@ -228,12 +250,14 @@ export class CommandPalettePresentation {
     notice: CommandPaletteNotice,
     catalogStatus: string,
     catalog: RemoteCommandCatalog | undefined,
+    catalogFailure: string,
     catalogErrorText: string,
     usageStatus: string,
     usageSections: UsageReportSection[],
     usagePartial: boolean,
     usageErrorText: string,
-    skillId: string
+    skillId: string,
+    skillLabel: string
   ) {
     this.visible = visible;
     this.chips = chips;
@@ -241,32 +265,33 @@ export class CommandPalettePresentation {
     this.notice = notice;
     this.catalogStatus = catalogStatus;
     this.catalog = catalog;
+    this.catalogFailure = catalogFailure;
     this.catalogErrorText = catalogErrorText;
     this.usageStatus = usageStatus;
     this.usageSections = usageSections;
     this.usagePartial = usagePartial;
     this.usageErrorText = usageErrorText;
     this.skillId = skillId;
+    this.skillLabel = skillLabel;
   }
 
   /** No row at all: the general surface, or a conversation with no session. */
   static hidden(): CommandPalettePresentation {
     return new CommandPalettePresentation(
       false, [], '', CommandPaletteNotice.none(),
-      CommandPaletteCatalogStatus.Idle, undefined, '',
-      CommandPaletteUsageStatus.Idle, [], false, '', '');
+      CommandPaletteCatalogStatus.Idle, undefined, CommandPaletteProbeFailure.None, '',
+      CommandPaletteUsageStatus.Idle, [], false, '', '', '');
   }
 
   static project(
     state: CommandPaletteState,
-    probeReady: boolean,
     hasSession: boolean,
     isBusy: boolean
   ): CommandPalettePresentation {
     if (!CommandPalettePolicy.visible(hasSession)) {
       return CommandPalettePresentation.hidden();
     }
-    const availability = state.availability(probeReady, hasSession, isBusy);
+    const availability = state.availability(hasSession, isBusy);
     const usage = UsageReportPresentationPolicy.present(state.usageReport);
     return new CommandPalettePresentation(
       true,
@@ -275,12 +300,14 @@ export class CommandPalettePresentation {
       state.notice,
       state.catalogStatus,
       state.catalog,
+      state.catalogFailure,
       state.catalogErrorText,
       state.usageStatus,
       usage.sections,
       usage.partial,
       state.usageErrorText,
-      state.skillId);
+      state.skillId,
+      state.skillLabel);
   }
 
   chipState(kind: CommandPaletteChipKind): CommandPaletteChipState {

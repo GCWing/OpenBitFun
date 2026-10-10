@@ -606,9 +606,9 @@ export abstract class AppRootRuntimeComposition {
           if (!this.isCommandPaletteSession(sessionId)) return;
           this.remotePageState.commandPalette.setCatalogReady(catalog);
         },
-        onCatalogFailed: (sessionId: string, errorText: string): void => {
+        onCatalogFailed: (sessionId: string, errorText: string, failure: string): void => {
           if (!this.isCommandPaletteSession(sessionId)) return;
-          this.remotePageState.commandPalette.setCatalogFailed(errorText);
+          this.remotePageState.commandPalette.setCatalogFailed(errorText, failure);
         },
         onCommandStarted: (sessionId: string, wireAction: string): void => {
           if (!this.isCommandPaletteSession(sessionId)) return;
