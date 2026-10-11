@@ -1,4 +1,4 @@
-use crate::agentic::memories::db::MemoryRow;
+use crate::agentic::memories::db::{MemoryRolloutSummaryIdentity, MemoryRow};
 use crate::infrastructure::get_path_manager_arc;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use chrono::{DateTime, Utc};
@@ -20,6 +20,7 @@ pub const MEMORY_ROOT_NAME: &str = "memories";
 pub const RAW_MEMORIES_FILENAME: &str = "raw_memories.md";
 pub const PHASE2_WORKSPACE_DIFF_FILE_NAME: &str = "phase2_workspace_diff.md";
 pub const ROLLOUT_SUMMARIES_DIR_NAME: &str = "rollout_summaries";
+pub const SKILLS_DIR_NAME: &str = "skills";
 pub const AD_HOC_INSTRUCTIONS_FILE_NAME: &str = "instructions.md";
 const AD_HOC_INSTRUCTIONS: &str = r#"# Ad-hoc notes
 
@@ -80,6 +81,22 @@ pub fn phase2_workspace_diff_file(root: &Path) -> PathBuf {
 
 pub fn rollout_summary_file_name(row: &MemoryRow) -> String {
     format!("{}.md", rollout_summary_file_stem(row))
+}
+
+/// Rollout-summary file name for the identity fields of a stage-1 row.
+///
+/// Kept separate from [`rollout_summary_file_name`] so callers that only have
+/// the persisted identity columns (not a full [`MemoryRow`]) derive the exact
+/// same file name.
+pub fn rollout_summary_file_name_for_parts(
+    session_id: &str,
+    source_updated_at_unix_secs: i64,
+    rollout_slug: Option<&str>,
+) -> String {
+    format!(
+        "{}.md",
+        rollout_summary_file_stem_from_parts(session_id, source_updated_at_unix_secs, rollout_slug)
+    )
 }
 
 fn rollout_summary_file_stem(row: &MemoryRow) -> String {
@@ -215,10 +232,20 @@ pub async fn ensure_memory_workspace(root: &Path) -> OpenBitFunResult<()> {
     Ok(())
 }
 
-pub async fn sync_phase2_workspace_inputs(root: &Path, rows: &[MemoryRow]) -> OpenBitFunResult<()> {
+/// Writes the selected stage-1 inputs into the memory workspace.
+///
+/// `live_summary_identities` is the identity of every stage-1 row that still
+/// exists in the database. Rollout-summary files are pruned only when their
+/// database row is gone, so evidence that `MEMORY.md` still references is never
+/// destroyed just because a row fell outside the current selection.
+pub async fn sync_phase2_workspace_inputs(
+    root: &Path,
+    rows: &[MemoryRow],
+    live_summary_identities: &[MemoryRolloutSummaryIdentity],
+) -> OpenBitFunResult<()> {
     ensure_memory_workspace(root).await?;
     seed_ad_hoc_memory_extension(root).await?;
-    sync_rollout_summaries(root, rows).await?;
+    sync_rollout_summaries(root, rows, live_summary_identities).await?;
     rebuild_raw_memories(root, rows).await?;
     remove_phase2_workspace_diff(root).await?;
     Ok(())
@@ -343,11 +370,42 @@ fn map_memory_workspace_git_error(
     }
 }
 
-async fn rebuild_raw_memories(root: &Path, rows: &[MemoryRow]) -> OpenBitFunResult<()> {
+/// True when the memory workspace still holds rendered stage-1 input.
+///
+/// The phase-2 runner rebuilds `raw_memories.md` and prunes rollout summaries
+/// whenever the input state can be derived, so a workspace that still shows
+/// input has to be rebuilt even after the database no longer has candidates
+/// (for example once retention removed every row). Otherwise stale input would
+/// never appear in a workspace diff and never be forgotten.
+pub async fn memory_workspace_has_input_artifacts(root: &Path) -> bool {
+    if let Ok(body) = tokio::fs::read_to_string(raw_memories_file(root)).await {
+        if body != empty_raw_memories_body() {
+            return true;
+        }
+    }
+
+    let Ok(mut entries) = tokio::fs::read_dir(rollout_summaries_dir(root)).await else {
+        return false;
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        if entry.file_name().to_string_lossy().ends_with(".md") {
+            return true;
+        }
+    }
+    false
+}
+
+fn empty_raw_memories_body() -> String {
     let mut body = String::from("# Raw Memories\n\n");
-    if rows.is_empty() {
-        body.push_str("No raw memories yet.\n");
+    body.push_str("No raw memories yet.\n");
+    body
+}
+
+async fn rebuild_raw_memories(root: &Path, rows: &[MemoryRow]) -> OpenBitFunResult<()> {
+    let body = if rows.is_empty() {
+        empty_raw_memories_body()
     } else {
+        let mut body = String::from("# Raw Memories\n\n");
         body.push_str("Merged stage-1 raw memories (stable ascending session-id order):\n\n");
         for row in sorted_rows(rows) {
             writeln!(body, "## Session `{}`", row.session_id).map_err(format_error)?;
@@ -369,17 +427,28 @@ async fn rebuild_raw_memories(root: &Path, rows: &[MemoryRow]) -> OpenBitFunResu
             body.push_str(row.raw_memory.trim());
             body.push_str("\n\n");
         }
-    }
+        body
+    };
 
     let path = raw_memories_file(root);
     write_text_file_if_changed(&path, &body).await
 }
 
-async fn sync_rollout_summaries(root: &Path, rows: &[MemoryRow]) -> OpenBitFunResult<()> {
+async fn sync_rollout_summaries(
+    root: &Path,
+    rows: &[MemoryRow],
+    live_summary_identities: &[MemoryRolloutSummaryIdentity],
+) -> OpenBitFunResult<()> {
     let dir = rollout_summaries_dir(root);
-    let keep = rows
+    let keep = live_summary_identities
         .iter()
-        .map(rollout_summary_file_name)
+        .map(|identity| {
+            rollout_summary_file_name_for_parts(
+                &identity.session_id,
+                identity.source_updated_at_unix_secs,
+                identity.rollout_slug.as_deref(),
+            )
+        })
         .collect::<HashSet<_>>();
     prune_rollout_summaries(&dir, &keep).await?;
 
@@ -535,6 +604,100 @@ mod tests {
     const FIXED_PREFIX: &str = "2025-02-11T15-35-19-jqmb";
     const FIXED_SESSION_ID: &str = "0194f5a6-89ab-7cde-8123-456789abcdef";
 
+    #[tokio::test]
+    async fn sync_phase2_workspace_inputs_drops_sections_without_touching_live_summaries() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        ensure_memory_workspace(root).await.unwrap();
+
+        let deselected = memory_row("session-forget", "slug-forget");
+        let deselected_summary_file = rollout_summary_file_name(&deselected);
+        sync_phase2_workspace_inputs(
+            root,
+            &[deselected.clone()],
+            &summary_identities(&[deselected.clone()]),
+        )
+        .await
+        .unwrap();
+        let raw = tokio::fs::read_to_string(raw_memories_file(root))
+            .await
+            .unwrap();
+        assert!(raw.contains("## Session `session-forget`"));
+
+        // The row falls out of the selection but is still live: the rebuilt
+        // `raw_memories.md` drops its section so the removal is visible to the
+        // consolidation agent, and its rollout summary file survives.
+        sync_phase2_workspace_inputs(root, &[], &summary_identities(&[deselected.clone()]))
+            .await
+            .unwrap();
+
+        let raw = tokio::fs::read_to_string(raw_memories_file(root))
+            .await
+            .unwrap();
+        assert!(!raw.contains("## Session `session-forget`"));
+        assert!(raw.contains("No raw memories yet."));
+        assert!(
+            rollout_summaries_dir(root)
+                .join(&deselected_summary_file)
+                .exists(),
+            "an empty selection must not delete summaries of live rows"
+        );
+    }
+
+    #[tokio::test]
+    async fn memory_workspace_input_artifacts_probe_reports_rendered_input() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        ensure_memory_workspace(root).await.unwrap();
+        assert!(!memory_workspace_has_input_artifacts(root).await);
+
+        let row = memory_row("session-a", "slug-a");
+        sync_phase2_workspace_inputs(root, &[row.clone()], &summary_identities(&[row.clone()]))
+            .await
+            .unwrap();
+        assert!(memory_workspace_has_input_artifacts(root).await);
+
+        // Once the input is rebuilt empty, only leftover summary files can still
+        // mark the workspace as holding input.
+        tokio::fs::write(raw_memories_file(root), empty_raw_memories_body())
+            .await
+            .unwrap();
+        assert!(memory_workspace_has_input_artifacts(root).await);
+
+        tokio::fs::remove_file(rollout_summaries_dir(root).join(rollout_summary_file_name(&row)))
+            .await
+            .unwrap();
+        assert!(!memory_workspace_has_input_artifacts(root).await);
+    }
+
+    #[test]
+    fn rollout_summary_file_names_stay_stable_across_slug_changes() {
+        // The file prefix is derived from session identity (UUIDv7 timestamp and
+        // hash), so a re-extraction that only changes the slug renames the file
+        // while keeping the prefix. The phase-2 prompt relies on exactly this
+        // signal to tell a rename apart from evidence loss.
+        let mut before = memory_row(FIXED_SESSION_ID, "first-slug");
+        before.rollout_slug = Some("first_slug".to_string());
+        let mut after = memory_row(FIXED_SESSION_ID, "second-slug");
+        after.rollout_slug = Some("second_slug".to_string());
+
+        let before_name = rollout_summary_file_name(&before);
+        let after_name = rollout_summary_file_name(&after);
+        assert_ne!(before_name, after_name);
+        assert_eq!(
+            rollout_summary_file_name_for_parts(FIXED_SESSION_ID, 123, Some("first_slug")),
+            before_name
+        );
+        assert!(before_name.starts_with(FIXED_PREFIX));
+        assert!(after_name.starts_with(FIXED_PREFIX));
+
+        // The same identity and slug always maps to the same file name.
+        assert_eq!(
+            rollout_summary_file_name(&before),
+            rollout_summary_file_name_for_parts(FIXED_SESSION_ID, 123, Some("first_slug"))
+        );
+    }
+
     #[test]
     fn rollout_summary_file_name_uses_uuid_timestamp_and_hash_when_slug_missing() {
         let mut row = memory_row(FIXED_SESSION_ID, "");
@@ -598,7 +761,10 @@ mod tests {
         let session_a_summary_file = rollout_summary_file_name(&rows[1]);
         let session_b_summary_file = rollout_summary_file_name(&rows[0]);
         let session_a_rollout_path = rows[1].rollout_path.clone();
-        sync_phase2_workspace_inputs(root, &rows).await.unwrap();
+        let live_identities = summary_identities(&rows);
+        sync_phase2_workspace_inputs(root, &rows, &live_identities)
+            .await
+            .unwrap();
 
         let raw = tokio::fs::read_to_string(raw_memories_file(root))
             .await
@@ -630,6 +796,79 @@ mod tests {
         assert!(ad_hoc_instructions_file(root).exists());
         assert!(!rollout_summaries_dir(root).join("stale.md").exists());
         assert!(!phase2_workspace_diff_file(root).exists());
+    }
+
+    #[tokio::test]
+    async fn sync_phase2_workspace_inputs_keeps_summaries_for_live_unselected_rows() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        ensure_memory_workspace(root).await.unwrap();
+
+        let selected = vec![memory_row("session-a", "slug-a")];
+        let unselected = memory_row("session-b", "slug-b");
+        let unselected_summary_file = rollout_summary_file_name(&unselected);
+        tokio::fs::write(
+            rollout_summaries_dir(root).join(&unselected_summary_file),
+            "live but unselected summary",
+        )
+        .await
+        .unwrap();
+
+        let live_identities = summary_identities(&[selected[0].clone(), unselected.clone()]);
+        sync_phase2_workspace_inputs(root, &selected, &live_identities)
+            .await
+            .unwrap();
+
+        assert!(
+            rollout_summaries_dir(root)
+                .join(&unselected_summary_file)
+                .exists(),
+            "a live-but-unselected row must keep its rollout summary file"
+        );
+        let raw = tokio::fs::read_to_string(raw_memories_file(root))
+            .await
+            .unwrap();
+        assert!(raw.contains("## Session `session-a`"));
+        assert!(!raw.contains("## Session `session-b`"));
+    }
+
+    #[tokio::test]
+    async fn sync_phase2_workspace_inputs_deletes_summaries_for_rows_that_no_longer_exist() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        ensure_memory_workspace(root).await.unwrap();
+
+        let removed = memory_row("session-removed", "slug-removed");
+        let removed_summary_file = rollout_summary_file_name(&removed);
+        tokio::fs::write(
+            rollout_summaries_dir(root).join(&removed_summary_file),
+            "summary for a pruned row",
+        )
+        .await
+        .unwrap();
+
+        let selected = vec![memory_row("session-a", "slug-a")];
+        let live_identities = summary_identities(&selected);
+        sync_phase2_workspace_inputs(root, &selected, &live_identities)
+            .await
+            .unwrap();
+
+        assert!(
+            !rollout_summaries_dir(root)
+                .join(&removed_summary_file)
+                .exists(),
+            "a rollout summary file must be deleted once its stage-1 row is gone"
+        );
+    }
+
+    fn summary_identities(rows: &[MemoryRow]) -> Vec<MemoryRolloutSummaryIdentity> {
+        rows.iter()
+            .map(|row| MemoryRolloutSummaryIdentity {
+                session_id: row.session_id.clone(),
+                source_updated_at_unix_secs: row.source_updated_at_unix_secs,
+                rollout_slug: row.rollout_slug.clone(),
+            })
+            .collect()
     }
 
     #[tokio::test]

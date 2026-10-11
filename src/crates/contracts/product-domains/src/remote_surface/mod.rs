@@ -853,5 +853,16 @@ mod tests {
                 "{alias} is a CLI metadata alias and carries an explicit stance"
             );
         }
+        for command in [
+            "get_memory_paths",
+            "get_memory_status",
+            "run_memory_pipeline_now",
+        ] {
+            assert_eq!(
+                stance(command),
+                RemoteWorkspaceStance::Agnostic,
+                "{command} reads or mutates this host's memory store, which does not follow the workspace filesystem to an SSH host"
+            );
+        }
     }
 }

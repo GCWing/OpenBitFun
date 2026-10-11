@@ -39,6 +39,11 @@ impl ClawMode {
                 "Glob".to_string(),
                 "WebSearch".to_string(),
                 "WebFetch".to_string(),
+                // Claw receives the memory read path in its user context policy,
+                // so it also gets the memory tools.
+                "MemorySearch".to_string(),
+                "MemoryFetch".to_string(),
+                "MemorySave".to_string(),
                 "get_goal".to_string(),
                 "create_goal".to_string(),
                 "update_goal".to_string(),

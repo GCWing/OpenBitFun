@@ -23,6 +23,62 @@
       "description": "控制抽取结果进入长期记忆前的整理范围"
     }
   },
+  "status": {
+    "title": "记忆状态",
+    "description": "以下内容描述运行 OpenBitFun 这台设备上的记忆存储。记忆不属于工作区，因此这些数据不会随远程工作区迁移。",
+    "enabled": "已开启",
+    "disabled": "已关闭",
+    "unknown": "未知",
+    "bytes": "{{size}} 字节",
+    "actions": {
+      "runNow": "立即运行记忆流程"
+    },
+    "phase2Status": {
+      "never": "尚未运行"
+    },
+    "fields": {
+      "memoryRoot": "记忆目录",
+      "memoryRootHint": "存放记忆文件的本机目录。",
+      "generateMemories": "自动生成",
+      "useMemories": "会话中使用记忆",
+      "storedOutputs": "已存记忆条数",
+      "storedOutputsHint": "当前保留在记忆存储中的抽取结果数量。",
+      "pendingPromotion": "等待整理",
+      "pendingPromotionHint": "尚未被任何一次整理合并的记忆条数。",
+      "phase2": "最近整理",
+      "phase2LastRun": "完成于 {{time}}",
+      "phase2NeverRun": "尚未执行过整理。",
+      "phase2LastError": "最近整理错误",
+      "memoryIndex": "MEMORY.md",
+      "memoryIndexHint": "长期记忆索引文件的大小。",
+      "memorySummary": "memory_summary.md",
+      "memorySummaryHint": "注入会话的摘要文件大小。",
+      "rolloutSummaries": "会话抽取文件数",
+      "rolloutSummariesHint": "记忆目录中按会话保存的抽取文件数量。"
+    },
+    "failed": {
+      "title": "抽取失败的会话",
+      "description": "这些会话未能完成抽取。在抽取成功、重试次数恢复，或失败记录超过失败报告保留期之前会一直列出。清除失败记录后，下一次记忆任务会重新尝试抽取这些会话。",
+      "none": "没有抽取失败的会话。",
+      "retryExhausted": "重试次数已用尽",
+      "failedAt": "失败于 {{time}}",
+      "clearAction": "清除失败记录",
+      "clearConfirmTitle": "清除抽取失败记录？",
+      "clearConfirm": "将删除当前执行主机上这些会话的失败记录。已抽取的记忆不会被删除；清除失败记录后，这些会话会在下一次记忆任务中重新尝试抽取。",
+      "clearConfirmAction": "清除记录",
+      "cleared": "已清除 {{count}} 条失败记录",
+      "clearFailed": "清除失败记录失败"
+    },
+    "messages": {
+      "loading": "正在读取记忆状态…",
+      "loadFailed": "读取记忆状态失败",
+      "unavailable": "记忆状态不可用：{{error}}",
+      "pipelineStarted": "已启动记忆流程",
+      "pipelineDisabled": "自动记忆生成已关闭，未启动任何任务",
+      "startFailed": "启动记忆流程失败",
+      "pollTimedOut": "流程已运行超过 10 分钟，已停止刷新状态。重新打开本页可再次刷新。"
+    }
+  },
   "fields": {
     "memoryEnabled": {
       "label": "记忆",
@@ -78,7 +134,7 @@
     },
     "maxUnusedDays": {
       "label": "候选保留天数",
-      "description": "未使用的抽取结果超过此天数后不再参与整理；不能小于会话回溯天数"
+"description": "未被使用的抽取结果超过该天数后会被永久删除，由其整理进 MEMORY.md 的内容会在下一次整理时移除。需不小于会话最大年龄"
     },
     "consolidationModel": {
       "label": "整理模型",

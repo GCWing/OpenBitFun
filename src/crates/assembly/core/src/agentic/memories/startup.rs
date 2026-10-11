@@ -54,20 +54,43 @@ pub async fn start_memory_startup_task(request: MemoryStartupRequest) {
                 return;
             }
         };
+        let max_unused_days = config.memories.max_unused_days.clamp(1, 365);
         match phase1
-            .prune_stage1_outputs_for_retention(config.memories.max_unused_days)
+            .prune_stage1_outputs_for_retention(max_unused_days)
             .await
         {
             Ok(pruned) if pruned > 0 => {
                 info!(
                     "Memory startup pruned stale stage1 output rows: pruned={}, max_unused_days={}",
-                    pruned, config.memories.max_unused_days
+                    pruned, max_unused_days
                 );
             }
             Ok(_) => {}
             Err(error) => {
                 warn!(
                     "Memory startup failed to prune stale stage1 output rows: {}",
+                    error
+                );
+            }
+        }
+        // Failure bookkeeping expires on the same pass and before phase 1 claims
+        // any session: an expired row is a dead end whose attempt budget is
+        // dropped here instead of being requeued by the quarantine path.
+        let max_failure_report_days = config.memories.max_failure_report_days;
+        match phase1
+            .prune_failed_stage1_jobs(max_failure_report_days)
+            .await
+        {
+            Ok(expired) if expired > 0 => {
+                info!(
+                    "Memory startup expired stale stage1 failure records: expired={}, max_failure_report_days={}",
+                    expired, max_failure_report_days
+                );
+            }
+            Ok(_) => {}
+            Err(error) => {
+                warn!(
+                    "Memory startup failed to expire stale stage1 failure records: {}",
                     error
                 );
             }

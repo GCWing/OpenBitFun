@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "e05dbc222e1267523832f82d6392701ab011c9d8d5ad1582dbe407904dc80d3d",
-  "commandCount": 670,
+  "catalogDigest": "88a95ef7fbc07eb066896d6fa45b34fb1da4c857a06baf2012cdef9979e8bc1e",
+  "commandCount": 673,
   "coverage": {
-    "commandCount": 670,
-    "documentedCommandCount": 622,
+    "commandCount": 673,
+    "documentedCommandCount": 625,
     "implementationCommandCount": 48,
     "implementationDigest": "f6d38a24a70708988cb47ada81d07eccf0668684e8734c9ee5155b9ffa7e3db8"
   },
@@ -1233,6 +1233,22 @@
       "sourceFile": "src/apps/desktop/src/api/mcp_api.rs",
       "signature": "fn clear_mcp_remote_auth( state: State<'_, AppState>, request: ClearMCPRemoteAuthRequest, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "clear_memory_stage1_failures",
+      "moduleId": "memory",
+      "capabilityId": "setting.ai.memory",
+      "capabilityIds": [
+        "setting.ai.memory"
+      ],
+      "documentedItemIds": [
+        "setting.ai.memory:pipeline-status"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::memory_api::clear_memory_stage1_failures",
+      "sourceFile": "src/apps/desktop/src/api/memory_api.rs",
+      "signature": "fn clear_memory_stage1_failures( request: ClearMemoryStage1FailuresRequest, ) -> Result<ClearMemoryStage1FailuresResponse, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "clear_project_permission_grants",
@@ -3417,7 +3433,23 @@
       "rustPath": "api::agentic_api::get_memory_paths",
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
       "signature": "fn get_memory_paths(state: State<'_, AppState>) -> Result<MemoryPathsResponse, String>",
-      "remoteWorkspacePolicy": "LegacyUnaudited"
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
+      "id": "get_memory_status",
+      "moduleId": "memory",
+      "capabilityId": "setting.ai.memory",
+      "capabilityIds": [
+        "setting.ai.memory"
+      ],
+      "documentedItemIds": [
+        "setting.ai.memory:pipeline-status"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::memory_api::get_memory_status",
+      "sourceFile": "src/apps/desktop/src/api/memory_api.rs",
+      "signature": "fn get_memory_status() -> Result<MemoryStatusResponse, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "get_miniapp",
@@ -8180,6 +8212,22 @@
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
       "signature": "fn run_init_agents_md( coordinator: State<'_, Arc<ConversationCoordinator>>, scheduler: State<'_, Arc<DialogScheduler>>, request: RunInitAgentsMdRequest, ) -> Result<StartDialogTurnResponse, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "run_memory_pipeline_now",
+      "moduleId": "memory",
+      "capabilityId": "setting.ai.memory",
+      "capabilityIds": [
+        "setting.ai.memory"
+      ],
+      "documentedItemIds": [
+        "setting.ai.memory:pipeline-status"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::memory_api::run_memory_pipeline_now",
+      "sourceFile": "src/apps/desktop/src/api/memory_api.rs",
+      "signature": "fn run_memory_pipeline_now() -> Result<RunMemoryPipelineNowResponse, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "run_system_command",

@@ -114,6 +114,7 @@ use openbitfun_runtime_ports::{
     ThreadGoalContinuationPlan, ThreadGoalStatus, OUTPUT_SCHEMA_CONTEXT_KEY,
 };
 use openbitfun_services_core::filesystem::{FileSearchOptions, FileSystemService, FileTreeNode};
+use openbitfun_services_core::workspace_identity::local_workspace_roots_equal;
 use openbitfun_services_core::workspace_text::{
     normalize_workspace_relative_path, resolve_workspace_relative_entry, WorkspaceEntryKind,
     WorkspaceTextReadError,
@@ -1311,6 +1312,19 @@ impl ConversationCoordinator {
             return;
         };
 
+        // The memory workspace is an internal store, not a user workspace. It is
+        // registered so internal Agent requests can carry a workspace ID, but
+        // tracking its activity would add it to the recent-workspace list and
+        // re-ensure a workspace runtime that writes tool state under the memory
+        // root.
+        if Self::workspace_is_memory_root(&workspace_service, workspace_id).await {
+            debug!(
+                "Skipping session workspace activity for the memory root: reason={}, workspace_id={}",
+                reason, workspace_id
+            );
+            return;
+        }
+
         if let Err(error) = workspace_service
             .track_workspace_activity_by_id(workspace_id, mode)
             .await
@@ -1320,6 +1334,24 @@ impl ConversationCoordinator {
                 reason, workspace_id, error
             );
         }
+    }
+
+    /// True when a workspace ID names the internal memory root.
+    ///
+    /// The memory root is registered as a workspace so the internal phase-2
+    /// consolidation Agent can carry a workspace ID instead of a path, so this is
+    /// an identity check on the resolved record and not a path heuristic.
+    async fn workspace_is_memory_root(
+        workspace_service: &WorkspaceService,
+        workspace_id: &str,
+    ) -> bool {
+        let memories_root = crate::infrastructure::get_path_manager_arc().memories_root_dir();
+        workspace_service
+            .get_workspace(workspace_id)
+            .await
+            .is_some_and(|workspace| {
+                memory_root_matches_workspace_root(&workspace.root_path, &memories_root)
+            })
     }
 
     /// Build a workspace binding that is remote-aware.
@@ -15645,6 +15677,18 @@ fn merge_prepended_messages_for_turn(
     prepended_messages
 }
 
+/// Whether a workspace root names the internal memory root.
+///
+/// Registered workspace roots are stored canonicalized, so the identity check
+/// must compare canonical forms instead of raw path strings: a root that differs
+/// only by a `..`/`.` component, a separator style, or a short/long name still
+/// names the same directory. The shared helper falls back to a plain comparison
+/// when either side cannot be canonicalized, so an unresolvable memory root
+/// degrades to the previous exact-match behavior instead of reporting a match.
+fn memory_root_matches_workspace_root(workspace_root: &Path, memories_root: &Path) -> bool {
+    local_workspace_roots_equal(workspace_root, memories_root)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -15654,19 +15698,20 @@ mod tests {
         external_delegation_agent_id, lineage_active_turn_after_transcript,
         lineage_post_admission_cancellation_error,
         lineage_session_is_settling_without_active_state, logical_subagent_type_or_runtime,
-        merge_prepended_messages_for_turn, normalize_model_selection,
-        normalize_subagent_max_concurrency, permission_mode_from_metadata,
-        resolve_agent_session_create_created_by, resolve_agent_submission_turn_id,
-        resolve_subagent_model_selection, resolve_submission_permission_mode,
-        revoke_interrupted_turn_intent_or_observe_commit, runtime_port_error_preserving_message,
-        runtime_session_summary, runtime_tool_restrictions_for_session_lifetime,
-        runtime_transcript_messages_from_turns, session_storage_workspace_locator,
-        snapshot_normal_session_model, turn_review_manifest_for_agent,
-        validate_required_lineage_turns_settled, ActiveSubagentExecution,
-        BackgroundSubagentWaitMode, ContextCompactionOutcome, ConversationCoordinator,
-        DialogSubmissionPolicy, DialogTriggerSource, InterruptedTurnIntentState,
-        ManualCompactionCommitGate, SessionMemoryMode, SessionReferenceLocator,
-        SessionRelationshipKind, SubagentExecutionRequest, TEST_AGENT_MODEL_DEFAULTS,
+        memory_root_matches_workspace_root, merge_prepended_messages_for_turn,
+        normalize_model_selection, normalize_subagent_max_concurrency,
+        permission_mode_from_metadata, resolve_agent_session_create_created_by,
+        resolve_agent_submission_turn_id, resolve_subagent_model_selection,
+        resolve_submission_permission_mode, revoke_interrupted_turn_intent_or_observe_commit,
+        runtime_port_error_preserving_message, runtime_session_summary,
+        runtime_tool_restrictions_for_session_lifetime, runtime_transcript_messages_from_turns,
+        session_storage_workspace_locator, snapshot_normal_session_model,
+        turn_review_manifest_for_agent, validate_required_lineage_turns_settled,
+        ActiveSubagentExecution, BackgroundSubagentWaitMode, ContextCompactionOutcome,
+        ConversationCoordinator, DialogSubmissionPolicy, DialogTriggerSource,
+        InterruptedTurnIntentState, ManualCompactionCommitGate, SessionMemoryMode,
+        SessionReferenceLocator, SessionRelationshipKind, SubagentExecutionRequest,
+        TEST_AGENT_MODEL_DEFAULTS,
     };
     use crate::agentic::agents::ExternalSubagentModelBinding;
     use crate::agentic::coordination::coordination_store::{
@@ -16753,6 +16798,31 @@ mod tests {
             btw_session_memory_mode(true, true),
             SessionMemoryMode::Enabled
         );
+    }
+
+    #[test]
+    fn memory_root_identity_follows_the_canonicalized_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let memories_root = temp.path().join("memories");
+        std::fs::create_dir_all(memories_root.join("nested")).unwrap();
+
+        // A registered workspace root is stored canonicalized, so an equivalent
+        // path that is not byte-identical must still be recognized.
+        let equivalent = memories_root.join("nested").join("..");
+        assert_ne!(memories_root, equivalent);
+        assert!(memory_root_matches_workspace_root(
+            &equivalent,
+            &memories_root
+        ));
+
+        assert!(memory_root_matches_workspace_root(
+            &memories_root,
+            &memories_root
+        ));
+        assert!(!memory_root_matches_workspace_root(
+            &temp.path().join("other-workspace"),
+            &memories_root
+        ));
     }
 
     #[tokio::test]

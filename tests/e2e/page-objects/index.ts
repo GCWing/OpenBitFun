@@ -2,6 +2,11 @@
 export { BasePage } from './BasePage';
 export { StartupPage } from './StartupPage';
 export { ChatPage } from './ChatPage';
+export { SettingsPage } from './SettingsPage';
 export { MiniAppsPage } from './MiniAppsPage';
 export { Header } from './components/Header';
 export { ChatInput } from './components/ChatInput';
+export { FlowChat } from './components/FlowChat';
+export { MemoriesSettings } from './components/MemoriesSettings';
+export { NavPanel } from './components/NavPanel';
+export { SceneBar } from './components/SceneBar';

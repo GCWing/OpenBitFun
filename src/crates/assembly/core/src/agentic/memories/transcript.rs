@@ -57,7 +57,13 @@ pub(crate) fn render_memory_phase1_transcript(
     token_limit: usize,
     external_context_policy: MemoryExternalContextPolicy,
 ) -> OpenBitFunResult<String> {
-    let items = collect_memory_transcript_items(turns, external_context_policy);
+    let mut items = collect_memory_transcript_items(turns, external_context_policy);
+    if items.is_empty() {
+        // A session can hold user turns but no model-visible rounds. Falling back
+        // to the user messages avoids marking the session as extracted with zero
+        // output.
+        items = collect_user_message_fallback_items(turns);
+    }
     if items.is_empty() {
         return Ok(String::new());
     }
@@ -154,6 +160,22 @@ fn collect_memory_transcript_items(
                 }
             }
         }
+    }
+    messages
+}
+
+/// Minimal user-messages-only render used when the full render is empty.
+fn collect_user_message_fallback_items(turns: &[DialogTurnData]) -> Vec<MemoryTranscriptMessage> {
+    let mut messages = Vec::new();
+    for turn in turns {
+        let user_content = transcript_display_user_content(turn);
+        if user_content.trim().is_empty() {
+            continue;
+        }
+        messages.push(MemoryTranscriptMessage::User {
+            role: "user",
+            content: truncate_middle_tokens(user_content.trim(), MESSAGE_CONTENT_TOKEN_LIMIT),
+        });
     }
     messages
 }
@@ -738,5 +760,18 @@ mod tests {
                 .unwrap();
 
         assert!(transcript.is_empty());
+    }
+
+    #[test]
+    fn memory_transcript_falls_back_to_user_messages_when_no_round_is_model_visible() {
+        let mut turn = base_turn("keep the memory review notes concise");
+        turn.kind = DialogTurnKind::ManualCompaction;
+
+        let transcript =
+            render_memory_phase1_transcript(&[turn], 20_000, MemoryExternalContextPolicy::Allow)
+                .unwrap();
+
+        assert!(transcript.contains("\"role\":\"user\""));
+        assert!(transcript.contains("keep the memory review notes concise"));
     }
 }

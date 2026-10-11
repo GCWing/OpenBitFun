@@ -1,4 +1,5 @@
 use git2::{Delta, Diff, DiffFormat, DiffOptions, IndexAddOption, Repository, Signature};
+use log::{debug, info};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -21,12 +22,6 @@ pub enum MemoryWorkspaceGitError {
     },
     #[error("Failed to remove memory workspace git metadata {path}: {source}")]
     RemoveGitMetadata {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
-    #[error("Failed to read added memory workspace file {path}: {source}")]
-    ReadAddedFile {
         path: PathBuf,
         #[source]
         source: std::io::Error,
@@ -219,21 +214,14 @@ fn memory_workspace_diff_sync(root: &Path) -> Result<MemoryWorkspaceDiff, Memory
     options
         .include_untracked(true)
         .recurse_untracked_dirs(true)
-        .include_ignored(true)
-        .recurse_ignored_dirs(true)
         .show_untracked_content(true)
         .include_typechange(true);
     let diff = repository
         .diff_tree_to_workdir_with_index(Some(&baseline), Some(&mut options))
         .map_err(|source| git_operation(root, "compute workspace diff", source))?;
     let changes = collect_workspace_changes(&diff);
-    let mut unified_diff = render_workspace_diff(&diff, root)?;
-    for path in ignored_workspace_paths(&diff) {
-        // libgit2 reports ignored entries but does not render their content as a
-        // patch, while the previous filesystem scan included every file except
-        // `.git`. Append an equivalent added-file patch to preserve that input.
-        unified_diff.push_str(&render_added_file_diff(root, &path)?);
-    }
+    let unified_diff = render_workspace_diff(&diff, root)?;
+    log_skipped_ignored_paths(&repository, &baseline, root);
 
     Ok(MemoryWorkspaceDiff {
         changes,
@@ -241,11 +229,95 @@ fn memory_workspace_diff_sync(root: &Path) -> Result<MemoryWorkspaceDiff, Memory
     })
 }
 
+/// How many skipped ignored paths a single diff computation reports by name.
+const IGNORED_MEMORY_PATH_LOG_SAMPLE: usize = 8;
+
+/// Report the ignored paths this diff deliberately leaves out.
+///
+/// The consolidation diff does not enable `include_ignored`, so a file inside the
+/// memory root that a user or global gitignore rule matches is invisible to the
+/// consolidation prompt. libgit2 also reports no delta for it in that pass, so the
+/// skipped entries are enumerated by a separate ignored-only walk and reported
+/// once per diff computation. Memory content must stay un-ignored; this log is how
+/// the divergence becomes visible instead of silent.
+fn log_skipped_ignored_paths(repository: &Repository, baseline: &git2::Tree<'_>, root: &Path) {
+    let paths = skipped_ignored_memory_paths(repository, baseline, root);
+    if paths.is_empty() {
+        return;
+    }
+
+    let sample = paths
+        .iter()
+        .take(IGNORED_MEMORY_PATH_LOG_SAMPLE)
+        .cloned()
+        .collect::<Vec<_>>();
+    info!(
+        "Memory workspace diff skipped gitignored paths inside the memory root; memory files must stay un-ignored: root={}, skipped_count={}, sample={:?}, sample_truncated={}",
+        root.display(),
+        paths.len(),
+        sample,
+        paths.len() > sample.len()
+    );
+}
+
+/// Gitignored paths inside the memory root that the consolidation diff skips.
+///
+/// Sorted, deduplicated, and free of OpenBitFun tool state. Best effort: a workdir
+/// that cannot be walked yields an empty list, because observability must never
+/// fail the diff itself.
+fn skipped_ignored_memory_paths(
+    repository: &Repository,
+    baseline: &git2::Tree<'_>,
+    root: &Path,
+) -> Vec<String> {
+    let mut options = DiffOptions::new();
+    options
+        .include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .show_untracked_content(true)
+        .include_ignored(true)
+        .recurse_ignored_dirs(true);
+    // Observability must never fail the diff itself, so an unwalkable workdir
+    // degrades to an empty list.
+    let ignored_diff = repository
+        .diff_tree_to_workdir_with_index(Some(baseline), Some(&mut options))
+        .map_err(|error| {
+            debug!(
+                "Memory workspace could not enumerate gitignored paths inside the memory root: root={}, error={}",
+                root.display(),
+                error
+            );
+        });
+    let Ok(ignored_diff) = ignored_diff else {
+        return Vec::new();
+    };
+
+    let mut paths = ignored_diff
+        .deltas()
+        .filter(|delta| delta.status() == Delta::Ignored)
+        .filter_map(|delta| {
+            delta
+                .new_file()
+                .path()
+                .or_else(|| delta.old_file().path())
+                .map(|path| path.to_string_lossy().replace('\\', "/"))
+        })
+        .filter(|path| !is_memory_tool_state_path(path))
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
 fn collect_workspace_changes(diff: &Diff<'_>) -> Vec<MemoryWorkspaceChange> {
     let mut changes = Vec::new();
     for delta in diff.deltas() {
         let (status, path) = match delta.status() {
-            Delta::Added | Delta::Untracked | Delta::Ignored => {
+            // Ignored paths are not part of the memory contract. The memory root
+            // also hosts tool state such as `.openbitfun/search/` indexes, which
+            // must never appear as memory input.
+            Delta::Ignored => continue,
+            Delta::Added | Delta::Untracked => {
                 (MemoryWorkspaceChangeStatus::Added, delta.new_file().path())
             }
             Delta::Deleted => (
@@ -264,10 +336,11 @@ fn collect_workspace_changes(diff: &Diff<'_>) -> Vec<MemoryWorkspaceChange> {
             Delta::Unmodified => continue,
         };
         if let Some(path) = path {
-            changes.push(MemoryWorkspaceChange {
-                status,
-                path: path.to_string_lossy().replace('\\', "/"),
-            });
+            let path = path.to_string_lossy().replace('\\', "/");
+            if is_memory_tool_state_path(&path) {
+                continue;
+            }
+            changes.push(MemoryWorkspaceChange { status, path });
         }
     }
     changes.sort_by(|left, right| left.path.cmp(&right.path));
@@ -275,48 +348,31 @@ fn collect_workspace_changes(diff: &Diff<'_>) -> Vec<MemoryWorkspaceChange> {
     changes
 }
 
-fn ignored_workspace_paths(diff: &Diff<'_>) -> Vec<String> {
-    let mut paths = diff
-        .deltas()
-        .filter(|delta| delta.status() == Delta::Ignored)
-        .filter_map(|delta| delta.new_file().path())
-        .map(|path| path.to_string_lossy().replace('\\', "/"))
-        .collect::<Vec<_>>();
-    paths.sort();
-    paths.dedup();
-    paths
-}
-
-fn render_added_file_diff(root: &Path, path: &str) -> Result<String, MemoryWorkspaceGitError> {
-    let file_path = root.join(path);
-    let body = std::fs::read_to_string(&file_path).map_err(|source| {
-        MemoryWorkspaceGitError::ReadAddedFile {
-            path: file_path,
-            source,
-        }
-    })?;
-    let diff = similar::TextDiff::from_lines("", &body);
-    let mut rendered = format!(
-        "diff --git a/{path} b/{path}\nnew file mode 100644\n--- /dev/null\n+++ b/{path}\n"
-    );
-    for change in diff.iter_all_changes() {
-        let sign = match change.tag() {
-            similar::ChangeTag::Delete => "-",
-            similar::ChangeTag::Insert => "+",
-            similar::ChangeTag::Equal => " ",
-        };
-        rendered.push_str(sign);
-        rendered.push_str(change.value());
-    }
-    if !rendered.ends_with('\n') {
-        rendered.push('\n');
-    }
-    Ok(rendered)
+/// True for OpenBitFun-owned tool state that can appear inside the memory root.
+///
+/// The memory root can be registered as a workspace and indexed by local search,
+/// which writes an index directory into it. That state is tool bookkeeping, not
+/// memory content, and must never be reported as a workspace change or rendered
+/// into the consolidation prompt, whether or not the host ignores it. The
+/// directory name is read from the product identity owner so a build with a
+/// different data namespace still filters its own tool state.
+fn is_memory_tool_state_path(path: &str) -> bool {
+    let first_segment = path.split('/').next().unwrap_or_default();
+    first_segment == ".git" || first_segment == crate::product_identity::hidden_data_directory()
 }
 
 fn render_workspace_diff(diff: &Diff<'_>, root: &Path) -> Result<String, MemoryWorkspaceGitError> {
     let mut rendered = Vec::new();
-    diff.print(DiffFormat::Patch, |_, _, line| {
+    diff.print(DiffFormat::Patch, |delta, _hunk, line| {
+        let path = delta
+            .new_file()
+            .path()
+            .or_else(|| delta.old_file().path())
+            .map(|path| path.to_string_lossy().replace('\\', "/"));
+        if path.as_deref().is_some_and(is_memory_tool_state_path) {
+            // Tool state never reaches the consolidation prompt.
+            return true;
+        }
         if matches!(line.origin(), ' ' | '+' | '-') {
             rendered.push(line.origin() as u8);
         }
@@ -374,7 +430,8 @@ fn git_operation(
 mod tests {
     use super::{
         memory_workspace_diff, render_memory_workspace_diff_file,
-        reset_memory_workspace_git_baseline, MemoryWorkspaceChange, MemoryWorkspaceChangeStatus,
+        reset_memory_workspace_git_baseline, skipped_ignored_memory_paths, MemoryWorkspaceChange,
+        MemoryWorkspaceChangeStatus, Repository,
     };
 
     #[tokio::test]
@@ -418,7 +475,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn memory_workspace_diff_includes_ignored_ad_hoc_notes() {
+    async fn memory_workspace_diff_ignores_gitignored_files() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
         std::fs::write(
@@ -434,14 +491,98 @@ mod tests {
 
         let diff = memory_workspace_diff(root).await.unwrap();
 
+        assert!(
+            !diff.has_changes(),
+            "a change consisting only of an ignored file must yield an empty diff"
+        );
+        assert!(diff.unified_diff.is_empty());
+        assert!(!diff.unified_diff.contains("Durable ignored memory note"));
+
+        // The skipped file is still enumerable, so the divergence is reported
+        // instead of staying silent.
+        let repository = Repository::open(root).unwrap();
+        let baseline = repository.head().unwrap().peel_to_tree().unwrap();
+        assert_eq!(
+            skipped_ignored_memory_paths(&repository, &baseline, root),
+            vec!["extensions/ad_hoc/notes/ignored-note.md".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn skipped_ignored_paths_exclude_tool_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        std::fs::write(root.join(".gitignore"), ".openbitfun/\n").unwrap();
+        reset_memory_workspace_git_baseline(root).await.unwrap();
+
+        let index_dir = root.join(".openbitfun/search/flashgrep-index");
+        std::fs::create_dir_all(&index_dir).unwrap();
+        std::fs::write(index_dir.join("index.bin"), "tool state").unwrap();
+
+        let repository = Repository::open(root).unwrap();
+        let baseline = repository.head().unwrap().peel_to_tree().unwrap();
+        assert!(skipped_ignored_memory_paths(&repository, &baseline, root).is_empty());
+    }
+
+    #[tokio::test]
+    async fn memory_workspace_diff_detects_untracked_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        std::fs::write(root.join(".gitignore"), "ignored-dir/\n").unwrap();
+        reset_memory_workspace_git_baseline(root).await.unwrap();
+
+        let note_path = root.join("extensions/ad_hoc/notes/untracked-note.md");
+        std::fs::create_dir_all(note_path.parent().unwrap()).unwrap();
+        std::fs::write(&note_path, "Durable untracked memory note\n").unwrap();
+
+        let diff = memory_workspace_diff(root).await.unwrap();
+
         assert!(diff.changes.contains(&MemoryWorkspaceChange {
             status: MemoryWorkspaceChangeStatus::Added,
-            path: "extensions/ad_hoc/notes/ignored-note.md".to_string(),
+            path: "extensions/ad_hoc/notes/untracked-note.md".to_string(),
         }));
         assert!(diff
             .unified_diff
-            .contains("extensions/ad_hoc/notes/ignored-note.md"));
-        assert!(diff.unified_diff.contains("+Durable ignored memory note"));
+            .contains("extensions/ad_hoc/notes/untracked-note.md"));
+        assert!(diff.unified_diff.contains("+Durable untracked memory note"));
+    }
+
+    #[tokio::test]
+    async fn memory_workspace_diff_stays_empty_when_tool_state_is_gitignored() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        std::fs::write(root.join("MEMORY.md"), "# Task Group: example\n").unwrap();
+        std::fs::write(root.join(".gitignore"), ".openbitfun/\n").unwrap();
+        reset_memory_workspace_git_baseline(root).await.unwrap();
+
+        // Simulates a search index written into the memory root by a local tool.
+        let index_dir = root.join(".openbitfun/search/flashgrep-index");
+        std::fs::create_dir_all(&index_dir).unwrap();
+        std::fs::write(index_dir.join("index.bin"), "tool state").unwrap();
+
+        let diff = memory_workspace_diff(root).await.unwrap();
+
+        assert!(!diff.has_changes());
+        assert!(!diff.unified_diff.contains("tool state"));
+    }
+
+    #[tokio::test]
+    async fn memory_workspace_diff_stays_empty_when_tool_state_is_untracked() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        std::fs::write(root.join("MEMORY.md"), "# Task Group: example\n").unwrap();
+        reset_memory_workspace_git_baseline(root).await.unwrap();
+
+        // No ignore rule applies on this host, so the index is untracked and the
+        // tool-state filter itself has to drop it.
+        let index_dir = root.join(".openbitfun/search/flashgrep-index");
+        std::fs::create_dir_all(&index_dir).unwrap();
+        std::fs::write(index_dir.join("index.bin"), "tool state").unwrap();
+
+        let diff = memory_workspace_diff(root).await.unwrap();
+
+        assert!(!diff.has_changes());
+        assert!(!diff.unified_diff.contains("tool state"));
     }
 
     #[test]

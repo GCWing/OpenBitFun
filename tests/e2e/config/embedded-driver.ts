@@ -413,6 +413,23 @@ async function startDevServer(): Promise<void> {
   }
 }
 
+/**
+ * File the app's stdout/stderr is mirrored into for this run.
+ *
+ * In embedded WebDriver mode the app logs to stdout only (`build_log_targets`
+ * skips every file target when `OPENBITFUN_WEBDRIVER_PORT` is set), so the
+ * per-session `app.log` a spec would normally read never exists. Mirroring
+ * stdout keeps the host log evidence durable and readable by specs.
+ */
+function appStdoutLogPath(): string {
+  const directory = process.env.OPENBITFUN_E2E_LOG_DIR
+    ? path.resolve(process.env.OPENBITFUN_E2E_LOG_DIR)
+    : path.join(e2eRuntimeRoot(), 'logs');
+  fs.mkdirSync(directory, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return path.join(directory, `app-stdout-${stamp}.log`);
+}
+
 async function startOpenBitFunApp(): Promise<void> {
   const appPath = getApplicationPath();
 
@@ -428,8 +445,12 @@ async function startOpenBitFunApp(): Promise<void> {
 
   stopOpenBitFunApp();
 
+  const stdoutLogPath = appStdoutLogPath();
+  const stdoutLogStream = fs.createWriteStream(stdoutLogPath, { flags: 'a' });
+
   console.log(`Starting OpenBitFun with embedded WebDriver on port ${DRIVER_PORT}`);
   console.log(`Application: ${appPath}`);
+  console.log(`Application stdout log: ${stdoutLogPath}`);
 
   openbitfunApp = spawn(appPath, [], {
     cwd: projectRoot(),
@@ -443,14 +464,17 @@ async function startOpenBitFunApp(): Promise<void> {
   });
 
   openbitfunApp.stdout?.on('data', (data: Buffer) => {
+    stdoutLogStream.write(data);
     console.log(`[openbitfun-app] ${data.toString().trim()}`);
   });
 
   openbitfunApp.stderr?.on('data', (data: Buffer) => {
+    stdoutLogStream.write(data);
     console.error(`[openbitfun-app] ${data.toString().trim()}`);
   });
 
   openbitfunApp.on('exit', (code, signal) => {
+    stdoutLogStream.end();
     console.log(`[openbitfun-app] exited (code=${code ?? 'null'}, signal=${signal ?? 'null'})`);
   });
 
@@ -535,7 +559,12 @@ export function createEmbeddedConfig(specs: string[], label: string): Options.Te
 
     mochaOpts: {
       ui: 'bdd',
-      timeout: 120000,
+      // WebdriverIO snapshots this value into a hard wall-clock cap when a test
+      // starts, so a spec's own `this.timeout(...)` cannot raise it afterwards.
+      // Specs that legitimately run for minutes (real model turns, memory
+      // consolidation) raise it through the environment instead of changing the
+      // default for every suite.
+      timeout: Number(process.env.OPENBITFUN_E2E_MOCHA_TIMEOUT ?? 120000),
       retries: 0,
     },
 

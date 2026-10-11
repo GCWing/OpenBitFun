@@ -27,6 +27,16 @@ pub struct MemoryPhase1RunStats {
     pub extracted_sessions: usize,
     pub skipped_sessions: usize,
     pub failed_sessions: usize,
+    /// Skips caused by an unresolvable workspace session storage root.
+    ///
+    /// The session storage directory is owned by the workspace identity, so a
+    /// workspace that does not resolve to a local or registered remote workspace
+    /// has no persisted turns to read. That is a different cause from "already
+    /// captured" or "another job owns it", so it is reported as its own fact
+    /// instead of being folded into `skipped_sessions`. Additive with a serde
+    /// default so an older reader of this shape keeps working.
+    #[serde(default)]
+    pub storage_unavailable_sessions: u64,
 }
 
 #[cfg(test)]
@@ -43,7 +53,19 @@ mod tests {
                 extracted_sessions: 0,
                 skipped_sessions: 0,
                 failed_sessions: 0,
+                storage_unavailable_sessions: 0,
             }
         );
+    }
+
+    #[test]
+    fn phase1_run_stats_deserialize_without_the_storage_unavailable_field() {
+        // Shape written before the typed storage-unavailable signal existed.
+        let stats: MemoryPhase1RunStats = serde_json::from_str(
+            r#"{"scanned_sessions":1,"candidate_sessions":1,"extracted_sessions":0,"skipped_sessions":1,"failed_sessions":0}"#,
+        )
+        .unwrap();
+        assert_eq!(stats.skipped_sessions, 1);
+        assert_eq!(stats.storage_unavailable_sessions, 0);
     }
 }

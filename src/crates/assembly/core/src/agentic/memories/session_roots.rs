@@ -2,7 +2,7 @@
 
 use crate::agentic::session::session_store_port::CoreSessionStorePort;
 use crate::service::workspace::{get_global_workspace_service, WorkspaceInfo, WorkspaceKind};
-use openbitfun_runtime_ports::SessionStorePort;
+use openbitfun_runtime_ports::{SessionStoragePathRequest, SessionStorePort};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -58,6 +58,27 @@ fn workspace_is_local_memory_source(ws: &WorkspaceInfo) -> bool {
 async fn local_session_storage_dir_for_workspace(ws: &WorkspaceInfo) -> Option<PathBuf> {
     CoreSessionStorePort::default()
         .resolve_workspace_storage(&ws.id)
+        .await
+        .map(|resolution| resolution.effective_storage_path)
+        .ok()
+}
+
+/// Effective local session storage directory for one workspace path.
+///
+/// The path variant exists for callers that only hold a workspace path, such as
+/// the on-demand phase-1 run. It resolves through the same session-store port, so
+/// a path that is neither a local nor a registered remote workspace reports
+/// `None` instead of falling back to its execution root, which is never session
+/// storage.
+pub(super) async fn local_session_storage_dir_for_workspace_path(
+    workspace_path: &std::path::Path,
+) -> Option<PathBuf> {
+    CoreSessionStorePort::default()
+        .resolve_session_storage_path(SessionStoragePathRequest {
+            workspace_path: workspace_path.to_path_buf(),
+            remote_connection_id: None,
+            remote_ssh_host: None,
+        })
         .await
         .map(|resolution| resolution.effective_storage_path)
         .ok()

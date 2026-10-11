@@ -4,6 +4,8 @@
 //! isolated. High-coupling runtime services stay here until their port
 //! contracts and equivalence tests are explicit.
 
+#[cfg(feature = "agent-runtime")]
+pub mod agentic_api; // Memory pipeline status read / on-demand trigger facade
 #[cfg(feature = "announcement")]
 pub mod announcement; // Announcement / feature-demo / tips system
 #[cfg(feature = "workspace-runtime")]

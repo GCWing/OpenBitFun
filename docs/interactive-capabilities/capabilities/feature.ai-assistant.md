@@ -45,6 +45,8 @@ Work with AI in project context, create sessions, continue tasks, answer permiss
   - Edit the goal objective or clear the current session goal
 - **由专用智能体工具控制 / Delegated Agent tool** · `TodoWrite` / `AskUserQuestion` · 让智能体维护任务清单、生成实施计划并按需向用户提问
   - Let an agent maintain a task list, produce an implementation plan, and ask the user when needed
+- **由专用智能体工具控制 / Delegated Agent tool** · `MemorySearch` / `MemoryFetch` / `MemorySave` · 让智能体检索、读取并主动记录长期记忆
+  - Let an agent search, read, and proactively record long-term memory
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看单个会话的请求、Token 与成本用量报告
   - View request, token, and cost usage for an individual session
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 重新加载会话上下文、运行 AGENTS.md 初始化并管理长期记忆

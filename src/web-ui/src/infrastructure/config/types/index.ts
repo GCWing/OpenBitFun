@@ -47,6 +47,7 @@ export interface MemoriesConfig {
   max_raw_memories_for_consolidation: number;
   max_unused_days: number;
   max_rollout_age_days: number;
+  max_failure_report_days: number;
   max_rollouts_per_startup: number;
   max_rollouts_scan_limit: number;
   min_rollout_idle_hours: number;

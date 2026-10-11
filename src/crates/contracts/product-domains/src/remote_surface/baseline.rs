@@ -78,7 +78,6 @@ pub(super) const UNAUDITED_BASELINE: &[&str] = &[
     "get_mcp_server_status",
     "get_mcp_servers",
     "get_mcp_tool_ui_uri",
-    "get_memory_paths",
     "get_miniapp",
     "get_miniapp_draft_storage",
     "get_miniapp_storage",

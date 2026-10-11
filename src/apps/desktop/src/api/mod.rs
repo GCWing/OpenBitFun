@@ -36,6 +36,7 @@ pub mod insights_api;
 pub mod local_file_download;
 pub mod market_image_api;
 pub mod mcp_api;
+pub mod memory_api;
 pub mod miniapp_agent_api;
 pub mod miniapp_api;
 pub mod miniapp_export_api;

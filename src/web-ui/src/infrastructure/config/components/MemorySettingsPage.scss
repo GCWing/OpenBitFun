@@ -1,0 +1,110 @@
+// Memory settings page presentation.
+//
+// Only the diagnostics of the status card live here: pipeline errors and failed
+// extractions are supporting evidence, not settings values, so they render as a
+// compact tinted block one step below the row description size instead of as
+// ordinary field text.
+.openbitfun-memory-settings {
+  &__inline-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-2);
+    width: 100%;
+  }
+
+  &__inline-header-main {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    min-width: 0;
+  }
+
+  &__inline-header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  &__error-detail {
+    box-sizing: border-box;
+    inline-size: 100%;
+    padding: var(--openbitfun-space-2) var(--openbitfun-space-3);
+    border: var(--openbitfun-border-width-default) solid
+      var(--openbitfun-color-status-danger-border);
+    border-radius: var(--openbitfun-radius-sm);
+    background: var(--openbitfun-color-status-danger-surface);
+    color: var(--openbitfun-color-status-danger-content);
+    font-size: var(--openbitfun-type-support-font-size);
+    font-weight: var(--openbitfun-type-support-font-weight);
+    line-height: var(--openbitfun-type-support-line-height);
+    letter-spacing: var(--openbitfun-type-support-letter-spacing);
+  }
+
+  // Two lines are enough to recognize a pipeline error; the full text stays on
+  // the `title` attribute instead of expanding the row into a text wall.
+  &__error-detail-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+
+  &__failure-list {
+    display: grid;
+    gap: var(--openbitfun-space-2);
+    inline-size: 100%;
+  }
+
+  &__failure-entry {
+    box-sizing: border-box;
+    display: grid;
+    gap: var(--openbitfun-space-1);
+    inline-size: 100%;
+    padding: var(--openbitfun-space-2) var(--openbitfun-space-3);
+    border: var(--openbitfun-border-width-default) solid
+      var(--openbitfun-color-status-danger-border);
+    border-radius: var(--openbitfun-radius-sm);
+    background: var(--openbitfun-color-status-danger-surface);
+  }
+
+  &__failure-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-2);
+    min-width: 0;
+    color: var(--openbitfun-color-content-primary);
+    font-size: var(--openbitfun-type-support-font-size);
+    line-height: var(--openbitfun-type-support-line-height);
+  }
+
+  &__failure-session {
+    font-family: var(--openbitfun-type-code-sm-font-family);
+  }
+
+  // First line of the raw provider error only; the whole message stays on the
+  // `title` attribute so the list stays scannable.
+  &__failure-error {
+    color: var(--openbitfun-color-status-danger-content);
+    font-size: var(--openbitfun-type-support-font-size);
+    font-weight: var(--openbitfun-type-support-font-weight);
+    line-height: var(--openbitfun-type-support-line-height);
+    letter-spacing: var(--openbitfun-type-support-letter-spacing);
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+
+  @media (forced-colors: active) {
+    &__error-detail,
+    &__failure-entry {
+      border-color: CanvasText;
+    }
+  }
+}

@@ -1,13 +1,18 @@
-use crate::agentic::coordination::{get_global_coordinator, InternalAgentExecutionRequest};
+use crate::agentic::coordination::{
+    get_global_coordinator, InternalAgentExecutionRequest, SubagentResultStatus,
+};
 use crate::agentic::memories::db::{
-    MemoryDatabase, MemoryPhase2CandidateRow, MemoryPhase2ClaimOutcome,
+    MemoryDatabase, MemoryPhase2CandidateRow, MemoryPhase2ClaimOutcome, MemoryPhase2SelectionRow,
     MEMORY_PHASE2_GLOBAL_JOB_KEY,
 };
 use crate::agentic::memories::transcript::redact_memory_secrets;
 use crate::agentic::memories::workspace::{
-    memory_workspace_diff, prepare_memory_workspace, reset_memory_workspace_baseline,
+    memory_index_file, memory_workspace_diff, memory_workspace_has_input_artifacts,
+    phase2_workspace_diff_file, prepare_memory_workspace, reset_memory_workspace_baseline,
     sync_phase2_workspace_inputs, write_workspace_diff, MemoryWorkspaceDiff, AD_HOC_EXTENSION_NAME,
-    AD_HOC_INSTRUCTIONS_FILE_NAME, MEMORY_EXTENSIONS_DIR_NAME,
+    AD_HOC_INSTRUCTIONS_FILE_NAME, MEMORY_EXTENSIONS_DIR_NAME, MEMORY_FILE_NAME,
+    MEMORY_SUMMARY_FILE_NAME, PHASE2_WORKSPACE_DIFF_FILE_NAME, RAW_MEMORIES_FILENAME,
+    ROLLOUT_SUMMARIES_DIR_NAME, SKILLS_DIR_NAME,
 };
 use crate::agentic::persistence::PersistenceManager;
 use crate::agentic::tools::{ToolPathPolicy, ToolRuntimeRestrictions};
@@ -18,6 +23,8 @@ use crate::service::session::SessionMemoryMode;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use async_trait::async_trait;
 use log::{debug, info, warn};
+use openbitfun_agent_runtime::permission::PERMISSION_MODE_CONTEXT_KEY;
+use openbitfun_runtime_ports::PermissionMode;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -36,13 +43,62 @@ pub struct Phase2RunReport {
     pub consolidation_output: String,
 }
 
+/// Outcome of one consolidation turn.
+///
+/// `completed` separates "the agent finished its consolidation" from "the agent
+/// returned something, but the turn did not finish cleanly" (for example a
+/// partial timeout). Only a completed turn may advance the pipeline: a turn that
+/// stopped mid-way left a half-applied workspace and a partly consumed diff, so
+/// the runner keeps the baseline and the pending input for the next pass.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MemoryPhase2ConsolidationOutcome {
+    output: String,
+    completed: bool,
+    reason: Option<String>,
+}
+
+impl MemoryPhase2ConsolidationOutcome {
+    fn completed(output: String) -> Self {
+        Self {
+            output,
+            completed: true,
+            reason: None,
+        }
+    }
+
+    /// Marker used in `Phase2RunReport::consolidation_output` so a caller can see
+    /// that the run happened but the consolidation itself did not finish.
+    const INCOMPLETE_OUTPUT_PREFIX: &'static str = "[consolidation-incomplete]";
+
+    fn into_run_output(self) -> String {
+        if self.completed {
+            return self.output;
+        }
+        match self.reason {
+            Some(reason) => format!(
+                "{} {}: {}",
+                Self::INCOMPLETE_OUTPUT_PREFIX,
+                reason,
+                self.output
+            ),
+            None => format!("{} {}", Self::INCOMPLETE_OUTPUT_PREFIX, self.output),
+        }
+    }
+}
+
+impl From<String> for MemoryPhase2ConsolidationOutcome {
+    fn from(output: String) -> Self {
+        Self::completed(output)
+    }
+}
+
 #[async_trait]
 trait MemoryPhase2Consolidator: Send + Sync {
     async fn consolidate(
         &self,
         memory_root: &std::path::Path,
         model_id: Option<String>,
-    ) -> OpenBitFunResult<String>;
+    ) -> OpenBitFunResult<MemoryPhase2ConsolidationOutcome>;
 }
 
 struct InternalAgentMemoryPhase2Consolidator;
@@ -53,7 +109,7 @@ impl MemoryPhase2Consolidator for InternalAgentMemoryPhase2Consolidator {
         &self,
         memory_root: &std::path::Path,
         model_id: Option<String>,
-    ) -> OpenBitFunResult<String> {
+    ) -> OpenBitFunResult<MemoryPhase2ConsolidationOutcome> {
         let coordinator = get_global_coordinator().ok_or_else(|| {
             OpenBitFunError::service(
                 "Memory phase2 consolidation requires an initialized agent coordinator".to_string(),
@@ -81,24 +137,44 @@ impl MemoryPhase2Consolidator for InternalAgentMemoryPhase2Consolidator {
                 crate::service::workspace::WorkspaceActivityMode::TouchOnly,
             )
             .await?;
-        let request = InternalAgentExecutionRequest {
+        let request = memory_phase2_internal_agent_request(
+            workspace.id,
+            memory_root,
+            model_id.clone(),
             task_description,
-            agent_type: "MemoryPhase2".to_string(),
-            session_name: "Memory Phase 2 Consolidation".to_string(),
-            workspace_id: workspace.id,
-            model_id: model_id.clone(),
-            created_by: Some("memory-phase2".to_string()),
-            context: HashMap::new(),
-            delegation_policy: openbitfun_runtime_ports::DelegationPolicy::top_level()
-                .spawn_child(),
-            runtime_tool_restrictions: memory_phase2_tool_restrictions(memory_root),
-            session_kind: SessionKind::EphemeralChild,
-            emit_lifecycle_events: false,
-        };
+        );
         let started_at = std::time::Instant::now();
+        // The consolidation budget follows the workload it has to read: a large
+        // workspace diff and a large consolidated index both cost real generation
+        // time, and a fixed ceiling silently truncates the turn on exactly those
+        // runs. The measured inputs are logged with the decision.
+        let (workspace_diff_bytes, memory_index_bytes) =
+            read_phase2_consolidation_workload(memory_root).await;
+        let consolidation_timeout_seconds =
+            phase2_consolidation_timeout_seconds(workspace_diff_bytes, memory_index_bytes);
+        info!(
+            "Memory phase2 consolidation timeout computed: workspace_root={}, workspace_diff_bytes={}, memory_index_bytes={}, timeout_seconds={}",
+            memory_root.display(),
+            workspace_diff_bytes,
+            memory_index_bytes,
+            consolidation_timeout_seconds
+        );
         let result = coordinator
-            .execute_internal_agent(request, None, Some(20 * 60))
+            .execute_internal_agent(request, None, Some(consolidation_timeout_seconds))
             .await?;
+        let completed = result.status == SubagentResultStatus::Completed;
+        if !completed {
+            // A wedged consolidation must not look like a clean run: the caller
+            // resets the workspace baseline on success, which would hide a
+            // half-finished update from the next run's diff.
+            warn!(
+                "Memory phase2 internal agent did not complete: workspace_root={}, status={:?}, reason={:?}, duration_ms={}",
+                memory_root.display(),
+                result.status,
+                result.reason,
+                started_at.elapsed().as_millis()
+            );
+        }
         info!(
             "Memory phase2 internal agent raw response: workspace_root={}, model_id={:?}, output_bytes={}, duration_ms={}, raw_response=\n{}",
             memory_root.display(),
@@ -107,7 +183,52 @@ impl MemoryPhase2Consolidator for InternalAgentMemoryPhase2Consolidator {
             started_at.elapsed().as_millis(),
             redact_memory_secrets(&result.text)
         );
-        Ok(result.text)
+        Ok(MemoryPhase2ConsolidationOutcome {
+            output: result.text,
+            completed,
+            reason: if completed {
+                None
+            } else {
+                Some(match result.reason {
+                    Some(reason) => format!("{:?}: {}", result.status, reason),
+                    None => format!("{:?}", result.status),
+                })
+            },
+        })
+    }
+}
+
+/// Builds the request for the internal consolidation turn.
+///
+/// The consolidation session is an ephemeral child whose lifecycle events are not
+/// emitted, so no surface is asked for approval and none can answer an interactive
+/// permission prompt. An in-root `Write` that raised an ask would therefore block
+/// the turn forever and keep the global phase-2 job `running` until its lease
+/// expired. The turn runs in auto-approve mode, which answers asks without a
+/// prompt; the tool allowlist and the workspace path roots still bound what the
+/// agent may touch.
+fn memory_phase2_internal_agent_request(
+    workspace_id: String,
+    memory_root: &std::path::Path,
+    model_id: Option<String>,
+    task_description: String,
+) -> InternalAgentExecutionRequest {
+    let context = HashMap::from([(
+        PERMISSION_MODE_CONTEXT_KEY.to_string(),
+        PermissionMode::AutoApprove.as_str().to_string(),
+    )]);
+    InternalAgentExecutionRequest {
+        task_description,
+        agent_type: "MemoryPhase2".to_string(),
+        session_name: "Memory Phase 2 Consolidation".to_string(),
+        workspace_id,
+        model_id,
+        created_by: Some("memory-phase2".to_string()),
+        context,
+        delegation_policy: openbitfun_runtime_ports::DelegationPolicy::top_level().spawn_child(),
+        runtime_tool_restrictions: memory_phase2_tool_restrictions(memory_root),
+        session_kind: SessionKind::EphemeralChild,
+        emit_lifecycle_events: false,
     }
 }
 
@@ -213,13 +334,17 @@ impl MemoryPhase2Runner {
         config: crate::service::config::types::GlobalConfig,
     ) -> OpenBitFunResult<Option<Phase2RunReport>> {
         let started_at = std::time::Instant::now();
+        let success_cooldown_seconds = config
+            .memories
+            .phase2_success_cooldown_seconds
+            .clamp(0, 7 * 24 * 60 * 60);
         info!(
             "Memory phase2 run started: generate_memories={}, limit={}, max_unused_days={}, phase2_lease_seconds={}, phase2_success_cooldown_seconds={}, phase2_retry_delay_seconds={}, memory_root={}",
             config.memories.generate_memories,
             config.memories.max_raw_memories_for_consolidation.clamp(1, 4096),
-            config.memories.max_unused_days.clamp(0, 365),
+            config.memories.max_unused_days.clamp(1, 365),
             config.memories.phase2_lease_seconds.clamp(60, 24 * 60 * 60),
-            config.memories.phase2_success_cooldown_seconds.clamp(0, 7 * 24 * 60 * 60),
+            success_cooldown_seconds,
             config.memories.phase2_retry_delay_seconds.clamp(60, 24 * 60 * 60),
             self.memory_root.display()
         );
@@ -228,30 +353,38 @@ impl MemoryPhase2Runner {
             return Ok(None);
         }
 
-        if let Some(job) = self.db.get_phase2_job(PHASE2_JOB_KEY).await? {
+        // The retry backoff is a hard gate: it protects a failing consolidation
+        // from being retried in a tight loop.
+        let job_before = self.db.get_phase2_job(PHASE2_JOB_KEY).await?;
+        if let Some(job) = job_before.as_ref() {
             let now = current_unix_secs();
-            let cooldown_until = job.success_cooldown_until_unix_secs(
-                config
-                    .memories
-                    .phase2_success_cooldown_seconds
-                    .clamp(0, 7 * 24 * 60 * 60),
-            );
-            if cooldown_until.is_some_and(|until| until > now) {
-                info!(
-                    "Memory phase2 run skipped by success cooldown: cooldown_until_unix_secs={:?}, now={}",
-                    cooldown_until, now
-                );
-                return Ok(None);
-            }
             if job.retry_at_unix_secs.is_some_and(|until| until > now) {
                 info!(
                     "Memory phase2 run skipped by retry backoff: retry_after_unix_secs={:?}, now={}",
-                    job.retry_at_unix_secs,
-                    now
+                    job.retry_at_unix_secs, now
                 );
                 return Ok(None);
             }
         }
+        // The success cooldown is evaluated later, after the cheap input and
+        // workspace checks, so it only ever protects a truly no-op run.
+        let cooldown_until = job_before.as_ref().and_then(|job| {
+            crate::agentic::memories::db::phase2_success_cooldown_until_unix_secs(
+                job,
+                success_cooldown_seconds,
+            )
+        });
+        // `input_watermark` is this job's evaluated-input clock: the newest stage-1
+        // candidate the pipeline has already accounted for, whether that happened
+        // through a consolidation or through a run that found nothing to do. It also
+        // advances when a session-memory state change requests a run, which is why
+        // freshness is compared against it instead of the last consolidation
+        // watermark: a candidate that is newer but never selected must not be able to
+        // keep the success cooldown disarmed forever.
+        let previous_input_watermark = job_before
+            .as_ref()
+            .and_then(|job| job.input_watermark)
+            .unwrap_or_default();
 
         let ownership_token = Uuid::new_v4().to_string();
         match self.claim_phase2_job(&ownership_token).await? {
@@ -289,7 +422,7 @@ impl MemoryPhase2Runner {
             .max_raw_memories_for_consolidation
             .clamp(1, 4096);
         let candidate_scan_limit = 4096;
-        let max_unused_days = config.memories.max_unused_days.clamp(0, 365);
+        let max_unused_days = config.memories.max_unused_days.clamp(1, 365);
         let candidate_rows = self
             .db
             .list_phase2_input_candidates(candidate_scan_limit, max_unused_days)
@@ -314,6 +447,23 @@ impl MemoryPhase2Runner {
             );
         }
         let has_candidate_rows = !candidate_rows.is_empty();
+        let candidate_input_watermark = candidate_rows
+            .iter()
+            .map(|row| row.source_updated_at_unix_secs)
+            .max()
+            .unwrap_or_default();
+        let has_new_input = candidate_input_watermark > previous_input_watermark;
+        // Every completed run records the newest candidate it evaluated, so a
+        // candidate that stays unselected cannot keep this run's freshness signal
+        // alive for the next one.
+        let evaluated_input_watermark = previous_input_watermark.max(candidate_input_watermark);
+        info!(
+            "Memory phase2 input freshness evaluated: candidate_count={}, has_new_input={}, candidate_input_watermark={}, evaluated_input_watermark={}",
+            candidate_rows.len(),
+            has_new_input,
+            candidate_input_watermark,
+            evaluated_input_watermark
+        );
         if !has_candidate_rows {
             info!(
                 "Memory phase2 found no stage1 candidates; checking workspace diff for extension changes: limit={}, max_unused_days={}",
@@ -346,22 +496,23 @@ impl MemoryPhase2Runner {
             .map(|row| row.session_id.clone())
             .collect::<Vec<_>>();
 
-        let Some(selection) = self
-            .db
-            .upsert_phase2_selection(PHASE2_JOB_KEY, &selected)
-            .await?
-        else {
-            info!("Memory phase2 run stopped because selection was empty");
-            return Ok(None);
-        };
-        info!(
-            "Memory phase2 selection persisted: input_watermark={}",
-            selection.input_watermark
-        );
-
-        if has_candidate_rows {
-            if let Err(error) =
-                sync_phase2_workspace_inputs(&self.memory_root, &selected_memory_rows).await
+        // The workspace input is rebuilt whenever it can be derived at all. An empty
+        // enabled-selection still has to drop deselected rows from `raw_memories.md`
+        // so the removal shows up in this run's diff and the consolidation agent
+        // forgets the content in the same run; a workspace that holds nothing has
+        // nothing to rebuild. Rollout summaries are safe to prune against because
+        // the keep-set is every live stage-1 row, not the selection.
+        let live_summary_identities = self.db.list_live_rollout_summary_identities().await?;
+        let workspace_holds_input_artifacts =
+            memory_workspace_has_input_artifacts(&self.memory_root).await;
+        let rebuilds_workspace_inputs = !selected.is_empty() || workspace_holds_input_artifacts;
+        if rebuilds_workspace_inputs {
+            if let Err(error) = sync_phase2_workspace_inputs(
+                &self.memory_root,
+                &selected_memory_rows,
+                &live_summary_identities,
+            )
+            .await
             {
                 let _ = self
                     .complete_phase2_job_failure(&ownership_token, error.to_string())
@@ -378,10 +529,12 @@ impl MemoryPhase2Runner {
                 )));
             }
             info!(
-                "Memory phase2 inputs synced: memory_root={}, selected_count={}, input_bytes={}",
+                "Memory phase2 inputs synced: memory_root={}, selected_count={}, candidate_count={}, input_bytes={}, live_summary_count={}",
                 self.memory_root.display(),
                 selected_memory_rows.len(),
-                input_bytes
+                candidate_rows.len(),
+                input_bytes,
+                live_summary_identities.len()
             );
         }
 
@@ -399,11 +552,13 @@ impl MemoryPhase2Runner {
                 return Err(error);
             }
         };
+        let has_meaningful_changes = workspace_diff_has_meaningful_changes(&workspace_diff);
         info!(
-            "Memory phase2 workspace diff computed: memory_root={}, has_changes={}, change_count={}",
+            "Memory phase2 workspace diff computed: memory_root={}, has_changes={}, change_count={}, has_meaningful_changes={}",
             self.memory_root.display(),
             workspace_diff.has_changes(),
-            workspace_diff.changes.len()
+            workspace_diff.changes.len(),
+            has_meaningful_changes
         );
         for change in &workspace_diff.changes {
             debug!(
@@ -412,20 +567,121 @@ impl MemoryPhase2Runner {
             );
         }
 
-        if !workspace_diff.has_changes() {
-            if has_candidate_rows {
-                self.confirm_phase2_job_completion(
-                    self.complete_phase2_job_success(&ownership_token, &selection)
-                        .await?,
-                )?;
+        // The success cooldown only protects a run that has nothing to do: no new
+        // stage-1 input and no meaningful workspace change.
+        if cooldown_until.is_some_and(|until| until > current_unix_secs())
+            && !has_new_input
+            && !has_meaningful_changes
+        {
+            let selection = MemoryPhase2SelectionRow {
+                job_key: PHASE2_JOB_KEY.to_string(),
+                input_watermark: evaluated_input_watermark,
+            };
+            self.confirm_phase2_job_completion(
+                self.complete_phase2_job_idle(&ownership_token, &selection)
+                    .await?,
+            )?;
+            info!(
+                "Memory phase2 run skipped by success cooldown: cooldown_until_unix_secs={:?}, has_new_input={}, meaningful_changes={}, candidate_count={}, duration_ms={}",
+                cooldown_until,
+                has_new_input,
+                has_meaningful_changes,
+                candidate_rows.len(),
+                started_at.elapsed().as_millis()
+            );
+            return Ok(None);
+        }
+
+        let selection = match self
+            .db
+            .upsert_phase2_selection(PHASE2_JOB_KEY, &selected)
+            .await?
+        {
+            Some(selection) => {
+                info!(
+                    "Memory phase2 selection persisted: input_watermark={}",
+                    selection.input_watermark
+                );
+                selection
+            }
+            None => {
+                // Empty selection. No candidate is marked selected in this run, and the
+                // workspace input was still rebuilt above, so deselected rows drop out
+                // of `raw_memories.md` and the removal reaches the consolidation agent
+                // through this run's diff.
+                info!(
+                    "Memory phase2 selection was empty: candidate_count={}, meaningful_changes={}, input_rebuilt={}",
+                    candidate_rows.len(),
+                    has_meaningful_changes,
+                    rebuilds_workspace_inputs
+                );
+                if !has_meaningful_changes {
+                    if workspace_diff.has_changes() {
+                        self.confirm_phase2_job_ownership(&ownership_token).await?;
+                        if let Err(error) = reset_memory_workspace_baseline(&self.memory_root).await
+                        {
+                            let _ = self
+                                .complete_phase2_job_failure(&ownership_token, error.to_string())
+                                .await;
+                            return Err(error);
+                        }
+                        self.prune_prompt_artifacts().await?;
+                        info!(
+                            "Memory phase2 baseline updated for seeded extension instructions without consolidation: duration_ms={}",
+                            started_at.elapsed().as_millis()
+                        );
+                    }
+                    let idle_selection = MemoryPhase2SelectionRow {
+                        job_key: PHASE2_JOB_KEY.to_string(),
+                        input_watermark: evaluated_input_watermark,
+                    };
+                    self.confirm_phase2_job_completion(
+                        self.complete_phase2_job_idle(&ownership_token, &idle_selection)
+                            .await?,
+                    )?;
+                    info!(
+                        "Memory phase2 run stopped because selection was empty: candidate_count={}, duration_ms={}",
+                        candidate_rows.len(),
+                        started_at.elapsed().as_millis()
+                    );
+                    return Ok(None);
+                }
+                MemoryPhase2SelectionRow {
+                    job_key: PHASE2_JOB_KEY.to_string(),
+                    input_watermark: evaluated_input_watermark,
+                }
+            }
+        };
+        // Completion always records the evaluated input clock, so the next run compares
+        // its candidates against input this pipeline has already looked at.
+        let completion_selection = MemoryPhase2SelectionRow {
+            job_key: selection.job_key.clone(),
+            input_watermark: selection.input_watermark.max(evaluated_input_watermark),
+        };
+
+        if !has_meaningful_changes {
+            if workspace_diff.has_changes() {
+                self.confirm_phase2_job_ownership(&ownership_token).await?;
+                if let Err(error) = reset_memory_workspace_baseline(&self.memory_root).await {
+                    let _ = self
+                        .complete_phase2_job_failure(&ownership_token, error.to_string())
+                        .await;
+                    return Err(error);
+                }
+                self.prune_prompt_artifacts().await?;
+                info!(
+                    "Memory phase2 baseline updated for non-meaningful workspace changes without consolidation: duration_ms={}",
+                    started_at.elapsed().as_millis()
+                );
+            }
+            self.confirm_phase2_job_completion(
+                self.complete_phase2_job_success(&ownership_token, &completion_selection)
+                    .await?,
+            )?;
+            if !selected_ids.is_empty() {
                 self.db
                     .mark_phase2_candidates_selected(&selected_ids, selection.input_watermark)
                     .await?;
-            } else {
-                self.confirm_phase2_job_completion(
-                    self.complete_phase2_job_idle(&ownership_token, &selection)
-                        .await?,
-                )?;
             }
             let duration_ms = started_at.elapsed().as_millis();
             info!(
@@ -433,40 +689,17 @@ impl MemoryPhase2Runner {
                 candidate_rows.len(),
                 selected.len(),
                 input_bytes,
-                selection.input_watermark,
+                completion_selection.input_watermark,
                 duration_ms
             );
-            if !has_candidate_rows {
-                return Ok(None);
-            }
             return Ok(Some(Phase2RunReport {
                 selected_count: selected.len(),
                 candidate_count: candidate_rows.len(),
-                input_watermark: selection.input_watermark,
+                input_watermark: completion_selection.input_watermark,
                 input_bytes,
                 duration_ms,
                 consolidation_output: "No memory workspace changes to consolidate.".to_string(),
             }));
-        }
-
-        if !has_candidate_rows && workspace_diff_only_seeds_ad_hoc_instructions(&workspace_diff) {
-            self.confirm_phase2_job_ownership(&ownership_token).await?;
-            if let Err(error) = reset_memory_workspace_baseline(&self.memory_root).await {
-                let _ = self
-                    .complete_phase2_job_failure(&ownership_token, error.to_string())
-                    .await;
-                return Err(error);
-            }
-            self.prune_prompt_artifacts().await?;
-            self.confirm_phase2_job_completion(
-                self.complete_phase2_job_idle(&ownership_token, &selection)
-                    .await?,
-            )?;
-            info!(
-                "Memory phase2 baseline updated for seeded ad-hoc extension instructions without consolidation: duration_ms={}",
-                started_at.elapsed().as_millis()
-            );
-            return Ok(None);
         }
 
         if let Err(error) = write_workspace_diff(&self.memory_root, &workspace_diff).await {
@@ -486,8 +719,8 @@ impl MemoryPhase2Runner {
             workspace_diff.changes.len()
         );
 
-        let consolidation_output = match self.run_consolidation_agent().await {
-            Ok(output) => output,
+        let consolidation = match self.run_consolidation_agent().await {
+            Ok(outcome) => outcome,
             Err(error) => {
                 let _ = self
                     .complete_phase2_job_failure(&ownership_token, error.to_string())
@@ -501,9 +734,43 @@ impl MemoryPhase2Runner {
             }
         };
         info!(
-            "Memory phase2 consolidation agent completed: output_bytes={}",
-            consolidation_output.len()
+            "Memory phase2 consolidation agent returned: output_bytes={}, turn_completed={}",
+            consolidation.output.len(),
+            consolidation.completed
         );
+
+        if !consolidation.completed {
+            // The turn stopped mid-way, so its workspace edits are only partly
+            // applied and the diff it was given is only partly consumed. Do not
+            // reset the baseline and do not mark the candidates selected: the
+            // retained diff keeps counting as a meaningful change, so the next
+            // pass re-offers exactly the same input instead of dropping it behind
+            // an advanced evaluated watermark.
+            self.confirm_phase2_job_completion(
+                self.complete_phase2_job_idle(&ownership_token, &completion_selection)
+                    .await?,
+            )?;
+            let duration_ms = started_at.elapsed().as_millis();
+            warn!(
+                "Memory phase2 consolidation did not complete; keeping the workspace baseline and the pending input for the next run: reason={:?}, candidate_count={}, selected_count={}, input_bytes={}, watermark={}, duration_ms={}",
+                consolidation.reason,
+                candidate_rows.len(),
+                selected.len(),
+                input_bytes,
+                completion_selection.input_watermark,
+                duration_ms
+            );
+            return Ok(Some(Phase2RunReport {
+                selected_count: selected.len(),
+                candidate_count: candidate_rows.len(),
+                input_watermark: completion_selection.input_watermark,
+                input_bytes,
+                duration_ms,
+                consolidation_output: consolidation.into_run_output(),
+            }));
+        }
+
+        let consolidation_output = consolidation.output;
 
         self.confirm_phase2_job_ownership(&ownership_token).await?;
         if let Err(error) = reset_memory_workspace_baseline(&self.memory_root).await {
@@ -524,10 +791,10 @@ impl MemoryPhase2Runner {
         self.prune_prompt_artifacts().await?;
 
         self.confirm_phase2_job_completion(
-            self.complete_phase2_job_success(&ownership_token, &selection)
+            self.complete_phase2_job_success(&ownership_token, &completion_selection)
                 .await?,
         )?;
-        if has_candidate_rows {
+        if !selected_ids.is_empty() {
             self.db
                 .mark_phase2_candidates_selected(&selected_ids, selection.input_watermark)
                 .await?;
@@ -538,13 +805,13 @@ impl MemoryPhase2Runner {
             candidate_rows.len(),
             selected.len(),
             input_bytes,
-            selection.input_watermark,
+            completion_selection.input_watermark,
             duration_ms
         );
         Ok(Some(Phase2RunReport {
             selected_count: selected.len(),
             candidate_count: candidate_rows.len(),
-            input_watermark: selection.input_watermark,
+            input_watermark: completion_selection.input_watermark,
             input_bytes,
             duration_ms,
             consolidation_output,
@@ -665,7 +932,7 @@ impl MemoryPhase2Runner {
             .await
     }
 
-    async fn run_consolidation_agent(&self) -> OpenBitFunResult<String> {
+    async fn run_consolidation_agent(&self) -> OpenBitFunResult<MemoryPhase2ConsolidationOutcome> {
         let Ok(config_service) = get_global_config_service().await else {
             return self.consolidator.consolidate(&self.memory_root, None).await;
         };
@@ -679,16 +946,17 @@ impl MemoryPhase2Runner {
             model_id,
             self.memory_root.display()
         );
-        let output = self
+        let outcome = self
             .consolidator
             .consolidate(&self.memory_root, model_id.clone())
             .await?;
         info!(
-            "Memory phase2 internal agent completed: model_id={:?}, output_bytes={}",
+            "Memory phase2 internal agent completed: model_id={:?}, output_bytes={}, turn_completed={}",
             model_id,
-            output.len()
+            outcome.output.len(),
+            outcome.completed
         );
-        Ok(output)
+        Ok(outcome)
     }
 
     async fn prune_prompt_artifacts(&self) -> OpenBitFunResult<()> {
@@ -782,16 +1050,42 @@ fn memory_phase2_tool_restrictions(memory_root: &std::path::Path) -> ToolRuntime
     }
 }
 
-fn workspace_diff_only_seeds_ad_hoc_instructions(diff: &MemoryWorkspaceDiff) -> bool {
-    let instructions_path = format!(
-        "{}/{}/{}",
-        MEMORY_EXTENSIONS_DIR_NAME, AD_HOC_EXTENSION_NAME, AD_HOC_INSTRUCTIONS_FILE_NAME
-    );
-    diff.has_changes()
-        && diff
-            .changes
-            .iter()
-            .all(|change| change.path == instructions_path)
+/// True when the workspace diff contains a change the consolidation agent must
+/// look at.
+///
+/// A change is meaningful when it touches memory content: the consolidated
+/// artifacts, the merged raw inputs, per-rollout evidence, skills, or extension
+/// inputs. The re-seeded ad-hoc instructions file and the generated
+/// `phase2_workspace_diff.md` are not content, so they never trigger a run on
+/// their own.
+fn workspace_diff_has_meaningful_changes(diff: &MemoryWorkspaceDiff) -> bool {
+    diff.changes
+        .iter()
+        .any(|change| workspace_change_path_is_meaningful(&change.path))
+}
+
+fn workspace_change_path_is_meaningful(path: &str) -> bool {
+    if path == MEMORY_FILE_NAME || path == MEMORY_SUMMARY_FILE_NAME || path == RAW_MEMORIES_FILENAME
+    {
+        return true;
+    }
+    if path == PHASE2_WORKSPACE_DIFF_FILE_NAME {
+        return false;
+    }
+    if path.starts_with(&format!("{ROLLOUT_SUMMARIES_DIR_NAME}/"))
+        || path.starts_with(&format!("{SKILLS_DIR_NAME}/"))
+    {
+        return true;
+    }
+    if path.starts_with(&format!("{MEMORY_EXTENSIONS_DIR_NAME}/")) {
+        // Re-seeding the extension instructions file alone keeps the existing
+        // baseline-reset behavior and is not a consolidation trigger.
+        return path
+            != format!(
+            "{MEMORY_EXTENSIONS_DIR_NAME}/{AD_HOC_EXTENSION_NAME}/{AD_HOC_INSTRUCTIONS_FILE_NAME}"
+        );
+    }
+    false
 }
 
 pub fn current_unix_secs() -> i64 {
@@ -809,9 +1103,72 @@ async fn phase2_retry_delay_seconds() -> OpenBitFunResult<i64> {
         .clamp(60, 24 * 60 * 60))
 }
 
-async fn phase2_lease_seconds() -> OpenBitFunResult<i64> {
+/// Configured length of the global phase-2 job lease.
+///
+/// Single source for both the claim path and the read-only liveness query, so a
+/// stale-lease decision can never be made against a different lease length than
+/// the one the job was claimed with.
+pub(crate) async fn phase2_lease_seconds() -> OpenBitFunResult<i64> {
     let config = get_phase2_runtime_config().await;
     Ok(config.memories.phase2_lease_seconds.clamp(60, 24 * 60 * 60))
+}
+
+/// Floor of the consolidation turn budget: a small memory workspace still needs a
+/// full model turn, and a run that hits this floor is never a timeout candidate.
+const PHASE2_CONSOLIDATION_MIN_TIMEOUT_SECONDS: u64 = 20 * 60;
+/// Ceiling of the consolidation turn budget. Bounded on purpose: the global
+/// phase-2 lease is heartbeated, but an unbounded turn would still hold the
+/// memory workspace baseline and the global job open indefinitely.
+const PHASE2_CONSOLIDATION_MAX_TIMEOUT_SECONDS: u64 = 60 * 60;
+/// Bytes of `phase2_workspace_diff.md` that buy one extra second of budget.
+///
+/// The diff is what the agent must read and reason about, so it dominates the
+/// scaling: 200 B/s means a 10 KB diff adds ~51 s (still at the floor) and a
+/// 200 KB diff adds ~17 min.
+const PHASE2_CONSOLIDATION_DIFF_BYTES_PER_EXTRA_SECOND: u64 = 200;
+/// Bytes of `MEMORY.md` that buy one extra second of budget.
+///
+/// The current index is re-read on every consolidation, so it costs time too, but
+/// it is rewriting cost rather than parsing cost: 1 KiB/s means a 400 KB index
+/// adds ~6.5 min.
+const PHASE2_CONSOLIDATION_INDEX_BYTES_PER_EXTRA_SECOND: u64 = 1024;
+
+/// Consolidation turn budget in seconds, derived from the workload the turn must
+/// read.
+///
+/// The budget is `base + diff/200 + index/1024` seconds clamped to
+/// [`PHASE2_CONSOLIDATION_MIN_TIMEOUT_SECONDS`]..[`PHASE2_CONSOLIDATION_MAX_TIMEOUT_SECONDS`].
+/// Anchors (see the constants above): an empty workspace stays at 20 min, a
+/// ~10 KB diff with a ~20 KB index stays at ~21 min, and the observed heavy run
+/// (~200 KB diff with a ~393 KB index) lands at ~44 min.
+fn phase2_consolidation_timeout_seconds(diff_bytes: u64, memory_index_bytes: u64) -> u64 {
+    let workload_seconds = diff_bytes / PHASE2_CONSOLIDATION_DIFF_BYTES_PER_EXTRA_SECOND.max(1)
+        + memory_index_bytes / PHASE2_CONSOLIDATION_INDEX_BYTES_PER_EXTRA_SECOND.max(1);
+    PHASE2_CONSOLIDATION_MIN_TIMEOUT_SECONDS
+        .saturating_add(workload_seconds)
+        .clamp(
+            PHASE2_CONSOLIDATION_MIN_TIMEOUT_SECONDS,
+            PHASE2_CONSOLIDATION_MAX_TIMEOUT_SECONDS,
+        )
+}
+
+/// Measures the two inputs of the consolidation budget.
+///
+/// Both files are produced by this run: the runner writes
+/// `phase2_workspace_diff.md` immediately before starting the agent, and
+/// `MEMORY.md` is the previous consolidation's output. A file that is not there
+/// yet contributes nothing, so a missing workspace never inflates the budget.
+async fn read_phase2_consolidation_workload(memory_root: &std::path::Path) -> (u64, u64) {
+    let diff_bytes = read_file_len_if_present(&phase2_workspace_diff_file(memory_root)).await;
+    let index_bytes = read_file_len_if_present(&memory_index_file(memory_root)).await;
+    (diff_bytes, index_bytes)
+}
+
+async fn read_file_len_if_present(path: &std::path::Path) -> u64 {
+    match tokio::fs::metadata(path).await {
+        Ok(metadata) => metadata.len(),
+        Err(_) => 0,
+    }
 }
 
 fn select_phase2_model_id(
@@ -865,7 +1222,7 @@ mod tests {
             &self,
             memory_root: &std::path::Path,
             _model_id: Option<String>,
-        ) -> OpenBitFunResult<String> {
+        ) -> OpenBitFunResult<MemoryPhase2ConsolidationOutcome> {
             let diff = tokio::fs::read_to_string(
                 crate::agentic::memories::workspace::phase2_workspace_diff_file(memory_root),
             )
@@ -888,7 +1245,7 @@ mod tests {
             )
             .await
             .unwrap();
-            Ok(format!("consolidated with diff bytes={}", diff.len()))
+            Ok(format!("consolidated with diff bytes={}", diff.len()).into())
         }
     }
 
@@ -955,6 +1312,51 @@ mod tests {
         }
     }
 
+    /// Counts how often the consolidation agent really ran.
+    struct CountingConsolidator {
+        calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl MemoryPhase2Consolidator for CountingConsolidator {
+        async fn consolidate(
+            &self,
+            memory_root: &std::path::Path,
+            model_id: Option<String>,
+        ) -> OpenBitFunResult<MemoryPhase2ConsolidationOutcome> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            FakeConsolidator.consolidate(memory_root, model_id).await
+        }
+    }
+
+    /// Consolidator that writes a partial MEMORY.md and reports an unfinished turn,
+    /// like an internal agent that hit its execution timeout mid-consolidation.
+    struct IncompleteConsolidator {
+        calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl MemoryPhase2Consolidator for IncompleteConsolidator {
+        async fn consolidate(
+            &self,
+            memory_root: &std::path::Path,
+            _model_id: Option<String>,
+        ) -> OpenBitFunResult<MemoryPhase2ConsolidationOutcome> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            tokio::fs::write(
+                crate::agentic::memories::workspace::memory_index_file(memory_root),
+                "# MEMORY.md\n\n# Task Group: partial consolidation\nscope: test\napplies_to: cwd=test; reuse_rule=test\n",
+            )
+            .await
+            .unwrap();
+            Ok(MemoryPhase2ConsolidationOutcome {
+                output: "partial output".to_string(),
+                completed: false,
+                reason: Some("PartialTimeout: consolidation turn timed out".to_string()),
+            })
+        }
+    }
+
     #[test]
     fn memory_phase2_tool_restrictions_allow_only_workspace_file_tools() {
         let root = std::path::PathBuf::from("E:/memory-root");
@@ -980,6 +1382,97 @@ mod tests {
         assert_eq!(
             restrictions.path_policy.delete_roots,
             vec![root.to_string_lossy().to_string()]
+        );
+    }
+
+    #[test]
+    fn phase2_internal_agent_request_auto_approves_in_root_tool_calls() {
+        let root = std::path::PathBuf::from("E:/memory-root");
+        let request = memory_phase2_internal_agent_request(
+            "memory-root-workspace".to_string(),
+            &root,
+            Some("model-1".to_string()),
+            "consolidate".to_string(),
+        );
+
+        // The consolidation turn is unattended: no surface can answer a permission
+        // prompt, so an ask would block the global phase-2 job until its lease
+        // expired. Auto-approve answers asks in-process.
+        assert_eq!(
+            request
+                .context
+                .get(PERMISSION_MODE_CONTEXT_KEY)
+                .map(String::as_str),
+            Some(PermissionMode::AutoApprove.as_str())
+        );
+        assert_eq!(request.session_kind, SessionKind::EphemeralChild);
+        assert!(!request.emit_lifecycle_events);
+        assert_eq!(request.agent_type, "MemoryPhase2");
+        // The internal request carries the registered memory-root workspace ID: the
+        // session config is built from the ID, so the path is never re-inferred.
+        assert_eq!(request.workspace_id, "memory-root-workspace");
+        // Auto-approve must not widen what the agent may touch.
+        assert_eq!(
+            request.runtime_tool_restrictions.path_policy.write_roots,
+            vec![root.to_string_lossy().to_string()]
+        );
+        assert!(!request.runtime_tool_restrictions.is_tool_allowed("Bash"));
+    }
+
+    #[test]
+    fn phase2_consolidation_timeout_scales_with_the_workload() {
+        let min = PHASE2_CONSOLIDATION_MIN_TIMEOUT_SECONDS;
+        let max = PHASE2_CONSOLIDATION_MAX_TIMEOUT_SECONDS;
+
+        // An empty workspace pays no workload and stays at the floor.
+        assert_eq!(phase2_consolidation_timeout_seconds(0, 0), min);
+        // A small run stays near the floor: buffer slack, not a second turn.
+        let small = phase2_consolidation_timeout_seconds(10 * 1024, 20 * 1024);
+        assert!(
+            (min..=25 * 60).contains(&small),
+            "small run should stay in the 20-25 min band, got {small}"
+        );
+
+        // The observed heavy run (~200 KB diff, ~393 KB index) must land in the
+        // 40-50 min band instead of hitting a fixed 20 min ceiling.
+        let heavy = phase2_consolidation_timeout_seconds(200 * 1024, 393 * 1024);
+        assert!(
+            (40 * 60..=50 * 60).contains(&heavy),
+            "heavy run should land in the 40-50 min band, got {heavy}"
+        );
+
+        // The budget is monotonic in both inputs and never leaves its band.
+        assert!(phase2_consolidation_timeout_seconds(200 * 1024, 0) > small);
+        assert!(phase2_consolidation_timeout_seconds(0, 393 * 1024) > small);
+        assert_eq!(
+            phase2_consolidation_timeout_seconds(u64::MAX, u64::MAX),
+            max
+        );
+        assert_eq!(phase2_consolidation_timeout_seconds(1, 1), min);
+    }
+
+    #[tokio::test]
+    async fn phase2_consolidation_workload_counts_only_present_files() {
+        let temp = tempdir().unwrap();
+        let memory_root = temp.path().join("memories");
+
+        // No workspace yet: neither input contributes.
+        assert_eq!(
+            read_phase2_consolidation_workload(&memory_root).await,
+            (0, 0)
+        );
+
+        tokio::fs::create_dir_all(&memory_root).await.unwrap();
+        tokio::fs::write(phase2_workspace_diff_file(&memory_root), vec![b'd'; 4096])
+            .await
+            .unwrap();
+        tokio::fs::write(memory_index_file(&memory_root), vec![b'm'; 2048])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            read_phase2_consolidation_workload(&memory_root).await,
+            (4096, 2048)
         );
     }
 
@@ -1081,8 +1574,8 @@ mod tests {
             Arc::new(PersistenceManager::new(path_manager.clone()).expect("persistence manager"));
         let db = MemoryDatabase::new(path_manager);
         db.initialize().await.unwrap();
-        let runner =
-            runner_with_fake_consolidator(Arc::new(db), persistence, temp.path().join("memories"));
+        let memory_root = temp.path().join("memories");
+        let runner = runner_with_fake_consolidator(Arc::new(db), persistence, memory_root.clone());
         assert_eq!(
             runner
                 .db
@@ -1102,10 +1595,14 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+        assert!(
+            !crate::agentic::memories::workspace::memory_index_file(&memory_root).exists(),
+            "a no-op run inside the success cooldown must not invoke the consolidation agent"
+        );
     }
 
     #[tokio::test]
-    async fn phase2_runner_idle_noop_does_not_set_success_cooldown() {
+    async fn phase2_runner_bypasses_success_cooldown_for_ad_hoc_notes() {
         let temp = tempdir().unwrap();
         let path_manager = Arc::new(PathManager::with_user_root_for_tests(
             temp.path().to_path_buf(),
@@ -1114,8 +1611,194 @@ mod tests {
             Arc::new(PersistenceManager::new(path_manager.clone()).expect("persistence manager"));
         let db = MemoryDatabase::new(path_manager);
         db.initialize().await.unwrap();
-        let runner =
-            runner_with_fake_consolidator(Arc::new(db), persistence, temp.path().join("memories"));
+        let memory_root = temp.path().join("memories");
+        let runner = runner_with_fake_consolidator(Arc::new(db), persistence, memory_root.clone());
+        assert_eq!(
+            runner
+                .db
+                .claim_phase2_job(PHASE2_JOB_KEY, "token-a", 10, 60)
+                .await
+                .unwrap(),
+            MemoryPhase2ClaimOutcome::Claimed
+        );
+        assert!(runner
+            .db
+            .complete_phase2_job_success(PHASE2_JOB_KEY, "token-a", 10)
+            .await
+            .unwrap());
+
+        crate::agentic::memories::workspace::prepare_memory_workspace(&memory_root)
+            .await
+            .unwrap();
+        tokio::fs::write(
+            crate::agentic::memories::workspace::ad_hoc_notes_dir(&memory_root)
+                .join("2026-07-02T12-00-00-remember-review-style.md"),
+            "Remember to keep memory review notes concise.",
+        )
+        .await
+        .unwrap();
+
+        let report = runner
+            .run_once_with_config_for_tests(phase2_enabled_test_config())
+            .await
+            .unwrap()
+            .expect("an ad-hoc note must bypass the success cooldown");
+        assert_eq!(report.selected_count, 0);
+        assert!(report.consolidation_output.contains("consolidated"));
+        assert!(crate::agentic::memories::workspace::memory_index_file(&memory_root).exists());
+    }
+
+    #[test]
+    fn memory_workspace_meaningful_change_detection_ignores_tool_and_seed_artifacts() {
+        assert!(workspace_change_path_is_meaningful("MEMORY.md"));
+        assert!(workspace_change_path_is_meaningful("memory_summary.md"));
+        assert!(workspace_change_path_is_meaningful("raw_memories.md"));
+        assert!(workspace_change_path_is_meaningful(
+            "rollout_summaries/2025-02-11T15-35-19-jqmb.md"
+        ));
+        assert!(workspace_change_path_is_meaningful(
+            "skills/example/SKILL.md"
+        ));
+        assert!(workspace_change_path_is_meaningful(
+            "extensions/ad_hoc/notes/2026-07-02T12-00-00-note.md"
+        ));
+
+        assert!(!workspace_change_path_is_meaningful(
+            "extensions/ad_hoc/instructions.md"
+        ));
+        assert!(!workspace_change_path_is_meaningful(
+            "phase2_workspace_diff.md"
+        ));
+        assert!(!workspace_change_path_is_meaningful(
+            ".openbitfun/search/flashgrep-index/index.bin"
+        ));
+    }
+
+    #[tokio::test]
+    async fn phase2_runner_advances_evaluated_watermark_so_cooldown_protects_noop_runs() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let persistence =
+            Arc::new(PersistenceManager::new(path_manager.clone()).expect("persistence manager"));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+        let memory_root = temp.path().join("memories");
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let runner = MemoryPhase2Runner::with_memory_root_and_consolidator_for_tests(
+            Arc::new(db),
+            persistence.clone(),
+            memory_root.clone(),
+            Arc::new(CountingConsolidator {
+                calls: calls.clone(),
+            }),
+        );
+
+        // A memory-disabled session is never selected, so its watermark can only be
+        // accounted for by the evaluated clock, never by a selection.
+        let disabled = test_memory_row(
+            "session-disabled",
+            temp.path()
+                .join("workspace-disabled")
+                .to_string_lossy()
+                .to_string(),
+            "memory disabled",
+            1,
+            Some(current_unix_secs() - 10),
+            current_unix_secs() - 90,
+        );
+        save_memory_row_metadata(&persistence, &disabled, SessionMemoryMode::Disabled).await;
+        runner.db.upsert_memory(&disabled).await.unwrap();
+
+        // An ad-hoc note gives this first run real work, which arms the success
+        // cooldown for the runs after it.
+        crate::agentic::memories::workspace::prepare_memory_workspace(&memory_root)
+            .await
+            .unwrap();
+        tokio::fs::write(
+            crate::agentic::memories::workspace::ad_hoc_notes_dir(&memory_root)
+                .join("2026-07-02T12-00-00-remember-review-style.md"),
+            "Remember to keep memory review notes concise.",
+        )
+        .await
+        .unwrap();
+
+        runner
+            .run_once_with_config_for_tests(phase2_enabled_test_config())
+            .await
+            .unwrap()
+            .expect("an ad-hoc note must trigger consolidation");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        let job = runner
+            .db
+            .get_phase2_job(PHASE2_JOB_KEY)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            job.input_watermark.unwrap_or_default() >= disabled.source_updated_at_unix_secs,
+            "a completed run must record the newest candidate it evaluated"
+        );
+
+        // Second run: nothing new and nothing changed, so the success cooldown has to
+        // protect it instead of running the consolidation agent again.
+        assert!(runner
+            .run_once_with_config_for_tests(phase2_enabled_test_config())
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "an unchanged unselected candidate must not keep the cooldown disarmed"
+        );
+
+        // A genuinely newer candidate is new input again, and the run after it is
+        // cooldown-protected once more.
+        let mut newer = disabled.clone();
+        newer.session_id = "session-disabled-newer".to_string();
+        newer.source_updated_at_unix_secs = current_unix_secs();
+        newer.last_usage_unix_secs = Some(current_unix_secs());
+        save_memory_row_metadata(&persistence, &newer, SessionMemoryMode::Disabled).await;
+        runner.db.upsert_memory(&newer).await.unwrap();
+
+        assert!(runner
+            .run_once_with_config_for_tests(phase2_enabled_test_config())
+            .await
+            .unwrap()
+            .is_none());
+        let job = runner
+            .db
+            .get_phase2_job(PHASE2_JOB_KEY)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(job.input_watermark.unwrap_or_default() >= newer.source_updated_at_unix_secs);
+        assert!(runner
+            .run_once_with_config_for_tests(phase2_enabled_test_config())
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn phase2_runner_idle_noop_records_clock_and_yields_to_new_input() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let persistence =
+            Arc::new(PersistenceManager::new(path_manager.clone()).expect("persistence manager"));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+        let runner = runner_with_fake_consolidator(
+            Arc::new(db),
+            persistence.clone(),
+            temp.path().join("memories"),
+        );
 
         assert!(runner
             .run_once_with_config_for_tests(phase2_enabled_test_config())
@@ -1133,7 +1816,36 @@ mod tests {
         assert!(job.finished_at_unix_secs.is_some());
         assert_eq!(job.last_success_watermark, None);
         assert!(job.last_error.is_none());
+        // The idle run still records the evaluated input clock...
+        assert!(job.input_watermark.is_some());
 
+        // ...and a candidate newer than that clock bypasses the armed cooldown.
+        let row = test_memory_row(
+            "session-after-idle",
+            temp.path()
+                .join("workspace-after-idle")
+                .to_string_lossy()
+                .to_string(),
+            "memory after idle",
+            0,
+            None,
+            current_unix_secs(),
+        );
+        save_memory_row_metadata(&persistence, &row, SessionMemoryMode::Enabled).await;
+        runner.db.upsert_memory(&row).await.unwrap();
+        let report = runner
+            .run_once_with_config_for_tests(phase2_enabled_test_config())
+            .await
+            .unwrap()
+            .expect("new input after an idle run must consolidate");
+        assert_eq!(report.selected_count, 1);
+
+        let job = runner
+            .db
+            .get_phase2_job(PHASE2_JOB_KEY)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(
             runner
                 .db
@@ -1188,7 +1900,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn phase2_runner_forgets_polluted_previous_selection() {
+    async fn phase2_runner_forgets_polluted_session_on_the_next_run() {
         let temp = tempdir().unwrap();
         let path_manager = Arc::new(PathManager::with_user_root_for_tests(
             temp.path().to_path_buf(),
@@ -1197,11 +1909,9 @@ mod tests {
             Arc::new(PersistenceManager::new(path_manager.clone()).expect("persistence manager"));
         let db = MemoryDatabase::new(path_manager);
         db.initialize().await.unwrap();
-        let runner = runner_with_fake_consolidator(
-            Arc::new(db),
-            persistence.clone(),
-            temp.path().join("memories"),
-        );
+        let memory_root = temp.path().join("memories");
+        let runner =
+            runner_with_fake_consolidator(Arc::new(db), persistence.clone(), memory_root.clone());
         let workspace_path = temp
             .path()
             .join("workspace-forget")
@@ -1229,10 +1939,11 @@ mod tests {
             .phase2_selected_for_session(&row.session_id)
             .await
             .unwrap());
-        let raw_path =
-            crate::agentic::memories::workspace::raw_memories_file(&temp.path().join("memories"));
+        let raw_path = crate::agentic::memories::workspace::raw_memories_file(&memory_root);
         let first_raw = tokio::fs::read_to_string(&raw_path).await.unwrap();
         assert!(first_raw.contains("memory forget"));
+        let polluted_summary_file =
+            crate::agentic::memories::workspace::rollout_summary_file_name(&row);
 
         persistence
             .mark_session_memory_mode_polluted(
@@ -1241,20 +1952,163 @@ mod tests {
             )
             .await
             .expect("polluted selected session should enqueue phase2");
+
+        // The polluted session is the only candidate and drops out of the selection.
+        // Forgetting still has to take effect in this run: `raw_memories.md` is
+        // rebuilt without its section, so the removal reaches the consolidation agent
+        // through the workspace diff.
         let second_report = runner
             .run_once_with_config_for_tests(phase2_enabled_test_config())
             .await
             .unwrap()
-            .expect("pollution should enqueue phase2");
-        assert_eq!(second_report.candidate_count, 1);
+            .expect("a deselected candidate must still rebuild the workspace inputs");
         assert_eq!(second_report.selected_count, 0);
+        assert_eq!(second_report.candidate_count, 1);
         let second_raw = tokio::fs::read_to_string(&raw_path).await.unwrap();
         assert!(!second_raw.contains("memory forget"));
-        assert!(!runner
-            .db
-            .phase2_selected_for_session(&row.session_id)
+        assert!(second_raw.contains("No raw memories yet."));
+
+        // Evidence is only deleted when its stage-1 row is gone, not when the row
+        // merely leaves the selection.
+        assert!(
+            crate::agentic::memories::workspace::rollout_summaries_dir(&memory_root)
+                .join(&polluted_summary_file)
+                .exists(),
+            "a live-but-deselected row must keep its rollout summary file"
+        );
+    }
+
+    #[tokio::test]
+    async fn phase2_runner_never_marks_an_unselected_candidate_as_selected() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let persistence =
+            Arc::new(PersistenceManager::new(path_manager.clone()).expect("persistence manager"));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+        let memory_root = temp.path().join("memories");
+        let runner =
+            runner_with_fake_consolidator(Arc::new(db), persistence.clone(), memory_root.clone());
+
+        let enabled = test_memory_row(
+            "session-enabled",
+            temp.path()
+                .join("workspace-enabled")
+                .to_string_lossy()
+                .to_string(),
+            "memory enabled",
+            5,
+            Some(current_unix_secs() - 10),
+            current_unix_secs() - 90,
+        );
+        save_memory_row_metadata(&persistence, &enabled, SessionMemoryMode::Enabled).await;
+        runner.db.upsert_memory(&enabled).await.unwrap();
+
+        let polluted = test_memory_row(
+            "session-polluted",
+            temp.path()
+                .join("workspace-polluted")
+                .to_string_lossy()
+                .to_string(),
+            "memory polluted",
+            1,
+            Some(current_unix_secs() - 9),
+            current_unix_secs() - 80,
+        );
+        save_memory_row_metadata(&persistence, &polluted, SessionMemoryMode::Polluted).await;
+        runner.db.upsert_memory(&polluted).await.unwrap();
+
+        let report = runner
+            .run_once_with_config_for_tests(phase2_enabled_test_config())
             .await
-            .unwrap());
+            .unwrap()
+            .expect("phase2 report");
+        assert_eq!(report.selected_count, 1);
+        assert!(
+            !runner
+                .db
+                .phase2_selected_for_session(&polluted.session_id)
+                .await
+                .unwrap(),
+            "a candidate excluded by its memory mode must not be marked selected"
+        );
+        assert!(
+            !crate::agentic::memories::workspace::rollout_summaries_dir(&memory_root)
+                .join(crate::agentic::memories::workspace::rollout_summary_file_name(&polluted))
+                .exists()
+        );
+        let raw = tokio::fs::read_to_string(
+            crate::agentic::memories::workspace::raw_memories_file(&memory_root),
+        )
+        .await
+        .unwrap();
+        assert!(raw.contains("memory enabled"));
+        assert!(!raw.contains("memory polluted"));
+    }
+
+    #[tokio::test]
+    async fn phase2_runner_deletes_summary_file_once_retention_removed_the_row() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let persistence =
+            Arc::new(PersistenceManager::new(path_manager.clone()).expect("persistence manager"));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+        let memory_root = temp.path().join("memories");
+        let runner =
+            runner_with_fake_consolidator(Arc::new(db), persistence.clone(), memory_root.clone());
+        let stale_usage = current_unix_secs() - 3 * 24 * 60 * 60;
+        let row = test_memory_row(
+            "session-stale",
+            temp.path()
+                .join("workspace-stale")
+                .to_string_lossy()
+                .to_string(),
+            "memory stale",
+            1,
+            Some(stale_usage),
+            current_unix_secs() - 4 * 24 * 60 * 60,
+        );
+        save_memory_row_metadata(&persistence, &row, SessionMemoryMode::Enabled).await;
+        runner.db.upsert_memory(&row).await.unwrap();
+
+        runner
+            .run_once_with_config_for_tests(phase2_enabled_test_config())
+            .await
+            .unwrap()
+            .expect("first phase2 report");
+        let summary_path = crate::agentic::memories::workspace::rollout_summaries_dir(&memory_root)
+            .join(crate::agentic::memories::workspace::rollout_summary_file_name(&row));
+        assert!(summary_path.exists());
+
+        assert_eq!(
+            runner
+                .db
+                .prune_stage1_outputs_for_retention(1, 100)
+                .await
+                .unwrap(),
+            1
+        );
+
+        // The row is gone, so the next run must forget its input and delete the
+        // summary file even though there is no candidate left at all.
+        runner
+            .run_once_with_config_for_tests(phase2_enabled_test_config())
+            .await
+            .unwrap()
+            .expect("retention deletion must be consolidated");
+        assert!(!summary_path.exists());
+        let raw = tokio::fs::read_to_string(
+            crate::agentic::memories::workspace::raw_memories_file(&memory_root),
+        )
+        .await
+        .unwrap();
+        assert!(!raw.contains("memory stale"));
+        assert!(raw.contains("No raw memories yet."));
     }
 
     #[tokio::test]
@@ -1320,5 +2174,87 @@ mod tests {
         .await
         .unwrap();
         assert!(summary.starts_with("v1\n"));
+    }
+
+    #[tokio::test]
+    async fn phase2_runner_keeps_baseline_and_input_when_consolidation_does_not_complete() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let persistence =
+            Arc::new(PersistenceManager::new(path_manager.clone()).expect("persistence manager"));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+        let memory_root = temp.path().join("memories");
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let runner = MemoryPhase2Runner::with_memory_root_and_consolidator_for_tests(
+            Arc::new(db),
+            persistence.clone(),
+            memory_root.clone(),
+            Arc::new(IncompleteConsolidator {
+                calls: calls.clone(),
+            }),
+        );
+        let row = test_memory_row(
+            "session-incomplete",
+            temp.path()
+                .join("workspace-incomplete")
+                .to_string_lossy()
+                .to_string(),
+            "memory incomplete",
+            5,
+            Some(current_unix_secs() - 10),
+            current_unix_secs() - 90,
+        );
+        save_memory_row_metadata(&persistence, &row, SessionMemoryMode::Enabled).await;
+        runner.db.upsert_memory(&row).await.unwrap();
+
+        let report = runner
+            .run_once_with_config_for_tests(phase2_enabled_test_config())
+            .await
+            .unwrap()
+            .expect("an unfinished consolidation still reports the run");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(report
+            .consolidation_output
+            .starts_with(MemoryPhase2ConsolidationOutcome::INCOMPLETE_OUTPUT_PREFIX));
+
+        // The run did not advance the pipeline: the job completed without a success
+        // stamp, the candidate stays unselected, and the consumed diff is still
+        // pending on disk.
+        let job = runner
+            .db
+            .get_phase2_job(PHASE2_JOB_KEY)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.status, "done");
+        assert_eq!(job.last_success_watermark, None);
+        assert!(job.ownership_token.is_none());
+        assert!(!runner
+            .db
+            .phase2_selected_for_session(&row.session_id)
+            .await
+            .unwrap());
+        assert!(
+            crate::agentic::memories::workspace::phase2_workspace_diff_file(&memory_root).exists(),
+            "an unfinished consolidation must keep the diff it was given"
+        );
+
+        // The retained diff is a meaningful change, so the next pass re-offers the
+        // same input instead of dropping it behind the advanced evaluated watermark.
+        let second = runner
+            .run_once_with_config_for_tests(phase2_enabled_test_config())
+            .await
+            .unwrap()
+            .expect("the retained diff must re-offer the same input");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert_eq!(second.selected_count, 1);
+        assert_eq!(second.candidate_count, report.candidate_count);
+        // Same input content, and the selection clock only moved by its monotonic
+        // per-run bump.
+        assert_eq!(second.input_bytes, report.input_bytes);
+        assert_eq!(second.input_watermark, report.input_watermark + 1);
     }
 }

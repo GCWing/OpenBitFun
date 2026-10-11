@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "e05dbc222e1267523832f82d6392701ab011c9d8d5ad1582dbe407904dc80d3d",
+  "digest": "88a95ef7fbc07eb066896d6fa45b34fb1da4c857a06baf2012cdef9979e8bc1e",
   "ownerDigest": "2269c2432e5db44706b2bce44df3c60672141a47c36141aeb1257ea7fd2507f8",
   "searchAcceptance": [
     {
@@ -138,11 +138,11 @@
     "features": 22,
     "settings": 21,
     "userFacing": 43,
-    "documentedItems": 325,
+    "documentedItems": 327,
     "controlCoverage": {
       "direct": 49,
-      "delegated": 62,
-      "interactive": 214,
+      "delegated": 63,
+      "interactive": 215,
       "unsupported": 0
     }
   },
@@ -203,6 +203,7 @@
         "goals",
         "goal-maintenance",
         "working-plan",
+        "memory-tools",
         "usage",
         "context-memory",
         "btw-editor-ai"
@@ -893,6 +894,53 @@
       "delegateTools": [
         "TodoWrite",
         "AskUserQuestion"
+      ],
+      "presentationTarget": {
+        "kind": "scene",
+        "sceneId": "session"
+      }
+    },
+    {
+      "id": "feature.ai-assistant:delegate:memory-tools",
+      "capabilityId": "feature.ai-assistant",
+      "itemIds": [
+        "memory-tools"
+      ],
+      "kind": "delegate",
+      "risk": "execute",
+      "executionHost": "workspaceHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "delegateTools": [
+        "MemorySearch",
+        "MemoryFetch",
+        "MemorySave"
       ],
       "presentationTarget": {
         "kind": "scene",
@@ -14312,6 +14360,7 @@
         "extraction-model",
         "retention",
         "consolidation",
+        "pipeline-status",
         "maintenance"
       ],
       "kind": "query",
@@ -14863,6 +14912,52 @@
       "capabilityId": "setting.ai.memory",
       "itemIds": [
         "consolidation"
+      ],
+      "kind": "open",
+      "risk": "ui",
+      "executionHost": "presentationSurface",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_presentation_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "openReason": "unstructuredInteraction",
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "ai.memory"
+      }
+    },
+    {
+      "id": "setting.ai.memory:open:pipeline-status",
+      "capabilityId": "setting.ai.memory",
+      "itemIds": [
+        "pipeline-status"
       ],
       "kind": "open",
       "risk": "ui",
@@ -19581,6 +19676,27 @@
           }
         },
         {
+          "id": "memory-tools",
+          "titleZh": "让智能体检索、读取并主动记录长期记忆",
+          "titleEn": "Let an agent search, read, and proactively record long-term memory",
+          "control": {
+            "kind": "delegate",
+            "tools": [
+              "MemorySearch",
+              "MemoryFetch",
+              "MemorySave"
+            ],
+            "workflowZh": [
+              "先 MemorySearch 找候选条目，再用 MemoryFetch 读取 MEMORY.md 指向的具体证据文件；MemoryFetch 会自动记录使用情况，不需要再输出记忆引用块",
+              "只有明确值得长期保留的结论才用 MemorySave 写入；记忆工具只在本地工作区可用，远端工作区会明确返回不可用，不要用文件工具代替"
+            ],
+            "workflowEn": [
+              "Use MemorySearch for candidate entries, then MemoryFetch to read the file MEMORY.md points at; MemoryFetch records memory usage by itself, so no memory citation block is needed",
+              "Use MemorySave only for conclusions that clearly belong in long-term memory; the memory tools are host-local and fail loudly on remote workspaces, so do not substitute raw file tools"
+            ]
+          }
+        },
+        {
           "id": "usage",
           "titleZh": "查看单个会话的请求、Token 与成本用量报告",
           "titleEn": "View request, token, and cost usage for an individual session",
@@ -19715,6 +19831,8 @@
         "Edit the goal objective or clear the current session goal",
         "让智能体维护任务清单、生成实施计划并按需向用户提问",
         "Let an agent maintain a task list, produce an implementation plan, and ask the user when needed",
+        "让智能体检索、读取并主动记录长期记忆",
+        "Let an agent search, read, and proactively record long-term memory",
         "查看单个会话的请求、Token 与成本用量报告",
         "View request, token, and cost usage for an individual session",
         "重新加载会话上下文、运行 AGENTS.md 初始化并管理长期记忆",
@@ -19760,7 +19878,14 @@
         "复杂任务用 TodoWrite 维护当前进度；正式计划产物通过 Write 写入项目的 .openbitfun/plans 目录",
         "缺少会改变结果的用户选择时用 AskUserQuestion；能从仓库或当前上下文查明的信息不重复询问",
         "Use TodoWrite to maintain progress for complex work; create formal plan artifacts with Write under the project's .openbitfun/plans directory",
-        "Use AskUserQuestion only for a missing choice that changes the outcome; do not ask again for facts available from the repository or current context"
+        "Use AskUserQuestion only for a missing choice that changes the outcome; do not ask again for facts available from the repository or current context",
+        "MemorySearch",
+        "MemoryFetch",
+        "MemorySave",
+        "先 MemorySearch 找候选条目，再用 MemoryFetch 读取 MEMORY.md 指向的具体证据文件；MemoryFetch 会自动记录使用情况，不需要再输出记忆引用块",
+        "只有明确值得长期保留的结论才用 MemorySave 写入；记忆工具只在本地工作区可用，远端工作区会明确返回不可用，不要用文件工具代替",
+        "Use MemorySearch for candidate entries, then MemoryFetch to read the file MEMORY.md points at; MemoryFetch records memory usage by itself, so no memory citation block is needed",
+        "Use MemorySave only for conclusions that clearly belong in long-term memory; the memory tools are host-local and fail loudly on remote workspaces, so do not substitute raw file tools"
       ],
       "docsUrl": "https://playbook.openbitfun.com/capabilities/feature.ai-assistant/"
     },
@@ -27432,6 +27557,17 @@
           }
         },
         {
+          "id": "pipeline-status",
+          "titleZh": "查看宿主记忆管线状态、手动运行一次提取与整理，或清除失败记录",
+          "titleEn": "Inspect the host memory pipeline status, run one extraction and consolidation pass manually, or clear the failed-extraction records",
+          "control": {
+            "kind": "open",
+            "reasonCode": "unstructuredInteraction",
+            "reasonZh": "“查看宿主记忆管线状态、手动运行一次提取与整理，或清除失败记录”依赖当前宿主的实时管线数据（数据库行、记忆目录文件与有效配置），手动运行也是异步后台任务，目前没有绑定到产品控制 operation 的结构化动作；智能体会打开精确入口，把查看状态、手动运行与清除失败记录保留在用户可见界面。",
+            "reasonEn": "“Inspect the host memory pipeline status, run one extraction and consolidation pass manually, or clear the failed-extraction records” depends on the current host's live pipeline data (database rows, memory-root files, and effective config), and a manual run is an asynchronous background pass with no product-control operation bound yet; the Agent opens the exact entry and keeps status inspection, the manual run, and clearing failed records in the visible UI."
+          }
+        },
+        {
           "id": "maintenance",
           "titleZh": "打开记忆目录、恢复默认设置或显式清空全部记忆",
           "titleEn": "Open the memory directory, restore defaults, or explicitly erase all memories",
@@ -27699,6 +27835,8 @@
         "Set how long unused memories are retained",
         "选择记忆整理模型并让它跟随主模型或提取模型",
         "Choose the consolidation model or make it follow the primary or extraction model",
+        "查看宿主记忆管线状态、手动运行一次提取与整理，或清除失败记录",
+        "Inspect the host memory pipeline status, run one extraction and consolidation pass manually, or clear the failed-extraction records",
         "打开记忆目录、恢复默认设置或显式清空全部记忆",
         "Open the memory directory, restore defaults, or explicitly erase all memories",
         "关闭长期记忆",

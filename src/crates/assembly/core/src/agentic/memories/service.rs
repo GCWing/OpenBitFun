@@ -1,6 +1,8 @@
 use crate::agentic::memories::db::{MemoryDatabase, MemoryPhase1ClaimOutcome, MemoryRow};
 use crate::agentic::memories::external_context::session_uses_external_context;
-use crate::agentic::memories::session_roots::collect_local_session_storage_roots;
+use crate::agentic::memories::session_roots::{
+    collect_local_session_storage_roots, local_session_storage_dir_for_workspace_path,
+};
 use crate::agentic::memories::transcript::{
     redact_memory_secrets, render_memory_phase1_transcript,
 };
@@ -79,7 +81,7 @@ impl MemoryPhase1RuntimeConfig {
             max_scan_sessions: memories.max_rollouts_scan_limit.clamp(1, 50_000),
             max_claimed_sessions: memories.max_rollouts_per_startup.clamp(1, 128),
             min_idle_hours: memories.min_rollout_idle_hours.clamp(1, 48) as u64,
-            max_session_age_days: memories.max_rollout_age_days.clamp(0, 90) as u64,
+            max_session_age_days: memories.max_rollout_age_days.clamp(0, 365) as u64,
             max_running_jobs: memories.phase1_max_concurrency.clamp(1, 16),
             retry_backoff_seconds: memories.phase1_retry_backoff_minutes.clamp(1, 24 * 60) * 60,
             lease_seconds: memories.phase1_lease_seconds.clamp(60, 24 * 60 * 60),
@@ -104,13 +106,214 @@ impl MemoryPhase1Service {
         self.run_once_excluding_session(None).await
     }
 
+    /// Extract phase-1 memory for ONE session on demand. Bypasses the scan,
+    /// idle, age, turn-count and current-session-exclusion gates, but still
+    /// respects `generate_memories`, the session's `memory_mode == Enabled`,
+    /// and claim/watermark semantics (up-to-date sessions return Ok with
+    /// skipped stats). Safe to call while a later turn is in flight: only
+    /// persisted completed turns are rendered.
+    pub async fn run_once_for_session(
+        &self,
+        workspace_path: &str,
+        session_id: &str,
+    ) -> OpenBitFunResult<MemoryPhase1RunStats> {
+        let config = MemoryPhase1RuntimeConfig::from_global(&load_global_config().await);
+        self.run_once_for_session_with_config(workspace_path, session_id, config)
+            .await
+    }
+
+    async fn run_once_for_session_with_config(
+        &self,
+        workspace_path: &str,
+        session_id: &str,
+        config: MemoryPhase1RuntimeConfig,
+    ) -> OpenBitFunResult<MemoryPhase1RunStats> {
+        let started_at = Instant::now();
+        info!(
+            "Memory phase1 on-demand run started: session_id={}, workspace_path={}, generate_memories={}, extract_model_selector={}",
+            session_id, workspace_path, config.generate_memories, config.extract_model_selector
+        );
+        if !config.generate_memories {
+            info!(
+                "Memory phase1 on-demand run skipped because generate_memories is disabled: session_id={}",
+                session_id
+            );
+            return Ok(MemoryPhase1RunStats::default());
+        }
+
+        let mut stats = MemoryPhase1RunStats {
+            scanned_sessions: 1,
+            ..Default::default()
+        };
+        let workspace_path_ref = Path::new(workspace_path);
+        let persistence = Arc::new(PersistenceManager::new(get_path_manager_arc())?);
+        let Some(metadata) = persistence
+            .load_session_metadata(workspace_path_ref, session_id)
+            .await?
+        else {
+            info!(
+                "Memory phase1 on-demand run skipped because session metadata was not found: session_id={}, workspace_path={}",
+                session_id, workspace_path
+            );
+            stats.skipped_sessions = 1;
+            return Ok(stats);
+        };
+        if phase1_memory_mode_gate_skips(&metadata) {
+            info!(
+                "Memory phase1 on-demand run skipped because memory mode is not enabled: session_id={}, memory_mode={:?}",
+                session_id, metadata.memory_mode
+            );
+            stats.skipped_sessions = 1;
+            return Ok(stats);
+        }
+        let Some(last_finished_at) = session_last_finished_at(&metadata) else {
+            info!(
+                "Memory phase1 on-demand run skipped because the session has no finish time: session_id={}",
+                session_id
+            );
+            stats.skipped_sessions = 1;
+            return Ok(stats);
+        };
+        let session_finished_at_unix_secs = (last_finished_at / 1000) as i64;
+        if !self
+            .db
+            .phase1_source_needs_update(session_id, session_finished_at_unix_secs)
+            .await?
+        {
+            info!(
+                "Memory phase1 on-demand run skipped because the session is already up to date: session_id={}, session_finished_at={}",
+                session_id, session_finished_at_unix_secs
+            );
+            stats.skipped_sessions = 1;
+            return Ok(stats);
+        }
+
+        let ownership_token = match self
+            .db
+            .try_claim_phase1_job(
+                session_id,
+                "memory-phase1",
+                session_finished_at_unix_secs,
+                config.lease_seconds,
+                config.max_claimed_sessions,
+            )
+            .await?
+        {
+            MemoryPhase1ClaimOutcome::Claimed { ownership_token } => ownership_token,
+            outcome => {
+                info!(
+                    "Memory phase1 on-demand run claim skipped: session_id={}, outcome={:?}",
+                    session_id, outcome
+                );
+                stats.skipped_sessions = 1;
+                return Ok(stats);
+            }
+        };
+
+        let ai_factory = get_global_ai_client_factory().await.map_err(|error| {
+            OpenBitFunError::service(format!("Failed to get AI client factory: {}", error))
+        })?;
+        let ai_client = ai_factory
+            .get_client_resolved(&config.extract_model_selector)
+            .await?;
+
+        // Session storage is owned by the workspace identity, so an unresolvable
+        // workspace has no persisted turns to extract. Skip and release the claim
+        // instead of reading a directory that is not session storage.
+        let Some(session_storage_path) =
+            local_session_storage_dir_for_workspace_path(workspace_path_ref).await
+        else {
+            return self
+                .skip_unavailable_workspace_storage(session_id, &ownership_token, workspace_path)
+                .await;
+        };
+        stats.candidate_sessions = 1;
+        let claimed = ClaimedMemorySourceSession {
+            source: MemorySourceSession {
+                workspace_path: workspace_path.to_string(),
+                rollout_path: session_storage_path
+                    .join(session_id)
+                    .to_string_lossy()
+                    .to_string(),
+                session_id: session_id.to_string(),
+                session_name: metadata.session_name,
+                agent_type: metadata.agent_type,
+                turn_count: metadata.turn_count,
+                last_finished_unix_secs: session_finished_at_unix_secs.max(0) as u64,
+            },
+            session_storage_path: session_storage_path.to_string_lossy().to_string(),
+            ownership_token,
+        };
+        let extracted =
+            process_single_session(self.db.clone(), persistence, ai_client, claimed, config)
+                .await?;
+        if extracted {
+            stats.extracted_sessions = 1;
+        } else {
+            stats.skipped_sessions = 1;
+        }
+        info!(
+            "Memory phase1 on-demand run completed: session_id={}, extracted_sessions={}, skipped_sessions={}, duration_ms={}",
+            session_id,
+            stats.extracted_sessions,
+            stats.skipped_sessions,
+            started_at.elapsed().as_millis()
+        );
+        Ok(stats)
+    }
+
+    /// Release the phase-1 claim and report a skip for an unresolvable workspace.
+    ///
+    /// Session storage is owned by the workspace identity, so a workspace path
+    /// that resolves to neither a local nor a registered remote workspace has no
+    /// persisted turns to read. The claim is released instead of left to expire,
+    /// and the skip is reported through `storage_unavailable_sessions` so callers
+    /// do not misreport it as the generic "already captured / owned" outcome.
+    async fn skip_unavailable_workspace_storage(
+        &self,
+        session_id: &str,
+        ownership_token: &str,
+        workspace_path: &str,
+    ) -> OpenBitFunResult<MemoryPhase1RunStats> {
+        self.db
+            .release_phase1_claim_without_watermark(session_id, ownership_token)
+            .await?;
+        warn!(
+            "Memory phase1 on-demand run skipped because the workspace storage is unavailable: session_id={}, workspace_path={}",
+            session_id, workspace_path
+        );
+        Ok(MemoryPhase1RunStats {
+            scanned_sessions: 1,
+            skipped_sessions: 1,
+            storage_unavailable_sessions: 1,
+            ..Default::default()
+        })
+    }
+
     pub async fn prune_stage1_outputs_for_retention(
         &self,
         max_unused_days: i64,
     ) -> OpenBitFunResult<usize> {
+        // Retention always keeps a one-day floor so a zero setting cannot delete all
+        // memory input at once.
         self.db
-            .prune_stage1_outputs_for_retention(max_unused_days, STAGE_ONE_PRUNE_BATCH_SIZE)
+            .prune_stage1_outputs_for_retention(
+                max_unused_days.clamp(1, 365),
+                STAGE_ONE_PRUNE_BATCH_SIZE,
+            )
             .await
+    }
+
+    /// Expires stage-1 failure bookkeeping older than the configured report
+    /// window.
+    ///
+    /// The store owns the 1..=90 day clamp of that window, so the configured
+    /// value is passed through unchanged. Returns the number of expired rows.
+    pub async fn prune_failed_stage1_jobs(
+        &self,
+        max_report_age_days: i64,
+    ) -> OpenBitFunResult<u64> {
+        self.db.prune_failed_stage1_jobs(max_report_age_days).await
     }
 
     pub async fn run_once_excluding_session(
@@ -237,6 +440,7 @@ impl MemoryPhase1Service {
 
         let mut candidates = Vec::new();
         let mut scanned_sessions = 0usize;
+        let mut aged_out_sources: Vec<(String, i64)> = Vec::new();
         for root in collect_local_session_storage_roots().await {
             debug!(
                 "Memory phase1 scanning workspace sessions: workspace_path={}, session_storage_path={}",
@@ -311,16 +515,15 @@ impl MemoryPhase1Service {
                     );
                     continue;
                 };
-                if phase1_time_gate_skips(last_finished_at, cutoff_idle_ms, cutoff_age_ms) {
+                if phase1_idle_gate_skips(last_finished_at, cutoff_idle_ms) {
                     debug!(
-                        "Memory phase1 candidate skipped by time gate: session_id={}, workspace_path={}, session_storage_path={}, last_finished_at={}, cutoff_idle_ms={}, created_at={}, cutoff_age_ms={}",
+                        "Memory phase1 candidate skipped because the session is not idle enough: session_id={}, workspace_path={}, session_storage_path={}, last_finished_at={}, cutoff_idle_ms={}, created_at={}",
                         metadata.session_id,
                         root.workspace_path.display(),
                         root.session_storage_path.display(),
                         last_finished_at,
                         cutoff_idle_ms,
-                        metadata.created_at,
-                        cutoff_age_ms
+                        metadata.created_at
                     );
                     continue;
                 }
@@ -356,6 +559,21 @@ impl MemoryPhase1Service {
                     continue;
                 }
                 let session_finished_at_unix_secs = (last_finished_at / 1000) as i64;
+                // The age gate is evaluated last so the aggregate log below can
+                // report sessions that the age gate alone discarded.
+                if phase1_age_gate_skips(last_finished_at, cutoff_age_ms) {
+                    debug!(
+                        "Memory phase1 candidate skipped by age gate: session_id={}, workspace_path={}, session_storage_path={}, last_finished_at={}, created_at={}, cutoff_age_ms={}",
+                        metadata.session_id,
+                        root.workspace_path.display(),
+                        root.session_storage_path.display(),
+                        last_finished_at,
+                        metadata.created_at,
+                        cutoff_age_ms
+                    );
+                    aged_out_sources.push((metadata.session_id, session_finished_at_unix_secs));
+                    continue;
+                }
                 let claim = self
                     .db
                     .try_claim_phase1_job(
@@ -415,6 +633,26 @@ impl MemoryPhase1Service {
 
             if scanned_sessions >= max_scan || candidates.len() >= config.max_claimed_sessions {
                 break;
+            }
+        }
+
+        if !aged_out_sources.is_empty() {
+            match self
+                .db
+                .count_phase1_sources_needing_update(&aged_out_sources)
+                .await
+            {
+                Ok(never_extracted) => info!(
+                    "Memory phase1 age gate discarded sessions: aged_out_sessions={}, aged_out_never_extracted_sessions={}, max_session_age_days={}",
+                    aged_out_sources.len(),
+                    never_extracted,
+                    config.max_session_age_days
+                ),
+                Err(error) => warn!(
+                    "Memory phase1 failed to inspect age-gated sessions: aged_out_sessions={}, error={}",
+                    aged_out_sources.len(),
+                    error
+                ),
             }
         }
 
@@ -680,8 +918,12 @@ fn json_value_as_u64(value: &serde_json::Value) -> Option<u64> {
         .or_else(|| value.as_i64().and_then(|value| u64::try_from(value).ok()))
 }
 
-fn phase1_time_gate_skips(last_finished_at: u64, cutoff_idle_ms: u64, cutoff_age_ms: u64) -> bool {
-    last_finished_at > cutoff_idle_ms || last_finished_at < cutoff_age_ms
+fn phase1_idle_gate_skips(last_finished_at: u64, cutoff_idle_ms: u64) -> bool {
+    last_finished_at > cutoff_idle_ms
+}
+
+fn phase1_age_gate_skips(last_finished_at: u64, cutoff_age_ms: u64) -> bool {
+    last_finished_at < cutoff_age_ms
 }
 
 fn phase1_status_gate_skips(metadata: &SessionMetadata) -> bool {
@@ -1063,30 +1305,37 @@ mod tests {
     }
 
     #[test]
-    fn phase1_time_gate_allows_recent_session_that_is_idle_enough() {
-        assert!(!phase1_time_gate_skips(
+    fn phase1_idle_gate_allows_recent_session_that_is_idle_enough() {
+        assert!(!phase1_idle_gate_skips(
             1_782_894_678_264,
-            1_783_066_024_331,
-            1_779_181_624_331
+            1_783_066_024_331
         ));
+        assert!(!phase1_age_gate_skips(1_782_894_678_264, 1_779_181_624_331));
     }
 
     #[test]
-    fn phase1_time_gate_skips_session_that_is_not_idle_enough() {
-        assert!(phase1_time_gate_skips(
-            1_783_068_649_340,
-            1_783_066_024_331,
-            1_779_181_624_331
-        ));
+    fn phase1_idle_gate_skips_session_that_is_not_idle_enough() {
+        assert!(phase1_idle_gate_skips(1_783_068_649_340, 1_783_066_024_331));
     }
 
     #[test]
-    fn phase1_time_gate_skips_session_finished_before_max_age_window() {
-        assert!(phase1_time_gate_skips(
+    fn phase1_age_gate_skips_session_finished_before_max_age_window() {
+        assert!(phase1_age_gate_skips(1_770_000_000_000, 1_779_181_624_331));
+        assert!(!phase1_idle_gate_skips(
             1_770_000_000_000,
-            1_783_066_024_331,
-            1_779_181_624_331
+            1_783_066_024_331
         ));
+    }
+
+    #[test]
+    fn phase1_age_gate_accepts_the_widened_max_age_window() {
+        // `max_rollout_age_days` is clamped to 365 days, so a session that is
+        // almost a year old is still eligible.
+        let now_ms: u64 = 1_783_066_024_331;
+        let cutoff_age_ms = now_ms - 365 * 24 * 60 * 60 * 1000;
+        let eleven_months_old = now_ms - 330 * 24 * 60 * 60 * 1000;
+
+        assert!(!phase1_age_gate_skips(eleven_months_old, cutoff_age_ms));
     }
 
     #[test]
@@ -1335,5 +1584,218 @@ mod tests {
             stage_one_rollout_token_limit(&config),
             DEFAULT_ROLLOUT_TOKEN_LIMIT
         );
+    }
+
+    fn on_demand_config() -> MemoryPhase1RuntimeConfig {
+        let mut global = GlobalConfig::default();
+        global.memories.generate_memories = true;
+        MemoryPhase1RuntimeConfig::from_global(&global)
+    }
+
+    #[tokio::test]
+    async fn phase1_on_demand_run_skips_sessions_that_are_not_extractable() {
+        let temp = tempfile::tempdir().unwrap();
+        let path_manager = Arc::new(
+            crate::infrastructure::app_paths::PathManager::with_user_root_for_tests(
+                temp.path().to_path_buf(),
+            ),
+        );
+        let persistence =
+            Arc::new(PersistenceManager::new(path_manager.clone()).expect("persistence manager"));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+        let service = MemoryPhase1Service { db: Arc::new(db) };
+
+        let workspace = temp.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let workspace_path = workspace.to_string_lossy().to_string();
+
+        let stats = service
+            .run_once_for_session_with_config(
+                &workspace_path,
+                "missing-session",
+                on_demand_config(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(stats.scanned_sessions, 1);
+        assert_eq!(stats.skipped_sessions, 1);
+        assert_eq!(stats.extracted_sessions, 0);
+
+        let mut metadata = SessionMetadata::new(
+            "session-disabled".to_string(),
+            "Session Disabled".to_string(),
+            "agentic".to_string(),
+            "model".to_string(),
+        );
+        metadata.memory_mode = SessionMemoryMode::Disabled;
+        metadata.turn_count = 3;
+        metadata.last_finished_at = Some(1_700_000_000_000);
+        metadata.workspace_path = Some(workspace_path.clone());
+        persistence
+            .save_session_metadata(&workspace, &metadata)
+            .await
+            .unwrap();
+        let stats = service
+            .run_once_for_session_with_config(
+                &workspace_path,
+                "session-disabled",
+                on_demand_config(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(stats.skipped_sessions, 1);
+        assert_eq!(stats.extracted_sessions, 0);
+
+        let mut metadata = SessionMetadata::new(
+            "session-no-finish-time".to_string(),
+            "Session No Finish Time".to_string(),
+            "agentic".to_string(),
+            "model".to_string(),
+        );
+        metadata.memory_mode = SessionMemoryMode::Enabled;
+        metadata.turn_count = 3;
+        metadata.workspace_path = Some(workspace_path.clone());
+        persistence
+            .save_session_metadata(&workspace, &metadata)
+            .await
+            .unwrap();
+        let stats = service
+            .run_once_for_session_with_config(
+                &workspace_path,
+                "session-no-finish-time",
+                on_demand_config(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(stats.skipped_sessions, 1);
+        assert_eq!(stats.extracted_sessions, 0);
+    }
+
+    #[tokio::test]
+    async fn phase1_on_demand_run_reports_unavailable_workspace_storage() {
+        let temp = tempfile::tempdir().unwrap();
+        let path_manager = Arc::new(
+            crate::infrastructure::app_paths::PathManager::with_user_root_for_tests(
+                temp.path().to_path_buf(),
+            ),
+        );
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+        let service = MemoryPhase1Service { db: Arc::new(db) };
+        let workspace_path = temp
+            .path()
+            .join("unregistered-workspace")
+            .to_string_lossy()
+            .to_string();
+
+        let ownership_token = match service
+            .db
+            .try_claim_phase1_job("session-no-storage", "memory-phase1", 1_700_000_000, 600, 4)
+            .await
+            .unwrap()
+        {
+            MemoryPhase1ClaimOutcome::Claimed { ownership_token } => ownership_token,
+            outcome => panic!("expected a claim, got {outcome:?}"),
+        };
+
+        let stats = service
+            .skip_unavailable_workspace_storage(
+                "session-no-storage",
+                &ownership_token,
+                &workspace_path,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(stats.scanned_sessions, 1);
+        assert_eq!(stats.skipped_sessions, 1);
+        assert_eq!(stats.storage_unavailable_sessions, 1);
+        assert_eq!(stats.extracted_sessions, 0);
+
+        // The claim is released without a watermark, so the session stays
+        // claimable once its workspace storage resolves.
+        assert!(service
+            .db
+            .phase1_source_needs_update("session-no-storage", 1_700_000_000)
+            .await
+            .unwrap());
+        assert!(matches!(
+            service
+                .db
+                .try_claim_phase1_job("session-no-storage", "memory-phase1", 1_700_000_000, 600, 4)
+                .await
+                .unwrap(),
+            MemoryPhase1ClaimOutcome::Claimed { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn phase1_on_demand_run_skips_sessions_that_are_already_up_to_date() {
+        let temp = tempfile::tempdir().unwrap();
+        let path_manager = Arc::new(
+            crate::infrastructure::app_paths::PathManager::with_user_root_for_tests(
+                temp.path().to_path_buf(),
+            ),
+        );
+        let persistence =
+            Arc::new(PersistenceManager::new(path_manager.clone()).expect("persistence manager"));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+        let service = MemoryPhase1Service { db: Arc::new(db) };
+
+        let workspace = temp.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let workspace_path = workspace.to_string_lossy().to_string();
+
+        let mut metadata = SessionMetadata::new(
+            "session-up-to-date".to_string(),
+            "Session Up To Date".to_string(),
+            "agentic".to_string(),
+            "model".to_string(),
+        );
+        metadata.memory_mode = SessionMemoryMode::Enabled;
+        metadata.turn_count = 3;
+        metadata.last_finished_at = Some(1_700_000_000_000);
+        metadata.workspace_path = Some(workspace_path.clone());
+        persistence
+            .save_session_metadata(&workspace, &metadata)
+            .await
+            .unwrap();
+
+        let row = MemoryRow {
+            session_id: "session-up-to-date".to_string(),
+            workspace_path: workspace_path.clone(),
+            rollout_path: workspace_path.clone(),
+            source_updated_at_unix_secs: 1_700_000_000,
+            raw_memory: "memory".to_string(),
+            rollout_summary: "summary".to_string(),
+            rollout_slug: None,
+            generated_at_unix_secs: 1_700_000_000,
+            usage_count: 0,
+            last_usage_unix_secs: None,
+            selected_for_phase2: 0,
+            selected_for_phase2_source_updated_at: None,
+        };
+        service.db.upsert_memory(&row).await.unwrap();
+
+        let stats = service
+            .run_once_for_session_with_config(
+                &workspace_path,
+                "session-up-to-date",
+                on_demand_config(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(stats.skipped_sessions, 1);
+        assert_eq!(stats.extracted_sessions, 0);
+
+        // A session whose stage-1 output is older than its last finished turn is
+        // eligible again.
+        assert!(service
+            .db
+            .phase1_source_needs_update("session-up-to-date", 1_800_000_000)
+            .await
+            .unwrap());
     }
 }

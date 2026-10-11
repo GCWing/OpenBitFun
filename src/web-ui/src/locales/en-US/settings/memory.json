@@ -23,6 +23,62 @@
       "description": "Control how extracted results are prepared before becoming long-term memory."
     }
   },
+  "status": {
+    "title": "Memory status",
+    "description": "This describes the memory store of the device running OpenBitFun. Memory is not part of the workspace, so these numbers do not move with a remote workspace.",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "unknown": "Unknown",
+    "bytes": "{{size}} B",
+    "actions": {
+      "runNow": "Run memory pipeline now"
+    },
+    "phase2Status": {
+      "never": "Not run yet"
+    },
+    "fields": {
+      "memoryRoot": "Memory folder",
+      "memoryRootHint": "Host-local folder that holds the memory files.",
+      "generateMemories": "Automatic generation",
+      "useMemories": "Memory usage in sessions",
+      "storedOutputs": "Stored memories",
+      "storedOutputsHint": "Extracted results currently kept in the memory store.",
+      "pendingPromotion": "Waiting for consolidation",
+      "pendingPromotionHint": "Stored memories that no consolidation pass has merged yet.",
+      "phase2": "Last consolidation",
+      "phase2LastRun": "Finished {{time}}",
+      "phase2NeverRun": "No consolidation pass has run yet.",
+      "phase2LastError": "Last consolidation error",
+      "memoryIndex": "MEMORY.md",
+      "memoryIndexHint": "Size of the long-term memory index file.",
+      "memorySummary": "memory_summary.md",
+      "memorySummaryHint": "Size of the summary file injected into sessions.",
+      "rolloutSummaries": "Rollout summaries",
+      "rolloutSummariesHint": "Per-session extraction files in the memory folder."
+    },
+    "failed": {
+      "title": "Sessions that failed extraction",
+      "description": "These sessions could not be extracted. They stay listed until extraction succeeds, their retry budget is restored, or the failure is older than the failure report window. Clearing the failure records lets them be retried on the next memory run.",
+      "none": "No failed extraction.",
+      "retryExhausted": "retry budget exhausted",
+      "failedAt": "Failed {{time}}",
+      "clearAction": "Clear failed records",
+      "clearConfirmTitle": "Clear failed extraction records?",
+      "clearConfirm": "This deletes the failure records of the listed sessions on the current execution host. Extracted memories are kept, and clearing the failure bookkeeping lets these sessions be retried on the next memory run.",
+      "clearConfirmAction": "Clear records",
+      "cleared": "Cleared {{count}} failed extraction records",
+      "clearFailed": "Failed to clear failed extraction records"
+    },
+    "messages": {
+      "loading": "Reading memory status…",
+      "loadFailed": "Failed to read memory status",
+      "unavailable": "Memory status is unavailable: {{error}}",
+      "pipelineStarted": "Memory pipeline started",
+      "pipelineDisabled": "Automatic memory generation is disabled, so nothing was started",
+      "startFailed": "Failed to start the memory pipeline",
+      "pollTimedOut": "The pipeline is still running after 10 minutes, so status refresh stopped. Reopen this page to refresh again."
+    }
+  },
   "fields": {
     "memoryEnabled": {
       "label": "Memory",
@@ -78,7 +134,7 @@
     },
     "maxUnusedDays": {
       "label": "Candidate retention",
-      "description": "Unused extracted results expire from consolidation after this many days; cannot be shorter than session lookback"
+"description": "Unused extracted results older than this many days are permanently deleted, and the memory content consolidated from them is removed from MEMORY.md at the next consolidation. This must be at least the maximum session age."
     },
     "consolidationModel": {
       "label": "Consolidation model",

@@ -1343,6 +1343,8 @@ pub struct MemoriesConfig {
     pub max_unused_days: i64,
     /// Maximum age in days for a source session to be considered by Phase 1.
     pub max_rollout_age_days: i64,
+    /// Maximum age in days for a failed Phase 1 extraction record to stay listed.
+    pub max_failure_report_days: i64,
     /// Maximum source sessions claimed for extraction per memory startup pass.
     pub max_rollouts_per_startup: usize,
     /// Maximum source sessions scanned while looking for extraction candidates per memory startup pass.
@@ -1551,6 +1553,10 @@ fn default_memory_max_unused_days() -> i64 {
 
 fn default_memory_max_rollout_age_days() -> i64 {
     10
+}
+
+fn default_memory_max_failure_report_days() -> i64 {
+    14
 }
 
 fn default_memory_max_rollouts_per_startup() -> usize {
@@ -2064,6 +2070,7 @@ impl Default for MemoriesConfig {
             max_raw_memories_for_consolidation: default_memory_max_raw_memories_for_consolidation(),
             max_unused_days: default_memory_max_unused_days(),
             max_rollout_age_days: default_memory_max_rollout_age_days(),
+            max_failure_report_days: default_memory_max_failure_report_days(),
             max_rollouts_per_startup: default_memory_max_rollouts_per_startup(),
             max_rollouts_scan_limit: default_memory_max_rollouts_scan_limit(),
             min_rollout_idle_hours: default_memory_min_rollout_idle_hours(),
@@ -3419,6 +3426,7 @@ mod tests {
         assert_eq!(config.memories.max_raw_memories_for_consolidation, 64);
         assert_eq!(config.memories.max_unused_days, 30);
         assert_eq!(config.memories.max_rollout_age_days, 10);
+        assert_eq!(config.memories.max_failure_report_days, 14);
         assert_eq!(config.memories.max_rollouts_per_startup, 2);
         assert_eq!(config.memories.max_rollouts_scan_limit, 2_000);
         assert_eq!(config.memories.min_rollout_idle_hours, 6);
@@ -3444,6 +3452,7 @@ mod tests {
                     "max_raw_memories_for_consolidation": 12,
                     "max_unused_days": 7,
                     "max_rollout_age_days": 14,
+                    "max_failure_report_days": 21,
                     "max_rollouts_per_startup": 8,
                     "max_rollouts_scan_limit": 200,
                     "min_rollout_idle_hours": 12,
@@ -3469,6 +3478,7 @@ mod tests {
         assert_eq!(config.memories.max_raw_memories_for_consolidation, 12);
         assert_eq!(config.memories.max_unused_days, 7);
         assert_eq!(config.memories.max_rollout_age_days, 14);
+        assert_eq!(config.memories.max_failure_report_days, 21);
         assert_eq!(config.memories.max_rollouts_per_startup, 8);
         assert_eq!(config.memories.max_rollouts_scan_limit, 200);
         assert_eq!(config.memories.min_rollout_idle_hours, 12);
@@ -3483,6 +3493,23 @@ mod tests {
             config.memories.consolidation_model.as_deref(),
             Some("consolidator")
         );
+    }
+
+    #[test]
+    fn memories_config_without_failure_report_window_uses_the_default() {
+        // A config written before `max_failure_report_days` existed must keep
+        // working and land on the default failure-report window.
+        let config: GlobalConfig =
+            serde_json::from_value(current_global_config_with(serde_json::json!({
+                "memories": {
+                    "generate_memories": true,
+                    "max_unused_days": 7
+                }
+            })))
+            .expect("a memories section without the failure window should deserialize");
+
+        assert_eq!(config.memories.max_failure_report_days, 14);
+        assert_eq!(config.memories.max_unused_days, 7);
     }
 
     #[test]

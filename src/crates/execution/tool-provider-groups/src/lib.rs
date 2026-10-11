@@ -92,9 +92,8 @@ pub fn enabled_feature_groups() -> Vec<ToolPackFeatureGroup> {
 pub fn tool_feature_group(tool_name: &str) -> Option<ToolPackFeatureGroup> {
     match tool_name {
         "LS" | "Read" | "Glob" | "Grep" | "Write" | "Edit" | "Delete" | "ExecCommand"
-        | "WriteStdin" | "ExecControl" | "GetTime" | "ListModels" => {
-            Some(ToolPackFeatureGroup::Basic)
-        }
+        | "WriteStdin" | "ExecControl" | "GetTime" | "MemorySearch" | "MemoryFetch"
+        | "MemorySave" | "ListModels" => Some(ToolPackFeatureGroup::Basic),
         "Worktree" | "ReviewPlatform" | "GetFileDiff" => Some(ToolPackFeatureGroup::Git),
         "ListMCPResources" | "ReadMCPResource" | "ListMCPPrompts" | "GetMCPPrompt" => {
             Some(ToolPackFeatureGroup::Mcp)
@@ -186,6 +185,9 @@ const PRODUCT_TOOL_PROVIDER_GROUP_PLAN: &[ToolProviderGroupPlan] = &[
             "WriteStdin",
             "ExecControl",
             "GetTime",
+            "MemorySearch",
+            "MemoryFetch",
+            "MemorySave",
             "ListModels",
         ],
     },
@@ -530,6 +532,9 @@ mod tests {
                 "WriteStdin",
                 "ExecControl",
                 "GetTime",
+                "MemorySearch",
+                "MemoryFetch",
+                "MemorySave",
                 "ListModels",
                 "Task",
                 "AgentSpawn",
