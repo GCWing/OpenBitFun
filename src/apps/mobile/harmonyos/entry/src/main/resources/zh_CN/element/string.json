@@ -1101,6 +1101,10 @@
       "value": "极致"
     },
     {
+      "name": "remote_harness_creative",
+      "value": "创造"
+    },
+    {
       "name": "remote_connectTitle",
       "value": "连接桌面端"
     },

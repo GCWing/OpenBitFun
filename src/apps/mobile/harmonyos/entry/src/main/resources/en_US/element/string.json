@@ -1101,6 +1101,10 @@
       "value": "Ultimate"
     },
     {
+      "name": "remote_harness_creative",
+      "value": "Creative"
+    },
+    {
       "name": "remote_connectTitle",
       "value": "Connect desktop"
     },

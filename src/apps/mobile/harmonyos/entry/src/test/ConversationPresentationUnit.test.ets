@@ -66,6 +66,7 @@ export default function conversationPresentationUnitTest() {
       expect(HarnessProfilePolicy.agentType('minimal')).assertEqual('minimal');
       expect(HarnessProfilePolicy.agentType('standard')).assertEqual('agentic');
       expect(HarnessProfilePolicy.agentType('ultimate')).assertEqual('Ultra');
+      expect(HarnessProfilePolicy.agentType('creative')).assertEqual('Creative');
     });
   });
 
