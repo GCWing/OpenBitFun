@@ -79,18 +79,17 @@ function sourceCandidates() {
   if (explicitSource) {
     candidates.push(path.resolve(explicitSource));
   }
+  // Canonical roots only, mirroring `path_manager::get_user_config_root`.
+  // A profile whose config still sits under a pre-rename product directory must
+  // be passed explicitly with `--source=<path>` / OPENBITFUN_E2E_SOURCE_CONFIG.
   if (process.env.APPDATA) {
     candidates.push(
       path.join(process.env.APPDATA, 'openbitfun', 'config', 'app.json'),
-      path.join(process.env.APPDATA, 'BitFun', 'config', 'app.json'),
-      path.join(process.env.APPDATA, 'bitfun', 'config', 'app.json'),
     );
   }
   candidates.push(
     path.join(os.homedir(), '.config', 'openbitfun', 'config', 'app.json'),
     path.join(os.homedir(), 'Library', 'Application Support', 'openbitfun', 'config', 'app.json'),
-    path.join(os.homedir(), '.config', 'bitfun', 'config', 'app.json'),
-    path.join(os.homedir(), 'Library', 'Application Support', 'bitfun', 'config', 'app.json'),
   );
   return candidates;
 }

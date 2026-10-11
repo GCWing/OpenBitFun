@@ -353,14 +353,12 @@ fn collect_workspace_changes(diff: &Diff<'_>) -> Vec<MemoryWorkspaceChange> {
 /// The memory root can be registered as a workspace and indexed by local search,
 /// which writes an index directory into it. That state is tool bookkeeping, not
 /// memory content, and must never be reported as a workspace change or rendered
-/// into the consolidation prompt, whether or not the host ignores it. The legacy
-/// `.bitfun` directory name is still recognized because an install upgraded in
-/// place can hold tool state written before the rename.
+/// into the consolidation prompt, whether or not the host ignores it. The
+/// directory name is read from the product identity owner so a build with a
+/// different data namespace still filters its own tool state.
 fn is_memory_tool_state_path(path: &str) -> bool {
-    matches!(
-        path.split('/').next(),
-        Some(".bitfun") | Some(".openbitfun") | Some(".git")
-    )
+    let first_segment = path.split('/').next().unwrap_or_default();
+    first_segment == ".git" || first_segment == crate::product_identity::hidden_data_directory()
 }
 
 fn render_workspace_diff(diff: &Diff<'_>, root: &Path) -> Result<String, MemoryWorkspaceGitError> {
@@ -575,20 +573,16 @@ mod tests {
         std::fs::write(root.join("MEMORY.md"), "# Task Group: example\n").unwrap();
         reset_memory_workspace_git_baseline(root).await.unwrap();
 
-        // No ignore rule applies on this host, so the index is untracked. Both the
-        // current and the legacy tool-state directory names must be filtered.
-        let index_dir = root.join(".bitfun/search/flashgrep-index");
+        // No ignore rule applies on this host, so the index is untracked and the
+        // tool-state filter itself has to drop it.
+        let index_dir = root.join(".openbitfun/search/flashgrep-index");
         std::fs::create_dir_all(&index_dir).unwrap();
         std::fs::write(index_dir.join("index.bin"), "tool state").unwrap();
-        let openbitfun_dir = root.join(".openbitfun/search/flashgrep-index");
-        std::fs::create_dir_all(&openbitfun_dir).unwrap();
-        std::fs::write(openbitfun_dir.join("index.bin"), "more tool state").unwrap();
 
         let diff = memory_workspace_diff(root).await.unwrap();
 
         assert!(!diff.has_changes());
         assert!(!diff.unified_diff.contains("tool state"));
-        assert!(!diff.unified_diff.contains("more tool state"));
     }
 
     #[test]

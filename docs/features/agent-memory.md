@@ -77,7 +77,7 @@ deleted by that rebuild, because the keep-set is every live stage-1 row.
 
 The workspace diff is the input to forgetting. Only tracked and untracked content
 files are diffed. Gitignored paths are never part of the diff, and OpenBitFun's own
-tool state (`.openbitfun/`, and the legacy `.bitfun/` name) is excluded whether or not the host
+tool state (the product's hidden data directory, `.openbitfun/` by default) is excluded whether or not the host
 ignores it, so a local search index written into the memory root can never make an
 unchanged workspace look dirty or leak tool state into the prompt.
 

@@ -66,7 +66,7 @@ extensions/<name>/         扩展输入，包含 ad-hoc 用户笔记
 存活的 stage-1 行。
 
 工作区 diff 是"遗忘"的依据。diff 只覆盖已跟踪和未跟踪的内容文件。被 gitignore 的
-路径永远不进入 diff，OpenBitFun 自身的工具状态（`.openbitfun/` 以及旧版 `.bitfun/` 目录名）无论主机
+路径永远不进入 diff，OpenBitFun 自身的工具状态（产品隐藏数据目录，默认为 `.openbitfun/`）无论主机
 是否忽略它都会被排除，因此写入记忆目录的本地搜索索引既不会让未变更的工作区看起来
 "有改动"，也不会把工具状态泄漏进提示词。
 
