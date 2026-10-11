@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "a042a92c8c3910bf7d20aebf5c9ecfc7a950f5954068afa34313547ef5d08f1d",
+  "catalogDigest": "88a95ef7fbc07eb066896d6fa45b34fb1da4c857a06baf2012cdef9979e8bc1e",
   "commandCount": 673,
   "coverage": {
     "commandCount": 673,

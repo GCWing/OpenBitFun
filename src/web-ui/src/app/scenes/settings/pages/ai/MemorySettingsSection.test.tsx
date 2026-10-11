@@ -3,7 +3,7 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import MemorySettingsPage from './MemorySettingsPage';
+import MemorySettingsSection from './MemorySettingsSection';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -204,17 +204,18 @@ const createCommonMock = vi.hoisted(() => () => ({
       {children}
     </div>
   ),
-  ConfigPageSection: ({ children, description, extra, title, ...props }: {
+  ConfigPageSection: ({ children, description, descriptionLayout: _descriptionLayout, extra, title, ...props }: {
     children: React.ReactNode;
     description?: React.ReactNode;
+    descriptionLayout?: string;
     extra?: React.ReactNode;
     title: string;
   } & React.HTMLAttributes<HTMLElement>) => (
     <section {...props}><h2>{title}</h2>{description}{extra}{children}</section>
   ),
+  ConfigPageSectionStack: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock('./common', createCommonMock);
 vi.mock('@/infrastructure/config/components/common', createCommonMock);
 vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({
   agentAPI: {
@@ -230,8 +231,10 @@ vi.mock('@/infrastructure/api/service-api/WorkspaceAPI', () => ({
   workspaceAPI: { revealInExplorer: vi.fn() },
 }));
 
-vi.mock('../services/ConfigManager', () => ({
+vi.mock('@/infrastructure/config/services/ConfigManager', () => ({
   configManager: {
+    hasCachedConfig: () => false,
+    getCachedConfig: () => undefined,
     getConfig: getConfigMock,
     updateConfig: updateConfigMock,
     resetConfig: resetConfigMock,
@@ -322,7 +325,7 @@ async function expandAdvanced(container: HTMLElement) {
   await flush();
 }
 
-describe('MemorySettingsPage truthfulness', () => {
+describe('Memory settings section truthfulness', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -358,7 +361,7 @@ describe('MemorySettingsPage truthfulness', () => {
         : { max_rollout_age_days: 14, max_unused_days: 7, max_rollouts_per_startup: 2 }
     ));
 
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
     await expandAdvanced(container);
 
@@ -368,7 +371,7 @@ describe('MemorySettingsPage truthfulness', () => {
   });
 
   it('refuses a retention of zero, which would delete every unused memory', async () => {
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
     await expandAdvanced(container);
 
@@ -379,7 +382,7 @@ describe('MemorySettingsPage truthfulness', () => {
   });
 
   it('mirrors the backend defaults when the host stores only non-default keys', async () => {
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     expect(memoryToggle(container)?.checked).toBe(false);
@@ -397,7 +400,7 @@ describe('MemorySettingsPage truthfulness', () => {
       throw new Error('config backend offline');
     });
 
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     expect(container.querySelector('[data-testid="retry-state"]')?.textContent)
@@ -411,7 +414,7 @@ describe('MemorySettingsPage truthfulness', () => {
   });
 
   it('reports the host pipeline state in the status card', async () => {
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     expect(rowByLabel(container, 'status.fields.storedOutputs')?.textContent).toContain('n7');
@@ -431,7 +434,7 @@ describe('MemorySettingsPage truthfulness', () => {
   });
 
   it('renders the consolidation error as a tinted, clamped block with the full text on title', async () => {
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     const errorBlock = phase2LastErrorBlock(container);
@@ -453,7 +456,7 @@ describe('MemorySettingsPage truthfulness', () => {
     const longError = `provider failure ${'x'.repeat(400)}`;
     getMemoryStatusMock.mockResolvedValue({ ...READY_STATUS, phase2LastError: longError });
 
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     const visibleText = phase2LastErrorBlock(container)
@@ -466,7 +469,7 @@ describe('MemorySettingsPage truthfulness', () => {
   });
 
   it('renders each failed session as a compact entry with a one-line error summary', async () => {
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     const entries = failedSessionEntries(container);
@@ -493,7 +496,7 @@ describe('MemorySettingsPage truthfulness', () => {
   });
 
   it('shows the failure age so a stale failure is answerable at a glance', async () => {
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     const entries = failedSessionEntries(container);
@@ -507,7 +510,7 @@ describe('MemorySettingsPage truthfulness', () => {
   });
 
   it('clears failed extraction records only after the confirm action', async () => {
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     const clearButton = clearFailuresButton(container);
@@ -537,7 +540,7 @@ describe('MemorySettingsPage truthfulness', () => {
   it('reports a failed clear instead of claiming the records were removed', async () => {
     clearMemoryStage1FailuresMock.mockRejectedValue(new Error('host unreachable'));
 
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     await act(async () => {
@@ -556,7 +559,7 @@ describe('MemorySettingsPage truthfulness', () => {
   it('offers the clear action only when a session actually failed', async () => {
     getMemoryStatusMock.mockResolvedValue({ ...READY_STATUS, stage1Failed: [] });
 
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     expect(clearFailuresButton(container)).toBeNull();
@@ -567,7 +570,7 @@ describe('MemorySettingsPage truthfulness', () => {
   it('does not fabricate pipeline numbers when the status read fails', async () => {
     getMemoryStatusMock.mockRejectedValue(new Error('host unreachable'));
 
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     const alerts = Array.from(container.querySelectorAll('[data-testid="inline-message"]'))
@@ -586,7 +589,7 @@ describe('MemorySettingsPage truthfulness', () => {
     // page manages, not the status fetch.
     getMemoryStatusMock.mockResolvedValue({ ...READY_STATUS, generateMemories: true });
 
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     expect(runNowButton(container)?.disabled).toBe(true);
@@ -599,7 +602,7 @@ describe('MemorySettingsPage truthfulness', () => {
     ));
     getMemoryStatusMock.mockRejectedValue(new Error('host unreachable'));
 
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     // The status card reports its own failure...
@@ -623,7 +626,7 @@ describe('MemorySettingsPage truthfulness', () => {
       path === 'ai.models' ? [] : { generate_memories: true }
     ));
 
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     expect(runNowButton(container)?.disabled).toBe(false);
@@ -644,7 +647,7 @@ describe('MemorySettingsPage truthfulness', () => {
     ));
     runMemoryPipelineNowMock.mockResolvedValue({ started: false });
 
-    await act(async () => root.render(<MemorySettingsPage />));
+    await act(async () => root.render(<MemorySettingsSection />));
     await flush();
 
     await act(async () => {

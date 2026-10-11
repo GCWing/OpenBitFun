@@ -626,7 +626,7 @@
               "只有明确值得长期保留的结论才用 MemorySave 写入；记忆工具只在本地工作区可用，远端工作区会明确返回不可用，不要用文件工具代替"
             ],
             "workflowEn": [
-              "Use MemorySearch for candidate entries, then MemoryFetch to read the evidence file MEMORY.md points at; MemoryFetch records memory usage by itself, so no memory citation block is needed",
+              "Use MemorySearch for candidate entries, then MemoryFetch to read the file MEMORY.md points at; MemoryFetch records memory usage by itself, so no memory citation block is needed",
               "Use MemorySave only for conclusions that clearly belong in long-term memory; the memory tools are host-local and fail loudly on remote workspaces, so do not substitute raw file tools"
             ]
           },
@@ -7014,8 +7014,8 @@
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "记忆状态与失败记录都来自当前宿主的实时管线数据（数据库行、记忆目录文件与有效配置），手动运行也是异步后台任务，目前没有绑定到产品控制 operation 的结构化动作；智能体会打开精确入口，把查看状态、手动运行与清除失败记录保留在用户可见界面。",
-            "reasonEn": "The memory status and the failed-extraction records come from the current host's live pipeline data (database rows, memory-root files, and effective config), and a manual run is an asynchronous background pass with no product-control operation bound yet; the Agent opens the exact entry and keeps status inspection, the manual run, and clearing failed records in the visible UI."
+            "reasonZh": "“查看宿主记忆管线状态、手动运行一次提取与整理，或清除失败记录”依赖当前宿主的实时管线数据（数据库行、记忆目录文件与有效配置），手动运行也是异步后台任务，目前没有绑定到产品控制 operation 的结构化动作；智能体会打开精确入口，把查看状态、手动运行与清除失败记录保留在用户可见界面。",
+            "reasonEn": "“Inspect the host memory pipeline status, run one extraction and consolidation pass manually, or clear the failed-extraction records” depends on the current host's live pipeline data (database rows, memory-root files, and effective config), and a manual run is an asynchronous background pass with no product-control operation bound yet; the Agent opens the exact entry and keeps status inspection, the manual run, and clearing failed records in the visible UI."
           },
           "evidence": [
             "command:clear_memory_stage1_failures",

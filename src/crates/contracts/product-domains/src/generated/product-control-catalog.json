@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "a042a92c8c3910bf7d20aebf5c9ecfc7a950f5954068afa34313547ef5d08f1d",
+  "digest": "88a95ef7fbc07eb066896d6fa45b34fb1da4c857a06baf2012cdef9979e8bc1e",
   "ownerDigest": "2269c2432e5db44706b2bce44df3c60672141a47c36141aeb1257ea7fd2507f8",
   "searchAcceptance": [
     {
@@ -19691,7 +19691,7 @@
               "只有明确值得长期保留的结论才用 MemorySave 写入；记忆工具只在本地工作区可用，远端工作区会明确返回不可用，不要用文件工具代替"
             ],
             "workflowEn": [
-              "Use MemorySearch for candidate entries, then MemoryFetch to read the evidence file MEMORY.md points at; MemoryFetch records memory usage by itself, so no memory citation block is needed",
+              "Use MemorySearch for candidate entries, then MemoryFetch to read the file MEMORY.md points at; MemoryFetch records memory usage by itself, so no memory citation block is needed",
               "Use MemorySave only for conclusions that clearly belong in long-term memory; the memory tools are host-local and fail loudly on remote workspaces, so do not substitute raw file tools"
             ]
           }
@@ -19884,7 +19884,7 @@
         "MemorySave",
         "先 MemorySearch 找候选条目，再用 MemoryFetch 读取 MEMORY.md 指向的具体证据文件；MemoryFetch 会自动记录使用情况，不需要再输出记忆引用块",
         "只有明确值得长期保留的结论才用 MemorySave 写入；记忆工具只在本地工作区可用，远端工作区会明确返回不可用，不要用文件工具代替",
-        "Use MemorySearch for candidate entries, then MemoryFetch to read the evidence file MEMORY.md points at; MemoryFetch records memory usage by itself, so no memory citation block is needed",
+        "Use MemorySearch for candidate entries, then MemoryFetch to read the file MEMORY.md points at; MemoryFetch records memory usage by itself, so no memory citation block is needed",
         "Use MemorySave only for conclusions that clearly belong in long-term memory; the memory tools are host-local and fail loudly on remote workspaces, so do not substitute raw file tools"
       ],
       "docsUrl": "https://playbook.openbitfun.com/capabilities/feature.ai-assistant/"
@@ -27563,8 +27563,8 @@
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "记忆状态与失败记录都来自当前宿主的实时管线数据（数据库行、记忆目录文件与有效配置），手动运行也是异步后台任务，目前没有绑定到产品控制 operation 的结构化动作；智能体会打开精确入口，把查看状态、手动运行与清除失败记录保留在用户可见界面。",
-            "reasonEn": "The memory status and the failed-extraction records come from the current host's live pipeline data (database rows, memory-root files, and effective config), and a manual run is an asynchronous background pass with no product-control operation bound yet; the Agent opens the exact entry and keeps status inspection, the manual run, and clearing failed records in the visible UI."
+            "reasonZh": "“查看宿主记忆管线状态、手动运行一次提取与整理，或清除失败记录”依赖当前宿主的实时管线数据（数据库行、记忆目录文件与有效配置），手动运行也是异步后台任务，目前没有绑定到产品控制 operation 的结构化动作；智能体会打开精确入口，把查看状态、手动运行与清除失败记录保留在用户可见界面。",
+            "reasonEn": "“Inspect the host memory pipeline status, run one extraction and consolidation pass manually, or clear the failed-extraction records” depends on the current host's live pipeline data (database rows, memory-root files, and effective config), and a manual run is an asynchronous background pass with no product-control operation bound yet; the Agent opens the exact entry and keeps status inspection, the manual run, and clearing failed records in the visible UI."
           }
         },
         {
