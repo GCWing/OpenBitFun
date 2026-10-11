@@ -366,6 +366,33 @@ export class SessionAPI {
     }
   }
 
+  /**
+   * Copy a session into a new independent session.
+   *
+   * The host copies the source session's persisted history under a new session
+   * id and leaves the source session untouched. No turn id is sent: the host
+   * resolves the copy boundary from the session's own latest persisted turn, so
+   * the controller never has to load a session's turns to ask for a copy.
+   */
+  async duplicateSession(
+    sourceSessionId: string,
+    workspaceId: string
+  ): Promise<{ sessionId: string; sessionName: string; agentType: string }> {
+    try {
+      return await invokePrepared('fork_session', async () => ({
+        request: {
+          source_session_id: sourceSessionId,
+          ...await sessionWorkspaceIdRequest(workspaceId),
+        }
+      }));
+    } catch (error) {
+      throw createTauriCommandError('fork_session', error, {
+        sourceSessionId,
+        workspaceId,
+      });
+    }
+  }
+
   async listSessions(workspaceId: string): Promise<SessionMetadata[]> {
     return invokePrepared('list_persisted_sessions', async () => ({
       request: await sessionWorkspaceIdRequest(workspaceId),

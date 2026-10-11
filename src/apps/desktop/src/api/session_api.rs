@@ -240,7 +240,12 @@ fn default_include_hidden_subagents() -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForkSessionRequest {
     pub source_session_id: String,
-    pub source_turn_id: String,
+    /// Turn to copy the history through. Omitted means "copy the whole
+    /// session": the host then forks at the session's latest persisted turn.
+    ///
+    /// The field stays on the wire for existing callers and older frontends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_turn_id: Option<String>,
     #[serde(default)]
     pub workspace_id: Option<String>,
     #[serde(default)]
@@ -723,6 +728,8 @@ pub async fn load_persisted_session_metadata(
     result
 }
 
+/// Forks a session through a selected turn, or copies the whole session when
+/// `source_turn_id` is omitted.
 #[tauri::command]
 pub async fn fork_session(
     request: ForkSessionRequest,

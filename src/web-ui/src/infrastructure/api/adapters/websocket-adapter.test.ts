@@ -5,12 +5,37 @@ import {
   decodeResponseBody,
   encodeRequestBody,
   resolveWsMethod,
+  resolveWsMethodForBody,
   WebSocketTransportAdapter,
 } from './websocket-adapter';
 import type {
   SubmitDialogTurnBody,
   SubmitDialogTurnResponse,
 } from '@/generated/api';
+
+describe('resolveWsMethodForBody', () => {
+  it('routes a whole-session copy to session/fork and a turn copy to session/forkAtTurn', () => {
+    // One desktop command (`fork_session`) covers the app-server's two fork
+    // methods. `session/forkAtTurn` rejects a missing turn id, so a body without
+    // one must ride `session/fork` (the host's latest-persisted-turn copy).
+    expect(resolveWsMethodForBody('fork_session', { source_session_id: 's1' }))
+      .toBe('session/fork');
+    expect(resolveWsMethodForBody('fork_session', { source_session_id: 's1', source_turn_id: '' }))
+      .toBe('session/fork');
+    expect(resolveWsMethodForBody('fork_session', { source_session_id: 's1', source_turn_id: '  ' }))
+      .toBe('session/fork');
+    expect(resolveWsMethodForBody('fork_session', { source_session_id: 's1', source_turn_id: 't2' }))
+      .toBe('session/forkAtTurn');
+  });
+
+  it('leaves every other command on its table method', () => {
+    expect(resolveWsMethodForBody('archive_session', { session_id: 's1' }))
+      .toBe('session/setArchived');
+    expect(resolveWsMethodForBody('delete_session', { session_id: 's1' }))
+      .toBe('agent/deleteSession');
+    expect(resolveWsMethodForBody('ping', undefined)).toBe('ping');
+  });
+});
 
 describe('resolveWsMethod', () => {
   it('maps every app-server agent command to its agent/* surface method', () => {
@@ -295,6 +320,19 @@ describe('encodeRequestBody', () => {
       workspaceId: 'workspace-1',
       sessionId: 's1',
       archived: true,
+    });
+  });
+
+  it('encodes a whole-session copy without a source turn id', () => {
+    // The copy action lets the host resolve the boundary from the session's own
+    // latest persisted turn; inventing a turn id would move that decision into
+    // the controller.
+    expect(encodeRequestBody('fork_session', {
+      workspace_id: 'workspace-1',
+      source_session_id: 's1',
+    })).toEqual({
+      workspaceId: 'workspace-1',
+      sourceSessionId: 's1',
     });
   });
 

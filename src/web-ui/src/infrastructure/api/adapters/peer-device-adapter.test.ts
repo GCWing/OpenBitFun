@@ -216,6 +216,12 @@ describe('peerInvokePriorityFor', () => {
     expect(isPeerRetryableReadCommand('start_dialog_turn')).toBe(false);
     expect(isPeerRetryableReadCommand('delete_session')).toBe(false);
     expect(isPeerRetryableReadCommand('respond_permission')).toBe(false);
+    // Copying a session rides `fork_session`. It carries no host-side
+    // idempotency key, so a retry would create a second copy of the session.
+    expect(isPeerRetryableReadCommand('fork_session')).toBe(false);
+    expect(isPeerRetryableIdempotentMutation('fork_session', {
+      request: { workspace_id: 'workspace-1', source_session_id: 'session-1' },
+    })).toBe(false);
   });
 
   it('does not retry side-effecting announcement get_* commands', () => {

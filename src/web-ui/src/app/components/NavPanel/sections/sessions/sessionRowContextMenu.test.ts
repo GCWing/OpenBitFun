@@ -42,4 +42,27 @@ describe('SessionsSection session row context menu', () => {
     expect(source).toContain("visibility: sessionMenuPosition ? 'visible' : 'hidden'");
     expect(source).toContain('data-testid="nav-session-menu"');
   });
+
+  it('exposes the copy action to both menu entry points as one shared row', () => {
+    const source = readSessionsSectionSource();
+    // The copy action lives in the single shared Menu, so the "more" button and
+    // right click open the same entry with the same handler.
+    expect(source).toContain('data-testid="nav-session-menu-duplicate"');
+    expect(source).toMatch(/handleDuplicateSession = useCallback\(\s*async \(e: React\.MouseEvent, sessionId: string\)/);
+    expect(source).toContain('await flowChatManager.duplicateChatSession(sessionId)');
+    expect(source).toContain("t('nav.sessions.duplicateSuccess'");
+    expect(source).toContain('{ name: copied.sessionName }');
+    expect(source).toContain("t('nav.sessions.duplicateFailed')");
+  });
+
+  it('keeps copy unavailable while a turn runs or another device owns the session', () => {
+    const source = readSessionsSectionSource();
+    // A running turn is not a stable copy boundary, and a dispatch-owned session
+    // has no local history to copy. Both entry points share these guards.
+    expect(source).toContain('disabled={isDispatched');
+    expect(source).toContain('|| runningSessionIds.has(session.sessionId)');
+    expect(source).toContain('|| duplicatingSessionId === session.sessionId}');
+    expect(source).toContain("t('nav.sessions.duplicateDispatchUnsupported')");
+    expect(source).toContain("t('nav.sessions.duplicateRunning')");
+  });
 });

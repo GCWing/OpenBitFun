@@ -11,10 +11,10 @@ use std::time::Instant;
 use async_trait::async_trait;
 use openbitfun_agent_runtime::sdk::{
     AgentLocalCommandTurnRecordRequest, AgentRuntime, AgentSessionArchiveStateRequest,
-    AgentSessionDeleteRequest, AgentSessionForkAtTurnRequest, AgentSessionLineageRequest,
-    AgentSessionLineageSnapshot, AgentSessionRenameRequest, AgentSessionUsageRequest,
-    PortErrorKind, RuntimeError, SessionEventBackfill, SessionEventJournal,
-    SessionEventProjectionSnapshot, SessionInteractionSnapshot,
+    AgentSessionDeleteRequest, AgentSessionForkAtTurnRequest, AgentSessionForkRequest,
+    AgentSessionLineageRequest, AgentSessionLineageSnapshot, AgentSessionRenameRequest,
+    AgentSessionUsageRequest, PortErrorKind, RuntimeError, SessionEventBackfill,
+    SessionEventJournal, SessionEventProjectionSnapshot, SessionInteractionSnapshot,
 };
 use openbitfun_core::agentic::coordination::{ConversationCoordinator, DialogScheduler};
 use openbitfun_core::agentic::core::Session;
@@ -621,31 +621,28 @@ impl DesktopSessionApplication {
         Ok(report)
     }
 
+    /// Copies a session into a new independent session.
+    ///
+    /// `source_turn_id` selects a prefix of the source history. Omitting it
+    /// copies the whole session, which is the runtime's latest-persisted-turn
+    /// fork (`AgentSessionForkRequest`); the Desktop "Copy session" action uses
+    /// that form so the controller never has to load a session's turns just to
+    /// ask for a copy.
     pub(crate) async fn fork_session(
         &self,
         request: DesktopSessionScopeRequest,
         source_session_id: String,
-        source_turn_id: String,
+        source_turn_id: Option<String>,
     ) -> DesktopSessionApplicationResult<SessionBranchResult> {
         let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)?;
-        let result = self
-            .agent_runtime
-            .fork_session_at_turn(AgentSessionForkAtTurnRequest {
-                workspace_id: Some(scope.workspace_id.clone()),
-                workspace_path: String::new(),
-                source_session_id,
-                source_turn_id,
-                remote_connection_id: scope.remote_connection_id,
-                remote_ssh_host: scope.resolved_remote_ssh_host,
-            })
-            .await
-            .map_err(|error| DesktopSessionApplicationError::Runtime(error.into_message()))?;
-        Ok(SessionBranchResult {
-            session_id: result.session_id,
-            session_name: result.session_name,
-            agent_type: result.agent_type,
-        })
+        fork_session_in_scope(
+            &self.agent_runtime,
+            scope,
+            source_session_id,
+            source_turn_id,
+        )
+        .await
     }
 
     pub(crate) async fn set_session_archived(
@@ -917,6 +914,55 @@ impl DesktopSessionApplication {
     }
 }
 
+/// Copies a session into a new independent session.
+///
+/// This is the Agent Runtime's session fork, which is the only owner of session
+/// copy semantics: it copies every persisted turn, turn context snapshot, skill
+/// snapshot, compression transcript, and evidence-ledger event under a new
+/// session id, and resets the inherited child/relationship state. Passing a
+/// turn id copies the history through that turn; passing `None` copies the whole
+/// session by forking at the latest persisted turn. The source session keeps its
+/// identity, history, and metadata.
+async fn fork_session_in_scope(
+    agent_runtime: &AgentRuntime,
+    scope: ResolvedDesktopSessionScope,
+    source_session_id: String,
+    source_turn_id: Option<String>,
+) -> DesktopSessionApplicationResult<SessionBranchResult> {
+    let workspace_id = Some(scope.workspace_id.clone());
+    let result = match source_turn_id {
+        Some(source_turn_id) => {
+            agent_runtime
+                .fork_session_at_turn(AgentSessionForkAtTurnRequest {
+                    workspace_id,
+                    workspace_path: String::new(),
+                    source_session_id,
+                    source_turn_id,
+                    remote_connection_id: scope.remote_connection_id,
+                    remote_ssh_host: scope.resolved_remote_ssh_host,
+                })
+                .await
+        }
+        None => {
+            agent_runtime
+                .fork_session(AgentSessionForkRequest {
+                    workspace_id,
+                    workspace_path: String::new(),
+                    source_session_id,
+                    remote_connection_id: scope.remote_connection_id,
+                    remote_ssh_host: scope.resolved_remote_ssh_host,
+                })
+                .await
+        }
+    }
+    .map_err(|error| DesktopSessionApplicationError::Runtime(error.into_message()))?;
+    Ok(SessionBranchResult {
+        session_id: result.session_id,
+        session_name: result.session_name,
+        agent_type: result.agent_type,
+    })
+}
+
 async fn delete_session_with_host_effects(
     agent_runtime: &AgentRuntime,
     host_effects: &dyn DesktopSessionHostEffects,
@@ -970,6 +1016,7 @@ mod tests {
     use super::*;
     use openbitfun_agent_runtime::sdk::{
         AgentRuntimeBuilder, AgentSessionCreateRequest, AgentSessionCreateResult,
+        AgentSessionForkPort, AgentSessionForkRequest, AgentSessionForkResult,
         AgentSessionListRequest, AgentSessionManagementPort, AgentSessionSummary,
         AgentSessionWorkspaceBinding, AgentSessionWorkspaceRequest, AgentSubmissionPort,
         AgentSubmissionRequest, AgentSubmissionResult, PortError, PortErrorKind, PortResult,
@@ -1162,6 +1209,92 @@ mod tests {
             }))
             .build()
             .expect("delete test runtime")
+    }
+
+    struct RecordingForkPort {
+        calls: Arc<Mutex<Vec<&'static str>>>,
+        workspace_id: Arc<Mutex<Option<String>>>,
+    }
+
+    #[async_trait]
+    impl AgentSessionForkPort for RecordingForkPort {
+        async fn fork_session(
+            &self,
+            request: AgentSessionForkRequest,
+        ) -> PortResult<AgentSessionForkResult> {
+            self.calls.lock().unwrap().push("whole_session");
+            *self.workspace_id.lock().unwrap() = request.workspace_id.clone();
+            Ok(AgentSessionForkResult {
+                session_id: "copy-1".to_string(),
+                session_name: "Source (1)".to_string(),
+                agent_type: "Standard".to_string(),
+            })
+        }
+
+        async fn fork_session_at_turn(
+            &self,
+            _request: openbitfun_agent_runtime::sdk::AgentSessionForkAtTurnRequest,
+        ) -> PortResult<AgentSessionForkResult> {
+            self.calls.lock().unwrap().push("through_turn");
+            Ok(AgentSessionForkResult {
+                session_id: "prefix-1".to_string(),
+                session_name: "Source (2)".to_string(),
+                agent_type: "Standard".to_string(),
+            })
+        }
+    }
+
+    fn fork_test_runtime(
+        calls: Arc<Mutex<Vec<&'static str>>>,
+        workspace_id: Arc<Mutex<Option<String>>>,
+    ) -> AgentRuntime {
+        AgentRuntimeBuilder::new()
+            .with_submission_port(Arc::new(NoopSubmissionPort))
+            .with_session_fork_port(Arc::new(RecordingForkPort {
+                calls,
+                workspace_id,
+            }))
+            .build()
+            .expect("fork test runtime")
+    }
+
+    /// The Desktop "copy session" action must copy the whole session without a
+    /// caller-supplied turn id, so it rides the runtime's latest-persisted-turn
+    /// fork. A selected-turn copy keeps using the explicit-turn fork.
+    #[tokio::test]
+    async fn whole_session_copy_uses_the_latest_persisted_turn_fork() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let workspace_id = Arc::new(Mutex::new(None));
+        let runtime = fork_test_runtime(calls.clone(), workspace_id.clone());
+
+        let copied =
+            fork_session_in_scope(&runtime, delete_test_scope(), "session-1".to_string(), None)
+                .await
+                .expect("whole-session copy should succeed");
+
+        assert_eq!(calls.lock().unwrap().as_slice(), ["whole_session"]);
+        assert_eq!(
+            workspace_id.lock().unwrap().as_deref(),
+            Some("test-workspace")
+        );
+        assert_eq!(copied.session_id, "copy-1");
+        assert_eq!(copied.session_name, "Source (1)");
+        assert_eq!(copied.agent_type, "Standard");
+
+        let prefixed = fork_session_in_scope(
+            &runtime,
+            delete_test_scope(),
+            "session-1".to_string(),
+            Some("turn-2".to_string()),
+        )
+        .await
+        .expect("turn-prefix copy should succeed");
+
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            ["whole_session", "through_turn"]
+        );
+        assert_eq!(prefixed.session_id, "prefix-1");
     }
 
     #[test]

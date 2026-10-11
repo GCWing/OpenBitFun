@@ -830,6 +830,47 @@ export async function forkChatSession(
 }
 
 /**
+ * Copy a session into a new independent session without leaving the current one.
+ *
+ * The host owns the copy: it duplicates the source session's persisted history
+ * under a new session id and leaves the source session untouched. The copy is
+ * projected into the store from its authoritative metadata record instead of
+ * being switched to, so the navigation list gains a row while the user keeps
+ * their place (delete and archive behave the same way).
+ */
+export async function duplicateChatSession(
+  context: FlowChatContext,
+  sourceSessionId: string,
+): Promise<{ sessionId: string; sessionName: string }> {
+  const sourceSession = context.flowChatStore.getState().sessions.get(sourceSessionId);
+  if (!sourceSession) {
+    throw new Error(`Session does not exist: ${sourceSessionId}`);
+  }
+  if (driverForSession(sourceSessionId, sourceSession).id === 'dispatch') {
+    throw new Error('Copying a detached dispatch session is not supported');
+  }
+
+  const workspaceId = requireSessionOwningWorkspaceId(sourceSession);
+  const response = await sessionAPI.duplicateSession(sourceSessionId, workspaceId);
+
+  // The host already created the copy. Metadata projection only decides when the
+  // navigation list shows it, so a projection miss is reported, not rethrown.
+  const projected = await context.flowChatStore.ensurePersistedSessionMetadata(
+    response.sessionId,
+    workspaceId,
+  );
+  if (!projected) {
+    log.warn('Copied session metadata is unavailable for the navigation list', {
+      sessionId: response.sessionId,
+      sourceSessionId,
+      workspaceId,
+    });
+  }
+
+  return { sessionId: response.sessionId, sessionName: response.sessionName };
+}
+
+/**
  * Ensure backend session exists (check before sending message)
  */
 export async function ensureBackendSession(

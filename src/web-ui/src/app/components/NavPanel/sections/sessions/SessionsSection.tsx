@@ -294,6 +294,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   /** Second level of the session menu: pick what a Markdown export includes. */
   const [isExportScopeMenu, setIsExportScopeMenu] = useState(false);
   const [exportingSessionId, setExportingSessionId] = useState<string | null>(null);
+  /** Session whose copy request is in flight; one copy runs at a time. */
+  const [duplicatingSessionId, setDuplicatingSessionId] = useState<string | null>(null);
   const orderingRevision = useSyncExternalStore(
     sessionNavStatusService.subscribeOrdering,
     sessionNavStatusService.getOrderingSnapshot,
@@ -1290,6 +1292,39 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   );
 
   /**
+   * Copy the session into a new independent session. The copy is created by the
+   * host and appears in this list; the current row and the active session stay
+   * untouched (delete and archive never move the user either).
+   */
+  const handleDuplicateSession = useCallback(
+    async (e: React.MouseEvent, sessionId: string) => {
+      e.stopPropagation();
+      closeSessionMenu();
+      if (duplicatingSessionId) return;
+
+      setDuplicatingSessionId(sessionId);
+      try {
+        const copied = await flowChatManager.duplicateChatSession(sessionId);
+        notificationService.success(
+          t('nav.sessions.duplicateSuccess', { name: copied.sessionName }),
+          { duration: 3000 },
+        );
+      } catch (error) {
+        log.error('Failed to copy session', { sessionId, error });
+        notificationService.error(
+          error instanceof Error && error.message
+            ? error.message
+            : t('nav.sessions.duplicateFailed'),
+          { duration: 4000 },
+        );
+      } finally {
+        setDuplicatingSessionId(null);
+      }
+    },
+    [closeSessionMenu, duplicatingSessionId, t],
+  );
+
+  /**
    * A worktree directory is registered for execution but not opened, so the
    * session row is the only place it can be reached from. Opening it as a
    * workspace is an explicit user action; if the worktree happens to be open
@@ -1937,6 +1972,28 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                             data-session-id={session.sessionId}
                           >
                             <span>{t('nav.sessions.copySessionId')}</span>
+                          </MenuItem>
+                          <MenuItem
+                            type="button"
+                            leading={duplicatingSessionId === session.sessionId
+                              ? <Loader2 className="openbitfun-nav-panel__inline-toggle-spinner" aria-hidden />
+                              : <Icon name="files" size="sm" />}
+                            onClick={e => { void handleDuplicateSession(e, session.sessionId); }}
+                            // A running turn is still being persisted, so its
+                            // history is not a stable copy boundary; a session
+                            // owned by another device has no local history.
+                            disabled={isDispatched
+                              || runningSessionIds.has(session.sessionId)
+                              || duplicatingSessionId === session.sessionId}
+                            title={isDispatched
+                              ? t('nav.sessions.duplicateDispatchUnsupported')
+                              : runningSessionIds.has(session.sessionId)
+                                ? t('nav.sessions.duplicateRunning')
+                                : undefined}
+                            data-testid="nav-session-menu-duplicate"
+                            data-session-id={session.sessionId}
+                          >
+                            <span>{t('nav.sessions.duplicate')}</span>
                           </MenuItem>
                           <MenuItem
                             type="button"
