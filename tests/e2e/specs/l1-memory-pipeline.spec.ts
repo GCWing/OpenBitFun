@@ -100,7 +100,7 @@ const INJECTION_REPLY = 'MEMORY_E2E_INJECT';
 const BACKDATE_HOURS = 8;
 
 /** Settings page id of the Memory page (Settings > AI > Memory). */
-const MEMORY_SETTINGS_PAGE = 'ai.memory';
+const MEMORY_SETTINGS_PAGE = 'ai.session-memory';
 /** Unrelated settings page used to remount the Memory page and re-read config. */
 const REMOUNT_SETTINGS_PAGE = 'application.appearance';
 
