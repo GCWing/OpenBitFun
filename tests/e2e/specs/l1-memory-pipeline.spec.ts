@@ -28,7 +28,9 @@
  *   stable anchors.
  * - `MemorySave capture_session` writes under the memory root, so the turn stops
  *   on the chat-input approval band until it is answered. `settleTurn` answers it
- *   the way a user would and keeps polling until the session is idle again.
+ *   the way a user would, keeps polling until the session is idle again, and then
+ *   waits for the reply round to render: the cancel-button probe it uses goes idle
+ *   before the host starts streaming, so idle alone is not "the answer exists".
  * - WebdriverIO's `isExisting()` never settles on this driver's non-W3C "no such
  *   element" response, so turn state is read through `helpers/dom-utils`.
  *
@@ -106,6 +108,16 @@ const REMOUNT_SETTINGS_PAGE = 'application.appearance';
 
 const CHAT_TIMEOUT_MS = 5 * 60 * 1000;
 const PIPELINE_TIMEOUT_MS = 10 * 60 * 1000;
+/**
+ * Budget for the assistant-round wait at the end of `settleTurn`.
+ *
+ * The cancel-button probe goes idle before the host starts streaming, so `settleTurn`
+ * also waits for the reply round to render. Real-model latency in this journey is a
+ * few seconds; this bound only has to outlast a slow provider call, and it is separate
+ * from the turn budget so a missing round fails as a missing reply rather than as the
+ * generic turn timeout.
+ */
+const TURN_OUTPUT_TIMEOUT_MS = 2 * 60 * 1000;
 
 interface MemoryFileStatsPayload {
   memoryIndexBytes?: number | null;
@@ -276,11 +288,47 @@ describe('L1 Memory Pipeline', () => {
   let backdatedSessionId = '';
 
   /**
+   * Wait until the transcript holds one assistant round per submitted user turn.
+   *
+   * `FlowChat.isTurnRunning()` reads the cancel button, which is absent both before
+   * the host starts streaming and after the turn ends, while the user bubble is
+   * rendered optimistically. A settle based on it alone can therefore return seconds
+   * before the reply exists. Each turn answers its user bubble with at least one
+   * `model-round` item, so "as many rounds as user turns" is the durable signal that
+   * the reply landed; a tool-using turn only adds more rounds and still satisfies it.
+   */
+  async function waitForAssistantRound(): Promise<void> {
+    await browser.waitUntil(
+      async () => {
+        const turns = await flowChat.getUserMessageTexts();
+        const rounds = await flowChat.getModelRoundTexts();
+        return turns.length > 0 && rounds.length >= turns.length;
+      },
+      {
+        timeout: TURN_OUTPUT_TIMEOUT_MS,
+        interval: 500,
+        timeoutMsg: `No assistant round rendered for the submitted turn within ${TURN_OUTPUT_TIMEOUT_MS}ms`,
+      },
+    );
+  }
+
+  /**
    * Wait until the running turn finishes, answering permission requests.
    *
    * A memory tool that writes new files stops the turn on the approval band, so
    * "the turn is idle" is not enough on its own: the loop answers whatever the
    * band asks and only then waits for the session to become idle.
+   *
+   * Idle alone is not enough for a second reason. `FlowChat.isTurnRunning()` probes
+   * the cancel button, which is absent both before the host starts streaming and
+   * after the turn ends, while the user bubble is rendered optimistically; a settle
+   * that stopped at idle could return seconds before the reply existed. The turn is
+   * therefore only settled once the assistant round for the submitted turn is in the
+   * transcript as well (`waitForAssistantRound`).
+   *
+   * Every caller submits a chat turn first (`step-c`, `step-c-conventions`, `step-d`,
+   * `step-g`, `step-g2`), so a reply round is always expected. A caller that settles
+   * a non-chat action must not reuse this helper.
    */
   async function settleTurn(label: string, timeoutMs: number): Promise<void> {
     const deadline = Date.now() + timeoutMs;
@@ -305,6 +353,21 @@ describe('L1 Memory Pipeline', () => {
 
       if (!(await flowChat.isTurnRunning())) {
         console.log(`[L1-Memory] ${label}: turn idle after ${approvals} approval(s)`);
+
+        // A failed turn renders a failure notice instead of a round. Leaving that to
+        // the caller's own assertion reports the real defect, where waiting here would
+        // only replace it with a timeout.
+        if (await flowChat.hasTurnFailureNotice()) {
+          console.log(`[L1-Memory] ${label}: turn ended with a failure notice; assertions report it`);
+        } else {
+          const outputWaitStartedAt = Date.now();
+          await waitForAssistantRound();
+          console.log(
+            `[L1-Memory] ${label}: assistant round rendered after`,
+            `${((Date.now() - outputWaitStartedAt) / 1000).toFixed(1)}s`,
+          );
+        }
+
         await browser.pause(500);
         return;
       }
