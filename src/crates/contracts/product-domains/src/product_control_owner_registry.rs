@@ -425,6 +425,12 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
         ),
         option(
             "setting.application.input",
+            "auto-show-selection-toolbar",
+            boolean(),
+            config("app.flow_chat.auto_show_selection_toolbar"),
+        ),
+        option(
+            "setting.application.input",
             "voice-language",
             string_enum(&["auto", "zh", "en", "ja", "yue"]),
             merge_config("app.ai_experience", &["voice_input.default_language"]),

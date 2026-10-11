@@ -31,6 +31,7 @@ const AMBIENT_TOOL_CARD_NAMES = new Set([
   'ListModels',
   'Skill',
   'TerminalControl',
+  'ListWorkspaces',
   'SessionControl',
   'SessionMessage',
   'AgentSendInput',
@@ -362,6 +363,17 @@ const TOOL_CARD_DEFINITIONS: Record<string, ToolCardDefinition> = {
     description: 'Create and manage project plans',
     displayMode: 'detailed',
     primaryColor: 'var(--openbitfun-color-status-warning-content)'
+  },
+
+  'ListWorkspaces': {
+    toolName: 'ListWorkspaces',
+    displayName: 'List Workspaces',
+    icon: 'LW',
+    requiresConfirmation: false,
+    resultDisplayType: 'summary',
+    description: 'Discover registered local and remote workspaces',
+    displayMode: 'compact',
+    primaryColor: APPEARANCE_DOMAIN_TOKENS.toolIdentity.assistantAction
   },
 
   'SessionControl': {

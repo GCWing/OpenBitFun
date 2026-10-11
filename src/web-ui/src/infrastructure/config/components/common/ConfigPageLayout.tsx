@@ -1,4 +1,10 @@
-import { FieldGroup, FormSection, ScrollArea, type FieldGroupFieldSurface } from '@openbitfun/ui';
+import {
+  FieldGroup,
+  FormSection,
+  ScrollArea,
+  type FieldGroupFieldSurface,
+  type FormSectionProps,
+} from '@openbitfun/ui';
 import React from 'react';
 import { formatStandaloneUiCopy } from './standaloneUiCopy';
 import './ConfigPageLayout.scss';
@@ -79,6 +85,7 @@ export interface ConfigPageSectionProps extends Omit<React.HTMLAttributes<HTMLEl
   /** Renders inline after the title (e.g. status badge). */
   titleSuffix?: React.ReactNode;
   description?: React.ReactNode;
+  descriptionLayout?: FormSectionProps['descriptionLayout'];
   extra?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
@@ -92,6 +99,7 @@ export const ConfigPageSection: React.FC<ConfigPageSectionProps> = ({
   title,
   titleSuffix,
   description,
+  descriptionLayout = 'stacked',
   extra,
   children,
   className = '',
@@ -104,6 +112,10 @@ export const ConfigPageSection: React.FC<ConfigPageSectionProps> = ({
     'openbitfun-config-page-section__body',
     !bodySurface && 'openbitfun-config-page-section__body--flush',
   ].filter(Boolean).join(' ');
+  const descriptionClassName = [
+    'openbitfun-config-page-section__description',
+    descriptionLayout === 'inline' && 'openbitfun-config-page-section__description--inline',
+  ].filter(Boolean).join(' ');
 
   return (
     <FormSection
@@ -111,6 +123,7 @@ export const ConfigPageSection: React.FC<ConfigPageSectionProps> = ({
       data-openbitfun-component="config"
       data-openbitfun-part="section"
       headingAs="h3"
+      descriptionLayout={descriptionLayout}
       title={(
         <span className="openbitfun-config-page-section__title-row" data-openbitfun-component="config" data-openbitfun-part="sectionHeader">
           <span className="openbitfun-config-page-section__title" data-openbitfun-component="config" data-openbitfun-part="sectionTitle">{title}</span>
@@ -118,7 +131,9 @@ export const ConfigPageSection: React.FC<ConfigPageSectionProps> = ({
         </span>
       )}
       description={description ? (
-        <span className="openbitfun-config-page-section__description" data-openbitfun-component="config" data-openbitfun-part="sectionDescription">{formatStandaloneUiCopy(description)}</span>
+        <span className={descriptionClassName} data-openbitfun-component="config" data-openbitfun-part="sectionDescription">
+          {formatStandaloneUiCopy(description)}
+        </span>
       ) : undefined}
       actions={extra ? (
         <div className="openbitfun-config-page-section__extra">{extra}</div>

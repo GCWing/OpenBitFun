@@ -99,7 +99,7 @@ describe('askUserQuestionDraftStore', () => {
     expect(askUserQuestionDraftStore.getState().drafts[key]).toBeUndefined();
   });
 
-  it('removes the Other marker when custom input becomes blank', () => {
+  it('preserves the Other marker when custom input becomes blank', () => {
     const multiKey = askUserQuestionDraftKey('session-a', 'tool-multi');
     const singleKey = askUserQuestionDraftKey('session-a', 'tool-single');
     const store = askUserQuestionDraftStore.getState();
@@ -114,21 +114,21 @@ describe('askUserQuestionDraftStore', () => {
     store.setOtherInput(singleKey, 0, '');
 
     expect(askUserQuestionDraftStore.getState().drafts[multiKey]).toMatchObject({
-      answers: { 0: ['PostgreSQL'] },
+      answers: { 0: ['PostgreSQL', 'Other'] },
       otherInputs: { 0: '' },
     });
     expect(askUserQuestionDraftStore.getState().drafts[singleKey]).toMatchObject({
-      answers: {},
+      answers: { 0: 'Other' },
       otherInputs: { 0: '' },
     });
   });
 
-  it('preserves the Other marker for transient blank IME composition values', () => {
+  it('preserves the Other marker for an initially empty custom input', () => {
     const key = askUserQuestionDraftKey('session-a', 'tool-ime');
     const store = askUserQuestionDraftStore.getState();
 
     store.setSingleAnswer(key, 0, 'Other');
-    store.setOtherInput(key, 0, '', true);
+    store.setOtherInput(key, 0, '');
 
     expect(askUserQuestionDraftStore.getState().drafts[key]).toMatchObject({
       answers: { 0: 'Other' },

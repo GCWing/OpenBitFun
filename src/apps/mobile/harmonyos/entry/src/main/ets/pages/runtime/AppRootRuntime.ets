@@ -77,7 +77,7 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
    * mints the watch's credential itself in that case, so waiting for a live
    * connection would keep the listener down exactly when it is not needed.
    */
-  private async startWatchProvisioning(): Promise<void> {
+  protected async startWatchProvisioning(): Promise<void> {
     if (!this.settingsController.hasCloudAccountSession() && !this.hasRemoteBindingForResume()) {
       return;
     }

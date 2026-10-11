@@ -6,6 +6,7 @@ import { workspaceIdRequest } from '@/infrastructure/api/service-api/legacyWorks
  */
 
 import { api } from '@/infrastructure/api/service-api/ApiClient';
+import { invokePrepared } from '@/infrastructure/api/service-api/invokePrepared';
 import { createLogger } from '@/shared/utils/logger';
 import {
   getActiveSurfaceScope,
@@ -256,20 +257,17 @@ export class TerminalService {
   }
 
   async createSession(request: CreateSessionRequest): Promise<SessionResponse> {
-    const scope = getActiveSurfaceScope();
+    const { surfaceId } = getActiveSurfaceScope();
     try {
-      let payload = request;
-      if (request.workspaceId) {
+      const session = await invokePrepared<SessionResponse>('terminal_create', async () => {
+        if (!request.workspaceId) return { request };
         const reference = await workspaceIdRequest(request.workspaceId, 'workspacePath');
-        if (!('workspaceId' in reference)) {
-          payload = { ...request, workspaceId: undefined, connectionId: reference.remoteConnectionId ?? '' };
-        }
-      }
-      scope.assertCurrent('resolve terminal workspace');
-      const session = await api.invoke<SessionResponse>('terminal_create', { request: payload });
-      scope.assertCurrent('terminal_create');
+        return 'workspaceId' in reference
+          ? { request }
+          : { request: { ...request, workspaceId: undefined, connectionId: reference.remoteConnectionId ?? '' } };
+      });
       log.debug('Session created', { sessionId: session.id });
-      return this.projectSession(scope.surfaceId, {
+      return this.projectSession(surfaceId, {
         ...session, workspaceId: session.workspaceId || request.workspaceId, initialCwd: session.initialCwd || request.workingDirectory || session.cwd,
       });
     } catch (error) {

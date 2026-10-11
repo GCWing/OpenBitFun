@@ -302,6 +302,22 @@ describe('ConfigPageLayout', () => {
     expect(container.querySelector('.openbitfun-config-page-section__body')).toBeNull();
   });
 
+  it('forwards inline summaries without merging descriptions into the heading', () => {
+    act(() => {
+      root.render(
+        <ConfigPageSection title="Memory processing" description="Limit session scope." descriptionLayout="inline" extra={<button>Expand</button>}>
+          {null}
+        </ConfigPageSection>,
+      );
+    });
+
+    expect(container.querySelector('[data-openbitfun-component="form-section"]')?.getAttribute('data-description-layout')).toBe('inline');
+    expect(container.querySelector('h3')?.textContent).toBe('Memory processing');
+    expect(container.querySelector('[data-openbitfun-part="sectionDescription"]')?.textContent).toBe('Limit session scope');
+    expect(container.querySelector('.openbitfun-config-page-section__extra button')?.textContent).toBe('Expand');
+    expect(container.querySelector('.openbitfun-config-page-section__body')).toBeNull();
+  });
+
   it('lets copy use the full row when there is no control', () => {
     act(() => {
       root.render(

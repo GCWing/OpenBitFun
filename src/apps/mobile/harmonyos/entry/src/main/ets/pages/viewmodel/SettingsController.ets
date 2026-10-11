@@ -135,23 +135,38 @@ export class SettingsController {
       return undefined;
     }
     const cloud = this.requireCloud();
+    // Persist the identity before registration. A timed-out or cancelled
+    // handoff can then replay registration without rotating the watch's key.
+    let identity = await cloud.sessionStore.loadWatchProvisionIdentity(this.cloudRelayUrl, session.userId, deviceId);
+    if (!identity) {
+      identity = {
+        relayUrl: this.cloudRelayUrl, userId: session.userId, deviceId, requestId,
+        privateKeyBase64: Encoding.bytesToBase64(Encoding.randomBytes(32))
+      };
+      await cloud.sessionStore.saveWatchProvisionIdentity(identity);
+    }
+    const secret = Encoding.base64ToBytes(identity.privateKeyBase64);
     try {
       const provisioned = await cloud.client.provisionDevice(
-        this.cloudRelayUrl, session, deviceId, deviceName, requestId);
+        this.cloudRelayUrl, session, deviceId, deviceName, identity.requestId, secret);
       RemoteLogger.info(`watch credential minted from the phone account device=${provisioned.deviceId}`);
+      const masterKeyBase64 = Encoding.bytesToBase64(provisioned.deviceSecret);
+      provisioned.deviceSecret.fill(0);
       return {
         ok: true,
         passwordRequired: false,
         relayUrl: this.cloudRelayUrl,
         token: provisioned.token,
         userId: provisioned.userId,
-        masterKeyBase64: Encoding.bytesToBase64(provisioned.deviceSecret),
+        masterKeyBase64,
         deviceId: provisioned.deviceId,
         failure: '',
         desktopReported: false
       };
     } catch (err) {
       throw err instanceof Error ? err : new Error('Watch credential provisioning failed.');
+    } finally {
+      secret.fill(0);
     }
   }
 

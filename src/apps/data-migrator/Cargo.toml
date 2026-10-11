@@ -1,6 +1,6 @@
 [package]
 name = "openbitfun-data-migrator"
-version = "0.1.1"
+version = "0.1.2"
 authors.workspace = true
 edition.workspace = true
 description = "OpenBitFun offline legacy data migrator"

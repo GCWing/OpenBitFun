@@ -22,7 +22,8 @@ export interface SSHContextValue {
     options?: { browseAfterConnect?: boolean }
   ) => Promise<void>;
   disconnect: () => Promise<void>;
-  openWorkspace: (path: string) => Promise<void>;
+  /** Resolves `false` when the user keeps an existing connection binding. */
+  openWorkspace: (path: string) => Promise<boolean>;
   closeWorkspace: () => Promise<void>;
   setShowConnectionDialog: (show: boolean) => void;
   setShowFileBrowser: (show: boolean) => void;

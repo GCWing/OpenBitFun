@@ -49,34 +49,10 @@ Use `ComputerUse` directly for native application and OS UI tasks when it appear
 For a model that can see images, observe the selected window and act on its attached screenshot, including controls with no AX/OCR text. Use image coordinates and the exact screenshot ID; accessibility and OCR are optional precision aids, not prerequisites for a visible button, canvas or game. Group already-decided inputs with `app_batch` and typed `steps` (`app_click`, `app_type_text`, `app_key_chord`, `app_scroll`, `app_drag`, `wait`); inspect the single final observation before the next decision. For an observed search field with known Return-to-search behavior, batch `app_type_text` with `focus` plus `app_key_chord` with `["return"]`, then inspect the results before choosing one. Focus-and-type alone is already one `app_type_text` call; do not split it into click, observation and typing. A batch uses the same native input route and authorization as single calls, so it cannot repair an unavailable route. Do not batch a later target that is not yet visible, or wait through an unknown result. Reuse returned observations instead of taking an extra screenshot after every input. `app_drag` uses observed `from`/`to` image targets and `duration_ms`."#;
 
 const FILE_REFERENCES: &str = r#"# File and Image References
-IMPORTANT: Whenever you mention a file path in normal prose that the user might want to open, make it a clickable markdown link: [text](url). For an image file, use standard Markdown image syntax: ![concise alt text](url).
-
-**Link URL path**:
-- For files inside the workspace, use the workspace-relative path: [filename.ts](src/filename.ts)
-- For files outside the workspace, use the absolute path as the URL: [settings.json](/absolute/path/to/settings.json)
-- For images, use workspace-relative path or absolute path or verified HTTP(S) image URLs
-
-**Line targets**:
-- For a specific line, append `#L<line>` to URL: [filename.ts:42](src/filename.ts#L42)
-- For a line range, append `#L<start>-L<end>`: [filename.ts:42-51](src/filename.ts#L42-L51)
-
-**Link text and formatting**:
-- Link text should be the bare filename, optionally with line numbers; do not include directory prefixes.
-- Do not output bare paths as plain text in normal prose. Raw paths are appropriate inside commands, code/config snippets, or when the user explicitly asks for a copyable path.
-- Do not wrap link text or the whole markdown link in backticks.
-
-<good-examples>
-- Source file: [filename.ts](src/filename.ts)
-- Specific line: [filename.ts:42](src/filename.ts#L42)
-- External file line: [settings.json:12](/absolute/path/to/settings.json#L12)
-</good-examples>
-<bad-examples>
-- Bare path: src/filename.ts
-- Backticks in link text: [`filename.ts:42`](src/filename.ts)
-- Whole link wrapped in backticks: `[report.md](deep-research/report.md)`
-- Full path in link text: [src/filename.ts](src/filename.ts)
-- Absolute path as plain text: /absolute/path/to/deep-research/report.md
-</bad-examples>"#;
+Link files the user may want to open using Markdown: [filename.ts](src/filename.ts). Use workspace-relative targets inside the workspace and absolute targets outside it. Labels use the bare filename, optionally with line numbers; keep links out of backticks.
+For source lines, append `#L42` or `#L42-L51`: [filename.ts:42](src/filename.ts#L42). These are source-file lines, not extracted document lines.
+Display images with ![concise alt text](url), using workspace-relative or absolute paths, or verified HTTP(S) image URLs.
+Use raw paths in commands, code/config, or when a copyable path is requested; otherwise prefer clickable links."#;
 
 #[derive(Debug, Clone)]
 pub struct PromptBuilderContext {

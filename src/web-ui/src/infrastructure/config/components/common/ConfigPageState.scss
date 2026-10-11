@@ -1,15 +1,59 @@
-@keyframes openbitfun-config-page-loading-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
 .openbitfun-config-loading-state {
-  min-height: 200px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative;
+  width: 100%;
+  min-width: 0;
   color: var(--openbitfun-color-content-muted);
   font-size: var(--openbitfun-type-label-md-font-size);
+
+  &__skeleton {
+    display: grid;
+    gap: var(--openbitfun-space-4);
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--openbitfun-space-5);
+    min-height: 48px;
+  }
+
+  &__copy,
+  &__control {
+    display: block;
+    border-radius: var(--openbitfun-radius-md);
+    background: var(--openbitfun-color-action-quiet-hover);
+  }
+
+  &__copy {
+    width: 45%;
+    height: 16px;
+  }
+
+  &__control {
+    width: 28%;
+    height: 28px;
+  }
+
+  &__status {
+    display: flex;
+    justify-content: center;
+    min-height: 28px;
+    margin-top: var(--openbitfun-space-3);
+  }
+
+  &[data-loading-variant='list'] &__row {
+    min-height: 64px;
+  }
+
+  &[data-loading-variant='statistics'] &__row {
+    min-height: 96px;
+    align-items: flex-end;
+  }
+
+  &[data-loading-variant='statistics'] &__control {
+    height: 72px;
+  }
 }
 
 .openbitfun-config-message {

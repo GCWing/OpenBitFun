@@ -11,6 +11,7 @@ import {
 } from '../policy/ConnectSheetLandingPolicy';
 import { CARD, CONNECT_HERO_ACCENT, CONNECT_HERO_BG, CONNECT_HERO_SECONDARY,
   CONNECT_HERO_SURFACE, INK, MUTED, SOFT, STATUS_DANGER, STATUS_SUCCESS, SUBTLE } from './Theme';
+import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 
 /**
  * Connect sheet. A signed-in phone picks a desktop from the account device
@@ -37,6 +38,23 @@ export struct ConnectView {
   @Event cloudListDevices: () => Promise<CloudAccountDevice[]> = async (): Promise<CloudAccountDevice[]> => [];
   @Event cloudSelectDevice: (device: CloudAccountDevice) => Promise<void> =
     async (_device: CloudAccountDevice): Promise<void> => {};
+  /**
+   * The sheet's own bottom edge, in vp. The connect sheet is full-height and
+   * its status strip is the fixed control at that edge, so the strip keeps the
+   * navigation bar clear itself.
+   */
+  @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
+
+  aboutToAppear(): void {
+    const context = this.getUIContext().getHostContext();
+    if (context) {
+      this.insets.bind(this.getUIContext(), context);
+    }
+  }
+
+  aboutToDisappear(): void {
+    this.insets.unbind();
+  }
 
   build() {
     Stack() {
@@ -104,7 +122,9 @@ export struct ConnectView {
     }
     .width('100%')
     .height('100%')
-    .padding({ bottom: 28 })
+    // The sheet's fill runs to its bottom edge; the status strip is the fixed
+    // control there, and it keeps the navigation bar clear itself.
+    .padding({ bottom: this.insets.bottomPadding(28) })
     .backgroundColor(CARD)
   }
 

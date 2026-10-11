@@ -494,4 +494,9 @@
     <string name="chat_loading_older_messages">Loading earlier messages…</string>
     <string name="tool_todo_fallback">Task list</string>
     <string name="tool_todo_all_completed">All tasks completed</string>
+    <string name="model_primary">Primary model</string>
+    <string name="model_fast">Fast model</string>
+    <string name="model_fast_fallback">Fast model not configured; using primary</string>
+    <string name="model_role_primary">Primary</string>
+    <string name="model_role_fast">Fast</string>
 </resources>

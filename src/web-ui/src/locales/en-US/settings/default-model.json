@@ -52,7 +52,7 @@
     "notConfigured": "Not configured, will use primary model"
   },
   "empty": {
-    "noModels": "No models available. Add API models or import a subscription first."
+    "noModels": "No models available"
   },
   "messages": {
     "loadFailed": "Failed to load configuration",

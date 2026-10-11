@@ -120,10 +120,9 @@ class MobileScreenTest {
     /**
      * The settings page closes by its own button.
      *
-     * The sheet has no drag handle — the source draws none, and the page centres
-     * its title where one would sit — so this button is the only way out that does
-     * not depend on guessing where a downward drag will be read as a dismissal
-     * rather than as a scroll. Losing it would strand the page.
+     * The page's body is one long scroll and the sheet does not take a pull-down,
+     * so a downward drag never dismisses it and this button is the exit that is
+     * always there. Losing it would strand the page.
      */
     @Test
     fun theSettingsPageClosesByItsOwnButton() {

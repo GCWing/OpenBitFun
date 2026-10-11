@@ -1,7 +1,7 @@
 {
   "name": "OpenBitFun",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.0.5",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
@@ -10,6 +10,8 @@
     "agent-harness:generate": "node scripts/generate-agent-harness.mjs",
     "agent-harness:check": "node scripts/generate-agent-harness.mjs --check",
     "copy-monaco": "copyfiles -u 5 \"src/web-ui/node_modules/monaco-editor/min/vs/**/*\" src/web-ui/public/monaco-editor && node scripts/prune-monaco-nls.cjs",
+    "check:macos-icons": "node scripts/macos-icon-bundle.mjs preflight",
+    "generate:macos-icons": "node scripts/generate-macos-icons.mjs",
     "generate-brand-assets": "node scripts/generate-brand-assets.mjs",
     "copy-assets": "pnpm run copy-monaco && pnpm run generate-brand-assets",
     "generate-version": "node scripts/generate-version.cjs --build-env production",
@@ -78,7 +80,7 @@
     "check:core-boundaries": "pnpm run agent-harness:check && node scripts/check-core-boundaries.mjs",
     "check:core-boundaries:test": "node --test scripts/check-core-boundaries.test.mjs",
     "check:github-config": "pnpm --dir src/web-ui exec node ../../scripts/check-github-config.mjs && node --test scripts/check-github-config.test.mjs",
-    "test:release-packaging": "node --test scripts/release-channel.test.mjs scripts/desktop-tauri-build.test.mjs scripts/server-build.test.mjs scripts/version-generation.test.mjs scripts/generate-frontend-revision.test.mjs scripts/generate-brand-assets.test.mjs scripts/tauri-release-manifest.test.mjs OpenBitFun-Installer/scripts/build-installer.test.cjs",
+    "test:release-packaging": "node --test scripts/release-channel.test.mjs scripts/desktop-tauri-build.test.mjs scripts/server-build.test.mjs scripts/version-generation.test.mjs scripts/generate-frontend-revision.test.mjs scripts/generate-brand-assets.test.mjs scripts/macos-icon-bundle.test.mjs scripts/tauri-release-manifest.test.mjs OpenBitFun-Installer/scripts/build-installer.test.cjs",
     "fmt:rs": "node scripts/format-changed-rust.mjs",
     "lint:rs": "cargo clippy --workspace --exclude openbitfun-desktop --all-targets",
     "lint:rs:desktop": "pnpm run prepare:mobile-web && cargo clippy -p openbitfun-desktop --all-targets",
@@ -174,7 +176,7 @@
   },
   "devDependencies": {
     "@noble/hashes": "^2.0.1",
-    "@tauri-apps/cli": "^2.10.0",
+    "@tauri-apps/cli": "2.11.4",
     "@vitejs/plugin-react": "^4.6.0",
     "copyfiles": "^2.4.1",
     "cross-env": "^10.1.0",

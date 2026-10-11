@@ -9,9 +9,13 @@ import { RemoteLogger } from '../../services/RemoteLogger';
 import { ChatComposerCapabilities } from '../state/ChatComposerCapabilities';
 import { ChatSurface } from '../state/ChatSurface';
 import { ConversationViewState } from '../state/ConversationViewState';
-import { ConversationIntent, ConversationIntents, ConversationIntentType } from '../actions/ConversationIntent';
+import { ConversationIntent, ConversationIntents, ConversationIntentType, MessageCopyScope } from '../actions/ConversationIntent';
+import { SettingsPlacement } from '../policy/SettingsPlacementPolicy';
+import { AdaptiveSheetOptions } from './AdaptiveSheetOptions';
 import { ChatTimeline } from './ChatTimeline';
 import { ConversationLoadingState } from './ConversationLoadingState';
+import { UserMessageFullTextSheet } from './UserMessageFullTextSheet';
+import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 import {
   ConversationViewContract,
   ConversationViewOptions
@@ -48,6 +52,17 @@ export struct ConversationView {
   @Event onRestoreSidebar: () => void = () => {};
   @Local showHeaderActions: boolean = false;
   /**
+   * The user message whose full text is open, as a panel over the conversation.
+   *
+   * One panel at a time is the whole reason this is state of the conversation
+   * rather than of the row that was long-pressed: the rows are virtualized and
+   * reused, and a sheet bound per row would fight the pool instead of the
+   * message it belongs to. It is view state, so it never becomes a projected
+   * field or an intent: nothing outside this pane reads it.
+   */
+  @Local showFullText: boolean = false;
+  @Local fullTextMessage: string = '';
+  /**
    * How much of the pane the two floating layers cover, measured rather than
    * assumed: the composer grows with multiline text and attachments, and the
    * mailbox appears without warning. The transcript runs the full height behind
@@ -56,16 +71,38 @@ export struct ConversationView {
    */
   @Local topInset: number = 0;
   @Local bottomInset: number = 0;
+  /**
+   * The window's own insets, in vp. The shell is immersive, so the page draws
+   * from the top of the window and the composer keeps its distance from the
+   * bottom edge itself, which is what lets the transcript and its fade run to the
+   * very bottom of the screen without carrying the composer down with them. The
+   * header band reserves the top strip for the same reason: the band's own box is
+   * what the transcript borrows as its content start offset.
+   */
+  @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
   private previousKeyboardAvoidMode: KeyboardAvoidMode = KeyboardAvoidMode.OFFSET;
+
+  private get topSafeInset(): number {
+    return this.insets.top;
+  }
+
+  private get bottomSafeInset(): number {
+    return this.insets.bottom;
+  }
 
   aboutToAppear(): void {
     RemoteLogger.info(`conversation view mounted surface=${this.surface}`);
     this.previousKeyboardAvoidMode = this.getUIContext().getKeyboardAvoidMode();
     this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE);
+    const context = this.getUIContext().getHostContext();
+    if (context) {
+      this.insets.bind(this.getUIContext(), context);
+    }
   }
 
   aboutToDisappear(): void {
     RemoteLogger.info('conversation view disposed');
+    this.insets.unbind();
     this.getUIContext().setKeyboardAvoidMode(this.previousKeyboardAvoidMode);
   }
 
@@ -80,6 +117,17 @@ export struct ConversationView {
     .width('100%')
     .height('100%')
     .backgroundColor(PAGE_BG)
+    .bindSheet($$this.showFullText, this.FullTextSheet(), this.fullTextSheetOptions())
+  }
+
+  @Builder
+  private FullTextSheet() {
+    UserMessageFullTextSheet({
+      text: this.fullTextMessage,
+      onClose: () => {
+        this.showFullText = false;
+      }
+    })
   }
 
   /**
@@ -136,6 +184,9 @@ export struct ConversationView {
           this.Composer()
         }
         .width('100%')
+        // The composer pane of a half-folded screen is the bottom edge too, so it
+        // keeps the same distance from it as the floating layer does.
+        .padding({ bottom: this.bottomSafeInset })
       }
       .alignContent(Alignment.Bottom)
       .layoutWeight(1)
@@ -156,8 +207,28 @@ export struct ConversationView {
         this.Mailbox()
       }
       .width('100%')
+      // Carried by the band that owns the background, not by the wrapper: the
+      // band is what has to reach the status bar, and its measured height is
+      // what the transcript borrows as its content start offset. Its sides are
+      // the window's wherever this page *is* the window — the compact layout,
+      // and the wide compositions that put it flush against an edge — so it
+      // reserves the side strips as well; the header's own gutter lives inside
+      // it and is not restated here.
+      //
+      // In the usual wide layout this page is the detail pane instead, and then
+      // only its right edge is the window's: the left one is the master pane's.
+      // A layout dump of that posture reads the left strip as a 21.14vp indent
+      // on a band that never touches that edge (see the note on `FlowPlaceholder`
+      // in RemoteSurfaceHost — the padding model cannot drop one side per edge,
+      // and dropping both would put the compact header back under the cutout).
+      .padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topSafeInset })
       .backgroundColor(PAGE_BG_OVERLAY)
       .backgroundBlurStyle(BlurStyle.Thin)
+      // Named so a layout dump can be read against the pixels, the way the
+      // bottom fade is: this band's own box is what says where the page's top
+      // edge sits, and the side padding it carries is only visible in a dump as
+      // an offset between the box and its first child.
+      .id('conversation-top-band')
       this.TopEdgeFade()
     }
     .width('100%')
@@ -173,6 +244,22 @@ export struct ConversationView {
       this.Composer()
     }
     .width('100%')
+    // The composer keeps the distance from the screen edge it had while the page
+    // area ended above the navigation bar, and the layer's own box grows by that
+    // strip: the gradient below is the layer's background, so it fills the strip
+    // and the transcript behind it reaches the bottom of the screen. Wherever the
+    // layer's sides are the window's — the compact layout, and the wide
+    // compositions that put the page flush against an edge — they are the
+    // layer's own business as well: the composer's gutter is inside it, and on a
+    // rotated device the camera cutout would otherwise sit over the first control
+    // of the row. In the usual wide layout the layer is the detail pane's width
+    // instead, so only its right edge is the window's and the left strip is an
+    // indent nothing needs; see the note on `TopOverlay` above.
+    .padding({
+      left: this.insets.leftPadding(0),
+      right: this.insets.rightPadding(0),
+      bottom: this.bottomSafeInset
+    })
     // The fade covers the whole layer, not just a strip above it: the transcript
     // runs behind the composer, so anything short of that leaves a line of text
     // sitting crisp and legible beside the pill after it has already faded out
@@ -182,6 +269,27 @@ export struct ConversationView {
       angle: 180,
       colors: [[PAGE_BG_FADE, 0.0], [PAGE_BG_OVERLAY, 0.45], [PAGE_BG_OVERLAY, 1.0]]
     })
+    // This layer owns the bottom edge of the screen, so it is allowed to paint
+    // into it. Where the immersive layout already puts the page area there the
+    // two overlap and nothing extra is drawn; on a window that still ends above
+    // the navigation bar this is what keeps the strip from being bare page
+    // colour under the fade. The cutout is a separate avoid area, so the fade
+    // claims it as well: a device that rotated its camera onto an edge the fade
+    // reaches would otherwise show the page colour beside the gradient. Both of
+    // its sides are named because `expandSafeArea` is per edge and only takes
+    // effect where this box's own boundary meets that edge's safe-area
+    // boundary: a side the compact layer owns expands, and the same claim on the
+    // detail pane's left side — where the master pane is in between — draws
+    // nothing. `TOP` is deliberately absent: this layer is only as tall as the
+    // status line and the composer and sits at the bottom of the pane, so its
+    // top edge is nowhere near the window's top avoid area and naming it would
+    // claim a strip the fade never touches.
+    .expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT],
+      [SafeAreaEdge.START, SafeAreaEdge.END, SafeAreaEdge.BOTTOM])
+    // Named so a layout dump can be read against the pixels: the fade's own box
+    // is what says where the chat page's bottom edge sits and how far the
+    // transcript can scroll, and neither is visible in the composer's bounds.
+    .id('conversation-bottom-fade')
     .onAreaChange((_oldArea: Area, newArea: Area) => {
       this.bottomInset = newArea.height as number;
     })
@@ -331,6 +439,12 @@ export struct ConversationView {
       },
       onCopyMessage: (text: string) => {
         this.onCopyMessage(text);
+      },
+      onCopyMessageScoped: (text: string, scope: MessageCopyScope) => {
+        this.onCopyMessageScoped(text, scope);
+      },
+      onOpenFullText: (text: string) => {
+        this.onOpenFullText(text);
       },
       onRetryMessage: (text: string) => {
         this.onRetryMessage(text);
@@ -573,6 +687,7 @@ export struct ConversationView {
   private get composerPresentation(): ComposerPresentation { return this.options.composerPresentation; }
   private get composerInputId(): string { return this.options.composerInputId; }
   private get hoverOperateMode(): boolean { return this.options.hoverOperateMode; }
+  private get fullTextSheetPlacement(): SettingsPlacement { return this.options.fullTextSheetPlacement; }
   private onOpenSidebar(): void { this.dispatchSimple(ConversationIntentType.OpenSidebar); }
   private onBack(): void { this.dispatchSimple(ConversationIntentType.Back); }
   private onTogglePinSession(): void { this.dispatchSimple(ConversationIntentType.TogglePin); }
@@ -597,7 +712,23 @@ export struct ConversationView {
     this.dispatchValue(ConversationIntentType.RenameSession, title);
   }
   private onCopyMessage(text: string): void { this.dispatchValue(ConversationIntentType.CopyMessage, text); }
+  private onCopyMessageScoped(text: string, scope: MessageCopyScope): void {
+    this.onIntent(ConversationIntents.copyMessage(text, scope));
+  }
   private onRetryMessage(text: string): void { this.dispatchValue(ConversationIntentType.RetryMessage, text); }
+  private onOpenFullText(text: string): void {
+    if (text.length === 0) {
+      return;
+    }
+    this.fullTextMessage = text;
+    this.showFullText = true;
+  }
+  private fullTextSheetOptions(): SheetOptions {
+    // The same adaptive contract as the other overlay sheets: the content draws
+    // the surface, the sheet supplies transparency, the scrim, and a drag bar
+    // wherever the placement resolves to a bottom sheet.
+    return AdaptiveSheetOptions.fromPlacement(this.fullTextSheetPlacement, true);
+  }
   private onOpenFilePreview(path: string, label: string): void {
     this.onIntent(ConversationIntents.openFilePreview(path, label));
   }

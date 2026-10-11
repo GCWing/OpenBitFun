@@ -222,12 +222,16 @@ impl SharedProductControlExecutor {
     pub async fn configure_legacy_path(&self, path: &str, value: Value) -> Result<Value, String> {
         let _mutation = self.mutation_lock.lock().await;
         let applied = apply_legacy_config_mutation(&self.config_service, path, value).await?;
-        let revision = self.revision.fetch_add(1, Ordering::AcqRel) + 1;
+        let revision = if applied.changed {
+            self.revision.fetch_add(1, Ordering::AcqRel) + 1
+        } else {
+            self.revision.load(Ordering::Acquire)
+        };
         Ok(json!({
             "catalogDigest": product_control_catalog()?.digest.clone(),
             "configured": true,
             "changedPath": applied.changed_path.clone(),
-            "changedPaths": [applied.changed_path],
+            "changedPaths": if applied.changed { vec![applied.changed_path] } else { vec![] },
             "controlledBindings": applied.controlled_bindings,
             "effectiveValue": applied.effective_value,
             "revision": revision,
@@ -266,6 +270,7 @@ pub struct ProductConfigBinding {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AppliedLegacyProductConfig {
+    pub changed: bool,
     pub changed_path: String,
     pub effective_value: Value,
     pub controlled_bindings: Vec<ProductConfigBinding>,
@@ -454,8 +459,8 @@ pub async fn apply_legacy_config_mutation(
 ) -> Result<AppliedLegacyProductConfig, String> {
     let controlled_bindings = validate_legacy_config_mutation(path, &value)?;
     validate_config_semantics(path, &value)?;
-    config_service
-        .set_config(path, value)
+    let changed = config_service
+        .set_config_if_changed(path, value)
         .await
         .map_err(|error| error.to_string())?;
     let effective_value = config_service
@@ -463,6 +468,7 @@ pub async fn apply_legacy_config_mutation(
         .await
         .map_err(|error| error.to_string())?;
     Ok(AppliedLegacyProductConfig {
+        changed,
         changed_path: path.to_string(),
         effective_value,
         controlled_bindings,

@@ -4,6 +4,7 @@
   "editProvider": "编辑服务商配置",
   "newProvider": "新建服务商配置",
   "editModel": "编辑模型配置",
+  "modelEditorTitle": "{{model}} · {{provider}}",
   "newModel": "新建模型配置",
   "editProviderSubtitle": "设置此服务的 API 地址、认证方式与模型",
   "editSubtitle": "设置模型标识、上下文容量与请求参数",
@@ -93,7 +94,29 @@
     "logoutNoAffectedModels": "当前没有模型配置使用此订阅账号。",
     "logoutConsequence": "模型配置不会被删除；重新登录同一订阅账号后可以继续使用。",
     "confirmLogout": "确认退出",
-    "openCodeRemoved": "OpenCode Console OAuth 仅支持 Zen。Go 模型请选择 API key 并填写密钥，已有模型配置保留。"
+    "openCodeRemoved": "OpenCode Console OAuth 仅支持 Zen。Go 模型请选择 API key 并填写密钥，已有模型配置保留。",
+    "editorDescription": "此服务的模型共用当前登录的订阅账号",
+    "accountLabel": "账号",
+    "accountAuthentication": "订阅账号授权",
+    "manageAccount": "管理账号",
+    "loadingAccount": "正在读取账号…",
+    "accountIdentityUnavailable": "服务未提供账号标识",
+    "accountUnavailable": "暂无账号信息",
+    "serviceUnavailable": "当前主机未提供此订阅服务，请刷新状态或检查主机版本。",
+    "signInToUse": "登录此服务的订阅账号后即可使用，已有模型配置会保留。",
+    "sharedAccountHint": "此服务的模型共用当前登录账号。",
+    "credentialExpiresAt": "凭据有效期至 {{time}}",
+    "credentialExpired": "当前授权凭据已过期，请在管理账号中刷新凭据后重试。",
+    "openCodeLegacyConnection": "此旧版连接使用 OpenCode Go，已有模型配置会保留。如需继续使用 Go，请新建 API Key 服务；订阅授权请重新导入 Zen。",
+    "accountState": {
+      "loading": "正在读取状态",
+      "loadFailed": "状态读取失败",
+      "unavailable": "服务不可用",
+      "vaultUnavailable": "凭据暂不可用",
+      "reauthenticationRequired": "需重新登录",
+      "refreshRequired": "凭据待刷新",
+      "connected": "已登录"
+    }
   },
   "providerSelection": {
     "modelRoutingPending": "刷新模型列表后显示协议和端点；目录外模型可手动配置。",
@@ -110,6 +133,10 @@
     "collapseProviders": "收起提供商列表",
     "noProviderMatches": "没有匹配的提供商，可选择上方的自定义配置",
     "fetchModels": "获取模型列表",
+    "quickAdd": "快捷添加",
+    "fetchedModels": "已获取 {{count}} 个模型",
+    "presetModels": "预设模型 · {{count}}",
+    "searchModels": "搜索模型名称或 ID",
     "fetchHint": "可从当前供应商拉取模型列表；拉取失败时回退到常用预设模型",
     "fetchingModels": "正在拉取模型列表...",
     "fetchSuccessCount": "已从供应商拉取 {{count}} 个模型",
@@ -123,6 +150,7 @@
     "noPresetModels": "暂无可用模型，请获取模型列表或手动输入模型名",
     "backToSelection": "返回选择提供商",
     "selectModel": "选择模型",
+    "selectedModels": "已选择 {{count}} 个模型",
     "multiSelectHint": "可多选，添加后可分别调整各模型的上下文、输出上限和推理设置",
     "searchOrInputModel": "搜索或输入模型名称...",
     "inputModelName": "输入自定义模型名称...",
@@ -132,6 +160,8 @@
     "modelAlreadyInList": "该模型已在列表中",
     "noModelsSelected": "请先选择模型",
     "removeModel": "移除模型",
+    "removeModelByName": "移除模型「{{name}}」",
+    "editModelSettings": "编辑模型「{{name}}」",
     "expandModelSettings": "展开「{{name}}」的详细设置",
     "collapseModelSettings": "收起「{{name}}」的详细设置",
     "unsavedModel": "待保存",
@@ -299,7 +329,7 @@
     "providerPlaceholder": "选择请求格式",
     "contextWindow": "上下文窗口大小",
     "contextWindowHint": "用于判断何时压缩上下文，可小于模型实际支持的上限",
-    "contextWindowLongWarning": "当前模型配置的上下文窗口超过 400K。超长上下文可能降低模型效果，建议将其调整到 300K 左右。",
+    "contextWindowLongWarning": "上下文超过 400K，可能影响效果，建议约 300K。",
     "maxTokens": "最大输出Tokens",
     "maxTokensHint": "限制单次响应的最大 Token 数，影响输出长度",
     "description": "描述",
@@ -456,6 +486,8 @@
   },
   "actions": {
     "save": "保存",
+    "back": "返回",
+    "done": "$t(shared:statuses.done)",
     "cancel": "取消",
     "edit": "编辑",
     "delete": "删除",
@@ -502,7 +534,7 @@
   },
   "messages": {
     "loading": "正在加载模型设置…",
-    "loadFailedLocked": "无法读取模型设置。为避免覆盖现有配置，当前页面已锁定。",
+    "loadFailedLocked": "无法读取此处的设置。为避免覆盖现有配置，相关操作已锁定，请重新加载。",
     "retry": "重新加载",
     "unsaved": "未保存",
     "fillRequired": "请填写必要字段",
@@ -538,7 +570,8 @@
     "defaultDescription": "{{name}} 模型配置",
     "cloneName": "{{name}} - 副本",
     "templateName": "{{provider}} - {{modelName}}",
-    "templateDescription": "{{description}} - {{modelName}}"
+    "templateDescription": "{{description}} - {{modelName}}",
+    "providerRemoved": "此服务已被移除，请关闭编辑器后重新打开模型设置。"
   },
   "modelsDevCatalog": {
     "title": "models.dev 模型目录",
@@ -639,7 +672,7 @@
     "smartHint": "基于 OpenBitFun 自适应路由与多模型协同推理技术，提升经济效益和任务表现。",
     "battery": "电池模式",
     "batteryHint": "基于多源模型池化与故障转移技术，额度耗尽或连接失效时自动接力。",
-    "unavailable": "尚未开发"
+    "unavailable": "尚未开放"
   },
   "pool": {
     "manageConnections": "管理连接",
@@ -660,6 +693,8 @@
     "recommendedTags": "已有推荐标签",
     "tagsSaveFailed": "标签保存失败，修改已保留，请重试。",
     "addTags": "添加标签",
+    "editTag": "编辑标签“{{tag}}”",
+    "removeTag": "移除标签“{{tag}}”",
     "moreActions": "{{model}} 的更多操作",
     "details": "详情",
     "enableModel": "启用 {{model}}",
@@ -667,5 +702,6 @@
     "providerFilter": "筛选供应商",
     "allProviders": "全部供应商",
     "acknowledge": "知道了"
-  }
+  },
+  "editConfiguredProviderSubtitle": "更新此服务的 API 地址、密钥与模型"
 }

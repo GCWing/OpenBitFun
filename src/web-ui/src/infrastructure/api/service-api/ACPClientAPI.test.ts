@@ -30,6 +30,64 @@ describe('ACPClientAPI client list startup cache', () => {
     vi.stubGlobal('window', { dispatchEvent: vi.fn() });
   });
 
+  it.each(['clients', 'requirements'])('never reuses cached %s from another device', async (kind) => {
+    const ACPClientAPI = await importApi();
+    const { activateSurface } = await import('@/infrastructure/peer-device/deviceSurface');
+    const read = () => kind === 'clients' ? ACPClientAPI.getClients()
+      : ACPClientAPI.probeClientRequirements({ remoteConnectionId: 'same-connection-id' });
+    invokeMock.mockResolvedValueOnce([{ id: 'first-device' }]).mockResolvedValueOnce([{ id: 'second-device' }]);
+    expect(await read()).toEqual([{ id: 'first-device' }]);
+    activateSurface('peer-b');
+    expect(await read()).toEqual([{ id: 'second-device' }]);
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a new activation request when a previous request settles late', async () => {
+    const ACPClientAPI = await importApi();
+    const { activateSurface, isSurfaceChangedError } = await import('@/infrastructure/peer-device/deviceSurface');
+    const oldRequest = createDeferred<[]>();
+    const currentRequest = createDeferred<[]>();
+    invokeMock.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(currentRequest.promise);
+    const old = ACPClientAPI.getClients();
+    const rejection = expect(old).rejects.toSatisfy(isSurfaceChangedError);
+    activateSurface('peer-b');
+    activateSurface('local');
+    const current = ACPClientAPI.getClients();
+    oldRequest.resolve([]);
+    await rejection;
+    const duplicate = ACPClientAPI.getClients();
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+    currentRequest.resolve([]);
+    await expect(Promise.all([current, duplicate])).resolves.toEqual([[], []]);
+  });
+
+  it('never saves an ACP config read from a previous device to the current device', async () => {
+    const ACPClientAPI = await importApi();
+    const { activateSurface, isSurfaceChangedError } = await import('@/infrastructure/peer-device/deviceSurface');
+    const deferred = createDeferred<string>();
+    invokeMock.mockReturnValueOnce(deferred.promise);
+    const pending = ACPClientAPI.updateClientSubagentConfig({ clientId: 'codex', enabled: true });
+    const rejection = expect(pending).rejects.toSatisfy(isSurfaceChangedError);
+    activateSurface('peer-b');
+    deferred.resolve(JSON.stringify({ acpClients: { codex: { command: 'codex' } } }));
+    await rejection;
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(window.dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('does not publish an ACP change after its originating device is deactivated', async () => {
+    const ACPClientAPI = await importApi();
+    const { activateSurface, isSurfaceChangedError } = await import('@/infrastructure/peer-device/deviceSurface');
+    const deferred = createDeferred<void>();
+    invokeMock.mockReturnValueOnce(deferred.promise);
+    const pending = ACPClientAPI.stopClient({ clientId: 'codex' });
+    const rejection = expect(pending).rejects.toSatisfy(isSurfaceChangedError);
+    activateSurface('peer-b');
+    deferred.resolve();
+    await rejection;
+    expect(window.dispatchEvent).not.toHaveBeenCalled();
+  });
+
   it('deduplicates concurrent client list requests', async () => {
     const ACPClientAPI = await importApi();
     const clients = [

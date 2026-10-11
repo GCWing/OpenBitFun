@@ -75,6 +75,7 @@ describe('configured model identity', () => {
       'ai.models': models, 'ai.default_models': { primary: 'model-first' },
     });
     await expect(getModelMaxTokens('asdf')).resolves.toBe(64000);
+    expect(configManager.getConfigs).toHaveBeenLastCalledWith(['ai.models', 'ai.default_models']);
   });
 });
 

@@ -111,8 +111,10 @@ pub fn tool_feature_group(tool_name: &str) -> Option<ToolPackFeatureGroup> {
         "Task" | "AgentSpawn" | "AgentSendInput" | "AgentControl" | "AgentList" | "AgentWait"
         | "LaunchReviewAgent" | "Skill" | "AskUserQuestion" | "TodoWrite" | "get_goal"
         | "create_goal" | "update_goal" | "submit_code_review" | "GetToolSpec"
-        | "CallDeferredTool" | "SessionControl" | "SessionMessage" | "SessionHistory" | "Cron"
-        | "PortForward" | "OpenBitFunControl" => Some(ToolPackFeatureGroup::AgentControl),
+        | "CallDeferredTool" | "ListWorkspaces" | "SessionControl" | "SessionMessage"
+        | "SessionHistory" | "Cron" | "PortForward" | "OpenBitFunControl" => {
+            Some(ToolPackFeatureGroup::AgentControl)
+        }
         _ => None,
     }
 }
@@ -214,6 +216,7 @@ const PRODUCT_TOOL_PROVIDER_GROUP_PLAN: &[ToolProviderGroupPlan] = &[
         provider_id: "core.session",
         feature_groups: CORE_SESSION_FEATURE_GROUPS,
         tool_names: &[
+            "ListWorkspaces",
             "SessionControl",
             "SessionMessage",
             "SessionHistory",
@@ -548,6 +551,7 @@ mod tests {
                 "GetToolSpec",
                 "CallDeferredTool",
                 "OpenBitFunControl",
+                "ListWorkspaces",
                 "SessionControl",
                 "SessionMessage",
                 "SessionHistory",

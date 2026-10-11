@@ -342,6 +342,7 @@ impl Default for ClipboardImageResponse {
 
 /// Sniffs the image format from magic bytes so a tool that misreports success
 /// cannot inject arbitrary text as an attachment payload.
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
         Some("image/png")
@@ -355,12 +356,14 @@ pub(crate) fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
 /// Outcome of a Linux clipboard-image probe.
 enum ClipboardImageRead {
     /// An image payload, base64-encoded with its sniffed MIME type.
+    #[cfg(target_os = "linux")]
     Image(String, String),
     /// The reader tools ran; the clipboard simply holds no image payload.
     Empty,
     /// Neither `wl-paste` nor `xclip` could be spawned. Surfaced to the user
     /// instead of silently reporting "no image": a plain-text clipboard and a
     /// machine missing the reader tools must stay distinguishable.
+    #[cfg(target_os = "linux")]
     ToolsUnavailable(String),
 }
 
@@ -440,11 +443,13 @@ fn get_clipboard_image_internal() -> ClipboardImageRead {
 #[tauri::command]
 pub async fn get_clipboard_image() -> Result<ClipboardImageResponse, String> {
     match get_clipboard_image_internal() {
+        #[cfg(target_os = "linux")]
         ClipboardImageRead::Image(base64, mime_type) => Ok(ClipboardImageResponse {
             base64: Some(base64),
             mime_type: Some(mime_type),
         }),
         ClipboardImageRead::Empty => Ok(ClipboardImageResponse::default()),
+        #[cfg(target_os = "linux")]
         ClipboardImageRead::ToolsUnavailable(error) => {
             log::warn!("Clipboard image read unsupported: {}", error);
             Err(error)

@@ -1,4 +1,4 @@
-import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { invokePrepared } from './invokePrepared';
 import { workspaceHistoryRequest, workspaceIdRequest } from './legacyWorkspaceCompatibility';
 import { translateAgentIdentityFields } from '../../../../../shared/agent-harness/wire';
  
@@ -1103,9 +1103,9 @@ export class AgentAPI {
     workspaceId: string
   ): Promise<void> {
     try {
-      await api.invoke<void>('delete_session', { 
+      await invokePrepared<void>('delete_session', async () => ({
         request: { sessionId, ...await workspaceIdRequest(workspaceId, 'workspacePath') }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('delete_session', error, { sessionId, workspaceId });
     }
@@ -1118,18 +1118,15 @@ export class AgentAPI {
     traceId?: string,
     includeInternal?: boolean,
   ): Promise<SessionInfo> {
-    const scope = getActiveSurfaceScope();
     try {
-      const workspace = await workspaceIdRequest(workspaceId, 'workspacePath');
-      scope.assertCurrent();
-      return await api.invoke<SessionInfo>('restore_session', {
+      return await invokePrepared<SessionInfo>('restore_session', async () => ({
         request: {
           sessionId,
-          ...workspace,
+          ...await workspaceIdRequest(workspaceId, 'workspacePath'),
           traceId,
           includeInternal,
         },
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('restore_session', error, { sessionId, workspaceId });
     }
@@ -1141,18 +1138,15 @@ export class AgentAPI {
     traceId?: string,
     includeInternal?: boolean,
   ): Promise<RestoreSessionWithTurnsResponse> {
-    const scope = getActiveSurfaceScope();
     try {
-      const workspace = await workspaceIdRequest(workspaceId, 'workspacePath');
-      scope.assertCurrent();
-      return await api.invoke<RestoreSessionWithTurnsResponse>('restore_session_with_turns', {
+      return await invokePrepared<RestoreSessionWithTurnsResponse>('restore_session_with_turns', async () => ({
         request: {
           sessionId,
-          ...workspace,
+          ...await workspaceIdRequest(workspaceId, 'workspacePath'),
           traceId,
           includeInternal,
         },
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('restore_session_with_turns', error, { sessionId, workspaceId });
     }
@@ -1169,19 +1163,16 @@ export class AgentAPI {
     includeInternal?: boolean,
     tailTurnCount?: number,
   ): Promise<RestoreSessionViewResponse> {
-    const scope = getActiveSurfaceScope();
     try {
-      const workspace = await workspaceIdRequest(workspaceId, 'workspacePath');
-      scope.assertCurrent();
-      return await api.invoke<RestoreSessionViewResponse>('restore_session_view', {
+      return await invokePrepared<RestoreSessionViewResponse>('restore_session_view', async () => ({
         request: {
           sessionId,
-          ...workspace,
+          ...await workspaceIdRequest(workspaceId, 'workspacePath'),
           traceId,
           includeInternal,
           ...(tailTurnCount !== undefined ? { tailTurnCount } : {}),
         },
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('restore_session_view', error, { sessionId, workspaceId });
     }
@@ -1226,9 +1217,9 @@ export class AgentAPI {
   ): Promise<RollbackSessionToTurnOutcome> {
     try {
       const { workspaceId, ...mutation } = request;
-      const outcome = await api.invoke<RollbackSessionToTurnWireOutcome>('rollback_session_to_turn', {
+      const outcome = await invokePrepared<RollbackSessionToTurnWireOutcome>('rollback_session_to_turn', async () => ({
         request: { ...mutation, ...await workspaceHistoryRequest(workspaceId) },
-      });
+      }));
       if (outcome.status === 'completed') {
         return {
           ...outcome,
@@ -1326,12 +1317,11 @@ export class AgentAPI {
     workspaceId: string;
     includeInternal?: boolean;
   }): Promise<void> {
-    const scope = getActiveSurfaceScope();
     try {
       const { workspaceId, ...session } = request;
-      const workspace = await workspaceIdRequest(workspaceId, 'workspacePath');
-      scope.assertCurrent();
-      await api.invoke<void>('ensure_coordinator_session', { request: { ...session, ...workspace } });
+      await invokePrepared<void>('ensure_coordinator_session', async () => ({
+        request: { ...session, ...await workspaceIdRequest(workspaceId, 'workspacePath') },
+      }));
     } catch (error) {
       throw createTauriCommandError('ensure_coordinator_session', error, request);
     }
@@ -1420,11 +1410,10 @@ export class AgentAPI {
 
    
   async listSessions(workspaceId: string): Promise<SessionInfo[]> {
-    const scope = getActiveSurfaceScope();
     try {
-      const request = await workspaceIdRequest(workspaceId, 'workspacePath');
-      scope.assertCurrent();
-      return await api.invoke<SessionInfo[]>('list_sessions', { request });
+      return await invokePrepared<SessionInfo[]>('list_sessions', async () => ({
+        request: await workspaceIdRequest(workspaceId, 'workspacePath'),
+      }));
     } catch (error) {
       throw createTauriCommandError('list_sessions', error, { workspaceId });
     }
@@ -1807,8 +1796,9 @@ export class AgentAPI {
   async getAvailableModes(request: { workspaceId?: string } = {}): Promise<ModeInfo[]> {
     try {
       if (request.workspaceId !== undefined && !request.workspaceId.trim()) throw new Error('Workspace identity is unresolved');
-      const wire = request.workspaceId !== undefined ? await workspaceIdRequest(request.workspaceId, 'workspacePath') : {};
-      return translateAgentIdentityFields(await api.invoke<ModeInfo[]>('get_available_modes', { request: wire }), 'canonical');
+      return translateAgentIdentityFields(await invokePrepared<ModeInfo[]>('get_available_modes', async () => ({
+        request: request.workspaceId !== undefined ? await workspaceIdRequest(request.workspaceId, 'workspacePath') : {},
+      })), 'canonical');
     } catch (error) {
       throw createTauriCommandError('get_available_modes', error);
     }

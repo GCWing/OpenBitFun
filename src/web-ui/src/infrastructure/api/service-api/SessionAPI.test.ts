@@ -1,20 +1,43 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionAPI } from './SessionAPI';
+import { activateSurface, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 
 const invokeMock = vi.hoisted(() => vi.fn());
+const peerCapabilities = vi.hoisted(() => ({ workspaceIdReferencesV1: true }));
 
 vi.mock('./ApiClient', () => ({
   api: {
     invoke: invokeMock,
   },
 }));
+vi.mock('@/infrastructure/peer-device/PeerConnectionManager', () => ({
+  peerConnectionManager: { get: () => ({ getState: () => ({ capabilities: peerCapabilities }) }) },
+}));
 
 describe('SessionAPI paged metadata reads', () => {
   let sessionAPI: SessionAPI;
 
   beforeEach(() => {
+    activateSurface('local');
     sessionAPI = new SessionAPI();
     invokeMock.mockReset();
+    peerCapabilities.workspaceIdReferencesV1 = true;
+  });
+
+  it('does not send a local workspace request to an equal ID on a newly selected peer', async () => {
+    const pending = sessionAPI.listSessionsPage({ workspaceId: 'same-workspace-id', limit: 5 });
+    activateSurface('peer-with-the-same-workspace');
+
+    await expect(pending).rejects.toSatisfy(isSurfaceChangedError);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it('does not delete an equal session ID on a peer selected during request preparation', async () => {
+    const pending = sessionAPI.deleteSession('same-session-id', 'same-workspace-id');
+    activateSurface('peer-with-the-same-workspace');
+
+    await expect(pending).rejects.toSatisfy(isSurfaceChangedError);
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 
   it.each(['local-project', 'remote-loopback', 'remote-project'])('reads %s by ID without path or SSH hints', async workspaceId => {
@@ -23,6 +46,23 @@ describe('SessionAPI paged metadata reads', () => {
     await expect(sessionAPI.listSessionsPage({ workspaceId, limit: 5, cursor: '0' })).resolves.toBe(page);
     expect(invokeMock).toHaveBeenCalledWith('list_persisted_sessions_page', {
       request: { workspace_id: workspaceId, limit: 5, cursor: '0' },
+    });
+  });
+
+  it('preserves the selected SSH host when serializing for a peer without workspace ID support', async () => {
+    peerCapabilities.workspaceIdReferencesV1 = false;
+    activateSurface('legacy-peer');
+    const records = [
+      { id: 'local-id', rootPath: '/same/root', workspaceKind: 'normal' },
+      { id: 'remote-id', rootPath: '/same/root', workspaceKind: 'remote', connectionId: 'ssh-id', sshHost: 'localhost' },
+    ];
+    invokeMock.mockImplementation(async (command: string) =>
+      command === 'get_opened_workspaces' || command === 'get_recent_workspaces' ? records : []);
+
+    await sessionAPI.listSessions('remote-id');
+
+    expect(invokeMock).toHaveBeenCalledWith('list_persisted_sessions', {
+      request: { workspace_path: '/same/root', remote_connection_id: 'ssh-id', remote_ssh_host: 'localhost' },
     });
   });
 

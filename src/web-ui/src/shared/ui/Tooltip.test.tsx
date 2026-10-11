@@ -114,6 +114,27 @@ describe('shared tooltip visibility', () => {
     expect(popup()).toBeNull();
   });
 
+  it('keeps an interactive preview open while its own scroll container scrolls', () => {
+    render(
+      <Tooltip interactive content={<p data-testid="preview">Sub-agent details</p>}>
+        <button>Details</button>
+      </Tooltip>,
+    );
+    const button = host.querySelector('button')!;
+    enter(button); advance(); advance(1);
+    const card = popup()!;
+    expect(card.textContent).toBe('Sub-agent details');
+    // The tooltip body is its own scroll container: wheel scrolling or a
+    // scrollbar drag inside the preview must not dismiss the preview.
+    act(() => card.dispatchEvent(new Event('scroll')));
+    expect(popup()).toBe(card);
+    act(() => card.querySelector('[data-openbitfun-part="content"]')!.dispatchEvent(new Event('scroll')));
+    expect(popup()).toBe(card);
+    // A scroll owned by the surface behind the trigger still dismisses it.
+    act(() => host.dispatchEvent(new Event('scroll')));
+    expect(popup()).toBeNull();
+  });
+
   it('dismisses pinned cards on visual viewport scrolling', () => {
     const viewport = new EventTarget();
     vi.stubGlobal('visualViewport', viewport);

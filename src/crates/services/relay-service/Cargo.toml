@@ -1,6 +1,6 @@
 [package]
 name = "openbitfun-relay-service"
-version = "1.0.3"
+version = "1.0.5"
 authors = ["OpenBitFun Team"]
 edition = "2021"
 description = "Reusable relay runtime for OpenBitFun Remote Connect"

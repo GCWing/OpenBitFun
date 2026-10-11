@@ -330,7 +330,7 @@ describe('device status card', () => {
     state.overview = overview({ localDeviceName: name });
     render();
     expect(element('nav-device-status-summary').querySelector('.openbitfun-device-overview__device-name')?.textContent).toBe(name);
-    expect(element('nav-device-status-summary').querySelector('[title]')?.getAttribute('title')).toBe(name);
+    expect(element('nav-device-status-summary').querySelector('.openbitfun-device-overview__device-name')?.getAttribute('data-overflow-text')).toBe(name);
     expect(element('nav-footer-device-status').getAttribute('aria-label')).toContain(name);
   });
 

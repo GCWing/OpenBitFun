@@ -651,8 +651,8 @@ impl PersistenceManager {
     /// Resolve the on-disk sessions directory for `workspace_path`.
     ///
     /// Callers may pass either a logical workspace root or an already-resolved
-    /// managed sessions directory. Local workspace roots are slugified under
-    /// `~/.openbitfun/projects/`; already-resolved local/remote sessions
+    /// managed sessions directory. Local workspace roots use compact runtime
+    /// keys under `~/.openbitfun/projects/`; already-resolved local/remote sessions
     /// directories are used as-is.
     fn project_sessions_dir(&self, workspace_path: &Path) -> PathBuf {
         if self.is_resolved_sessions_dir(workspace_path) {
@@ -1795,7 +1795,7 @@ impl PersistenceManager {
         &self,
         workspace_path: &Path,
         session_id: &str,
-        state: &StoredSessionStateFile,
+        state: &(impl serde::Serialize + Sync),
     ) -> OpenBitFunResult<()> {
         #[cfg(test)]
         {
@@ -2492,6 +2492,118 @@ impl PersistenceManager {
         Ok(())
     }
 
+    /// Persist only selector facts. Historical sessions need neither transcript
+    /// loading nor runtime restoration, and unknown future state fields survive.
+    pub(crate) async fn save_session_model_selection(
+        &self,
+        workspace_path: &Path,
+        session: &Session,
+    ) -> OpenBitFunResult<()> {
+        let session_id = &session.session_id;
+        Self::validate_session_id(session_id)?;
+        let _writer = self.lock_session_write_operation(workspace_path, session_id)?;
+        self.ensure_runtime_for_write(workspace_path).await?;
+        let lock = self
+            .get_session_persistence_lock(workspace_path, session_id)
+            .await;
+        let _guard = lock.lock().await;
+        let original_metadata = self
+            .load_session_metadata(workspace_path, session_id)
+            .await?
+            .ok_or_else(|| OpenBitFunError::NotFound(format!("Session not found: {session_id}")))?;
+        let state_path = self.state_path(workspace_path, session_id);
+        let original_state = self
+            .read_json_optional::<serde_json::Value>(&state_path)
+            .await?;
+        let mut state = match original_state.as_ref() {
+            Some(value) => value.clone(),
+            None => serde_json::to_value(StoredSessionStateFile {
+                schema_version: SESSION_STORAGE_SCHEMA_VERSION,
+                config: session.config.clone(),
+                snapshot_session_id: session.snapshot_session_id.clone(),
+                last_user_dialog_agent_type: session.last_user_dialog_agent_type.clone(),
+                last_submitted_agent_type: session.last_submitted_agent_type.clone(),
+                compression_state: session.compression_state.clone(),
+                runtime_state: sanitize_persisted_session_state(&session.state),
+            })?,
+        };
+        let object = state
+            .as_object_mut()
+            .ok_or_else(|| OpenBitFunError::session("Invalid session state object"))?;
+        let config = object
+            .entry("config")
+            .or_insert_with(|| serde_json::json!({}))
+            .as_object_mut()
+            .ok_or_else(|| OpenBitFunError::session("Invalid session config object"))?;
+        config.insert(
+            "model_id".into(),
+            serde_json::to_value(&session.config.model_id)?,
+        );
+        config.insert(
+            "reasoning_preset".into(),
+            serde_json::to_value(&session.config.reasoning_preset)?,
+        );
+        config.insert(
+            "max_context_tokens".into(),
+            serde_json::to_value(session.config.max_context_tokens)?,
+        );
+        let mut metadata = original_metadata.clone();
+        metadata.model_name = session.config.model_id.clone().unwrap_or_default();
+        metadata.last_active_at = Self::system_time_to_unix_ms(session.last_activity_at);
+        if original_state.as_ref() == Some(&state)
+            && original_metadata.model_name == metadata.model_name
+            && original_metadata.last_active_at == metadata.last_active_at
+        {
+            return Ok(());
+        }
+        let write_result = async {
+            self.save_stored_session_state(workspace_path, session_id, &state)
+                .await?;
+            self.save_session_metadata_locked(workspace_path, &metadata)
+                .await
+        }
+        .await;
+        if let Err(error) = write_result {
+            // An IO error can be reported before or after an atomic rename.
+            // Avoid unnecessary rollback writes when the original is intact.
+            if self
+                .read_json_optional::<serde_json::Value>(&state_path)
+                .await
+                .is_ok_and(|state| state == original_state)
+                && self
+                    .load_session_metadata(workspace_path, session_id)
+                    .await
+                    .is_ok_and(|value| {
+                        value.is_some_and(|value| {
+                            value.model_name == original_metadata.model_name
+                                && value.last_active_at == original_metadata.last_active_at
+                        })
+                    })
+            {
+                return Err(error);
+            }
+            let state_rollback = match original_state {
+                Some(state) => {
+                    self.save_stored_session_state(workspace_path, session_id, &state)
+                        .await
+                }
+                None => tokio::fs::remove_file(&state_path)
+                    .await
+                    .map_err(Into::into),
+            };
+            let metadata_rollback = self
+                .save_session_metadata_locked(workspace_path, &original_metadata)
+                .await;
+            if state_rollback.is_err() || metadata_rollback.is_err() {
+                return Err(OpenBitFunError::OutcomeUnknown(format!(
+                    "Session model update rollback failed: session_id={session_id}, error={error}, state={state_rollback:?}, metadata={metadata_rollback:?}"
+                )));
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
     /// Save session
     pub async fn save_session(
         &self,
@@ -2583,6 +2695,11 @@ impl PersistenceManager {
         crate::agentic::workspace::normalize_session_workspace(&mut config).await?;
         if config.model_id.is_none() && !metadata.model_name.is_empty() {
             config.model_id = Some(metadata.model_name.clone());
+        }
+        if let Some(model_id) = config.model_id.as_mut() {
+            if metadata.compatible_model_selector(model_id) != model_id.as_str() {
+                *model_id = "primary".to_string();
+            }
         }
 
         let compression_state = stored_state
@@ -8065,7 +8182,7 @@ mod tests {
         assert!(runtime.snapshot_by_hash_dir.exists());
         assert!(runtime.snapshot_metadata_dir.exists());
         assert!(runtime.snapshot_operations_dir.exists());
-        assert!(runtime.plans_dir.exists());
+        assert!(!runtime.runtime_root.join("plans").exists());
         assert!(runtime.layout_state_file.exists());
     }
 

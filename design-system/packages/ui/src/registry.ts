@@ -4,6 +4,7 @@ import { activityItemMeta } from "./components/ActivityItem/ActivityItem.meta";
 import { alertMeta } from "./components/Alert/Alert.meta";
 import { avatarMeta } from "./components/Avatar/Avatar.meta";
 import { buttonMeta } from "./components/Button/Button.meta";
+import { capsuleMeta } from "./components/Capsule/Capsule.meta";
 import { checkboxMeta } from "./components/Checkbox/Checkbox.meta";
 import { cardMeta } from "./components/Card/Card.meta";
 import { composerMeta } from "./components/Composer/Composer.meta";
@@ -127,6 +128,7 @@ export const componentRegistry = [
   askUserMeta,
   avatarMeta,
   buttonMeta,
+  capsuleMeta,
   cardMeta,
   checkboxMeta,
   chatComposerMeta,

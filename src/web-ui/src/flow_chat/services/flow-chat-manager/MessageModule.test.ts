@@ -1241,6 +1241,8 @@ describe('MessageModule model synchronization', () => {
     });
     const { context, session } = modelSyncContext('asdf');
     await syncSessionModelSelection(context, session.sessionId, 'Standard');
+    expect(mockGetConfigs).toHaveBeenCalledTimes(1);
+    expect(mockGetConfigs).toHaveBeenCalledWith(['ai.models', 'ai.default_models']);
     expect(context.flowChatStore.updateSessionModelName).not.toHaveBeenCalled();
     expect(context.flowChatStore.updateSessionMaxContextTokens).toHaveBeenCalledWith(session.sessionId, 64000);
     expect(mockUpdateSessionModel).toHaveBeenCalledWith(expect.objectContaining({

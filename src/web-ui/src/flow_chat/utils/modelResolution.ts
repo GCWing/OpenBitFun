@@ -162,44 +162,33 @@ export function resolveModelSelection({
   };
 }
 
+/** Resolve from already loaded facts so selection and send do not read settings twice. */
+export function resolveModelMaxTokens(
+  modelName: string | undefined,
+  models: readonly AIModelConfig[],
+  defaultModels: DefaultModelsConfig,
+  modeDefaultModel?: string,
+): number {
+  const selection = modelName?.trim() || modeDefaultModel;
+  return resolveModelForContextWindow(selection, models, defaultModels)?.context_window
+    || resolveModelForContextWindow('primary', models, defaultModels)?.context_window
+    || 128128;
+}
+
 export async function getModelMaxTokens(modelName?: string, agentType?: string): Promise<number> {
   try {
     const configManager = await import('@/infrastructure/config/services/ConfigManager').then(m => m.configManager);
     const configData = await configManager.getConfigs([
       'ai.models',
       'ai.default_models',
-      'ai.agent_model_defaults',
+      ...(!modelName?.trim() ? ['ai.agent_model_defaults'] : []),
     ]);
-    const models = (configData['ai.models'] as AIModelConfig[] | undefined) || [];
-    const defaultModels = (configData['ai.default_models'] as DefaultModelsConfig | undefined) || {};
-    const agentModelDefaults = configData['ai.agent_model_defaults'] as AgentModelDefaultsConfig | undefined;
-
-    const normalizedModelName = modelName?.trim();
-    const explicitModel = resolveModelForContextWindow(modelName, models, defaultModels);
-    if (explicitModel?.context_window) {
-      return explicitModel.context_window;
-    }
-
-    // Only legacy sessions without a model selector inherit the current mode
-    // default. Session-owned selectors are resolved above.
-    if (!normalizedModelName) {
-      const modeModel = resolveModelForContextWindow(
-        agentModelDefaults?.mode,
-        models,
-        defaultModels,
-      );
-      if (modeModel?.context_window) {
-        return modeModel.context_window;
-      }
-    }
-
-    const primaryModel = resolveModelForContextWindow('primary', models, defaultModels);
-    if (primaryModel?.context_window) {
-      return primaryModel.context_window;
-    }
-
-    log.debug('Model context_window config not found, using default', { modelName, agentType });
-    return 128128;
+    return resolveModelMaxTokens(
+      modelName,
+      (configData['ai.models'] as AIModelConfig[] | undefined) || [],
+      (configData['ai.default_models'] as DefaultModelsConfig | undefined) || {},
+      (configData['ai.agent_model_defaults'] as AgentModelDefaultsConfig | undefined)?.mode,
+    );
   } catch (error) {
     log.warn('Failed to get model max tokens', { modelName, agentType, error });
     return 128128;
@@ -214,7 +203,7 @@ export async function resolveReasoningPresetForSessionCreation(
     const configData = await configManager.getConfigs([
       'ai.models',
       'ai.default_models',
-      'ai.agent_model_defaults',
+      ...(!modelName?.trim() ? ['ai.agent_model_defaults'] : []),
     ]);
     const models = (configData['ai.models'] as AIModelConfig[] | undefined) || [];
     const defaultModels = (configData['ai.default_models'] as DefaultModelsConfig | undefined) || {};

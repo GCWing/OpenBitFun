@@ -119,8 +119,8 @@ private fun ModelSection(
                     options.forEachIndexed { index, option ->
                         if (index > 0) HorizontalDivider()
                         SelectableRow(
-                            label = option.primaryLabel,
-                            description = option.secondaryLabel,
+                            label = com.openbitfun.mobile.app.ui.chat.modelOptionTitle(option),
+                            description = com.openbitfun.mobile.app.ui.chat.modelOptionSubtitle(option),
                             selected = option.selected,
                             enabled = !state.busy && sessionId.isNotEmpty(),
                             onSelect = {

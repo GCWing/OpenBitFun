@@ -739,6 +739,36 @@ impl DesktopSessionApplication {
         Ok(updated_title)
     }
 
+    pub(crate) async fn update_unloaded_session_model(
+        &self,
+        request: DesktopSessionScopeRequest,
+        session_id: &str,
+        model_id: &str,
+        reasoning_preset: Option<&str>,
+        include_internal: bool,
+    ) -> DesktopSessionApplicationResult<bool> {
+        if self
+            .compatibility
+            .is_session_loaded_in_memory(session_id)
+            .map_err(desktop_core_session_error)?
+        {
+            return Ok(false);
+        }
+        let scope = self.resolved_scope(request).await?;
+        self.ensure_runtime_ownership(&scope)?;
+        self.compatibility
+            .update_session_model_selection_from_storage_path(
+                &self.storage_path(&scope),
+                session_id,
+                model_id,
+                reasoning_preset,
+                include_internal,
+            )
+            .await
+            .map_err(desktop_core_session_error)?;
+        Ok(true)
+    }
+
     pub(crate) async fn ensure_session_loaded(
         &self,
         request: DesktopSessionScopeRequest,

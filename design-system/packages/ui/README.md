@@ -18,6 +18,31 @@ export function Example() {
 
 The package owns component anatomy, behavior, accessibility, and stable variants. It does not own theme selection persistence, product state, routes, locale resources, or platform APIs.
 
+## Pane layouts
+
+`SplitView` retains its primary and secondary content hosts across placement,
+visibility and `layout="split" | "overlay"` changes. Split layout is the default:
+`rightSize` controls the physical right slot. In overlay layout, `rightSize`
+controls the secondary pane on `secondarySide`, while the primary pane fills the
+container. `minLeftSize` reserves uncovered space in overlay layout; use zero
+when the secondary pane may cover the full width. The resize handle follows the
+secondary pane's inner edge and keeps keyboard and pointer directions aligned.
+
+This is a persistent, non-modal pane layout inside the component's isolated
+stacking context. It does not add a backdrop, focus trap or outside-click
+dismissal. Floating menus and dialogs within either pane continue to use the
+document overlay coordinator. Owners control visibility with `mode` and persist
+split and overlay sizes independently when those preferences differ.
+
+Place `SplitViewPrimaryDock` inside the primary content's positioned container
+for an absolute input or toolbar that must avoid the secondary overlay. Its
+width and placement follow the displayed pane size, including pointer drags and
+container clamping, without resizing the primary pane. The dock passes pointer
+events through; interactive children must enable pointer events. Keep
+`minLeftSize` large enough for the dock's controls; on narrow containers this
+reservation shrinks to half the available width. Dock contents stay mounted
+when visibility or placement changes.
+
 Floating dialog/sheet overlays, menu popovers, select/combobox popups and tooltips declare
 `data-openbitfun-native-webview-occlusion` on their rendered floating surface.
 Native hosts use its visible bounds to temporarily hide overlapping child views;
@@ -108,7 +133,9 @@ by the component that needs them.
 ## Icons
 
 Use `Icon` for shared size, tone and accessible labels. General-purpose symbols
-use Lucide. Automatic reasoning uses the authored `reasoning-auto` SVG mark with
+use Lucide. The named `edit` icon uses the simple `Pen` outline without Pencil's
+cap divider, keeping compact action groups visually light.
+Automatic reasoning uses the authored `reasoning-auto` SVG mark with
 a `currentColor` mask so it follows the active theme. Manual reasoning levels use
 the product slider and text labels.
 Product consumers own capability filtering, translated names and
@@ -367,6 +394,41 @@ focus ring. Use it for toolbar, dialog, and row utilities. `fill` and `primary`
 keep an opaque backing surface for persistent emphasis. Disabled quiet actions
 remain transparent and do not show hover or pressed feedback.
 
+`IconButton variant="glass"` is a translucent, blurred action over existing
+content. It uses a low-opacity tint of the shared raised surface, a softened
+subtle border and subtle blur, without an outer shadow. Hover and pressed states
+retain translucency. Unsupported blur, increased contrast and reduced transparency
+use a solid surface.
+The button itself owns the glass material and its reveal transition so an opaque
+backing or fading parent cannot prevent it from sampling the content behind it.
+
+### Capsule actions
+
+Wrap a pill-shaped `Button`, inline `Input`, or tag label in `Capsule`, matching
+its `size` to the child. Pass one `IconButton` (optionally inside `Tooltip`) to
+`action`. The slot selects circular glass presentation and compact geometry;
+the consumer keeps the action's accessible label, tone, disabled/loading state,
+and callbacks. The action is a sibling of the primary control, never a nested
+button. Pointer hover or focus within the capsule reveals it; touch keeps it
+available. Its right inset equals the top and bottom clearance at every density.
+
+```tsx
+<Capsule size="sm" action={
+  <IconButton aria-label="Remove provider" icon={<Icon name="delete" />}
+    tone="danger" onClick={requestRemoval} />
+}>
+  <Button size="sm" variant="outline" onClick={editProvider}>Provider name</Button>
+</Capsule>
+```
+
+The action floats over the intact label: do not clip, mask, hide, resize, or add
+action padding to its text when revealing the icon. Normal constrained-width
+`OverflowText` behavior remains available. `TabGroup.endAction` and removable
+`MultiSelect` tags share this contract, including existing native tab buttons.
+Leading identity icons stay in their label layout; this contract governs the
+independent trailing actions. Product CSS owns placement of capsules, not their
+action offsets, backgrounds, or visibility.
+
 For supplemental label annotations, compose `Tooltip trigger="hover-focus"
 openOnClick` with `IconButton variant="annotation" size="xs"` and an `info`
 icon. The annotation uses `color.content.muted` at rest and
@@ -446,10 +508,14 @@ padding uses `space.component.inline` and icon-to-text spacing uses `space.1`.
 An absolute-positioned search host must reserve that same search-row height.
 The built-in clear action uses the shared square xs quiet-button hover feedback.
 
+Use `Input size="xs" shape="pill"` for inline capsule editing. Its height,
+padding, and metadata type match compact `Button size="xs"` capsules; keep
+capsule placement and input width in the consumer layout.
+
 Choose `size` explicitly when composing form rows: selectors default to `md`,
-while `Input` defaults to `sm`. Except for SearchField's dedicated row contract,
-the shared `control.height.sm/md/lg` tokens and
-active density own the actual heights; consumers must not replace them with
+while `Input` defaults to `sm`. For ordinary `sm/md/lg` fields, apart from
+SearchField's dedicated row contract, the shared `control.height.sm/md/lg`
+tokens and active density own the actual heights; consumers must not replace them with
 page-level heights or padding overrides. Picker bodies stay single-line and
 token-sized, with labels and validation messages outside that height. Select
 keeps its in-flow anchor mounted when the unified popup covers it, so opening
@@ -461,6 +527,8 @@ inside one border and shadow. Flipping above the field keeps the search header
 beside the anchor. Labels, validation, and the field id follow the active input;
 Escape or selection restores the trigger, and Tab continues from its position
 in the form. Search, typed values, and multiple selection remain component-owned.
+Joined picker surfaces use the default neutral border on focus, matching the
+quiet search treatment while preserving validation and forced-color states.
 `SearchField variant="embedded"` removes its standalone pill surface for these
 compositions; its container must supply padding, height, and visible focus
 treatment. Standalone SearchField pills use a subtle neutral border, increasing
@@ -616,6 +684,11 @@ leading roles scale with user typography. FieldGroup uses the form group tint,
 retaining its existing row padding, dividers, and radius. The Patterns form
 specimen shows both orientations and long values over a tinted container.
 
+FormSection keeps descriptions below the title by default. Use
+`descriptionLayout="inline"` for compact summaries that share one line with
+the title. The description uses OverflowText while the heading and actions
+remain independent.
+
 Menu and Listbox row surfaces are separated by `overlay.menu.rowGap` (2px),
 including grouped options and the Listbox used by Select, Combobox and MultiSelect.
 This is distinct from `itemGap` (icon-to-label spacing) and `sectionGap` (8px).
@@ -651,7 +724,7 @@ Dialog titles use 24px bold type with their own 29px line box and normal trackin
 
 Extra-large (`xl`) dialogs have an 800px maximum width and continue shrinking within the viewport gutter. Provider editing uses the floating footer; small workspace creation retains its attached footer and existing button/input sizes. The Lab workspace pattern uses local sample paths and callbacks only.
 
-Keep `Dialog` and `Sheet` mounted and set `open={false}` to close them. They retain the last committed children during the exit animation, with interaction disabled, so clearing an owner selection does not collapse the surface. Reopening uses the latest children and cancels the pending exit. Owners that conditionally mount an editor can remove it in `onExitComplete`, which runs once after the surface unmounts.
+Keep `Dialog` and `Sheet` mounted and set `open={false}` to close them. They retain the last committed children, size, placement, classes, and styles during the exit animation, with interaction disabled, so clearing an owner selection does not resize the surface. Reopening uses the latest presentation and cancels the pending exit. Owners that conditionally mount an editor can remove it in `onExitComplete`, which runs once after the surface unmounts.
 
 PageHeader `md` uses the settings title with a primary 15px description; `display` uses the welcome heading and medium 17px introduction with a 12px gap. ActionCard uses 12px padding, section-heading typography (15px semibold), and a primary 13px single-line action description. Its inset outline does not inflate the 62px medium minimum height; longer content keeps the independent sibling actions and OverflowText behavior.
 

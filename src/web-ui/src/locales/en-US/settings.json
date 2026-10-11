@@ -74,7 +74,7 @@
       },
       "input": {
         "label": "Input & Interaction",
-        "description": "Configure voice dictation and keyboard shortcuts"
+        "description": "Configure text selection actions, voice dictation, and keyboard shortcuts"
       },
       "sessionMemory": {
         "label": "Sessions & Memory",
@@ -95,6 +95,7 @@
       "json": "Advanced JSON"
     },
     "sections": {
+      "text-selection": "Text selection",
       "voice": "Voice",
       "shortcuts": "Keyboard Shortcuts",
       "session": "Session Defaults",

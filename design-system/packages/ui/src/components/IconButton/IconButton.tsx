@@ -1,9 +1,12 @@
 import {
   forwardRef,
+  useContext,
   type ButtonHTMLAttributes,
   type ReactNode,
 } from "react";
 import { classNames } from "../../internal/classNames";
+import { FloatingActionContext } from "../../internal/floatingActionContext";
+import glassStyles from "../../internal/GlassAction.module.css";
 import styles from "./IconButton.module.css";
 
 export interface IconButtonProps
@@ -15,7 +18,7 @@ export interface IconButtonProps
   size?: "xs" | "standard" | "sm" | "md" | "lg";
   tone?: "danger" | "neutral";
   /** Use annotation with an xs size and Tooltip for supplemental label help. */
-  variant?: "annotation" | "fill" | "outline" | "primary" | "quiet";
+  variant?: "annotation" | "fill" | "glass" | "outline" | "primary" | "quiet";
 }
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton({
@@ -31,18 +34,20 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   variant = "quiet",
   ...props
 }, ref) {
+  const floating = useContext(FloatingActionContext);
+  const resolvedVariant = floating ? "glass" : variant;
   return (
     <button
       {...props}
       aria-busy={loading || undefined}
       aria-label={ariaLabel}
-      className={classNames(styles.button, className)}
+      className={classNames(styles.button, resolvedVariant === "glass" && glassStyles.surface, className)}
       data-openbitfun-component="icon-button"
-      data-openbitfun-shape={shape}
+      data-openbitfun-shape={floating ? "circle" : shape}
       data-openbitfun-tone={tone}
-      data-openbitfun-variant={variant}
+      data-openbitfun-variant={resolvedVariant}
       data-loading={loading ? "true" : "false"}
-      data-size={size}
+      data-size={floating ? "xs" : size}
       disabled={disabled || loading}
       ref={ref}
       type={type}

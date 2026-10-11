@@ -647,7 +647,20 @@ impl ConfigManager {
         })?;
 
         reject_protected_metadata_path(path)?;
+        if self.get::<serde_json::Value>(path).ok().as_ref() == Some(&json_value) {
+            return Ok(());
+        }
         let mut config = self.config_with_value(path, json_value)?;
+        // Selecting a future-session default changes only a reference to an
+        // already validated model. Keep legacy alias/fallback normalization,
+        // without constructing clients or revalidating every provider.
+        if path == "ai.agent_model_defaults.mode" {
+            reconcile_model_references(&mut config);
+            if config.ai.agent_model_defaults.mode == self.config.ai.agent_model_defaults.mode {
+                return Ok(());
+            }
+            return self.commit_config(config, Some(path)).await;
+        }
         // Apply capability-driven canonicalization before validation and persistence.
         // Speech/embedding/image-only models must never carry text-generation sentinels.
         normalize_typed_config(&mut config);

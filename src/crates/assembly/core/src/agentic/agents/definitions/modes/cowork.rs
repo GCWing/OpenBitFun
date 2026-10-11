@@ -21,7 +21,6 @@ impl CoworkMode {
             default_tools: vec![
                 // Clarification + planning helpers
                 "AskUserQuestion".to_string(),
-                "TodoWrite".to_string(),
                 "get_goal".to_string(),
                 "create_goal".to_string(),
                 "update_goal".to_string(),

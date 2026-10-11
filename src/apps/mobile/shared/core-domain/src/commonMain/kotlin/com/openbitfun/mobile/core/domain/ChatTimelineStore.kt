@@ -896,7 +896,7 @@ public class ChatTimelineStore public constructor() {
 
         private fun selectedModelIdForCatalog(catalog: RemoteModelCatalog, current: String): String {
             catalog.sessionModelId?.takeIf(String::isNotEmpty)?.let { return it }
-            if (current.isNotEmpty() && catalog.models.any { it.id == current && it.enabled }) return current
+            if (current.isNotEmpty() && ModelSelectionPolicy.resolve(catalog, current) != null) return current.trim()
             return catalog.defaultModels.primary ?: catalog.defaultModels.fast ?: current
         }
     }

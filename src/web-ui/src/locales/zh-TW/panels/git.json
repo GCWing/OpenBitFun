@@ -197,6 +197,7 @@
     "current": "目前"
   },
   "quickSwitch": {
+    "refresh": "重新整理分支",
     "menuLabel": "切換分支",
     "searchLabel": "搜尋分支",
     "searchPlaceholder": "搜尋分支...",
@@ -225,6 +226,7 @@
     },
     "errors": {
       "title": "分支切換失敗",
+      "refreshFailed": "重新整理分支失敗，目前顯示上次的清單。",
       "loadFailed": "無法載入分支清單",
       "switchFailed": "無法切換分支",
       "switchFailedWithMessage": "無法切換分支：{{error}}",

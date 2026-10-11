@@ -3,6 +3,7 @@
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot, type Root } from 'react-dom/client';
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 import UsageStatisticsSettingsPage from '@/app/scenes/settings/pages/data/UsageStatisticsSettingsPage';
 import type { UsageStatistics } from '@/infrastructure/api';
 
@@ -124,6 +125,7 @@ describe('UsageStatisticsSettingsPage', () => {
   let root: Root;
 
   beforeEach(() => {
+    activateSurface('local');
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -140,6 +142,29 @@ describe('UsageStatisticsSettingsPage', () => {
     await act(async () => { root.render(<UsageStatisticsSettingsPage />); });
     await act(async () => { await Promise.resolve(); });
   }
+
+  it('retains the same chart and heatmap nodes during refresh and a failed refresh', async () => {
+    await render();
+    const heatmap = container.querySelector('.openbitfun-usage-stats__activity');
+    expect(heatmap).not.toBeNull();
+    const rejects: Array<(reason: Error) => void> = [];
+    getStatisticsMock.mockImplementation(() => new Promise((_resolve, reject) => rejects.push(reject)));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="usage-refresh"]')!.click());
+    expect(container.querySelector('.openbitfun-usage-stats__activity')).toBe(heatmap);
+    expect(container.querySelector('[data-testid="usage-loading"]')).toBeNull();
+    await act(async () => rejects.forEach(reject => reject(new Error('offline'))));
+    expect(container.querySelector('.openbitfun-usage-stats__activity')).toBe(heatmap);
+    expect(container.textContent).toContain('loadFailed');
+  });
+
+  it('paints the last successful statistics immediately when returning to the same device', async () => {
+    await render();
+    act(() => root.render(null));
+    getStatisticsMock.mockImplementation(() => new Promise(() => {}));
+    act(() => root.render(<UsageStatisticsSettingsPage />));
+    expect(container.querySelector('.openbitfun-usage-stats__activity')).not.toBeNull();
+    expect(container.querySelector('[data-testid="usage-loading"]')).toBeNull();
+  });
 
   it('places the fixed six-month heatmap first and includes subagent calls in both queries', async () => {
     await render();

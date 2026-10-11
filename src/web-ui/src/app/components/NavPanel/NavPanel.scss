@@ -1623,7 +1623,6 @@ $_section-header-height: 22px;
   position: fixed;
   z-index: var(--openbitfun-layer-popover);
   width: min(340px, calc(100vw - 16px));
-  aspect-ratio: 1.41 / 1;
   min-height: 0;
   max-height: calc(100vh - 16px);
   display: flex;
@@ -1633,7 +1632,8 @@ $_section-header-height: 22px;
 }
 
 .openbitfun-device-overview__scroll {
-  display: grid;
+  // Natural content height in both WebKit and Chromium; shrink only at the viewport limit.
+  display: block;
   min-height: 0;
   flex: 1 1 auto;
 }
@@ -1768,8 +1768,8 @@ $_section-header-height: 22px;
 }
 
 .openbitfun-device-overview__notice {
-  width: calc(100% - var(--openbitfun-space-5) * 2);
-  margin: 0 var(--openbitfun-space-5) var(--openbitfun-space-4);
+  width: calc(100% - var(--openbitfun-space-4) * 2);
+  margin: var(--openbitfun-space-3) var(--openbitfun-space-4) 0;
   height: auto;
   min-height: var(--openbitfun-control-height-sm);
   justify-content: flex-start;
@@ -1782,7 +1782,7 @@ $_section-header-height: 22px;
   flex-direction: column;
   flex-shrink: 0;
   gap: var(--openbitfun-space-2);
-  padding: var(--openbitfun-space-2) var(--openbitfun-space-4) var(--openbitfun-space-3);
+  padding: var(--openbitfun-space-3) var(--openbitfun-space-4) var(--openbitfun-space-4);
 }
 
 .openbitfun-device-overview__action {
@@ -1797,7 +1797,7 @@ $_section-header-height: 22px;
 
 .openbitfun-device-overview__header {
   flex-shrink: 0;
-  padding: var(--openbitfun-space-3) var(--openbitfun-space-4) var(--openbitfun-space-1);
+  padding: var(--openbitfun-space-4) var(--openbitfun-space-4) var(--openbitfun-space-3);
 
   .openbitfun-device-overview__title {
     color: var(--openbitfun-color-content-primary);
@@ -1812,20 +1812,20 @@ $_section-header-height: 22px;
 
 .openbitfun-device-overview__body {
   min-width: 0;
-  // Fill the scroll viewport and balance spare height above and below the
-  // device, rather than leaving all of it between the status and the footer.
-  justify-content: center;
+  // Keep every section in normal flow so additional controllers cannot squeeze
+  // the carousel and clip its name/status inside the horizontal viewport.
+  display: block;
 }
 
 .openbitfun-device-overview__summary {
   position: relative;
   display: grid;
   min-width: 0;
+  row-gap: var(--openbitfun-space-2);
   text-align: center;
 }
 
 .openbitfun-device-overview__carousel-viewport {
-  grid-area: 1 / 1;
   min-width: 0;
   overflow: hidden;
   width: 100%;
@@ -1842,6 +1842,7 @@ $_section-header-height: 22px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: var(--openbitfun-space-2);
 }
 
 .openbitfun-device-overview__device-switcher {
@@ -1853,6 +1854,8 @@ $_section-header-height: 22px;
 .openbitfun-device-overview__carousel-controls {
   position: absolute;
   inset: 0 0 auto;
+  width: 100%;
+  box-sizing: border-box;
   aspect-ratio: 3.25 / 1;
   display: flex;
   align-items: center;
@@ -1867,17 +1870,26 @@ $_section-header-height: 22px;
   .openbitfun-device-overview__carousel-track { transition: none; }
 }
 
-// A preview's activity line is empty, so the connection action shares that slot
-// below the device name. Reserve its height in the activity line to keep browsing
-// stable without adding an empty action row to the compact card.
+// Status and connection action share a dedicated row below the carousel.
+// Its natural height accommodates wrapped activity and compatibility messages.
 .openbitfun-device-overview__connect-action {
-  grid-area: 1 / 1;
-  align-self: end;
   min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   padding-inline: var(--openbitfun-space-4);
+
+  > button,
+  > .openbitfun-device-overview__activity {
+    grid-area: 1 / 1;
+    max-width: 100%;
+  }
+
+  > button {
+    height: auto;
+    min-height: var(--openbitfun-control-height-sm);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 .openbitfun-device-overview__connect-reserved {
@@ -1942,33 +1954,26 @@ $_section-header-height: 22px;
 }
 
 .openbitfun-device-overview__device-name {
-  max-width: 100%;
+  width: 100%;
+  min-width: 0;
   box-sizing: border-box;
-  padding-inline: var(--openbitfun-space-5);
+  padding-inline: var(--openbitfun-space-4);
   color: var(--openbitfun-color-content-secondary);
   font-family: var(--openbitfun-type-label-md-font-family);
   font-size: var(--openbitfun-type-meta-font-size);
   line-height: var(--openbitfun-type-body-sm-line-height);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .openbitfun-device-overview__activity {
-  min-height: var(--openbitfun-control-height-sm);
-  max-width: 100%;
   box-sizing: border-box;
-  padding: var(--openbitfun-space-1) var(--openbitfun-space-5) 0;
   color: var(--openbitfun-color-content-muted);
   font-size: var(--openbitfun-type-meta-font-size);
   line-height: var(--openbitfun-type-body-sm-line-height);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .openbitfun-device-overview__device-group {
-  margin: 0 var(--openbitfun-space-5) var(--openbitfun-space-4);
+  margin: 0 var(--openbitfun-space-4) var(--openbitfun-space-3);
 
   h3 {
     margin: 0 6px 7px;
@@ -1982,7 +1987,7 @@ $_section-header-height: 22px;
 .openbitfun-device-overview__device-rows {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--openbitfun-space-2);
 }
 
 .openbitfun-device-overview__device-row {
@@ -1992,7 +1997,7 @@ $_section-header-height: 22px;
   column-gap: var(--openbitfun-space-2);
   row-gap: var(--openbitfun-space-1);
   min-height: 42px;
-  padding: 4px 6px;
+  padding: var(--openbitfun-space-1) 0;
   border-radius: var(--openbitfun-radius-sm);
 
   &[data-openbitfun-device-kind='message-app'] .openbitfun-device-overview__device-icon {

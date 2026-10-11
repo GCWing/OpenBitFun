@@ -1,3 +1,4 @@
+import { createSettingsReadCache } from '@/infrastructure/config/services/SettingsReadCache';
 import '@/app/scenes/settings/pages/data/UsageStatisticsSettingsPage.scss';
 import {
   TokenUsageStatisticsUnavailableError,
@@ -378,40 +379,50 @@ function UsageDetails({ stats, timeZone }: { stats: UsageStatistics; timeZone: s
   );
 }
 
+const usageSnapshot = createSettingsReadCache<UsageStatistics>();
+
 const UsageStatisticsSettingsPage: React.FC = () => {
   const { t, resolvedTimeZone: timeZone, formatNumber } = useI18n('settings/usage');
   const [timeRange, setTimeRange] = useState<UsageTimeRange>('thisMonth');
-  const [stats, setStats] = useState<UsageStatistics | null>(null);
-  const [statsRange, setStatsRange] = useState<UsageTimeRange | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [initialStats] = useState(() => usageSnapshot.peek(JSON.stringify(['thisMonth', timeZone])) ?? null);
+  const [stats, setStats] = useState<UsageStatistics | null>(initialStats);
+  const [statsRange, setStatsRange] = useState<UsageTimeRange | null>(initialStats ? 'thisMonth' : null);
+  const [loading, setLoading] = useState(!initialStats);
   const [refreshing, setRefreshing] = useState(false);
   const [activityRefreshKey, setActivityRefreshKey] = useState(0);
   const [message, setMessage] = useState<{ type: 'error' | 'info'; text: string } | null>(null);
   const requestIdRef = useRef(0);
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(initialStats !== null);
 
   const load = useCallback(async (background = false) => {
     const requestId = ++requestIdRef.current;
-    if (background) setRefreshing(true);
+    const cached = usageSnapshot.peek(JSON.stringify([timeRange, timeZone]));
+    const keepContent = background || cached !== undefined;
+    if (cached) { setStats(cached); setStatsRange(timeRange); }
+    if (keepContent) { setRefreshing(true); setLoading(false); }
     else {
       setLoading(true);
       setStats(null);
     }
     setMessage(null);
     try {
-      const result = await tokenUsageStatisticsApi.getStatistics({
+      const result = await usageSnapshot.read(() => tokenUsageStatisticsApi.getStatistics({
         timeRange,
         granularity: granularityForRange(timeRange),
         timeZone,
         includeSubagent: true,
-      });
+      }), JSON.stringify([timeRange, timeZone]));
       if (requestId !== requestIdRef.current) return;
       setStats(result);
       setStatsRange(timeRange);
       hasLoadedRef.current = true;
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
-      setStats(null);
+      if (!keepContent || error instanceof TokenUsageStatisticsUnavailableError) setStats(null);
+      if (error instanceof TokenUsageStatisticsUnavailableError) {
+        hasLoadedRef.current = false;
+        usageSnapshot.invalidate();
+      }
       setMessage(error instanceof TokenUsageStatisticsUnavailableError
         ? { type: 'info', text: t('unsupported') }
         : { type: 'error', text: t('loadFailed') });
@@ -423,7 +434,10 @@ const UsageStatisticsSettingsPage: React.FC = () => {
     }
   }, [timeRange, timeZone, t]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => { requestIdRef.current += 1; };
+  }, [load]);
 
   const visibleStats = statsRange === timeRange ? stats : null;
   const empty = visibleStats !== null && visibleStats.totalRequests === 0;
@@ -468,7 +482,7 @@ const UsageStatisticsSettingsPage: React.FC = () => {
             </ConfigPageRow>
             <ConfigMessage className="openbitfun-usage-stats__message" message={message} />
             {loading ? (
-              <ConfigLoadingState label={t('loading')} />
+              <ConfigLoadingState label={t('loading')} variant="statistics" />
             ) : empty ? (
               <div data-openbitfun-component="usage-statistics-config" data-openbitfun-part="empty">
                 <Empty

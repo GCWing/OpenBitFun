@@ -1,4 +1,4 @@
- 
+import { isSurfaceChangedError, type SurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 
 export interface TauriCommandErrorContext {
   command: string;
@@ -79,7 +79,11 @@ export function createTauriCommandError(
   command: string,
   originalError: any,
   request?: any
-): TauriCommandError {
+): TauriCommandError | SurfaceChangedError {
+  // Device activation cancellation is control flow across every service API.
+  // Wrapping it would make callers report/retry stale work on the next host.
+  if (isSurfaceChangedError(originalError)) return originalError;
+
   let message = 'Unknown error';
   
   if (originalError?.message) {
@@ -196,6 +200,22 @@ export function gitRepositoryUntrustedPath(error: unknown): string | undefined {
 /** Identifies missing Git in the environment executing the workspace. */
 export function isGitUnavailableError(error: unknown): boolean {
   return hasStableErrorPrefix(error, 'git_unavailable:');
+}
+
+const REMOTE_WORKSPACE_CONNECTION_CONFLICT_PREFIX = 'remote_workspace_connection_conflict:';
+
+/**
+ * Identifies a remote workspace record bound to another saved SSH connection.
+ * The host keeps the record until the user confirms moving it.
+ */
+export function isRemoteWorkspaceConnectionConflictError(error: unknown): boolean {
+  return hasStableErrorPrefix(error, REMOTE_WORKSPACE_CONNECTION_CONFLICT_PREFIX);
+}
+
+/** Connection that currently owns the conflicting remote workspace record. */
+export function remoteWorkspaceConnectionConflictOwner(error: unknown): string | undefined {
+  const payload = stableErrorPayload(error, REMOTE_WORKSPACE_CONNECTION_CONFLICT_PREFIX);
+  return payload?.match(/bound to SSH connection (\S+);/)?.[1];
 }
 
 /** Stable Review-platform failure kind, preserved through transport wrappers. */

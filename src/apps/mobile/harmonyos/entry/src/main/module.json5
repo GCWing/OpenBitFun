@@ -10,6 +10,19 @@
     ],
     "deliveryWithInstall": true,
     "installationFree": false,
+    // The camera cutout is not an avoid area by default, so a page does not stay
+    // clear of it — and in landscape it sits on a side edge of a full-width
+    // band. From API version 12 on, a module makes the cutout a default avoid
+    // area with this metadata, which is what lets the window report it through
+    // `getWindowAvoidArea(TYPE_CUTOUT)` and lets a component expand into it
+    // (`ts-universal-attributes-expand-safe-area`; module-level `metadata` is
+    // legal per `module-configuration-file`).
+    "metadata": [
+      {
+        "name": "avoid_cutout",
+        "value": "true"
+      }
+    ],
     "requestPermissions": [
       {
         "name": "ohos.permission.INTERNET"

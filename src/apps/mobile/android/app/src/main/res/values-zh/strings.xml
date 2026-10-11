@@ -479,4 +479,9 @@
     <string name="chat_loading_older_messages">正在加载更早消息…</string>
     <string name="tool_todo_fallback">任务列表</string>
     <string name="tool_todo_all_completed">全部任务已完成</string>
+    <string name="model_primary">主力模型</string>
+    <string name="model_fast">快速模型</string>
+    <string name="model_fast_fallback">未配置快速模型，使用主力模型</string>
+    <string name="model_role_primary">主力</string>
+    <string name="model_role_fast">快速</string>
 </resources>

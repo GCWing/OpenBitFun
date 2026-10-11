@@ -5,6 +5,7 @@ import { RIGHT_PANEL_CONFIG, STORAGE_KEYS } from '../../layout/panelConfig';
 
 export type SessionPaneMode = 'chat-only' | 'split' | 'content-only';
 export type ContentPaneSide = 'left' | 'right';
+export type SessionPaneDisplayMode = 'split' | 'overlay';
 type PreferenceStorage = Pick<Storage, 'getItem' | 'setItem'>;
 
 export interface LegacySessionPaneLayout {
@@ -18,6 +19,10 @@ interface SessionPaneLayoutState {
   activeKey: string;
   modes: ReadonlyMap<string, SessionPaneMode>;
   contentSide: ContentPaneSide;
+  displayMode: SessionPaneDisplayMode;
+  preferredOverlayWidth: number;
+  setDisplayMode: (mode: SessionPaneDisplayMode) => void;
+  resizeOverlay: (width: number) => void;
   /** A physical slot preference, independent of which content occupies it. */
   preferredRightPaneWidth: number;
   activate: (surfaceId: string, sessionId: string | null) => void;
@@ -35,6 +40,8 @@ interface SessionPaneLayoutState {
 }
 
 const CONTENT_SIDE_KEY = 'openbitfun:sessionContentSide';
+const DISPLAY_MODE_KEY = 'openbitfun:sessionPaneDisplayMode';
+const OVERLAY_WIDTH_KEY = 'openbitfun:sessionOverlayWidth';
 const scopeKey = (surfaceId: string, sessionId: string | null) => surfaceScopedKey(surfaceId, sessionId);
 
 export const selectSessionPaneMode = (state: SessionPaneLayoutState): SessionPaneMode => (
@@ -65,6 +72,7 @@ export function createSessionPaneLayoutStore(storage = localPreferenceStorage())
     try { storage?.setItem(key, value); } catch { /* Layout remains usable without storage. */ }
   };
   const savedWidth = Number(read(STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH));
+  const savedOverlayWidth = Number(read(OVERLAY_WIDTH_KEY));
   const defaultWidth = typeof window !== 'undefined'
     ? Math.max(540, Math.min(800, Math.floor(window.innerWidth * 0.35)))
     : RIGHT_PANEL_CONFIG.COMFORTABLE_DEFAULT;
@@ -83,6 +91,21 @@ export function createSessionPaneLayoutStore(storage = localPreferenceStorage())
       activeKey: scopeKey('local', null),
       modes: new Map(),
       contentSide: read(CONTENT_SIDE_KEY) === 'left' ? 'left' : 'right',
+      displayMode: read(DISPLAY_MODE_KEY) === 'overlay' ? 'overlay' : 'split',
+      preferredOverlayWidth: Number.isFinite(savedOverlayWidth) && savedOverlayWidth > 0
+        ? normalizeWidth(savedOverlayWidth) : defaultWidth,
+      setDisplayMode: displayMode => {
+        if ((displayMode !== 'split' && displayMode !== 'overlay') || get().displayMode === displayMode) return;
+        write(DISPLAY_MODE_KEY, displayMode);
+        set({ displayMode });
+      },
+      resizeOverlay: width => {
+        if (!Number.isFinite(width) || width <= 0) return;
+        const preferredOverlayWidth = normalizeWidth(width);
+        if (get().preferredOverlayWidth === preferredOverlayWidth) return;
+        write(OVERLAY_WIDTH_KEY, String(preferredOverlayWidth));
+        set({ preferredOverlayWidth });
+      },
       preferredRightPaneWidth: Number.isFinite(savedWidth) && savedWidth > 0
         ? normalizeWidth(savedWidth) : defaultWidth,
       activate: (surfaceId, sessionId) => {
@@ -145,6 +168,9 @@ export function useSessionPaneLayout() {
   const mode = useStore(sessionPaneLayoutStore, selectSessionPaneMode);
   const contentSide = useStore(sessionPaneLayoutStore, state => state.contentSide);
   const preferredRightPaneWidth = useStore(sessionPaneLayoutStore, state => state.preferredRightPaneWidth);
-  const { showContent, hideContent, toggleContent, toggleMaximized, swapPanes, resizeRightPane } = sessionPaneLayoutStore.getState();
-  return { mode, contentSide, preferredRightPaneWidth, showContent, hideContent, toggleContent, toggleMaximized, swapPanes, resizeRightPane };
+  const displayMode = useStore(sessionPaneLayoutStore, state => state.displayMode);
+  const preferredOverlayWidth = useStore(sessionPaneLayoutStore, state => state.preferredOverlayWidth);
+  const { showContent, hideContent, toggleContent, toggleMaximized, swapPanes, resizeRightPane, resizeOverlay } = sessionPaneLayoutStore.getState();
+  return { mode, contentSide, displayMode, preferredOverlayWidth, preferredRightPaneWidth,
+    showContent, hideContent, toggleContent, toggleMaximized, swapPanes, resizeRightPane, resizeOverlay };
 }

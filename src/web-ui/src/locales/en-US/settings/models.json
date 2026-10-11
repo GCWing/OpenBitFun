@@ -4,6 +4,7 @@
   "editProvider": "Edit Provider Configuration",
   "newProvider": "New Provider Configuration",
   "editModel": "Edit Model Configuration",
+  "modelEditorTitle": "{{model}} · {{provider}}",
   "newModel": "New Model Configuration",
   "editProviderSubtitle": "Set the API address, authentication, and models for this provider",
   "editSubtitle": "Set the model ID, context capacity, and request parameters",
@@ -93,7 +94,29 @@
     "logoutNoAffectedModels": "No model configuration currently uses this subscription account.",
     "logoutConsequence": "Model configurations will not be deleted. Sign in to the same subscription account again to resume using them.",
     "confirmLogout": "Sign out",
-    "openCodeRemoved": "OpenCode Console OAuth supports Zen only. Select API key and enter a Go key. Your existing model configuration is preserved."
+    "openCodeRemoved": "OpenCode Console OAuth supports Zen only. Select API key and enter a Go key. Your existing model configuration is preserved.",
+    "editorDescription": "Models from this service share the signed-in subscription account",
+    "accountLabel": "Account",
+    "accountAuthentication": "Subscription account",
+    "manageAccount": "Manage account",
+    "loadingAccount": "Reading account…",
+    "accountIdentityUnavailable": "The service did not provide an account identity",
+    "accountUnavailable": "No account information",
+    "serviceUnavailable": "This host does not provide this subscription service. Refresh the status or check the host version.",
+    "signInToUse": "Sign in to use this subscription service. Existing model configurations will be kept.",
+    "sharedAccountHint": "Models from this service share the currently signed-in account.",
+    "credentialExpiresAt": "Credentials expire {{time}}",
+    "credentialExpired": "The current authorization credential has expired. Refresh it in Manage account and try again.",
+    "openCodeLegacyConnection": "This legacy connection uses OpenCode Go. Existing models are kept. Add an API Key provider to continue using Go, or import Zen again for subscription authorization.",
+    "accountState": {
+      "loading": "Reading status",
+      "loadFailed": "Status unavailable",
+      "unavailable": "Service unavailable",
+      "vaultUnavailable": "Credentials unavailable",
+      "reauthenticationRequired": "Sign-in required",
+      "refreshRequired": "Refresh required",
+      "connected": "Signed in"
+    }
   },
   "providerSelection": {
     "modelRoutingPending": "Refresh the model list to show protocols and endpoints. Models outside the catalog can be configured manually.",
@@ -110,6 +133,10 @@
     "collapseProviders": "Collapse the provider list",
     "noProviderMatches": "No matching providers. Use the custom configuration above.",
     "fetchModels": "Fetch Models",
+    "quickAdd": "Quick add",
+    "fetchedModels": "{{count}} models fetched",
+    "presetModels": "Preset models · {{count}}",
+    "searchModels": "Search model name or ID",
     "fetchHint": "Fetch the model list from the current provider; if it fails, fall back to common preset models",
     "fetchingModels": "Fetching model list...",
     "fetchSuccessCount": "Fetched {{count}} models from the provider",
@@ -123,6 +150,7 @@
     "noPresetModels": "No models available. Fetch the model list or enter a model name manually",
     "backToSelection": "Back to provider selection",
     "selectModel": "Select model",
+    "selectedModels": "Models selected: {{count}}",
     "multiSelectHint": "Select multiple models, then adjust context, output limits, and reasoning for each",
     "searchOrInputModel": "Search or enter model name...",
     "inputModelName": "Enter model name...",
@@ -132,6 +160,8 @@
     "modelAlreadyInList": "This model is already in the list",
     "noModelsSelected": "Select a model first",
     "removeModel": "Remove model",
+    "removeModelByName": "Remove model {{name}}",
+    "editModelSettings": "Edit model {{name}}",
     "expandModelSettings": "Expand settings for {{name}}",
     "collapseModelSettings": "Collapse settings for {{name}}",
     "unsavedModel": "Unsaved",
@@ -299,7 +329,7 @@
     "providerPlaceholder": "Select request format",
     "contextWindow": "Context Window Size",
     "contextWindowHint": "Determines when context is compacted; may be lower than the model's supported limit",
-    "contextWindowLongWarning": "This model's configured context window exceeds 400K. Very long context can reduce model quality; consider setting it to around 300K.",
+    "contextWindowLongWarning": "Context above 400K may reduce quality. Around 300K is recommended.",
     "maxTokens": "Max Output Tokens",
     "maxTokensHint": "Limits tokens in a single response, affecting output length",
     "description": "Description",
@@ -456,6 +486,8 @@
   },
   "actions": {
     "save": "Save",
+    "back": "Back",
+    "done": "$t(shared:statuses.done)",
     "cancel": "Cancel",
     "edit": "Edit",
     "delete": "Delete",
@@ -502,7 +534,7 @@
   },
   "messages": {
     "loading": "Loading model settings…",
-    "loadFailedLocked": "Model settings could not be read. This page is locked to avoid overwriting the current configuration.",
+    "loadFailedLocked": "These settings could not be read. Related controls are locked to avoid overwriting the current configuration. Please reload.",
     "retry": "Reload",
     "unsaved": "Unsaved",
     "fillRequired": "Please fill in required fields",
@@ -538,7 +570,8 @@
     "defaultDescription": "{{name}} model configuration",
     "cloneName": "{{name}} - Copy",
     "templateName": "{{provider}} - {{modelName}}",
-    "templateDescription": "{{description}} - {{modelName}}"
+    "templateDescription": "{{description}} - {{modelName}}",
+    "providerRemoved": "This provider was removed. Close the editor and reopen model settings."
   },
   "modelsDevCatalog": {
     "title": "models.dev model catalog",
@@ -639,7 +672,7 @@
     "smartHint": "Powered by OpenBitFun adaptive routing and collaborative multi-model reasoning to improve cost efficiency and task performance.",
     "battery": "Battery mode",
     "batteryHint": "Multi-source model pooling and failover automatically hand off when quota is exhausted or a connection fails.",
-    "unavailable": "Not implemented yet"
+    "unavailable": "Not available yet"
   },
   "pool": {
     "manageConnections": "Manage connections",
@@ -660,6 +693,8 @@
     "recommendedTags": "Existing recommended tags",
     "tagsSaveFailed": "Could not save tags. Your changes are retained; please retry.",
     "addTags": "Add tags",
+    "editTag": "Edit tag {{tag}}",
+    "removeTag": "Remove tag {{tag}}",
     "moreActions": "More actions for {{model}}",
     "details": "Details",
     "enableModel": "Enable {{model}}",
@@ -667,5 +702,6 @@
     "providerFilter": "Filter providers",
     "allProviders": "All providers",
     "acknowledge": "Got it"
-  }
+  },
+  "editConfiguredProviderSubtitle": "Update the API address, key, and models for this provider"
 }

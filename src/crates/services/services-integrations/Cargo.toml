@@ -106,6 +106,7 @@ models-dev = [
     "reqwest/system-proxy",
     "sha2",
     "tokio/fs",
+    "tokio/rt",
     "tokio/sync",
     "tokio/time",
     "windows",

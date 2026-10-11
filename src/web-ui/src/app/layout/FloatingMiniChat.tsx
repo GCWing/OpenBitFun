@@ -73,7 +73,10 @@ function DockConversationView({ entry, active, onCollapse, renderHeader, onVoice
   } : { kind: entry.kind, surfaceId: entry.surfaceId, sessionId: entry.sessionId,
     workspaceId: session.workspaceId ?? session.config.workspaceId, workspacePath: session.workspacePath || '' }, [entry, session, appName]);
   const unavailable = <div className="openbitfun-fmc__miniapp-session-pending" role="status"
-    data-openbitfun-component="floating-mini-chat" data-openbitfun-part="pending">{t('dock.unavailable')}</div>;
+    data-openbitfun-component="floating-mini-chat" data-openbitfun-part="pending">{t(
+      entry.kind === 'miniapp' && claim && claim.token === entry.claimToken
+        && claim.surfaceId === entry.surfaceId && !claim.sessionId ? 'dock.loading' : 'dock.unavailable',
+    )}</div>;
   if (entry.kind === 'control' && session && voiceTarget) return <ConversationViewProvider
     scope={{ ...entry, viewId: key, presentation: 'compact' }}>
     <ControlConversation session={session} sessionRef={entry} voiceTarget={voiceTarget} active={active}

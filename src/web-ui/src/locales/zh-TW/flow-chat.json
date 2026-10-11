@@ -1116,6 +1116,7 @@
     "emptyDirectory": "空目錄",
     "rootDirectory": "根目錄",
     "goBack": "返回上一級",
+    "openDirectory": "進入目錄",
     "navHint": "導航",
     "enterHint": "進入",
     "backHint": "返回",
@@ -2002,7 +2003,12 @@
       "finished": "產生結束"
     },
     "generativeWidget": {
-      "exportFileNamePrefix": "OpenBitFun組件"
+      "exportFileNamePrefix": "OpenBitFun組件",
+      "exportHtml": "匯出 HTML",
+      "exportingHtml": "正在匯出 HTML…",
+      "exportHtmlSuccess": "HTML 已匯出",
+      "exportHtmlFailed": "匯出 HTML 失敗",
+      "exportHtmlHostUnavailable": "此操作需要 OpenBitFun，無法在匯出的 HTML 中使用。"
     },
     "initMiniApp": {
       "title": "初始化小應用",
@@ -3305,8 +3311,8 @@
       "manualUnavailable": "上次選擇的模型暫不可用，請重新選擇模型。",
       "smart": "智慧模式",
       "pool": "電池模式",
-      "comingSoon": "即將推出",
-      "developmentNotice": "目前模式尚未完成，暫時直接使用主力模型。",
+      "comingSoon": "尚未開放",
+      "developmentNotice": "目前模式尚未開放，暫時直接使用主力模型。",
       "primaryRequired": "請先設定主力模型"
     },
     "model": "模型",
@@ -3325,6 +3331,7 @@
     "acpMode": "模式",
     "acpModeLocked": "對話已經開始，模式不能再改。",
     "acpModeFailed": "切換模式失敗",
+    "defaultSaveFailed": "模型已切換，但未能儲存後續對話的預設選擇。",
     "switchFailed": "切換模型失敗",
     "modelNotConfigured": "未設定",
     "openModelSettings": "前往模型設定",

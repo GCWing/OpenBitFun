@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 import { act, cloneElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -147,11 +148,13 @@ describe('ModelSelector provider levels', () => {
 
   const openMenu = async () => {
     await openSettingsMenu();
-    const settingsModel = document.body.querySelector<HTMLButtonElement>(
+    const entry = document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="chat-model-selector-settings-provider"]:not(:disabled)',
+    ) ?? document.body.querySelector<HTMLButtonElement>(
       '[data-testid="chat-model-selector-settings-model"]',
     );
-    if (settingsModel) {
-      await act(async () => settingsModel.click());
+    if (entry) {
+      await act(async () => entry.click());
     }
   };
 
@@ -210,6 +213,11 @@ describe('ModelSelector provider levels', () => {
   };
 
   beforeEach(() => {
+    activateSurface('local');
+    vi.mocked(configManager.getConfigs).mockReset();
+    vi.mocked(configManager.setConfig).mockReset().mockResolvedValue(undefined);
+    aiApiMocks.getModelCatalog.mockReset();
+    vi.mocked(agentAPI.updateSessionModel).mockReset().mockResolvedValue(undefined);
     notificationStore.clearActiveNotifications();
     notificationStore.clearHistory();
     flowChatStoreMocks.sessions.clear();
@@ -338,7 +346,7 @@ describe('ModelSelector provider levels', () => {
     }));
     await act(async () => { aiApiMocks.onModelCatalogUpdated.mock.calls[0][0](); });
 
-    expect(container.querySelector('[data-testid="chat-model-selector-btn"]')?.getAttribute('aria-busy')).toBe('true');
+    expect(container.querySelector('[data-testid="chat-model-selector-btn"]')?.hasAttribute('aria-busy')).toBe(false);
     expect(document.body.querySelector('[data-testid="chat-model-selector-loading"]')).toBeNull();
     expect(document.body.querySelector('[data-testid="chat-model-selector-settings-model"]')).toBe(modelField);
     expect(modelField?.textContent).toContain('acme-fast-native');
@@ -418,40 +426,41 @@ describe('ModelSelector provider levels', () => {
 
   });
 
-  it('opens the resolved primary provider directly and returns focus to its shortcut', async () => {
-    await renderSelector();
+  it.each(['primary', 'fast', 'acme-deep'])('opens the current provider models from the model entry for %s', async modelId => {
+    await renderSelector(CATALOG_MODELS, modelId);
     await openSettingsMenu();
 
-    const providerControl = () => document.body.querySelector<HTMLButtonElement>(
-      '[data-testid="chat-model-selector-settings-provider"]',
+    const modelControl = () => document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="chat-model-selector-settings-model"]',
     )!;
-    expect(providerControl().textContent).toBe('Acme');
-    await act(async () => providerControl().click());
+    const isUmbra = modelId === 'fast';
+    const selectedModelId = modelId === 'primary' ? 'acme-fast' : isUmbra ? 'umbra-main' : modelId;
+    await act(async () => modelControl().click());
 
     expect(document.body.querySelector('[data-testid="chat-model-selector-menu"]')
       ?.getAttribute('data-menu-level')).toBe('provider');
     expect(providerRows()).toHaveLength(0);
-    expect(modelOption('acme-fast')?.getAttribute('aria-checked')).toBe('true');
-    expect(document.activeElement).toBe(modelOption('acme-fast'));
-    expect(modelOption('acme-deep')).not.toBeNull();
-    expect(modelOption('umbra-main')).toBeNull();
+    expect(modelOption(selectedModelId)?.getAttribute('aria-checked')).toBe('true');
+    expect(document.activeElement).toBe(modelOption(selectedModelId));
+    expect(Boolean(modelOption('acme-deep'))).toBe(!isUmbra);
+    expect(Boolean(modelOption('umbra-main'))).toBe(isUmbra);
     expect(modelOption('primary')).toBeNull();
 
     await act(async () => document.body.querySelector<HTMLButtonElement>(
       '[data-testid="chat-model-selector-back"]',
     )!.click());
     expect(optionsPanel()).toBeNull();
-    expect(document.activeElement).toBe(providerControl());
+    expect(document.activeElement).toBe(modelControl());
 
-    await act(async () => providerControl().dispatchEvent(
+    await act(async () => modelControl().dispatchEvent(
       new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
     ));
-    expect(modelOption('acme-deep')).not.toBeNull();
+    expect(Boolean(modelOption('acme-deep'))).toBe(!isUmbra);
     await act(async () => optionsPanel()!.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
     ));
     expect(optionsPanel()).toBeNull();
-    expect(document.activeElement).toBe(providerControl());
+    expect(document.activeElement).toBe(modelControl());
     expect(configManager.setConfig).not.toHaveBeenCalled();
   });
 
@@ -766,7 +775,7 @@ describe('ModelSelector provider levels', () => {
         { id: 'high', label: 'High', order: 1, source: 'models_dev', actions: [{ type: 'effort', value: 'high' }] },
       ] } }],
     });
-    await renderSelector();
+    await renderSelector(CATALOG_MODELS, 'acme-fast');
     await openSettingsMenu();
     const sky = document.body.querySelector('[data-openbitfun-part="reasoningSliderSky"]');
     expect(sky).not.toBeNull();
@@ -854,7 +863,7 @@ describe('ModelSelector provider levels', () => {
     expect(document.activeElement).toBe(autoChoice);
   });
 
-  it('offers providers first and keeps the symbolic selectors on that level', async () => {
+  it('opens only providers from the provider entry and marks the resolved default provider', async () => {
     await renderSelector();
     await openMenu();
 
@@ -867,32 +876,111 @@ describe('ModelSelector provider levels', () => {
     expect(document.body.querySelector(
       '[data-testid="chat-model-selector-settings"]',
     )).toBeNull();
-    expect(optionsPanel()?.dataset.panelKind).toBe('models');
+    expect(optionsPanel()?.dataset.panelKind).toBe('providers');
     expect(sharedPanelItems()).not.toBeNull();
     expect(providerRows().every(row => sharedPanelItems()?.contains(row))).toBe(true);
-    expect(sharedPanelItems()?.contains(modelOption('primary'))).toBe(true);
-    expect(sharedPanelItems()?.contains(modelOption('fast'))).toBe(true);
     expect(providerRows().map(row => row.dataset.providerKey))
       .toEqual(['provider-acme', 'provider-umbra']);
-    expect(modelOption('primary')).not.toBeNull();
-    expect(modelOption('fast')).not.toBeNull();
-    const submenuButtons = Array.from(
-      sharedPanelItems()?.querySelectorAll<HTMLButtonElement>('button') ?? [],
-    );
-    expect(submenuButtons.indexOf(modelOption('primary')!))
-      .toBeLessThan(submenuButtons.indexOf(modelOption('fast')!));
-    expect(submenuButtons.indexOf(modelOption('fast')!))
-      .toBeLessThan(submenuButtons.indexOf(providerRows()[0]));
+    expect(modelOption('primary')).toBeNull();
+    expect(modelOption('fast')).toBeNull();
+    expect(document.body.querySelectorAll('[data-testid="chat-model-selector-option"]')).toHaveLength(0);
+    expect(providerRows().find(row => row.dataset.selected === 'true')?.dataset.providerKey)
+      .toBe('provider-acme');
     expect(document.body.querySelector(
       '[data-testid="chat-model-selector-provider-selected-model"]',
     )).toBeNull();
     // A concrete model is only reachable through its provider now.
     expect(modelOption('acme-deep')).toBeNull();
     expect(modelOption('umbra-main')).toBeNull();
+    await act(async () => document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="chat-model-selector-summary-back"]',
+    )!.click());
+    const providerControl = document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="chat-model-selector-settings-provider"]',
+    )!;
+    expect(document.activeElement).toBe(providerControl);
+    await act(async () => providerControl.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+    ));
+    expect(document.activeElement).toBe(providerRows()[0]);
+    await act(async () => {
+      providerRows()[1].focus();
+      providerRows()[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    });
+    expect(modelOption('umbra-main')).not.toBeNull();
+    expect(modelOption('acme-fast')).toBeNull();
+    await act(async () => optionsPanel()!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
+    ));
+    expect(document.activeElement).toBe(providerRows()[1]);
+    expect(configManager.setConfig).not.toHaveBeenCalled();
+  });
+
+  it('commits the session before remembering defaults and leaves the selector usable during that save', async () => {
+    flowChatStoreMocks.sessions.set('session-a', { config: { modelName: 'umbra-main' } });
+    let commitSession!: () => void;
+    let saveDefault!: () => void;
+    vi.mocked(agentAPI.updateSessionModel).mockReturnValueOnce(new Promise(resolve => { commitSession = resolve; }));
+    vi.mocked(configManager.setConfig).mockReturnValueOnce(new Promise(resolve => { saveDefault = resolve; }));
+    await renderSelector(CATALOG_MODELS, 'umbra-main', 'session-a');
+    await openMenu();
+    await openProvider('provider-acme');
+    await act(async () => modelOption('acme-deep')!.click());
+    expect(agentAPI.updateSessionModel).toHaveBeenCalledTimes(1);
+    expect(configManager.setConfig).not.toHaveBeenCalled();
+    await act(async () => commitSession());
+    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_defaults.mode', 'acme-deep');
+    expect(optionsPanel()).toBeNull();
+    expect(container.querySelector<HTMLButtonElement>('[data-testid="chat-model-selector-btn"]')!.disabled).toBe(false);
+    expect(flowChatStoreMocks.sessions.get('session-a')?.config.modelName).toBe('acme-deep');
+    await act(async () => saveDefault());
+  });
+
+  it('preserves a committed session selection when remembering the default fails', async () => {
+    flowChatStoreMocks.sessions.set('session-a', { config: { modelName: 'umbra-main' } });
+    vi.mocked(configManager.setConfig).mockRejectedValueOnce(new Error('default save failed'));
+    await renderSelector(CATALOG_MODELS, 'umbra-main', 'session-a');
+    await openMenu();
+    await openProvider('provider-acme');
+    await act(async () => modelOption('acme-deep')!.click());
+    expect(flowChatStoreMocks.sessions.get('session-a')?.config.modelName).toBe('acme-deep');
+    expect(notificationStore.getState().activeNotifications.some(item => item.message === 'modelSelector.defaultSaveFailed')).toBe(true);
+    expect(optionsPanel()).toBeNull();
+  });
+
+  it('skips an identical model and preset but clears a preset when entering an automatic selection mode', async () => {
+    flowChatStoreMocks.sessions.set('session-a', { config: { modelName: 'acme-fast' } });
+    await renderSelector(CATALOG_MODELS, 'acme-fast', 'session-a');
+    await openMenu();
+    await openProvider('provider-acme');
+    await act(async () => modelOption('acme-fast')!.click());
+    expect(agentAPI.updateSessionModel).not.toHaveBeenCalled();
+    expect(configManager.setConfig).not.toHaveBeenCalled();
+    flowChatStoreMocks.sessions.get('session-a')!.config.modelName = 'primary';
+    flowChatStoreMocks.sessions.get('session-a')!.config.reasoningPreset = 'high';
+    await act(async () => flowChatStoreMocks.subscribers.forEach(callback => callback()));
+    await act(async () => modeTrigger().click());
+    await act(async () => modeOption('smart')!.click());
+    expect(agentAPI.updateSessionModel).toHaveBeenCalledWith(expect.objectContaining({ modelName: 'primary', reasoningPreset: null }));
+    await act(async () => modeTrigger().click());
+    await act(async () => modeOption('pool')!.click());
+    expect(agentAPI.updateSessionModel).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls back an unpinned selection and context limit when the session update fails', async () => {
+    flowChatStoreMocks.sessions.set('session-a', { config: {} });
+    vi.mocked(agentAPI.updateSessionModel).mockRejectedValueOnce(new Error('session write failed'));
+    await renderSelector(CATALOG_MODELS, 'umbra-main', 'session-a');
+    await openMenu();
+    await openProvider('provider-acme');
+    await act(async () => modelOption('acme-deep')!.click());
+    expect(flowChatStoreMocks.store.updateSessionModelName).toHaveBeenLastCalledWith('session-a', undefined);
+    expect(flowChatStoreMocks.store.updateSessionMaxContextTokens).toHaveBeenLastCalledWith('session-a', undefined);
+    expect(configManager.setConfig).not.toHaveBeenCalled();
   });
 
   it('shows only the chosen provider\'s models and applies a selection', async () => {
-    await renderSelector();
+    await renderSelector(CATALOG_MODELS, 'umbra-main');
     await openMenu();
     await openProvider('provider-acme');
 
@@ -904,7 +992,7 @@ describe('ModelSelector provider levels', () => {
     expect(sharedPanelItems()).not.toBeNull();
     expect(sharedPanelItems()?.contains(modelOption('acme-fast'))).toBe(true);
     expect(sharedPanelItems()?.contains(modelOption('acme-deep'))).toBe(true);
-    // The symbolic selectors belong to the provider level and are not repeated.
+    // Model choices are concrete models owned by this provider.
     expect(modelOption('primary')).toBeNull();
 
     const card = document.body.querySelector('[data-testid="chat-model-selector-menu"]');
@@ -925,12 +1013,12 @@ describe('ModelSelector provider levels', () => {
     expect(container.querySelector('[data-testid="chat-model-selector-btn"]')?.getAttribute('aria-expanded')).toBe('true');
     expect(document.body.querySelector('[data-testid="chat-model-selector-menu"]')).toBe(card);
     expect(optionsPanel()).toBeNull();
-    expect(document.activeElement).toBe(document.body.querySelector('[data-testid="chat-model-selector-settings-model"]'));
+    expect(document.activeElement).toBe(document.body.querySelector('[data-testid="chat-model-selector-settings-provider"]'));
     await act(async () => document.body.querySelector<HTMLButtonElement>(
       '[data-testid="chat-model-selector-settings-model"]',
     )!.click());
-    expect(document.body.querySelector('[data-testid="chat-model-selector-current-selection"]')?.textContent)
-      .toBe('acme-deep-native');
+    expect(modelOption('acme-deep')?.getAttribute('aria-checked')).toBe('true');
+    expect(modelOption('umbra-main')).toBeNull();
   });
 
   it('marks the provider that owns the pinned model without repeating the model beneath it', async () => {
@@ -975,7 +1063,7 @@ describe('ModelSelector provider levels', () => {
     await openProvider('provider-acme');
     expect(modelOption('acme-deep')).not.toBeNull();
 
-    // Reopening starts at the summary; opening models resets the provider level.
+    // Reopening starts at the summary; opening models goes straight to the current provider.
     await act(async () => {
       container.querySelector<HTMLButtonElement>(
         '[data-testid="chat-model-selector-btn"]',
@@ -990,8 +1078,8 @@ describe('ModelSelector provider levels', () => {
       '[data-testid="chat-model-selector-settings-model"]',
     )!.click());
     expect(optionsPanel()?.dataset.panelKind).toBe('models');
-    expect(providerRows()).toHaveLength(2);
-    expect(modelOption('acme-deep')).toBeNull();
+    expect(providerRows()).toHaveLength(0);
+    expect(modelOption('acme-deep')).not.toBeNull();
   });
 
   it('keeps the selector visible and actionable when no model is configured', async () => {
@@ -1177,11 +1265,11 @@ describe('ModelSelector provider levels', () => {
       .toContain('first-model-native');
 
     const listeners = [...flowChatStoreMocks.configChangeListeners];
-    expect(listeners).toHaveLength(1);
+    expect(listeners).toHaveLength(2);
     await act(async () => {
       // ModelSettingsPage writes ai.models through ConfigManager's ai-scoped
       // mutation notification, so this is the post-save event to handle.
-      listeners[0]?.('ai');
+      listeners.forEach(listener => listener('ai'));
       await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
@@ -1195,7 +1283,7 @@ describe('ModelSelector provider levels', () => {
     });
   });
 
-  it('lets Escape step from a provider to the model list, then the summary, then close', async () => {
+  it('lets Escape step from provider models to the provider list, then the summary, then close', async () => {
     await renderSelector();
     await openMenu();
     await openProvider('provider-acme');
@@ -1215,16 +1303,16 @@ describe('ModelSelector provider levels', () => {
     expect(document.body.querySelector(
       '[data-testid="chat-model-selector-settings"]',
     )).not.toBeNull();
-    const modelField = document.body.querySelector<HTMLButtonElement>(
-      '[data-testid="chat-model-selector-settings-model"]',
+    const providerField = document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="chat-model-selector-settings-provider"]',
     )!;
-    expect(document.activeElement).toBe(modelField);
+    expect(document.activeElement).toBe(providerField);
     const trigger = container.querySelector<HTMLButtonElement>(
       '[data-testid="chat-model-selector-btn"]',
     )!;
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
 
-    await act(async () => modelField.dispatchEvent(
+    await act(async () => providerField.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
     ));
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
@@ -1316,7 +1404,7 @@ describe('ModelSelector provider levels', () => {
     expect(document.body.querySelectorAll('[role="menu"]')).toHaveLength(1);
 
     await act(async () => document.body.querySelector<HTMLButtonElement>(
-      '[data-testid="chat-model-selector-summary-back"]',
+      '[data-testid="chat-model-selector-back"]',
     )!.click());
     const reasoningRow = document.body.querySelector<HTMLButtonElement>(
       '[data-testid="chat-model-selector-settings-reasoning"]',

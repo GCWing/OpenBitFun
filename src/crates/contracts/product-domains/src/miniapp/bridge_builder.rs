@@ -163,6 +163,9 @@ pub fn build_bridge_script(
     // per-run virtual read-only snapshot.
     agent: {{
       ensureSession:  (opts) => _rpc('agent.ensureSession', opts || {{}}),
+      // Explicit fresh conversation. Uses the existing host operation, so it
+      // also works across older peers. Existing sessions/history are retained.
+      createSession:  (opts) => _rpc('agent.ensureSession', {{ ...(opts || {{}}), sessionId: undefined }}),
       run:            (prompt, opts) => _rpc('agent.run', {{ prompt, ...(opts || {{}}) }}),
       cancel:         (sessionId, turnId) => _rpc('agent.cancel', {{ sessionId, turnId }}),
       turnText:       (sessionId, turnId) => _rpc('agent.turnText', {{ sessionId, turnId }}),

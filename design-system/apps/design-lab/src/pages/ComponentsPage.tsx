@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ComponentDetailPage } from "./ComponentDetailPage";
 import { BrandPreview } from "../preview/BrandPreview";
+import { CapsulePreview } from "../preview/CapsulePreview";
 import { AppWindow, Heading, Keyboard, List, Rows3, MousePointerClick, PanelTop, ToggleLeft } from "lucide-react";
 import { VoiceCallPreview, VoiceParticlePreview } from "../components/VoiceCallPreview";
 import {
@@ -607,6 +608,8 @@ export function ComponentCardPreview({ component }: { component: ComponentMeta }
           shortcut={<KeyHint icon={<CatalogIcon name="command-mac" size="lg" aria-hidden="true" />}>K</KeyHint>}
         />
       );
+    case "Capsule":
+      return <CapsulePreview state="hover" />;
     case "StatusPill":
       return (
         <StatusPill leading={<CatalogIcon name="unselected" />}>

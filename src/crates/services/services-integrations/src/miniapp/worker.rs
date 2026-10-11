@@ -84,15 +84,14 @@ impl JsWorker {
                 if line.is_empty() {
                     continue;
                 }
-                let _ =
-                    last_activity_clone.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |_| {
-                        Some(
-                            std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as i64,
-                        )
-                    });
+                let _ = last_activity_clone.try_update(Ordering::SeqCst, Ordering::SeqCst, |_| {
+                    Some(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as i64,
+                    )
+                });
                 let msg: Value = match serde_json::from_str(&line) {
                     Ok(v) => v,
                     Err(_) => continue,

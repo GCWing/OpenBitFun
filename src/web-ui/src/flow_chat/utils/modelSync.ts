@@ -10,7 +10,7 @@ import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import type { AIModelConfig, AgentModelDefaultsConfig, DefaultModelsConfig } from '@/infrastructure/config/types';
 import { createLogger } from '@/shared/utils/logger';
 import type { FlowChatContext } from '../services/flow-chat-manager/types';
-import { getModelMaxTokens, resolveModelReference } from './modelResolution';
+import { resolveModelMaxTokens, resolveModelReference } from './modelResolution';
 import { sessionProjectWorkspacePath, sessionWorkspaceId } from './sessionWorkspace';
 import {
   getActiveSurfaceScope,
@@ -52,8 +52,9 @@ export async function syncSessionModelSelection(
     throw new Error(`Session does not exist: ${sessionId}`);
   }
 
+  const sessionModelId = session.config.modelName?.trim();
   const configData = (await configManager.getConfigs([
-    'ai.agent_model_defaults',
+    ...(!sessionModelId ? ['ai.agent_model_defaults'] : []),
     'ai.models',
     'ai.default_models',
   ])) ?? {};
@@ -62,10 +63,9 @@ export async function syncSessionModelSelection(
   const allModels = (configData['ai.models'] as AIModelConfig[] | undefined) || [];
   const defaultModels = (configData['ai.default_models'] as DefaultModelsConfig | undefined) || {};
 
-  const sessionModelId = session.config.modelName?.trim();
   const requestedModelId = sessionModelId || agentModelDefaults?.mode;
   const desiredModelId = normalizeModelSelection(requestedModelId, allModels, defaultModels);
-  const desiredMaxContextTokens = await getModelMaxTokens(desiredModelId, agentType);
+  const desiredMaxContextTokens = resolveModelMaxTokens(desiredModelId, allModels, defaultModels);
   surfaceScope.assertCurrent('resolve session model context window');
   const shouldSyncContextWindow = session.maxContextTokens !== desiredMaxContextTokens;
 

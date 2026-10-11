@@ -9,6 +9,7 @@ import {
   WatchProvisionRequest
 } from './WatchProvisionProtocol';
 import { WatchProvisionDisplay } from './WatchProvisionDisplay';
+import { CloudAccountRequestError } from './CloudAccountClient';
 
 const DATASYNC_PERMISSION: Permissions = 'ohos.permission.DISTRIBUTED_DATASYNC';
 
@@ -200,6 +201,10 @@ export class WatchProvisionController {
   }
 
   private async runProvisioning(request: WatchProvisionRequest, password: string): Promise<boolean> {
+    if (WatchProvisionProtocol.isExpired(request, Date.now())) {
+      await this.failAttempt(request.requestId, RemoteI18n.t('watchProvision.errors.requestExpired'));
+      return true;
+    }
     if (!this.port.canProvision()) {
       await this.failAttempt(request.requestId, RemoteI18n.t('watchProvision.errors.noDesktop'));
       return true;
@@ -209,6 +214,10 @@ export class WatchProvisionController {
       outcome = await this.port.provision(request.deviceId, request.deviceName, request.requestId, password);
     } catch (err) {
       RemoteLogger.error(`watch provisioning failed: ${WatchProvisionController.errorText(err)}`);
+      if (err instanceof CloudAccountRequestError && err.statusCode === 409) {
+        await this.failAttempt(request.requestId, RemoteI18n.t('watchProvision.errors.alreadyRegistered'));
+        return true;
+      }
       if (password.length > 0) {
         this.state.requirePassword(RemoteI18n.t('watchProvision.errors.passwordFailed'));
         return false;

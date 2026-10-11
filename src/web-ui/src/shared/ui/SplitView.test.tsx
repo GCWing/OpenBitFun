@@ -2,7 +2,7 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SplitView, type SplitViewProps } from '@openbitfun/ui';
+import { SplitView, SplitViewPrimaryDock, type SplitViewProps } from '@openbitfun/ui';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -15,7 +15,7 @@ describe('shared SplitView interaction contract', () => {
   let resizing: ReturnType<typeof vi.fn>;
   const part = (name: string) => container.querySelector<HTMLElement>(`[data-openbitfun-component="split-view"][data-openbitfun-part="${name}"]`)!;
   const render = (props: Partial<SplitViewProps> = {}) => act(() => root.render(<SplitView
-    primary={<textarea aria-label="Draft" defaultValue="unsent" />}
+    primary={<SplitViewPrimaryDock><textarea aria-label="Draft" defaultValue="unsent" /></SplitViewPrimaryDock>}
     secondary={<iframe title="Content" />}
     rightSize={400} minLeftSize={300} minRightSize={200}
     onRightSizeChange={changed} onResizeStateChange={resizing}
@@ -74,12 +74,60 @@ describe('shared SplitView interaction contract', () => {
     }
   });
 
+  it('retains edited content across live layout switches and overlay visibility changes', () => {
+    render();
+    const draft = container.querySelector('textarea')!;
+    const frame = container.querySelector('iframe')!;
+    draft.value = 'still editing';
+    for (const layout of ['overlay', 'split', 'overlay'] as const) {
+      for (const mode of ['split', 'primary', 'secondary', 'split'] as const) {
+        render({ layout, mode });
+        expect(part('root').getAttribute('data-layout')).toBe(layout);
+        expect(container.querySelector('textarea')).toBe(draft);
+        expect(draft.value).toBe('still editing');
+        expect(container.querySelector('iframe')).toBe(frame);
+        expect(part('primary').hidden).toBe(mode === 'secondary');
+        expect(part('secondary').hidden).toBe(mode === 'primary');
+      }
+    }
+  });
+
+  it.each(['left', 'right'] as const)('resizes the %s overlay from its inner edge', secondarySide => {
+    render({ layout: 'overlay', secondarySide, minLeftSize: 0 });
+    expect(part('resizeHandle').getAttribute('aria-controls')).toBe(part('secondary').id);
+    key(part('resizeHandle'), 'ArrowRight');
+    expect(changed).toHaveBeenLastCalledWith(secondarySide === 'left' ? 410 : 390);
+    pointer('pointerdown', 600);
+    pointer('pointerup', 650);
+    expect(changed).toHaveBeenLastCalledWith(secondarySide === 'left' ? 450 : 350);
+  });
+
   it('clamps display to a smaller container without overwriting the preferred width', () => {
     render({ rightSize: 600 });
     width = 701; act(() => resized());
     expect(part('root').style.getPropertyValue('--_split-view-right-size')).toBe('400px');
     width = 1001; act(() => resized());
     expect(part('root').style.getPropertyValue('--_split-view-right-size')).toBe('600px');
+    expect(changed).not.toHaveBeenCalled();
+  });
+
+  it('reserves uncovered overlay space for a stable primary dock through clamping and dragging', () => {
+    render({ layout: 'overlay', rightSize: 900, minLeftSize: 400 });
+    const dock = part('primaryDock');
+    const draft = container.querySelector('textarea')!;
+    expect(part('root').style.getPropertyValue('--_split-view-right-size')).toBe('600px');
+    width = 601; act(() => resized());
+    expect(part('root').style.getPropertyValue('--_split-view-right-size')).toBe('300px');
+    width = 1201; act(() => resized());
+    expect(part('root').style.getPropertyValue('--_split-view-right-size')).toBe('800px');
+    pointer('pointerdown', 400); pointer('pointermove', 500);
+    act(() => vi.advanceTimersByTime(16));
+    expect(part('root').style.getPropertyValue('--_split-view-right-size')).toBe('700px');
+    expect(part('primaryDock')).toBe(dock);
+    expect(container.querySelector('textarea')).toBe(draft);
+    pointer('pointercancel', 500);
+    render({ layout: 'overlay', secondarySide: 'left', mode: 'primary' });
+    expect(part('primaryDock')).toBe(dock);
     expect(changed).not.toHaveBeenCalled();
   });
 
@@ -96,11 +144,12 @@ describe('shared SplitView interaction contract', () => {
     expect(document.body.style.cursor).toBe('crosshair'); expect(document.body.style.userSelect).toBe('text');
   });
 
-  it.each(['pointercancel', 'lostpointercapture', 'Escape', 'mode'])('cancels without persisting on %s', reason => {
+  it.each(['pointercancel', 'lostpointercapture', 'Escape', 'mode', 'layout'])('cancels without persisting on %s', reason => {
     render(); pointer('pointerdown', 600); pointer('pointermove', 550);
     act(() => vi.advanceTimersByTime(16));
     if (reason === 'Escape') key(part('resizeHandle'), 'Escape');
     else if (reason === 'mode') render({ mode: 'secondary' });
+    else if (reason === 'layout') render({ layout: 'overlay' });
     else pointer(reason, 550);
     expect(changed).not.toHaveBeenCalled();
     expect(part('root').style.getPropertyValue('--_split-view-right-size')).toBe('400px');

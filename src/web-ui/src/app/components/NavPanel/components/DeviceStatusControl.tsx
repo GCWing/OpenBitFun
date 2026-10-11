@@ -499,31 +499,24 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                         <div className="openbitfun-device-overview__device-switcher">
                           <DeviceArtwork device={device} />
                         </div>
-                        <span className="openbitfun-device-overview__device-name" title={device.name}>
+                        <OverflowText className="openbitfun-device-overview__device-name" title={device.name}>
                           {device.name}
-                        </span>
-                        <span className="openbitfun-device-overview__activity">
-                          {index === previewIndex && !isPreviewing
-                            ? (previewIncompatible ? previewIncompatibleNotice : deviceActivity(overview.primaryDevice))
-                            : '\u00a0'}
-                        </span>
+                        </OverflowText>
                       </div>
                       );
                     })}
                   </div>
                 </div>
-                {/* One control in every state, not one control per state: this
-                    machine, a connectable peer, and a rejected peer all render
-                    the same button, so the card keeps one height and cannot
-                    resize while the user browses devices. Only the label text
-                    and the interaction attributes differ, which also keeps the
-                    row equal at any density, theme, or font size.
-                    Below the artwork rather than on top of it: the system mark is
-                    centred on the screen, so an action centred there hides exactly
-                    the part that says which system this device runs. Outside the
-                    track it also stops sliding with the carousel. */}
+                {/* Reserve one action row when showing current-device status so
+                    browsing peers keeps the artwork and name in place. */}
                 <div className="openbitfun-device-overview__connect-action">
+                  {!isPreviewing && (
+                    <span className="openbitfun-device-overview__activity">
+                      {previewIncompatible ? previewIncompatibleNotice : deviceActivity(overview.primaryDevice)}
+                    </span>
+                  )}
                   <Button
+                    labelBehavior="static"
                     variant="outline"
                     size="sm"
                     // A device cannot connect to itself, so this machine's button

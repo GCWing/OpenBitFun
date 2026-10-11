@@ -12,6 +12,12 @@ export enum SessionActionPresentation {
 export struct SessionActionSurface {
   @Param presentation: SessionActionPresentation = SessionActionPresentation.BottomSheet;
   @Param sessionTitle: string = '';
+  /**
+   * Bottom padding in vp. The bottom-sheet presentation sits at the screen
+   * edge under the immersive shell, so its host passes the strip-aware value
+   * (`insets.bottomPadding(18)`); a popover keeps the plain design spacing.
+   */
+  @Param bottomPadding: number = 18;
   @Param archived: boolean = false;
   @Param canViewDetails: boolean = false;
   @Param canArchive: boolean = false;
@@ -102,7 +108,9 @@ export struct SessionActionSurface {
       }
     }
     .width(this.presentation === SessionActionPresentation.Popover ? 300 : '100%')
-    .padding({ left: 16, right: 16, top: 10, bottom: 18 })
+    // The card's fill still reaches the sheet's bottom edge; the padding is
+    // what keeps the last action row out of the navigation bar's strip.
+    .padding({ left: 16, right: 16, top: 10, bottom: this.bottomPadding })
     .backgroundColor(CARD)
     .border({ width: this.presentation === SessionActionPresentation.Popover ? 0.5 : 1, color: LINE })
     .borderRadius(16)

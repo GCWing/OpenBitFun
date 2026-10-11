@@ -21,7 +21,7 @@ enum MobileLaunchConfiguration {
                 ChatMessage(id: UUID(), role: .user, text: "你好"),
                 ChatMessage(id: UUID(), role: .assistant, text: "这是 OpenBitFun 的移动端会话界面。你可以从手机连接桌面端，查看工作区、会话和智能体的执行状态。")
             ],
-            connectCore: !streamingRegressionPreview && !ProcessInfo.processInfo.arguments.contains("--permission-mailbox-preview") && !ProcessInfo.processInfo.arguments.contains("--harness-preview") && designPreviewScenario() == nil
+            connectCore: !ProcessInfo.processInfo.arguments.contains("--composer-model-picker") && !ProcessInfo.processInfo.arguments.contains("--composer-draft-preview") && !streamingRegressionPreview && !ProcessInfo.processInfo.arguments.contains("--permission-mailbox-preview") && !ProcessInfo.processInfo.arguments.contains("--harness-preview") && designPreviewScenario() == nil
         )
         return configure(model)
     }
@@ -139,18 +139,25 @@ enum MobileLaunchConfiguration {
             model.surface = .remote
             model.settingsOpen = true
         }
-        if arguments.contains("--composer-model-picker") ||
+        if arguments.contains("--composer-model-picker") || arguments.contains("--composer-draft-preview") ||
             ProcessInfo.processInfo.environment["OPENBITFUN_COMPOSER_MODEL_PICKER"] == "1" {
-            model.composerModelPickerPreview = true
+            model.composerModelPickerPreview = !arguments.contains("--composer-draft-preview")
+            model.surface = .local
             model.localSessionSelected = true
-            model.draft = "\n"
+            model.draft = arguments.contains("--composer-draft-preview")
+                ? String(repeating: "A long draft stays editable after its collapsed preview. ", count: 8) : "\n"
             model.modelOptions = [
+                ComposerModelOption(id: "primary", primaryLabel: "GPT-5.6 Codex",
+                    secondaryLabel: "GPT-5.6 Codex · openai · 200k", source: "REMOTE", selected: true, role: "PRIMARY"),
+                ComposerModelOption(id: "fast", primaryLabel: "GPT-5 mini",
+                    secondaryLabel: "GPT-5 mini · openai · 128k", source: "REMOTE", selected: false, role: "FAST"),
                 ComposerModelOption(
                     id: "preview-codex",
                     primaryLabel: "GPT-5.6 Codex",
                     secondaryLabel: "OpenBitFun 账号",
                     source: "ACCOUNT",
-                    selected: true
+                    selected: false,
+                    roles: ["PRIMARY"]
                 ),
                 ComposerModelOption(
                     id: "preview-local",

@@ -24,32 +24,32 @@ describe('ModelSettingsPage dialog presentation', () => {
     expect(editorDialogStart).toBeGreaterThan(-1);
     expect(editingFormStart).toBeGreaterThan(-1);
     expect(editorDialog).toContain('className="openbitfun-model-settings__editor-dialog"');
-    expect(editorDialog).toContain('size="xl"');
+    expect(editorDialog).toContain("size={editingConfig?.id ? 'lg' : 'xl'}");
     expect(editorDialog).not.toContain('size="2xl"');
     expect(editorDialog).toMatch(
       /\{!reasoningPanelDraft && \(\s*<DialogFooter appearance="floating">/,
     );
     expect(editorDialog).toContain('appearance="floating"');
     expect(editorDialog).toContain(
-      '<Button variant="fill" size="sm" onClick={requestCloseEditingModal} disabled={isEditorSaving}>',
+      '<Button variant="fill" size="sm" onClick={modelPanelDraft ? cancelModelPanel : requestCloseEditingModal} disabled={isEditorSaving}>',
     );
     expect(editorDialog).toMatch(
       /<Button\s+data-testid="settings-model-save-btn"\s+variant="primary"\s+size="sm"/,
     );
-    expect(editorDialog).toContain('<DialogClose disabled={isEditorSaving} />');
+    expect(editorDialog).toContain('<DialogClose disabled={isEditorSaving || !!(managingSubscriptionProvider && loggingInProvider)} />');
     expect(editorDialog).toContain('loading={isEditorSaving}');
-    expect(editingForm.match(/fieldSurface="default"/g)).toHaveLength(2);
+    expect(editingForm.match(/fieldSurface="default"/g)).toHaveLength(3);
     expect(editingForm).not.toContain('<ScrollArea');
     expect(editingForm).toContain('className="openbitfun-model-settings__form-content"');
     expect(editorDialog).not.toContain('openbitfun-model-settings__editor-dialog-footer');
     expect(editorDialog).not.toContain('openbitfun-model-settings__editor-dialog-cancel');
     expect(styles).toMatch(
-      /&__editor-dialog\s*{[\s\S]*?max-block-size:\s*min\(\s*640px,\s*calc\(100vh - 2 \* var\(--openbitfun-overlay-dialog-viewport-gutter\)\)\s*\);/,
+      /&__editor-dialog\s*{\s*block-size:\s*min\(\s*640px,\s*calc\(100vh - 2 \* var\(--openbitfun-overlay-dialog-viewport-gutter\)\)\s*\);/,
     );
     expect(styles).not.toContain('&__editor-dialog-footer');
     expect(styles).not.toContain('&__editor-dialog-cancel');
-    expect(styles).toMatch(/&__selected-model-row\s*{[\s\S]*?background:\s*var\(--openbitfun-color-surface-tertiary\);/);
-    expect(styles).toMatch(/&__reasoning-summary\s*{[\s\S]*?background:\s*transparent;/);
+    expect(styles).toMatch(/&__selected-models-list\s*{\s*display:\s*flex;\s*flex-wrap:\s*wrap;/);
+    expect(styles).toMatch(/&__model-capsule\s*{[\s\S]*?width:\s*auto;/);
   });
 
   it('keeps unsaved editor state behind an explicit draft decision', () => {

@@ -56,7 +56,6 @@ pub(super) struct CaptureFrame {
     pub height: u32,
     pub window_id: u32,
     pub bounds: [f64; 4],
-    pub sequence: u64,
     pub generation: u64,
 }
 
@@ -144,7 +143,6 @@ impl CaptureSession {
             height,
             window_id,
             bounds,
-            sequence,
             generation: self.generation,
         })
     }

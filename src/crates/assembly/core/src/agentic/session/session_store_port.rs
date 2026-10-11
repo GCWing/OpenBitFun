@@ -9,30 +9,6 @@ use openbitfun_runtime_ports::{
 use crate::agentic::core::SessionConfig;
 use crate::infrastructure::{get_path_manager_arc, PathManager};
 use crate::service::WorkspaceRuntimeService;
-use openbitfun_services_core::workspace_identity::{
-    unresolved_remote_session_storage_dir, WorkspaceSessionIdentity,
-};
-
-async fn resolve_workspace_session_identity(
-    workspace_path: &str,
-    remote_connection_id: Option<&str>,
-    remote_ssh_host: Option<&str>,
-) -> Option<WorkspaceSessionIdentity> {
-    let mut config = SessionConfig {
-        workspace_path: Some(workspace_path.to_owned()),
-        remote_connection_id: remote_connection_id.map(str::to_owned),
-        remote_ssh_host: remote_ssh_host.map(str::to_owned),
-        ..Default::default()
-    };
-    crate::agentic::workspace::normalize_session_workspace(&mut config)
-        .await
-        .ok()?;
-    openbitfun_services_core::workspace_identity::workspace_session_identity(
-        workspace_path,
-        config.remote_connection_id.as_deref(),
-        config.remote_ssh_host.as_deref(),
-    )
-}
 
 #[derive(Debug, Clone, Default)]
 pub struct CoreSessionStorePort {
@@ -119,26 +95,26 @@ impl CoreSessionStorePort {
         None
     }
 
+    fn canonical_storage_projection(path: &Path) -> Option<PathBuf> {
+        if Self::has_parent_traversal(path) {
+            return None;
+        }
+        let ancestor = Self::nearest_existing_ancestor(path)?;
+        Some(
+            dunce::canonicalize(ancestor)
+                .ok()?
+                .join(path.strip_prefix(ancestor).ok()?),
+        )
+    }
+
     fn is_confined_to_managed_root(root: &Path, path: &Path) -> bool {
-        if Self::has_parent_traversal(path) || !path.starts_with(root) {
-            return false;
+        match (
+            Self::canonical_storage_projection(root),
+            Self::canonical_storage_projection(path),
+        ) {
+            (Some(root), Some(path)) => path.starts_with(root),
+            _ => false,
         }
-
-        if !root.exists() {
-            return true;
-        }
-
-        let Ok(canonical_root) = dunce::canonicalize(root) else {
-            return false;
-        };
-        let Some(existing_ancestor) = Self::nearest_existing_ancestor(path) else {
-            return false;
-        };
-        let Ok(canonical_ancestor) = dunce::canonicalize(existing_ancestor) else {
-            return false;
-        };
-
-        canonical_ancestor == canonical_root || canonical_ancestor.starts_with(canonical_root)
     }
 
     fn looks_like_resolved_sessions_dir(path_manager: &PathManager, path: &Path) -> bool {
@@ -151,9 +127,37 @@ impl CoreSessionStorePort {
         }
 
         let projects_root = path_manager.projects_root();
-        path.parent()
+        let lexical_shape = path
+            .parent()
             .and_then(Path::parent)
-            .is_some_and(|candidate| candidate == projects_root)
+            .is_some_and(|candidate| candidate == projects_root);
+        lexical_shape || Self::resolved_sessions_dir_kind(path_manager, path).is_some()
+    }
+
+    fn project_runtime_sessions_kind(
+        path_manager: &PathManager,
+        path: &Path,
+    ) -> SessionStorageKind {
+        let Some(runtime_root) = path.parent() else {
+            return SessionStorageKind::Local;
+        };
+        let state_path = runtime_root
+            .join("config")
+            .join("runtime_layout_state.json");
+        let Ok(bytes) = std::fs::read(state_path) else {
+            return SessionStorageKind::Local;
+        };
+        let Ok(state) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+            return SessionStorageKind::Local;
+        };
+        if state.get("target_kind").and_then(serde_json::Value::as_str)
+            == Some("remote_workspace_mirror")
+            && Self::is_confined_to_managed_root(&path_manager.projects_root(), path)
+        {
+            SessionStorageKind::Remote
+        } else {
+            SessionStorageKind::Local
+        }
     }
 
     pub(crate) fn resolved_sessions_dir_kind(
@@ -165,6 +169,13 @@ impl CoreSessionStorePort {
         {
             return None;
         }
+
+        // Committed bindings may be canonical (for example /private/var on
+        // macOS) while PathManager retains an equivalent symlink spelling.
+        // Compare physical projections, including not-yet-created suffixes,
+        // so a sessions directory cannot be reinterpreted as a workspace root.
+        let canonical_path = Self::canonical_storage_projection(path)?;
+        let path = canonical_path.as_path();
 
         let remote_mirror_root = path_manager.remote_ssh_mirror_root_dir();
         if Self::is_confined_to_managed_root(&remote_mirror_root, path) {
@@ -180,13 +191,16 @@ impl CoreSessionStorePort {
             );
         }
 
-        let projects_root = path_manager.projects_root();
+        let projects_root = Self::canonical_storage_projection(&path_manager.projects_root())?;
         let has_local_shape = path
             .parent()
             .and_then(|runtime_root| runtime_root.parent())
             .is_some_and(|candidate| candidate == projects_root.as_path());
-        (has_local_shape && Self::is_confined_to_managed_root(&projects_root, path))
-            .then_some(SessionStorageKind::Local)
+        if has_local_shape && Self::is_confined_to_managed_root(&projects_root, path) {
+            Some(Self::project_runtime_sessions_kind(path_manager, path))
+        } else {
+            None
+        }
     }
 }
 
@@ -297,62 +311,36 @@ impl SessionStorePort for CoreSessionStorePort {
         }
 
         let workspace_path = request.workspace_path.to_string_lossy().to_string();
-        let identity = resolve_workspace_session_identity(
-            &workspace_path,
-            request.remote_connection_id.as_deref(),
-            request.remote_ssh_host.as_deref(),
-        )
-        .await
-        .ok_or_else(|| {
-            PortError::new(
-                PortErrorKind::InvalidRequest,
-                format!(
-                    "Session workspace_path does not resolve to a local workspace or a \
-                     registered remote workspace: {workspace_path}"
-                ),
-            )
-        })?;
-
-        let requested_workspace_path = request.workspace_path;
-        let runtime_service = WorkspaceRuntimeService::new(path_manager.clone());
-        let (effective_storage_path, storage_kind, remote_ssh_host) = if !identity.is_remote() {
-            (
-                runtime_service
-                    .context_for_local_workspace(Path::new(identity.logical_workspace_path()))
-                    .sessions_dir,
-                SessionStorageKind::Local,
-                None,
-            )
-        } else if identity.hostname == "_unresolved" {
-            (
-                unresolved_remote_session_storage_dir(
-                    path_manager.remote_ssh_mirror_root_dir(),
-                    identity.remote_connection_id.as_deref().unwrap_or_default(),
-                    identity.logical_workspace_path(),
-                ),
-                SessionStorageKind::UnresolvedRemote,
-                None,
-            )
-        } else {
-            (
-                runtime_service
-                    .context_for_remote_workspace(
-                        &identity.hostname,
-                        identity.logical_workspace_path(),
-                    )
-                    .sessions_dir,
-                SessionStorageKind::Remote,
-                Some(identity.hostname.clone()),
-            )
+        let mut config = SessionConfig {
+            workspace_path: Some(workspace_path.clone()),
+            remote_connection_id: request.remote_connection_id,
+            remote_ssh_host: request.remote_ssh_host,
+            ..Default::default()
         };
-
-        Ok(SessionStoragePathResolution::new(
-            requested_workspace_path,
-            effective_storage_path,
-            storage_kind,
-            identity.remote_connection_id,
-            remote_ssh_host,
-        ))
+        // Convert pre-ID input exactly once at this compatibility boundary.
+        // Storage then follows the same catalog record as current ID requests;
+        // do not re-infer local/SSH identity from filesystem existence.
+        crate::agentic::workspace::normalize_session_workspace(&mut config)
+            .await
+            .map_err(|error| {
+                PortError::new(
+                    PortErrorKind::InvalidRequest,
+                    format!(
+                        "Session workspace_path does not resolve to a local workspace or a \
+                     registered remote workspace: {workspace_path}: {error}"
+                    ),
+                )
+            })?;
+        let mut resolution = self
+            .resolve_workspace_storage(config.workspace_id.as_deref().ok_or_else(|| {
+                PortError::new(
+                    PortErrorKind::InvalidRequest,
+                    "Session workspace ID is unavailable",
+                )
+            })?)
+            .await?;
+        resolution.requested_workspace_path = request.workspace_path;
+        Ok(resolution)
     }
 }
 
@@ -394,6 +382,46 @@ mod tests {
 
         assert!(result.is_err());
         let _ = std::fs::remove_dir_all(test_root);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn resolved_sessions_path_accepts_canonical_user_root_alias_without_relocating_history() {
+        let root = tempfile::tempdir().unwrap();
+        let physical = root.path().join("physical");
+        let alias = root.path().join("alias");
+        std::fs::create_dir_all(&physical).unwrap();
+        std::os::unix::fs::symlink(&physical, &alias).unwrap();
+        // Product home is derived from the user root's parent, so the user
+        // root must sit below the alias for managed paths to use it.
+        let user_root = alias.join("user");
+        std::fs::create_dir_all(&user_root).unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(user_root));
+        let port = CoreSessionStorePort::with_path_manager_for_tests(path_manager.clone());
+        let projected = path_manager
+            .projects_root()
+            .join("project-key")
+            .join("sessions");
+        std::fs::create_dir_all(&projected).unwrap();
+        let canonical = dunce::canonicalize(&projected).unwrap();
+        assert_ne!(canonical, projected);
+        for path in [projected, canonical.clone()] {
+            let resolution = port
+                .resolve_session_storage_path(SessionStoragePathRequest {
+                    workspace_path: path.clone(),
+                    remote_connection_id: None,
+                    remote_ssh_host: None,
+                })
+                .await
+                .unwrap();
+            assert_eq!(resolution.effective_storage_path, path);
+            assert_eq!(resolution.storage_kind, SessionStorageKind::Local);
+        }
+        std::fs::remove_dir(&canonical).unwrap();
+        assert_eq!(
+            CoreSessionStorePort::resolved_sessions_dir_kind(&path_manager, &canonical),
+            Some(SessionStorageKind::Local)
+        );
     }
 
     #[cfg(unix)]

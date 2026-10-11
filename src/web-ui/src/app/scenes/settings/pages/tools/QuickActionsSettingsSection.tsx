@@ -26,7 +26,6 @@ import {
   DialogHeader,
   DialogHeading,
   DialogTitle,
-  Empty,
   Icon,
   IconButton,
   Input,
@@ -265,10 +264,11 @@ const QuickActionsSettingsSection: React.FC = () => {
   const { t } = useTranslation('settings/quick-actions');
   const notification = useNotification();
 
-  const [loading, setLoading] = useState(true);
+  const [cachedSettings] = useState(() => aiExperienceConfigService.getCachedSettings());
+  const [loading, setLoading] = useState(!cachedSettings);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [actions, setActions] = useState<QuickAction[]>([]);
+  const [actions, setActions] = useState<QuickAction[]>(cachedSettings?.quick_actions ?? []);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingSaveCountRef = useRef(0);
 
@@ -278,7 +278,7 @@ const QuickActionsSettingsSection: React.FC = () => {
   const isModalOpen = modalTarget !== undefined;
 
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(!cachedSettings);
     setLoadFailed(false);
     try {
       const settings = await aiExperienceConfigService.getSettingsAsync({ forceRefresh: true, requireLoaded: true });
@@ -290,9 +290,9 @@ const QuickActionsSettingsSection: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [cachedSettings]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (!cachedSettings) void load(); }, [load, cachedSettings]);
 
   const persistSettings = useCallback((patch: AIExperienceSettingsPatch, onSaved: () => void): Promise<boolean> => {
     if (pendingSaveCountRef.current > 0) {
@@ -423,27 +423,9 @@ const QuickActionsSettingsSection: React.FC = () => {
             </Button>
           }
         >
-          <div data-openbitfun-component="quick-actions-config" data-openbitfun-part="list" className="quick-actions-config__list">
-            {customActions.length === 0 ? (
-              <div data-openbitfun-component="quick-actions-config" data-openbitfun-part="empty" data-openbitfun-state="empty" className="quick-actions-config__empty">
-                <Empty
-                  icon={<Zap aria-hidden />}
-                  description={t('sections.custom.empty')}
-                  actions={(
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setModalTarget(null)}
-                      disabled={saving}
-                      leadingIcon={<Icon name="plus" size="sm" />}
-                    >
-                      {t('add.button')}
-                    </Button>
-                  )}
-                />
-              </div>
-            ) : (
-              customActions.map(action => (
+          {customActions.length > 0 && (
+            <div data-openbitfun-component="quick-actions-config" data-openbitfun-part="list" className="quick-actions-config__list">
+              {customActions.map(action => (
                 <ActionRow
                   key={action.id}
                   action={action}
@@ -454,9 +436,9 @@ const QuickActionsSettingsSection: React.FC = () => {
                   disabled={saving}
                   t={t}
                 />
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </ConfigPageSection>
 
       </ConfigPageSectionStack>

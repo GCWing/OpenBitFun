@@ -219,6 +219,19 @@ jobs:
           CARGO_PROFILE_TEST_DEBUG: "0"
         run: cargo test --locked -p openbitfun-cli --test terminal_process_contracts -- --test-threads=1
 
+      - name: Select Xcode for macOS Icon Composer assets
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          test -d /Applications/Xcode_26.2.app/Contents/Developer
+          echo "DEVELOPER_DIR=/Applications/Xcode_26.2.app/Contents/Developer" >> "$GITHUB_ENV"
+
+      - name: Verify native macOS icon bundling
+        if: runner.os == 'macOS'
+        env:
+          OPENBITFUN_TEST_MACOS_BUNDLE: '1'
+        run: node --test scripts/macos-icon-bundle.test.mjs
+
       - name: Build desktop app
         shell: bash
         run: |

@@ -1,4 +1,7 @@
+import { invokePrepared } from './invokePrepared';
 import { sessionWorkspaceIdRequest } from './legacyWorkspaceCompatibility';
+import { isTauriRuntime } from '@/infrastructure/runtime/environment';
+import { getActiveSurfaceId, isLocalSurface } from '@/infrastructure/peer-device/deviceSurface';
 
 import { api } from './ApiClient';
 import { createTauriCommandError } from '../errors/TauriCommandError';
@@ -279,6 +282,25 @@ export interface SessionUsageReport {
 }
 
 export class SessionAPI {
+  canRevealStorageDirectory(): boolean {
+    return isTauriRuntime() && isLocalSurface(getActiveSurfaceId());
+  }
+
+  async revealStorageDirectory(workspaceId: string, sessionId?: string): Promise<void> {
+    if (!this.canRevealStorageDirectory()) {
+      throw new Error('Session storage directories can only be opened on the local desktop');
+    }
+    if (!workspaceId.trim()) throw new Error('Workspace ID is required');
+    if (sessionId !== undefined && !sessionId.trim()) throw new Error('Session ID is required');
+    try {
+      await api.invoke('reveal_session_storage_directory', {
+        request: { workspace_id: workspaceId, session_id: sessionId },
+      });
+    } catch (error) {
+      throw createTauriCommandError('reveal_session_storage_directory', error, { workspaceId, sessionId });
+    }
+  }
+
   async searchSessionContent(
     request: SessionContentSearchRequest,
     signal?: AbortSignal,
@@ -328,13 +350,13 @@ export class SessionAPI {
     workspaceId: string
   ): Promise<{ sessionId: string; sessionName: string; agentType: string }> {
     try {
-      return await api.invoke('fork_session', {
+      return await invokePrepared('fork_session', async () => ({
         request: {
           source_session_id: sourceSessionId,
           source_turn_id: sourceTurnId,
           ...await sessionWorkspaceIdRequest(workspaceId),
         }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('fork_session', error, {
         sourceSessionId,
@@ -345,23 +367,23 @@ export class SessionAPI {
   }
 
   async listSessions(workspaceId: string): Promise<SessionMetadata[]> {
-    return api.invoke('list_persisted_sessions', {
+    return invokePrepared('list_persisted_sessions', async () => ({
       request: await sessionWorkspaceIdRequest(workspaceId),
-    });
+    }));
   }
 
   async listSessionsPage(
     request: SessionMetadataPageRequest
   ): Promise<SessionMetadataPage> {
     try {
-      return await api.invoke('list_persisted_sessions_page', {
+      return await invokePrepared('list_persisted_sessions_page', async () => ({
         request: {
           ...await sessionWorkspaceIdRequest(request.workspaceId),
           limit: request.limit,
           ...(request.cursor ? { cursor: request.cursor } : {}),
           ...(request.sessionIds ? { session_ids: request.sessionIds } : {}),
         }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('list_persisted_sessions_page', error, {
         workspaceId: request.workspaceId,
@@ -375,13 +397,13 @@ export class SessionAPI {
     request: SessionLineageRequest
   ): Promise<SessionLineageSnapshot | null> {
     try {
-      return await api.invoke('get_session_lineage', {
+      return await invokePrepared('get_session_lineage', async () => ({
         request: {
           session_id: request.sessionId,
           ...await sessionWorkspaceIdRequest(request.workspaceId),
 
         }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('get_session_lineage', error, {
         sessionId: request.sessionId,
@@ -396,19 +418,13 @@ export class SessionAPI {
     limit?: number
   ): Promise<DialogTurnData[]> {
     try {
-      const request: Record<string, unknown> = {
-        session_id: sessionId,
-        ...await sessionWorkspaceIdRequest(workspaceId),
-
-      };
-
-      if (limit !== undefined) {
-        request.limit = limit;
-      }
-
-      return await api.invoke('load_session_turns', {
-        request
-      });
+      return await invokePrepared('load_session_turns', async () => ({
+        request: {
+          session_id: sessionId,
+          ...await sessionWorkspaceIdRequest(workspaceId),
+          ...(limit !== undefined ? { limit } : {}),
+        },
+      }));
     } catch (error) {
       throw createTauriCommandError('load_session_turns', error, { sessionId, workspaceId, limit });
     }
@@ -419,13 +435,13 @@ export class SessionAPI {
     workspaceId: string
   ): Promise<void> {
     try {
-      await api.invoke('save_session_turn', {
+      await invokePrepared('save_session_turn', async () => ({
         request: {
           turn_data: turnData,
           ...await sessionWorkspaceIdRequest(workspaceId),
 
         }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('save_session_turn', error, { turnData, workspaceId });
     }
@@ -437,14 +453,14 @@ export class SessionAPI {
     fields: UiSessionMetadataField[]
   ): Promise<void> {
     try {
-      await api.invoke('save_session_metadata', {
+      await invokePrepared('save_session_metadata', async () => ({
         request: {
           metadata,
           fields,
           ...await sessionWorkspaceIdRequest(workspaceId),
 
         }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('save_session_metadata', error, { metadata, workspaceId });
     }
@@ -455,13 +471,13 @@ export class SessionAPI {
     workspaceId: string
   ): Promise<void> {
     try {
-      await api.invoke('delete_persisted_session', {
+      await invokePrepared('delete_persisted_session', async () => ({
         request: {
           session_id: sessionId,
           ...await sessionWorkspaceIdRequest(workspaceId),
 
         }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('delete_persisted_session', error, { sessionId, workspaceId });
     }
@@ -472,13 +488,13 @@ export class SessionAPI {
     workspaceId: string
   ): Promise<void> {
     try {
-      await api.invoke('touch_session_activity', {
+      await invokePrepared('touch_session_activity', async () => ({
         request: {
           session_id: sessionId,
           ...await sessionWorkspaceIdRequest(workspaceId),
 
         }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('touch_session_activity', error, { sessionId, workspaceId });
     }
@@ -489,13 +505,13 @@ export class SessionAPI {
     workspaceId: string
   ): Promise<SessionMetadata | null> {
     try {
-      return await api.invoke('load_persisted_session_metadata', {
+      return await invokePrepared('load_persisted_session_metadata', async () => ({
         request: {
           session_id: sessionId,
           ...await sessionWorkspaceIdRequest(workspaceId),
 
         }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('load_persisted_session_metadata', error, { sessionId, workspaceId });
     }
@@ -505,14 +521,14 @@ export class SessionAPI {
     request: SessionUsageReportRequest
   ): Promise<SessionUsageReport> {
     try {
-      return await api.invoke('get_session_usage_report', {
+      return await invokePrepared('get_session_usage_report', async () => ({
         request: {
           session_id: request.sessionId,
           ...await sessionWorkspaceIdRequest(request.workspaceId),
           include_hidden_subagents: request.includeHiddenSubagents ?? true,
 
         }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('get_session_usage_report', error, {
         sessionId: request.sessionId,
@@ -526,13 +542,13 @@ export class SessionAPI {
     workspaceId: string
   ): Promise<void> {
     try {
-      await api.invoke('archive_session', {
+      await invokePrepared('archive_session', async () => ({
         request: {
           session_id: sessionId,
           ...await sessionWorkspaceIdRequest(workspaceId),
 
         }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('archive_session', error, { sessionId, workspaceId });
     }
@@ -543,13 +559,13 @@ export class SessionAPI {
     workspaceId: string
   ): Promise<void> {
     try {
-      await api.invoke('unarchive_session', {
+      await invokePrepared('unarchive_session', async () => ({
         request: {
           session_id: sessionId,
           ...await sessionWorkspaceIdRequest(workspaceId),
 
         }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('unarchive_session', error, { sessionId, workspaceId });
     }
@@ -559,12 +575,12 @@ export class SessionAPI {
     workspaceId: string
   ): Promise<number> {
     try {
-      return await api.invoke('archive_all_sessions', {
+      return await invokePrepared('archive_all_sessions', async () => ({
         request: {
           ...await sessionWorkspaceIdRequest(workspaceId),
 
         }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('archive_all_sessions', error, { workspaceId });
     }
@@ -574,12 +590,12 @@ export class SessionAPI {
     workspaceId: string
   ): Promise<SessionMetadata[]> {
     try {
-      return await api.invoke('list_archived_sessions', {
+      return await invokePrepared('list_archived_sessions', async () => ({
         request: {
           ...await sessionWorkspaceIdRequest(workspaceId),
 
         }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('list_archived_sessions', error, { workspaceId });
     }
@@ -589,12 +605,12 @@ export class SessionAPI {
     workspaceId: string
   ): Promise<number> {
     try {
-      return await api.invoke('delete_all_archived_sessions', {
+      return await invokePrepared('delete_all_archived_sessions', async () => ({
         request: {
           ...await sessionWorkspaceIdRequest(workspaceId),
 
         }
-      });
+      }));
     } catch (error) {
       throw createTauriCommandError('delete_all_archived_sessions', error, { workspaceId });
     }

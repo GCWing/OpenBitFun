@@ -70,6 +70,8 @@ let dragState = null;
 /** @type {{ sessionId: string, turnId: string }[]} */
 let backendRuns = [];
 let deckEpoch = 0;
+let deckSessionInitialization = null;
+let topicChangeInFlight = false;
 let promptSubmitGuard = false;
 let backendRunInFlight = false;
 let historyItems = [];
@@ -249,19 +251,29 @@ function renderHistory() {
 }
 
 async function restoreHistory(id) {
+  if (topicChangeInFlight) return;
   const item = historyItems.find((entry) => entry.id === id);
   if (!item) return;
-  deckEpoch += 1;
-  await cancelTrackedBackendRuns();
-  state = ensureState(clone(item.state));
-  state.generation.active = false;
-  resetGeneration();
-  rerender();
-  syncStylePanelFromState(state);
-  setStatus(t('historyRestored'));
-  await clearFocusedDeckAgentSession();
-  await ensureDeckAgentSession();
-  await storageSet(STORAGE_KEY, { ...state, updatedAt: Date.now() });
+  topicChangeInFlight = true;
+  try {
+    deckEpoch += 1;
+    await clearFocusedDeckAgentSession();
+    await saveHistorySnapshot('before-switch');
+    await cancelTrackedBackendRuns();
+    state = ensureState(clone(item.state));
+    state.generation.active = false;
+    resetGeneration();
+    rerender();
+    syncStylePanelFromState(state);
+    setStatus(t('historyRestored'));
+    await ensureDeckAgentSession();
+    await storageSet(STORAGE_KEY, { ...state, updatedAt: Date.now() });
+  } catch (error) {
+    runtime().log?.error?.('PPT Live topic restore failed', { error: String(error) });
+    setStatus(t('topicSessionFailed'));
+  } finally {
+    topicChangeInFlight = false;
+  }
 }
 
 function formatHistoryTime(value) {
@@ -468,7 +480,7 @@ function hasUsableDeckForRevision() {
  * composer of its own; this is the single entry point either way.
  */
 async function submitInstruction(rawInstruction, rawDisplayText = rawInstruction) {
-  if (promptSubmitGuard || backendRunInFlight) {
+  if (topicChangeInFlight || promptSubmitGuard || backendRunInFlight) {
     setStatus(t('bubbleBusy'));
     throw new Error(t('bubbleBusy'));
   }
@@ -819,6 +831,26 @@ async function clearFocusedDeckAgentSession() {
  * gets a fresh session in its own appdata project directory.
  */
 async function ensureDeckAgentSession() {
+  const topicEpoch = deckEpoch;
+  const topicId = String(state.sessionId || '');
+  if (deckSessionInitialization?.epoch === topicEpoch
+      && deckSessionInitialization.topicId === topicId) {
+    return deckSessionInitialization.promise;
+  }
+  const pending = {
+    epoch: topicEpoch,
+    topicId,
+    promise: initializeDeckAgentSession(topicEpoch, topicId),
+  };
+  deckSessionInitialization = pending;
+  try {
+    return await pending.promise;
+  } finally {
+    if (deckSessionInitialization === pending) deckSessionInitialization = null;
+  }
+}
+
+async function initializeDeckAgentSession(topicEpoch, topicId) {
   const host = runtime();
   if (typeof host.backend?.ensureSession !== 'function' || !host.appDataDir) {
     const existingSessionId = String(state.agentSession?.id || '');
@@ -828,29 +860,22 @@ async function ensureDeckAgentSession() {
     return existingSessionId || null;
   }
 
-  const topicEpoch = deckEpoch;
-  const topicId = String(state.sessionId || '');
   const project = currentDeckProject() || newDeckProject();
   const requestSession = async (sessionId) => host.backend.ensureSession({
     sessionId: sessionId || undefined,
     appDataWorkspace: project.workspaceSubdir,
   });
 
-  let result;
   const persistedSessionId = String(state.agentSession?.id || '');
-  try {
-    result = await requestSession(persistedSessionId);
-  } catch (error) {
-    if (!persistedSessionId || !isUnknownSessionBackendError(error)) throw error;
-    runtime().log?.warn?.('PPT Live topic session is stale; creating a replacement', {
-      sessionId: persistedSessionId,
-      error: String(error),
-    });
-    result = await requestSession('');
-  }
+  const result = await requestSession(persistedSessionId);
 
   const sessionId = String(result?.sessionId || '');
   if (!sessionId) throw new Error('PPT Live session initialization returned no sessionId');
+  // Older hosts may silently replace a missing session. Keep the old topic's
+  // pointer/history recoverable instead of persisting that empty replacement.
+  if (persistedSessionId && sessionId !== persistedSessionId) {
+    throw new Error('PPT Live could not restore the saved topic session');
+  }
   if (deckEpoch !== topicEpoch || String(state.sessionId || '') !== topicId) {
     return null;
   }
@@ -2708,19 +2733,28 @@ function syncSlidesFromOutline() {
 }
 
 async function newDeck() {
-  deckEpoch += 1;
-  await saveHistorySnapshot('before-new');
-  await cancelTrackedBackendRuns();
-  state.generation.active = false;
-  setBusy(false);
-  state = createBlankDeckState();
-  resetGeneration();
-  rerender();
-  syncStylePanelFromState(state);
-  setStatus(t('blankDeckReady'));
-  await clearFocusedDeckAgentSession();
-  await ensureDeckAgentSession();
-  await persist(true);
+  if (topicChangeInFlight) return;
+  topicChangeInFlight = true;
+  try {
+    deckEpoch += 1;
+    await clearFocusedDeckAgentSession();
+    await saveHistorySnapshot('before-new');
+    await cancelTrackedBackendRuns();
+    state.generation.active = false;
+    setBusy(false);
+    state = createBlankDeckState();
+    resetGeneration();
+    rerender();
+    syncStylePanelFromState(state);
+    setStatus(t('blankDeckReady'));
+    await ensureDeckAgentSession();
+    await persist(true);
+  } catch (error) {
+    runtime().log?.error?.('PPT Live new topic failed', { error: String(error) });
+    setStatus(t('topicSessionFailed'));
+  } finally {
+    topicChangeInFlight = false;
+  }
 }
 
 function createBlankDeckState() {
@@ -3797,6 +3831,9 @@ runtime().chat?.onUserMessage?.((payload) => {
   const text = String(payload?.text || '').trim();
   if (!text) return;
   const displayText = String(payload?.displayText || '').trim() || text;
+  if (topicChangeInFlight || (payload?.sessionId && payload.sessionId !== state.agentSession?.id)) {
+    throw new Error(t('topicSessionChanged'));
+  }
   // The returned Promise is part of the host completion contract used by
   // realtime voice. It spans Agent retries, file verification, and persistence.
   return submitInstruction(text, displayText);

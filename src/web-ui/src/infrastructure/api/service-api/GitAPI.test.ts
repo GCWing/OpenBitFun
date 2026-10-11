@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GitAPI } from './GitAPI';
+import { activateSurface, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 
 const workspace = { workspaceId: 'workspace-1' };
 
@@ -25,8 +26,37 @@ describe('GitAPI repository probe cache', () => {
   let gitAPI: GitAPI;
 
   beforeEach(() => {
+    activateSurface('local');
     gitAPI = new GitAPI();
     invokeMock.mockReset();
+  });
+
+  it('does not dispatch a repository probe after its device changes during preparation', async () => {
+    invokeMock.mockResolvedValue(true);
+    const pending = gitAPI.isGitRepository(workspace);
+    const rejection = expect(pending).rejects.toSatisfy(isSurfaceChangedError);
+    activateSurface('peer-b');
+    await rejection;
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it('starts a fresh probe after returning to the same device while an old probe is pending', async () => {
+    const deferred = createDeferred<boolean>();
+    invokeMock.mockReturnValueOnce(deferred.promise).mockResolvedValue(true);
+    const first = gitAPI.isGitRepository(workspace);
+    await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
+    activateSurface('peer-b');
+    activateSurface('local');
+    const second = gitAPI.isGitRepository(workspace);
+    const results = Promise.allSettled([first, second]);
+    deferred.resolve(false);
+    const [old, current] = await results;
+    expect(old.status).toBe('rejected');
+    if (old.status === 'rejected') expect(isSurfaceChangedError(old.reason)).toBe(true);
+    expect(current).toEqual({ status: 'fulfilled', value: true });
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+    await expect(gitAPI.isGitRepository(workspace)).resolves.toBe(true);
+    expect(invokeMock).toHaveBeenCalledTimes(2);
   });
 
   it('deduplicates concurrent repository probes for the same path', async () => {

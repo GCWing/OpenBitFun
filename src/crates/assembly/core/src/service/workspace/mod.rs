@@ -42,10 +42,11 @@ pub use factory::WorkspaceFactory;
 pub use identity_watch::WorkspaceIdentityWatchService;
 #[cfg(feature = "workspace-runtime")]
 pub use manager::{
-    GitInfo, PrimaryAssistantKey, RelatedPath, ScanOptions, WorkspaceIdentity, WorkspaceInfo,
-    WorkspaceInfoRuntimeExt, WorkspaceKind, WorkspaceManager, WorkspaceManagerConfig,
-    WorkspaceManagerStatistics, WorkspaceOpenOptions, WorkspaceStatistics, WorkspaceStatus,
-    WorkspaceSummary, WorkspaceType, WorkspaceWorktreeInfo,
+    remote_workspace_connection_conflict_message, GitInfo, PrimaryAssistantKey, RelatedPath,
+    RemoteConnectionRebind, ScanOptions, WorkspaceIdentity, WorkspaceInfo, WorkspaceInfoRuntimeExt,
+    WorkspaceKind, WorkspaceManager, WorkspaceManagerConfig, WorkspaceManagerStatistics,
+    WorkspaceOpenOptions, WorkspaceStatistics, WorkspaceStatus, WorkspaceSummary, WorkspaceType,
+    WorkspaceWorktreeInfo, REMOTE_WORKSPACE_CONNECTION_CONFLICT,
 };
 #[cfg(feature = "workspace-runtime")]
 pub use provider::{WorkspaceCleanupResult, WorkspaceProvider, WorkspaceSystemSummary};

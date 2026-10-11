@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(), update: vi.fn(), emit: vi.fn(), t: (key: string) => key,
 }));
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: mocks.t }) }));
-vi.mock('../../../../../infrastructure/config/services/ConfigManager', () => ({ configManager: { getConfig: mocks.get, updateConfig: mocks.update } }));
+vi.mock('../../../../../infrastructure/config/services/ConfigManager', () => ({ configManager: { hasCachedConfig: () => false, getCachedConfig: () => undefined, getConfig: mocks.get, updateConfig: mocks.update } }));
 vi.mock('@/infrastructure/event-bus', () => ({ globalEventBus: { emit: mocks.emit } }));
 vi.mock('@/shared/utils/logger', () => ({ createLogger: () => ({ error: vi.fn() }) }));
 vi.mock('../../../../../infrastructure/config/components/common', () => {

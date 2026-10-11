@@ -65,6 +65,15 @@ export default tseslint.config(
             '业务命令必须经 api.invoke(ApiClient) 统一适配层,不可动态 import invoke。' +
             '如需直连平台 invoke,放到 adapters/ 内并经 api 暴露。',
         },
+        {
+          // api.invoke captures the device surface when it is called, after
+          // its arguments were awaited. An await inside the arguments can
+          // therefore send the previous device's IDs or paths to the next one.
+          selector: "CallExpression[callee.property.name='invoke'] > * AwaitExpression, CallExpression[callee.property.name='invoke'] > AwaitExpression",
+          message:
+            'Do not await inside api.invoke(...) arguments: the device surface is captured after ' +
+            'they resolve. Use invokePrepared(command, async scope => args) instead.',
+        },
       ],
     },
   },

@@ -716,7 +716,7 @@ mod tests {
         assert_eq!(resolution.requested_workspace_path, record.root_path);
         assert!(resolution
             .effective_storage_path
-            .starts_with(paths.remote_ssh_mirror_root_dir()));
+            .starts_with(paths.projects_root()));
         assert_ne!(resolution.effective_storage_path, record.root_path);
         assert!(CoreSessionStorePort::with_path_manager_for_tests(paths)
             .resolve_workspace_storage(&logical_root)

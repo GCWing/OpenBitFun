@@ -14,6 +14,19 @@ import { normalizeRemoteWorkspacePath } from '@/shared/utils/pathUtils';
 import { notificationService } from '@/shared/notification-system';
 import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFlag';
 import {
+  getActiveSurfaceScope,
+  isSurfaceChangedError,
+  runInSurfaceScope,
+  type SurfaceScope,
+} from '@/infrastructure/peer-device/deviceSurface';
+import { useI18n } from '@/infrastructure/i18n';
+import { confirmWarning } from '@/infrastructure/confirm-dialog';
+import {
+  isRemoteWorkspaceConnectionConflictError,
+  remoteWorkspaceConnectionConflictOwner,
+} from '@/infrastructure/api/errors/TauriCommandError';
+import type { WorkspaceInfo } from '@/shared/types';
+import {
   SSHContext,
   type ConnectionStatus,
   type SSHContextValue,
@@ -147,6 +160,11 @@ interface SSHRemoteProviderProps {
 }
 
 export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }) => {
+  const { t } = useI18n('common');
+  // Restore callbacks feed the startup check effect; a language change must
+  // not re-run a remote reconnect probe.
+  const translateRef = useRef(t);
+  translateRef.current = t;
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -262,12 +280,19 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
 
   const reportRemoteWorkspaceRestoreDeferred = useCallback((
     workspace: RemoteWorkspace,
-    reason: 'missing-connection' | 'missing-password'
+    reason: 'missing-connection' | 'missing-password' | 'connection-conflict'
   ) => {
     if (isPeerDeviceModeActive()) {
       return;
     }
     const path = normalizeRemoteWorkspacePath(workspace.remotePath);
+    if (reason === 'connection-conflict') {
+      notificationService.warning(
+        translateRef.current('ssh.remote.connectionConflictRestoreDeferred', { path }),
+        { duration: 8000 }
+      );
+      return;
+    }
     notificationService.warning(
       reason === 'missing-password'
         ? `Remote workspace was kept. Re-enter its SSH password to reconnect: ${path}`
@@ -275,6 +300,33 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
       { duration: 8000 }
     );
   }, []);
+
+  /**
+   * Background restore never moves a record to another connection: that is a
+   * user decision. The record stays bound to its owner and the entry is kept.
+   */
+  const openRestoredRemoteWorkspaceRecord = useCallback(async (
+    workspace: RemoteWorkspace,
+    scope: SurfaceScope,
+  ): Promise<WorkspaceInfo | null> => {
+    try {
+      return await runInSurfaceScope(scope, 'restore SSH workspace record', () =>
+        workspaceManager.openRemoteWorkspace(workspace));
+    } catch (error) {
+      scope.assertCurrent('restore SSH workspace record');
+      if (!isRemoteWorkspaceConnectionConflictError(error)) {
+        throw error;
+      }
+      log.warn('Deferring remote workspace restore because its record is bound to another connection', {
+        connectionId: workspace.connectionId,
+        remotePath: workspace.remotePath,
+        owner: remoteWorkspaceConnectionConflictOwner(error),
+      });
+      setWorkspaceStatus(workspace.connectionId, 'error');
+      reportRemoteWorkspaceRestoreDeferred(workspace, 'connection-conflict');
+      return null;
+    }
+  }, [reportRemoteWorkspaceRestoreDeferred, setWorkspaceStatus]);
 
   // Cleanup heartbeat on unmount
   useEffect(() => {
@@ -294,10 +346,13 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
   // Fast connection failures must keep retrying inside the budget; only then remove.
   const tryReconnectWithRetry = useCallback(async (
     workspace: RemoteWorkspace,
+    scope: SurfaceScope,
     timeoutMs: number = REMOTE_WORKSPACE_RECONNECT_TIMEOUT_MS
   ): Promise<false | { workspace: RemoteWorkspace; connectionId: string }> => {
+    scope.assertCurrent('reconnect SSH workspace');
     const connectionKey = workspace.connectionId.trim();
-    let reconnect = reconnectByConnectionRef.current.get(connectionKey);
+    const flightKey = scope.key(scope.epoch, connectionKey);
+    let reconnect = reconnectByConnectionRef.current.get(flightKey);
 
     if (!reconnect) {
       log.info('tryReconnectWithRetry: starting connection restore', {
@@ -306,6 +361,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
       });
       reconnect = (async () => {
         const savedConnections = await sshApi.listSavedConnections();
+        scope.assertCurrent('read SSH reconnect profile');
         const savedConn = savedConnections.find(c => c.id === connectionKey);
 
         if (!savedConn) {
@@ -351,6 +407,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
         const result = await reconnectUntilDeadline({
           totalTimeoutMs: timeoutMs,
           attempt: async (attemptTimeoutMs, attempt) => {
+            if (!scope.isCurrent()) return false as const;
             if (isPeerDeviceModeActive()) {
               // Abort controller-side reconnects: connecting now would open an SSH
               // session on the peer with controller-local credentials.
@@ -364,6 +421,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
 
             const connectWithTimeout = async (): Promise<{ connectionId: string }> => {
               const connectionResult = await sshApi.connect(reconnectConfig);
+              scope.assertCurrent('reconnect SSH workspace');
               if (!connectionResult.success || !connectionResult.connectionId) {
                 throw new Error(connectionResult.error || 'Connection failed');
               }
@@ -380,6 +438,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
               });
               return await Promise.race([connectWithTimeout(), timeoutPromise]);
             } catch (err) {
+              if (!scope.isCurrent() || isSurfaceChangedError(err)) return false as const;
               log.warn(`Reconnect attempt ${attempt} failed`, {
                 connectionId: connectionKey,
                 error: err,
@@ -402,10 +461,10 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
           sshHost: reconnectConfig.host?.trim() || workspace.sshHost?.trim() || undefined,
         };
       })();
-      reconnectByConnectionRef.current.set(connectionKey, reconnect);
+      reconnectByConnectionRef.current.set(flightKey, reconnect);
       const clearReconnect = () => {
-        if (reconnectByConnectionRef.current.get(connectionKey) === reconnect) {
-          reconnectByConnectionRef.current.delete(connectionKey);
+        if (reconnectByConnectionRef.current.get(flightKey) === reconnect) {
+          reconnectByConnectionRef.current.delete(flightKey);
         }
       };
       void reconnect.then(clearReconnect, clearReconnect);
@@ -414,13 +473,13 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     }
 
     const result = await reconnect;
+    scope.assertCurrent('reconnect SSH workspace');
     if (result === false) {
       return false;
     }
 
-    // A connection can own several opened workspace roots. Connect once, then
-    // register every caller's path against the shared live transport.
-    await sshApi.openWorkspace(result.connectionId, workspace.remotePath);
+    // Connecting the transport does not authorize moving a workspace record.
+    // The caller checks ownership before registering this root on the host.
     const reconnectedWorkspace: RemoteWorkspace = {
       connectionId: result.connectionId,
       connectionName: result.connectionName,
@@ -487,6 +546,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
       return;
     }
     checkRemoteWorkspaceInFlightRef.current = true;
+    const scope = getActiveSurfaceScope();
     try {
       // ── Collect all remote workspaces to reconnect ──────────────────────
       const wmState0 = workspaceManager.getState();
@@ -509,6 +569,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
           // Ignore
         }
       }
+      scope.assertCurrent('read SSH restore snapshot');
 
       // Opened workspaces are keyed by workspace ID. Only the pre-ID legacy
       // snapshot still uses connection + path, and it is dropped when an
@@ -548,6 +609,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
 
       const reconnectList = Array.from(toReconnect.values());
       const savedConnectionsList = await sshApi.listSavedConnections();
+      scope.assertCurrent('read SSH restore profiles');
 
       const skipPasswordAutoReconnect = new Set<string>();
       const missingSavedConnections = new Set<string>();
@@ -564,6 +626,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
           } catch {
             hasVault = false;
           }
+          scope.assertCurrent('read SSH stored password');
           if (!hasVault) {
             skipPasswordAutoReconnect.add(ws.connectionId);
           }
@@ -596,14 +659,19 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
           }, openedRemote);
 
           const alreadyConnected = await sshApi.isConnected(workspace.connectionId).catch(() => false);
+          scope.assertCurrent('check SSH restore connection');
 
           if (alreadyConnected) {
             log.info('Remote workspace already connected', { connectionId: workspace.connectionId });
-            await sshApi.openWorkspace(workspace.connectionId, workspace.remotePath).catch(() => {});
+            const record = openedRecord ?? await openRestoredRemoteWorkspaceRecord(workspace, scope);
+            if (!record) {
+              return { ok: false as const };
+            }
+            await runInSurfaceScope(scope, 'activate restored SSH workspace', () =>
+              sshApi.openWorkspace(workspace.connectionId, workspace.remotePath));
+            scope.assertCurrent('publish restored SSH workspace');
             setWorkspaceStatus(workspace.connectionId, 'connected');
             refreshRemoteAcpCapabilities(workspace.connectionId);
-
-            const record = openedRecord ?? await workspaceManager.openRemoteWorkspace(workspace);
             workspace.workspaceId = record.id;
             void flowChatStore.initializeFromDisk(record.id, 'ssh_remote_auto_restore_existing').catch(() => {});
 
@@ -634,14 +702,20 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
             remotePath: workspace.remotePath,
           });
           setWorkspaceStatuses(prev => ({ ...prev, [workspace.connectionId]: 'connecting' }));
-          const result = await tryReconnectWithRetry(workspace);
+          const result = await tryReconnectWithRetry(workspace, scope);
+          scope.assertCurrent('restore reconnected SSH workspace');
 
           if (result !== false) {
             log.info('Reconnection successful', { newConnectionId: result.connectionId });
+            const record = openedRecord ?? await openRestoredRemoteWorkspaceRecord(result.workspace, scope);
+            if (!record) {
+              return { ok: false as const };
+            }
+            await runInSurfaceScope(scope, 'activate reconnected SSH workspace', () =>
+              sshApi.openWorkspace(result.connectionId, result.workspace.remotePath));
+            scope.assertCurrent('publish reconnected SSH workspace');
             setWorkspaceStatus(result.workspace.connectionId, 'connected');
             refreshRemoteAcpCapabilities(result.connectionId);
-
-            const record = openedRecord ?? await workspaceManager.openRemoteWorkspace(result.workspace);
             result.workspace.workspaceId = record.id;
             void flowChatStore.initializeFromDisk(record.id, 'ssh_remote_auto_restore_reconnected').catch(() => {});
 
@@ -661,6 +735,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
           return { ok: false as const };
         })
       );
+      scope.assertCurrent('select restored SSH workspace');
 
       const connectedEntries: ConnectedEntry[] = results
         .filter((r): r is { ok: true; connected: ConnectedEntry } => r.ok)
@@ -674,11 +749,13 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
         startHeartbeatRef.current(chosen.connectionId);
       }
     } catch (e) {
+      if (isSurfaceChangedError(e)) return;
       log.error('checkRemoteWorkspace failed', e);
     } finally {
       checkRemoteWorkspaceInFlightRef.current = false;
     }
   }, [
+    openRestoredRemoteWorkspaceRecord,
     reportRemoteWorkspaceReconnectFailure,
     reportRemoteWorkspaceRestoreDeferred,
     setWorkspaceStatus,
@@ -877,30 +954,87 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
     }
   }, [connectionId, remoteWorkspace, setWorkspaceStatus]);
 
-  const openWorkspace = useCallback(async (pingPath: string) => {
+  /**
+   * Opens the record for an interactive selection. A record bound to another
+   * saved connection is only moved after the user confirms; `null` means the
+   * user kept the existing binding.
+   */
+  const openSelectedRemoteWorkspaceRecord = useCallback(async (
+    remoteWs: RemoteWorkspace,
+    scope: SurfaceScope,
+  ): Promise<WorkspaceInfo | null> => {
+    try {
+      return await runInSurfaceScope(scope, 'open SSH workspace record', () =>
+        workspaceManager.openRemoteWorkspace(remoteWs));
+    } catch (error) {
+      scope.assertCurrent('open SSH workspace record');
+      if (!isRemoteWorkspaceConnectionConflictError(error)) {
+        throw error;
+      }
+      const ownerId = remoteWorkspaceConnectionConflictOwner(error);
+      const savedConnections = await sshApi.listSavedConnections().catch(() => []);
+      scope.assertCurrent('read SSH workspace owner');
+      const owner = savedConnections.find(connection => connection.id === ownerId)?.name || ownerId || '';
+      const confirmed = await confirmWarning(
+        t('ssh.remote.connectionConflictTitle'),
+        t('ssh.remote.connectionConflictMessage', {
+          path: remoteWs.remotePath,
+          owner,
+          connection: remoteWs.connectionName,
+        }),
+        { confirmText: t('ssh.remote.connectionConflictConfirm') }
+      );
+      scope.assertCurrent('confirm SSH workspace rebind');
+      if (!confirmed) {
+        log.info('Kept remote workspace bound to its existing connection', {
+          connectionId: remoteWs.connectionId,
+          remotePath: remoteWs.remotePath,
+          owner: ownerId,
+        });
+        return null;
+      }
+      return runInSurfaceScope(scope, 'rebind SSH workspace record', () =>
+        workspaceManager.openRemoteWorkspace(remoteWs, { rebindConnection: true }));
+    }
+  }, [t]);
+
+  const openWorkspace = useCallback(async (pingPath: string): Promise<boolean> => {
+    const scope = getActiveSurfaceScope();
     if (!connectionId) {
       throw new Error('Not connected');
     }
     const connName = connectionConfig?.name || 'Remote';
     const remotePath = normalizeRemoteWorkspacePath(pingPath);
-    await sshApi.openWorkspace(connectionId, remotePath);
     const remoteWs: RemoteWorkspace = {
       connectionId,
       connectionName: connName,
       remotePath,
       sshHost: connectionConfig?.host?.trim() || undefined,
     };
+    const previousRemoteWorkspace = remoteWorkspaceRef.current;
     setRemoteWorkspace(remoteWs);
     setShowFileBrowser(false);
     setWorkspaceStatus(connectionId, 'connected');
 
-    const record = await workspaceManager.openRemoteWorkspace(remoteWs);
+    // The record is opened before the active remote pointer moves, so keeping
+    // an existing binding leaves no host-side state behind.
+    const record = await openSelectedRemoteWorkspaceRecord(remoteWs, scope);
+    scope.assertCurrent('open SSH workspace');
+    if (!record) {
+      setRemoteWorkspace(previousRemoteWorkspace);
+      setShowFileBrowser(true);
+      return false;
+    }
+    await runInSurfaceScope(scope, 'activate selected SSH workspace', () =>
+      sshApi.openWorkspace(connectionId, remotePath));
+    scope.assertCurrent('publish selected SSH workspace');
     // The opened record is the identity; keep it on the provider state so
     // close/disconnect can name the exact workspace instead of its connection.
     setRemoteWorkspace(current =>
       current && sameRemoteWorkspace(current, remoteWs) ? { ...current, workspaceId: record.id } : current
     );
-  }, [connectionId, connectionConfig, setWorkspaceStatus]);
+    return true;
+  }, [connectionId, connectionConfig, openSelectedRemoteWorkspaceRecord, setWorkspaceStatus]);
 
   const closeWorkspace = useCallback(async () => {
     const currentRemoteWorkspace = remoteWorkspace;

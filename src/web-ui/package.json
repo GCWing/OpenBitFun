@@ -1,6 +1,6 @@
 {
   "name": "@openbitfun/web-ui",
-  "version": "1.0.3",
+  "version": "1.0.5",
   "private": true,
   "description": "OpenBitFun Web UI - 支持 Desktop 和 Server 两种部署方式",
   "type": "module",

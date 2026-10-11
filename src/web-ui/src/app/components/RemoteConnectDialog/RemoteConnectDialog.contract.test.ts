@@ -95,6 +95,76 @@ describe('Remote Connect safety contracts', () => {
     expect(dialogSource).toContain("aria-current={activeView === view ? 'page' : undefined}");
   });
 
+  it('gives every view, including the overview, the same page header', () => {
+    const viewHeader = dialogSource.slice(
+      dialogSource.indexOf('const renderViewHeader'),
+      dialogSource.indexOf('const renderConnectedMarker'),
+    );
+    const viewCopy = dialogSource.slice(
+      dialogSource.indexOf('const VIEW_COPY'),
+      dialogSource.indexOf('const FEISHU_SETUP_GUIDE_URLS'),
+    );
+
+    expect(viewHeader).not.toContain('return null');
+    expect(viewHeader).toContain('<PageHeader');
+    expect(viewHeader).toContain('id="remote-connect-view-title"');
+    expect(viewCopy).toContain("overview: { titleKey: 'remoteConnect.overviewTitle'");
+    expect(viewCopy).toContain("account: { titleKey: 'remoteConnect.myDevicesTitle'");
+    expect(dialogSource.match(/\{renderViewHeader\(\)\}/g)).toHaveLength(1);
+  });
+
+  it('composes every view from the shared section, card, row and action-bar styles', () => {
+    const accountStyleSource = readFileSync(new URL('./AccountPanel.scss', import.meta.url), 'utf8');
+    const surfaceStyleSource = readFileSync(new URL('./_remote-connect-surface.scss', import.meta.url), 'utf8');
+    const networkSource = readFileSync(new URL('./RemoteNetworkConnections.tsx', import.meta.url), 'utf8');
+
+    for (const source of [dialogStyleSource, accountStyleSource]) {
+      expect(source).toContain("@use './remote-connect-surface' as surface;");
+      expect(source).not.toMatch(/font-size:\s*\d/);
+      expect(source).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    }
+    expect(surfaceStyleSource).toContain('@mixin action-bar');
+    expect(dialogStyleSource).toContain('@include surface.action-bar;');
+    expect(dialogSource).toContain('className="openbitfun-remote-connect__card-actions"');
+    expect(networkSource).toContain('className="openbitfun-remote-connect__card-actions"');
+  });
+
+  it('uses one destructive treatment and real buttons for every link-like action', () => {
+    const networkSource = readFileSync(new URL('./RemoteNetworkConnections.tsx', import.meta.url), 'utf8');
+
+    expect(dialogSource).not.toContain('role="link"');
+    expect(dialogSource).toContain('className="openbitfun-remote-connect__inline-link" onClick={handleOpenFeishuPlatform}');
+    expect(dialogSource).toContain('<Button variant="outline" tone="danger" size="sm" onClick={handleDisconnectBot}>');
+    expect(networkSource).toContain('<Button variant="outline" tone="danger" size="sm" onClick={onDisconnect}>');
+    expect(accountPanelSource).toContain('leadingIcon={<LogOut size={14} />} onClick={handleLogout}');
+  });
+
+  it('labels the chat-app detail switch with what it changes', () => {
+    const botContent = dialogSource.slice(
+      dialogSource.indexOf('const renderBotContent'),
+      dialogSource.indexOf('// ── Layout'),
+    );
+
+    expect(botContent).toContain("t('remoteConnect.botExecutionDetailsTitle')");
+    expect(botContent).toContain('aria-labelledby="remote-connect-bot-details-title"');
+    expect(botContent).toContain('aria-describedby="remote-connect-bot-details-description"');
+    expect(dialogSource).not.toContain('botConciseMode');
+  });
+
+  it('keeps device-row actions in fixed columns with the open affordance last', () => {
+    const deviceRow = accountPanelSource.slice(
+      accountPanelSource.indexOf('const DeviceEntry'),
+      accountPanelSource.indexOf('export default AccountPanel'),
+    );
+
+    expect(deviceRow.indexOf('account-panel__device-actions')).toBeLessThan(
+      deviceRow.indexOf('account-panel__device-chevron'),
+    );
+    expect(deviceRow.indexOf('</DeviceEntry>')).toBeLessThan(
+      deviceRow.indexOf('<Icon name="chevron-right"'),
+    );
+  });
+
   it('keeps the dialog height stable while selected content scrolls inside it', () => {
     const desktopGeometry = dialogStyleSource.slice(
       dialogStyleSource.indexOf('.openbitfun-remote-connect-dialog {'),
@@ -138,10 +208,6 @@ describe('Remote Connect safety contracts', () => {
       dialogStyleSource.indexOf('.openbitfun-remote-connect__bot-identity-icon'),
       dialogStyleSource.indexOf('.openbitfun-remote-connect__bot-identity-title'),
     );
-    const connectedBrandStyle = dialogStyleSource.slice(
-      dialogStyleSource.indexOf('.openbitfun-remote-connect__connected-app-icon'),
-      dialogStyleSource.indexOf('.openbitfun-remote-connect__connected-app-copy'),
-    );
     const footerMessageBrandStyle = navPanelStyleSource.slice(
       navPanelStyleSource.indexOf("&[data-openbitfun-device-kind='message-app'] {"),
       navPanelStyleSource.indexOf('.openbitfun-nav-panel__footer-device-status-attached-count'),
@@ -158,9 +224,9 @@ describe('Remote Connect safety contracts', () => {
       navPanelStyleSource.indexOf('  strong {', overviewMessageBrandStart),
     );
 
-    expect(dialogSource).toContain('<ChatAppBrandIcon app={botTab} size={28} />');
+    expect(dialogSource).toContain('<ChatAppBrandIcon app={botTab} size={20} />');
     expect(dialogSource).toContain('icon: <MessageCircle size={18} />');
-    expect(dialogSource).toContain('<ChatAppBrandIcon app={brand} size={15} />');
+    expect(dialogSource).toContain('icon: <ChatAppBrandIcon app={tab.id} size={15} />');
     expect(chatAppBrandIconSource).toContain("app === 'telegram'");
     expect(chatAppBrandIconSource).toContain("app === 'feishu'");
     expect(chatAppBrandIconSource.match(/viewBox="0 0 24 24"/g)).toHaveLength(3);
@@ -168,7 +234,7 @@ describe('Remote Connect safety contracts', () => {
     expect(deviceStatusControlSource).toContain('chatAppBrandFromIdentity(identity)');
     expect(deviceStatusControlSource).toContain('<ChatAppBrandIcon app={chatApp} size={size} />');
     expect(identityBrandStyle).not.toContain('background:');
-    expect(connectedBrandStyle).not.toContain('background:');
+    expect(dialogStyleSource).not.toContain('connected-app-icon');
     expect(footerMessageBrandStyle).toContain('border: 0');
     expect(footerMessageBrandStyle).toContain('background: transparent');
     expect(footerBrandColorStyle).toContain('--openbitfun-color-content-primary');

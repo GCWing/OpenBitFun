@@ -2,10 +2,13 @@
 
 use std::path::PathBuf;
 
+use openbitfun_core::service::workspace::{
+    remote_workspace_connection_conflict_message, RemoteConnectionRebind,
+};
 use openbitfun_runtime_ports::SessionStoragePathRequest;
 use serde_json::{json, Value};
 
-use crate::peer_host::args::{get_string, request_value};
+use crate::peer_host::args::{get_string, optional_bool, optional_string, request_value};
 use crate::peer_host::state::PeerHostState;
 use crate::peer_host::workspace_dto::{workspace_info_to_json, workspace_list_to_json};
 
@@ -113,7 +116,12 @@ pub(crate) async fn open_remote_workspace(
     let request = request_value(args);
     let path = get_string(request, "remotePath")?;
     let connection_id = get_string(request, "connectionId")?;
-    let host = crate::peer_host::args::optional_string(request, "sshHost");
+    let host = optional_string(request, "sshHost");
+    let rebind = if optional_bool(request, "rebindConnection").unwrap_or(false) {
+        RemoteConnectionRebind::UserConfirmed
+    } else {
+        RemoteConnectionRebind::Reject
+    };
     let coordinator = openbitfun_core::agentic::coordination::get_global_coordinator()
         .ok_or("Conversation coordinator is unavailable")?;
     let info = coordinator
@@ -122,9 +130,15 @@ pub(crate) async fn open_remote_workspace(
             &path,
             &connection_id,
             host.as_deref(),
+            rebind,
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            let message = e.to_string();
+            remote_workspace_connection_conflict_message(&message)
+                .map(str::to_string)
+                .unwrap_or(message)
+        })?;
     Ok(workspace_info_to_json(&info))
 }
 

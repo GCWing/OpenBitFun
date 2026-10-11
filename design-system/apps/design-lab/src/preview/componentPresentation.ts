@@ -7,7 +7,7 @@ export type ComponentPresentation =
 // These are website presentation choices. The public registry still owns the
 // component inventory, properties and supported states.
 const presentations: Record<string, ComponentPresentation> = {
-  Button: "matrix", IconButton: "matrix",
+  Button: "matrix", IconButton: "matrix", Capsule: "compact",
   Avatar: "compact", Checkbox: "compact", Radio: "compact", Switch: "compact",
   StatusPill: "compact", Spinner: "compact", LoadingState: "compact",
   LauncherButton: "compact", NumberBadge: "compact", KeyHint: "compact",

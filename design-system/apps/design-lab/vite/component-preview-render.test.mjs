@@ -75,6 +75,16 @@ test("color and pattern directories expose one labelled panel while retaining ot
   }
 });
 
+test("Capsule previews publish the glass action composition in every supported state", () => {
+  const { html, preview } = render("Capsule");
+  assert.match(preview, /data-openbitfun-component="capsule"/);
+  assert.match(preview, /data-openbitfun-variant="glass"/);
+  assert.match(preview, /data-openbitfun-shape="circle"/);
+  assert.match(preview, /data-openbitfun-preview-state="disabled"/);
+  assert.match(html, /import \{ Button, Capsule, Icon, IconButton \}/);
+  assert.doesNotMatch(html, />component\.Capsule\.description</);
+});
+
 test("Textarea opens with its editable, validation and disabled examples visible", () => {
   const { html, preview } = render("Textarea");
   assert.equal((preview.match(/data-openbitfun-component="textarea"/g) ?? []).length, 5);

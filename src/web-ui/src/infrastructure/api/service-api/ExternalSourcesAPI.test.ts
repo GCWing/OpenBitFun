@@ -5,6 +5,7 @@ import { PeerProductCommandError } from '../adapters/peer-device-adapter';
 import { ApiClient } from './ApiClient';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { MCP_CONFIG_CHANGED } from '@/infrastructure/mcp/configEvents';
+import { activateSurface, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 
 const invokeMock = vi.hoisted(() => vi.fn());
 const adapterMocks = vi.hoisted(() => ({
@@ -62,6 +63,7 @@ vi.mock('./ApiClient', async importOriginal => {
 
 describe('ExternalSourcesAPI', () => {
   beforeEach(() => {
+    activateSurface('local');
     vi.clearAllMocks();
     invokeMock.mockReset();
     invokeMock.mockResolvedValue(surface({}));
@@ -73,6 +75,34 @@ describe('ExternalSourcesAPI', () => {
     hasScanned: true, preferenceRevision: 9, discoverableCapabilities: { codex: ['mcp'] },
     catalog: { ...surface({}).catalog, generation: 2, discoveryPending: false, sources: [], commands: [],
       integrationPolicy: { status: 'compatible', effective: { enabled: false, ecosystems: {} }, registeredEcosystems: [] } },
+  });
+
+  it('does not refresh another device after a discovery preference write has returned', async () => {
+    invokeMock.mockImplementationOnce(() => {
+      // Complete the transport and prepared-command promises, then switch
+      // before the compound operation resumes to issue its follow-up read.
+      queueMicrotask(() => queueMicrotask(() => queueMicrotask(() => activateSurface('other-device'))));
+      return Promise.resolve({});
+    });
+
+    await expect(externalSourcesAPI.setAutomaticDiscovery(undefined, false, 8))
+      .rejects.toSatisfy(isSurfaceChangedError);
+    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual([
+      'update_external_integration_policy_command',
+    ]);
+  });
+
+  it('does not negotiate a legacy fallback on a device selected after the first response', async () => {
+    invokeMock.mockImplementationOnce(() => {
+      queueMicrotask(() => queueMicrotask(() => queueMicrotask(() => queueMicrotask(() => activateSurface('other-device')))));
+      return Promise.reject(new Error('Unknown command get_external_source_control_snapshot'));
+    });
+
+    await expect(externalSourcesAPI.getControlSnapshot())
+      .rejects.toSatisfy(isSurfaceChangedError);
+    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual([
+      'get_external_source_control_snapshot',
+    ]);
   });
 
   it('negotiates independent catalog discovery while keeping runtime authorization off', async () => {

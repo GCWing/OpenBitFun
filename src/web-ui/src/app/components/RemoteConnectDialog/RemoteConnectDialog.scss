@@ -1,3 +1,5 @@
+@use './remote-connect-surface' as surface;
+
 .openbitfun-remote-connect-dialog {
   block-size: min(620px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
   min-block-size: min(620px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
@@ -6,8 +8,8 @@
 
 .openbitfun-remote-connect-dialog__header {
   position: absolute;
-  inset-block-start: 20px;
-  inset-inline-end: 20px;
+  inset-block-start: surface.$page-block-start;
+  inset-inline-end: var(--openbitfun-space-6);
   z-index: 12;
   min-block-size: 0;
   padding: 0;
@@ -33,313 +35,6 @@
   color: var(--openbitfun-color-content-secondary);
 }
 
-// ==================== Persistent context column ====================
-
-.openbitfun-remote-connect__sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--openbitfun-space-6);
-  min-width: 0;
-  padding: var(--openbitfun-space-8) var(--openbitfun-space-4) var(--openbitfun-space-5);
-  border-right: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-  background: var(--openbitfun-color-surface-panel);
-}
-
-.openbitfun-remote-connect__sidebar-brand {
-  display: flex;
-  flex-direction: column;
-  gap: var(--openbitfun-space-3);
-  padding-inline: var(--openbitfun-space-3);
-}
-
-.openbitfun-remote-connect__sidebar-icon {
-  display: inline-flex;
-  align-items: center;
-  color: var(--openbitfun-color-content-secondary);
-}
-
-.openbitfun-remote-connect__sidebar-title {
-  margin: 0;
-  color: var(--openbitfun-color-content-primary);
-  font-size: var(--openbitfun-type-heading-section-font-size);
-  font-weight: var(--openbitfun-type-heading-section-font-weight);
-  line-height: var(--openbitfun-type-heading-section-line-height);
-}
-
-.openbitfun-remote-connect__title-extra {
-  margin-top: auto;
-  padding-inline: var(--openbitfun-space-2);
-
-  button { color: var(--openbitfun-color-content-muted); }
-}
-
-
-
-.openbitfun-remote-connect__navigation {
-  display: flex;
-  flex-direction: column;
-  gap: var(--openbitfun-space-1);
-}
-
-.openbitfun-remote-connect__navigation-item {
-  display: flex;
-  align-items: center;
-  gap: var(--openbitfun-space-3);
-  min-width: 0;
-  min-height: 40px;
-  padding: var(--openbitfun-space-2) var(--openbitfun-space-3);
-  border: 0;
-  border-radius: var(--openbitfun-radius-base);
-  background: transparent;
-  color: var(--openbitfun-color-content-secondary);
-  font-family: var(--openbitfun-type-body-sm-font-family);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-sm-line-height);
-  text-align: left;
-  cursor: pointer;
-
-  > span:first-child {
-    display: inline-flex;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-  }
-  > span:last-child { min-width: 0; white-space: nowrap; }
-  &[aria-current] {
-    background: var(--openbitfun-color-action-neutral-surface);
-    color: var(--openbitfun-color-content-primary);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-  }
-  &:hover { background: var(--openbitfun-color-action-neutral-surface); }
-  &:active { background: var(--openbitfun-color-action-neutral-surface-pressed); }
-  &:focus-visible {
-    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
-    outline-offset: 2px;
-  }
-}
-
-// ==================== Main work surface ====================
-
-.openbitfun-remote-connect__main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--openbitfun-color-surface-panel);
-}
-
-// ==================== Overview ====================
-
-.openbitfun-remote-connect__overview {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  flex-direction: column;
-  gap: var(--openbitfun-space-8);
-  padding: var(--openbitfun-space-8);
-}
-
-.openbitfun-remote-connect__overview-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--openbitfun-space-3);
-}
-
-.openbitfun-remote-connect__overview-section-heading {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--openbitfun-space-2);
-}
-
-.openbitfun-remote-connect__overview-section-title {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--openbitfun-space-3);
-  margin: 0;
-  color: var(--openbitfun-color-content-primary);
-  font-size: var(--openbitfun-type-heading-section-font-size);
-  font-weight: var(--openbitfun-type-label-selected-font-weight);
-  line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
-}
-
-.openbitfun-remote-connect__overview-section-description {
-  margin: 0;
-  color: var(--openbitfun-color-content-muted);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-sm-line-height);
-}
-
-.openbitfun-remote-connect__overview-actions {
-  overflow: hidden;
-  border: 0;
-  border-radius: var(--openbitfun-layout-field-group-radius);
-  background: var(--openbitfun-color-surface-tertiary);
-}
-
-.openbitfun-remote-connect__overview-action {
-  width: 100%;
-  min-height: 84px;
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto 16px;
-  align-items: center;
-  gap: var(--openbitfun-space-3);
-  padding: var(--openbitfun-space-4);
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
-  & + & {
-    border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-  }
-
-  &:hover:not(:disabled) {
-    background: var(--openbitfun-color-action-neutral-surface);
-
-    .openbitfun-remote-connect__overview-action-chevron {
-      color: var(--openbitfun-color-content-primary);
-    }
-  }
-
-  &:active:not(:disabled) {
-    background: var(--openbitfun-color-action-neutral-surface-pressed);
-  }
-
-  &:focus-visible {
-    position: relative;
-    z-index: 1;
-    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
-    outline-offset: calc(0px - var(--openbitfun-focus-width));
-    border-radius: var(--openbitfun-radius-lg);
-  }
-
-  &:disabled {
-    cursor: not-allowed;
-    opacity: var(--openbitfun-opacity-disabled);
-  }
-
-}
-
-.openbitfun-remote-connect__overview-action-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  color: var(--openbitfun-color-content-secondary);
-}
-
-.openbitfun-remote-connect__overview-action-copy {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.openbitfun-remote-connect__overview-action-title {
-  color: var(--openbitfun-color-content-primary);
-  font-size: var(--openbitfun-type-label-selected-font-size);
-  font-weight: var(--openbitfun-type-label-selected-font-weight);
-  line-height: var(--openbitfun-type-meta-line-height);
-}
-
-.openbitfun-remote-connect__overview-action-description {
-  max-width: 410px;
-  color: var(--openbitfun-color-content-muted);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-support-line-height);
-}
-
-.openbitfun-remote-connect__overview-action-status {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-}
-
-.openbitfun-remote-connect__overview-action-status-detail {
-  max-width: 150px;
-  overflow: hidden;
-  color: var(--openbitfun-color-content-muted);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  white-space: nowrap;
-}
-
-.openbitfun-remote-connect__overview-action-chevron {
-  color: var(--openbitfun-color-content-muted);
-  transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-}
-
-// ==================== Detail heading ====================
-
-.openbitfun-remote-connect__view-header {
-  display: flex;
-  flex-shrink: 0;
-  flex-direction: column;
-  gap: var(--openbitfun-space-4);
-  padding: var(--openbitfun-space-8) var(--openbitfun-space-8) 0;
-}
-
-.openbitfun-remote-connect__back {
-  display: none;
-  align-self: flex-start;
-}
-
-.openbitfun-remote-connect__view-page-header {
-  max-width: 560px;
-  padding-inline-end: var(--openbitfun-space-8);
-
-  [data-openbitfun-part='heading'] {
-    font-size: var(--openbitfun-type-heading-dialog-font-size);
-    line-height: var(--openbitfun-type-heading-dialog-line-height);
-  }
-  [data-openbitfun-part='description'] {
-    max-width: 56ch;
-    color: var(--openbitfun-color-content-secondary);
-  }
-}
-
-// ==================== Method / provider selectors ====================
-
-.openbitfun-remote-connect__subtabs {
-  flex-shrink: 0;
-  margin: var(--openbitfun-space-5) var(--openbitfun-space-8) 0;
-  max-width: 100%;
-}
-
-.openbitfun-remote-connect__tab-group {
-  max-width: 100%;
-}
-
-.openbitfun-remote-connect__tab-label {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: var(--openbitfun-space-1);
-}
-
-.openbitfun-remote-connect__tab-brand {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  color: currentColor;
-}
-
-.openbitfun-remote-connect__dot-sm {
-  width: 5px;
-  height: 5px;
-  flex-shrink: 0;
-  border-radius: var(--openbitfun-radius-pill);
-  background: var(--openbitfun-color-status-success-content);
-}
-
 .openbitfun-remote-connect__visually-hidden {
   position: absolute;
   width: 1px;
@@ -350,11 +45,191 @@
   white-space: nowrap;
 }
 
-// ==================== Detail panels ====================
+// ==================== Sidebar ====================
+
+.openbitfun-remote-connect__sidebar {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--openbitfun-space-5);
+  padding: surface.$page-block-start var(--openbitfun-space-3) var(--openbitfun-space-4);
+  border-inline-end: surface.$divider;
+  background: var(--openbitfun-color-surface-panel);
+}
+
+.openbitfun-remote-connect__sidebar-brand {
+  display: flex;
+  min-width: 0;
+  min-block-size: 30px;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  padding-inline: var(--openbitfun-space-3);
+}
+
+.openbitfun-remote-connect__sidebar-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--openbitfun-color-content-primary);
+}
+
+.openbitfun-remote-connect__sidebar-title {
+  @include surface.section-title;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.openbitfun-remote-connect__navigation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--openbitfun-space-1);
+}
+
+.openbitfun-remote-connect__navigation-item {
+  display: flex;
+  min-width: 0;
+  min-height: 36px;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  padding: 0 var(--openbitfun-space-3);
+  border: 0;
+  border-radius: var(--openbitfun-radius-base);
+  background: transparent;
+  color: var(--openbitfun-color-content-secondary);
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
+  text-align: start;
+  cursor: pointer;
+  transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+  &:hover {
+    background: var(--openbitfun-color-action-neutral-surface);
+    color: var(--openbitfun-color-content-primary);
+  }
+
+  &:active {
+    background: var(--openbitfun-color-action-neutral-surface-pressed);
+  }
+
+  &:focus-visible {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: calc(0px - var(--openbitfun-focus-width));
+  }
+
+  &[aria-current] {
+    background: var(--openbitfun-color-action-neutral-surface);
+    color: var(--openbitfun-color-content-primary);
+    font-weight: var(--openbitfun-type-label-selected-font-weight);
+  }
+}
+
+.openbitfun-remote-connect__navigation-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+.openbitfun-remote-connect__navigation-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.openbitfun-remote-connect__sidebar-footer {
+  margin-top: auto;
+  padding-inline: var(--openbitfun-space-1);
+
+  .openbitfun-remote-connect__disclaimer-trigger {
+    color: var(--openbitfun-color-content-muted);
+
+    &:hover {
+      color: var(--openbitfun-color-content-primary);
+    }
+  }
+}
+
+// ==================== Main surface ====================
+
+.openbitfun-remote-connect__main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--openbitfun-color-surface-panel);
+}
+
+.openbitfun-remote-connect__view-header {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: var(--openbitfun-space-3);
+  padding: surface.$page-block-start surface.$page-inline 0;
+}
+
+.openbitfun-remote-connect__back {
+  display: none;
+  align-self: flex-start;
+}
+
+.openbitfun-remote-connect__view-page-header {
+  max-width: 600px;
+  padding-inline-end: var(--openbitfun-space-10);
+
+  [data-openbitfun-part='heading'] {
+    @include surface.page-title;
+  }
+
+  [data-openbitfun-part='description'] {
+    max-width: 60ch;
+    color: var(--openbitfun-color-content-secondary);
+  }
+}
+
+.openbitfun-remote-connect__subtabs {
+  display: flex;
+  flex-shrink: 0;
+  max-width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--openbitfun-space-2);
+  margin: var(--openbitfun-space-5) surface.$page-inline 0;
+}
+
+.openbitfun-remote-connect__tab-group {
+  max-width: 100%;
+}
+
+.openbitfun-remote-connect__subtabs-hint {
+  @include surface.supporting-text;
+}
+
+.openbitfun-remote-connect__tab-marker {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: var(--openbitfun-space-1);
+}
+
+.openbitfun-remote-connect__dot-sm {
+  inline-size: 6px;
+  block-size: 6px;
+  flex-shrink: 0;
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-status-success-content);
+}
 
 .openbitfun-remote-connect [data-openbitfun-part='panel'] {
   flex: 1;
   min-height: 0;
+}
+
+.openbitfun-remote-connect [data-openbitfun-part='panel'][data-openbitfun-group='account'] {
+  display: flex;
 }
 
 .openbitfun-remote-connect [data-openbitfun-part='panel'] > [role='tabpanel'] {
@@ -366,143 +241,362 @@
 .openbitfun-remote-connect__body {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
   gap: var(--openbitfun-space-4);
-  padding: var(--openbitfun-space-5) var(--openbitfun-space-8) var(--openbitfun-space-8);
+  padding: var(--openbitfun-space-5) surface.$page-inline surface.$page-block-start;
 }
 
-.openbitfun-remote-connect__network-card {
-  overflow: hidden;
-  border-radius: var(--openbitfun-layout-field-group-radius);
-  background: var(--openbitfun-color-surface-tertiary);
-}
+// ==================== Overview ====================
 
-.openbitfun-remote-connect__network-heading {
+.openbitfun-remote-connect__overview {
   display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: surface.$section-gap;
+  padding: surface.$page-content-gap surface.$page-inline surface.$page-block-start;
+
+  > * {
+    flex-shrink: 0;
+  }
+}
+
+.openbitfun-remote-connect__overview-section {
+  @include surface.section;
+}
+
+.openbitfun-remote-connect__overview-section-heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--openbitfun-space-1);
+}
+
+.openbitfun-remote-connect__overview-section-title {
+  @include surface.section-title;
+}
+
+.openbitfun-remote-connect__overview-section-description {
+  @include surface.supporting-text;
+}
+
+.openbitfun-remote-connect__overview-actions {
+  @include surface.card;
+}
+
+.openbitfun-remote-connect__overview-action {
+  display: grid;
+  width: 100%;
+  min-height: 72px;
+  grid-template-columns: surface.$icon-slot minmax(0, 1fr) auto 16px;
   align-items: center;
-  gap: var(--openbitfun-space-3);
-  padding: var(--openbitfun-space-4);
-  color: var(--openbitfun-color-content-secondary);
+  gap: surface.$row-gap;
+  padding: surface.$row-block surface.$row-inline;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
 
-  h3 {
-    margin: 0;
+  & + & {
+    @include surface.card-divider;
+  }
+
+  &:hover:not(:disabled) .openbitfun-remote-connect__overview-action-chevron {
     color: var(--openbitfun-color-content-primary);
-    font-size: var(--openbitfun-type-body-md-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    line-height: var(--openbitfun-type-body-md-line-height);
   }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: var(--openbitfun-opacity-disabled);
+  }
+
+  @include surface.interactive-row;
 }
 
-.openbitfun-remote-connect__network-description {
-  padding: var(--openbitfun-space-3) var(--openbitfun-space-5) var(--openbitfun-space-4);
+.openbitfun-remote-connect__overview-action-icon {
+  @include surface.icon-slot;
 }
 
-.openbitfun-remote-connect__network-settings {
+.openbitfun-remote-connect__overview-action-copy {
+  @include surface.row-copy;
+}
+
+.openbitfun-remote-connect__overview-action-title {
+  @include surface.row-title;
+}
+
+.openbitfun-remote-connect__overview-action-description {
+  @include surface.supporting-text;
+  max-width: 420px;
+}
+
+.openbitfun-remote-connect__overview-action-status {
+  @include surface.row-trailing;
+  justify-content: flex-end;
+}
+
+.openbitfun-remote-connect__overview-action-status-detail {
+  @include surface.supporting-text;
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.openbitfun-remote-connect__overview-action-chevron {
+  @include surface.chevron;
+  transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+
+// ==================== Cards ====================
+
+.openbitfun-remote-connect__network-card,
+.openbitfun-remote-connect__bot-card {
+  @include surface.card;
+}
+
+.openbitfun-remote-connect__card-header,
+.openbitfun-remote-connect__bot-identity {
+  @include surface.card-row;
+}
+
+.openbitfun-remote-connect__card-header-icon {
+  @include surface.icon-slot;
+}
+
+.openbitfun-remote-connect__bot-identity-icon {
+  @include surface.icon-slot;
+  color: var(--openbitfun-color-content-primary);
+}
+
+.openbitfun-remote-connect__card-header-copy,
+.openbitfun-remote-connect__bot-identity-copy {
+  @include surface.row-copy;
+}
+
+.openbitfun-remote-connect__card-header-title,
+.openbitfun-remote-connect__bot-identity-title {
+  @include surface.row-title;
+}
+
+.openbitfun-remote-connect__card-header-description,
+.openbitfun-remote-connect__bot-identity-description {
+  @include surface.supporting-text;
+  max-width: 480px;
+}
+
+.openbitfun-remote-connect__status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.openbitfun-remote-connect__card-section {
   display: flex;
+  min-width: 0;
   flex-direction: column;
-  gap: var(--openbitfun-space-3);
-  padding: var(--openbitfun-space-4);
-  border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-
-  &:empty {
-    display: none;
-  }
-
-  .openbitfun-remote-connect__info-meta-group {
-    margin: 0;
-    padding: 0;
-    border: 0;
-  }
-}
-
-.openbitfun-remote-connect__network-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--openbitfun-space-3);
-  padding: var(--openbitfun-space-4);
-  border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-}
-
-.openbitfun-remote-connect__primary-action {
-  align-self: flex-start;
-  max-width: 100%;
-}
-
-// ==================== QR / pairing ====================
-
-.openbitfun-remote-connect__body--pairing {
   gap: var(--openbitfun-space-4);
+  padding: surface.$row-block surface.$row-inline;
+  @include surface.card-divider;
 }
+
+.openbitfun-remote-connect__card-actions {
+  @include surface.action-bar;
+}
+
+.openbitfun-remote-connect__setting-row {
+  @include surface.card-row;
+  @include surface.card-divider;
+  justify-content: space-between;
+}
+
+.openbitfun-remote-connect__setting-copy {
+  @include surface.row-copy;
+}
+
+.openbitfun-remote-connect__setting-title {
+  @include surface.row-title;
+}
+
+.openbitfun-remote-connect__setting-description {
+  @include surface.supporting-text;
+}
+
+.openbitfun-remote-connect__notice {
+  @include surface.notice;
+
+  > p {
+    margin: 0;
+  }
+}
+
+.openbitfun-remote-connect__error-group {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--openbitfun-space-2);
+  padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
+  border-radius: var(--openbitfun-radius-base);
+  background: var(--openbitfun-color-status-danger-surface);
+
+  > [data-openbitfun-component='icon'] {
+    margin-top: 2px;
+  }
+}
+
+.openbitfun-remote-connect__error {
+  margin: 0;
+  color: var(--openbitfun-color-status-danger-content);
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+  overflow-wrap: anywhere;
+}
+
+.openbitfun-remote-connect__hint {
+  @include surface.supporting-text;
+}
+
+.openbitfun-remote-connect__field {
+  width: 100%;
+  max-width: none;
+}
+
+.openbitfun-remote-connect__field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--openbitfun-space-3) var(--openbitfun-space-4);
+}
+
+// ==================== Setup steps ====================
+
+.openbitfun-remote-connect__setup {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--openbitfun-space-3);
+}
+
+.openbitfun-remote-connect__setup-heading {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--openbitfun-space-2);
+}
+
+.openbitfun-remote-connect__setup-title {
+  @include surface.label-text;
+  margin: 0;
+}
+
+.openbitfun-remote-connect__steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--openbitfun-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.openbitfun-remote-connect__step {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--openbitfun-space-3);
+  color: var(--openbitfun-color-content-secondary);
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+}
+
+.openbitfun-remote-connect__step-index {
+  display: inline-flex;
+  inline-size: 20px;
+  block-size: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-action-neutral-surface);
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-micro-font-family);
+  font-size: var(--openbitfun-type-micro-font-size);
+  font-weight: var(--openbitfun-type-label-selected-font-weight);
+  line-height: var(--openbitfun-type-modifier-leading-none-line-height);
+  font-variant-numeric: tabular-nums;
+}
+
+.openbitfun-remote-connect__step-text {
+  min-width: 0;
+  padding-top: 1px;
+  overflow-wrap: anywhere;
+}
+
+.openbitfun-remote-connect__inline-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--openbitfun-color-link-default);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--openbitfun-color-link-hover);
+  }
+
+  &:focus-visible {
+    border-radius: var(--openbitfun-radius-xs);
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+// ==================== Pairing ====================
 
 .openbitfun-remote-connect__pairing-card {
   display: grid;
-  grid-template-columns: 204px minmax(0, 1fr);
-  gap: var(--openbitfun-space-4);
   min-width: 0;
-  padding: var(--openbitfun-space-4);
-  border-radius: var(--openbitfun-layout-field-group-radius);
-  background: var(--openbitfun-color-surface-tertiary);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--openbitfun-space-5);
 
   &--compact {
     grid-template-columns: minmax(0, 1fr);
-    justify-items: center;
-    gap: var(--openbitfun-space-4);
-    padding: var(--openbitfun-space-6);
-    text-align: center;
 
-    .openbitfun-remote-connect__pairing-visual {
-      padding: 0;
-    }
-
-    .openbitfun-remote-connect__pairing-details {
-      align-items: center;
-      gap: var(--openbitfun-space-3);
-      padding: 0;
-    }
-
-    .openbitfun-remote-connect__pairing-status {
-      align-self: center;
-      margin: 0;
-    }
-
-    .openbitfun-remote-connect__hint {
-      max-width: 36ch;
-      color: var(--openbitfun-color-content-secondary);
+    &:has(> .openbitfun-remote-connect__pairing-visual) {
+      grid-template-columns: auto minmax(0, 1fr);
     }
   }
 }
 
 .openbitfun-remote-connect__pairing-visual {
   display: flex;
-  flex-direction: column;
-  gap: var(--openbitfun-space-3);
-  align-items: center;
-  justify-content: center;
   min-width: 0;
-  padding: var(--openbitfun-space-2) 0;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--openbitfun-space-3);
 }
 
 .openbitfun-remote-connect__qr-box {
-  appearance: none;
-  width: 170px;
-  height: 170px;
   display: flex;
+  inline-size: 168px;
+  block-size: 168px;
+  appearance: none;
   align-items: center;
   justify-content: center;
   padding: 6px;
-  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  border: surface.$divider;
   border-radius: var(--openbitfun-radius-lg);
   background: var(--openbitfun-color-content-on-dark);
   cursor: pointer;
-  transition: border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard), transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  transition: border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
   &:hover {
-    border-color: color-mix(
-      in srgb,
-      var(--openbitfun-color-accent-default) 40%,
-      var(--openbitfun-color-border-subtle)
-    );
+    border-color: var(--openbitfun-color-border-default);
   }
 
   &:focus-visible {
@@ -516,69 +610,15 @@
   }
 }
 
-.openbitfun-remote-connect__pairing-details {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  justify-content: center;
-  padding: var(--openbitfun-space-4);
-}
-
-.openbitfun-remote-connect__pairing-status {
-  display: flex;
-  align-self: flex-start;
-  max-width: 100%;
-  margin-bottom: var(--openbitfun-space-4);
-}
-
-.openbitfun-remote-connect__pairing-label {
-  margin-bottom: var(--openbitfun-space-1);
-  color: var(--openbitfun-color-content-muted);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-sm-line-height);
-}
-
-.openbitfun-remote-connect__pairing-url-row {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--openbitfun-space-2);
-  width: 100%;
-  min-width: 0;
-
-  > button { flex-shrink: 0; }
-}
-
-.openbitfun-remote-connect__pairing-url {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  user-select: text;
-  color: var(--openbitfun-color-content-primary);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-sm-line-height);
-}
-
-.openbitfun-remote-connect__pairing-instruction {
-  margin: var(--openbitfun-space-4) 0 0;
-  color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-sm-line-height);
-}
-
-.openbitfun-remote-connect__pairing-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
 .openbitfun-remote-connect__pairing-code {
   max-width: 100%;
   padding: var(--openbitfun-space-3) var(--openbitfun-space-5);
-  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  border: surface.$divider;
   border-radius: var(--openbitfun-radius-base);
   background: var(--openbitfun-color-surface-canvas);
   color: var(--openbitfun-color-content-primary);
   font-family: var(--openbitfun-type-code-md-font-family);
-  font-size: var(--openbitfun-type-flow-section-title-font-size);
+  font-size: var(--openbitfun-type-heading-dialog-font-size);
   font-weight: var(--openbitfun-type-label-selected-font-weight);
   line-height: var(--openbitfun-type-heading-dialog-line-height);
   font-variant-numeric: tabular-nums;
@@ -586,431 +626,179 @@
   user-select: all;
 }
 
-// ==================== Bot setup card ====================
-
-.openbitfun-remote-connect__body--bot {
-  padding-top: var(--openbitfun-space-5);
-}
-
-.openbitfun-remote-connect__bot-card {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 0;
-  border-radius: var(--openbitfun-layout-field-group-radius);
-  background: var(--openbitfun-color-surface-tertiary);
-}
-
-.openbitfun-remote-connect__bot-identity {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  align-items: center;
-  gap: var(--openbitfun-space-2) var(--openbitfun-space-3);
-  padding: var(--openbitfun-space-4);
-  border-bottom: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-}
-
-.openbitfun-remote-connect__bot-identity-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  grid-row: 1 / 3;
-  color: var(--openbitfun-color-content-secondary);
-}
-
-.openbitfun-remote-connect__bot-identity-title {
-  margin: 0;
-  color: var(--openbitfun-color-content-primary);
-  font-size: var(--openbitfun-type-body-md-font-size);
-  font-weight: var(--openbitfun-type-label-selected-font-weight);
-  line-height: var(--openbitfun-type-body-md-line-height);
-}
-
-.openbitfun-remote-connect__bot-identity-description {
-  margin: 0;
-  grid-column: 2;
-  color: var(--openbitfun-color-content-muted);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-lg-line-height);
-}
-
-.openbitfun-remote-connect__bot-setup {
+.openbitfun-remote-connect__pairing-details {
   display: flex;
   min-width: 0;
-  flex-direction: column;
-  gap: var(--openbitfun-space-4);
-  padding: var(--openbitfun-space-4);
-
-  > .openbitfun-remote-connect__primary-action {
-    align-self: flex-start;
-  }
-}
-
-.openbitfun-remote-connect__bot-guide {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--openbitfun-space-4);
-
-  .openbitfun-remote-connect__info-card {
-    max-width: none;
-    padding: 0;
-    border: 0;
-    background: transparent;
-  }
-
-  .openbitfun-remote-connect__field {
-    max-width: none;
-  }
-
-  > .openbitfun-remote-connect__primary-action {
-    align-self: flex-start;
-  }
-}
-
-.openbitfun-remote-connect__info-text + .openbitfun-remote-connect__steps {
-  margin-top: var(--openbitfun-space-3);
-}
-
-.openbitfun-remote-connect__steps {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  gap: var(--openbitfun-space-3);
-}
-
-.openbitfun-remote-connect__step {
-  display: grid;
-  width: 100%;
-  grid-template-columns: 22px minmax(0, 1fr);
-  align-items: start;
-  gap: var(--openbitfun-space-3);
-  margin: 0;
-  color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-lg-line-height);
-  text-align: left;
-}
-
-.openbitfun-remote-connect__step-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--openbitfun-radius-pill);
-  background: var(--openbitfun-color-action-neutral-surface);
-  color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-micro-font-size);
-  font-weight: var(--openbitfun-type-heading-page-font-weight);
-  line-height: var(--openbitfun-type-modifier-leading-none-line-height);
-}
-
-// ==================== Shared detail primitives ====================
-
-.openbitfun-remote-connect__info-card {
-  width: 100%;
-  max-width: none;
-  margin: 0;
-  padding: var(--openbitfun-space-4);
-  box-sizing: border-box;
-  border: 0;
-  border-radius: var(--openbitfun-layout-field-group-radius);
-  background: var(--openbitfun-color-surface-tertiary);
-}
-
-.openbitfun-remote-connect__info-text,
-.openbitfun-remote-connect__info-meta {
-  margin: 0;
-  color: var(--openbitfun-color-content-muted);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-lg-line-height);
-  text-align: left;
-}
-
-.openbitfun-remote-connect__info-meta-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-}
-
-.openbitfun-remote-connect__lan-ip-select {
-  display: flex;
-  align-items: center;
-  gap: var(--openbitfun-space-3);
-}
-
-.openbitfun-remote-connect__info-meta-label {
-  color: var(--openbitfun-color-content-muted);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  white-space: nowrap;
-}
-
-.openbitfun-remote-connect__lan-ip-dropdown {
-  flex: 1;
-  min-width: 0;
-}
-
-.openbitfun-remote-connect__description-link,
-.openbitfun-remote-connect__step-link {
-  color: var(--openbitfun-color-content-secondary);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-  transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
-  &:hover {
-    color: var(--openbitfun-color-content-primary);
-  }
-
-  &:focus-visible {
-    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
-    outline-offset: 2px;
-    border-radius: var(--openbitfun-radius-xs);
-  }
-}
-
-.openbitfun-remote-connect__field {
-  width: 100%;
-  max-width: none;
-
-  &--inline {
-    max-width: none;
-  }
-}
-
-.openbitfun-remote-connect__input {
-  width: 100%;
-}
-
-.openbitfun-remote-connect__status {
-  display: flex;
-  align-items: center;
-  gap: var(--openbitfun-space-3);
-}
-
-.openbitfun-remote-connect__peer-username {
-  color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-}
-
-.openbitfun-remote-connect__connected {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--openbitfun-space-4);
-  margin: 20px 32px 28px;
-  padding: var(--openbitfun-space-5);
-  border: 0;
-  border-radius: var(--openbitfun-layout-field-group-radius);
-  background: var(--openbitfun-color-surface-tertiary);
-}
-
-.openbitfun-remote-connect__connected > button {
-  align-self: flex-start;
-}
-
-.openbitfun-remote-connect__connected > .openbitfun-remote-connect__hint {
-  text-align: left;
-}
-
-.openbitfun-remote-connect__connected--bot {
-  align-items: stretch;
-  gap: 0;
-  overflow: hidden;
-  padding: 0;
-  background: var(--openbitfun-color-surface-tertiary);
-}
-
-.openbitfun-remote-connect__connected-app {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--openbitfun-space-4);
-  padding: 20px;
-  border-bottom: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-}
-
-.openbitfun-remote-connect__connected-app-icon {
-  width: 32px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--openbitfun-color-content-primary);
-}
-
-.openbitfun-remote-connect__connected-app-copy {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--openbitfun-space-1);
-
-  strong {
-    color: var(--openbitfun-color-content-primary);
-    font-size: var(--openbitfun-type-body-md-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
-  }
-
-  > span {
-    max-width: 470px;
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-body-sm-font-size);
-    line-height: var(--openbitfun-type-body-sm-line-height);
-  }
-}
-
-.openbitfun-remote-connect__connected-notice {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  align-items: start;
-  gap: var(--openbitfun-space-3);
-  margin: 16px 20px 0;
-  padding: 13px 14px;
-  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-  border-radius: var(--openbitfun-radius-base);
-  background: var(--openbitfun-color-surface-subtle);
-  color: var(--openbitfun-color-content-muted);
-
-  svg {
-    margin-top: 2px;
-  }
-
-  p {
-    margin: 0;
-    font-size: var(--openbitfun-type-body-sm-font-size);
-    line-height: var(--openbitfun-type-body-lg-line-height);
-  }
-}
-
-.openbitfun-remote-connect__connected-setting {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--openbitfun-space-3);
-  padding: var(--openbitfun-space-4);
-  border-bottom: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-}
-
-.openbitfun-remote-connect__connected-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding: 14px 20px 20px;
-}
-
-.openbitfun-remote-connect__hint,
-.openbitfun-remote-connect__description {
-  width: 100%;
-  max-width: 480px;
-  margin: 0;
-  color: var(--openbitfun-color-content-muted);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-lg-line-height);
-}
-
-.openbitfun-remote-connect__hint {
-  text-align: center;
-}
-
-.openbitfun-remote-connect__description {
-  text-align: left;
-}
-
-.openbitfun-remote-connect__error {
-  margin: 0;
-  color: var(--openbitfun-color-status-danger-content);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-sm-line-height);
-  overflow-wrap: anywhere;
-  text-align: left;
-}
-
-.openbitfun-remote-connect__error-group {
-  display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--openbitfun-space-2);
-  padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
-  border-radius: var(--openbitfun-radius-base);
-  background: var(--openbitfun-color-status-danger-surface);
 }
 
-.openbitfun-remote-connect__mode-setting {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--openbitfun-space-2);
-  color: var(--openbitfun-color-content-muted);
-  font-family:var(--openbitfun-type-body-sm-font-family);
-  font-size: var(--openbitfun-type-body-sm-font-size);
+.openbitfun-remote-connect__pairing-status {
+  display: flex;
+  max-width: 100%;
+  margin-bottom: var(--openbitfun-space-2);
+}
 
-  > span[data-active='true'] {
-    color: var(--openbitfun-color-content-primary);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
+.openbitfun-remote-connect__pairing-label {
+  @include surface.label-text;
+}
+
+.openbitfun-remote-connect__pairing-url-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  gap: var(--openbitfun-space-2);
+
+  > button {
+    flex-shrink: 0;
   }
 }
 
-.openbitfun-remote-connect__mode-divider {
-  color: var(--openbitfun-color-border-default);
+.openbitfun-remote-connect__pairing-url {
+  flex: 1;
+  min-width: 0;
+  padding-top: var(--openbitfun-space-1);
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-code-md-font-family);
+  font-size: var(--openbitfun-type-code-md-font-size);
+  line-height: var(--openbitfun-type-code-md-line-height);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.openbitfun-remote-connect__pairing-instruction {
+  @include surface.supporting-text;
+}
+
+// ==================== Weixin login ====================
+
+.openbitfun-remote-connect__weixin-login {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--openbitfun-space-5);
+
+  &--progress {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .openbitfun-remote-connect__weixin-qr {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: var(--openbitfun-space-3);
-  margin-top: 4px;
-  text-align: center;
-}
-
-.openbitfun-remote-connect__weixin-progress {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--openbitfun-space-2);
-  max-width: 100%;
-
-  .openbitfun-remote-connect__hint {
-    margin: 0;
-  }
-}
-
-.openbitfun-remote-connect__weixin-verify {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--openbitfun-space-3);
+  justify-content: center;
 }
 
 .openbitfun-remote-connect__weixin-qr-img {
   display: block;
-  max-width: 180px;
+  max-width: 168px;
   height: auto;
-  margin: 0 auto;
-  border-radius: var(--openbitfun-radius-base);
+  border-radius: var(--openbitfun-radius-lg);
 }
 
 .openbitfun-remote-connect__weixin-qr-svg-wrap {
-  display: inline-block;
-  margin: 0 auto;
-  padding: 8px;
-  border-radius: var(--openbitfun-radius-base);
+  display: inline-flex;
+  padding: 2px;
+  border: surface.$divider;
+  border-radius: var(--openbitfun-radius-lg);
   background: var(--openbitfun-color-content-on-dark);
-  box-sizing: border-box;
 
   svg {
     display: block;
-    vertical-align: top;
   }
 }
 
-// ==================== Responsive containment ====================
+.openbitfun-remote-connect__weixin-progress {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--openbitfun-space-2);
+}
+
+// ==================== Connected clients ====================
+
+.openbitfun-remote-connect__connections {
+  gap: var(--openbitfun-space-2);
+}
+
+.openbitfun-remote-connect__connections-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+}
+
+.openbitfun-remote-connect__connections-title {
+  @include surface.label-text;
+  margin: 0;
+}
+
+.openbitfun-remote-connect__connections-count {
+  display: inline-flex;
+  min-inline-size: 20px;
+  block-size: 20px;
+  align-items: center;
+  justify-content: center;
+  padding-inline: var(--openbitfun-space-1);
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-action-neutral-surface);
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-meta-font-family);
+  font-size: var(--openbitfun-type-meta-font-size);
+  font-weight: var(--openbitfun-type-label-selected-font-weight);
+  line-height: var(--openbitfun-type-modifier-leading-none-line-height);
+  font-variant-numeric: tabular-nums;
+}
+
+.openbitfun-remote-connect__connections-list {
+  display: flex;
+  max-height: 168px;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.openbitfun-remote-connect__client {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: surface.$row-gap;
+  padding-block: var(--openbitfun-space-2);
+
+  & + & {
+    @include surface.card-divider;
+  }
+}
+
+.openbitfun-remote-connect__client-icon {
+  @include surface.icon-slot;
+}
+
+.openbitfun-remote-connect__client-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+  overflow-wrap: anywhere;
+}
+
+.openbitfun-remote-connect__client-meta {
+  @include surface.supporting-text;
+  flex-shrink: 0;
+}
+
+.openbitfun-remote-connect__connections-empty {
+  @include surface.supporting-text;
+}
+
+// ==================== Responsive ====================
 
 @media (max-width: 760px) {
   .openbitfun-remote-connect-dialog {
@@ -1018,142 +806,129 @@
     min-block-size: calc(100dvh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter));
     max-block-size: calc(100dvh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter));
   }
-  .openbitfun-remote-connect { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+
+  .openbitfun-remote-connect-dialog__header {
+    inset-block-start: var(--openbitfun-space-3);
+    inset-inline-end: var(--openbitfun-space-4);
+  }
+
+  .openbitfun-remote-connect {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
   .openbitfun-remote-connect__sidebar {
     flex-direction: row;
     align-items: center;
     gap: var(--openbitfun-space-2);
-    padding: var(--openbitfun-space-4) 56px var(--openbitfun-space-4) var(--openbitfun-space-5);
-    border-right: 0;
-    border-bottom: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    padding: var(--openbitfun-space-3) var(--openbitfun-space-12) var(--openbitfun-space-3) var(--openbitfun-space-2);
+    border-inline-end: 0;
+    border-block-end: surface.$divider;
   }
-  .openbitfun-remote-connect__sidebar-brand { flex-direction: row; align-items: center; gap: var(--openbitfun-space-2); padding: 0; }
-  .openbitfun-remote-connect__sidebar-icon { display: none; }
-  .openbitfun-remote-connect__sidebar-title { font-size: var(--openbitfun-type-body-md-font-size); }
-  .openbitfun-remote-connect__navigation { display: none; }
-  .openbitfun-remote-connect__title-extra { margin: 0 0 0 auto; padding: 0; }
-  .openbitfun-remote-connect__overview { padding: var(--openbitfun-space-5); gap: var(--openbitfun-space-6); }
-  .openbitfun-remote-connect__overview-action { grid-template-columns: 24px minmax(0, 1fr) 16px; padding: var(--openbitfun-space-4); }
-  .openbitfun-remote-connect__overview-action-status { grid-column: 2; align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
-  .openbitfun-remote-connect__overview-action-chevron { grid-column: 3; grid-row: 1 / 3; }
-  .openbitfun-remote-connect__view-header { padding: var(--openbitfun-space-5) var(--openbitfun-space-5) 0; }
-  .openbitfun-remote-connect__back { display: inline-flex; }
-  .openbitfun-remote-connect__view-page-header { padding: 0; }
-  .openbitfun-remote-connect__subtabs { margin-inline: var(--openbitfun-space-5); }
-  .openbitfun-remote-connect__body { padding: var(--openbitfun-space-5); }
-  .openbitfun-remote-connect__pairing-card { grid-template-columns: minmax(0, 1fr); gap: var(--openbitfun-space-3); }
-  .openbitfun-remote-connect__pairing-visual { padding-top: var(--openbitfun-space-3); }
-  .openbitfun-remote-connect__connected { margin: var(--openbitfun-space-5); }
-  .openbitfun-remote-connect__connected-app { grid-template-columns: 24px minmax(0, 1fr); }
-  .openbitfun-remote-connect__connected-app .openbitfun-remote-connect__status { grid-column: 2; justify-self: start; }
+
+  .openbitfun-remote-connect__navigation {
+    display: none;
+  }
+
+  .openbitfun-remote-connect__sidebar-footer {
+    margin: 0 0 0 auto;
+    padding: 0;
+  }
+
+  .openbitfun-remote-connect__view-header {
+    padding: var(--openbitfun-space-5) surface.$page-inline-compact 0;
+  }
+
+  .openbitfun-remote-connect__back {
+    display: inline-flex;
+  }
+
+  .openbitfun-remote-connect__view-page-header {
+    padding-inline-end: 0;
+  }
+
+  .openbitfun-remote-connect__subtabs {
+    margin-inline: surface.$page-inline-compact;
+  }
+
+  .openbitfun-remote-connect__overview {
+    padding: var(--openbitfun-space-5) surface.$page-inline-compact;
+  }
+
+  .openbitfun-remote-connect__body {
+    padding: var(--openbitfun-space-5) surface.$page-inline-compact;
+  }
+
+  .openbitfun-remote-connect__overview-action {
+    grid-template-columns: surface.$icon-slot minmax(0, 1fr) 16px;
+  }
+
+  .openbitfun-remote-connect__overview-action-status {
+    flex-wrap: wrap;
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+
+  .openbitfun-remote-connect__overview-action-chevron {
+    grid-column: 3;
+    grid-row: 1 / 3;
+  }
+
+  .openbitfun-remote-connect__card-header,
+  .openbitfun-remote-connect__bot-identity {
+    flex-wrap: wrap;
+  }
+
+  .openbitfun-remote-connect__card-header .openbitfun-remote-connect__status,
+  .openbitfun-remote-connect__bot-identity .openbitfun-remote-connect__status {
+    margin-inline-start: calc(surface.$icon-slot + surface.$row-gap);
+  }
+
+  .openbitfun-remote-connect__pairing-card,
+  .openbitfun-remote-connect__pairing-card--compact:has(> .openbitfun-remote-connect__pairing-visual),
+  .openbitfun-remote-connect__weixin-login,
+  .openbitfun-remote-connect__field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .openbitfun-remote-connect__pairing-visual,
+  .openbitfun-remote-connect__weixin-qr {
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 380px) {
+  .openbitfun-remote-connect__view-header {
+    padding-inline: surface.$page-inline-narrow;
+  }
+
+  .openbitfun-remote-connect__subtabs {
+    margin-inline: surface.$page-inline-narrow;
+  }
+
   .openbitfun-remote-connect__overview,
-  .openbitfun-remote-connect__body { padding-inline: var(--openbitfun-space-4); }
-  .openbitfun-remote-connect__view-header { padding-inline: var(--openbitfun-space-4); }
-  .openbitfun-remote-connect__subtabs { margin-inline: var(--openbitfun-space-4); }
-  .openbitfun-remote-connect__tab-brand { display: none; }
-  .openbitfun-remote-connect__sidebar { padding-inline-start: var(--openbitfun-space-4); }
+  .openbitfun-remote-connect__body {
+    padding-inline: surface.$page-inline-narrow;
+  }
+
+  .openbitfun-remote-connect__overview-action,
+  .openbitfun-remote-connect__card-header,
+  .openbitfun-remote-connect__bot-identity,
+  .openbitfun-remote-connect__card-section,
+  .openbitfun-remote-connect__setting-row {
+    padding-inline: var(--openbitfun-space-4);
+  }
+
+  .openbitfun-remote-connect__card-actions {
+    padding-inline: var(--openbitfun-space-4);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .openbitfun-remote-connect__overview-action,
+  .openbitfun-remote-connect__navigation-item,
   .openbitfun-remote-connect__overview-action-chevron,
   .openbitfun-remote-connect__qr-box {
     transition: none;
   }
-}
-
-.openbitfun-remote-connect__relay-card > .openbitfun-remote-connect__network-heading {
-  padding-bottom: var(--openbitfun-space-4);
-}
-
-.openbitfun-remote-connect__relay-settings {
-  padding: 0 var(--openbitfun-space-4) var(--openbitfun-space-4);
-}
-
-.openbitfun-remote-connect__connections-content {
-  padding: var(--openbitfun-space-4);
-  border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-}
-
-.openbitfun-remote-connect__connections-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-start;
-  gap: var(--openbitfun-space-2);
-
-  h4 {
-    margin: 0;
-    color: var(--openbitfun-color-content-secondary);
-    font-size: var(--openbitfun-type-body-sm-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    line-height: var(--openbitfun-type-body-sm-line-height);
-  }
-}
-
-.openbitfun-remote-connect__connections-list {
-  list-style: none;
-  padding: 0;
-  margin: var(--openbitfun-space-2) 0 0;
-  max-height: 132px;
-  overflow-y: auto;
-
-  li {
-    display: flex;
-    align-items: center;
-    gap: var(--openbitfun-space-3);
-    padding-block: var(--openbitfun-space-2);
-    color: var(--openbitfun-color-content-secondary);
-    font-size: var(--openbitfun-type-body-sm-font-size);
-    line-height: var(--openbitfun-type-body-sm-line-height);
-  }
-
-  strong {
-    flex: 1;
-    min-width: 0;
-    overflow-wrap: anywhere;
-    color: var(--openbitfun-color-content-primary);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-  }
-}
-
-.openbitfun-remote-connect__connections-note {
-  margin: var(--openbitfun-space-2) 0 0;
-  color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-sm-line-height);
-}
-
-.openbitfun-remote-connect__relay-actions {
-  padding: var(--openbitfun-space-4);
-  border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-}
-
-.openbitfun-remote-connect__relay-action-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--openbitfun-space-3);
-}
-
-.openbitfun-remote-connect__relay-invitation {
-  padding: var(--openbitfun-space-4);
-  border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-
-  .openbitfun-remote-connect__pairing-card {
-    margin: 0;
-    padding: 0;
-    background: transparent;
-  }
-}
-
-.openbitfun-remote-connect [data-openbitfun-part='panel'][data-openbitfun-group='account'] { display: flex; }
-
-.openbitfun-remote-connect__relay-invitation {
-  .openbitfun-remote-connect__pairing-visual,
-  .openbitfun-remote-connect__pairing-details { padding: 0; }
 }

@@ -183,7 +183,9 @@ const MainNav: React.FC = () => {
 
   const handleSelectRemoteWorkspace = useCallback(async (path: string) => {
     try {
-      await sshRemote.openWorkspace(path);
+      if (!(await sshRemote.openWorkspace(path))) {
+        return;
+      }
       sshRemote.setShowFileBrowser(false);
       setIsSSHConnectionDialogOpen(false);
     } catch (err) {

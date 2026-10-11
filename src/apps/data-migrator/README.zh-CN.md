@@ -6,7 +6,7 @@
 
 ## 下载和使用
 
-**最新版本：[v0.1.1 — 下载数据迁移器](https://github.com/GCWing/OpenBitFun/releases/tag/data-migrator-v0.1.1)。**
+**最新版本：[v0.1.2 — 下载数据迁移器](https://github.com/GCWing/OpenBitFun/releases/tag/data-migrator-v0.1.2)。**
 
 | 系统 | 下载文件 | 启动方式 |
 | --- | --- | --- |
@@ -74,9 +74,16 @@ Windows 需要 Microsoft Edge WebView2；macOS 使用系统 WebView，Linux 包�
 
 如果 OpenBitFun 中没有需要保留的新数据，可以清空目标数据后重新迁移：
 
-1. 完全退出 BitFun、OpenBitFun 和迁移器。
-2. 备份以下目录，然后删除它们。**这会清除 OpenBitFun 的现有配置、会话及其他本地数据。**
-3. 重新运行迁移器，完成后再启动 OpenBitFun。
+1. 完全退出 BitFun、OpenBitFun、CLI 及后台写入进程，以及其他迁移器实例。
+2. 打开迁移器，检查目标位置，在“重置 OpenBitFun 数据”中点击“查看待重置目录”。
+3. 另存列表目录中需要保留的数据、迁移日志及备份。**重置会永久删除这些目录的全部内容，包括 OpenBitFun 配置、凭据、助理工作区和会话，不会自动备份。**
+4. 输入 `RESET`，点击“永久重置 OpenBitFun 数据”。如果部分目录未能完全删除，请关闭占用应用并重试，再进行迁移。
+5. 重新扫描并开始新迁移，完成后再启动 OpenBitFun。
+
+重置预览以所选目标位置为准；使用标准位置时，还会包含系统 Skills/SSH 所属的
+OpenBitFun 目录，以及 `com.openbitfun.desktop` 下的桌面 WebView/UI 数据。
+旧 BitFun 来源、迁移器自身配置和列表之外的普通项目目录会保留。
+危险目录重叠、带符号链接或 junction 的重置路径会被拒绝。
 
 Windows 目标目录：
 
@@ -85,6 +92,12 @@ Windows 目标目录：
 %USERPROFILE%\.openbitfun
 %LOCALAPPDATA%\OpenBitFun
 ```
+
+macOS 标准目录为 `~/.openbitfun` 和
+`~/Library/Application Support/{openbitfun,OpenBitFun}`；Linux 为
+`~/.openbitfun`、`~/.config/openbitfun` 和
+`~/.local/share/{openbitfun,OpenBitFun}`（或对应的 XDG 目录）。
+确认前请以迁移器显示的实际路径为准。
 
 **重试后仍然异常**
 

@@ -67,3 +67,10 @@ cargo check -p openbitfun-core --features product-full
 ```
 
 For documentation-only changes, run `git diff --check`.
+
+For MiniApp bridge/session or embedded bundle changes, use the focused contracts:
+
+```bash
+cargo test --locked -p openbitfun-product-domains --no-default-features --features miniapp --lib miniapp::agent_bridge::tests
+cargo test --locked -p openbitfun-product-domains --no-default-features --features miniapp --test miniapp_contracts
+```

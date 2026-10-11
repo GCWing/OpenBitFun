@@ -50,6 +50,19 @@ test("Input exposes invalid, disabled, and size independently", () => {
   assert.match(markup, /disabled=""/);
 });
 
+test("Input supports compact capsule editing without leaking shape or size to the native input", async () => {
+  const markup = renderToStaticMarkup(
+    createElement(Input, { size: "xs", shape: "pill", "aria-label": "Tag", defaultValue: "Planning" }),
+  );
+  assert.match(markup, /data-size="xs"/);
+  assert.match(markup, /data-shape="pill"/);
+  assert.match(markup, /<input[^>]*aria-label="Tag"/);
+  assert.doesNotMatch(markup, /<input[^>]*\s(?:shape|size)=/);
+  const styles = await readFile(new URL("../src/components/Input/Input.module.css", import.meta.url), "utf8");
+  assert.match(styles, /\[data-size="xs"\][\s\S]*?--_field-height: var\(--openbitfun-control-button-xs-height\)/);
+  assert.match(styles, /\[data-shape="pill"\][\s\S]*?border-radius: var\(--openbitfun-radius-pill\)/);
+});
+
 test("Input styles consume semantic field and status tokens", async () => {
   const styles = await readFile(new URL("../dist/styles.css", import.meta.url), "utf8");
 

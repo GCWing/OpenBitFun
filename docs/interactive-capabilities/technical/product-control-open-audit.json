@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "2962c3e48e05d2eb8931c256453b9cac62e90a9be849eca3c6e24a668245bfcf",
-  "count": 213,
+  "catalogDigest": "a042a92c8c3910bf7d20aebf5c9ecfc7a950f5954068afa34313547ef5d08f1d",
+  "count": 215,
   "reasonCounts": {
     "externalAuth": 4,
     "secretEntry": 5,
     "unstructuredInteraction": 186,
-    "visualSelection": 18
+    "visualSelection": 20
   },
   "entries": [
     {
@@ -96,6 +96,22 @@
         "command:subscribe_permission_requests",
         "command:submit_user_answers",
         "command:start_user_question_interaction"
+      ]
+    },
+    {
+      "capabilityId": "feature.ai-assistant",
+      "itemId": "session-storage-directory",
+      "titleZh": "从工作区或会话菜单打开会话存储目录，用于备份与手动排障",
+      "titleEn": "Open session storage from workspace or session menus for backups and manual troubleshooting",
+      "reasonCode": "visualSelection",
+      "reasonZh": "需要用户选择工作区或会话，并在本机桌面文件管理器中操作；远程工作区打开本机保存的会话镜像，对端设备和 Detached Dispatch 会话不支持此操作。打开目录不会修改会话归属。",
+      "reasonEn": "The user selects a workspace or session and works in the local desktop file manager; remote workspaces reveal their locally stored session mirror, while peer and detached-dispatch sessions are unsupported. Opening storage does not change session ownership.",
+      "presentationTarget": {
+        "kind": "scene",
+        "sceneId": "session"
+      },
+      "evidence": [
+        "command:reveal_session_storage_directory"
       ]
     },
     {
@@ -337,7 +353,27 @@
       },
       "evidence": [
         "command:create_assistant_workspace",
+        "command:get_assistant_workspaces",
         "source:src/web-ui/src/app/scenes/profile/views/NurseryGallery.tsx#NurseryGallery"
+      ]
+    },
+    {
+      "capabilityId": "feature.personal-assistants",
+      "itemId": "assistant-open-close",
+      "titleZh": "关闭侧栏中的助理并取消正在运行的会话，保留配置和历史，之后从助理空间重新打开",
+      "titleEn": "Close sidebar assistants and cancel running sessions, preserve configuration and history, and reopen them from the assistant gallery",
+      "reasonCode": "visualSelection",
+      "reasonZh": "关闭操作依赖用户选择的助理；助理空间保留完整目录，并提供重新打开入口。",
+      "reasonEn": "Closing depends on the assistant selected by the user; the gallery retains the complete catalog and provides a reopen action.",
+      "presentationTarget": {
+        "kind": "scene",
+        "sceneId": "profile"
+      },
+      "evidence": [
+        "command:close_workspace",
+        "command:open_workspace",
+        "source:src/web-ui/src/app/components/NavPanel/sections/workspaces/WorkspaceItem.tsx#handleCloseWorkspace",
+        "source:src/web-ui/src/app/scenes/profile/views/NurseryGallery.tsx#handleOpenAssistant"
       ]
     },
     {

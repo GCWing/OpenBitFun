@@ -42,6 +42,16 @@
     cursor: not-allowed;
   }
 
+  .field[data-size="xs"] {
+    --_field-height: var(--openbitfun-control-button-xs-height);
+    --_field-icon-size: var(--openbitfun-control-button-xs-leading-icon-size);
+    padding-inline: var(--openbitfun-control-button-xs-padding-inline);
+  }
+
+  .field[data-shape="pill"] {
+    border-radius: var(--openbitfun-radius-pill);
+  }
+
   .field[data-size="md"] {
     --_field-height: var(--openbitfun-control-height-md);
     --_field-icon-size: 16px;
@@ -77,6 +87,14 @@
   .input::placeholder {
     color: var(--openbitfun-color-field-placeholder);
     opacity: 1;
+  }
+
+  .field[data-size="xs"] .input {
+    font-family: var(--openbitfun-type-meta-font-family);
+    font-size: var(--openbitfun-type-meta-font-size);
+    font-weight: var(--openbitfun-type-meta-font-weight);
+    line-height: var(--openbitfun-type-meta-line-height);
+    letter-spacing: var(--openbitfun-type-meta-letter-spacing);
   }
 
   .input:disabled {

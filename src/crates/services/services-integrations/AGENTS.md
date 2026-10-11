@@ -187,3 +187,9 @@ cargo test --locked -p openbitfun-services-integrations --no-default-features --
 
 These loopback protocol fixtures exercise the serving host's HTTP and filesystem
 behavior; they do not establish real SSH, relay, peer or dispatch support.
+
+For models.dev snapshot reuse, last-valid recovery, and background refresh:
+
+```bash
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features models-dev --lib models_dev::tests
+```

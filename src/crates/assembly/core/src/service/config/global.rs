@@ -106,6 +106,9 @@ impl GlobalConfigManager {
             crate::service::web_search::refresh_global_web_search_runtime(&ai_config).await;
         }
 
+        #[cfg(feature = "model-catalog")]
+        crate::infrastructure::ai::reasoning_catalog::prepare_model_catalog();
+
         info!("Global config service initialized");
 
         Ok(())

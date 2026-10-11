@@ -6,6 +6,7 @@
  */
 
 import React, { useCallback, memo, useRef, useState, useMemo, useContext } from 'react';
+import { SplitViewPrimaryDock } from '@openbitfun/ui';
 import { ChatFileDropOverlay } from './ChatFileDropOverlay';
 import type { FileDropPreview, FileDropPosition } from '@/shared/types/fileDropPreview';
 import { ModernFlowChatContainer as FlowChatContainer } from '../../../flow_chat/components/modern/ModernFlowChatContainer';
@@ -55,7 +56,7 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
   isFullscreen,
   isSceneActive: hostActive = true,
   workspacePath,
-  isDragging: _isDragging = false,
+  isDragging = false,
   showChatInput = false,
   isRightPanelOpen = false,
   onToggleRightPanel,
@@ -143,14 +144,17 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
         onTabOpen={handleTabOpen}
       />
       {showChatInput && (
-        <ChatInput
-          fileDropTargetRef={fileDropTargetRef}
-          onFileDragOverChange={setIsFileDragOver}
-          onFileDragPreviewChange={setFilePreview}
-          onFileDragPositionChange={updateFileDragPosition}
-          isSceneActive={isSceneActive}
-          registration={chatInputRegistration}
-        />
+        <SplitViewPrimaryDock>
+          <ChatInput
+            fileDropTargetRef={fileDropTargetRef}
+            onFileDragOverChange={setIsFileDragOver}
+            onFileDragPreviewChange={setFilePreview}
+            onFileDragPositionChange={updateFileDragPosition}
+            isSceneActive={isSceneActive}
+            layoutResizeSuspended={isDragging}
+            registration={chatInputRegistration}
+          />
+        </SplitViewPrimaryDock>
       )}
       {showChatInput && isSceneActive && isFileDragOver && (
         <ChatFileDropOverlay preview={filePreview} positionRef={fileDragPosition} />

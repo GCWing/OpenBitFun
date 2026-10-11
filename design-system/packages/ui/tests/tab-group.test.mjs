@@ -102,7 +102,7 @@ test("product wrappers preserve the standard tablist, selection and end-action a
   assert.equal((markup.match(/role="tab"/g) ?? []).length, 2);
   assert.equal((markup.match(/aria-selected="true"/g) ?? []).length, 1);
   assert.match(markup, /data-document="settings" data-index="1" draggable="true"/);
-  assert.match(markup, /<\/button><span[^>]+data-openbitfun-part="endAction"><button/);
+  assert.match(markup, /<\/button><span[^>]+data-openbitfun-part="endAction"[^>]*><button/);
 });
 
 test("label metadata remains inside the accessible tab and outside rolling text", () => {
@@ -163,24 +163,14 @@ test("end actions are rendered beside tabs instead of nesting interactive contro
   assert.equal((markup.match(/data-has-icon="true"/g) ?? []).length, 1);
   assert.equal((markup.match(/data-has-icon="false"/g) ?? []).length, 1);
   assert.match(markup, /data-openbitfun-part="endAction"/);
-  assert.match(markup, /<\/button><span[^>]+data-openbitfun-part="endAction"><button/);
+  assert.match(markup, /<\/button><span[^>]+data-openbitfun-part="endAction"[^>]*><button/);
   assert.equal((markup.match(/type="button"/g) ?? []).length, 3);
 });
 
-test("text-only tabs mirror the end-action reserve to keep labels centered", async () => {
-  const styles = await readFile(
-    new URL("../src/components/TabGroup/TabGroup.module.css", import.meta.url),
-    "utf8",
-  );
-
-  assert.match(
-    styles,
-    /\.item\[data-has-end-action="true"\] \.tab\s*\{[^}]*padding-inline-end:\s*var\(--_tab-group-item-action-reserve\);/s,
-  );
-  assert.match(
-    styles,
-    /\.item\[data-has-end-action="true"\]\[data-has-icon="false"\] \.tab\s*\{[^}]*padding-inline-start:\s*var\(--_tab-group-item-action-reserve\);/s,
-  );
+test("end actions float over the label without reserving or clipping text", async () => {
+  const styles = await readFile(new URL("../src/components/TabGroup/TabGroup.module.css", import.meta.url), "utf8");
+  assert.doesNotMatch(styles, /action-reserve|clip-path|mask-image/);
+  assert.doesNotMatch(styles, /data-has-end-action[^}]*padding-inline/s);
 });
 
 test("TabGroup styling uses its geometry contract and Button semantic colors", async () => {
@@ -195,7 +185,6 @@ test("TabGroup styling uses its geometry contract and Button semantic colors", a
   assert.match(styles, /--openbitfun-control-tab-group-item-padding-block-sm/);
   assert.match(styles, /--openbitfun-control-tab-group-item-padding-inline-sm/);
   assert.match(styles, /--openbitfun-control-tab-group-item-action-size/);
-  assert.match(styles, /--openbitfun-control-tab-group-item-action-inset/);
   assert.match(styles, /--openbitfun-control-tab-group-item-radius/);
   assert.match(styles, /--openbitfun-color-action-neutral-border/);
   assert.match(styles, /--openbitfun-color-action-neutral-content/);

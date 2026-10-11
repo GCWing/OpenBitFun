@@ -11,11 +11,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": [
-      "icons/openbitfun-app-icon.icns",
-      "icons/openbitfun-app-icon.ico",
-      "icons/openbitfun-app-icon.png"
-    ],
     "resources": {
       "../../mobile-web/dist": "mobile-web/dist",
       "../extension-host/dist/extension-host.js": "resources/ext-host/extension-host.js",

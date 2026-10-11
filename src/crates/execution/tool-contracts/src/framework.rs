@@ -2342,6 +2342,10 @@ pub fn miniapp_headless_agent_tool_restrictions() -> ToolRuntimeRestrictions {
             "Cron is unavailable in MiniApp headless agent runs.",
         ),
         (
+            "ListWorkspaces",
+            "ListWorkspaces is unavailable in MiniApp headless agent runs.",
+        ),
+        (
             "SessionControl",
             "SessionControl is unavailable in MiniApp headless agent runs.",
         ),
@@ -2913,6 +2917,20 @@ mod tests {
         let scoped = miniapp_agent_run_tool_restrictions(Some(&market_with_context), created_by);
         assert!(scoped.is_tool_allowed("Read"));
         assert!(scoped.is_tool_allowed("Grep"));
+        // Adding app context must never narrow a research Agent into a
+        // closed-book file reader, including deferred tool exposure.
+        for tool in [
+            "WebSearch",
+            "WebFetch",
+            "GetTime",
+            "GetToolSpec",
+            "CallDeferredTool",
+        ] {
+            assert!(scoped.is_tool_allowed(tool), "context must retain {tool}");
+        }
+        for tool in ["Write", "Edit", "ExecCommand", "AgentSpawn"] {
+            assert!(!scoped.is_tool_allowed(tool));
+        }
         assert_eq!(
             scoped.path_policy.read_roots,
             vec![".miniapp-context/0123456789abcdef0123456789abcdef"]

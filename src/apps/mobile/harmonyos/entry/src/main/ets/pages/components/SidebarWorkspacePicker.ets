@@ -4,6 +4,7 @@ import { SavedRuntimeConnection, RecentWorkspaceEntry, RemoteWorkspaceIdentity }
 import { remoteWorkspaceIdentityMatches, remoteWorkspaceKey } from '../../services/RemoteSessionIdentity';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { CARD, CONTENT_ON_ACTION, INK, LINE, MUTED, PAGE_BG, PRIMARY_ACTION, SOFT, TRANSPARENT } from './Theme';
+import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 
 @ComponentV2
 export struct SidebarWorkspacePicker {
@@ -23,6 +24,23 @@ export struct SidebarWorkspacePicker {
   @Param selectedWorkspaceSshHost: string = '';
   @Param loading: boolean = false;
   @Event onClose: () => void = () => {};
+  /**
+   * The sheet's own bottom edge, in vp. The picker is a full-height sheet and
+   * its confirm button is the fixed control at that edge, so the button keeps
+   * the navigation bar clear itself.
+   */
+  @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
+
+  aboutToAppear(): void {
+    const context = this.getUIContext().getHostContext();
+    if (context) {
+      this.insets.bind(this.getUIContext(), context);
+    }
+  }
+
+  aboutToDisappear(): void {
+    this.insets.unbind();
+  }
   /**
    * Catalog rows report their stable `workspaceId`; the manual path entry has
    * none, which is the only case where the host may resolve by path.
@@ -195,7 +213,9 @@ export struct SidebarWorkspacePicker {
           .backgroundColor(PRIMARY_ACTION).height(48).width('100%').borderRadius(14)
           .enabled(this.canOpenTargetPath())
           .onClick(() => this.onSelectWorkspace(this.targetPath.trim(), this.connectionId.length > 0 ? this.connectionId : undefined))
-      }.width('100%').padding({ top: 12, bottom: 16 }).backgroundColor(PAGE_BG)
+        // The sheet's fixed confirm button: the strip, or the design's own
+        // spacing where the strip is already clear, so it never sits in it.
+      }.width('100%').padding({ top: 12, bottom: this.insets.bottomPadding(16) }).backgroundColor(PAGE_BG)
     }
     .width('100%')
     .height('100%')

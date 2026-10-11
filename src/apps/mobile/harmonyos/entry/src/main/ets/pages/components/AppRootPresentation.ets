@@ -98,6 +98,8 @@ export struct AppRootPresentation {
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SessionDetails);
   @Local remoteViewSettingsPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.RemoteViewSettings);
+  @Local fullTextPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UserMessageFullText);
   private verticalCreases: ConversationLayoutCrease[] = [];
   private horizontalCreases: ConversationLayoutHorizontalCrease[] = [];
   private wideQueryListener?: mediaQuery.MediaQueryListener;
@@ -239,6 +241,7 @@ export struct AppRootPresentation {
       actions: this.actions,
       filePreviewLayout: this.filePreviewLayout(),
       sessionDetailsPlacement: this.sessionDetailsPlacement,
+      fullTextSheetPlacement: this.fullTextPlacement,
       wideMasterPaneWidth: this.wideMasterPaneWidth,
       wideMasterDetailGap: this.wideMasterDetailGap,
       wideDetailContentOffset: this.wideDetailContentOffset,
@@ -280,6 +283,7 @@ export struct AppRootPresentation {
         // Remote both open the sidebar over the chat instead of leaving it.
         showBackButton: false,
         hoverOperateMode: this.isHoverLayout(),
+        fullTextSheetPlacement: this.fullTextPlacement,
         onRestoreSidebar: () => this.restoreWideMasterPane()
       })
     }
@@ -522,6 +526,10 @@ export struct AppRootPresentation {
     this.remoteViewSettingsPlacement = SettingsPlacementPolicy.resolve(
       input,
       SettingsSheetKind.RemoteViewSettings
+    );
+    this.fullTextPlacement = SettingsPlacementPolicy.resolve(
+      input,
+      SettingsSheetKind.UserMessageFullText
     );
   }
 

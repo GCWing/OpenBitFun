@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import React, { act } from 'react';
+import React, { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Dialog, DialogBody, DialogDescription, DialogHeader, DialogHeading, DialogTitle, Sheet } from '@openbitfun/ui';
@@ -53,7 +53,8 @@ describe('overlay exit content', () => {
     const onExitComplete = vi.fn();
     function render(open: boolean, selected: string | null) {
       act(() => root.render(
-        <Surface open={open} onOpenChange={() => undefined} onExitComplete={onExitComplete}>
+        <Surface open={open} onOpenChange={() => undefined} onExitComplete={onExitComplete}
+          size={selected === 'Second' ? 'lg' : selected ? 'sm' : 'md'}>
           <DialogHeader>
             <DialogHeading>
               <DialogTitle>{selected ?? 'No selection'}</DialogTitle>
@@ -73,6 +74,7 @@ describe('overlay exit content', () => {
     render(true, 'Edited');
     render(false, null);
     expect(surface.dataset.state).toBe('exiting');
+    expect(surface.dataset.size).toBe('sm');
     expect(surface.hasAttribute('inert')).toBe(true);
     expect(surface.getAttribute('aria-describedby')).toBe(descriptionId);
     expect(surface.textContent).toContain('Edited description');
@@ -81,12 +83,14 @@ describe('overlay exit content', () => {
     expect(input?.value).toBe('Edited');
     act(() => vi.advanceTimersByTime(90));
     render(true, 'Second');
+    expect(surface.dataset.size).toBe('lg');
     expect(surface.hasAttribute('inert')).toBe(false);
     expect(input?.value).toBe('Second');
     act(() => vi.advanceTimersByTime(180));
     expect(surface.isConnected).toBe(true);
     expect(onExitComplete).not.toHaveBeenCalled();
     render(false, null);
+    expect(surface.dataset.size).toBe('lg');
     act(() => vi.advanceTimersByTime(179));
     expect(surface.isConnected).toBe(true);
     expect(input?.value).toBe('Second');
@@ -95,5 +99,38 @@ describe('overlay exit content', () => {
     expect(onExitComplete).toHaveBeenCalledTimes(1);
     render(false, null);
     expect(onExitComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the model dialog geometry when an outside click clears its selection', () => {
+    const reasons: string[] = [];
+    function ModelEditor() {
+      const [model, setModel] = useState<string | null>('Current model');
+      return (
+        <Dialog open={model !== null} size={model ? 'lg' : 'xl'}
+          className={model ? 'model-editor' : 'provider-editor'}
+          style={{ blockSize: model ? '640px' : '720px' }}
+          overlayProps={{ className: model ? 'model-overlay' : 'provider-overlay' }}
+          onOpenChange={(_, reason) => { reasons.push(reason); setModel(null); }}>
+          <DialogHeader><DialogHeading><DialogTitle>{model ?? 'Provider'}</DialogTitle></DialogHeading></DialogHeader>
+          <DialogBody>{model}</DialogBody>
+        </Dialog>
+      );
+    }
+    act(() => root.render(<ModelEditor />));
+    const surface = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const overlay = surface.parentElement!;
+    act(() => overlay.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })));
+    expect(reasons).toEqual(['pointer-outside']);
+    expect(surface.dataset.state).toBe('exiting');
+    expect(surface.dataset.size).toBe('lg');
+    expect(surface.classList.contains('model-editor')).toBe(true);
+    expect(surface.style.blockSize).toBe('640px');
+    expect(overlay.classList.contains('model-overlay')).toBe(true);
+    expect(surface.textContent).not.toContain('Provider');
+    act(() => vi.advanceTimersByTime(179));
+    expect(surface.isConnected).toBe(true);
+    expect(surface.dataset.size).toBe('lg');
+    act(() => vi.advanceTimersByTime(1));
+    expect(surface.isConnected).toBe(false);
   });
 });

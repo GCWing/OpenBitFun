@@ -22,6 +22,22 @@ its tag automatically. Release creation and editing use GitHub CLI without
 `--target`: sending `target_commitish` for workflow-changing commits can require
 `workflows:write`, even for an existing tag. Asset upload precedes publication.
 
+## Mobile Android releases
+
+Mobile Android packages are released independently from Desktop packages. Use a
+`mobile-vMAJOR.MINOR.PATCH` tag (or a prerelease suffix such as
+`mobile-v1.1.0-beta.1`) to trigger [`Mobile Package`](../../.github/workflows/mobile-package.yml).
+The workflow builds an Android APK with the runner-generated debug keystore and
+publishes it to its own prerelease GitHub Release. It does not add Android assets
+to the Desktop `v*` Release. A production signing key can be introduced later
+without changing the mobile tag or release layout. Mobile Android versions are
+checked as a group across the Android, iOS, and HarmonyOS version files, but they
+do not need to equal the Desktop version.
+
+GitHub exposes one repository-wide `Latest` release. Desktop release notes also
+include the Android version and a link to the corresponding Mobile prerelease,
+while the Desktop release itself contains no Android APK assets.
+
 ## Legacy update isolation
 
 Desktop 1.x reads `latest-v1.json`; CLI 1.x reads `linux-binaries-v1.json`,

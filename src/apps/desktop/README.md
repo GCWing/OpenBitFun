@@ -3,6 +3,19 @@
 For development commands, see [AGENTS.md](AGENTS.md) and the repository
 [contribution guide](../../../CONTRIBUTING.md).
 
+## Session storage directories
+
+The workspace and session action menus include **Open session storage directory**.
+The workspace action opens its managed sessions root; the session action opens
+that session's subdirectory. Empty workspaces create the sessions root on demand.
+Remote SSH/Docker workspaces open their locally stored session mirror, not the
+remote project directory. These actions are unavailable in Peer Device Mode,
+browser clients, and for detached sessions owned by another host.
+
+For manual recovery, exit every OpenBitFun instance using the session and back
+up its complete directory before editing or moving files. Moving a directory
+does not update the workspace bindings in its metadata or saved configuration.
+
 ## Computer Use control
 
 Computer Use opens a visible control session. Its status card shows the current
@@ -102,6 +115,17 @@ For a headless fixture run, use
 real desktop and asks you to select its dedicated fixture window in the system
 picker. These fixtures require Node.js 22/24, Rust, `python3-gi` and GTK 3; the
 portal fixture also needs the runtime packages listed above.
+
+## macOS application icon builds
+
+Development uses the committed macOS ICNS fallback and does not require Icon
+Composer. Packaged macOS 26/27 builds also include the native Icon Composer
+catalog; earlier macOS releases use the static fallback. Building a distributable
+macOS bundle requires full Xcode 26 or newer selected through `DEVELOPER_DIR` or
+`xcode-select`. The packaging command rejects a missing catalog instead of
+silently shipping only the legacy icon. See the
+[brand resource guide](../../../assets/brand/README.md#macos-icons) for regeneration
+and focused validation commands.
 
 ## macOS menu bar
 

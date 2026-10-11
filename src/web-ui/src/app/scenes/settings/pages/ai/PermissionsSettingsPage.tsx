@@ -1,3 +1,4 @@
+import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
 import '@/app/scenes/settings/pages/shared/RuntimeSettings.scss';
 import {
   ConfigLoadingState,
@@ -41,19 +42,20 @@ function resolveToolPermissionMode(config: ToolPermissionConfig): ToolPermission
 const PermissionsSettingsPage: React.FC = () => {
   const { t } = useTranslation('settings/runtime');
 
-  const [isLoading, setIsLoading] = useState(true);
+  const seed = useConfigSeed(['tool_permissions', SHOW_PERMISSION_MODE_CONTROL_CONFIG_PATH]);
+  const [isLoading, setIsLoading] = useState(!seed.loaded);
 
   const [loadError, setLoadError] = useState(false);
 
-  const hasLoadedPageDataRef = useRef(false);
+  const hasLoadedPageDataRef = useRef(seed.loaded);
 
   const toolPermissionSaveInFlightRef = useRef(false);
 
-  const [toolPermissionConfig, setToolPermissionConfig] = useState<ToolPermissionConfig>(DEFAULT_TOOL_PERMISSION_CONFIG);
+  const [toolPermissionConfig, setToolPermissionConfig] = useState<ToolPermissionConfig>(() => normalizeToolPermissionConfig(seed.get('tool_permissions', DEFAULT_TOOL_PERMISSION_CONFIG)));
 
   const [permissionConfigSaving, setPermissionConfigSaving] = useState(false);
 
-  const [showPermissionModeControl, setShowPermissionModeControl] = useState(true);
+  const [showPermissionModeControl, setShowPermissionModeControl] = useState(seed.get<boolean | null>(SHOW_PERMISSION_MODE_CONTROL_CONFIG_PATH, true) !== false);
 
   const [permissionModeControlVisibilitySaving, setPermissionModeControlVisibilitySaving] = useState(false);
 
@@ -149,7 +151,7 @@ const PermissionsSettingsPage: React.FC = () => {
     if (isInitialLoad) { setIsLoading(true); setLoadError(false); }
     try {
       const [permissionConfig, permissionModeVisible] = await Promise.all([
-        permissionConfigService.getConfig(),
+        permissionConfigService.getConfig({ requireLoaded: true }),
         configManager.getOptionalConfig<boolean>(SHOW_PERMISSION_MODE_CONTROL_CONFIG_PATH),
       ]);
       setToolPermissionConfig(normalizeToolPermissionConfig(permissionConfig));
@@ -164,8 +166,8 @@ const PermissionsSettingsPage: React.FC = () => {
   }, []);
   useEffect(() => {
 
-    void loadPageData();
-  }, [loadPageData]);
+    if (!seed.loaded) void loadPageData();
+  }, [loadPageData, seed.loaded]);
 
   return (
     <SettingsPage pageId="ai.permissions" className="openbitfun-runtime-settings" data-openbitfun-component="runtime-settings" data-openbitfun-part="root" data-openbitfun-view="permissions">

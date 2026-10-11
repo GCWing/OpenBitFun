@@ -122,6 +122,7 @@ export interface AppFlowChatConfig {
   default_mode_id?: string | null;
   last_mode_id?: string | null;
   show_permission_mode_control?: boolean;
+  auto_show_selection_toolbar?: boolean;
 }
 
 export interface SidebarConfig {
@@ -598,6 +599,9 @@ export interface WorkspaceConfig {
 }
 
 export interface IConfigManager {
+  /** Trusted snapshots for synchronous UI seeding, scoped to the active device. */
+  hasCachedConfig(path: string): boolean;
+  getCachedConfig<T>(path: string): T | undefined;
   getConfig<T = any>(path?: string): Promise<T>;
   getOptionalConfig<T = any>(path: string): Promise<T | undefined>;
   getConfigs(paths: string[]): Promise<Record<string, unknown>>;
@@ -673,6 +677,7 @@ export type ConfigPath =
   | 'app.flow_chat.default_mode_id'
   | 'app.flow_chat.last_mode_id'
   | 'app.flow_chat.show_permission_mode_control'
+  | 'app.flow_chat.auto_show_selection_toolbar'
   | 'app.sidebar'
   | 'app.sidebar.width'
   | 'app.sidebar.collapsed'

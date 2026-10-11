@@ -13,7 +13,7 @@ const AssistantScene: React.FC = () => {
   const { t } = useI18n('common');
   const selectedAssistantWorkspaceId = useMyAgentStore((s) => s.selectedAssistantWorkspaceId);
   const setSelectedAssistantWorkspaceId = useMyAgentStore((s) => s.setSelectedAssistantWorkspaceId);
-  const { currentWorkspace, assistantWorkspacesList, primaryAssistantWorkspaceId } = useWorkspaceContext();
+  const { currentWorkspace, allAssistantWorkspacesList: assistantWorkspacesList, primaryAssistantWorkspaceId } = useWorkspaceContext();
   const activeAssistantWorkspace =
     currentWorkspace?.workspaceKind === WorkspaceKind.Assistant ? currentWorkspace : null;
 

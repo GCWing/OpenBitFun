@@ -9,6 +9,29 @@ import kotlin.test.assertTrue
 
 class MessageBlockPresentationTest {
     @Test
+    fun markedOwnerKeepsLiveChildrenAndStableIdentity() {
+        val owner = item(tool = tool("owner", name = "Task", status = "running")).copy(isSubagent = true)
+        val thought = item(type = "thinking", content = "Inspecting").copy(isSubagent = true)
+        val before = messageBlocks(message(items = listOf(owner)), true).single() as MessageBlock.Subagent
+        val after = messageBlocks(message(items = listOf(owner, thought)), true).single() as MessageBlock.Subagent
+        assertEquals(before.id, after.id)
+        assertEquals("Inspecting", (after.children.single() as MessageBlock.Thinking).text)
+        val completed = messageBlocks(message(items = listOf(owner.copy(tool = owner.tool!!.copy(status = "completed")), thought)), false).single() as MessageBlock.Subagent
+        assertEquals(after.id, completed.id)
+        assertEquals(1, completed.children.size)
+        assertEquals(false, completed.running)
+    }
+
+    @Test
+    fun orphanReasoningHasOnlyOneCopyInsideItsBranch() {
+        val orphan = item(type = "thinking", content = "Early reasoning").copy(isSubagent = true)
+        val block = messageBlocks(message(items = listOf(orphan)), true).single() as MessageBlock.Subagent
+        assertEquals("", block.title)
+        assertEquals("", block.text)
+        assertEquals("Early reasoning", (block.children.single() as MessageBlock.Thinking).text)
+    }
+
+    @Test
     fun markedFlatChildrenBelongToTheirTaskNotTheMainTranscript() {
         val task1 = item(tool = tool("task1", name = "Task", status = "running"))
         val task2 = item(tool = tool("task2", name = "Task", status = "completed"))

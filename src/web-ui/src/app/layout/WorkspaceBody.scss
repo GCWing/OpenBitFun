@@ -192,11 +192,35 @@ $_resize-target-width: 6px;
   }
 }
 
+// Move during AppKit's transition, before the traffic lights return. Only
+// the moving toolbar accepts pointer events; no clipping hides the controls.
 .openbitfun-app-layout--macos .openbitfun-workspace-body__collapsed-nav {
-  left: 72px;
+  width: calc(#{$_nav-collapsed-width} + 72px);
+  pointer-events: none;
+
+  > .openbitfun-nav-bar {
+    box-sizing: border-box;
+    width: $_nav-collapsed-width;
+    pointer-events: auto;
+    transform: translateX(72px);
+    transition: transform var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard);
+  }
+}
+
+.openbitfun-app-layout--macos.openbitfun-app-layout--fullscreen-chrome .openbitfun-workspace-body__collapsed-nav {
+  > .openbitfun-nav-bar {
+    transform: translateX(0);
+  }
 }
 
 .openbitfun-app-layout--macos .openbitfun-workspace-body__nav-area.is-collapsed + .openbitfun-workspace-body__scene-area {
+  .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar {
+    transition: padding-left var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard);
+  }
+}
+
+// Reserve traffic-light space only while the native window is not fullscreen.
+.openbitfun-app-layout--macos:not(.openbitfun-app-layout--fullscreen-chrome) .openbitfun-workspace-body__nav-area.is-collapsed + .openbitfun-workspace-body__scene-area {
   .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar {
     padding-left: calc(#{$_nav-collapsed-width} + var(--openbitfun-space-1) + 72px);
   }
@@ -218,6 +242,11 @@ $_resize-target-width: 6px;
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .openbitfun-app-layout--macos .openbitfun-workspace-body__collapsed-nav > .openbitfun-nav-bar,
+  .openbitfun-app-layout--macos .openbitfun-workspace-body__nav-area.is-collapsed + .openbitfun-workspace-body__scene-area .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar {
+    transition: none;
+  }
+
   .openbitfun-workspace-body__scene-surface::after {
     transition: none;
   }

@@ -370,27 +370,34 @@ export class CloudAccountClient {
     session: CloudAccountSession,
     deviceId: string,
     deviceName: string,
-    requestId: string
+    requestId: string,
+    deviceSecret?: Uint8Array
   ): Promise<CloudProvisionedDevice> {
-    const keys = X25519.generateKeyPair();
-    const body: ProvisionDeviceRequest = {
-      public_key: Encoding.bytesToBase64(keys.publicKey),
-      device_id: deviceId,
-      device_name: deviceName,
-      device_kind: DEVICE_KIND_WATCH,
-      request_id: requestId
-    };
-    const wire = await this.request<ProvisionDeviceWire>(
-      relayUrl, '/api/auth/provision-device', 'POST', body, session.token);
-    const token = (wire.token || '').trim();
-    const userId = (wire.user_id || '').trim();
-    const provisionedDeviceId = (wire.device_id || '').trim();
-    if (token.length === 0 || userId !== session.userId || provisionedDeviceId !== deviceId) {
-      // A credential naming a different account or device would sign the watch
-      // in as somebody else. Refuse rather than pass it on.
-      throw new Error('Relay returned a mismatched provisioned device identity.');
+    const privateKey = deviceSecret ? Encoding.copyBytes(deviceSecret) : X25519.generateKeyPair().privateKey;
+    try {
+      if (privateKey.length !== 32) throw new Error('Invalid watch device identity.');
+      const body: ProvisionDeviceRequest = {
+        public_key: Encoding.bytesToBase64(X25519.scalarMultBase(privateKey)),
+        device_id: deviceId,
+        device_name: deviceName,
+        device_kind: DEVICE_KIND_WATCH,
+        request_id: requestId
+      };
+      const wire = await this.request<ProvisionDeviceWire>(
+        relayUrl, '/api/auth/provision-device', 'POST', body, session.token);
+      const token = (wire.token || '').trim();
+      const userId = (wire.user_id || '').trim();
+      const provisionedDeviceId = (wire.device_id || '').trim();
+      if (token.length === 0 || userId !== session.userId || provisionedDeviceId !== deviceId) {
+        // A credential naming a different account or device would sign the watch
+        // in as somebody else. Refuse rather than pass it on.
+        throw new Error('Relay returned a mismatched provisioned device identity.');
+      }
+      return { token, userId, deviceId: provisionedDeviceId, deviceSecret: privateKey };
+    } catch (err) {
+      privateKey.fill(0);
+      throw err instanceof Error ? err : new Error('Watch credential provisioning failed.');
     }
-    return { token, userId, deviceId: provisionedDeviceId, deviceSecret: keys.privateKey };
   }
 
   /**

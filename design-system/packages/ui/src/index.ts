@@ -57,6 +57,7 @@ export {
 export { Alert, type AlertProps, type AlertTone } from "./components/Alert";
 export { Avatar, AvatarGroup, type AvatarGroupProps, type AvatarProps, type AvatarSize } from "./components/Avatar";
 export { Button, type ButtonProps } from "./components/Button";
+export { Capsule, type CapsuleProps } from "./components/Capsule";
 export { Checkbox, type CheckboxProps, type CheckboxSize } from "./components/Checkbox";
 export {
   Card,
@@ -304,5 +305,5 @@ export {
 } from "./primitives/ThemeRoot";
 
 export { LayersPlusIcon } from "./components/Icon";
-export { SplitView } from './components/SplitView';
+export { SplitView, SplitViewPrimaryDock } from './components/SplitView';
 export type { SplitViewProps, SplitViewMode } from './components/SplitView';

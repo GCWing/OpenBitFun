@@ -7,12 +7,19 @@ import styles from './SplitView.module.css';
 
 export type SplitViewMode = 'split' | 'primary' | 'secondary';
 
+/** Absolutely positioned primary content that stays clear of the secondary overlay. */
+export function SplitViewPrimaryDock({ className, children, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div {...props} className={classNames(styles.primaryDock, className)}
+    data-openbitfun-component="split-view" data-openbitfun-part="primaryDock">{children}</div>;
+}
+
 export interface SplitViewProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
   primary: ReactNode;
   secondary: ReactNode;
   mode?: SplitViewMode;
+  layout?: 'split' | 'overlay';
   secondarySide?: 'left' | 'right';
-  /** Physical right slot width. Swapping content never moves the divider. */
+  /** Physical right slot width in split layout; secondary width in overlay layout. */
   rightSize: number;
   minLeftSize?: number;
   minRightSize?: number;
@@ -34,7 +41,7 @@ function sizeBounds(width: number, dividerWidth: number, minLeft: number, minRig
 }
 
 export function SplitView({
-  primary, secondary, mode = 'split', secondarySide = 'right', rightSize,
+  primary, secondary, mode = 'split', layout = 'split', secondarySide = 'right', rightSize,
   minLeftSize = 0, minRightSize = 0, maxRightSize = Number.MAX_SAFE_INTEGER,
   defaultRightSize = rightSize, onRightSizeChange, onResizeStateChange,
   dividerLabel, dividerActions, primaryPaneProps, secondaryPaneProps,
@@ -59,6 +66,7 @@ export function SplitView({
   callbacks.current = { onRightSizeChange, onResizeStateChange };
   const bounds = width === null ? { min: minRightSize, max: maxRightSize }
     : sizeBounds(width, dividerWidth, minLeftSize, minRightSize, maxRightSize);
+  const resizeDirection = layout === 'overlay' && secondarySide === 'left' ? -1 : 1;
   const resolvedSize = Math.min(bounds.max, Math.max(bounds.min, rightSize));
   const resolvedSizeRef = useRef(resolvedSize);
   resolvedSizeRef.current = resolvedSize;
@@ -78,7 +86,7 @@ export function SplitView({
     observer?.observe(root);
     window.addEventListener('resize', measure);
     return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
-  }, [mode]);
+  }, [mode, layout]);
 
   const finishResize = useCallback((commit: boolean) => {
     const drag = dragRef.current;
@@ -95,7 +103,7 @@ export function SplitView({
     callbacks.current.onResizeStateChange?.(false);
   }, []);
 
-  useLayoutEffect(() => { finishResize(false); }, [mode, secondarySide, finishResize]);
+  useLayoutEffect(() => { finishResize(false); }, [mode, layout, secondarySide, finishResize]);
   useEffect(() => () => { finishResize(false); }, [finishResize]);
 
   useLayoutEffect(() => {
@@ -111,7 +119,7 @@ export function SplitView({
     const measuredWidth = rootRef.current?.getBoundingClientRect().width ?? 0;
     const currentBounds = measuredWidth > 0
       ? sizeBounds(measuredWidth, dividerWidth, minLeftSize, minRightSize, maxRightSize) : bounds;
-    const delta = drag.x - event.clientX;
+    const delta = (drag.x - event.clientX) * resizeDirection;
     drag.latest = Math.min(currentBounds.max, Math.max(currentBounds.min, drag.size + delta));
     if (frameRef.current !== null) return;
     frameRef.current = requestAnimationFrame(() => {
@@ -127,7 +135,7 @@ export function SplitView({
       className={classNames(styles.root, className)}
       style={{ ...style, '--_split-view-right-size': `${resolvedSize}px` } as CSSProperties}
       data-openbitfun-component="split-view" data-openbitfun-part="root"
-      data-mode={mode} data-secondary-side={secondarySide} data-resizing={resizing || undefined}
+      data-mode={mode} data-layout={layout} data-secondary-side={secondarySide} data-resizing={resizing || undefined}
       onKeyDown={event => {
         onKeyDown?.(event);
         if (event.defaultPrevented || event.key !== 'F6' || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -149,7 +157,7 @@ export function SplitView({
       <div ref={dividerRef} className={styles.divider} data-openbitfun-component="split-view" data-openbitfun-part="divider" hidden={mode !== 'split'}>
         <div className={styles.resizeHandle} role="separator" tabIndex={mode === 'split' ? 0 : -1}
           data-openbitfun-component="split-view" data-openbitfun-part="resizeHandle"
-          aria-label={dividerLabel} aria-orientation="vertical" aria-controls={secondarySide === 'right' ? secondaryId : primaryId}
+          aria-label={dividerLabel} aria-orientation="vertical" aria-controls={layout === 'overlay' || secondarySide === 'right' ? secondaryId : primaryId}
           aria-valuemin={Math.round(bounds.min)} aria-valuemax={Math.round(bounds.max)} aria-valuenow={Math.round(resolvedSize)}
           onPointerDown={event => {
             if (event.button !== 0 || dragRef.current) return;
@@ -178,7 +186,7 @@ export function SplitView({
           onKeyDown={event => {
             let next: number;
             if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-              next = resolvedSize + (event.key === 'ArrowRight' ? -1 : 1) * (event.shiftKey ? 50 : 10);
+              next = resolvedSize + (event.key === 'ArrowRight' ? -1 : 1) * resizeDirection * (event.shiftKey ? 50 : 10);
             } else if (event.key === 'Escape' && dragRef.current) {
               event.preventDefault();
               event.stopPropagation();

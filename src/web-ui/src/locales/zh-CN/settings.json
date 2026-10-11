@@ -74,7 +74,7 @@
       },
       "input": {
         "label": "输入与交互",
-        "description": "设置语音转文字与键盘快捷键"
+        "description": "设置文本选择操作、语音转文字与键盘快捷键"
       },
       "sessionMemory": {
         "label": "会话与记忆",
@@ -95,6 +95,7 @@
       "json": "高级 JSON"
     },
     "sections": {
+      "text-selection": "文本选择",
       "voice": "语音",
       "shortcuts": "快捷键",
       "session": "会话默认行为",

@@ -529,6 +529,17 @@ struct ComposerModelOption: Identifiable, Equatable {
     let secondaryLabel: String
     let source: String
     let selected: Bool
+    var role: String? = nil
+    var roles: [String] = []
+    var fallsBackToPrimary: Bool = false
+
+    var roleLabelKey: String? {
+        switch role {
+        case "PRIMARY": return "主力模型"
+        case "FAST": return "快速模型"
+        default: return nil
+        }
+    }
 }
 
 enum MobileDownloadPhase {

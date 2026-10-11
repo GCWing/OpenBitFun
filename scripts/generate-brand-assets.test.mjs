@@ -61,6 +61,55 @@ test('generated macOS icons use the canonical ICNS layout', () => {
   assert.ok(desktop.equals(canonicalizeIcns(desktop)), 'desktop ICNS is not canonical');
   assert.ok(installer.equals(canonicalizeIcns(installer)), 'installer ICNS is not canonical');
   assert.ok(desktop.equals(installer), 'desktop and installer ICNS files differ');
+  assert.deepEqual(desktop, readFileSync('assets/brand/exports/openbitfun-app-icon.icns'));
+});
+
+test('macOS ICNS PNG representations preserve a visible body and transparent Dock margins', async () => {
+  const icns = readFileSync(GENERATED_ICNS_FILES[0]);
+  let checked = 0;
+  for (let offset = 8; offset < icns.length;) {
+    const length = icns.readUInt32BE(offset + 4);
+    const payload = icns.subarray(offset + 8, offset + length);
+    offset += length;
+    if (!payload.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) continue;
+    const { data, info } = await sharp(payload).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const size = info.width;
+    assert.equal(info.height, size);
+    // Catch both full-bleed and double-padded exports without baking a drawing
+    // constant into the test. The native decoder test also covers 16 px ARGB.
+    const middle = Math.floor(size / 2);
+    let first = -1;
+    let last = -1;
+    for (let x = 0; x < size; x++) {
+      if (data[(middle * size + x) * 4 + 3] >= 128) {
+        if (first < 0) first = x;
+        last = x;
+      }
+      assert.equal(data[x * 4 + 3], 0, 'top edge');
+      assert.equal(data[((size - 1) * size + x) * 4 + 3], 0, 'bottom edge');
+    }
+    assert.ok(first >= size * 0.07 && first <= size * 0.14, `visible body: ${size}, ${first}`);
+    assert.ok(Math.abs(first - (size - 1 - last)) <= 1, 'centered body');
+    checked++;
+  }
+  assert.equal(checked, 8);
+});
+
+test('desktop and installer retain independent Windows/Linux icons alongside the macOS fallback', () => {
+  for (const configPath of ['src/apps/desktop/tauri.conf.json', 'OpenBitFun-Installer/src-tauri/tauri.conf.json']) {
+    const { bundle } = JSON.parse(readFileSync(configPath, 'utf8'));
+    assert.equal(bundle.icon.find(icon => icon.endsWith('.icns')), 'icons/openbitfun-app-icon.icns');
+    assert.equal(bundle.icon.find(icon => icon.endsWith('.png')), 'icons/openbitfun-app-icon.png');
+    assert.equal(bundle.icon.find(icon => icon.endsWith('.ico')), 'icons/openbitfun-app-icon.ico');
+  }
+  for (const iconDir of ['src/apps/desktop/icons', 'OpenBitFun-Installer/src-tauri/icons']) {
+    assert.deepEqual(readFileSync(`${iconDir}/openbitfun-app-icon.png`),
+      readFileSync('assets/brand/exports/openbitfun-app-icon-1024.png'));
+  }
+  for (const size of [16, 32, 48, 64, 96, 128, 256, 512]) {
+    assert.deepEqual(readFileSync(`src/apps/desktop/icons/hicolor/${size}x${size}/apps/openbitfun-desktop.png`),
+      readFileSync(`assets/brand/exports/openbitfun-app-icon-${size}.png`));
+  }
 });
 
 test('application icons preserve the submitted artwork independently from the startup Logo', async () => {

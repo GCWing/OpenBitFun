@@ -40,6 +40,16 @@ PPT Live 同时是 OpenBitFun **Agentic MiniApp** 的样板间：它自己**没�
 | `app.chat.setComposerDraft(text)` | 展开气泡并预填输入框，**不发送**——欢迎页的示例 prompt 用它，用户仍可编辑后再发 |
 | `app.chat.releaseComposer()` | 主动释放；iframe 卸载时宿主自动释放 |
 
+每个主题各自保存 `agentSession.id` 和工作目录。初始化按主题合并并发请求；“新主题”先解除旧绑定，
+一次创建一个新会话，历史主题恢复原会话。切换期间暂停提交，旧主题的迟到初始化和消息不能绑定新主题。
+会话恢复失败会保留历史引用并显示错误，用户可以重试；不会用新空白会话替换旧记录。
+
+主题生命周期回归检查：
+
+```bash
+node --test src/crates/contracts/product-domains/src/miniapp/builtin/assets/ppt-live/test/topic-sessions.test.mjs
+```
+
 > 认领是按 **runner 实例**（token）而不是 appId 记账的：AI 定制时同一个 appId 会同时挂载
 > 已安装实例和草稿预览实例，若按 appId 路由，一条气泡消息会让两个 iframe 各跑一次 agent。
 

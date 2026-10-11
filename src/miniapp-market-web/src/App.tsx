@@ -837,7 +837,7 @@ function DetailPage({
                 icon={<Star size={18} fill={value <= (app.myRating || 0) ? 'currentColor' : 'none'} />}
               />
             ))}
-            <span>{app.ratingAverage.toFixed(1)} ({app.ratingCount})</span>
+            <span className="rating-summary">{app.ratingAverage.toFixed(1)} ({app.ratingCount})</span>
           </div>
         </div>
         <div className="detail-gallery">

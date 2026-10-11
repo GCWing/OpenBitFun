@@ -40,6 +40,12 @@ describe('PermissionConfigService', () => {
     await expect(permissionConfigService.getConfig()).resolves.toEqual(stored);
   });
 
+  it('propagates a failed read when a settings form requires loaded configuration', async () => {
+    configManagerMock.getConfig.mockRejectedValueOnce(new Error('offline'));
+    const { permissionConfigService } = await import('./PermissionConfigService');
+    await expect(permissionConfigService.getConfig({ requireLoaded: true })).rejects.toThrow('offline');
+  });
+
   it('keeps configuration load failures on the ask fallback', async () => {
     configManagerMock.getConfig.mockRejectedValue(new Error('offline'));
     const { permissionConfigService } = await import('./PermissionConfigService');

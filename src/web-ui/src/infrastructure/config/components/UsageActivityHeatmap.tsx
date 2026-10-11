@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createSettingsReadCache } from '../services/SettingsReadCache';
 import { Tooltip } from '@openbitfun/ui';
 import {
   TokenUsageStatisticsUnavailableError,
@@ -10,13 +11,16 @@ import { formatTokenCount } from '@/shared/utils/tokenUsageFormatting';
 import { ConfigLoadingState, ConfigMessage, ConfigPageSection } from './common';
 import { buildUsageActivity, usageActivityRequestRange } from './usageActivity';
 
+type ActivitySnapshot = { points: UsageTrendPoint[]; now: Date; timeZone: string };
+const activitySnapshot = createSettingsReadCache<ActivitySnapshot>();
+
 interface UsageActivityHeatmapProps {
   refreshKey: number;
 }
 
 export function UsageActivityHeatmap({ refreshKey }: UsageActivityHeatmapProps) {
   const { t, formatDate, formatNumber, resolvedTimeZone: timeZone } = useI18n('settings/usage');
-  const [data, setData] = useState<{ points: UsageTrendPoint[]; now: Date } | null>(null);
+  const [data, setData] = useState<ActivitySnapshot | null>(() => activitySnapshot.peek(timeZone) ?? null);
   const [message, setMessage] = useState<{ type: 'error' | 'info'; text: string } | null>(null);
   const [focusedDate, setFocusedDate] = useState<string | null>(null);
   const dayRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -24,18 +28,25 @@ export function UsageActivityHeatmap({ refreshKey }: UsageActivityHeatmapProps) 
   useEffect(() => {
     let cancelled = false;
     const now = new Date();
-    setData(null);
+    setData(current => current?.timeZone === timeZone ? current : activitySnapshot.peek(timeZone) ?? null);
     setMessage(null);
-    void tokenUsageStatisticsApi.getStatistics({
+    void activitySnapshot.read(async () => {
+      const result = await tokenUsageStatisticsApi.getStatistics({
       timeRange: 'custom',
       granularity: 'day',
       timeZone,
       includeSubagent: true,
       ...usageActivityRequestRange(timeZone, now),
-    }).then(result => {
-      if (!cancelled) setData({ points: result.trend, now });
+      });
+      return { points: result.trend, now, timeZone };
+    }, timeZone).then(result => {
+      if (!cancelled) setData(result);
     }).catch(error => {
       if (!cancelled) {
+        if (error instanceof TokenUsageStatisticsUnavailableError) {
+          activitySnapshot.invalidate();
+          setData(null);
+        }
         setMessage(error instanceof TokenUsageStatisticsUnavailableError
           ? { type: 'info', text: t('unsupported') }
           : { type: 'error', text: t('loadFailed') });
@@ -45,7 +56,7 @@ export function UsageActivityHeatmap({ refreshKey }: UsageActivityHeatmapProps) 
   }, [refreshKey, timeZone, t]);
 
   const activity = useMemo(
-    () => data ? buildUsageActivity(data.points, timeZone, data.now) : null,
+    () => data?.timeZone === timeZone ? buildUsageActivity(data.points, timeZone, data.now) : null,
     [data, timeZone],
   );
   const visibleDays = activity?.days.filter(day => day.inRange) ?? [];
@@ -71,11 +82,10 @@ export function UsageActivityHeatmap({ refreshKey }: UsageActivityHeatmapProps) 
       data-openbitfun-component="usage-statistics-config"
       data-openbitfun-part="activityPanel"
     >
-      {message ? (
-        <ConfigMessage className="openbitfun-usage-stats__activity-message" message={message} />
-      ) : !activity ? (
-        <ConfigLoadingState label={t('loading')} />
-      ) : (
+      {message && <ConfigMessage className="openbitfun-usage-stats__activity-message" message={message} />}
+      {!activity ? (message ? null : (
+        <ConfigLoadingState label={t('loading')} variant="statistics" rows={1} />
+      )) : (
         <div className="openbitfun-usage-stats__activity">
           <div
             className="openbitfun-usage-stats__activity-grid"

@@ -95,7 +95,7 @@ vi.mock('@/shared/notification-system', () => ({
 }));
 
 vi.mock('../../../../../infrastructure/config/services/ConfigManager', () => ({
-  configManager: { getConfig: getConfigMock, setConfig: setConfigMock },
+  configManager: { hasCachedConfig: () => false, getCachedConfig: () => undefined, getConfig: getConfigMock, setConfig: setConfigMock },
 }));
 
 vi.mock('@/infrastructure/api/service-api/ExternalHooksAPI', () => ({

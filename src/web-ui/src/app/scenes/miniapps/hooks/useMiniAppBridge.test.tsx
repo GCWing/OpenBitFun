@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   openMainSession: vi.fn(),
   addExternalSession: vi.fn(),
   loadSessionHistory: vi.fn(),
+  registeredSessions: new Map(),
 }));
 
 vi.mock('@/infrastructure/api/service-api/MiniAppAPI', () => ({
@@ -74,8 +75,11 @@ vi.mock('@/infrastructure/api', () => ({
 
 vi.mock('@/flow_chat/store/FlowChatStore', () => ({
   flowChatStore: {
-    getState: () => ({ sessions: new Map() }),
-    addExternalSession: (...args: unknown[]) => mocks.addExternalSession(...args),
+    getState: () => ({ sessions: mocks.registeredSessions }),
+    addExternalSession: (...args: unknown[]) => {
+      mocks.registeredSessions.set(args[0], {});
+      return mocks.addExternalSession(...args);
+    },
     loadSessionHistory: (...args: unknown[]) => mocks.loadSessionHistory(...args),
   },
 }));
@@ -138,6 +142,7 @@ describe('useMiniAppBridge floating Agent routing', () => {
   let root: Root;
 
   beforeEach(() => {
+    mocks.registeredSessions.clear();
     mocks.activeTabId = 'miniapp:market-lens';
     mocks.agentEnsureSession.mockResolvedValue({
       sessionId: 'session-1',
@@ -280,6 +285,8 @@ describe('useMiniAppBridge floating Agent routing', () => {
     });
     const iframe = container.querySelector('iframe') as HTMLIFrameElement;
     await dispatchRpc(iframe, 1, 'chat.claimComposer');
+    await dispatchRpc(iframe, 11, 'agent.ensureSession', { appDataWorkspace: 'chat' });
+    await dispatchRpc(iframe, 12, 'chat.focusSession', { sessionId: 'session-1' });
     const token = useMiniAppStore.getState().composerClaims[app.id]?.token;
     expect(token).toEqual(expect.any(String));
     const postMessage = vi.spyOn(iframe.contentWindow!, 'postMessage');
@@ -323,6 +330,80 @@ describe('useMiniAppBridge floating Agent routing', () => {
     });
 
     expect(useMiniAppStore.getState().composerClaims[app.id]?.sessionId).toBeUndefined();
+  });
+
+  it('creates and switches between topic sessions without reusing the prior workspace', async () => {
+    await act(async () => { root.render(<BridgeHarness />); });
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    mocks.agentEnsureSession
+      .mockResolvedValueOnce({ sessionId: 'deck-one', created: true, workspacePath: '/app/decks/one' })
+      .mockResolvedValueOnce({ sessionId: 'deck-two', created: true, workspacePath: '/app/decks/two' });
+    await dispatchRpc(iframe, 1, 'chat.claimComposer');
+    await dispatchRpc(iframe, 2, 'agent.ensureSession', { appDataWorkspace: 'decks/one' });
+    await dispatchRpc(iframe, 3, 'chat.focusSession', { sessionId: 'deck-one' });
+    await dispatchRpc(iframe, 4, 'chat.clearSession');
+    expect(useMiniAppStore.getState().composerClaims[app.id]?.sessionId).toBeUndefined();
+    await dispatchRpc(iframe, 5, 'agent.ensureSession', { appDataWorkspace: 'decks/two' });
+    await dispatchRpc(iframe, 6, 'chat.focusSession', { sessionId: 'deck-two' });
+    expect(useMiniAppStore.getState().composerClaims[app.id]?.sessionId).toBe('deck-two');
+    await dispatchRpc(iframe, 7, 'chat.focusSession', { sessionId: 'deck-one' });
+    expect(useMiniAppStore.getState().composerClaims[app.id]?.sessionId).toBe('deck-one');
+    expect(mocks.registeredSessions.size).toBe(2);
+    expect(mocks.agentEnsureSession.mock.calls.map(call => call[1].sessionId)).toEqual([undefined, undefined]);
+  });
+
+  it('reports history loading failures and retries restoration of the same registered session', async () => {
+    await act(async () => { root.render(<BridgeHarness />); });
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const postMessage = vi.spyOn(iframe.contentWindow!, 'postMessage');
+    mocks.agentEnsureSession.mockResolvedValue({ sessionId: 'saved', created: false, workspacePath: '/app/chat' });
+    mocks.loadSessionHistory.mockRejectedValueOnce(new Error('Peer disconnected')).mockResolvedValueOnce(undefined);
+    await dispatchRpc(iframe, 1, 'agent.ensureSession', { sessionId: 'saved', appDataWorkspace: 'chat' });
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ id: 1, error: expect.anything() }), '*');
+    await dispatchRpc(iframe, 2, 'agent.ensureSession', { sessionId: 'saved', appDataWorkspace: 'chat' });
+    expect(mocks.addExternalSession).toHaveBeenCalledTimes(1);
+    expect(mocks.loadSessionHistory).toHaveBeenCalledTimes(2);
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ id: 2, result: expect.objectContaining({ sessionId: 'saved' }) }), '*');
+  });
+
+  it('restores the exact saved topic only after its hidden history has loaded', async () => {
+    await act(async () => { root.render(<BridgeHarness />); });
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const postMessage = vi.spyOn(iframe.contentWindow!, 'postMessage');
+    mocks.registeredSessions.set('latest-chat', {});
+    mocks.agentEnsureSession.mockResolvedValue({ sessionId: 'saved-topic', created: false, workspacePath: '/app/decks/saved' });
+    let finishHistory = () => {};
+    const history = new Promise<void>((resolve) => { finishHistory = resolve; });
+    mocks.loadSessionHistory.mockReturnValueOnce(history);
+
+    await dispatchRpc(iframe, 1, 'chat.claimComposer');
+    await dispatchRpc(iframe, 2, 'agent.ensureSession', { sessionId: 'saved-topic', appDataWorkspace: 'decks/saved' });
+    expect(mocks.loadSessionHistory).toHaveBeenCalledWith('saved-topic', { includeInternal: true });
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ id: 2 }), '*');
+    await dispatchRpc(iframe, 3, 'chat.focusSession', { sessionId: 'saved-topic' });
+    expect(useMiniAppStore.getState().composerClaims[app.id]?.sessionId).toBeUndefined();
+
+    await act(async () => { finishHistory(); await history; });
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ id: 2, result: expect.objectContaining({ sessionId: 'saved-topic' }) }), '*');
+    await dispatchRpc(iframe, 4, 'chat.focusSession', { sessionId: 'saved-topic' });
+    expect(useMiniAppStore.getState().composerClaims[app.id]?.sessionId).toBe('saved-topic');
+    await dispatchRpc(iframe, 5, 'agent.ensureSession', { sessionId: 'saved-topic', appDataWorkspace: 'decks/saved' });
+    expect(mocks.loadSessionHistory).toHaveBeenCalledTimes(1);
+    expect(mocks.openMainSession).not.toHaveBeenCalled();
+  });
+
+  it('rejects an old-topic message before it reaches the new topic in the iframe', async () => {
+    await act(async () => { root.render(<BridgeHarness />); });
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    await dispatchRpc(iframe, 1, 'chat.claimComposer');
+    await dispatchRpc(iframe, 2, 'agent.ensureSession', { appDataWorkspace: 'chat' });
+    await dispatchRpc(iframe, 3, 'chat.focusSession', { sessionId: 'session-1' });
+    const postMessage = vi.spyOn(iframe.contentWindow!, 'postMessage');
+    const claim = useMiniAppStore.getState().composerClaims[app.id];
+    await expect(requestMiniAppComposerMessage({
+      token: claim.token, text: 'Old topic question', sessionId: 'old-session',
+    })).rejects.toThrow('conversation changed');
+    expect(postMessage).not.toHaveBeenCalled();
   });
 
   it('opens an unbound strict Agent run in the main session scene', async () => {

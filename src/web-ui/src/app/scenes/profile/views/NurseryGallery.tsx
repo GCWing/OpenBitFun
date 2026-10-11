@@ -35,7 +35,10 @@ type TemplateStatsStatus = 'loading' | 'ready' | 'error';
 const NurseryGallery: React.FC = () => {
   const { t } = useTranslation('scenes/profile');
   const {
-    assistantWorkspacesList,
+    allAssistantWorkspacesList: assistantWorkspacesList,
+    openedWorkspaces,
+    assistantWorkspaces,
+    closeWorkspaceById,
     createAssistantWorkspace,
     deleteAssistantWorkspace,
     primaryAssistantWorkspaceId,
@@ -50,6 +53,8 @@ const NurseryGallery: React.FC = () => {
   const [deletingWorkspaceId, setDeletingWorkspaceId] = useState<string | null>(null);
   const [settingPrimaryWorkspaceId, setSettingPrimaryWorkspaceId] = useState<string | null>(null);
   const [startingSessionWorkspaceId, setStartingSessionWorkspaceId] = useState<string | null>(null);
+  const [openingWorkspaceId, setOpeningWorkspaceId] = useState<string | null>(null);
+  const [closingWorkspaceId, setClosingWorkspaceId] = useState<string | null>(null);
   const [templateStats, setTemplateStats] = useState<TemplateStats | null>(null);
   const [templateStatsStatus, setTemplateStatsStatus] = useState<TemplateStatsStatus>('loading');
 
@@ -157,6 +162,7 @@ const NurseryGallery: React.FC = () => {
       if (startingSessionWorkspaceId) return;
       setStartingSessionWorkspaceId(workspace.id);
       try {
+        await setActiveWorkspace(workspace.id);
         const sessionId = await flowChatManager.createChatSession(flowChatSessionConfigForWorkspace(workspace), 'Claw');
         await openMainSession(sessionId, {
           workspaceId: workspace.id,
@@ -176,6 +182,32 @@ const NurseryGallery: React.FC = () => {
       t,
     ],
   );
+
+  const handleOpenAssistant = useCallback(async (workspace: WorkspaceInfo) => {
+    if (openingWorkspaceId) return;
+    setOpeningWorkspaceId(workspace.id);
+    try {
+      await setActiveWorkspace(workspace.id);
+    } catch (error) {
+      log.error('Failed to open assistant workspace', error);
+      notification.error(t('nursery.card.openFailed'));
+    } finally {
+      setOpeningWorkspaceId(null);
+    }
+  }, [notification, openingWorkspaceId, setActiveWorkspace, t]);
+
+  const handleCloseAssistant = useCallback(async (workspace: WorkspaceInfo) => {
+    if (closingWorkspaceId) return;
+    setClosingWorkspaceId(workspace.id);
+    try {
+      await closeWorkspaceById(workspace.id);
+    } catch (error) {
+      log.error('Failed to close assistant workspace', error);
+      notification.error(t('nursery.card.closeFailed'));
+    } finally {
+      setClosingWorkspaceId(null);
+    }
+  }, [closeWorkspaceById, closingWorkspaceId, notification, t]);
 
   return (
     <GalleryLayout
@@ -323,6 +355,7 @@ const NurseryGallery: React.FC = () => {
             >
               {sortedAssistantWorkspacesList.map((workspace, i) => {
                 const isPrimary = workspace.id === primaryAssistantWorkspaceId;
+                const isOpened = openedWorkspaces.has(workspace.id);
                 return (
                   <AssistantCard
                     key={workspace.id}
@@ -331,8 +364,13 @@ const NurseryGallery: React.FC = () => {
                     isDeleting={deletingWorkspaceId === workspace.id}
                     isStartingSession={startingSessionWorkspaceId === workspace.id}
                     isSettingPrimary={settingPrimaryWorkspaceId === workspace.id}
+                    isOpening={openingWorkspaceId === workspace.id}
+                    isClosing={closingWorkspaceId === workspace.id}
+                    onOpen={isOpened ? undefined : () => { void handleOpenAssistant(workspace); }}
+                    onClose={isOpened ? () => { void handleCloseAssistant(workspace); } : undefined}
+                    closeDisabledReason={assistantWorkspaces === null ? t('common:nav.workspaces.closeAssistantUnsupported') : undefined}
                     onClick={() => openAssistant(workspace.id)}
-                    onNewSession={() => { void handleNewAssistantSession(workspace); }}
+                    onNewSession={isOpened ? () => { void handleNewAssistantSession(workspace); } : undefined}
                     onDelete={isPrimary ? undefined : () => { void handleDeleteRequest(workspace); }}
                     onSetPrimary={isPrimary ? undefined : () => { void handleSetPrimary(workspace); }}
                     style={{ '--surface-stagger-index': i } as React.CSSProperties}

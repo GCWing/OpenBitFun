@@ -1153,7 +1153,10 @@ extension MobileAppModel {
                 primaryLabel: option.primaryLabel,
                 secondaryLabel: option.secondaryLabel,
                 source: "REMOTE",
-                selected: option.selected
+                selected: option.selected,
+                role: option.role?.name,
+                roles: option.roles.map { $0.name },
+                fallsBackToPrimary: option.fallsBackToPrimary
             )
         }
         setPublishedIfChanged(\.modelOptions, to: projectedModelOptions)

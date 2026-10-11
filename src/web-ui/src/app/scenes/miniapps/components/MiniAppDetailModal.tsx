@@ -265,7 +265,9 @@ const MiniAppDetailModal: React.FC<MiniAppDetailModalProps> = ({
                   </span>
                   <span className="miniapp-detail-modal__highlight-copy">
                     <strong><OverflowText>{copy.title}</OverflowText></strong>
-                    <OverflowText lines={2}>{copy.description}</OverflowText>
+                    <OverflowText className="miniapp-detail-modal__highlight-description" lines={2}>
+                      {copy.description}
+                    </OverflowText>
                   </span>
                 </div>
               );

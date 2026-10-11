@@ -1,6 +1,6 @@
 /**
- * Compact navigation chrome. Buttons share one geometry and only animate the
- * press response; panel and history changes themselves remain immediate.
+ * Compact navigation chrome. Fullscreen moves the controls as one group;
+ * panel and history changes themselves remain immediate.
  */
 @use '../../styles/workspace-shell-surfaces' as shell-surfaces;
 
@@ -27,6 +27,12 @@
   &--macos {
     padding-left: 78px;
     padding-right: 2px;
+    transition: padding-left var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard);
+
+    // AppKit drives this independently of resize/command completion.
+    .openbitfun-app-layout--fullscreen-chrome & {
+      padding-left: var(--openbitfun-space-2);
+    }
   }
 
   &--macos#{&}--collapsed {
@@ -118,6 +124,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .openbitfun-nav-bar--macos {
+    transition: none;
+  }
+
   .openbitfun-nav-bar__btn,
   .openbitfun-nav-bar__panel-toggle {
     transition: none;

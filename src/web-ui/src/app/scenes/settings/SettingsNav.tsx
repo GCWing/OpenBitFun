@@ -1,4 +1,5 @@
 import { useSettingsDraftSnapshot } from '@/infrastructure/config/settingsDraftRegistry';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { getInteractionMotion } from '@/shared/utils/motionPreference';
 import {
@@ -11,10 +12,10 @@ import {
   NavigationPanelSection,
   OverflowText,
   SearchField,
+  Spinner,
 } from '@openbitfun/ui';
 import type { i18n as I18nApi } from 'i18next';
 import React, {
-  startTransition,
   useCallback,
   useEffect,
   useMemo,
@@ -138,6 +139,13 @@ const SettingsNav: React.FC = () => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const activationRequestRef = useRef(0);
+  const [pendingPageId, setPendingPageId] = useState<SettingsPageId | null>(null);
+  const activationTimerRef = useRef<number | undefined>();
+
+  useEffect(() => () => {
+    activationRequestRef.current += 1;
+    window.clearTimeout(activationTimerRef.current);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSearchQuery(draftQuery), SEARCH_DEBOUNCE_MS);
@@ -186,14 +194,27 @@ const SettingsNav: React.FC = () => {
 
   const activate = useCallback((destination: SettingsDestination, clear = false) => {
     const requestId = ++activationRequestRef.current;
+    const scope = getActiveSurfaceScope();
+    const navigationRequestId = useSettingsStore.getState().navigationRequestId;
     const motion = getInteractionMotion();
+    window.clearTimeout(activationTimerRef.current);
+    setPendingPageId(destination.pageId);
+    let committed = false;
     const commit = () => {
-      if (requestId !== activationRequestRef.current) return;
-      startTransition(() => {
-        openDestination(destination, motion);
-        if (clear) clearSearch();
-      });
+      if (committed || requestId !== activationRequestRef.current) return;
+      if (!scope.isCurrent() || useSettingsStore.getState().navigationRequestId !== navigationRequestId) {
+        window.clearTimeout(activationTimerRef.current);
+        setPendingPageId(null);
+        return;
+      }
+      committed = true;
+      window.clearTimeout(activationTimerRef.current);
+      setPendingPageId(null);
+      openDestination(destination, motion);
+      if (clear) clearSearch();
     };
+    // Keep the current page during fast preparation; slow loads get a titled skeleton.
+    activationTimerRef.current = window.setTimeout(commit, 180);
     void preloadSettingsPage(destination.pageId).then(commit, commit);
   }, [clearSearch, openDestination]);
 
@@ -301,6 +322,7 @@ const SettingsNav: React.FC = () => {
                       id={`settings-nav-result-${index}`}
                       role="option"
                       aria-selected={active}
+                      aria-busy={pendingPageId === row.destination.pageId || undefined}
                       selected={active}
                       data-openbitfun-component="settings-nav"
                       data-openbitfun-part="searchResult"
@@ -325,7 +347,7 @@ const SettingsNav: React.FC = () => {
                           {highlightFirstMatch(row.description, searchQuery)}
                         </OverflowText>
                       </span>
-                      {dirtyMarker(row.destination.pageId)}
+                      {pendingPageId === row.destination.pageId ? <Spinner size="sm" /> : dirtyMarker(row.destination.pageId)}
                     </NavigationPanelItem>
                   );
                 })}
@@ -362,12 +384,13 @@ const SettingsNav: React.FC = () => {
                     data-openbitfun-state={activePageId === page.id ? 'active' : undefined}
                     className="openbitfun-settings-nav__item"
                     selected={activePageId === page.id}
+                    aria-busy={pendingPageId === page.id || undefined}
                     onClick={() => activate({ pageId: page.id })}
                     onPointerEnter={() => preload(page.id)}
                     onFocus={() => preload(page.id)}
                   >
                     <OverflowText className="openbitfun-settings-nav__item-label">{t(page.labelKey)}</OverflowText>
-                    {dirtyMarker(page.id)}
+                    {pendingPageId === page.id ? <Spinner size="sm" /> : dirtyMarker(page.id)}
                   </NavigationPanelItem>
                 ))}
               </div>

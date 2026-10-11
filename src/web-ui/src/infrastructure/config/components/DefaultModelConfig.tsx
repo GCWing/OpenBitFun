@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Layers } from 'lucide-react';
-import { Combobox, Icon, IconButton, Spinner, Tooltip } from '@openbitfun/ui';
+import { Combobox, Icon, IconButton, Tooltip } from '@openbitfun/ui';
 import { notificationService } from '@/shared/notification-system';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { configManager } from '../services/ConfigManager';
 import type {
   AIModelConfig,
-  DefaultModels,
+  DefaultModelsConfig,
 } from '../types';
-import { ConfigEmptyState, ConfigPageRow } from './common';
+import { ConfigPageRow } from './common';
 import { createLogger } from '@/shared/utils/logger';
 import { useModelSelectPresentation } from './ModelSelectPresentation';
 import {
@@ -24,9 +24,35 @@ const normalizeSelectValue = (value: string | number | (string | number)[]): str
 
 type DefaultModelSlot = 'primary' | 'fast' | 'image_understanding' | 'speech_recognition';
 
-export const DefaultModelConfig: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
+interface DefaultModelConfigProps {
+  compact?: boolean;
+  models: AIModelConfig[];
+  defaultModels: DefaultModelsConfig;
+  loading: boolean;
+  disabled: boolean;
+  onDefaultModelsChange: (defaults: DefaultModelsConfig) => void;
+}
+
+export const DefaultModelConfig: React.FC<DefaultModelConfigProps> = ({
+  compact = false,
+  models,
+  defaultModels,
+  loading,
+  disabled,
+  onDefaultModelsChange,
+}) => {
   const { t } = useTranslation('settings/default-model');
   const { buildModelOption } = useModelSelectPresentation();
+  const controlsDisabled = loading || disabled || models.length === 0;
+  const pendingPlaceholder = loading ? (
+    <span data-openbitfun-component="default-model-config" data-openbitfun-part="loading" data-openbitfun-state="loading">
+      {t('loading')}
+    </span>
+  ) : disabled ? t('messages.loadFailed') : models.length === 0 ? (
+    <span data-openbitfun-component="default-model-config" data-openbitfun-part="empty" data-openbitfun-state="empty">
+      {t('empty.noModels')}
+    </span>
+  ) : undefined;
   const renderSlotLabel = (label: string, description: string) => (
     <span className="default-model-config__slot-label-content">
       <span>{label}</span>
@@ -40,58 +66,6 @@ export const DefaultModelConfig: React.FC<{ compact?: boolean }> = ({ compact = 
       </Tooltip>
     </span>
   );
-  
-  
-  const [loading, setLoading] = useState(true);
-  const [models, setModels] = useState<AIModelConfig[]>([]);
-  const [defaultModels, setDefaultModels] = useState<DefaultModels>({
-    primary: null,
-    fast: null,
-    image_understanding: null,
-    speech_recognition: null,
-  });
-
-  const loadData = useCallback(async () => {
-    try {
-      setLoading(true);
-
-      const [allModels, defaultModelsConfig] = await Promise.all([
-        configManager.getConfig<AIModelConfig[]>('ai.models') || [],
-        configManager.getConfig<any>('ai.default_models') || {},
-      ]);
-
-      setModels(allModels);
-
-      setDefaultModels({
-        primary: defaultModelsConfig?.primary || null,
-        fast: defaultModelsConfig?.fast || null,
-        image_understanding: defaultModelsConfig?.image_understanding || null,
-        speech_recognition: defaultModelsConfig?.speech_recognition || null,
-      });
-    } catch (error) {
-      log.error('Failed to load data', error);
-      notificationService.error(t('messages.loadFailed'));
-    } finally {
-      setLoading(false);
-    }
-  }, [t]);
-
-  useEffect(() => {
-    void loadData();
-
-    const unsubscribeModels = configManager.watch('ai.models', () => {
-      void loadData();
-    });
-    const unsubscribeDefaultModels = configManager.watch('ai.default_models', () => {
-      void loadData();
-    });
-
-    return () => {
-      unsubscribeModels();
-      unsubscribeDefaultModels();
-    };
-  }, [loadData]);
-
   
   const getModelName = useCallback((modelId: string | null | undefined): string | undefined => {
     if (!modelId) return undefined;
@@ -118,20 +92,16 @@ export const DefaultModelConfig: React.FC<{ compact?: boolean }> = ({ compact = 
   }, [t]);
 
   const handleDefaultModelChange = async (slot: DefaultModelSlot, modelId: string | number) => {
+    if (controlsDisabled) return;
+    const scope = getActiveSurfaceScope();
     const modelIdStr = modelId ? String(modelId) : null;
     try {
-      const currentConfig = await configManager.getConfig<any>('ai.default_models') || {};
-
-      
-      await configManager.setConfig('ai.default_models', {
-        ...currentConfig,
-        [slot]: modelIdStr,
-      });
-
-      setDefaultModels(prev => ({
-        ...prev,
-        [slot]: modelIdStr,
-      }));
+      const updatedDefaults = await configManager.updateConfig<DefaultModelsConfig>(
+        'ai.default_models',
+        current => ({ ...current, [slot]: modelIdStr }),
+      );
+      if (!scope.isCurrent()) return;
+      onDefaultModelsChange(updatedDefaults);
 
       const modelName = getModelName(modelIdStr);
       let successMessage: string;
@@ -150,6 +120,7 @@ export const DefaultModelConfig: React.FC<{ compact?: boolean }> = ({ compact = 
         { duration: 2000 }
       );
     } catch (error) {
+      if (!scope.isCurrent()) return;
       log.error('Failed to update default model', { slot, modelId: modelIdStr, error });
       notificationService.error(t('messages.updateFailed'));
     }
@@ -166,29 +137,8 @@ export const DefaultModelConfig: React.FC<{ compact?: boolean }> = ({ compact = 
     isSelectableModelForCapability(model, 'speech_recognition')
   ));
 
-  if (loading) {
-    return (
-      <div className="default-model-config__loading" data-openbitfun-component="default-model-config" data-openbitfun-part="loading" data-openbitfun-state="loading">
-        <Spinner size="sm" />
-        <p>{t('loading')}</p>
-      </div>
-    );
-  }
-
-  if (models.length === 0) {
-    return (
-      <ConfigEmptyState
-        data-openbitfun-component="default-model-config"
-        data-openbitfun-part="empty"
-        data-openbitfun-state="empty"
-        icon={<Layers aria-hidden="true" />}
-        description={t('empty.noModels')}
-      />
-    );
-  }
-
   return (
-    <div className={`default-model-config${compact ? ' default-model-config--compact' : ''}`} data-openbitfun-component="default-model-config" data-openbitfun-part="root">
+    <div className={`default-model-config${compact ? ' default-model-config--compact' : ''}`} data-openbitfun-component="default-model-config" data-openbitfun-part="root" aria-busy={loading}>
       <ConfigPageRow
         label={renderSlotLabel(t('core.primary.label'), t('core.primary.description'))}
         required
@@ -197,13 +147,14 @@ export const DefaultModelConfig: React.FC<{ compact?: boolean }> = ({ compact = 
       >
         <Combobox
           aria-required="true"
+          aria-label={t('core.primary.label')}
           data-openbitfun-component="default-model-config"
           data-openbitfun-part="primaryModel"
           value={defaultModels.primary || ''}
           onValueChange={(value) => handleDefaultModelChange('primary', normalizeSelectValue(value))}
-          placeholder={t('core.primary.placeholder')}
+          placeholder={pendingPlaceholder ?? t('core.primary.placeholder')}
           options={enabledModels.map(buildModelOption)}
-          disabled={enabledModels.length === 0}
+          disabled={controlsDisabled || enabledModels.length === 0}
           size="sm"
         />
       </ConfigPageRow>
@@ -214,11 +165,13 @@ export const DefaultModelConfig: React.FC<{ compact?: boolean }> = ({ compact = 
         align="center"
       >
         <Combobox
+          aria-label={t('core.fast.label')}
           data-openbitfun-component="default-model-config"
           data-openbitfun-part="lightweightModel"
           value={defaultModels.fast || ''}
           onValueChange={(value) => handleDefaultModelChange('fast', normalizeSelectValue(value))}
-          placeholder={t('core.fast.placeholder')}
+          placeholder={pendingPlaceholder ?? t('core.fast.placeholder')}
+          disabled={controlsDisabled}
           options={[
             { label: t('core.fast.notSet'), value: '' },
             ...enabledModels.map(buildModelOption),
@@ -236,11 +189,13 @@ export const DefaultModelConfig: React.FC<{ compact?: boolean }> = ({ compact = 
         align="center"
       >
         <Combobox
+          aria-label={t('optional.capabilities.image_understanding.label')}
           data-openbitfun-component="default-model-config"
           data-openbitfun-part="embeddingModel"
           value={defaultModels.image_understanding || ''}
           onValueChange={(value) => handleDefaultModelChange('image_understanding', normalizeSelectValue(value))}
-          placeholder={t('optional.selectModel')}
+          placeholder={pendingPlaceholder ?? t('optional.selectModel')}
+          disabled={controlsDisabled}
           options={[
             { label: t('optional.notSet'), value: '' },
             ...imageUnderstandingModels.map(buildModelOption),
@@ -258,15 +213,16 @@ export const DefaultModelConfig: React.FC<{ compact?: boolean }> = ({ compact = 
         align="center"
       >
         <Combobox
+          aria-label={t('optional.capabilities.speech_recognition.label')}
           value={defaultModels.speech_recognition || ''}
           onValueChange={(value) => handleDefaultModelChange('speech_recognition', normalizeSelectValue(value))}
-          placeholder={t('optional.notSet')}
+          placeholder={pendingPlaceholder ?? t('optional.notSet')}
           options={[
             { label: t('optional.notSet'), value: '' },
             ...speechRecognitionModels.map(buildModelOption),
           ]}
           className="default-model-config__model-select"
-          disabled={speechRecognitionModels.length === 0}
+          disabled={controlsDisabled || speechRecognitionModels.length === 0}
           size="sm"
         />
       </ConfigPageRow>

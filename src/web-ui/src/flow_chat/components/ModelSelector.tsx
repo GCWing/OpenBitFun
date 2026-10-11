@@ -17,19 +17,17 @@ import { useI18n } from '@/infrastructure/i18n';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import {
-  aiApi,
   type AIModelCatalog,
   type ReasoningCatalogProjection,
 } from '@/infrastructure/api/service-api/AIApi';
 import { ACPClientAPI, type AcpSessionOptions } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { getProviderDisplayName, getProviderGroupKey } from '@/infrastructure/config/services/modelConfigs';
-import { globalEventBus } from '@/infrastructure/event-bus';
 import type { AIModelConfig, AgentModelDefaultsConfig, DefaultModelsConfig } from '@/infrastructure/config/types';
 import { Tooltip, Icon } from '@openbitfun/ui';
 import { RetainedMountBoundary } from '@/shared/presence';
 import { notificationService } from '@/shared/notification-system';
 import { FlowChatStore } from '../store/FlowChatStore';
-import { getModelMaxTokens } from '../services/flow-chat-manager/SessionModule';
+import { modelCatalogStore } from '@/infrastructure/config/services/ModelCatalogStore';
 import { acpClientIdFromAgentType } from '../utils/acpSession';
 import {
   buildAcpFastModeValue,
@@ -67,6 +65,7 @@ import {
 import {
   resolveModelReference,
   resolveModelSelection,
+  resolveModelMaxTokens,
   type ModelAvailabilityStatus,
 } from '../utils/modelResolution';
 import { getRecentManualModel, setRecentManualModel } from '../utils/manualModelSelection';
@@ -75,6 +74,8 @@ import './ModelSelector.scss';
 const log = createLogger('ModelSelector');
 const ACP_SESSION_OPTIONS_TIMEOUT_MS = 65_000;
 const MODEL_SELECTOR_EXIT_DURATION_MS = 100;
+const EMPTY_MODELS: AIModelConfig[] = [];
+const EMPTY_DEFAULT_MODELS: DefaultModelsConfig = {};
 
 export interface ExternalModelSelection {
   models: string[];
@@ -161,7 +162,7 @@ interface ProviderGroupInfo {
   models: ModelInfo[];
 }
 
-type ModelSelectorPanel = 'modes' | 'models';
+type ModelSelectorPanel = 'modes' | 'models' | 'providers';
 type UpcomingModelMode = 'smart' | 'pool';
 type ModelSelectorLevelDirection = 'none' | 'forward' | 'back';
 
@@ -337,23 +338,29 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const modelSelectionScopeRef = useRef(modelSelectionScopeKey);
   modelSelectionScopeRef.current = modelSelectionScopeKey;
   const manualModelRef = useRef<{ scopeKey: string; modelId: string } | null>(null);
-  const [allModels, setAllModels] = useState<AIModelConfig[]>([]);
-  const [modelCatalog, setModelCatalog] = useState<AIModelCatalog | null>(null);
-  const [defaultModels, setDefaultModels] = useState<DefaultModelsConfig>({});
-  const [modeModel, setModeModel] = useState('primary');
-  const [configLoadState, setConfigLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [catalogLoadState, setCatalogLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [configEpoch, setConfigEpoch] = useState(deviceSurfaceScope.epoch);
+  const [loadedModels, setAllModels] = useState<AIModelConfig[]>([]);
+  const allModels = configEpoch === deviceSurfaceScope.epoch ? loadedModels : EMPTY_MODELS;
+  const { catalog: modelCatalog, status: catalogLoadState } = useSyncExternalStore(
+    modelCatalogStore.subscribe, modelCatalogStore.getSnapshot, modelCatalogStore.getSnapshot,
+  );
+  const [loadedDefaults, setDefaultModels] = useState<DefaultModelsConfig>({});
+  const defaultModels = configEpoch === deviceSurfaceScope.epoch ? loadedDefaults : EMPTY_DEFAULT_MODELS;
+  const [loadedModeModel, setModeModel] = useState('primary');
+  const modeModel = configEpoch === deviceSurfaceScope.epoch ? loadedModeModel : 'primary';
+  const [configState, setConfigLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const configLoadState = configEpoch === deviceSurfaceScope.epoch ? configState : 'loading';
   const [acpOptions, setAcpOptions] = useState<AcpSessionOptions | null>(null);
   const [acpOptionsLoadState, setAcpOptionsLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [keyboardNavigationOpen, setKeyboardNavigationOpen] = useState(false);
   /** Provider whose models the menu is currently showing; null is the provider level. */
   const [activeProviderKey, setActiveProviderKey] = useState<string | null>(null);
-  /** Models use a detail view; modes expand horizontally inside the summary card. */
+  /** Providers and models use detail views; modes expand inside the summary card. */
   const [activePanel, setActivePanel] = useState<ModelSelectorPanel | null>(null);
   const [modeSelectionPending, setModeSelectionPending] = useState(false);
   const [modeFocusRevision, setModeFocusRevision] = useState(0);
-  const [providerFromSummary, setProviderFromSummary] = useState(false);
+  const [modelsFromSummary, setModelsFromSummary] = useState(false);
   // Upcoming modes execute through primary until the runtime supports routing.
   const [upcomingMode, setUpcomingMode] = useState<{
     id: UpcomingModelMode;
@@ -369,8 +376,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   } | null>(null);
   const acpRestoreToastShownRef = useRef<string | null>(null);
   const acpOptionsRef = useRef<AcpSessionOptions | null>(null);
+  const configEpochRef = useRef(configEpoch);
+  configEpochRef.current = configEpoch;
   const configLoadRequestRef = useRef(0);
-  const catalogLoadRequestRef = useRef(0);
   const acpOptionsLoadRequestRef = useRef(0);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -382,9 +390,18 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const modeRetryFocusRef = useRef<string | undefined>(undefined);
   const providerFieldRef = useRef<HTMLButtonElement>(null);
   const focusPanelOnOpenRef = useRef(false);
-  const focusSummaryOnReturnRef = useRef<ModelSelectorPanel | 'provider' | null>(null);
+  const focusSummaryOnReturnRef = useRef<ModelSelectorPanel | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuId = useId();
+
+  useEffect(() => {
+    setLoading(false);
+    setReasoningLoading(false);
+    setUpcomingMode(null);
+    setPreSessionReasoningSelection(null);
+    setDropdownOpen(false);
+    setActivePanel(null);
+  }, [deviceSurfaceScope.epoch]);
 
   useEffect(() => {
     onLoadingChange?.(loading || reasoningLoading);
@@ -432,28 +449,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const isAcpSession = Boolean(acpClientId && sessionId);
   const targetIsSubagent = isSubagentSession || activeSession?.sessionKind === 'subagent';
 
-  const loadModelCatalog = useCallback(async () => {
-    const requestId = ++catalogLoadRequestRef.current;
-    setCatalogLoadState('loading');
-    try {
-      const catalog = await aiApi.getModelCatalog();
-      if (requestId !== catalogLoadRequestRef.current) return false;
-      setModelCatalog(catalog);
-      setCatalogLoadState('ready');
-      return true;
-    } catch (error) {
-      if (requestId !== catalogLoadRequestRef.current) return false;
-      setModelCatalog(null);
-      setCatalogLoadState('error');
-      log.warn('Failed to load AI model catalog', { error });
-      return false;
-    }
-  }, []);
-
   // Load configuration data.
   const loadConfigData = useCallback(async () => {
     const requestId = ++configLoadRequestRef.current;
-    setConfigLoadState('loading');
+    const scope = getActiveSurfaceScope();
     try {
       const configData = await configManager.getConfigs([
         'ai.models',
@@ -466,53 +465,40 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       const defaultModelsData = (configData['ai.default_models'] as DefaultModelsConfig | undefined) || {};
       const agentModelDefaults = configData['ai.agent_model_defaults'] as AgentModelDefaultsConfig | undefined;
 
-      if (requestId !== configLoadRequestRef.current) return false;
+      if (requestId !== configLoadRequestRef.current || !scope.isCurrent()) return false;
+      setConfigEpoch(scope.epoch);
       setAllModels(models);
       setDefaultModels(defaultModelsData);
       setModeModel(agentModelDefaults?.mode?.trim() || 'primary');
       setConfigLoadState('ready');
-      await loadModelCatalog();
 
-      if (requestId !== configLoadRequestRef.current) return false;
+      if (requestId !== configLoadRequestRef.current || !scope.isCurrent()) return false;
 
       log.debug('Configuration loaded', {
         modelsCount: models.length
       });
       return true;
     } catch (error) {
-      if (requestId !== configLoadRequestRef.current) return false;
+      if (requestId !== configLoadRequestRef.current || !scope.isCurrent()) return false;
+      if (configEpochRef.current !== scope.epoch) {
+        setAllModels([]); setDefaultModels({}); setModeModel('primary');
+      }
+      setConfigEpoch(scope.epoch);
       setConfigLoadState('error');
       log.error('Failed to load configuration', error);
       return false;
     }
-  }, [loadModelCatalog]);
+  }, []);
   
   useEffect(() => {
-    const unsubscribeCatalog = aiApi.onModelCatalogUpdated(() => {
-      void loadModelCatalog();
-    });
     void loadConfigData();
-    
-    const handleConfigUpdate = () => {
-      log.debug('Configuration update detected, reloading');
-      void loadConfigData();
-    };
-    
-    globalEventBus.on('mode:config:updated', handleConfigUpdate);
-    
     const unsubscribe = configManager.onConfigChange((path) => {
-      if (path === 'ai' || path.startsWith('ai.')) {
-        log.debug('AI configuration changed', { path });
-        void loadConfigData();
-      }
+      if (!path || path === 'ai' || ['ai.models', 'ai.default_models', 'ai.agent_model_defaults'].some(
+        owned => path === owned || path.startsWith(`${owned}.`),
+      )) void loadConfigData();
     });
-    
-    return () => {
-      globalEventBus.off('mode:config:updated', handleConfigUpdate);
-      unsubscribe();
-      unsubscribeCatalog();
-    };
-  }, [loadConfigData, loadModelCatalog]);
+    return () => { configLoadRequestRef.current += 1; unsubscribe(); };
+  }, [loadConfigData, deviceSurfaceScope.epoch]);
 
   const loadAcpOptions = useCallback(async () => {
     const requestId = ++acpOptionsLoadRequestRef.current;
@@ -1009,7 +995,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     focusSummaryOnReturnRef.current = null;
     focusPanelOnOpenRef.current = false;
     setActiveProviderKey(null);
-    setProviderFromSummary(false);
+    setModelsFromSummary(false);
     setActivePanel(null);
     setLevelDirection('none');
   }, []);
@@ -1019,7 +1005,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     focusPanelOnOpenRef.current = moveFocus;
     focusSummaryOnReturnRef.current = null;
     setActiveProviderKey(null);
-    setProviderFromSummary(false);
+    setModelsFromSummary(false);
     setLevelDirection('forward');
     if (activePanel === kind && moveFocus && !activeProviderKey) {
       focusPanelOnOpenRef.current = false;
@@ -1032,7 +1018,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     focusSummaryOnReturnRef.current = restoreFocus ? activePanel : null;
     focusPanelOnOpenRef.current = false;
     setActiveProviderKey(null);
-    setProviderFromSummary(false);
+    setModelsFromSummary(false);
     setActivePanel(null);
     setLevelDirection('back');
   }, [activePanel]);
@@ -1043,25 +1029,24 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const openProviderLevel = useCallback((providerKey: string, fromSummary = false) => {
     setActiveProviderKey(providerKey);
-    setProviderFromSummary(fromSummary);
+    setModelsFromSummary(fromSummary);
     setLevelDirection('forward');
   }, []);
 
   const closeProviderLevel = useCallback(() => {
-    if (providerFromSummary) {
+    if (modelsFromSummary) {
       closePanel(true);
-      focusSummaryOnReturnRef.current = 'provider';
       return;
     }
     setActiveProviderKey(null);
     setLevelDirection('back');
-  }, [closePanel, providerFromSummary]);
+  }, [closePanel, modelsFromSummary]);
 
   // Keep the last view intact during exit; trigger handlers reset it on reopening.
   // Catalog refreshes must not leave an open menu on a missing provider view.
   useEffect(() => {
     if (!dropdownOpen) return;
-    if (activePanel !== 'models' && activeProviderKey) {
+    if (activePanel !== 'models' && activePanel !== 'providers' && activeProviderKey) {
       setActiveProviderKey(null);
       return;
     }
@@ -1072,13 +1057,16 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   const currentNativeModelId = getCurrentModelId();
   const concreteModelId = resolveConcreteModelId(currentNativeModelId, defaultModels);
-  /** Provider that owns the pinned model, so the provider level can mark it. */
+  const currentModelId = externalSelection ? externalCurrentModelId
+    : isAcpSession ? acpOptions?.currentModelId || acpAvailableModels[0]?.id || ''
+      : currentNativeModelId;
+  /** Resolve symbolic defaults and target-owned models to their provider. */
   const selectedProviderKey = useMemo((): string | null => {
-    if (isSpecialModel(currentNativeModelId)) return null;
+    const modelId = externalSelection || isAcpSession ? currentModelId : concreteModelId;
     return providerGroups.find(
-      group => group.models.some(model => model.id === currentNativeModelId),
+      group => group.models.some(model => model.id === modelId),
     )?.key ?? null;
-  }, [currentNativeModelId, providerGroups]);
+  }, [concreteModelId, currentModelId, externalSelection, isAcpSession, providerGroups]);
   const currentReasoningProjection = useMemo((): ReasoningCatalogProjection | null => {
     if (!concreteModelId) return null;
     return modelCatalog?.models.find(model => model.id === concreteModelId)?.reasoning ?? null;
@@ -1245,12 +1233,14 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     const previousReasoningPreset = sessionId
       ? store.getState().sessions.get(sessionId)?.config.reasoningPreset
       : undefined;
+    const previousMaxContextTokens = sessionId ? store.getState().sessions.get(sessionId)?.maxContextTokens : undefined;
     const nextReasoningPreset = mode ? undefined : recentPresetForModel(modelId);
     let sessionModelWrittenOptimistically = false;
 
     try {
       if (externalSelection) {
         await externalSelection.onSelect(modelId);
+        selectionScope.assertCurrent('select external model');
         return true;
       }
       if (isAcpSession && acpClientId && sessionId) {
@@ -1263,6 +1253,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
           remoteSshHost: activeSession?.remoteSshHost,
           modelId,
         });
+        selectionScope.assertCurrent('select ACP model');
         setAcpOptions(options);
         syncAcpContextUsageToStore(sessionId, options);
         store.updateSessionModelName(sessionId, modelId);
@@ -1272,13 +1263,14 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
       const updateTargetSessionModel = async () => {
         if (!sessionId) return;
+        if (previousSessionModelName === modelId && previousReasoningPreset === nextReasoningPreset) return;
 
         // Update the frontend session model immediately so the UI reflects the
         // switch without waiting for the backend IPC round-trip.
         store.updateSessionModelName(sessionId, modelId);
         store.updateSessionReasoningPreset(sessionId, nextReasoningPreset);
         sessionModelWrittenOptimistically = true;
-        const maxContextTokens = await getModelMaxTokens(modelId, currentMode);
+        const maxContextTokens = resolveModelMaxTokens(modelId, allModels, defaultModels);
         selectionScope.assertCurrent('select model');
         store.updateSessionMaxContextTokens(sessionId, maxContextTokens);
         const session = store.getState().sessions.get(sessionId);
@@ -1305,13 +1297,26 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         return true;
       }
 
-      if (persistSharedModeDefault) {
-        await configManager.setConfig('ai.agent_model_defaults.mode', modelId);
-        selectionScope.assertCurrent('select model');
-        setModeModel(modelId);
-        globalEventBus.emit('mode:config:updated');
-      }
       await updateTargetSessionModel();
+      if (persistSharedModeDefault && modeModel !== modelId) {
+        const saveDefault = configManager.setConfig('ai.agent_model_defaults.mode', modelId);
+        if (!sessionId) {
+          // A selector without a draft/session has no other owner for the next
+          // submission. Its preference is the selection commit itself.
+          await saveDefault;
+          selectionScope.assertCurrent('select initial model');
+        } else {
+          // ConfigManager captures the device and serializes related writes.
+          // Remembering a future default must not hold the current session UI.
+          void saveDefault.catch(error => {
+            if (!selectionScope.isCurrent()) return;
+            log.warn('Session model selected but default preference was not saved', { error });
+            notificationService.warning(t('modelSelector.defaultSaveFailed'));
+            void loadConfigData();
+          });
+        }
+        setModeModel(modelId);
+      }
       rememberManualModel();
       setUpcomingMode(mode ? { id: mode, scopeKey: modelSelectionScopeKey } : null);
       setPreSessionReasoningSelection({
@@ -1327,20 +1332,22 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     } catch (error) {
       if (!selectionScope.isCurrent()) return false;
       log.error('Failed to switch model', error);
-      // Only a previously pinned selection can be restored: the store has no
-      // way to express "never pinned" without claiming a session binding.
-      if (sessionId && sessionModelWrittenOptimistically && previousSessionModelName) {
+      if (sessionId && sessionModelWrittenOptimistically) {
         store.updateSessionModelName(sessionId, previousSessionModelName);
       }
       if (sessionId && sessionModelWrittenOptimistically) {
         store.updateSessionReasoningPreset(sessionId, previousReasoningPreset);
+        store.updateSessionMaxContextTokens(sessionId, previousMaxContextTokens);
       }
       notificationService.error(t('modelSelector.switchFailed'));
       return false;
     } finally {
-      setLoading(false);
+      if (selectionScope.isCurrent()) setLoading(false);
     }
   }, [
+    allModels,
+    modeModel,
+    loadConfigData,
     activeSession?.config.workspacePath,
     activeSession?.remoteConnectionId,
     activeSession?.remoteSshHost,
@@ -1411,6 +1418,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     const previousPreset = session.config.reasoningPreset;
     if (previousPreset === normalizedPreset) return true;
 
+    const selectionScope = getActiveSurfaceScope();
     setReasoningLoading(true);
     store.updateSessionReasoningPreset(sessionId, normalizedPreset);
     try {
@@ -1426,6 +1434,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
           includeInternal: shouldIncludeInternalModelSession(session),
         });
       }
+      selectionScope.assertCurrent('select reasoning preset');
       if (!targetIsSubagent) {
         setRecentReasoningPreset(concreteModelId, normalizedPreset);
         setPreSessionReasoningSelection({
@@ -1440,12 +1449,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       });
       return true;
     } catch (error) {
+      if (!selectionScope.isCurrent()) return false;
       store.updateSessionReasoningPreset(sessionId, previousPreset);
       log.error('Failed to update session reasoning preset', error);
       notificationService.error(t('reasoningSelector.updateFailed'));
       return false;
     } finally {
-      setReasoningLoading(false);
+      if (selectionScope.isCurrent()) setReasoningLoading(false);
     }
   }, [
     concreteModelId,
@@ -1727,7 +1737,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     if (event.key === 'ArrowRight') {
       const focusedElement = document.activeElement as HTMLElement | null;
       const focusedTarget = focusedElement?.dataset?.modelMenuTarget;
-      if (focusedTarget === 'modes' || focusedTarget === 'models') {
+      if (focusedTarget === 'modes' || focusedTarget === 'models' || focusedTarget === 'providers') {
         event.preventDefault();
         openPanel(focusedTarget, true);
       }
@@ -1752,7 +1762,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       return;
     }
 
-    if (event.key === 'ArrowRight' && activePanel === 'models' && !activeProviderKey) {
+    if (event.key === 'ArrowRight' && !activeProviderKey) {
       const focusedElement = document.activeElement as HTMLElement | null;
       const focusedProviderKey = focusedElement?.dataset?.providerKey;
       if (focusedProviderKey) {
@@ -1801,14 +1811,14 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       const returnTarget = focusSummaryOnReturnRef.current;
       focusSummaryOnReturnRef.current = null;
       if (returnTarget) {
-        const field = returnTarget === 'provider' ? providerFieldRef.current
+        const field = returnTarget === 'providers' ? providerFieldRef.current
           : returnTarget === 'modes' ? modeFieldRef.current : modelFieldRef.current;
         (field ?? modeFieldRef.current ?? modelFieldRef.current)?.focus({ preventScroll: true });
       }
       return;
     }
     if (activePanel === 'modes' && (modeSelectionPending || loading || reasoningLoading)) return;
-    const providerLevelChanged = activePanel === 'models'
+    const providerLevelChanged = (activePanel === 'models' || activePanel === 'providers')
       && previousProviderKey !== activeProviderKey;
     if (!focusPanelOnOpenRef.current && !providerLevelChanged) return;
     focusPanelOnOpenRef.current = false;
@@ -1827,7 +1837,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       return;
     }
 
-    if (activePanel === 'models' && previousProviderKey) {
+    if (previousProviderKey) {
       const providerRows = Array.from(
         menu.querySelectorAll<HTMLButtonElement>('button[data-provider-key]'),
       );
@@ -1858,9 +1868,6 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   
   const resolvedContextUsageSource: ContextUsageSource =
     contextUsageSource ?? (isAcpSession ? 'acp_context' : 'agent_prompt');
-  const currentModelId = externalSelection ? externalCurrentModelId
-    : isAcpSession ? acpOptions?.currentModelId || acpAvailableModels[0]?.id || ''
-      : currentNativeModelId;
   const displayedModel = externalSelection ? externalCurrentModel
     : isAcpSession ? acpCurrentModel ?? acpAvailableModels[0] ?? null : currentModel;
   const isAcpSelection = isAcpSession && !externalSelection;
@@ -1871,7 +1878,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const displayedAvailability = externalSelection ? externalAvailability
     : isAcpSession ? acpAvailability : nativeAvailability;
   const showModelLoadingState = modelInformationLoading && (
-    isNativeModelSelection ? !modelCatalog : isAcpSelection ? !acpOptions : !displayedModel
+    isNativeModelSelection ? configLoadState === 'loading' || !modelCatalog : isAcpSelection ? !acpOptions : !displayedModel
   );
   useEffect(() => {
     // An ACP response may hand model ownership entirely to its separate mode control.
@@ -1890,14 +1897,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   ));
   const manualModelLabel = manualModelConfig?.model_name
     || getAvailabilityLabel(rememberedManualModelId ? 'target-model-unavailable' : nativeAvailability.status, t);
-  const displayedProviderGroup = providerGroups.find(group => group.models.some(model => (
-    model.id === (isNativeModelSelection ? concreteModelId : currentModelId)
-  )));
-  const openCurrentProvider = () => {
-    if (!displayedProviderGroup || disabled || loading || externalSelection?.disabled) return;
+  const displayedProviderGroup = providerGroups.find(group => group.key === selectedProviderKey);
+  const openCurrentProviderModels = () => {
+    if (disabled || loading || externalSelection?.disabled) return;
     openPanel('models', true);
-    openProviderLevel(displayedProviderGroup.key, true);
+    if (displayedProviderGroup) openProviderLevel(displayedProviderGroup.key, true);
   };
+  const isSelectionPanel = activePanel === 'models' || activePanel === 'providers';
   const acpModeLabel = acpMode?.option.options.find(option => option.value === acpMode.currentValue)?.name
     ?? acpMode?.currentValue ?? '';
   const targetTooltip = buildContextUsageTooltip({
@@ -2055,16 +2061,16 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             data-keyboard-open={keyboardNavigationOpen ? 'true' : 'false'}
             data-placement={resolvedDropdownPlacement}
             data-open={dropdownOpen ? 'true' : 'false'}
-            data-menu-level={activeProviderGroup ? 'provider' : activePanel === 'models' ? 'models' : 'settings'}
+            data-menu-level={activeProviderGroup ? 'provider' : isSelectionPanel ? activePanel : 'settings'}
             data-model-mode={currentModelMode ?? 'manual'}
             aria-busy={modelInformationLoading || undefined}
             aria-hidden={!dropdownOpen}
             {...(!dropdownOpen ? { inert: '' } : {})}
             aria-label={activeProviderGroup?.providerName ?? (activePanel === 'modes'
                 ? t('modelSelector.modes.selection') : t('modelSelector.modelSettings'))}
-            onKeyDown={activePanel === 'models' ? handlePanelKeyDown : handleDropdownKeyDown}
+            onKeyDown={isSelectionPanel ? handlePanelKeyDown : handleDropdownKeyDown}
           >
-            {!showModelLoadingState && activePanel !== 'models' && !activeProviderGroup
+            {!showModelLoadingState && !isSelectionPanel && !activeProviderGroup
               && (currentModelMode === 'smart' || currentModelMode === 'pool') && (
                 <ModelModeAnimation mode={currentModelMode} />
               )}
@@ -2078,7 +2084,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
               >
                 <LoadingState size="sm">{t('modelSelector.status.loading')}</LoadingState>
               </div>
-            ) : activePanel === 'models' ? (
+            ) : isSelectionPanel ? (
               <div data-testid="chat-model-selector-options" data-panel-kind={activePanel}>
                 <ModelSelectorMenuLevel
                   key={activeProviderGroup ? `provider:${activeProviderGroup.key}` : activePanel}
@@ -2090,9 +2096,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                         className="openbitfun-model-selector__selection-back"
                         data-testid="chat-model-selector-summary-back"
                         aria-label={t('modelSelector.backToSettings')}
-                        aria-describedby={activePanel === 'models' ? `${menuId}-current-selection` : undefined}
+                        aria-describedby={`${menuId}-current-selection`}
                         leading={<Icon name="chevron-left" size="xs" aria-hidden />}
-                        metadata={activePanel === 'models' ? (
+                        metadata={(
                           <Tooltip
                             content={currentModelMode ? undefined : displayedModel?.providerName}
                             disabled={Boolean(currentModelMode) || !displayedModel?.providerName}
@@ -2102,15 +2108,17 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                               {settingsModelLabel}
                             </OverflowText>
                           </Tooltip>
-                        ) : undefined}
+                        )}
                         onClick={() => closePanel(true)}
                       >
-                        {t('modelSelector.model')}
+                        {activePanel === 'providers'
+                          ? displayedModel?.providerName || t('modelSelector.modelSettings')
+                          : t('modelSelector.model')}
                       </MenuItem>
                       <MenuSeparator />
                     </>
                   )}
-                  {(externalSelection || isAcpSession) && !activeProviderGroup ? (
+                  {(externalSelection || isAcpSession) && activePanel === 'models' && !activeProviderGroup ? (
                     <>
                       {showModelChoices && (
                         <MenuSection title={externalSelection
@@ -2148,7 +2156,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                         data-testid="chat-model-selector-back"
                         data-openbitfun-component="model-selector"
                         data-openbitfun-part="back"
-                        aria-label={t(providerFromSummary ? 'modelSelector.backToSettings' : 'modelSelector.backToProviders')}
+                        aria-label={t(modelsFromSummary ? 'modelSelector.backToSettings' : 'modelSelector.backToProviders')}
                         leading={<Icon name="chevron-left" size="xs" aria-hidden />}
                         onClick={closeProviderLevel}
                       >
@@ -2179,77 +2187,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                         );
                       })}
                     </>
-                  ) : availableModels.length === 0 ? (
-                    <>{renderUnavailableModelMenu(nativeAvailability, true)}</>
+                  ) : providerGroups.length === 0 ? (
+                    <>{renderUnavailableModelMenu(displayedAvailability, isNativeModelSelection)}</>
                   ) : (
                     <>
-                      {(() => {
-                        const primaryModel = allModels.find(
-                          m => m.id === defaultModels.primary && isSelectableTextChatModel(m),
-                        );
-                        const primaryTooltip = primaryModel
-                          ? buildResolvedModelTooltipText(primaryModel.model_name, {
-                            providerName: getProviderDisplayName(primaryModel),
-                            contextWindow: primaryModel.context_window
-                          }, t('modelSelector.primaryModelDesc'))
-                          : t('modelSelector.primaryModelDesc');
-                        return (
-                          <Tooltip content={primaryTooltip} placement="right">
-                            <MenuItem
-                              role="menuitemradio"
-                              checked={currentModelId === 'primary' && !currentModelMode}
-                              data-testid="chat-model-selector-option"
-                              data-model-id="primary"
-                              data-model-name={primaryModel?.model_name || 'primary'}
-                              data-selected={currentModelId === 'primary' && !currentModelMode ? 'true' : 'false'}
-                              data-openbitfun-component="model-selector"
-                              data-openbitfun-part="option"
-                              data-openbitfun-state={currentModelId === 'primary' && !currentModelMode ? 'selected' : undefined}
-                              metadata={currentModelId === 'primary' && !currentModelMode ? <Icon name="check-line" size="sm" aria-hidden /> : null}
-                               disabled={!primaryModel}
-                               onClick={() => handleSelectModelFromMenu('primary')}
-                            >
-                              {t('modelSelector.primaryModel')}
-                            </MenuItem>
-                          </Tooltip>
-                        );
-                      })()}
-
-                      {(() => {
-                        const fastModel = allModels.find(
-                          m => m.id === defaultModels.fast && isSelectableTextChatModel(m),
-                        ) ?? allModels.find(
-                          m => m.id === defaultModels.primary && isSelectableTextChatModel(m),
-                        );
-                        const fastTooltip = fastModel
-                          ? buildResolvedModelTooltipText(fastModel.model_name, {
-                            providerName: getProviderDisplayName(fastModel),
-                            contextWindow: fastModel.context_window
-                          }, t('modelSelector.fastModelDesc'))
-                          : t('modelSelector.fastModelDesc');
-                        return (
-                          <Tooltip content={fastTooltip} placement="right">
-                            <MenuItem
-                              role="menuitemradio"
-                              checked={currentModelId === 'fast'}
-                              data-testid="chat-model-selector-option"
-                              data-model-id="fast"
-                              data-model-name={fastModel?.model_name || 'fast'}
-                              data-selected={currentModelId === 'fast' ? 'true' : 'false'}
-                              data-openbitfun-component="model-selector"
-                              data-openbitfun-part="option"
-                              data-openbitfun-state={currentModelId === 'fast' ? 'selected' : undefined}
-                              metadata={currentModelId === 'fast' ? <Icon name="check-line" size="sm" aria-hidden /> : null}
-                              onClick={() => handleSelectModelFromMenu('fast')}
-                            >
-                              {t('modelSelector.fastModel')}
-                            </MenuItem>
-                          </Tooltip>
-                        );
-                      })()}
-
-                      <MenuSeparator />
-
                       {providerGroups.map(group => {
                         const isSelected = selectedProviderKey === group.key;
 
@@ -2355,8 +2296,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                             data-testid="chat-model-selector-settings-model"
                             data-model-menu-target="models"
                             aria-label={`${t('modelSelector.model')}: ${settingsModelLabel}`}
-                            onClick={() => openPanelFromClick('models')}
-                            onKeyDown={(event) => handlePanelTriggerKeyDown('models', event)}
+                            onClick={openCurrentProviderModels}
+                            onKeyDown={event => {
+                              if (event.key !== 'ArrowRight') return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              openCurrentProviderModels();
+                            }}
                             disabled={disabled || loading || externalSelection?.disabled}
                           >
                             <OverflowText className="openbitfun-model-selector__model-name">
@@ -2397,15 +2343,11 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                           className="openbitfun-model-selector__provider-control"
                           labelBehavior="static"
                           data-testid="chat-model-selector-settings-provider"
+                          data-model-menu-target="providers"
                           data-provider-key={displayedProviderGroup?.key}
-                          disabled={disabled || loading || externalSelection?.disabled || !displayedProviderGroup}
-                          onClick={openCurrentProvider}
-                          onKeyDown={event => {
-                            if (event.key !== 'ArrowRight') return;
-                            event.preventDefault();
-                            event.stopPropagation();
-                            openCurrentProvider();
-                          }}
+                          disabled={disabled || loading || externalSelection?.disabled || providerGroups.length === 0}
+                          onClick={() => openPanelFromClick('providers')}
+                          onKeyDown={event => handlePanelTriggerKeyDown('providers', event)}
                         >
                           <OverflowText className="openbitfun-model-selector__model-provider">
                             {displayedModel.providerName}

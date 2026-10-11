@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReviewPlatformPullRequest, ReviewPlatformPullRequestDetailPage, ReviewPlatformWorkspaceSnapshot, ReviewRepositoryLocator } from '@/infrastructure/api/service-api/ReviewPlatformAPI';
 import { ReviewPlatformPanel } from './ReviewPlatformPanel';
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 
 const mocks = vi.hoisted(() => ({ snapshot: vi.fn(), detail: vi.fn(), openExternal: vi.fn(), t: (key: string) => key }));
 vi.mock('@/infrastructure/api', () => ({ reviewPlatformAPI: { getWorkspaceSnapshot: mocks.snapshot, getPullRequestDetailPage: mocks.detail }, systemAPI: { openExternal: mocks.openExternal } }));
@@ -93,6 +94,32 @@ describe('Gitee panel state and asynchronous request ordering', () => {
     mocks.openExternal.mockReset().mockResolvedValue(undefined);
   });
   afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
+
+  it('never serves one device\'s pull requests to another device with the same workspace ID', async () => {
+    // Same-path local workspaces hash to one workspace ID on every device.
+    const path = '/same-path-on-two-devices';
+    const remount = async () => {
+      await act(async () => root.unmount());
+      root = createRoot(host);
+      await act(async () => { root.render(<ReviewPlatformPanel workspaceId={workspaceIdFor(path)} workspacePath={path} />); });
+    };
+    try {
+      const late = deferred<ReviewPlatformWorkspaceSnapshot>();
+      mocks.snapshot.mockImplementationOnce(() => late.promise);
+      await remount();
+      activateSurface('peer-b');
+      await act(async () => late.resolve(snapshot(path)));
+      await remount();
+      expect(mocks.snapshot).toHaveBeenCalledTimes(2);
+      await remount();
+      expect(mocks.snapshot).toHaveBeenCalledTimes(2);
+      activateSurface('local');
+      await remount();
+      expect(mocks.snapshot).toHaveBeenCalledTimes(3);
+    } finally {
+      activateSurface('local');
+    }
+  });
 
   it('uses list statistics in the selected detail while its overview is still pending', async () => {
     mocks.snapshot.mockImplementation(snapshotFor(result => {

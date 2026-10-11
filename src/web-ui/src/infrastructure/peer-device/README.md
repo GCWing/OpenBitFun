@@ -102,9 +102,26 @@ listener alone recovers an interaction emitted before attachment.
    peer host (e.g. Mac). `initialize()` failure must **throw**, never return
    `false` (callers treat `false` as “no history → create session”).
 
-5. **Create-session always passes the live workspace path**
-   (`flowChatSessionConfigForWorkspace`). Empty `{}` configs are unsafe after
-   peer switch.
+5. **Create-session always passes the live workspace ID**
+   (`flowChatSessionConfigForWorkspace`). Paths are execution projections; the
+   temporary old-peer adapter alone converts an ID to legacy path/SSH fields.
+   Empty `{}` configs are unsafe after a peer switch.
+
+   Service calls with asynchronous argument preparation use `invokePrepared` so
+   preparation and invocation share one `SurfaceScope`. Capturing the scope only
+   inside `api.invoke(command, { request: await ... })` is too late: argument
+   evaluation may resume on another device. Multi-step preparation checks that
+   scope before each subsequent host operation. Service error wrappers preserve
+   `SurfaceChangedError`, and pending-operation dedup includes the activation
+   epoch so A → B → A never reuses abandoned work from A's earlier activation.
+   ESLint rejects `await` inside `api.invoke(...)` arguments. Controller-local
+   commands (`PEER_CONTROLLER_LOCAL_COMMANDS`) skip the activation check in
+   `invokePrepared`, as they do in `ApiClient`.
+
+   Settled caches and in-flight maps key by the rendered surface as well as the
+   workspace ID: two devices with the same local path produce the same
+   workspace ID. A user answer collected on one device (for example a Git trust
+   prompt) is re-checked against the current activation before it is applied.
 
 6. **Config / mode HostInvokes are high priority** during peer hydrate
    (`get_config`, `get_configs`, `get_available_modes`,

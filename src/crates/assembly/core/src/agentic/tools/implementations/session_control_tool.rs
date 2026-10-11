@@ -9,6 +9,7 @@ use crate::agentic::coordination::{get_global_coordinator, get_global_scheduler}
 use crate::agentic::tools::framework::{
     Tool, ToolExposure, ToolRenderOptions, ToolResult, ToolUseContext, ValidationResult,
 };
+use crate::service::workspace::{get_global_workspace_service, WorkspaceService};
 use crate::service_agent_runtime::CoreServiceAgentRuntime;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use async_trait::async_trait;
@@ -29,6 +30,7 @@ use openbitfun_runtime_ports::{
     AgentSessionRenameRequest, AgentSessionSummary, AgentSessionWorkspaceBinding,
     AgentSessionWorkspaceRequest, AgentSubmissionSource, AgentTurnCancellationRequest,
 };
+use openbitfun_services_core::workspace_identity::normalize_remote_workspace_path;
 use serde_json::{json, Value};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -61,14 +63,19 @@ impl SessionControlTool {
     fn current_workspace_session<'a>(
         &self,
         context: &'a ToolUseContext,
-        workspace: &str,
+        workspace: &SessionControlWorkspaceTarget,
     ) -> Option<&'a str> {
         let current_session_id = context.session_id.as_deref()?;
-        let current_workspace = context.workspace_root()?;
-        let normalized_current_workspace =
-            normalize_path(current_workspace.to_string_lossy().as_ref());
-
-        if normalized_current_workspace == workspace {
+        let current_workspace = context.workspace.as_ref()?;
+        let matches = match (&current_workspace.workspace_id, &workspace.workspace_id) {
+            (Some(current), Some(target)) => current == target,
+            _ => {
+                let current = Self::workspace_target_from_context(current_workspace);
+                current.display_workspace == workspace.display_workspace
+                    && current.remote_connection_id == workspace.remote_connection_id
+            }
+        };
+        if matches {
             Some(current_session_id)
         } else {
             None
@@ -98,6 +105,7 @@ impl SessionControlTool {
         &self,
         action: SessionControlAction,
         session_id: Option<&str>,
+        requested_workspace: Option<&str>,
         context: &ToolUseContext,
         runtime: &AgentRuntime,
     ) -> OpenBitFunResult<SessionControlWorkspaceTarget> {
@@ -125,23 +133,139 @@ impl SessionControlTool {
                 )))
             }
             SessionControlAction::Create | SessionControlAction::List => {
-                let workspace = context.workspace.as_ref().ok_or_else(|| {
-                    OpenBitFunError::tool(format!(
-                        "workspace is required for {} when the current workspace is unavailable",
-                        action.as_str()
-                    ))
+                let workspace = requested_workspace.ok_or_else(|| {
+                    OpenBitFunError::tool(format!("workspace is required for {}", action.as_str()))
                 })?;
-                Ok(Self::workspace_target_from_context(workspace))
+                let service = get_global_workspace_service().ok_or_else(|| {
+                    OpenBitFunError::tool("Workspace service is unavailable".to_string())
+                })?;
+                Self::resolve_requested_workspace(workspace, context, &service).await
             }
         }
+    }
+
+    async fn resolve_requested_workspace(
+        workspace: &str,
+        context: &ToolUseContext,
+        service: &WorkspaceService,
+    ) -> OpenBitFunResult<SessionControlWorkspaceTarget> {
+        let current = context.workspace.as_ref();
+        let operand = workspace.trim();
+        let record = if let Some(record) = service.get_workspace(operand).await {
+            record
+        } else {
+            let remote = current.is_some_and(|binding| binding.is_remote());
+            let absolute = if remote {
+                operand.starts_with('/')
+            } else {
+                std::path::Path::new(operand).is_absolute()
+            };
+            if !absolute {
+                return Err(OpenBitFunError::NotFound(format!(
+                    "Workspace ID '{}' is unavailable on this host; use ListWorkspaces to select a registered ID or provide an absolute path in the caller's environment",
+                    operand
+                )));
+            }
+            let path = if current.is_some_and(|binding| binding.is_remote()) {
+                normalize_remote_workspace_path(operand)
+            } else {
+                normalize_path(operand)
+            };
+            // Paths are scoped to the caller's filesystem provider. Never inspect
+            // a remote path with local filesystem APIs or select another SSH host.
+            let canonical = (!remote).then(|| dunce::canonicalize(&path).ok()).flatten();
+            let candidates: Vec<_> = service
+                .list_workspace_infos()
+                .await
+                .into_iter()
+                .filter(|record| {
+                    if remote {
+                        record.workspace_kind == crate::service::workspace::WorkspaceKind::Remote
+                            && record.remote_ssh_connection_id()
+                                == current.and_then(|binding| binding.connection_id())
+                            && normalize_remote_workspace_path(&record.root_path.to_string_lossy())
+                                == path
+                    } else {
+                        record.workspace_kind != crate::service::workspace::WorkspaceKind::Remote
+                            && (normalize_path(&record.root_path.to_string_lossy()) == path
+                                || canonical
+                                    .as_ref()
+                                    .is_some_and(|value| value == &record.root_path))
+                    }
+                })
+                .collect();
+            // A caller may execute in an unregistered worktree. Preserve that
+            // explicit binding, but only after rejecting ambiguous catalog paths.
+            if candidates.len() <= 1 {
+                if let Some(binding) = current {
+                    let target = Self::workspace_target_from_context(binding);
+                    if target.workspace_id.is_some() && target.display_workspace == path {
+                        return Ok(target);
+                    }
+                }
+            }
+            match candidates.as_slice() {
+                [] => {
+                    return Err(OpenBitFunError::NotFound(format!(
+                        "Workspace '{}' is not registered in the caller's environment",
+                        workspace
+                    )))
+                }
+                [record] => record.clone(),
+                _ => {
+                    return Err(OpenBitFunError::tool(
+                        "Workspace path is ambiguous; use ListWorkspaces to select a workspace ID"
+                            .to_string(),
+                    ))
+                }
+            }
+        };
+        if let Some(binding) =
+            current.filter(|binding| binding.workspace_id.as_deref() == Some(record.id.as_str()))
+        {
+            return Ok(Self::workspace_target_from_context(binding));
+        }
+        let mut config = crate::agentic::core::SessionConfig::default();
+        crate::agentic::workspace::apply_workspace_record(&mut config, &record)?;
+        let project = service
+            .require_workspace(
+                config
+                    .project_workspace_id
+                    .as_deref()
+                    .expect("resolved project ID"),
+            )
+            .await?;
+        let normalize = |path: &str| {
+            if config.is_remote_workspace() {
+                normalize_remote_workspace_path(path)
+            } else {
+                normalize_path(path)
+            }
+        };
+        Ok(SessionControlWorkspaceTarget {
+            display_workspace: normalize(&record.root_path.to_string_lossy()),
+            project_workspace: normalize(&project.root_path.to_string_lossy()),
+            execution_target: None,
+            workspace_id: config.workspace_id,
+            remote_connection_id: config.remote_connection_id,
+            remote_ssh_host: config.remote_ssh_host,
+        })
     }
 
     fn workspace_target_from_context(
         workspace: &crate::agentic::WorkspaceBinding,
     ) -> SessionControlWorkspaceTarget {
         SessionControlWorkspaceTarget {
-            display_workspace: normalize_path(&workspace.root_path_string()),
-            project_workspace: normalize_path(&workspace.project_root_path_string()),
+            display_workspace: if workspace.is_remote() {
+                normalize_remote_workspace_path(&workspace.root_path_string())
+            } else {
+                normalize_path(&workspace.root_path_string())
+            },
+            project_workspace: if workspace.is_remote() {
+                normalize_remote_workspace_path(&workspace.project_root_path_string())
+            } else {
+                normalize_path(&workspace.project_root_path_string())
+            },
             execution_target: workspace.execution_target.clone(),
             workspace_id: workspace.workspace_id.clone(),
             remote_connection_id: workspace.connection_id().map(ToOwned::to_owned),
@@ -186,6 +310,15 @@ impl SessionControlTool {
         }
     }
 
+    fn list_request(workspace: &SessionControlWorkspaceTarget) -> AgentSessionListRequest {
+        AgentSessionListRequest {
+            workspace_id: workspace.workspace_id.clone(),
+            workspace_path: String::new(),
+            remote_connection_id: None,
+            remote_ssh_host: None,
+        }
+    }
+
     fn validation_context(context: Option<&ToolUseContext>) -> SessionControlValidationContext<'_> {
         SessionControlValidationContext {
             current_session_id: context.and_then(|value| value.session_id.as_deref()),
@@ -209,12 +342,7 @@ impl SessionControlTool {
         session_id: &str,
     ) -> OpenBitFunResult<()> {
         let existing_sessions = runtime
-            .list_sessions(AgentSessionListRequest {
-                workspace_id: workspace.workspace_id.clone(),
-                workspace_path: String::new(),
-                remote_connection_id: None,
-                remote_ssh_host: None,
-            })
+            .list_sessions(Self::list_request(workspace))
             .await
             .map_err(|error| {
                 OpenBitFunError::tool(CoreServiceAgentRuntime::runtime_error_message(error))
@@ -287,14 +415,14 @@ impl Tool for SessionControlTool {
             r#"Manage persisted workspace-scoped agent sessions.
 
 Actions:
+- "list": List sessions.
 - "create": Create a new session. You may optionally provide session_name and agent_type.
 - "cancel": Cancel the target session's currently running dialog turn. This does not delete the session or clear any queued messages that may still run later.
 - "delete": Delete an existing session by session_id.
 - "rename": Rename an existing session by session_id using session_name as the new title.
-- "list": List all sessions.
 
 Arguments:
-- "workspace": Absolute workspace path. Required for create and list. Ignored for cancel, delete, and rename.
+- "workspace": Registered workspace ID or absolute path, required for create and list. Use ListWorkspaces to discover IDs. IDs select any workspace registered on this runtime host. Paths select only the current machine or SSH connection. Ignored for cancel, delete, and rename.
 - "session_name": Used by create (defaults to "New Session") and required as the new title for rename.
 - "agent_type": Only used by create. Defaults to "Standard".
   - "Standard": Coding-focused agent for implementation, debugging, and code changes.
@@ -324,7 +452,7 @@ Arguments:
                 },
                 "workspace": {
                     "type": "string",
-                    "description": "Required absolute workspace path for create and list. Ignored for cancel, delete, and rename."
+                    "description": "Registered workspace ID or absolute path for create and list. Discover IDs with ListWorkspaces. IDs can select local or remote workspaces; paths resolve only in the caller's environment. Ignored for cancel, delete, and rename."
                 },
                 "session_id": {
                     "type": "string",
@@ -337,7 +465,7 @@ Arguments:
                 "agent_type": {
                     "type": "string",
                     "enum": ["Standard", "Cowork", "DeepResearch"],
-                    "description": "Optional agent type when creating a session. Defaults to agentic."
+                    "description": "Optional agent type when creating a session. Defaults to Standard."
                 }
             },
             "required": ["action"],
@@ -394,6 +522,7 @@ Arguments:
                     .resolve_effective_workspace(
                         SessionControlAction::Create,
                         None,
+                        params.workspace.as_deref(),
                         context,
                         &runtime,
                     )
@@ -455,13 +584,12 @@ Arguments:
                     .resolve_effective_workspace(
                         SessionControlAction::Cancel,
                         Some(session_id),
+                        params.workspace.as_deref(),
                         context,
                         &runtime,
                     )
                     .await?;
-                if self.current_workspace_session(context, &workspace.display_workspace)
-                    == Some(session_id)
-                {
+                if self.current_workspace_session(context, &workspace) == Some(session_id) {
                     return Err(OpenBitFunError::tool(
                         "cannot cancel the current session from SessionControl".to_string(),
                     ));
@@ -541,13 +669,12 @@ Arguments:
                     .resolve_effective_workspace(
                         SessionControlAction::Delete,
                         Some(session_id),
+                        params.workspace.as_deref(),
                         context,
                         &runtime,
                     )
                     .await?;
-                if self.current_workspace_session(context, &workspace.display_workspace)
-                    == Some(session_id)
-                {
+                if self.current_workspace_session(context, &workspace) == Some(session_id) {
                     return Err(OpenBitFunError::tool(
                         "cannot delete the current session from SessionControl".to_string(),
                     ));
@@ -613,13 +740,12 @@ Arguments:
                     .resolve_effective_workspace(
                         SessionControlAction::Rename,
                         Some(session_id),
+                        params.workspace.as_deref(),
                         context,
                         &runtime,
                     )
                     .await?;
-                if self.current_workspace_session(context, &workspace.display_workspace)
-                    == Some(session_id)
-                {
+                if self.current_workspace_session(context, &workspace) == Some(session_id) {
                     return Err(OpenBitFunError::tool(
                         "cannot rename the current session from SessionControl".to_string(),
                     ));
@@ -660,23 +786,18 @@ Arguments:
                     .resolve_effective_workspace(
                         SessionControlAction::List,
                         None,
+                        params.workspace.as_deref(),
                         context,
                         &runtime,
                     )
                     .await?;
                 let sessions = runtime
-                    .list_sessions(AgentSessionListRequest {
-                        workspace_id: workspace.workspace_id.clone(),
-                        workspace_path: String::new(),
-                        remote_connection_id: None,
-                        remote_ssh_host: None,
-                    })
+                    .list_sessions(Self::list_request(&workspace))
                     .await
                     .map_err(|error| {
                         OpenBitFunError::tool(CoreServiceAgentRuntime::runtime_error_message(error))
                     })?;
-                let current_session_id =
-                    self.current_workspace_session(context, &workspace.display_workspace);
+                let current_session_id = self.current_workspace_session(context, &workspace);
                 let result_for_assistant = self.build_list_result_for_assistant(
                     &workspace.display_workspace,
                     &sessions,
@@ -705,6 +826,8 @@ mod tests {
     use super::*;
     use crate::agentic::tools::framework::ToolUseContext;
     use crate::agentic::WorkspaceBinding;
+    use crate::service::workspace::{WorkspaceActivityMode, WorkspaceCreateOptions, WorkspaceKind};
+    use openbitfun_agent_runtime::sdk::AgentRuntimeBuilder;
     use openbitfun_core_types::{
         SessionExecutionTarget, SessionExecutionTargetKind, WorktreeLifecycle,
     };
@@ -712,6 +835,7 @@ mod tests {
     use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
     use uuid::Uuid;
 
     fn empty_context() -> ToolUseContext {
@@ -749,6 +873,451 @@ mod tests {
     impl Drop for TestTempDir {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn context_for_workspace(workspace_id: String, path: PathBuf) -> ToolUseContext {
+        let mut context = empty_context();
+        context.session_id = Some("caller-session".into());
+        context.workspace = Some(WorkspaceBinding::new(Some(workspace_id), path));
+        context
+    }
+
+    fn remote_context(workspace_id: &str, path: &str, connection: &str) -> ToolUseContext {
+        let mut context = empty_context();
+        context.session_id = Some("caller-session".into());
+        context.workspace = Some(WorkspaceBinding::new_remote(
+            Some(workspace_id.into()),
+            PathBuf::from(path),
+            connection.into(),
+            "remote.example".into(),
+            openbitfun_services_core::workspace_identity::WorkspaceSessionIdentity {
+                workspace_kind: WorkspaceKind::Remote,
+                hostname: "remote.example".into(),
+                logical_workspace_path: path.into(),
+                remote_connection_id: Some(connection.into()),
+            },
+        ));
+        context
+    }
+
+    struct SessionsPort {
+        binding: Option<AgentSessionWorkspaceBinding>,
+        requests: Mutex<Vec<AgentSessionListRequest>>,
+    }
+
+    #[async_trait]
+    impl openbitfun_runtime_ports::AgentSubmissionPort for SessionsPort {
+        async fn create_session(
+            &self,
+            _request: AgentSessionCreateRequest,
+        ) -> openbitfun_runtime_ports::PortResult<openbitfun_runtime_ports::AgentSessionCreateResult>
+        {
+            unreachable!("workspace resolution must not create sessions")
+        }
+
+        async fn submit_message(
+            &self,
+            _request: openbitfun_runtime_ports::AgentSubmissionRequest,
+        ) -> openbitfun_runtime_ports::PortResult<openbitfun_runtime_ports::AgentSubmissionResult>
+        {
+            unreachable!("workspace resolution must not submit messages")
+        }
+
+        async fn resolve_session_agent_type(
+            &self,
+            _session_id: &str,
+        ) -> openbitfun_runtime_ports::PortResult<Option<String>> {
+            Ok(None)
+        }
+    }
+
+    #[async_trait]
+    impl openbitfun_runtime_ports::AgentSessionManagementPort for SessionsPort {
+        async fn list_sessions(
+            &self,
+            request: AgentSessionListRequest,
+        ) -> openbitfun_runtime_ports::PortResult<Vec<AgentSessionSummary>> {
+            self.requests.lock().unwrap().push(request);
+            Ok(Vec::new())
+        }
+
+        async fn delete_session(
+            &self,
+            _request: AgentSessionDeleteRequest,
+        ) -> openbitfun_runtime_ports::PortResult<()> {
+            unreachable!("workspace resolution must not delete sessions")
+        }
+
+        async fn resolve_session_workspace_binding(
+            &self,
+            request: AgentSessionWorkspaceRequest,
+        ) -> openbitfun_runtime_ports::PortResult<Option<AgentSessionWorkspaceBinding>> {
+            assert_eq!(request.session_id, "target-session");
+            Ok(self.binding.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn requested_workspace_queries_target_instead_of_caller() {
+        let root = TestTempDir::new("session-control-cross-workspace");
+        let service = WorkspaceService::new_isolated_for_tests(root.path.join("user")).await;
+        let caller_path = root.path.join("caller");
+        let target_path = root.path.join("target");
+        fs::create_dir_all(&caller_path).unwrap();
+        fs::create_dir_all(&target_path).unwrap();
+        let caller = service.open_workspace(caller_path).await.unwrap();
+        let target = service.open_workspace(target_path).await.unwrap();
+        let mut context = context_for_workspace(caller.id, caller.root_path);
+        context.workspace.as_mut().unwrap().execution_target =
+            Some(SessionExecutionTarget::local("caller-execution-root"));
+
+        let resolved = SessionControlTool::resolve_requested_workspace(
+            &target.root_path.to_string_lossy(),
+            &context,
+            &service,
+        )
+        .await
+        .unwrap();
+        assert_eq!(resolved.workspace_id.as_deref(), Some(target.id.as_str()));
+        assert_eq!(PathBuf::from(&resolved.display_workspace), target.root_path);
+        assert_eq!(resolved.project_workspace, resolved.display_workspace);
+        assert!(resolved.execution_target.is_none());
+        assert!(resolved.remote_connection_id.is_none());
+        assert_eq!(
+            SessionControlTool::new().current_workspace_session(&context, &resolved),
+            None
+        );
+
+        let port = Arc::new(SessionsPort {
+            binding: None,
+            requests: Mutex::new(Vec::new()),
+        });
+        let runtime = AgentRuntimeBuilder::new()
+            .with_submission_port(port.clone())
+            .with_session_management_port(port.clone())
+            .build()
+            .unwrap();
+        runtime
+            .list_sessions(SessionControlTool::list_request(&resolved))
+            .await
+            .unwrap();
+        assert_eq!(
+            port.requests.lock().unwrap()[0].workspace_id.as_deref(),
+            Some(target.id.as_str())
+        );
+
+        // Explicit workspace selection also works without a caller workspace.
+        let resolved = SessionControlTool::resolve_requested_workspace(
+            &target.root_path.to_string_lossy(),
+            &empty_context(),
+            &service,
+        )
+        .await
+        .unwrap();
+        assert_eq!(resolved.workspace_id.as_deref(), Some(target.id.as_str()));
+    }
+
+    #[tokio::test]
+    async fn requested_current_workspace_preserves_worktree_execution_target() {
+        let root = TestTempDir::new("session-control-current-worktree");
+        let service = WorkspaceService::new_isolated_for_tests(root.path.join("user")).await;
+        fs::create_dir_all(root.path.join("project")).unwrap();
+        let project = service
+            .open_workspace(root.path.join("project"))
+            .await
+            .unwrap();
+        let mut context = context_for_workspace("worktree-id".into(), root.path.join("worktree"));
+        let target = SessionExecutionTarget {
+            kind: SessionExecutionTargetKind::ManagedWorktree,
+            worktree_id: Some("worktree-id".into()),
+            root_path: root.path.join("worktree").to_string_lossy().into_owned(),
+            base_ref: None,
+            base_commit: None,
+            branch: None,
+            lifecycle: Some(WorktreeLifecycle::Managed),
+        };
+        context.workspace = context.workspace.take().map(|binding| {
+            binding
+                .with_project_root_path(root.path.join("project"))
+                .with_execution_target(Some(target.clone()))
+        });
+        let resolved = SessionControlTool::resolve_requested_workspace(
+            &context.workspace.as_ref().unwrap().root_path_string(),
+            &context,
+            &service,
+        )
+        .await
+        .unwrap();
+        assert_eq!(resolved.execution_target, Some(target));
+        assert_eq!(
+            PathBuf::from(&resolved.project_workspace),
+            root.path.join("project")
+        );
+        assert_eq!(resolved.workspace_id.as_deref(), Some("worktree-id"));
+        assert_eq!(
+            SessionControlTool::new().current_workspace_session(&context, &resolved),
+            Some("caller-session")
+        );
+        let resolved = SessionControlTool::resolve_requested_workspace(
+            &project.root_path.to_string_lossy(),
+            &context,
+            &service,
+        )
+        .await
+        .unwrap();
+        assert_eq!(resolved.workspace_id.as_deref(), Some(project.id.as_str()));
+        assert_eq!(
+            PathBuf::from(&resolved.display_workspace),
+            project.root_path
+        );
+        assert!(resolved.execution_target.is_none());
+    }
+
+    #[tokio::test]
+    async fn requested_remote_workspace_stays_on_callers_connection() {
+        let root = TestTempDir::new("session-control-remote-workspace");
+        let service = WorkspaceService::new_isolated_for_tests(root.path.join("user")).await;
+        let path = "/remote/target";
+        let mut expected_id = String::new();
+        for connection in ["caller-connection", "other-connection"] {
+            let record = service
+                .track_workspace_activity(
+                    PathBuf::from(path),
+                    WorkspaceCreateOptions {
+                        workspace_kind: WorkspaceKind::Remote,
+                        remote_connection_id: Some(connection.into()),
+                        remote_ssh_host: Some(format!("{connection}.example")),
+                        ..Default::default()
+                    },
+                    WorkspaceActivityMode::TouchOnly,
+                )
+                .await
+                .unwrap();
+            if connection == "caller-connection" {
+                expected_id = record.id;
+            }
+        }
+        let context = remote_context("caller-workspace", "/remote/caller", "caller-connection");
+        let resolved =
+            SessionControlTool::resolve_requested_workspace("/remote//target/", &context, &service)
+                .await
+                .unwrap();
+        assert_eq!(resolved.workspace_id.as_deref(), Some(expected_id.as_str()));
+        assert_eq!(resolved.display_workspace, path);
+        assert_eq!(resolved.project_workspace, path);
+        assert_eq!(
+            resolved.remote_connection_id.as_deref(),
+            Some("caller-connection")
+        );
+        assert_eq!(
+            resolved.remote_ssh_host.as_deref(),
+            Some("caller-connection.example")
+        );
+        assert_eq!(
+            SessionControlTool::list_request(&resolved)
+                .workspace_id
+                .as_deref(),
+            Some(expected_id.as_str())
+        );
+
+        let current =
+            SessionControlTool::resolve_requested_workspace("/remote//caller/", &context, &service)
+                .await
+                .unwrap();
+        assert_eq!(current.display_workspace, "/remote/caller");
+        assert_eq!(
+            current.remote_connection_id.as_deref(),
+            Some("caller-connection")
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_or_foreign_path_does_not_fall_back_to_caller() {
+        let root = TestTempDir::new("session-control-missing-workspace");
+        let service = WorkspaceService::new_isolated_for_tests(root.path.join("user")).await;
+        let context = context_for_workspace("caller-id".into(), root.path.join("caller"));
+        assert!(matches!(
+            SessionControlTool::resolve_requested_workspace(
+                &root.path.join("missing").to_string_lossy(),
+                &context,
+                &service,
+            )
+            .await,
+            Err(OpenBitFunError::NotFound(_))
+        ));
+
+        let path = root.path.join("shared-path");
+        fs::create_dir_all(&path).unwrap();
+        service.open_workspace(path.clone()).await.unwrap();
+        let mut remote_ids = Vec::new();
+        for connection in ["other-connection", "another-connection"] {
+            let record = service
+                .track_workspace_activity(
+                    PathBuf::from("/remote/ambiguous"),
+                    WorkspaceCreateOptions {
+                        workspace_kind: WorkspaceKind::Remote,
+                        remote_connection_id: Some(connection.into()),
+                        remote_ssh_host: Some(format!("{connection}.example")),
+                        ..Default::default()
+                    },
+                    WorkspaceActivityMode::TouchOnly,
+                )
+                .await
+                .unwrap();
+            remote_ids.push((record.id, connection));
+        }
+        assert!(matches!(
+            SessionControlTool::resolve_requested_workspace(
+                "/remote/ambiguous",
+                &context,
+                &service
+            )
+            .await,
+            Err(OpenBitFunError::NotFound(_))
+        ));
+
+        // Discovery exposes both same-path remote records to a local caller.
+        let catalog =
+            crate::service_agent_runtime::CoreWorkspaceCatalogPort::list_from_service(&service)
+                .await;
+        for (id, connection) in remote_ids {
+            assert!(catalog.iter().any(|record| record.workspace_id == id));
+            for caller in [
+                &context,
+                &remote_context("remote-caller", "/caller", "caller-connection"),
+            ] {
+                let resolved =
+                    SessionControlTool::resolve_requested_workspace(&id, caller, &service)
+                        .await
+                        .unwrap();
+                assert_eq!(resolved.workspace_id.as_deref(), Some(id.as_str()));
+                assert_eq!(resolved.remote_connection_id.as_deref(), Some(connection));
+                assert_eq!(resolved.display_workspace, "/remote/ambiguous");
+            }
+        }
+        for invalid in ["unknown-id", "relative/path", ""] {
+            assert!(matches!(
+                SessionControlTool::resolve_requested_workspace(invalid, &context, &service).await,
+                Err(OpenBitFunError::NotFound(_))
+            ));
+        }
+
+        // Imported legacy records can share a path even when IDs differ.
+        let mut duplicate = service
+            .list_workspace_infos()
+            .await
+            .into_iter()
+            .find(|row| row.root_path == dunce::canonicalize(&path).unwrap())
+            .unwrap();
+        duplicate.id = "legacy-duplicate".into();
+        service
+            .get_manager()
+            .write()
+            .await
+            .get_workspaces_mut()
+            .insert(duplicate.id.clone(), duplicate);
+        let error = SessionControlTool::resolve_requested_workspace(
+            &path.to_string_lossy(),
+            &context,
+            &service,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("ambiguous"));
+
+        let remote = remote_context("remote-caller", "/caller", "caller-connection");
+        assert!(matches!(
+            SessionControlTool::resolve_requested_workspace(
+                &path.to_string_lossy(),
+                &remote,
+                &service
+            )
+            .await,
+            Err(OpenBitFunError::NotFound(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn session_targeted_actions_ignore_workspace_and_use_target_session_binding() {
+        let port = Arc::new(SessionsPort {
+            binding: Some(AgentSessionWorkspaceBinding {
+                workspace_kind: Some(WorkspaceKind::Remote),
+                project_workspace_id: Some("target-workspace".into()),
+                workspace_id: Some("target-workspace".into()),
+                workspace_path: "/remote/target".into(),
+                project_workspace_path: None,
+                execution_target: None,
+                remote_connection_id: Some("target-connection".into()),
+                remote_ssh_host: Some("target.example".into()),
+            }),
+            requests: Mutex::new(Vec::new()),
+        });
+        let runtime = AgentRuntimeBuilder::new()
+            .with_submission_port(port.clone())
+            .with_session_management_port(port.clone())
+            .build()
+            .unwrap();
+        let context = remote_context("caller-workspace", "/remote/caller", "caller-connection");
+        let tool = SessionControlTool::new();
+        for action in [
+            SessionControlAction::Cancel,
+            SessionControlAction::Delete,
+            SessionControlAction::Rename,
+        ] {
+            let resolved = tool
+                .resolve_effective_workspace(
+                    action,
+                    Some("target-session"),
+                    Some("ignored-path"),
+                    &context,
+                    &runtime,
+                )
+                .await
+                .unwrap();
+            assert_eq!(resolved.workspace_id.as_deref(), Some("target-workspace"));
+            assert_eq!(
+                resolved.remote_connection_id.as_deref(),
+                Some("target-connection")
+            );
+            assert_eq!(tool.current_workspace_session(&context, &resolved), None);
+            let _ = tool
+                .ensure_session_exists(&runtime, &resolved, "target-session")
+                .await;
+            assert_eq!(
+                port.requests
+                    .lock()
+                    .unwrap()
+                    .last()
+                    .unwrap()
+                    .workspace_id
+                    .as_deref(),
+                Some("target-workspace")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn create_and_list_accept_ids_before_host_resolution() {
+        let tool = SessionControlTool::new();
+        let context = remote_context("caller-workspace", "/remote/caller", "caller-connection");
+        for action in ["create", "list"] {
+            assert!(
+                tool.validate_input(
+                    &json!({ "action": action, "workspace": "/remote/target" }),
+                    Some(&context)
+                )
+                .await
+                .result
+            );
+            assert!(
+                tool.validate_input(
+                    &json!({ "action": action, "workspace": "relative/path" }),
+                    Some(&context)
+                )
+                .await
+                .result
+            );
         }
     }
 

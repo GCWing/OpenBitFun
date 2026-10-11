@@ -4,6 +4,14 @@
   "common": {
     "retry": "重试"
   },
+  "textSelection": {
+    "title": "文本选择",
+    "autoShowToolbar": "自动显示选中文字操作栏",
+    "autoShowToolbarDescription": "选中对话文本后，显示“添加批注”和“侧边提问”。关闭后仍可通过右键菜单操作。",
+    "loading": "正在加载文本选择偏好…",
+    "loadFailed": "加载文本选择偏好失败",
+    "saveFailed": "保存文本选择偏好失败"
+  },
   "applicationGroups": {
     "startupAndUpdates": {
       "title": "启动与更新",

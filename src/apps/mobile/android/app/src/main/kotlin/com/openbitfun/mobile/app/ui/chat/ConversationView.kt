@@ -9,6 +9,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
@@ -268,6 +271,11 @@ internal fun ConversationView(
         var topInset by remember { mutableStateOf(0.dp) }
         var bottomInset by remember { mutableStateOf(0.dp) }
         val density = LocalDensity.current
+        // Scaffold already lifts the pane above the keyboard. Navigation only
+        // belongs to this layer when the keyboard is absent.
+        val navigationBottom = with(density) {
+            if (WindowInsets.ime.getBottom(this) > 0) 0.dp else WindowInsets.navigationBars.getBottom(this).toDp()
+        }
         Box(modifier = Modifier.fillMaxSize().testTag(CONVERSATION_TEST_TAG)) {
             if (timeline == null) {
                 Box(Modifier.fillMaxSize()) {
@@ -338,7 +346,8 @@ internal fun ConversationView(
                     // short of that leaves a line of text sitting crisp and
                     // legible beside the pill after it has already faded out
                     // higher up.
-                    .background(bottomOverlayFade()),
+                    .background(bottomOverlayFade())
+                    .padding(bottom = navigationBottom),
             ) {
                 if (attachmentDraft.failed.value) {
                     TextButton(onClick = { attachmentDraft.retry() }) {

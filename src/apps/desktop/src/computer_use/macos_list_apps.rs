@@ -127,9 +127,6 @@ pub(super) fn list_running_apps(include_hidden: bool) -> OpenBitFunResult<Vec<Ap
     Ok(apps)
 }
 
-/// Compatibility for launch/quit call sites. Discovery is always fresh now.
-pub(super) fn invalidate_cache() {}
-
 #[cfg(test)]
 mod tests {
     use super::*;

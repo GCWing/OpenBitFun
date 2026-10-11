@@ -21,6 +21,14 @@ export interface PersistedCloudAccountSession {
   targetDeviceName?: string;
 }
 
+export interface PersistedWatchProvisionIdentity {
+  relayUrl: string;
+  userId: string;
+  deviceId: string;
+  requestId: string;
+  privateKeyBase64: string;
+}
+
 /** Persists only an HUKS-encrypted account session, never plaintext secrets. */
 export class CloudAccountSessionStore {
   private store?: preferences.Preferences;
@@ -88,6 +96,28 @@ export class CloudAccountSessionStore {
 
   async save(session: PersistedCloudAccountSession): Promise<void> {
     await this.writeSealed(CIPHER_KEY, IV_KEY, JSON.stringify(session));
+  }
+
+  async loadWatchProvisionIdentity(relayUrl: string, userId: string,
+    deviceId: string): Promise<PersistedWatchProvisionIdentity | undefined> {
+    const key = this.watchProvisionKey(relayUrl, userId, deviceId);
+    const text = await this.readSealed(`${key}_cipher`, `${key}_iv`);
+    if (!text) return undefined;
+    const identity = JSON.parse(text) as PersistedWatchProvisionIdentity;
+    if (identity.relayUrl !== relayUrl || identity.userId !== userId || identity.deviceId !== deviceId ||
+      !identity.requestId || Encoding.base64ToBytes(identity.privateKeyBase64).length !== 32) {
+      throw new Error('Stored watch provisioning identity is invalid.');
+    }
+    return identity;
+  }
+
+  async saveWatchProvisionIdentity(identity: PersistedWatchProvisionIdentity): Promise<void> {
+    const key = this.watchProvisionKey(identity.relayUrl, identity.userId, identity.deviceId);
+    await this.writeSealed(`${key}_cipher`, `${key}_iv`, JSON.stringify(identity));
+  }
+
+  private watchProvisionKey(relayUrl: string, userId: string, deviceId: string): string {
+    return `watch_provision_v1_${encodeURIComponent(relayUrl)}_${encodeURIComponent(userId)}_${deviceId}`;
   }
 
   private async writeSealed(cipherKey: string, ivKey: string, plaintext: string): Promise<void> {

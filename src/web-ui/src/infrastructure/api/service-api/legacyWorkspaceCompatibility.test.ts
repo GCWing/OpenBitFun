@@ -2,13 +2,42 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock('./ApiClient', () => ({ api: { invoke } }));
-import { migrateLegacySkillReceipts, upgradeLegacyWorktreeReferences, upgradeLegacyEditorWorkspaceId } from './legacyWorkspaceCompatibility';
+import { migrateLegacySkillReceipts, upgradeLegacyWorktreeReferences, upgradeLegacyEditorWorkspaceId, resolveLegacySessionWorkspace } from './legacyWorkspaceCompatibility';
 
 const parent = { id: 'parent-id', rootPath: '/repo', workspaceKind: 'normal' };
 const execution = {
   id: 'worktree-id', rootPath: '/repo/tree', workspaceKind: 'normal',
   worktree: { isMain: false, mainRepoPath: '/repo', mainWorkspaceId: undefined as string | undefined },
 };
+
+describe('legacy session workspace identity', () => {
+  const remote = { ...parent, id: 'remote-id', workspaceKind: 'remote', connectionId: 'ssh-1', sshHost: 'localhost' };
+  const otherHost = { ...remote, id: 'other-host', connectionId: 'ssh-2', sshHost: 'server-2' };
+
+  it('keeps same-path local and SSH records ambiguous without identity hints', () => {
+    expect(resolveLegacySessionWorkspace({ workspacePath: '/repo' }, [parent, remote])).toBeUndefined();
+    expect(resolveLegacySessionWorkspace({ workspacePath: '/repo', remoteSshHost: 'localhost' }, [parent, remote])).toBeUndefined();
+  });
+
+  it('uses the SSH connection and host together, including loopback hosts', () => {
+    const records = [parent, remote, otherHost, { ...remote, id: 'stale-host', sshHost: 'stale' }];
+    expect(resolveLegacySessionWorkspace({ workspacePath: '/repo', remoteConnectionId: 'ssh-1', remoteSshHost: 'localhost' }, records)).toBe(remote);
+    expect(resolveLegacySessionWorkspace({ workspacePath: '/repo', remoteSshHost: 'server-2' }, records)).toBe(otherHost);
+  });
+
+  it('does not substitute a worktree project for its missing execution workspace', () => {
+    const old = { workspacePath: '/repo/tree', projectWorkspacePath: '/repo' };
+    expect(resolveLegacySessionWorkspace(old, [parent])).toBeUndefined();
+    expect(resolveLegacySessionWorkspace(old, [parent, execution])).toBe(execution);
+    expect(resolveLegacySessionWorkspace({ projectWorkspacePath: '/repo' }, [parent])).toBe(parent);
+  });
+
+  it('deduplicates opened/recent records by ID and never falls back from an unknown ID', () => {
+    expect(resolveLegacySessionWorkspace({ workspacePath: '/repo' }, [parent, parent])).toBe(parent);
+    expect(resolveLegacySessionWorkspace({ workspaceId: 'missing', workspacePath: '/repo' }, [parent])).toBeUndefined();
+    expect(resolveLegacySessionWorkspace({ workspaceId: remote.id, workspacePath: '/stale' }, [parent, remote])).toBe(remote);
+  });
+});
 
 describe('temporary legacy worktree catalog upgrade', () => {
   it('resolves a local parent despite a remote record with the same path', () => {

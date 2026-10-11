@@ -184,12 +184,26 @@ impl ConfigService {
     where
         T: serde::Serialize,
     {
+        self.set_config_if_changed(path, value).await.map(|_| ())
+    }
+
+    /// Compares and persists under the same lock; unchanged preferences do not
+    /// trigger validation, disk writes, account sync, or runtime notifications.
+    pub async fn set_config_if_changed<T>(&self, path: &str, value: T) -> OpenBitFunResult<bool>
+    where
+        T: serde::Serialize,
+    {
+        let value = serde_json::to_value(value)?;
         {
             let mut manager = self.manager.write().await;
+            let before = manager.get::<serde_json::Value>(path).ok();
             manager.set(path, value).await?;
+            if before == manager.get::<serde_json::Value>(path).ok() {
+                return Ok(false);
+            }
         }
         self.after_config_change(path).await;
-        Ok(())
+        Ok(true)
     }
 
     /// Reads, modifies, validates, and persists a section under one write lock.
@@ -225,11 +239,13 @@ impl ConfigService {
     async fn after_config_change(&self, path: &str) {
         let model_configuration_changed = Self::path_touches_models(path);
         if model_configuration_changed {
-            if let Err(e) = self.reconcile_models("set_config").await {
-                warn!(
-                    "Model reconcile after set_config failed: path={}, error={}",
-                    path, e
-                );
+            if path != "ai.agent_model_defaults.mode" {
+                if let Err(e) = self.reconcile_models("set_config").await {
+                    warn!(
+                        "Model reconcile after set_config failed: path={}, error={}",
+                        path, e
+                    );
+                }
             }
             super::global::GlobalConfigManager::broadcast_update(
                 super::global::ConfigUpdateEvent::ModelConfigurationUpdated,
@@ -803,6 +819,53 @@ mod tests {
         (service, dir)
     }
 
+    #[tokio::test]
+    async fn model_default_noop_does_not_persist_or_notify() {
+        let (service, dir) = test_service("model-default-noop").await;
+        service
+            .add_ai_model(runtime_model("chosen", "fixture-key"))
+            .await
+            .unwrap();
+        let mut changes = service.subscribe_local_changes();
+        assert!(service
+            .set_config_if_changed("ai.agent_model_defaults.mode", "chosen")
+            .await
+            .unwrap());
+        changes.borrow_and_update();
+        let before: GlobalConfig = service.get_config(None).await.unwrap();
+        assert!(!service
+            .set_config_if_changed("ai.agent_model_defaults.mode", "chosen")
+            .await
+            .unwrap());
+        assert!(!changes.has_changed().unwrap());
+        let after: GlobalConfig = service.get_config(None).await.unwrap();
+        assert_eq!(before.last_modified, after.last_modified);
+        let restarted = restart_test_service(&dir, "model-default-noop").await;
+        assert_eq!(
+            restarted
+                .get_config::<String>(Some("ai.agent_model_defaults.mode"))
+                .await
+                .unwrap(),
+            "chosen"
+        );
+        // Keep the legacy invalid-reference fallback and reject malformed types.
+        service
+            .set_config("ai.agent_model_defaults.mode", "removed-model")
+            .await
+            .unwrap();
+        assert_eq!(
+            service
+                .get_config::<String>(Some("ai.agent_model_defaults.mode"))
+                .await
+                .unwrap(),
+            "primary"
+        );
+        assert!(service
+            .set_config("ai.agent_model_defaults.mode", 123)
+            .await
+            .is_err());
+    }
+
     fn realtime_voice_fixture() -> VoiceCallConfig {
         VoiceCallConfig {
             api_key: "fixture-realtime-voice-key".to_string(),
@@ -1137,9 +1200,10 @@ mod tests {
             ),
         ];
         for (path, value) in &fixtures {
-            source.set_config(path, value).await.unwrap();
-            assert!(
+            let changed = source.set_config_if_changed(path, value).await.unwrap();
+            assert_eq!(
                 changes.has_changed().unwrap(),
+                changed,
                 "Missing configuration change signal: {path}"
             );
             changes.borrow_and_update();

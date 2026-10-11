@@ -1,3 +1,4 @@
+import { CapsulePreview } from "../preview/CapsulePreview";
 import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { ComponentOverview } from "../preview/ComponentOverview";
 import { getComponentPresentation, getInitialPreviewState, hasComponentOverview } from "../preview/componentPresentation";
@@ -163,7 +164,7 @@ type PageHeaderAlign = "center" | "start";
 type PageHeaderSize = "display" | "lg" | "md" | "sm";
 
 const buttonVariants = ["outline", "fill", "secondary", "primary", "text"] as const;
-const iconButtonVariants = ["annotation", "quiet", "outline", "fill", "primary"] as const;
+const iconButtonVariants = ["annotation", "quiet", "glass", "outline", "fill", "primary"] as const;
 const iconButtonSizes = ["xs", "standard", "sm", "md", "lg"] as const;
 const buttonInspectorStates = ["default", "hover", "active"] as const;
 const fieldOrientations = ["vertical", "horizontal"] as const;
@@ -231,6 +232,7 @@ const optionLabelKeys: Readonly<Record<string, MessageKey>> = {
   open: "detail.option.open",
   outline: "detail.option.outline",
   annotation: "detail.option.annotation",
+  glass: "detail.option.glass",
   primary: "detail.option.primary",
   quiet: "detail.option.quiet",
   raised: "detail.option.raised",
@@ -537,6 +539,9 @@ export function ComponentDetailPage({
       return `import { Icon } from "@openbitfun/ui";\n\n<Icon name="${iconName}" size="${iconSize}" tone="${iconTone}" />`;
     }
 
+    if (component.name === "Capsule") {
+      return `import { Button, Capsule, Icon, IconButton } from "@openbitfun/ui";\n\n<Capsule size="sm" action={\n  <IconButton aria-label="${t("components.preview.close")}" icon={<Icon name="xmark" />} onClick={remove} />\n}>\n  <Button size="sm" variant="outline">${t("components.preview.modalProviderName")}</Button>\n</Capsule>`;
+    }
     if (component.name === "IconButton") {
       const stateProps = `${inspectorDisabled ? " disabled" : ""}${inspectorLoading ? " loading" : ""}`;
       const annotation = iconButtonVariant === "annotation";
@@ -904,6 +909,7 @@ export function ComponentDetailPage({
       );
     }
 
+    if (component.name === "Capsule") return <CapsulePreview key={state} state={state} />;
     if (component.name === "Icon") {
       return <Icon name={iconName} size={iconSize} tone={iconTone} />;
     }

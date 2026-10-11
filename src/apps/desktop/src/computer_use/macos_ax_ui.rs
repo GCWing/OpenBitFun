@@ -50,19 +50,6 @@ unsafe extern "C" {
 const K_AX_VALUE_CGPOINT: u32 = 1;
 const K_AX_VALUE_CGSIZE: u32 = 2;
 
-/// Pid of the frontmost application, via `NSWorkspace.frontmostApplication`.
-///
-/// Reads in-process in microseconds. The previous implementation shelled out to
-/// `osascript` on every call — and this is on the hot path for
-/// `describe_screen` (which reaches it up to three times per call), so a single
-/// observation used to cost several hundred milliseconds of process spawns plus
-/// the risk of a System Events AppleEvent timeout.
-fn frontmost_pid() -> OpenBitFunResult<i32> {
-    crate::computer_use::macos_bg_input::frontmost_pid_macos().ok_or_else(|| {
-        OpenBitFunError::tool("NSWorkspace reported no frontmost application.".to_string())
-    })
-}
-
 unsafe fn ax_release(v: CFTypeRef) {
     unsafe {
         if !v.is_null() {
@@ -540,14 +527,6 @@ fn element_short_desc(role: Option<&str>, title: Option<&str>) -> String {
 
 const MAX_CANDIDATES: usize = 10;
 
-/// Search the **frontmost** app's accessibility tree (BFS) for elements matching filters.
-/// Collects all matches, filters invisible/off-screen ones, ranks by relevance, returns the best.
-pub(super) fn locate_ui_element_center(
-    query: &UiElementLocateQuery,
-) -> OpenBitFunResult<UiElementLocateResult> {
-    locate_ui_element_center_for_pid(frontmost_pid()?, query)
-}
-
 /// Search only the explicitly selected application, even while another app is active.
 pub(super) fn locate_ui_element_center_for_pid(
     pid: i32,
@@ -890,13 +869,8 @@ unsafe fn is_ax_interactive(elem: AXUIElementRef, role: &str) -> bool {
     }
 }
 
-/// Enumerate visible interactive elements in the frontmost app's AX tree
-/// and return a condensed text representation of the UI for context (no
-/// numbered labels rendered on the screenshot).
-pub(super) fn enumerate_ui_tree_text(max_elements: usize) -> Option<String> {
-    enumerate_ui_tree_text_for_pid(frontmost_pid().ok()?, max_elements)
-}
-
+/// Enumerate visible interactive elements in the selected app's AX tree
+/// and return a condensed text representation of the UI for context.
 pub(super) fn enumerate_ui_tree_text_for_pid(pid: i32, max_elements: usize) -> Option<String> {
     let root = unsafe { AXUIElementCreateApplication(pid) };
     if root.is_null() {
@@ -1055,13 +1029,6 @@ unsafe fn ax_parent_context_line(elem: AXUIElementRef) -> Option<String> {
 }
 
 /// Hit-test the accessibility element at global screen coordinates (OCR `move_to_text` disambiguation).
-pub(super) fn accessibility_hit_at_global_point(gx: f64, gy: f64) -> Option<OcrAccessibilityHit> {
-    unsafe {
-        let sys = AXUIElementCreateSystemWide();
-        accessibility_hit_from_root(sys, None, gx, gy)
-    }
-}
-
 pub(super) fn accessibility_hit_at_global_point_for_pid(
     pid: i32,
     gx: f64,
@@ -1114,15 +1081,6 @@ unsafe fn accessibility_hit_from_root(
             description: desc,
         })
     }
-}
-
-// ── Raw OCR: frontmost window bounds (separate from agent screenshot pipeline) ─────────────────
-
-/// Bounds of the foreground app's focused or main window in global screen coordinates (same space as pointer / screen capture).
-/// Used to crop **raw** pixels for Vision OCR without pointer overlays from the agent screenshot path.
-pub(super) fn frontmost_window_bounds_global() -> OpenBitFunResult<(i32, i32, u32, u32)> {
-    let pid = frontmost_pid()?;
-    window_bounds_global_for_pid(pid)
 }
 
 /// Number of windows the app currently owns, per the AX `AXWindows` attribute.

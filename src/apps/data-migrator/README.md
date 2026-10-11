@@ -7,7 +7,7 @@ A separate, optional desktop utility for importing old **BitFun** data into
 
 ## Download and run
 
-**Latest release: [v0.1.1 — download Data Migrator](https://github.com/GCWing/OpenBitFun/releases/tag/data-migrator-v0.1.1).**
+**Latest release: [v0.1.2 — download Data Migrator](https://github.com/GCWing/OpenBitFun/releases/tag/data-migrator-v0.1.2).**
 
 | Platform | Download | Launch |
 | --- | --- | --- |
@@ -98,9 +98,17 @@ If you have already launched OpenBitFun or run a migration, existing destination
 
 If OpenBitFun contains no new data you need to keep, you can clear its destination data and retry:
 
-1. Fully quit BitFun, OpenBitFun, and the migrator.
-2. Back up the following directories, then delete them. **This removes existing OpenBitFun settings, sessions, and other local data.**
-3. Run the migrator again, then launch OpenBitFun after migration finishes.
+1. Fully quit BitFun, OpenBitFun, their CLI/background writers, and other migrator instances.
+2. Open Data Migrator and check the destination locations. Under **Reset OpenBitFun data**, select **Review reset directories**.
+3. Save any data and migration logs/backups you need from the listed directories. **Reset permanently removes all their contents, including existing OpenBitFun settings, credentials, assistant workspaces, and sessions.** It does not create a backup.
+4. Type `RESET`, then select **Permanently reset OpenBitFun data**. If a directory cannot be fully removed, close applications using it and retry before migrating.
+5. Scan again and start a new migration. Launch OpenBitFun after migration finishes.
+
+The reset preview uses the selected destination locations. For standard locations,
+it also covers platform Skills/SSH parent directories and Desktop WebView/UI data
+under `com.openbitfun.desktop`. It preserves the original BitFun source, the
+migrator's preferences, and ordinary project directories outside the listed roots.
+Unsafe overlaps and linked reset paths are rejected.
 
 Windows destination directories:
 
@@ -109,6 +117,12 @@ Windows destination directories:
 %USERPROFILE%\.openbitfun
 %LOCALAPPDATA%\OpenBitFun
 ```
+
+On macOS the standard roots are `~/.openbitfun` and
+`~/Library/Application Support/{openbitfun,OpenBitFun}`. On Linux they are
+`~/.openbitfun`, `~/.config/openbitfun`, and
+`~/.local/share/{openbitfun,OpenBitFun}` (or the corresponding XDG locations).
+Always review the actual paths shown by the tool before confirming.
 
 **The issue persists after retrying**
 

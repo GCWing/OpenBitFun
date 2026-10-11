@@ -263,7 +263,13 @@ export function Tooltip({
     // Capture nested, non-bubbling scrolls during both delayed and visible states.
     // Dormant tooltips do not need a document-level scroll subscription.
     if (view && !scrollCleanupRef.current) {
-      const dismissOnScroll = () => hideCurrentRef.current();
+      const dismissOnScroll = (event: Event) => {
+        // Scrolling the tooltip's own scroll container (a wheel over the
+        // preview or a scrollbar drag inside it) is not a moving anchor.
+        const surface = tooltipRef.current;
+        if (surface && event.target instanceof Node && surface.contains(event.target)) return;
+        hideCurrentRef.current();
+      };
       view.addEventListener("scroll", dismissOnScroll, { capture: true, passive: true });
       view.visualViewport?.addEventListener("scroll", dismissOnScroll, { passive: true });
       scrollCleanupRef.current = () => {

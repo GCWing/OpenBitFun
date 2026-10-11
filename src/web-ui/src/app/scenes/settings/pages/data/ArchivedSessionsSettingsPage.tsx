@@ -12,6 +12,7 @@ import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { sessionAPI } from '@/infrastructure/api/service-api/SessionAPI';
 import {
   ConfigMessage,
+  ConfigLoadingState,
   ConfigPageContent,
   ConfigPageHeader,
   ConfigPageLayout,
@@ -501,7 +502,7 @@ const ArchivedSessionsSettingsPage: React.FC = () => {
           ))}
           {loading ? (
             <div data-openbitfun-component="archived-sessions-config" data-openbitfun-part="loading" className="archived-sessions-config__loading">
-              {t('nav.sessions.loading')}
+              <ConfigLoadingState label={t('nav.sessions.loading')} variant="list" />
             </div>
           ) : !hasEntries && loadFailures.length === 0 ? (
             <div data-openbitfun-component="archived-sessions-config" data-openbitfun-part="empty" className="archived-sessions-config__empty">

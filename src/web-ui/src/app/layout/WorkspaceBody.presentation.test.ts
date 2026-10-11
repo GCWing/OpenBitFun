@@ -17,6 +17,16 @@ const navBarStylesheet = readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
+const sceneTopBarStylesheet = readFileSync(
+  fileURLToPath(new URL('../components/SceneTopBar/SceneTopBar.scss', import.meta.url)),
+  'utf8',
+).replace(/\r\n/g, '\n');
+
+const layoutStylesheet = readFileSync(
+  fileURLToPath(new URL('./AppLayout.scss', import.meta.url)),
+  'utf8',
+).replace(/\r\n/g, '\n');
+
 describe('WorkspaceBody presentation contract', () => {
   it('starts the navigation at 300px while retaining its resize range', () => {
     expect(componentSource).toContain('const NAV_DEFAULT_WIDTH = 300;');
@@ -46,11 +56,15 @@ describe('WorkspaceBody presentation contract', () => {
   });
 
   it('keeps navigation and scene tabs on the same toolbar row with the viewport attached below', () => {
-    expect(stylesheet).toContain('$_nav-bar-height: var(--openbitfun-layout-toolbar-md-height);');
+    const sharedHeight = 'var(--openbitfun-layout-toolbar-md-height)';
+    expect(layoutStylesheet).not.toMatch(/--openbitfun-layout-toolbar-md-height\s*:/);
+    expect(stylesheet).toContain(`$_nav-bar-height: ${sharedHeight};`);
     expect(stylesheet).toContain('padding: 0 var(--openbitfun-space-4);');
     expect(stylesheet).toMatch(
       /\.openbitfun-workspace-body__scene-surface\s*\{[^}]*gap:\s*0;/s,
     );
-    expect(navBarStylesheet).toContain('height: var(--openbitfun-layout-toolbar-md-height);');
+    expect(navBarStylesheet).toContain(`height: ${sharedHeight};`);
+    expect(sceneTopBarStylesheet).toContain(`height: ${sharedHeight};`);
+    expect(sceneTopBarStylesheet).toContain(`flex: 0 0 ${sharedHeight};`);
   });
 });

@@ -23,6 +23,7 @@ import { highlightExcerptRange } from './locateConversationExcerpt';
 import { contextMenuRegistry } from '@/shared/context-menu-system/core/ContextMenuRegistry';
 import { useContextMenuStore } from '@/shared/context-menu-system/store/ContextMenuStore';
 import { notificationService } from '@/shared/notification-system';
+import { useSelectionToolbarPreference } from '@/infrastructure/config/hooks/useSelectionToolbarPreference';
 
 export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, active = true, onSelectionIntent }: {
   rootRef: RefObject<HTMLElement | null>;
@@ -33,6 +34,9 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
 }) {
   const { t } = useI18n('flow-chat');
   const peer = usePeerDeviceModeOptional();
+  const { enabled: autoShowToolbar } = useSelectionToolbarPreference();
+  const autoShowToolbarRef = useRef(autoShowToolbar);
+  autoShowToolbarRef.current = autoShowToolbar;
   const menuId = useId();
   const popupRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -67,7 +71,11 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
     && (peer?.peerMode.active ? peer.currentPeerCapabilities?.hostKind === 'desktop' : isTauriRuntime())
     && (!parentSessionId || child));
 
-  useDismissibleLayer({ enabled: !!selection && active && !editing, layerRef: popupRef, onDismiss: clear });
+  useDismissibleLayer({ enabled: !!selection && active && !editing && autoShowToolbar === true, layerRef: popupRef, onDismiss: clear });
+
+  useEffect(() => {
+    if (autoShowToolbar !== true && !editingRef.current) clear();
+  }, [autoShowToolbar, clear]);
 
   useEffect(() => {
     clear();
@@ -91,7 +99,7 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
     };
     const capture = () => {
       frame = 0;
-      if (pressed || editingRef.current || useContextMenuStore.getState().visible
+      if (autoShowToolbarRef.current !== true || pressed || editingRef.current || useContextMenuStore.getState().visible
         || popupRef.current?.contains(owner.activeElement)) return;
       if (sameFlowChatSelection(lastCapturedRef.current, owner.getSelection())) return;
       const next = readSelection();
@@ -222,7 +230,7 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
 
   useLayoutEffect(() => {
     const root = rootRef.current;
-    if (!selection || editing || !popupRef.current || !root) return;
+    if (autoShowToolbar !== true || !selection || editing || !popupRef.current || !root) return;
     const popup = popupRef.current;
     const initial = measureSelectionBarGeometry(root, selection);
     if (!initial) { clear(); return; }
@@ -252,7 +260,7 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
     mutation.observe(root, { childList: true, characterData: true, subtree: true, attributes: true,
       attributeFilter: ['class', 'style', 'hidden', 'aria-hidden', 'data-openbitfun-viewport-inset-bottom'] });
     return () => { cancelAnimationFrame(frame); observer.disconnect(); mutation.disconnect(); };
-  }, [selection, editing, clear, rootRef]);
+  }, [selection, editing, autoShowToolbar, clear, rootRef]);
 
   useEffect(() => {
     if (!editing || !selection) return;
@@ -277,7 +285,7 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
 
   return (
     <>
-      {selection && active && !editing && createOverlayPortal(
+      {selection && active && !editing && autoShowToolbar === true && createOverlayPortal(
         <Card appearance="raised" radius="lg" data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="root"
           ref={popupRef} className="conversation-excerpt__popover" data-flowchat-selection-ignore="true" data-openbitfun-native-webview-occlusion
           style={{ left: position?.left ?? 0, top: position?.top ?? 0, visibility: position ? 'visible' : 'hidden' }}>

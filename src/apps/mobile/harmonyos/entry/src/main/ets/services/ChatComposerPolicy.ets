@@ -36,12 +36,16 @@ export class ChatComposerPolicy {
   }
 
   /**
-   * Whether voice needs its secondary slot inside the input field.
+   * Whether the draft earns the supplemental voice slot beside the primary one.
    *
-   * The primary slot belongs to Send as soon as the draft carries anything,
-   * but dictation is still an input method at that point. Keeping the inline
-   * affordance mounted while busy avoids layout movement; the component dims
-   * it until recording can start again.
+   * The primary slot belongs to Send as soon as the draft carries anything, but
+   * dictation is still an input method at that point, so a draft keeps a second
+   * way into it. That slot is asked for by the expanded action row alone: the
+   * collapsed field is one line tall and the draft being composed has the
+   * stronger claim on that room, so `ComposerBar` does not mount it inside the
+   * field in any state, and a collapsed draft shows the primary action only.
+   * Keeping the expanded affordance mounted while busy avoids layout movement;
+   * the component dims it until recording can start again.
    */
   static shouldShowSupplementalVoice(
     text: string,

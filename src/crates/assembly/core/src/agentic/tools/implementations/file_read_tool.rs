@@ -23,11 +23,13 @@ use std::path::Path;
 #[cfg(feature = "document-read")]
 use std::time::Duration;
 use std::time::Instant;
-use tool_runtime::fs::document::is_supported_document_path;
 #[cfg(feature = "document-read")]
 use tool_runtime::fs::document::{
-    convert_document_to_markdown, DocumentConversionError, MAX_DOCUMENT_INPUT_BYTES,
-    MAX_DOCUMENT_MARKDOWN_BYTES,
+    convert_document_pages_to_markdown, DocumentConversionError, MAX_DOCUMENT_INPUT_BYTES,
+    MAX_DOCUMENT_MARKDOWN_BYTES, TEXT_CHUNK_CHARS,
+};
+use tool_runtime::fs::document::{
+    is_supported_document_path, DocumentPageSelection, DocumentPagination, PdfTextCoverage,
 };
 use tool_runtime::fs::read_file::{
     build_read_file_presentation, read_file_from_reader, read_file_tail_from_reader, ReadFileResult,
@@ -43,6 +45,8 @@ pub struct FileReadTool {
 
 /// Default cap on characters returned by a single Read call (excluding wrapper text).
 pub const DEFAULT_READ_MAX_TOTAL_CHARS: usize = 64_000;
+// Coverage metadata remains complete; a tiny line window must not emit an unbounded gap list.
+const MAX_PDF_OCR_PAGE_RANGES: usize = 32;
 #[cfg(feature = "document-read")]
 // anydoc is synchronous, so this bounds the caller's wait rather than terminating the parser.
 // The worker retains the global conversion permit until it actually exits, keeping failures closed.
@@ -51,6 +55,8 @@ const DOCUMENT_CONVERSION_TIMEOUT: Duration = Duration::from_secs(30);
 struct DocumentReadMetadata {
     source_format: &'static str,
     source_size_bytes: usize,
+    pdf_coverage: Option<PdfTextCoverage>,
+    pagination: DocumentPagination,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,6 +149,30 @@ impl FileReadTool {
             .is_some_and(|extension| extension.eq_ignore_ascii_case("csv"))
     }
 
+    fn read_page_selection(input: &Value) -> Result<Option<DocumentPageSelection>, String> {
+        let Some(value) = input.get("pages") else {
+            return Ok(None);
+        };
+        #[cfg(not(feature = "document-read"))]
+        {
+            let _ = value;
+            Err("Document page selection is not available in this product build".to_string())
+        }
+        #[cfg(feature = "document-read")]
+        {
+            if Self::read_render_mode(input)? == ReadRenderMode::Source {
+                return Err(
+                    "pages selects extracted document units and cannot be used with render=source"
+                        .to_string(),
+                );
+            }
+            let value = value
+                .as_str()
+                .ok_or_else(|| "pages must be a string such as '1-3,7'".to_string())?;
+            DocumentPageSelection::parse(value).map(Some)
+        }
+    }
+
     fn optional_line_number(input: &Value, key: &str) -> Result<Option<usize>, String> {
         match input.get(key) {
             Some(value) => Self::line_number_from_value(value)
@@ -185,6 +215,7 @@ impl FileReadTool {
         start_line: usize,
         limit: usize,
         tail: bool,
+        pages: Option<DocumentPageSelection>,
         filesystem: &dyn crate::agentic::workspace::WorkspaceFileSystem,
         context: &ToolUseContext,
     ) -> OpenBitFunResult<(ReadFileResult, DocumentReadMetadata)> {
@@ -199,7 +230,7 @@ impl FileReadTool {
             })?
             .ok_or_else(|| {
                 OpenBitFunError::tool(format!(
-                    "Document {} is larger than the {} MiB Read limit",
+                    "Document {} is larger than the {} MiB Read limit. Use a smaller document or a specialized extraction workflow; pages/offset/limit do not reduce source file transfer.",
                     logical_path,
                     MAX_DOCUMENT_INPUT_BYTES / (1024 * 1024)
                 ))
@@ -216,7 +247,7 @@ impl FileReadTool {
         );
         let conversion = tokio::time::timeout(
             DOCUMENT_CONVERSION_TIMEOUT,
-            convert_document_to_markdown(bytes, resolved_path.to_string()),
+            convert_document_pages_to_markdown(bytes, resolved_path.to_string(), pages),
         )
         .await
         .map_err(|_| {
@@ -242,7 +273,7 @@ impl FileReadTool {
                     error.code(),
                     error
                 );
-                Self::document_conversion_error(logical_path, resolved_path, error)
+                Self::document_conversion_error(logical_path, error)
             })?;
         debug!(
             "Document conversion completed: path={}, source_format={}, source_size_bytes={}, markdown_size_bytes={}, duration_ms={}",
@@ -276,6 +307,8 @@ impl FileReadTool {
             DocumentReadMetadata {
                 source_format: converted.source_format,
                 source_size_bytes,
+                pdf_coverage: converted.pdf_coverage,
+                pagination: converted.pagination,
             },
         ))
     }
@@ -283,24 +316,20 @@ impl FileReadTool {
     #[cfg(feature = "document-read")]
     fn document_conversion_error(
         logical_path: &str,
-        resolved_path: &str,
         error: DocumentConversionError,
     ) -> OpenBitFunError {
-        let ocr_hint = (error.code() == "unsupported"
-            && Path::new(resolved_path)
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf")))
-        .then_some(
-            " Text PDFs are supported, but scanned or image-only PDFs require an OCR workflow.",
-        )
-        .unwrap_or_default();
+        let recovery = match error.code() {
+            "encrypted" => " Use an unlocked copy of the document.",
+            "unsupported" => " For a text file, use render=source; otherwise use a format-specific extraction tool.",
+            "resourceLimit" => " For an extracted-output limit, request fewer pages; this does not bypass source-size or parser limits. Otherwise use a smaller document or specialized extraction workflow.",
+            _ => "",
+        };
         OpenBitFunError::tool(format!(
             "Failed to convert document {} to Markdown ({}): {}.{}",
             logical_path,
             error.code(),
             error,
-            ocr_hint
+            recovery
         ))
     }
 }
@@ -313,15 +342,12 @@ impl Tool for FileReadTool {
 
     async fn description(&self) -> OpenBitFunResult<String> {
         #[cfg(feature = "document-read")]
-        let document_summary = " Office documents, OpenDocument files, RTF, EPUB, and PDFs are converted locally to GitHub-Flavored Markdown before reading.";
-        #[cfg(not(feature = "document-read"))]
-        let document_summary = "";
-        #[cfg(feature = "document-read")]
         let document_guidance = format!(
-            r#"- Supported document extensions are .doc, .docx, .docm, .ppt, .pps, .pot, .pptx, .pptm, .ppsx, .ppsm, .xls, .xlsx, .xlsm, .xlsb, .odt, .ods, .odp, .rtf, .epub, .csv, and .pdf. Document input is capped at {} MiB and extracted Markdown at {} MiB. Conversion is offline and never fetches linked resources.
-- render defaults to auto. auto converts supported documents but preserves CSV as exact source text for editing compatibility. Use render=markdown to turn CSV into a Markdown table or to content-detect a document with a missing/wrong extension. Use render=source to bypass conversion for a textual document such as CSV or RTF.
-- For converted documents, offset, limit, tail, line numbers, and total_lines refer to the extracted Markdown, not source pages or rows. The Markdown is a read-only representation; do not use it as exact source text for Edit. Embedded objects are represented by text, and scanned/image-only PDF pages require OCR.
+            r#"
+Documents: Word, PowerPoint, Excel, OpenDocument, RTF, EPUB and PDF are extracted offline as Markdown. PDF page markers identify source pages; extraction status and missing-page warnings describe coverage. Use available text, and seek OCR or visual inspection only if missing pages matter to the task. Read itself does not perform OCR. Other embedded images/objects may be represented only by available text.
+Use pages to select units after inspecting page_kind/page_count, especially when a large document is truncated. PDF units are original pages; PPTX slides and XLSX visible sheets follow source order. DOCX and other formats use {}-character text chunks, not printed pages. offset/limit/tail then address Markdown lines within that selection; keep the same pages when following next_offset. Extracted text is not exact source for Edit. Input limit: {} MiB; selected Markdown limit: {} MiB. Selection does not bypass source transfer limits; parsing may still process the full document.
 "#,
+            TEXT_CHUNK_CHARS,
             MAX_DOCUMENT_INPUT_BYTES / (1024 * 1024),
             MAX_DOCUMENT_MARKDOWN_BYTES / (1024 * 1024),
         );
@@ -329,22 +355,9 @@ impl Tool for FileReadTool {
         let document_guidance = "";
 
         Ok(format!(
-            r#"Reads a file from the current workspace filesystem.{document_summary} If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
-
-Usage:
-- The file_path parameter must be workspace-relative, an absolute path inside the current workspace, or an exact `openbitfun://...` URI returned by another tool.
-- Do not read host roots or placeholder paths such as `/workspace`.
-{document_guidance}- By default, it reads up to {} lines starting from the beginning of the file. When you plan to Edit a file, prefer this default full read so you see the exact bytes you will need to match.
-- You can optionally specify an offset and limit. offset is a 1-based line number. Use a range only when you already know the target lines; the range must include every line you will copy into Edit `old_string`.
-- You can set tail=true with limit to read the last N lines. This is useful for command output and logs. Do not combine tail=true with offset.
-- Any lines longer than {} characters will be truncated.
-- Total output is capped at {} characters. If that limit is hit, continue with offset/limit, until the target lines are fully visible, then Edit using only text from those Read results.
-- Results are returned using cat -n format, with line numbers starting at 1.
-- This tool can only read files, not directories.
-- You can call multiple tools in a single response. It is always better to speculatively read multiple potentially useful files in parallel.
-- Avoid tiny repeated slices (e.g. 30-100 line chunks). If you need more context, read a larger window that covers the whole block you will edit.
-- Do not use `limit` with a small value (e.g. < 50) to probe file type or structure. Source files typically begin with copyright headers — a probe read returns no useful code.
-"#,
+            r#"Read a file from the active workspace, including a remote workspace. Use LS/Glob for directories and an image tool for images.
+Returns numbered lines (line number, tab, text). Choose the window needed for the task; the default is up to {} lines. File content is capped at {} characters per line and {} characters per call. Follow next_offset for additional lines when useful. A truncated line needs another inspection method; rereading the same line window cannot recover its omitted characters. Use only complete source text for Edit.
+{document_guidance}"#,
             self.default_max_lines_to_read, self.max_line_chars, self.max_total_chars
         ))
     }
@@ -366,7 +379,7 @@ Usage:
                 },
                 "offset": {
                     "type": "number",
-                    "description": "The 1-based line number to start reading from. offset=0 is accepted as offset=1. Only provide if the file is too large to read at once."
+                    "description": "1-based line to start at (default 1; legacy 0 also means 1). For documents these are extracted Markdown lines."
                 },
                 "tail": {
                     "type": "boolean",
@@ -374,7 +387,7 @@ Usage:
                 },
                 "limit": {
                     "type": "number",
-                    "description": "The number of lines to read. Only provide if the file is too large to read at once."
+                    "description": "Positive integer number of lines to return. Choose a window that covers the relevant context."
                 }
             },
             "required": ["file_path"],
@@ -386,7 +399,11 @@ Usage:
             schema["properties"]["render"] = json!({
                 "type": "string",
                 "enum": ["auto", "source", "markdown"],
-                "description": "How to represent the file. auto converts supported documents but preserves CSV source text; source bypasses conversion; markdown forces local anydoc conversion and enables content detection. Defaults to auto."
+                "description": "auto (default): extract known documents, preserve CSV source. source: read text without conversion. markdown: extract a document by content, including misnamed files, or convert CSV to a table."
+            });
+            schema["properties"]["pages"] = json!({
+                "type": "string",
+                "description": "Optional 1-based document units, e.g. '1-3,7', in source order. See returned page_kind and page_count. Omit for the full extraction. Requires document rendering; offset/limit/tail apply within the selected units."
             });
             schema
         };
@@ -451,6 +468,7 @@ Usage:
         if let Err(message) = Self::read_tail_mode(input)
             .and_then(|_| Self::read_window_start_line(input))
             .and_then(|_| Self::read_render_mode(input))
+            .and_then(|_| Self::read_page_selection(input))
         {
             return ValidationResult {
                 result: false,
@@ -608,6 +626,7 @@ Usage:
 
         let tail = Self::read_tail_mode(input).map_err(OpenBitFunError::tool)?;
         let render_mode = Self::read_render_mode(input).map_err(OpenBitFunError::tool)?;
+        let pages = Self::read_page_selection(input).map_err(OpenBitFunError::tool)?;
         let start_line = Self::read_window_start_line(input).map_err(OpenBitFunError::tool)?;
 
         let limit = input
@@ -619,6 +638,11 @@ Usage:
         context.enforce_path_operation(ToolPathOperation::Read, &resolved)?;
         #[cfg(feature = "tools-miniapp")]
         if is_virtual_context_path(context, &resolved) {
+            if pages.is_some() {
+                return Err(OpenBitFunError::tool(
+                    "pages cannot select a MiniApp text context; use offset/limit".to_string(),
+                ));
+            }
             let content = virtual_context_file(context, &resolved).ok_or_else(|| {
                 OpenBitFunError::tool(format!(
                     "MiniApp context file is unavailable: {}",
@@ -650,6 +674,9 @@ Usage:
                     "start_line": read_file_result.start_line,
                     "size": read_file_result.content.len(),
                     "hit_total_char_limit": read_file_result.hit_total_char_limit,
+                    "content_truncated": read_file_result.content_truncated,
+                    "truncated_lines": read_file_result.truncated_lines,
+                    "next_offset": presentation.next_offset,
                     "representation": "miniapp_context"
                 }),
                 result_for_assistant: Some(presentation.result_for_assistant),
@@ -677,6 +704,9 @@ Usage:
             ReadRenderMode::Source => false,
             ReadRenderMode::Markdown => true,
         };
+        if pages.is_some() && !reads_document_representation {
+            return Err(OpenBitFunError::tool("pages requires a document. For a misnamed document or CSV use render=markdown; for ordinary text use offset/limit".to_string()));
+        }
         #[cfg(not(feature = "document-read"))]
         if reads_document_representation {
             return Err(OpenBitFunError::tool(format!(
@@ -708,6 +738,7 @@ Usage:
                     start_line,
                     limit,
                     tail,
+                    pages,
                     filesystem.as_ref(),
                     context,
                 )
@@ -783,20 +814,6 @@ Usage:
 
         let presentation = build_read_file_presentation(&resolved.logical_path, &read_file_result);
         let mut result_for_assistant = presentation.result_for_assistant;
-        if let Some(metadata) = document_metadata.as_ref() {
-            let extraction_note = if metadata.source_format == "pdf" {
-                " OCR is not performed, so scanned or image-only pages may be omitted."
-            } else {
-                " Embedded images and objects are represented by their available text."
-            };
-            result_for_assistant = format!(
-                "Converted {} from {} to GitHub-Flavored Markdown with anydoc. offset and limit refer to converted Markdown lines.{}\n\n{}",
-                resolved.logical_path,
-                metadata.source_format.to_ascii_uppercase(),
-                extraction_note,
-                result_for_assistant
-            );
-        }
 
         let mut data = json!({
             "file_path": resolved.logical_path,
@@ -808,18 +825,87 @@ Usage:
             "start_line": read_file_result.start_line,
             "size": read_file_result.content.len(),
             "hit_total_char_limit": read_file_result.hit_total_char_limit,
-            "content_truncated": read_file_result.content_truncated
+            "content_truncated": read_file_result.content_truncated,
+            "truncated_lines": read_file_result.truncated_lines,
+            "next_offset": presentation.next_offset
         });
         if let Some(metadata) = document_metadata {
             data["representation"] = json!("extracted_markdown");
             data["source_format"] = json!(metadata.source_format);
             data["source_size_bytes"] = json!(metadata.source_size_bytes);
-            data["conversion_engine"] = json!("anydoc");
-            data["extraction_warnings"] = if metadata.source_format == "pdf" {
-                json!(["OCR is not performed; scanned or image-only pages may be omitted."])
+            let pagination = metadata.pagination;
+            data["page_kind"] = json!(pagination.page_kind);
+            data["page_count"] = json!(pagination.page_count);
+            data["selected_pages"] = json!(pagination.selected_pages);
+            data["selected_page_count"] = json!(pagination.selected_page_count);
+            data["next_page"] = json!(pagination.next_page);
+            let warnings = if let Some(coverage) = metadata.pdf_coverage {
+                data["conversion_engine"] = json!("pdf-inspector");
+                data["extraction_status"] = json!(coverage.status());
+                data["page_count"] = json!(coverage.page_count);
+                data["extracted_pages"] = json!(coverage.extracted_pages);
+                data["pages_needing_ocr"] = json!(coverage.pages_needing_ocr);
+                let mut warnings = vec![
+                    "Coverage describes native text extraction; images and diagrams may require visual inspection."
+                        .to_string(),
+                ];
+                if !coverage.pages_needing_ocr.is_empty() {
+                    warnings.push(format!(
+                        "{} of {} PDF pages have reliable text in this selection. Pages {} need OCR or visual inspection; their contents are missing from this extraction. Use the available text, and inspect missing pages if the task requires them. Repeating Read will not perform OCR.",
+                        coverage.extracted_pages.len(),
+                        pagination.selected_page_count,
+                        coverage.ocr_page_ranges(MAX_PDF_OCR_PAGE_RANGES),
+                    ));
+                }
+                result_for_assistant = format!(
+                    "PDF text extraction: {} for the selected pages ({} source pages total). Page markers refer to the PDF; offset/limit refer to Markdown lines.\n{}\n{}",
+                    coverage.status(),
+                    coverage.page_count,
+                    warnings.join("\n"),
+                    result_for_assistant,
+                );
+                warnings
             } else {
-                json!(["Embedded images and objects are represented by their available text."])
+                data["conversion_engine"] = json!("anydoc");
+                let warning =
+                    "Embedded images and objects are represented by their available text.";
+                let mut warnings = vec![warning.to_string()];
+                if read_file_result.total_lines == 0 {
+                    let warning = "No text was extracted. This does not mean the source document is empty; use a format-specific or visual inspection tool if its contents are needed.";
+                    result_for_assistant = warning.to_string();
+                    warnings.push(warning.to_string());
+                }
+                result_for_assistant = format!(
+                    "Extracted {} as Markdown; offset/limit refer to Markdown lines. {}\n{}",
+                    metadata.source_format.to_ascii_uppercase(),
+                    warning,
+                    result_for_assistant,
+                );
+                warnings
             };
+            data["extraction_warnings"] = json!(warnings);
+            let unit_hint = match pagination.page_kind {
+                "pdf_page" => "original PDF pages",
+                "slide" => "slides in presentation order",
+                "sheet" => {
+                    "visible sheets in workbook order; hidden sheets/rows/columns are not extracted"
+                }
+                _ => "text chunks, not printed pages",
+            };
+            let continuation = if let Some(next_offset) = presentation.next_offset {
+                let same_selection = if input.get("pages").is_some() {
+                    format!("keep pages=\"{}\"", pagination.selected_pages)
+                } else {
+                    "keep pages omitted".to_string()
+                };
+                format!("To continue this extraction, {same_selection} and use offset={next_offset}; or choose a narrower pages range starting at offset=1.")
+            } else {
+                "Choose another pages range if more context is needed.".to_string()
+            };
+            result_for_assistant = format!(
+                "Document pages: kind={}, count={}, selected=\"{}\" ({unit_hint}). Selection metadata does not mean every selected unit is in this line window. {continuation}\n{result_for_assistant}",
+                pagination.page_kind, pagination.page_count, pagination.selected_pages,
+            );
         }
 
         let result = ToolResult::Result {
@@ -874,6 +960,66 @@ mod tests {
             runtime_tool_restrictions: ToolRuntimeRestrictions::default(),
             runtime_handles: ToolRuntimeHandles::default(),
         }
+    }
+
+    #[cfg(feature = "document-read")]
+    const PDF_TEXT_PAGE: &str =
+        "BT /F1 16 Tf 72 700 Td (First document paragraph.) Tj 0 -40 Td (Second document paragraph.) Tj ET";
+    #[cfg(feature = "document-read")]
+    const PDF_SCANNED_PAGE: &str = "q 468 0 0 648 72 72 cm /Im1 Do Q";
+
+    /// Minimal PDFs with real text/image content streams and a valid cross-reference table.
+    #[cfg(feature = "document-read")]
+    fn pdf_document(pages: &[&str]) -> Vec<u8> {
+        let page_refs = (0..pages.len())
+            .map(|index| format!("{} 0 R", 5 + index * 2))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut objects = vec![
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            format!("<< /Type /Pages /Kids [{page_refs}] /Count {} >>", pages.len())
+                .into_bytes(),
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec(),
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 1 >>\nstream\n\x80\nendstream".to_vec(),
+        ];
+        for (index, content) in pages.iter().enumerate() {
+            // Shared resources deliberately include an unused image on text pages.
+            // Document-wide classification used to reject these short text PDFs.
+            objects.push(format!(
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> /XObject << /Im1 4 0 R >> >> /Contents {} 0 R >>",
+                6 + index * 2,
+            ).into_bytes());
+            objects.push(
+                format!(
+                    "<< /Length {} >>\nstream\n{content}\nendstream",
+                    content.len(),
+                )
+                .into_bytes(),
+            );
+        }
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for (index, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(format!("{} 0 obj\n", index + 1).as_bytes());
+            pdf.extend_from_slice(object);
+            pdf.extend_from_slice(b"\nendobj\n");
+        }
+        let xref_offset = pdf.len();
+        pdf.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+        );
+        for offset in offsets {
+            pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n",
+                objects.len() + 1,
+            )
+            .as_bytes(),
+        );
+        pdf
     }
 
     struct FakeRemoteFs {
@@ -1178,6 +1324,8 @@ mod tests {
             .expect("properties");
 
         assert_eq!(properties["render"]["enum"], json!(["auto", "source"]));
+        assert!(!properties.contains_key("pages"));
+        assert!(FileReadTool::read_page_selection(&json!({"pages":"1"})).is_err());
         assert!(!properties["render"]["description"]
             .as_str()
             .expect("render description")
@@ -1186,7 +1334,7 @@ mod tests {
             .description()
             .await
             .expect("description")
-            .contains("converted locally"));
+            .contains("Documents:"));
         assert_eq!(tool.short_description(), "Read text files.");
     }
 
@@ -1306,7 +1454,7 @@ mod tests {
             .is_some_and(|content| content.contains("Hello from the document")));
         assert!(result_for_assistant
             .as_deref()
-            .is_some_and(|result| result.contains("from RTF to GitHub-Flavored Markdown")));
+            .is_some_and(|result| result.contains("Extracted RTF as Markdown")));
     }
 
     #[cfg(feature = "document-read")]
@@ -1322,6 +1470,272 @@ mod tests {
             .expect_err("invalid document must not be returned as source text");
 
         assert!(error.to_string().contains("Failed to convert document"));
+        assert!(!error.to_string().contains("OCR workflow"));
+    }
+
+    #[cfg(feature = "document-read")]
+    #[tokio::test]
+    async fn empty_extraction_is_not_reported_as_an_empty_source_document() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::write(dir.path().join("empty.rtf"), br"{\rtf1\ansi}").expect("write RTF");
+        let results = FileReadTool::new()
+            .call_impl(
+                &json!({ "file_path": "empty.rtf" }),
+                &local_context(dir.path().to_path_buf()),
+            )
+            .await
+            .expect("empty extraction should report its limits");
+        let ToolResult::Result {
+            data,
+            result_for_assistant,
+            ..
+        } = &results[0]
+        else {
+            panic!("expected extraction result");
+        };
+        assert_eq!(data["total_lines"], 0);
+        assert_eq!(data["next_offset"], Value::Null);
+        assert_eq!(data["content"], "");
+        let message = result_for_assistant.as_deref().unwrap();
+        assert!(message.contains("No text was extracted"));
+        assert!(!message.contains("empty.rtf is empty"));
+        assert!(data["extraction_warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning
+                .as_str()
+                .unwrap()
+                .contains("source document is empty")));
+    }
+
+    #[cfg(feature = "document-read")]
+    #[tokio::test]
+    async fn read_text_pdf_preserves_result_fields_and_markdown_paging() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source = pdf_document(&[PDF_TEXT_PAGE]);
+        fs::write(dir.path().join("document.pdf"), &source).expect("write PDF");
+        let context = local_context(dir.path().to_path_buf());
+        let tool = FileReadTool::new();
+        // The legacy request shape without render continues to select document conversion.
+        let full = tool
+            .call_impl(&json!({ "file_path": "document.pdf" }), &context)
+            .await
+            .expect("text PDF read");
+        let ToolResult::Result {
+            data,
+            result_for_assistant,
+            ..
+        } = &full[0]
+        else {
+            panic!("expected PDF result");
+        };
+        assert_eq!(data["representation"], "extracted_markdown");
+        assert_eq!(data["source_format"], "pdf");
+        assert_eq!(data["conversion_engine"], "pdf-inspector");
+        assert_eq!(data["source_size_bytes"], source.len());
+        assert!(data["extraction_warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning.as_str().unwrap().contains("native text extraction")));
+        assert_eq!(data["extraction_status"], "complete");
+        assert_eq!(data["page_count"], 1);
+        assert_eq!(data["extracted_pages"], json!([1]));
+        assert_eq!(data["pages_needing_ocr"], json!([]));
+        let content = data["content"].as_str().expect("content");
+        assert!(content.contains("First document paragraph."), "{content}");
+        assert!(content.contains("Second document paragraph."), "{content}");
+        assert!(result_for_assistant
+            .as_deref()
+            .unwrap()
+            .contains("PDF text extraction: complete"));
+        assert!(result_for_assistant
+            .as_deref()
+            .unwrap()
+            .contains("images and diagrams may require visual inspection"));
+        let total_lines = data["total_lines"].as_u64().expect("line count");
+        assert!(total_lines > 1, "{content}");
+        let expected_last_line = content.lines().last().expect("last line");
+
+        for input in [
+            json!({ "file_path": "document.pdf", "offset": total_lines, "limit": 1 }),
+            json!({ "file_path": "document.pdf", "tail": true, "limit": 1 }),
+        ] {
+            let window = tool.call_impl(&input, &context).await.expect("PDF window");
+            let ToolResult::Result { data, .. } = &window[0] else {
+                panic!("expected PDF window");
+            };
+            assert_eq!(data["content"], expected_last_line);
+            assert_eq!(data["offset"], total_lines);
+            assert_eq!(data["total_lines"], total_lines);
+            assert_eq!(data["lines_read"], 1);
+            assert_eq!(data["representation"], "extracted_markdown");
+            assert_eq!(data["next_offset"], Value::Null);
+            assert_eq!(data["extracted_pages"], json!([1]));
+        }
+    }
+
+    #[cfg(feature = "document-read")]
+    #[tokio::test]
+    async fn read_preserves_pdf_text_around_scanned_pages_and_reports_gaps_in_every_window() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = local_context(dir.path().to_path_buf());
+        let tool = FileReadTool::new();
+        fs::write(
+            dir.path().join("document.bin"),
+            pdf_document(&[PDF_TEXT_PAGE, PDF_SCANNED_PAGE, PDF_TEXT_PAGE]),
+        )
+        .expect("write mixed PDF");
+        for input in [
+            json!({ "file_path": "document.bin", "render": "markdown" }),
+            json!({ "file_path": "document.bin", "render": "markdown", "limit": 1 }),
+            json!({ "file_path": "document.bin", "render": "markdown", "tail": true, "limit": 2 }),
+        ] {
+            let results = tool
+                .call_impl(&input, &context)
+                .await
+                .expect("readable pages should remain available");
+            let ToolResult::Result {
+                data,
+                result_for_assistant,
+                ..
+            } = &results[0]
+            else {
+                panic!("expected partial extraction");
+            };
+            assert_eq!(data["source_format"], "pdf");
+            assert_eq!(data["extraction_status"], "partial");
+            assert_eq!(data["page_count"], 3);
+            assert_eq!(data["extracted_pages"], json!([1, 3]));
+            assert_eq!(data["pages_needing_ocr"], json!([2]));
+            let message = result_for_assistant.as_deref().expect("model response");
+            assert!(
+                message.contains("2 of 3 PDF pages have reliable text"),
+                "{message}"
+            );
+            assert!(
+                message.contains("Pages 2 need OCR or visual inspection"),
+                "{message}"
+            );
+            if input.get("limit").is_none() {
+                let content = data["content"].as_str().unwrap();
+                assert_eq!(content.matches("First document paragraph.").count(), 2);
+                assert!(content.contains("## PDF page 2"));
+                assert!(content.contains("No reliable text extracted"));
+                assert!(content.contains("## PDF page 3"));
+            }
+        }
+    }
+
+    #[cfg(feature = "document-read")]
+    #[tokio::test]
+    async fn scanned_pdf_returns_actionable_coverage_without_fabricating_text() {
+        let context = remote_context(
+            pdf_document(&[PDF_SCANNED_PAGE, PDF_SCANNED_PAGE]),
+            Arc::new(AtomicUsize::new(0)),
+        );
+        let results = FileReadTool::new()
+            .call_impl(&json!({ "file_path": "scanned.pdf" }), &context)
+            .await
+            .expect("scanned PDF should report its coverage");
+        let ToolResult::Result {
+            data,
+            result_for_assistant,
+            ..
+        } = &results[0]
+        else {
+            panic!("expected scan status");
+        };
+        assert_eq!(data["extraction_status"], "needs_ocr");
+        assert_eq!(data["extracted_pages"], json!([]));
+        assert_eq!(data["pages_needing_ocr"], json!([1, 2]));
+        let message = result_for_assistant.as_deref().unwrap();
+        assert!(message.contains("0 of 2 PDF pages have reliable text"));
+        assert!(message.contains("Pages 1-2 need OCR or visual inspection"));
+        assert!(message.contains("Repeating Read will not perform OCR"));
+        assert!(!data["content"]
+            .as_str()
+            .unwrap()
+            .contains("First document paragraph"));
+    }
+
+    #[cfg(feature = "document-read")]
+    #[tokio::test]
+    async fn remote_pdf_keeps_available_text_and_coverage_without_shell() {
+        let bounded_limit = Arc::new(AtomicUsize::new(0));
+        let context = remote_context(
+            pdf_document(&[PDF_TEXT_PAGE, PDF_SCANNED_PAGE]),
+            Arc::clone(&bounded_limit),
+        );
+        let results = FileReadTool::new()
+            .call_impl(&json!({ "file_path": "mixed.pdf" }), &context)
+            .await
+            .expect("remote readable pages should be available");
+
+        assert_eq!(
+            bounded_limit.load(Ordering::Relaxed),
+            MAX_DOCUMENT_INPUT_BYTES
+        );
+        let ToolResult::Result { data, .. } = &results[0] else {
+            panic!("expected partial remote result");
+        };
+        assert_eq!(data["extraction_status"], "partial");
+        assert_eq!(data["extracted_pages"], json!([1]));
+        assert_eq!(data["pages_needing_ocr"], json!([2]));
+        assert!(data["content"]
+            .as_str()
+            .unwrap()
+            .contains("First document paragraph."));
+        let mut disconnected = context;
+        disconnected.runtime_handles = ToolRuntimeHandles::default();
+        let error = FileReadTool::new()
+            .call_impl(&json!({ "file_path": "mixed.pdf" }), &disconnected)
+            .await
+            .expect_err("missing remote provider must not use local files");
+        assert!(error.to_string().contains("unavailable"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn remote_read_distinguishes_line_clipping_from_next_window() {
+        let context = remote_context(
+            b"abcdefghij\nnext\n".to_vec(),
+            Arc::new(AtomicUsize::new(0)),
+        );
+        let tool = FileReadTool::with_config(2000, 4, 100);
+        let first = tool
+            .call_impl(&json!({"file_path": "long.txt", "limit": 1}), &context)
+            .await
+            .unwrap();
+        let ToolResult::Result {
+            data,
+            result_for_assistant,
+            ..
+        } = &first[0]
+        else {
+            panic!("expected source result");
+        };
+        assert_eq!(data["next_offset"], 2);
+        assert_eq!(data["truncated_lines"], json!([1]));
+        assert_eq!(data["content_truncated"], true);
+        assert!(!data["hit_total_char_limit"].as_bool().unwrap());
+        assert!(result_for_assistant
+            .as_deref()
+            .unwrap()
+            .contains("cannot restore"));
+        let next = tool
+            .call_impl(
+                &json!({"file_path": "long.txt", "offset": data["next_offset"]}),
+                &context,
+            )
+            .await
+            .unwrap();
+        let ToolResult::Result { data, .. } = &next[0] else {
+            panic!("expected next window");
+        };
+        assert_eq!(data["content"], "     2\tnext");
+        assert_eq!(data["truncated_lines"], json!([]));
+        assert_eq!(data["next_offset"], Value::Null);
     }
 
     #[cfg(feature = "document-read")]
@@ -1397,5 +1811,155 @@ mod tests {
         assert!(data["content"]
             .as_str()
             .is_some_and(|content| content.contains("Hello from remote RTF")));
+    }
+
+    #[cfg(feature = "document-read")]
+    #[tokio::test]
+    async fn pdf_page_selection_preserves_source_numbers_and_scopes_ocr_for_local_and_remote() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = pdf_document(&[PDF_TEXT_PAGE, PDF_SCANNED_PAGE, PDF_TEXT_PAGE]);
+        fs::write(dir.path().join("document.pdf"), &source).unwrap();
+        let bounded_limit = Arc::new(AtomicUsize::new(0));
+        let contexts = [
+            local_context(dir.path().to_path_buf()),
+            remote_context(source, Arc::clone(&bounded_limit)),
+        ];
+        let tool = FileReadTool::new();
+        for context in contexts {
+            for (pages, status, extracted, missing) in [
+                ("3,1", "complete", json!([1, 3]), json!([])),
+                ("2", "needs_ocr", json!([]), json!([2])),
+                ("3", "complete", json!([3]), json!([])),
+            ] {
+                let results = tool
+                    .call_impl(
+                        &json!({"file_path":"document.pdf", "pages":pages}),
+                        &context,
+                    )
+                    .await
+                    .unwrap();
+                let ToolResult::Result {
+                    data,
+                    result_for_assistant,
+                    ..
+                } = &results[0]
+                else {
+                    panic!("result");
+                };
+                assert_eq!(data["page_kind"], "pdf_page");
+                assert_eq!(data["page_count"], 3);
+                assert_eq!(data["extraction_status"], status);
+                assert_eq!(data["extracted_pages"], extracted);
+                assert_eq!(data["pages_needing_ocr"], missing);
+                assert!(result_for_assistant
+                    .as_deref()
+                    .unwrap()
+                    .contains("for the selected pages"));
+                if pages == "3" {
+                    let content = data["content"].as_str().unwrap();
+                    assert!(content.contains("## PDF page 3"));
+                    assert!(!content.contains("## PDF page 1"));
+                    assert_eq!(data["selected_pages"], "3");
+                    assert_eq!(data["selected_page_count"], 1);
+                }
+            }
+            let error = tool
+                .call_impl(&json!({"file_path":"document.pdf", "pages":"4"}), &context)
+                .await
+                .unwrap_err();
+            assert!(
+                error.to_string().contains("has 3 selectable pages"),
+                "{error}"
+            );
+        }
+        assert_eq!(
+            bounded_limit.load(Ordering::Relaxed),
+            MAX_DOCUMENT_INPUT_BYTES
+        );
+    }
+
+    #[cfg(feature = "document-read")]
+    #[tokio::test]
+    async fn document_chunk_windows_continue_with_the_same_selection_and_recover_long_lines() {
+        let source = format!("{{\\rtf1\\ansi {}Final paragraph}}", "x".repeat(4000)).into_bytes();
+        let context = remote_context(source, Arc::new(AtomicUsize::new(0)));
+        let tool = FileReadTool::new();
+        let initial = tool
+            .call_impl(&json!({"file_path":"report.rtf"}), &context)
+            .await
+            .unwrap();
+        let ToolResult::Result { data, .. } = &initial[0] else {
+            panic!("result");
+        };
+        assert_eq!(data["page_kind"], "text_chunk");
+        assert_eq!(data["page_count"], 3);
+        assert!(!data["truncated_lines"].as_array().unwrap().is_empty());
+        let selected = tool
+            .call_impl(
+                &json!({"file_path":"report.rtf", "pages":"3", "limit":2}),
+                &context,
+            )
+            .await
+            .unwrap();
+        let ToolResult::Result {
+            data,
+            result_for_assistant,
+            ..
+        } = &selected[0]
+        else {
+            panic!("result");
+        };
+        assert_eq!(data["next_offset"], 3);
+        assert!(result_for_assistant
+            .as_deref()
+            .unwrap()
+            .contains("keep pages=\"3\""));
+        let continued = tool
+            .call_impl(
+                &json!({"file_path":"report.rtf", "pages":"3", "offset":data["next_offset"]}),
+                &context,
+            )
+            .await
+            .unwrap();
+        let ToolResult::Result { data, .. } = &continued[0] else {
+            panic!("result");
+        };
+        assert!(data["content"]
+            .as_str()
+            .unwrap()
+            .contains("Final paragraph"));
+        assert_eq!(data["truncated_lines"], json!([]));
+        let tail = tool
+            .call_impl(
+                &json!({"file_path":"report.rtf", "pages":"3", "tail":true, "limit":2}),
+                &context,
+            )
+            .await
+            .unwrap();
+        let ToolResult::Result { data, .. } = &tail[0] else {
+            panic!("result");
+        };
+        assert!(data["content"]
+            .as_str()
+            .unwrap()
+            .contains("Final paragraph"));
+    }
+
+    #[cfg(feature = "document-read")]
+    #[tokio::test]
+    async fn page_arguments_fail_explicitly_instead_of_falling_back_to_text() {
+        let context = remote_context(b"plain text".to_vec(), Arc::new(AtomicUsize::new(0)));
+        let tool = FileReadTool::new();
+        for input in [
+            json!({"file_path":"report.pdf", "pages":3}),
+            json!({"file_path":"report.pdf", "pages":"0"}),
+            json!({"file_path":"report.pdf", "pages":"3-1"}),
+            json!({"file_path":"report.pdf", "pages":"1", "render":"source"}),
+            json!({"file_path":"plain.txt", "pages":"1"}),
+        ] {
+            let error = tool.call_impl(&input, &context).await.unwrap_err();
+            assert!(error.to_string().contains("pages"), "{error}");
+        }
+        assert_eq!(tool.input_schema()["properties"]["pages"]["type"], "string");
     }
 }

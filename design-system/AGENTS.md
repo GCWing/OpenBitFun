@@ -42,4 +42,10 @@ pnpm run design-system:check
 
 Run `pnpm run design-system:check` for cross-package or release-boundary changes. Token and theme changes must also run the repository-level `pnpm run theme:color-audit:all`.
 
+For shared icon rendering or geometry changes, use the focused package checks:
+
+```bash
+pnpm --dir design-system run build:ui && node --test design-system/packages/ui/tests/icon.test.mjs design-system/packages/ui/tests/icon-slots.test.mjs
+```
+
 Do not use browser automation or mock screenshots as visual proof. Design Lab is the manual authoring surface; source, build, HTTP, and package checks do not establish final visual fidelity.

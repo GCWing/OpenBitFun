@@ -757,7 +757,20 @@ pub(crate) async fn update_session_model(
         .map(|preset| preset.trim().to_string())
         .filter(|preset| !preset.is_empty());
     if has_session_workspace_scope(request) {
-        ensure_coordinator_session(state, args).await?;
+        ensure_session_workspace_runtime_ownership(state, request).await?;
+        let storage = resolved_session_storage_path(state, request).await?;
+        state
+            .compatibility
+            .update_session_model_selection_from_storage_path(
+                &storage,
+                &session_id,
+                &model_name,
+                reasoning_preset.as_deref(),
+                optional_bool(request, "includeInternal").unwrap_or(false),
+            )
+            .await
+            .map_err(|error| peer_core_session_error("Failed to update session model", error))?;
+        return Ok(Value::Null);
     }
     state
         .agent_runtime

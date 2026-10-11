@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -143,6 +144,7 @@ describe('ModelSelector external transport reuse', () => {
   let catalogUpdated: (() => void) | undefined;
 
   beforeEach(() => {
+    activateSurface('local');
     catalogUpdated = undefined;
     flowChatStoreMocks.sessions.clear();
     flowChatStoreMocks.subscribers.clear();
@@ -309,11 +311,6 @@ describe('ModelSelector external transport reuse', () => {
     await act(async () => {
       document.body.querySelector<HTMLButtonElement>(
         '[data-testid="chat-model-selector-settings-model"]',
-      )?.click();
-    });
-    await act(async () => {
-      document.body.querySelector<HTMLButtonElement>(
-        '[data-testid="chat-model-selector-provider"][data-provider-key="provider-shared"]',
       )?.click();
     });
     await act(async () => {
@@ -739,11 +736,21 @@ describe('ModelSelector external transport reuse', () => {
     await act(async () => { control?.click(); });
   };
 
-  it('opens only the current target provider and applies choices through its transport', async () => {
+  it.each(['model', 'provider'])('selects target models through the %s entry and its transport', async entry => {
     const selection = targetSelection({ models: ['model-a', 'remote-model', 'remote-plain'] });
     await renderTarget(selection);
     await clickControl('chat-model-selector-btn');
-    await clickControl('chat-model-selector-settings-provider');
+    await clickControl(`chat-model-selector-settings-${entry}`);
+    if (entry === 'provider') {
+      const providers = document.body.querySelectorAll('[data-testid="chat-model-selector-provider"]');
+      expect(providers).toHaveLength(2);
+      expect(document.body.querySelector('[data-testid="chat-model-selector-option"]')).toBeNull();
+      const currentProvider = document.body.querySelector<HTMLButtonElement>(
+        '[data-testid="chat-model-selector-provider"][data-provider-key="external:a100"]',
+      )!;
+      expect(currentProvider.getAttribute('data-selected')).toBe('true');
+      await act(async () => currentProvider.click());
+    }
 
     expect(document.body.querySelector('[data-testid="chat-model-selector-provider"]')).toBeNull();
     expect(document.body.querySelector('[data-model-id="model-a"]')).toBeNull();

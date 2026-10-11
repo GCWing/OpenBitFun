@@ -2,6 +2,9 @@
 
 Own bounded source discovery, durable tasks, snapshot/staging/backup/journal IO,
 atomic commit and safe cancellation. Never initialize the main product runtime.
+`reset` owns explicitly confirmed destination deletion for starting migration
+again. Preview and revalidate the scope, preserve source/protected directories,
+and report partial failures. The host excludes concurrent operations and writers.
 Historical handoff and onboarding files remain readable compatibility formats;
 new standalone tasks use save_task/load_task and do not depend on request expiry.
 Do not delete or reset corrupt plans, reports or user data. Validate UUIDs and

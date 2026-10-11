@@ -96,6 +96,17 @@ The `devtools` Cargo feature exists for debugging UI/UX in the desktop app. When
 
 ## Verification
 
+For application icon resources and packaging, run `pnpm run generate-brand-assets`
+and `node --test scripts/generate-brand-assets.test.mjs scripts/macos-icon-bundle.test.mjs scripts/desktop-tauri-build.test.mjs`.
+The [brand guide](../../../assets/brand/README.md#macos-icons) owns native exports.
+On a Mac with full Xcode 26+, also run
+`OPENBITFUN_TEST_MACOS_BUNDLE=1 node --test scripts/macos-icon-bundle.test.mjs`;
+CI requires this on both macOS architectures. The fixture bundles a Mach-O
+without launching UI. Resource-only edits do not require the Rust suites below;
+packaging/startup code changes still require the desktop build. These checks do
+not establish visual Dock equivalence on an older OS. Keep modern `.icon`
+resources in the macOS config overlay and preserve the dev/legacy ICNS path.
+
 For macOS microphone signing metadata, run
 `plutil -lint src/apps/desktop/Info.plist src/apps/desktop/Entitlements.plist`
 and `node --test scripts/ci/verify-macos-microphone.test.mjs` on macOS.
@@ -107,6 +118,26 @@ and recording in the signed app on macOS. Ad-hoc fixture tests do not prove TCC 
 ```bash
 cargo check -p openbitfun-desktop && cargo test -p openbitfun-desktop
 ```
+
+For session storage directory access, run
+`cargo test -p openbitfun-desktop --lib api::session_storage_directory::tests`
+for session storage directory resolution (these tests do not launch a file manager),
+and `cargo test -p openbitfun-desktop --lib remote_workspace_policy` after registration changes.
+
+For model selector request compatibility and configuration effect routing:
+
+```bash
+cargo test --locked -p openbitfun-desktop --lib update_session_model_distinguishes_omitted_null_and_explicit_reasoning_presets
+cargo test --locked -p openbitfun-desktop --lib backend_effect_routing_is_owned_by_the_control_transaction
+```
+
+Use the Core guide's session-model tests for cold persistence, no-op writes,
+rollback, and ownership; the Desktop adapter must not restore history for a
+model selection alone.
+
+For MiniApp Agent session and context changes, run
+`cargo test --locked -p openbitfun-desktop --lib api::miniapp_agent_api::tests`.
+This covers legacy payloads, exact context paths, trust instructions, and snapshot cleanup.
 
 For tray unread synchronization, run
 `pnpm --dir src/web-ui run test:run src/flow_chat/services/trayUnreadService.test.ts src/flow_chat/services/sessionNavStatusService.test.ts`

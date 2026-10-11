@@ -4,6 +4,11 @@ import {
   emptyAppRootPresentationActions
 } from '../actions/AppRootPresentationActions';
 import { AppRoute } from '../navigation/AppRouteContract';
+import {
+  SettingsPlacement,
+  SettingsPlacementPolicy,
+  SettingsSheetKind
+} from '../policy/SettingsPlacementPolicy';
 import { FilePreviewPhase, FilePreviewState } from '../state/FilePreviewState';
 import { GeneralChatPageState } from '../state/GeneralChatPageState';
 import { RemotePageState } from '../state/RemotePageState';
@@ -30,6 +35,8 @@ export struct ConversationRouteSurface {
   @Param showSidebarRestoreButton: boolean = false;
   @Param useWidePresentation: boolean = false;
   @Param hoverOperateMode: boolean = false;
+  @Param fullTextSheetPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UserMessageFullText);
   @Event onRestoreSidebar: () => void = () => {};
 
   build() {
@@ -60,6 +67,7 @@ export struct ConversationRouteSurface {
           composerPresentation: this.composerPresentation(),
           composerInputId: 'conversation-composer-input',
           hoverOperateMode: this.hoverOperateMode,
+          fullTextSheetPlacement: this.fullTextSheetPlacement,
           onRestoreSidebar: this.onRestoreSidebar,
           onIntent: (intent: ConversationIntent) => this.dispatchConversationIntent(intent)
         })

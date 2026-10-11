@@ -1,9 +1,15 @@
 import { HistoryScrollPreview } from './HistoryScrollPreview';
 import { ColdStartHomePreview } from './ColdStartHomePreview';
 import { ComposerSubmissionPreview } from './ComposerSubmissionPreview';
+import { CopySelectionPreview } from './CopySelectionPreview';
 import { DurableTimelinePreview } from './DurableTimelinePreview';
 import { DeviceSelectorPreview } from './DeviceSelectorPreview';
 import { CatalogRefreshPreview } from './CatalogRefreshPreview';
+import { ModelRoleSelectorPreview } from './ModelRoleSelectorPreview';
+import { SubagentProcessPreview } from './SubagentProcessPreview';
+import { FileVisibilityPreview } from './FileVisibilityPreview';
+import { ComposerOverflowPreview } from './ComposerOverflowPreview';
+import { ImmersiveBottomPreview } from './ImmersiveBottomPreview';
 import { WelcomeHome } from '../components/WelcomeHome';
 import { InteractionMailboxPreview } from './InteractionMailboxPreview';
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
@@ -15,6 +21,7 @@ import {
 import { ComposerBar, ComposerPresentation } from '../components/ComposerBar';
 import { ConversationHeader } from '../components/ConversationHeader';
 import { INK, LINE, MUTED, PAGE_BG, SOFT, TRANSPARENT } from '../components/Theme';
+import { RemoteI18n } from '../../i18n/RemoteI18n';
 
 @Entry
 @ComponentV2
@@ -48,10 +55,22 @@ struct MobileDesignGallery {
       ComposerSubmissionPreview()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('catalog-refresh')) {
       CatalogRefreshPreview()
+    } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('model-role-selector')) {
+      ModelRoleSelectorPreview()
+    } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('subagent-process')) {
+      SubagentProcessPreview()
+    } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('file-visibility')) {
+      FileVisibilityPreview()
+    } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('composer-overflow')) {
+      ComposerOverflowPreview()
+    } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('immersive-bottom')) {
+      ImmersiveBottomPreview()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('device-selector')) {
       DeviceSelectorPreview()
     } else if (AppStorage.get<string>('scenarioId') === 'welcome-home') {
       WelcomeHome()
+    } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('copy-selection')) {
+      CopySelectionPreview()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('interaction-mailbox')) {
       InteractionMailboxPreview()
     } else {
@@ -98,11 +117,11 @@ struct MobileDesignGallery {
   @Builder
   private PlatformLabel() {
     Row({ space: 8 }) {
-      Text('HarmonyOS')
+      Text(RemoteI18n.t('app.title'))
         .fontSize(MobileDesignTypography.labelMedium.size)
         .fontWeight(FontWeight.Medium)
         .fontColor(INK)
-      Text('BASELINE')
+      Text(RemoteI18n.t('app.title'))
         .fontSize(MobileDesignTypography.labelSmall.size)
         .fontColor(MUTED)
         .padding({ left: 8, right: 8, top: 4, bottom: 4 })

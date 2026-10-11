@@ -220,15 +220,14 @@ mod tests {
     /// milliseconds.
     async fn assert_port_released(port: u16, what: &str) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        let mut last_err = None;
         loop {
-            match tokio::net::TcpListener::bind(("0.0.0.0", port)).await {
+            let last_err = match tokio::net::TcpListener::bind(("0.0.0.0", port)).await {
                 Ok(l) => {
                     drop(l);
                     return;
                 }
-                Err(e) => last_err = Some(e),
-            }
+                Err(e) => e,
+            };
             if std::time::Instant::now() >= deadline {
                 panic!("{what}: port {port} never became bindable again: {last_err:?}");
             }

@@ -197,6 +197,7 @@
     "current": "Current"
   },
   "quickSwitch": {
+    "refresh": "Refresh branches",
     "menuLabel": "Switch branch",
     "searchLabel": "Search branches",
     "searchPlaceholder": "Search branches...",
@@ -225,6 +226,7 @@
     },
     "errors": {
       "title": "Branch switch failed",
+      "refreshFailed": "Could not refresh branches. Showing the previous list.",
       "loadFailed": "Could not load branches",
       "switchFailed": "Failed to switch branch",
       "switchFailedWithMessage": "Failed to switch branch: {{error}}",

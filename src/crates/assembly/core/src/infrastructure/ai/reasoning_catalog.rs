@@ -1,6 +1,6 @@
 use std::sync::Arc;
 #[cfg(feature = "model-catalog")]
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Mutex, OnceLock, RwLock};
 #[cfg(feature = "model-catalog")]
 use std::time::{Duration, Instant};
 
@@ -41,19 +41,110 @@ pub(crate) struct ModelsDevReasoningCatalogSnapshot {
     pub(crate) source: ModelsDevSnapshotSource,
 }
 
+// This is a background check interval, not a snapshot expiration time.
 #[cfg(feature = "model-catalog")]
-const CATALOG_RELOAD_INTERVAL: Duration = Duration::from_secs(60);
+const CATALOG_CHECK_INTERVAL: Duration = Duration::from_secs(60);
 
 #[cfg(feature = "model-catalog")]
 struct CachedReasoningCatalogSnapshot {
-    loaded_at: Instant,
     snapshot: ModelsDevReasoningCatalogSnapshot,
 }
 
 #[cfg(feature = "model-catalog")]
-fn parsed_catalog_cache() -> &'static RwLock<Option<CachedReasoningCatalogSnapshot>> {
-    static CACHE: OnceLock<RwLock<Option<CachedReasoningCatalogSnapshot>>> = OnceLock::new();
-    CACHE.get_or_init(|| RwLock::new(None))
+#[derive(Default)]
+struct ParsedCatalogCache {
+    snapshot: RwLock<Option<CachedReasoningCatalogSnapshot>>,
+    // Covers reading, parsing and publication, including manual refreshes.
+    update: tokio::sync::Mutex<()>,
+    last_check: Mutex<Option<Instant>>,
+}
+
+#[cfg(feature = "model-catalog")]
+impl ParsedCatalogCache {
+    fn current(&self) -> Option<ModelsDevReasoningCatalogSnapshot> {
+        self.snapshot
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_ref()
+            .map(|cached| cached.snapshot.clone())
+    }
+
+    async fn load(&self, service: &ModelsDevCatalogService) -> ModelsDevReasoningCatalogSnapshot {
+        if let Some(snapshot) = self.current() {
+            return snapshot;
+        }
+        let _update = self.update.lock().await;
+        if let Some(snapshot) = self.current() {
+            return snapshot;
+        }
+        let source = service.load_cached_or_bundled().await;
+        self.publish(source).await;
+        self.current().expect("initial catalog snapshot")
+    }
+
+    // Caller holds update so a cold read cannot publish over a newer refresh.
+    async fn publish(&self, source: ModelsDevSnapshot) -> bool {
+        let current = self.current();
+        if let Some(current) = current
+            .as_ref()
+            .filter(|current| current.sha256 == source.sha256)
+        {
+            if current.source == source.source {
+                return false;
+            }
+            let mut updated = current.clone();
+            updated.source = source.source;
+            return replace_cached_catalog(
+                &mut self
+                    .snapshot
+                    .write()
+                    .unwrap_or_else(|error| error.into_inner()),
+                updated,
+            );
+        }
+        let version = source.version;
+        let sha256 = source.sha256.clone();
+        let source_kind = source.source;
+        let parsed = tokio::task::spawn_blocking(move || parse_models_dev_snapshot(&source))
+            .await
+            .ok()
+            .flatten();
+        let updated = match parsed {
+            Some(updated) => updated,
+            None if current.is_some() => return false,
+            None => ModelsDevReasoningCatalogSnapshot {
+                catalog: None,
+                version,
+                sha256,
+                source: source_kind,
+            },
+        };
+        replace_cached_catalog(
+            &mut self
+                .snapshot
+                .write()
+                .unwrap_or_else(|error| error.into_inner()),
+            updated,
+        )
+    }
+
+    fn claim_background_check(&self) -> bool {
+        let mut last = self
+            .last_check
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if last.is_some_and(|last| last.elapsed() < CATALOG_CHECK_INTERVAL) {
+            return false;
+        }
+        *last = Some(Instant::now());
+        true
+    }
+}
+
+#[cfg(feature = "model-catalog")]
+fn parsed_catalog_cache() -> &'static ParsedCatalogCache {
+    static CACHE: OnceLock<ParsedCatalogCache> = OnceLock::new();
+    CACHE.get_or_init(ParsedCatalogCache::default)
 }
 
 #[cfg(feature = "model-catalog")]
@@ -113,100 +204,89 @@ pub(crate) async fn get_models_dev_catalog_status() -> ModelsDevCatalogStatus {
 
 #[cfg(feature = "model-catalog")]
 pub(crate) async fn refresh_models_dev_catalog_now() -> Result<ModelsDevRefreshResult, String> {
+    let cache = parsed_catalog_cache();
     let service = models_dev_catalog_service();
-    let outcome = service.refresh_now().await;
-    match outcome {
-        ModelsDevRefreshOutcome::Updated(snapshot) => {
-            if let Some(updated) = parse_models_dev_snapshot(&snapshot) {
-                if replace_parsed_catalog_cache(updated) {
-                    emit_models_dev_catalog_updated(&snapshot).await;
-                }
+    // Ensure status reads never have to wait on an in-progress network refresh.
+    cache.load(service).await;
+    let outcome = if let Ok(_update) = cache.update.try_lock() {
+        let outcome = service.refresh_now().await;
+        match &outcome {
+            ModelsDevRefreshOutcome::Failed => {
+                return Err("Failed to refresh models.dev catalog".to_string())
             }
-            Ok(ModelsDevRefreshResult {
-                outcome: ModelsDevRefreshStatus::Updated,
-                status: models_dev_catalog_status().await,
-            })
+            ModelsDevRefreshOutcome::Throttled => {}
+            _ => publish_current_catalog(cache, service).await,
         }
-        ModelsDevRefreshOutcome::Unchanged { .. } => {
-            let snapshot = service.load_cached_or_bundled().await;
-            if let Some(updated) = parse_models_dev_snapshot(&snapshot) {
-                replace_parsed_catalog_cache(updated);
-            }
-            Ok(ModelsDevRefreshResult {
-                outcome: ModelsDevRefreshStatus::Unchanged,
-                status: models_dev_catalog_status().await,
-            })
-        }
-        ModelsDevRefreshOutcome::NotNeeded => Ok(ModelsDevRefreshResult {
-            outcome: ModelsDevRefreshStatus::Unchanged,
-            status: models_dev_catalog_status().await,
-        }),
-        ModelsDevRefreshOutcome::Throttled => Ok(ModelsDevRefreshResult {
-            outcome: ModelsDevRefreshStatus::Throttled,
-            status: models_dev_catalog_status().await,
-        }),
-        ModelsDevRefreshOutcome::Failed => Err("Failed to refresh models.dev catalog".to_string()),
+        outcome
+    } else {
+        ModelsDevRefreshOutcome::Throttled
+    };
+    Ok(ModelsDevRefreshResult {
+        outcome: match outcome {
+            ModelsDevRefreshOutcome::Updated(_) => ModelsDevRefreshStatus::Updated,
+            ModelsDevRefreshOutcome::Throttled => ModelsDevRefreshStatus::Throttled,
+            _ => ModelsDevRefreshStatus::Unchanged,
+        },
+        status: models_dev_catalog_status().await,
+    })
+}
+
+#[cfg(feature = "model-catalog")]
+async fn publish_current_catalog(cache: &ParsedCatalogCache, service: &ModelsDevCatalogService) {
+    let source = service.load_cached_or_bundled().await;
+    let event = AIModelCatalogUpdatedEvent {
+        source_version: source.version.to_string(),
+        sha256: source.sha256.clone(),
+    };
+    if cache.publish(source).await {
+        emit_models_dev_catalog_updated(event).await;
     }
 }
 
 #[cfg(feature = "model-catalog")]
 pub(crate) async fn load_models_dev_reasoning_catalog_without_refresh(
 ) -> ModelsDevReasoningCatalogSnapshot {
-    if let Ok(cache) = parsed_catalog_cache().read() {
-        if let Some(cached) = cache
-            .as_ref()
-            .filter(|cached| cached.loaded_at.elapsed() < CATALOG_RELOAD_INTERVAL)
-        {
-            return cached.snapshot.clone();
-        }
-    }
-
-    let service = models_dev_catalog_service();
-    let snapshot = service.load_cached_or_bundled().await;
-    let catalog = match ModelsDevCatalog::parse_str(&snapshot.body) {
-        Ok(catalog) => Some(Arc::new(catalog)),
-        Err(error) => {
-            debug!("Failed to parse models.dev catalog snapshot: {}", error);
-            None
-        }
-    };
-
-    let loaded = ModelsDevReasoningCatalogSnapshot {
-        catalog,
-        #[cfg(feature = "model-catalog")]
-        version: snapshot.version,
-        sha256: snapshot.sha256,
-        source: snapshot.source,
-    };
-    if let Ok(mut cache) = parsed_catalog_cache().write() {
-        *cache = Some(CachedReasoningCatalogSnapshot {
-            loaded_at: Instant::now(),
-            snapshot: loaded.clone(),
-        });
-    }
-
-    loaded
+    parsed_catalog_cache()
+        .load(models_dev_catalog_service())
+        .await
 }
 
 #[cfg(feature = "model-catalog")]
 pub(crate) async fn load_models_dev_reasoning_catalog() -> ModelsDevReasoningCatalogSnapshot {
     let loaded = load_models_dev_reasoning_catalog_without_refresh().await;
-
-    let refresh_service = models_dev_catalog_service().clone();
-    tokio::spawn(async move {
-        let ModelsDevRefreshOutcome::Updated(snapshot) = refresh_service.refresh_if_stale().await
-        else {
-            return;
-        };
-        let Some(updated) = parse_models_dev_snapshot(&snapshot) else {
-            return;
-        };
-        if !replace_parsed_catalog_cache(updated) {
-            return;
-        }
-        emit_models_dev_catalog_updated(&snapshot).await;
-    });
+    schedule_catalog_refresh();
     loaded
+}
+
+#[cfg(feature = "model-catalog")]
+fn schedule_catalog_refresh() {
+    let cache = parsed_catalog_cache();
+    if !cache.claim_background_check() {
+        return;
+    }
+    tokio::spawn(async move {
+        let Ok(_update) = cache.update.try_lock() else {
+            return;
+        };
+        let service = models_dev_catalog_service();
+        // Observe changes written by another host process, then check the source.
+        publish_current_catalog(cache, service).await;
+        if !matches!(
+            service.refresh_if_stale().await,
+            ModelsDevRefreshOutcome::Failed | ModelsDevRefreshOutcome::Throttled
+        ) {
+            publish_current_catalog(cache, service).await;
+        }
+    });
+}
+
+/// Prepare local capabilities once the host configuration is available. Network
+/// freshness is optional; readers always retain the last valid local snapshot.
+#[cfg(feature = "model-catalog")]
+pub(crate) fn prepare_model_catalog() {
+    tokio::spawn(async {
+        load_models_dev_reasoning_catalog().await;
+    });
 }
 
 #[cfg(feature = "model-catalog")]
@@ -232,40 +312,26 @@ fn parse_models_dev_snapshot(
 }
 
 #[cfg(feature = "model-catalog")]
-fn replace_parsed_catalog_cache(updated: ModelsDevReasoningCatalogSnapshot) -> bool {
-    let Ok(mut cache) = parsed_catalog_cache().write() else {
-        return false;
-    };
-    replace_cached_catalog(&mut cache, updated)
-}
-
-#[cfg(feature = "model-catalog")]
 fn replace_cached_catalog(
     cache: &mut Option<CachedReasoningCatalogSnapshot>,
     updated: ModelsDevReasoningCatalogSnapshot,
 ) -> bool {
     if cache.as_ref().is_some_and(|cached| {
-        cached.snapshot.version == updated.version && cached.snapshot.source == updated.source
+        cached.snapshot.sha256 == updated.sha256 && cached.snapshot.source == updated.source
     }) {
         return false;
     }
-    *cache = Some(CachedReasoningCatalogSnapshot {
-        loaded_at: Instant::now(),
-        snapshot: updated,
-    });
+    *cache = Some(CachedReasoningCatalogSnapshot { snapshot: updated });
     true
 }
 
 #[cfg(feature = "model-catalog")]
-async fn emit_models_dev_catalog_updated(snapshot: &ModelsDevSnapshot) {
+async fn emit_models_dev_catalog_updated(event: AIModelCatalogUpdatedEvent) {
     crate::service::config::GlobalConfigManager::broadcast_update(
         crate::service::config::ConfigUpdateEvent::ReasoningCatalogUpdated,
     )
     .await;
-    let payload = match serde_json::to_value(AIModelCatalogUpdatedEvent {
-        source_version: snapshot.version.to_string(),
-        sha256: snapshot.sha256.clone(),
-    }) {
+    let payload = match serde_json::to_value(event) {
         Ok(payload) => payload,
         Err(error) => {
             debug!(
@@ -847,7 +913,6 @@ mod tests {
     #[test]
     fn refreshed_catalog_replaces_projection_without_waiting_for_reload_interval() {
         let mut cache = Some(super::CachedReasoningCatalogSnapshot {
-            loaded_at: std::time::Instant::now(),
             snapshot: super::ModelsDevReasoningCatalogSnapshot {
                 catalog: None,
                 version: 1,
@@ -872,7 +937,6 @@ mod tests {
     fn cache_source_change_replaces_equal_bundled_snapshot() {
         let catalog = std::sync::Arc::new(catalog());
         let mut cache = Some(super::CachedReasoningCatalogSnapshot {
-            loaded_at: std::time::Instant::now(),
             snapshot: super::ModelsDevReasoningCatalogSnapshot {
                 catalog: Some(catalog.clone()),
                 version: 1,
@@ -893,5 +957,46 @@ mod tests {
             cache.as_ref().map(|value| value.snapshot.source),
             Some(openbitfun_services_integrations::models_dev::ModelsDevSnapshotSource::Cache)
         );
+    }
+    #[cfg(feature = "model-catalog")]
+    #[tokio::test]
+    async fn catalog_readers_share_initial_parse_and_keep_snapshot_until_publication() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("catalog.json");
+        tokio::fs::write(&file, r#"{"openai":{"models":{"a":{"id":"a"}}}}"#)
+            .await
+            .unwrap();
+        let service =
+            openbitfun_services_integrations::models_dev::ModelsDevCatalogService::new(&file);
+        let cache = super::ParsedCatalogCache::default();
+        let (a, b) = tokio::join!(cache.load(&service), cache.load(&service));
+        assert!(std::sync::Arc::ptr_eq(
+            a.catalog.as_ref().unwrap(),
+            b.catalog.as_ref().unwrap()
+        ));
+        tokio::fs::write(
+            &file,
+            r#"{"openai":{"models":{"new-model":{"id":"new-model"}}}}"#,
+        )
+        .await
+        .unwrap();
+        // A read never revalidates the source, even after the background deadline.
+        *cache.last_check.lock().unwrap() =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(120));
+        assert_eq!(cache.load(&service).await.sha256, a.sha256);
+        assert!(cache.claim_background_check());
+        assert!(!cache.claim_background_check());
+        let _update = cache.update.lock().await;
+        assert!(cache.publish(service.load_cached_or_bundled().await).await);
+        let updated = cache.load(&service).await;
+        assert_ne!(updated.sha256, a.sha256);
+        assert!(!cache.publish(service.load_cached_or_bundled().await).await);
+        assert!(std::sync::Arc::ptr_eq(
+            updated.catalog.as_ref().unwrap(),
+            cache.current().unwrap().catalog.as_ref().unwrap()
+        ));
+        tokio::fs::write(&file, "corrupt").await.unwrap();
+        assert!(!cache.publish(service.load_cached_or_bundled().await).await);
+        assert_eq!(cache.load(&service).await.sha256, updated.sha256);
     }
 }

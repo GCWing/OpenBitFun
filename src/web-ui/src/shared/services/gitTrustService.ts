@@ -23,6 +23,11 @@ import { i18nService } from '@/infrastructure/i18n';
 import { notificationService } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import { GitWorkspaceScope, gitWorkspaceKey } from '@/infrastructure/api/service-api/GitAPI';
+import {
+  getActiveSurfaceScope,
+  isSurfaceChangedError,
+  type SurfaceScope,
+} from '@/infrastructure/peer-device/deviceSurface';
 
 const log = createLogger('GitTrustService');
 
@@ -72,6 +77,7 @@ async function readTrustReport(repositoryPath: GitWorkspaceScope): Promise<GitTr
   try {
     return await gitAPI.getRepositoryTrust(repositoryPath);
   } catch (error) {
+    if (isSurfaceChangedError(error)) throw error;
     log.warn('Could not read Git repository trust for manual guidance', {
       repositoryPath,
       error,
@@ -132,7 +138,7 @@ function reportManualPath(repositoryPath: string, manualCommand: string | null):
   });
 }
 
-async function promptAndTrust(repositoryPath: GitWorkspaceScope): Promise<boolean> {
+async function promptAndTrust(repositoryPath: GitWorkspaceScope, scope: SurfaceScope): Promise<boolean> {
   const confirmed = await confirmWarning(
     i18nService.t('panels/git:trust.title'),
     i18nService.t('panels/git:trust.message', { path: repositoryPath.repositoryPath ?? repositoryPath.workspaceId }),
@@ -141,6 +147,9 @@ async function promptAndTrust(repositoryPath: GitWorkspaceScope): Promise<boolea
       cancelText: i18nService.t('panels/git:trust.cancel'),
     },
   );
+  // Same-path local workspaces share an ID across devices, so an answer given
+  // for the departed device must not grant trust on the one rendered now.
+  scope.assertCurrent('grant Git repository trust');
 
   if (!confirmed) {
     promptQuietUntil.set(promptKey(repositoryPath), Date.now() + PROMPT_QUIET_PERIOD_MS);
@@ -169,6 +178,7 @@ async function promptAndTrust(repositoryPath: GitWorkspaceScope): Promise<boolea
     const reportedPath = outcome.repositoryPath ?? repositoryPath.repositoryPath ?? repositoryPath.workspaceId;
     return await settleUngrantedTrust(repositoryPath, reportedPath, outcome.manualCommand);
   } catch (error) {
+    if (isSurfaceChangedError(error)) throw error;
     // Includes the hosts that refuse to grant at all: a peer host denies
     // `git_trust_repository` on purpose, and an older host does not know it.
     log.error('Failed to grant Git repository trust', { repositoryPath, error });
@@ -200,8 +210,10 @@ export function requestGitRepositoryTrust(
   repositoryPath: GitWorkspaceScope,
   options: GitRepositoryTrustRequestOptions = {},
 ): Promise<boolean> {
+  const scope = getActiveSurfaceScope();
   const key = promptKey(repositoryPath);
-  const pending = inFlightRequests.get(key);
+  const flightKey = scope.key(scope.epoch, key);
+  const pending = inFlightRequests.get(flightKey);
   if (pending) {
     return pending;
   }
@@ -214,10 +226,12 @@ export function requestGitRepositoryTrust(
     promptQuietUntil.delete(key);
   }
 
-  const request = promptAndTrust(repositoryPath).finally(() => {
-    inFlightRequests.delete(key);
+  const request = promptAndTrust(repositoryPath, scope).finally(() => {
+    if (inFlightRequests.get(flightKey) === request) {
+      inFlightRequests.delete(flightKey);
+    }
   });
-  inFlightRequests.set(key, request);
+  inFlightRequests.set(flightKey, request);
   return request;
 }
 

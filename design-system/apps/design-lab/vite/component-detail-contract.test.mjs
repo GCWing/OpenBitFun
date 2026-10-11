@@ -201,7 +201,7 @@ test("IconButton preview exposes its icon-only presentation contract", async () 
   assert.ok(declaration);
   assert.deepEqual(
     [...declaration[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]),
-    ["annotation", "quiet", "outline", "fill", "primary"],
+    ["annotation", "quiet", "glass", "outline", "fill", "primary"],
   );
   assert.match(source, /data-component="icon-button"/);
   assert.match(source, /aria-label=\{t\(annotation \? "components\.preview\.fieldHelp" : "components\.preview\.listView"\)\}/);

@@ -140,11 +140,11 @@ Avoid adding IDs to these surfaces unless there is a clear automated workflow.
 | Workspace create code session | `nav-workspace-menu-create-code-session` | Normal workspace code session action. |
 | Workspace create cowork session | `nav-workspace-menu-create-cowork-session` | Normal workspace cowork session action. |
 | Workspace create ACP session | `nav-workspace-menu-create-acp-session` | Repeated item. Pair with `data-acp-client-id`. |
-| Workspace create init session | `nav-workspace-menu-create-init-session` | Starts AGENTS.md/init session. |
 | Workspace related paths | `nav-workspace-menu-related-paths` | Opens related paths dialog. |
 | Session worktree toggle | `chat-input-worktree-toggle` | Chat input strip. Toggles worktree isolation for the current session. Pair with `data-worktree-enabled`. |
 | Workspace copy path | `nav-workspace-menu-copy-path` | Copies workspace path. |
 | Workspace reveal | `nav-workspace-menu-reveal` | Reveals workspace in file explorer. |
+| Workspace session storage | `nav-workspace-menu-open-session-storage` | Opens the host-managed sessions root, including a local remote-workspace mirror. Local desktop only. |
 | Workspace close | `nav-workspace-menu-close` | Closes workspace. |
 | Workspace reset assistant | `nav-workspace-menu-reset-assistant` | Resets default assistant workspace. |
 | Workspace delete assistant | `nav-workspace-menu-delete-assistant` | Deletes named assistant workspace. |
@@ -160,6 +160,7 @@ Avoid adding IDs to these surfaces unless there is a clear automated workflow.
 | Session menu | `nav-session-menu` | Portal menu for one session. Pair with `data-session-id`. |
 | Session rename item | `nav-session-menu-rename` | Starts session rename. |
 | Session copy ID item | `nav-session-menu-copy-id` | Copies the session ID. Pair with `data-session-id`. |
+| Session storage | `nav-session-menu-open-storage` | Opens this session's stored directory. Pair with `data-session-id`. Unavailable for peer and detached-dispatch sessions. |
 | Session scheduled jobs item | `nav-session-menu-scheduled-jobs` | Opens scheduled jobs for the session. Pair with `data-session-id`. |
 | Session archive item | `nav-session-menu-archive` | Archives the session. Pair with `data-session-id`. |
 | Session delete item | `nav-session-menu-delete` | Deletes session. |

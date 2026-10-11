@@ -13,15 +13,16 @@ const COMMIT_COAUTHOR_ACCOUNT = `@${new URL('https://github.com/bitfun-ai').path
 export default function GitCommitSettingsSection() {
   const { t } = useTranslation('settings/quick-actions');
   const notification = useNotification();
-  const [loading, setLoading] = useState(true);
+  const [cachedSettings] = useState(() => aiExperienceConfigService.getCachedSettings());
+  const [loading, setLoading] = useState(!cachedSettings);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [commitCoauthorEnabled, setCommitCoauthorEnabled] = useState<boolean | undefined>();
+  const [commitCoauthorEnabled, setCommitCoauthorEnabled] = useState<boolean | undefined>(cachedSettings?.enable_git_commit_coauthor);
   const saveInFlight = useRef(false);
   const sectionAnchor = useSettingsSectionAnchor('git', !loading);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(!cachedSettings);
     setLoadFailed(false);
     try {
       const settings = await aiExperienceConfigService.getSettingsAsync({ forceRefresh: true, requireLoaded: true });
@@ -32,8 +33,8 @@ export default function GitCommitSettingsSection() {
     } finally {
       setLoading(false);
     }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
+  }, [cachedSettings]);
+  useEffect(() => { if (!cachedSettings) void load(); }, [load, cachedSettings]);
 
   const handleCommitCoauthorToggle = async (enabled: boolean) => {
     if (saveInFlight.current || commitCoauthorEnabled === undefined) return;

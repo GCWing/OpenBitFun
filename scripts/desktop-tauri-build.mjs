@@ -18,6 +18,7 @@ import { extractProductConfigArg } from './product-customization/cli.mjs';
 import { productBuildEnvironment } from './product-customization/projections.mjs';
 import { resolveProductDefinition } from './product-customization/resolver.mjs';
 import { resolveReleaseChannel } from './release-channel.mjs';
+import { requireModernIconTools, verifyMacosIconBundle } from './macos-icon-bundle.mjs';
 import {
   WEB_FONT_PROFILE_ENV,
   fontProfileForDesktopTarget,
@@ -49,6 +50,8 @@ async function main() {
   console.log(`[release] channel=${releaseChannel.channel}`);
 
   const desktopDir = join(ROOT, 'src', 'apps', 'desktop');
+  const macosBundle = requestsMacosBundle(forward);
+  if (macosBundle) requireModernIconTools();
   if (!bundleOnly) preparePluginHost();
   const flashgrepBinary = prepareMacOSFlashgrepForSigning(
     ensureFlashgrepBinary({ target: optionValue(forward, '--target') || rustHostTargetTriple() }),
@@ -96,6 +99,16 @@ async function main() {
     process.exit(1);
   }
 
+  if (r.status === 0 && macosBundle) {
+    const config = JSON.parse(readFileSync(tauriConfig, 'utf8'));
+    const targetDir = process.env.CARGO_TARGET_DIR
+      ? resolve(desktopDir, process.env.CARGO_TARGET_DIR) : join(ROOT, 'target');
+    const target = optionValue(forward, '--target');
+    const profile = forward.includes('--debug') ? 'debug' : optionValue(forward, '--profile') || 'release';
+    verifyMacosIconBundle(join(targetDir, ...(target ? [target] : []), profile,
+      'bundle', 'macos', `${config.productName}.app`));
+  }
+
   // Keep only the latest useful Cargo caches for this build profile after tauri build ends.
   try {
     const { profileFromTauriBuildArgs, runGcBestEffort, targetFromTauriBuildArgs } = await import(
@@ -117,6 +130,12 @@ async function main() {
   }
 
   process.exit(r.status ?? 1);
+}
+
+export function requestsMacosBundle(args, platform = process.platform) {
+  if (args.includes('--no-bundle')) return false;
+  const target = optionValue(args, '--target');
+  return target ? target.endsWith('-apple-darwin') : platform === 'darwin';
 }
 
 function rustHostTargetTriple() {
@@ -322,6 +341,9 @@ export function prepareTauriConfig(
     config.mainBinaryName = resolution.assembly.binaryName;
     config.identifier = resolution.assembly.bundleId;
   }
+  // Let Tauri merge platform icon lists. Re-emitting the base list here would
+  // overwrite tauri.macos.conf.json and silently discard the .icon source.
+  delete config.bundle.icon;
   configureWindowsSigning(config);
   injectTargetFlashgrepResource(config, desktopDir, flashgrepBinary);
   // The DeepSeek bridge is not a compile-time resource: cargo check and

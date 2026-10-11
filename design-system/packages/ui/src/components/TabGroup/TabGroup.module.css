@@ -5,11 +5,6 @@
     --_tab-group-item-padding-inline: var(--openbitfun-control-tab-group-item-padding-inline);
     --_tab-group-item-gap: var(--openbitfun-control-tab-group-item-gap);
     --_tab-group-item-icon-size: var(--openbitfun-control-tab-group-item-icon-size);
-    --_tab-group-item-action-reserve: calc(
-      var(--openbitfun-control-tab-group-item-action-size)
-      + var(--openbitfun-control-tab-group-item-action-inset)
-      + var(--_tab-group-item-gap)
-    );
 
     display: inline-flex;
     align-items: center;
@@ -25,6 +20,8 @@
   }
 
   .item {
+    --_floating-action-host-height: var(--_tab-group-item-height);
+    --_floating-action-size: var(--openbitfun-control-tab-group-item-action-size);
     position: relative;
     display: inline-flex;
     flex: 0 0 auto;
@@ -62,16 +59,6 @@
       background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
       border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
       color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-  }
-
-  .item[data-has-end-action="true"] .tab {
-    padding-inline-end: var(--_tab-group-item-action-reserve);
-  }
-
-  .item[data-has-end-action="true"][data-has-icon="false"] .tab {
-    /* Mirror the trailing action reserve so a text-only label remains centered
-       within the complete tab while the overlaid action fades in and out. */
-    padding-inline-start: var(--_tab-group-item-action-reserve);
   }
 
   .tab[aria-selected="true"] {
@@ -132,17 +119,7 @@
   }
 
   .endAction {
-    position: absolute;
-    inset-block-start: 50%;
-    inset-inline-end: var(--openbitfun-control-tab-group-item-action-inset);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    inline-size: var(--openbitfun-control-tab-group-item-action-size);
-    block-size: var(--openbitfun-control-tab-group-item-action-size);
     color: var(--openbitfun-color-action-neutral-content);
-    transform: translateY(-50%);
-    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
   }
 
   .labelSuffix {
@@ -151,7 +128,7 @@
     align-items: center;
   }
 
-  /* Composed IconButtons own their variants, geometry and interaction states. */
+  /* Native tab actions share the glass material; IconButtons keep their tone and states. */
   .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])) {
     display: inline-flex;
     align-items: center;
@@ -163,7 +140,6 @@
     border: 0;
     border-radius: var(--openbitfun-radius-pill);
     color: inherit;
-    background: transparent;
     font: inherit;
     cursor: pointer;
     transition:
@@ -173,11 +149,6 @@
 
   .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])):hover {
     color: var(--openbitfun-color-action-neutral-content);
-    background: var(--openbitfun-color-action-neutral-surface-hover);
-  }
-
-  .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])):active {
-    background: var(--openbitfun-color-action-neutral-surface-pressed);
   }
 
   .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])):focus-visible {
@@ -188,18 +159,6 @@
   .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])):disabled {
     color: var(--openbitfun-color-action-neutral-content-disabled);
     cursor: not-allowed;
-  }
-
-  @media (hover: hover) and (pointer: fine) {
-    .endAction {
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    .item:is(:hover, :focus-within) .endAction {
-      opacity: 1;
-      pointer-events: auto;
-    }
   }
 
   @media (prefers-reduced-motion: reduce) {

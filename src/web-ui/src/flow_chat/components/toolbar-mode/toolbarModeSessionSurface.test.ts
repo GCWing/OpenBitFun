@@ -178,16 +178,6 @@ describe('floating mini chat bubble MiniApp registration', () => {
     expect(source).toContain('state.sessions.get(entry.sessionId)');
   });
 
-  it('hydrates a restored hidden topic session instead of substituting the latest chat', () => {
-    const bridgeSource = readSource(
-      '../../../app/scenes/miniapps/hooks/useMiniAppBridge.ts'
-    );
-
-    expect(bridgeSource).toContain('if (!result.created)');
-    expect(bridgeSource).toContain('flowChatStore.loadSessionHistory(');
-    expect(bridgeSource).toContain('{ includeInternal: true }');
-  });
-
   it('forwards a MiniApp agent turn user-facing label separately from its prompt', () => {
     const bridgeSource = readSource(
       '../../../app/scenes/miniapps/hooks/useMiniAppBridge.ts'

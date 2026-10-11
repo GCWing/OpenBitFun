@@ -8,6 +8,7 @@ import { LanguageSettingsPanel } from './LanguageSettingsPanel';
 import { SheetCloseHeader } from './SheetCloseHeader';
 import { SHEET_HORIZONTAL_PADDING, SHEET_TOP_RADIUS } from './SheetLayout';
 import { CloudAccountDevice } from '../../services/CloudAccountClient';
+import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 import { RemotePermissionMode } from '../../model/RemoteModels';
 import { RemotePermissionSection } from './RemotePermissionSection';
 
@@ -39,6 +40,20 @@ export struct SettingsSheet {
   @Event setPermissionMode: (mode: RemotePermissionMode) => Promise<RemotePermissionMode> =
     async (mode: RemotePermissionMode): Promise<RemotePermissionMode> => mode;
   @Event onSetLanguage: (language: string) => Promise<void> = async (_language: string) => {};
+  /** The sheet's own bottom edge, so its scrolling rows can run under the bar and still rest above it. */
+  @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
+
+  aboutToAppear(): void {
+    const context = this.getUIContext().getHostContext();
+    if (context) {
+      this.insets.bind(this.getUIContext(), context);
+    }
+  }
+
+  aboutToDisappear(): void {
+    this.insets.unbind();
+  }
+
   build() {
     Stack({ alignContent: Alignment.TopEnd }) {
       if (this.sheetState.page === 'language') {
@@ -49,6 +64,14 @@ export struct SettingsSheet {
     }
     .width('100%')
     .height('100%')
+    // The sheet's fill is the shell's bottom edge and runs to the screen edge,
+    // and so does its scrolling viewport: the rows are content, and they roll
+    // under the navigation indicator while they are still moving instead of
+    // stopping short of it above a band of bare page colour. What stops above
+    // the bar is the column's own tail padding, which brings the last row to
+    // rest there once the sheet is scrolled to its end. The framework does not
+    // inset a bottom sheet for the app while the window is immersive, so the
+    // sheet does it itself.
     .backgroundColor(PAGE_BG)
     .borderRadius({ topLeft: SHEET_TOP_RADIUS, topRight: SHEET_TOP_RADIUS })
   }
@@ -96,7 +119,9 @@ export struct SettingsSheet {
           left: SHEET_HORIZONTAL_PADDING,
           right: SHEET_HORIZONTAL_PADDING,
           top: 22,
-          bottom: 34
+          // The sheet's tail spacer: the strip plus its own breathing, so the
+          // last row rests above the navigation bar once the scroll ends.
+          bottom: this.insets.tailSpacing(34)
         })
       }
       .width('100%')

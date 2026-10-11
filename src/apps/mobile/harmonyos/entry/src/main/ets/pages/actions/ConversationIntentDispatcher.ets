@@ -1,7 +1,7 @@
 import { InteractionMailboxAction } from '../../model/InteractionMailbox';
 import { RemoteQuestionAnswerPayload, RemoteSession } from '../../model/RemoteModels';
 import { AppRoute, AppRouteContract } from '../navigation/AppRouteContract';
-import { ConversationIntent, ConversationIntentType } from './ConversationIntent';
+import { ConversationIntent, ConversationIntentType, MessageCopyScope } from './ConversationIntent';
 import { toRemoteQuestionAnswer } from '../state/ConversationUiModels';
 import { FilePreviewRequest } from '../../model/FilePreviewTarget';
 
@@ -18,7 +18,7 @@ export interface ConversationIntentDispatcherHooks {
   readonly cancel: (toolId: string) => Promise<void>;
   readonly answer: (toolId: string, answers: RemoteQuestionAnswerPayload) => Promise<void>;
   readonly rename: (title: string) => Promise<void>;
-  readonly copy: (text: string) => Promise<void>;
+  readonly copy: (text: string, scope: MessageCopyScope) => Promise<void>;
   readonly retry: (text: string) => Promise<void>;
   readonly selectModel: (modelId: string) => Promise<void>;
   readonly pickImages: () => Promise<void>;
@@ -57,7 +57,7 @@ export class ConversationIntentDispatcher {
       case ConversationIntentType.AnswerQuestion:
         if (intent.answers) void this.hooks.answer(intent.toolId, toRemoteQuestionAnswer(intent.answers)); return;
       case ConversationIntentType.RenameSession: void this.hooks.rename(intent.value); return;
-      case ConversationIntentType.CopyMessage: void this.hooks.copy(intent.value); return;
+      case ConversationIntentType.CopyMessage: void this.hooks.copy(intent.value, intent.copyScope); return;
       case ConversationIntentType.RetryMessage: void this.hooks.retry(intent.value); return;
       case ConversationIntentType.SelectModel: void this.hooks.selectModel(intent.value); return;
       case ConversationIntentType.PickImages: void this.hooks.pickImages(); return;

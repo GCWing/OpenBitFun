@@ -6,7 +6,7 @@ edition.workspace = true
 [features]
 default = []
 shell-analysis = []
-document-read = ["dep:anydoc", "dep:sha2"]
+document-read = ["dep:anydoc", "dep:pdf-inspector", "dep:roxmltree", "dep:sha2", "dep:zip"]
 web-readable = ["dep:htmd", "dep:legible", "dep:readability-js"]
 
 [dependencies]
@@ -24,13 +24,16 @@ htmd = { version = "0.5.4", optional = true }
 ignore = { workspace = true }
 legible = { version = "0.4.2", optional = true }
 log = { workspace = true }
+pdf-inspector = { workspace = true, optional = true }
 regex = { workspace = true }
+roxmltree = { workspace = true, features = ["std", "positions"], optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["io-util", "rt", "sync", "time"] }
 tokio-util = { workspace = true, features = ["io-util"] }
 vte = { workspace = true, features = ["ansi"] }
+zip = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [

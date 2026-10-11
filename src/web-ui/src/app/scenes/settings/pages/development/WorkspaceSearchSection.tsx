@@ -1,4 +1,4 @@
-import { ConfigLoadingState, ConfigPageRow, ConfigPageSection, ConfigRetryState } from '@/infrastructure/config/components/common';
+import { ConfigLoadingState, ConfigMessage, ConfigPageRow, ConfigPageSection, ConfigRetryState } from '@/infrastructure/config/components/common';
 import { useAIExperienceSettings } from '@/infrastructure/config/hooks';
 import { aiExperienceConfigService } from '@/infrastructure/config/services/AIExperienceConfigService';
 import { WORKSPACE_SEARCH_AVAILABLE } from '@/infrastructure/config/workspaceSearchAvailability';
@@ -37,12 +37,15 @@ function WorkspaceSearchSettings() {
 
   return (
     <ConfigPageSection id={sectionAnchor} title={t('features.workspaceSearch.title')} description={t('features.workspaceSearch.subtitle')}>
-      {isLoading ? <ConfigLoadingState label={t('loading.text')} /> : error || !settings ? (
+      {isLoading ? <ConfigLoadingState label={t('loading.text')} /> : !settings ? (
         <ConfigRetryState message={t('loading.failed')} retryLabel={t('loading.retry')} onRetry={() => void reload()} />
       ) : (
+        <>
+        {error && <ConfigMessage message={{ type: 'error', text: t('loading.failed') }} />}
         <ConfigPageRow label={t('features.workspaceSearch.enable')} align="center">
           <Switch checked={settings.enable_workspace_search} disabled={saving} onChange={event => void updateEnabled(event.currentTarget.checked)} />
         </ConfigPageRow>
+        </>
       )}
     </ConfigPageSection>
   );

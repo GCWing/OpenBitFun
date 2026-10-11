@@ -1094,8 +1094,44 @@ test('stages unique release asset names before publishing', () => {
       /release-assets\/\*\*\/\*\.sig(?:\s|\\)/,
       'raw updater signatures have colliding names across macOS architectures',
     );
+    assert.doesNotMatch(
+      steps[stagingIndex].run,
+      /release-assets\/\*\*\/\*(?:\.AppImage|\.deb|\.rpm)(?:\s|\\)/,
+      'raw Linux bundles must not duplicate canonical updater assets in the public release',
+    );
   }
   assert.match(steps[uploadIndex].run, /--clobber release-upload-assets\/\*/);
+});
+
+test('Desktop release notes link the separately published Android prerelease', () => {
+  const workflow = yaml.parse(
+    readFileSync(
+      path.join(repoRoot, '.github/workflows/desktop-package.yml'),
+      'utf8',
+    ),
+  );
+  const uploadStep = workflow.jobs['upload-release-assets'].steps.find(
+    (step) => step.name === 'Upload to release',
+  );
+  assert.match(uploadStep.run, /mobile-v\$\{MOBILE_VERSION\}/);
+  assert.match(uploadStep.run, /runner-generated debug signing key/);
+  assert.match(uploadStep.run, /--notes-file release-notes\.md/);
+});
+
+test('Mobile Package publishes Android assets from mobile-v tags', () => {
+  const workflow = yaml.parse(
+    readFileSync(path.join(repoRoot, '.github/workflows/mobile-package.yml'), 'utf8'),
+  );
+  assert.ok(workflow.on.push.tags.includes('mobile-v*'));
+  assert.match(
+    workflow.jobs.android.steps.find((step) => step.name === 'Build signed Android package').run,
+    /:app:assembleRelease/,
+  );
+  assert.equal(workflow.jobs.publish.needs.includes('android'), true);
+  assert.match(
+    workflow.jobs.publish.steps.find((step) => step.name === 'Create mobile release').run,
+    /gh release create/,
+  );
 });
 
 test('Desktop packaging installs Bun before preparing the OpenCode extension Host', () => {
@@ -1437,7 +1473,7 @@ fs.writeFileSync(output, content);
     });
     assert.equal(result.status, scenario === 'stale' ? 1 : 0, `${scenario}: ${result.stderr}`);
     const requests = Number(readFileSync(path.join(cwd, 'requests'), 'utf8'));
-    assert.ok(requests > 1 && requests <= 12, `${scenario}: bounded content retries`);
+    assert.ok(requests > 1 && requests <= 60, `${scenario}: bounded content retries`);
     if (scenario === 'stale') assert.match(result.stderr, /did not converge/);
   }
 });

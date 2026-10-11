@@ -1,6 +1,12 @@
 {
   "title": "外觀",
   "subtitle": "調整介面語言、主題與字體大小",
+  "sessionPanel": {
+    "title": "工作階段側邊面板",
+    "displayMode": "面板佈局",
+    "split": "並排",
+    "overlay": "覆蓋"
+  },
   "package": {
     "title": "外觀",
     "description": "外觀套件儲存在目前裝置；將游標停留在縮圖上可預覽",

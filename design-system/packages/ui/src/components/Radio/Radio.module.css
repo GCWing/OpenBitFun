@@ -71,7 +71,7 @@
     transform: scale(1);
   }
 
-  .input:hover:not(:disabled) + .circle {
+  .input:hover:not(:checked, :disabled) + .circle {
     border-color: var(--openbitfun-color-field-border-hover);
     background-color: var(--openbitfun-color-field-background-hover);
   }

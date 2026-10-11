@@ -31,6 +31,22 @@
     },
     {
       "name": "ohosTest",
+    },
+    {
+      // Emulator-only target. The x86_64 emulator cannot install the shipped
+      // arm64-only `default` artifact, so a separate target carries the ABI
+      // override. `default` stays arm64-only: nothing else may add x86_64 to it.
+      // Build with `-p module=entry@emulator`.
+      "name": "emulator",
+      "config": {
+        "buildOption": {
+          "externalNativeOptions": {
+            "abiFilters": [
+              "x86_64"
+            ]
+          }
+        }
+      }
     }
   ]
 }

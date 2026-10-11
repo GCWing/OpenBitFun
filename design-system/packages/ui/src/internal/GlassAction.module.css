@@ -1,0 +1,54 @@
+@layer openbitfun.components {
+  .surface[data-openbitfun-variant="glass"],
+  .surface:not([data-openbitfun-component="icon-button"]) {
+    background: var(--openbitfun-color-surface-raised);
+    box-shadow: inset 0 0 0 var(--openbitfun-border-width-default) color-mix(in srgb, var(--openbitfun-color-border-subtle) 60%, transparent);
+  }
+
+  @supports ((backdrop-filter: blur(0)) or (-webkit-backdrop-filter: blur(0))) {
+    .surface[data-openbitfun-variant="glass"],
+    .surface:not([data-openbitfun-component="icon-button"]) {
+      background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 28%, transparent);
+      -webkit-backdrop-filter: var(--openbitfun-effect-blur-subtle);
+      backdrop-filter: var(--openbitfun-effect-blur-subtle);
+    }
+
+    .surface[data-openbitfun-variant="glass"]:where(:not(:disabled):is(:hover, [data-openbitfun-preview-state="hover"])),
+    .surface:not([data-openbitfun-component="icon-button"]):where(:not(:disabled):is(:hover, [data-openbitfun-preview-state="hover"])) {
+      background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 40%, transparent);
+    }
+
+    .surface[data-openbitfun-variant="glass"]:where(:not(:disabled):is(:active, [data-openbitfun-preview-state="active"])),
+    .surface:not([data-openbitfun-component="icon-button"]):where(:not(:disabled):is(:active, [data-openbitfun-preview-state="active"])) {
+      background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 48%, transparent);
+    }
+  }
+
+  :where([data-contrast="high"]) .surface[data-openbitfun-variant="glass"],
+  :where([data-contrast="high"]) .surface:not([data-openbitfun-component="icon-button"]) {
+    background: var(--openbitfun-color-surface-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    .surface[data-openbitfun-variant="glass"],
+    .surface:not([data-openbitfun-component="icon-button"]) {
+      background: var(--openbitfun-color-surface-raised);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .surface[data-openbitfun-variant="glass"],
+    .surface:not([data-openbitfun-component="icon-button"]) {
+      color: ButtonText;
+      background: Canvas;
+      box-shadow: none;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      outline: var(--openbitfun-border-width-default) solid ButtonText;
+    }
+  }
+}

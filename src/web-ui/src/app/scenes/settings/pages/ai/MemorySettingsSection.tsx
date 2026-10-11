@@ -1,3 +1,4 @@
+import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
 import { ConfigLoadingState, ConfigMessage, ConfigRetryState } from '@/infrastructure/config/components/common';
 import {
   Button,
@@ -197,10 +198,12 @@ function summarizeMemoryError(rawError: string | null | undefined): string {
 const MemorySettingsSection: React.FC = () => {
   const { t, formatDate, formatNumber } = useI18n(['settings/memory', 'shared']);
   const { error: notifyError, info: notifyInfo, success: notifySuccess } = useNotification();
-  const [loading, setLoading] = useState(true);
+  const seed = useConfigSeed(['memories', 'ai.models']);
+  const hasLoaded = useRef(seed.loaded);
+  const [loading, setLoading] = useState(!seed.loaded);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [config, setConfig] = useState<MemoriesConfigShape>(DEFAULT_MEMORIES_CONFIG);
-  const [models, setModels] = useState<AIModelConfig[]>([]);
+  const [config, setConfig] = useState<MemoriesConfigShape>(() => normalizeMemoriesConfig(seed.get('memories', DEFAULT_MEMORIES_CONFIG)));
+  const [models, setModels] = useState<AIModelConfig[]>(seed.get<AIModelConfig[] | null>('ai.models', null) ?? []);
   const [savingKey, setSavingKey] = useState<keyof MemoriesConfigShape | null>(null);
   const [actionBusy, setActionBusy] = useState<'reset-settings' | 'open-directory' | 'reset-memory' | 'clear-failures' | null>(null);
   const [resetMemoryConfirmOpen, setResetMemoryConfirmOpen] = useState(false);
@@ -214,7 +217,7 @@ const MemorySettingsSection: React.FC = () => {
   const pipelineBaselineFinishedAtRef = useRef<number | null>(null);
 
   const loadData = useCallback(async () => {
-    setLoading(true);
+    setLoading(!hasLoaded.current);
     setLoadFailed(false);
 
     try {
@@ -223,6 +226,7 @@ const MemorySettingsSection: React.FC = () => {
       // non-default keys, so rendering the defaults would claim a host state
       // that was never read.
       setConfig(normalizeMemoriesConfig(loadedConfig));
+      hasLoaded.current = true;
     } catch (error) {
       log.error('Failed to load memories config', error);
       setLoadFailed(true);
@@ -242,8 +246,8 @@ const MemorySettingsSection: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    if (!seed.loaded) void loadData();
+  }, [loadData, seed.loaded]);
 
   const refreshMemoryStatus = useCallback(async (): Promise<MemoryStatusResponse | null> => {
     try {
@@ -923,6 +927,7 @@ const MemorySettingsSection: React.FC = () => {
         <ConfigPageSection
           title={t('sections.advanced.title')}
           description={t('sections.advanced.description')}
+          descriptionLayout={advancedOpen ? 'stacked' : 'inline'}
           extra={(
             <Tooltip
               content={t(advancedOpen ? 'actions.collapseAdvanced' : 'actions.expandAdvanced')}
@@ -935,7 +940,7 @@ const MemorySettingsSection: React.FC = () => {
                 onClick={() => setAdvancedOpen((open) => !open)}
                 aria-label={t(advancedOpen ? 'actions.collapseAdvanced' : 'actions.expandAdvanced')}
                 aria-expanded={advancedOpen}
-                icon={advancedOpen ? <Icon name="chevron-up" size="lg" /> : <Icon name="chevron-down" size="lg" />}
+                icon={<Icon name={advancedOpen ? 'chevron-down' : 'chevron-right'} size="lg" />}
               />
             </Tooltip>
           )}

@@ -26,6 +26,14 @@ Follow `src/web-ui/AGENTS.md` and the settings control sizing rules in
   rename generated protocol IDs to match sidebar labels.
 - Moving a setting must preserve its execution host, remote capability gates,
   unsupported states, persistence keys, and draft registration.
+- Page preparation must retain the scene frame and use `SettingsPage` for its
+  fallback. First-load placeholders use `ConfigLoadingState` inside the content
+  frame; refreshes retain successful content. Seed editable forms only from a
+  complete `ConfigManager` snapshot, never from default values after a failed
+  read. Do not hydrate over edits or keep inactive page effects alive for caching.
+- Runtime snapshots and scroll positions belong to the current device activation.
+  Background responses must not repopulate a previous activation; section links
+  take precedence over restored scroll positions.
 
 ## Focused verification
 

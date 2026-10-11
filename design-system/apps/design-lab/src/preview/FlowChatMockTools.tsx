@@ -9,14 +9,14 @@ export type MockToolScope = 'all' | ToolGroup;
 
 // Only grouping is Lab-owned. Names and component bindings come from production.
 const groupForTool = {
-  get_goal: 'collaboration', create_goal: 'collaboration', update_goal: 'collaboration', AgentList: 'collaboration', AgentDelete: 'collaboration',
+  get_goal: 'collaboration', create_goal: 'collaboration', update_goal: 'collaboration', AgentList: 'collaboration',
   SessionHistory: 'collaboration', analyze_image: 'files', GetTime: 'execution',
   ListMCPResources: 'execution', ReadMCPResource: 'execution', ListMCPPrompts: 'execution', GetMCPPrompt: 'execution',
   Worktree: 'files', PortForward: 'execution', ReviewPlatform: 'collaboration', FrontendWorkbench: 'web',
   FinalizeMiniApp: 'web', PublishMiniApp: 'web', PublishAppearance: 'web', Playbook: 'execution',
   Read: 'files', Write: 'files', Edit: 'files', Delete: 'files', Grep: 'files', Glob: 'files', LS: 'files',
   GetFileDiff: 'files', view_image: 'files',
-  ListModels: 'execution', ControlHub: 'web', AgentInterrupt: 'collaboration',
+  ListModels: 'execution', ControlHub: 'web',
   RunCode: 'execution', ExecCommand: 'execution', WriteStdin: 'execution', ExecControl: 'execution', Cron: 'execution', GetToolSpec: 'execution', Skill: 'execution',
   WebSearch: 'web', WebFetch: 'web', PageDeploy: 'web', PagePublish: 'web',
   AgentSpawn: 'collaboration', AgentSendInput: 'collaboration', AgentWait: 'collaboration', TodoWrite: 'collaboration',

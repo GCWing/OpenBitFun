@@ -16,6 +16,15 @@ Follow `src/web-ui/AGENTS.md` for shared frontend rules.
 
 ## Focused verification
 
+For loading states, warm snapshots, asynchronous reads, and device isolation:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/settings src/infrastructure/config/components/common/ConfigLoadingState.test.tsx src/infrastructure/config/hooks/useConfigSeed.test.tsx src/infrastructure/config/hooks/useAIExperienceSettings.test.tsx src/infrastructure/config/hooks/useSelectionToolbarPreference.test.tsx src/infrastructure/config/services/ConfigManager.test.ts src/infrastructure/config/services/SettingsReadCache.test.ts src/infrastructure/config/services/AIExperienceConfigService.test.ts src/infrastructure/config/services/PermissionConfigService.test.ts
+```
+
+These tests simulate device activation and request ordering; they do not exercise
+an actual SSH, relay, peer host, or detached-dispatch connection.
+
 For settings selection sizing, run:
 
 ```bash
@@ -34,3 +43,23 @@ pnpm --dir src/web-ui run test:run src/infrastructure/config/components/mcpConfi
 
 These checks cover local configuration handling and unavailable-surface gates;
 they do not prove an actual remote MCP connection.
+
+For model editor drafts and dialog presentation, run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/infrastructure/config/components/modelEditorRequestSettings.test.ts src/infrastructure/config/components/subscriptionAccountState.test.ts src/infrastructure/config/components/ModelSettingsDialog.presentation.test.ts src/app/scenes/settings/pages/ai/ModelSettingsPage.presentation.test.ts
+```
+
+These checks cover draft isolation and source contracts, not rendered visuals
+or remote runtime behavior.
+
+For the device-scoped model catalog and non-blocking session/default selection:
+
+```bash
+pnpm --dir src/web-ui run test:run src/infrastructure/config/services/ModelCatalogStore.test.ts src/infrastructure/config/services/ConfigManager.test.ts src/flow_chat/components/ModelSelectorProviderLevels.test.tsx src/flow_chat/components/ModelSelectorExternal.test.tsx src/flow_chat/components/ModelSelectorAcpMode.test.tsx src/flow_chat/utils/modelResolution.test.ts src/flow_chat/services/flow-chat-manager/MessageModule.test.ts src/flow_chat/services/flow-chat-manager/SessionModule.test.ts
+```
+
+Keep warm catalogs while refreshing, invalidate them only for catalog/model
+facts, and isolate all snapshots and pending work by surface activation. An
+existing session commits its selection before remembering future defaults;
+explicit model reads before send must not await the future-default write.

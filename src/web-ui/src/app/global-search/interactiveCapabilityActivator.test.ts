@@ -61,6 +61,7 @@ describe('activateInteractiveCapability', () => {
   it.each([
     ['feature.computer-use', undefined, { pageId: 'tools.desktop-control' }],
     ['setting.application.input', 'voice-enabled', { pageId: 'application.input', sectionId: 'voice' }],
+    ['setting.application.input', 'auto-show-selection-toolbar', { pageId: 'application.input', sectionId: 'text-selection' }],
     ['setting.application.appearance', 'language', { pageId: 'application.general' }],
     ['setting.workspace.session', 'default-agent-harness', { pageId: 'ai.session-memory', sectionId: 'session' }],
     ['setting.workspace.session', 'accelerated-search', { pageId: 'development.workspace', sectionId: 'workspace-search' }],

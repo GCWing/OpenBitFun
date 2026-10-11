@@ -13,6 +13,7 @@ import { OverflowText } from '@openbitfun/ui';
 import React, { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useContext, Suspense } from 'react';
 import { useWorkspaceContext } from '../../infrastructure/contexts/WorkspaceContext';
 import { useWindowControls } from '../hooks/useWindowControls';
+import { useFullscreenChrome } from '../hooks/useFullscreenChrome';
 import { isWindowFullscreenShortcut } from '../hooks/windowFullscreenShortcut';
 import { usePermissionRequestNotify } from '../hooks/usePermissionRequestNotify';
 import { useApp } from '../hooks/useApp';
@@ -118,6 +119,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
     canUseNativeWindowControls,
   } =
     useWindowControls({ isToolbarMode });
+  const { isFullscreenChrome } = useFullscreenChrome(isFullscreen);
 
   const { state, switchLeftPanelTab, toggleLeftPanel, toggleRightPanel } = useApp();
   const [windowModeHint, setWindowModeHint] = useState<WindowModeHint | null>(null);
@@ -672,6 +674,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
     isMacOS ? 'openbitfun-app-layout--macos' : '',
     className,
     isFullscreen ? 'openbitfun-app-layout--window-fullscreen' : '',
+    isFullscreenChrome ? 'openbitfun-app-layout--fullscreen-chrome' : '',
     isTransitioning ? 'openbitfun-app-layout--transitioning' : '',
   ].filter(Boolean).join(' ');
 

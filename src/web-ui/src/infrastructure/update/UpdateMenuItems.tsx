@@ -1,4 +1,5 @@
 import { Icon, MenuItem, Spinner, Tooltip } from '@openbitfun/ui';
+import { Repeat } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import { notificationService } from '@/shared/notification-system/services/NotificationService';
@@ -48,7 +49,7 @@ export function UpdateMenuItems({ onCloseMenu }: { onCloseMenu: () => void }) {
   return <Tooltip content={hint} placement="right">
     <MenuItem data-testid="nav-check-updates" disabled={busy} aria-busy={checking}
       metadata={<UpdateIndicator />}
-      leading={checking ? <Spinner size="sm" /> : <Icon name="refresh" size="sm" />}
+      leading={checking ? <Spinner size="sm" /> : <Icon glyph={Repeat} size="sm" />}
       onClick={() => void activate()}>
       {checkLabel}
     </MenuItem>

@@ -6638,6 +6638,8 @@ var STRINGS = {
     title: "PPT Live",
     newDeck: "New",
     newTopic: "New topic",
+    topicSessionFailed: "Could not open this conversation. Your saved topics are kept; reopen the topic to retry.",
+    topicSessionChanged: "The topic changed. Send your message from the current conversation.",
     blankDeckTitle: "Untitled deck",
     blankDeckReady: "Blank deck ready.",
     clusterDraft: "Draft",
@@ -7047,6 +7049,8 @@ var STRINGS = {
     title: "PPT Live",
     newDeck: "\u65B0\u5EFA",
     newTopic: "\u65B0\u4E3B\u9898",
+    topicSessionFailed: "\u4F1A\u8BDD\u6253\u5F00\u5931\u8D25\uFF0C\u5DF2\u4FDD\u7559\u539F\u6709\u4E3B\u9898\u3002\u8BF7\u91CD\u65B0\u6253\u5F00\u4E3B\u9898\u91CD\u8BD5\u3002",
+    topicSessionChanged: "\u4E3B\u9898\u5DF2\u5207\u6362\uFF0C\u8BF7\u5728\u5F53\u524D\u4F1A\u8BDD\u91CD\u65B0\u53D1\u9001\u3002",
     blankDeckTitle: "\u672A\u547D\u540D PPT",
     blankDeckReady: "\u7A7A\u767D PPT \u5DF2\u5C31\u7EEA\u3002",
     clusterDraft: "\u521B\u4F5C",
@@ -7072,7 +7076,7 @@ var STRINGS = {
     oneBoxPlaceholder: "0-1 \u751F\u6210\uFF1A\u5199\u6E05\u4E3B\u9898\u3001\u53D7\u4F17\u548C\u5927\u81F4\u9875\u6570\uFF0C\u4F8B\u5982\u201C\u4E3A\u9AD8\u7BA1\u505A\u4E00\u4EFD 10 \u9875\u7684 AI \u4EA7\u54C1\u6218\u7565 PPT\u201D\u3002\n\u4FEE\u6539\uFF1A\u6307\u660E\u54EA\u4E00\u9875\u4EE5\u53CA\u600E\u4E48\u6539\uFF0C\u4F8B\u5982\u201C\u628A\u7B2C 3 \u9875\u6539\u6210\u6570\u636E\u5BF9\u6BD4\u9875\u201D\u3002\n\u589E\u91CF\u751F\u6210\uFF1A\u8865\u5145\u65B0\u4FE1\u606F\uFF0C\u4F8B\u5982\u201C\u8865\u5145\u4E00\u6BB5\u7ADE\u54C1\u5206\u6790\uFF0C\u52A0\u5230\u7B2C 4 \u9875\u4E4B\u540E\u201D\u3002",
     sendPrompt: "\u53D1\u9001",
     promptRequired: "\u8BF7\u8F93\u5165\u4F60\u5E0C\u671B PPT Live \u505A\u4EC0\u4E48\u3002",
-    bubbleHintEyebrow: "PPT Live Agent",
+    bubbleHintEyebrow: "PPT Live \u667A\u80FD\u4F53",
     bubbleHintTitle: "\u4ECE PPT Live \u6309\u94AE\u5F00\u59CB",
     bubbleHintBody: "\u70B9\u51FB\u53F3\u4E0B\u89D2\u6309\u94AE\uFF0C\u63CF\u8FF0\u4F60\u8981\u7684\u6F14\u793A\u7A3F\uFF1B\u751F\u6210\u8FDB\u5EA6\u548C\u540E\u7EED\u4FEE\u6539\u90FD\u4F1A\u7559\u5728\u540C\u4E00\u4F1A\u8BDD\u4E2D\u3002",
     bubbleHintPointer: "\u6253\u5F00 PPT Live",
@@ -7168,7 +7172,7 @@ var STRINGS = {
     generationParsingDeck: "\u6B63\u5728\u6574\u7406\u9875\u9762\u2026",
     processWaitingForEventsTitle: "\u7B49\u5F85\u5F00\u59CB",
     processWaitingForEvents: "\u53D1\u9001 Prompt \u540E\uFF0C\u8FD9\u91CC\u4F1A\u663E\u793A\u751F\u6210\u8FDB\u5EA6\u3002",
-    agentStreamTitle: "Agent \u5B9E\u65F6\u6D41",
+    agentStreamTitle: "\u667A\u80FD\u4F53\u5B9E\u65F6\u6D41",
     agentStreamAssistant: "\u52A9\u624B",
     processEventUnknown: "\u8FDB\u5EA6\u66F4\u65B0",
     eventTurnStarted: "\u5F00\u59CB\u751F\u6210",
@@ -38118,6 +38122,8 @@ var busy = false;
 var dragState = null;
 var backendRuns = [];
 var deckEpoch = 0;
+var deckSessionInitialization = null;
+var topicChangeInFlight = false;
 var promptSubmitGuard = false;
 var backendRunInFlight = false;
 var historyItems = [];
@@ -38280,19 +38286,29 @@ function renderHistory() {
   });
 }
 async function restoreHistory(id) {
+  if (topicChangeInFlight) return;
   const item = historyItems.find((entry) => entry.id === id);
   if (!item) return;
-  deckEpoch += 1;
-  await cancelTrackedBackendRuns();
-  state = ensureState(clone(item.state));
-  state.generation.active = false;
-  resetGeneration();
-  rerender();
-  syncStylePanelFromState(state);
-  setStatus(translate("historyRestored"));
-  await clearFocusedDeckAgentSession();
-  await ensureDeckAgentSession();
-  await storageSet(STORAGE_KEY, { ...state, updatedAt: Date.now() });
+  topicChangeInFlight = true;
+  try {
+    deckEpoch += 1;
+    await clearFocusedDeckAgentSession();
+    await saveHistorySnapshot("before-switch");
+    await cancelTrackedBackendRuns();
+    state = ensureState(clone(item.state));
+    state.generation.active = false;
+    resetGeneration();
+    rerender();
+    syncStylePanelFromState(state);
+    setStatus(translate("historyRestored"));
+    await ensureDeckAgentSession();
+    await storageSet(STORAGE_KEY, { ...state, updatedAt: Date.now() });
+  } catch (error2) {
+    runtime().log?.error?.("PPT Live topic restore failed", { error: String(error2) });
+    setStatus(translate("topicSessionFailed"));
+  } finally {
+    topicChangeInFlight = false;
+  }
 }
 function formatHistoryTime(value) {
   const date = new Date(value);
@@ -38433,7 +38449,7 @@ function hasUsableDeckForRevision() {
   return Array.isArray(state.slides) && state.slides.length > 0 && !isDefaultDraft() && !isStarterDeck2() && !isRecoverableWorkingOnlyState(state);
 }
 async function submitInstruction(rawInstruction, rawDisplayText = rawInstruction) {
-  if (promptSubmitGuard || backendRunInFlight) {
+  if (topicChangeInFlight || promptSubmitGuard || backendRunInFlight) {
     setStatus(translate("bubbleBusy"));
     throw new Error(translate("bubbleBusy"));
   }
@@ -38718,6 +38734,24 @@ async function clearFocusedDeckAgentSession() {
   }
 }
 async function ensureDeckAgentSession() {
+  const topicEpoch = deckEpoch;
+  const topicId = String(state.sessionId || "");
+  if (deckSessionInitialization?.epoch === topicEpoch && deckSessionInitialization.topicId === topicId) {
+    return deckSessionInitialization.promise;
+  }
+  const pending = {
+    epoch: topicEpoch,
+    topicId,
+    promise: initializeDeckAgentSession(topicEpoch, topicId)
+  };
+  deckSessionInitialization = pending;
+  try {
+    return await pending.promise;
+  } finally {
+    if (deckSessionInitialization === pending) deckSessionInitialization = null;
+  }
+}
+async function initializeDeckAgentSession(topicEpoch, topicId) {
   const host = runtime();
   if (typeof host.backend?.ensureSession !== "function" || !host.appDataDir) {
     const existingSessionId = String(state.agentSession?.id || "");
@@ -38727,27 +38761,18 @@ async function ensureDeckAgentSession() {
     }
     return existingSessionId || null;
   }
-  const topicEpoch = deckEpoch;
-  const topicId = String(state.sessionId || "");
   const project = currentDeckProject() || newDeckProject();
   const requestSession = async (sessionId2) => host.backend.ensureSession({
     sessionId: sessionId2 || void 0,
     appDataWorkspace: project.workspaceSubdir
   });
-  let result;
   const persistedSessionId = String(state.agentSession?.id || "");
-  try {
-    result = await requestSession(persistedSessionId);
-  } catch (error2) {
-    if (!persistedSessionId || !isUnknownSessionBackendError(error2)) throw error2;
-    runtime().log?.warn?.("PPT Live topic session is stale; creating a replacement", {
-      sessionId: persistedSessionId,
-      error: String(error2)
-    });
-    result = await requestSession("");
-  }
+  const result = await requestSession(persistedSessionId);
   const sessionId = String(result?.sessionId || "");
   if (!sessionId) throw new Error("PPT Live session initialization returned no sessionId");
+  if (persistedSessionId && sessionId !== persistedSessionId) {
+    throw new Error("PPT Live could not restore the saved topic session");
+  }
   if (deckEpoch !== topicEpoch || String(state.sessionId || "") !== topicId) {
     return null;
   }
@@ -40147,19 +40172,28 @@ function syncSlidesFromOutline() {
   void persist(true);
 }
 async function newDeck() {
-  deckEpoch += 1;
-  await saveHistorySnapshot("before-new");
-  await cancelTrackedBackendRuns();
-  state.generation.active = false;
-  setBusy(false);
-  state = createBlankDeckState();
-  resetGeneration();
-  rerender();
-  syncStylePanelFromState(state);
-  setStatus(translate("blankDeckReady"));
-  await clearFocusedDeckAgentSession();
-  await ensureDeckAgentSession();
-  await persist(true);
+  if (topicChangeInFlight) return;
+  topicChangeInFlight = true;
+  try {
+    deckEpoch += 1;
+    await clearFocusedDeckAgentSession();
+    await saveHistorySnapshot("before-new");
+    await cancelTrackedBackendRuns();
+    state.generation.active = false;
+    setBusy(false);
+    state = createBlankDeckState();
+    resetGeneration();
+    rerender();
+    syncStylePanelFromState(state);
+    setStatus(translate("blankDeckReady"));
+    await ensureDeckAgentSession();
+    await persist(true);
+  } catch (error2) {
+    runtime().log?.error?.("PPT Live new topic failed", { error: String(error2) });
+    setStatus(translate("topicSessionFailed"));
+  } finally {
+    topicChangeInFlight = false;
+  }
 }
 function createBlankDeckState() {
   return ensureState(createInitialState());
@@ -41141,6 +41175,9 @@ runtime().chat?.onUserMessage?.((payload) => {
   const text2 = String(payload?.text || "").trim();
   if (!text2) return;
   const displayText = String(payload?.displayText || "").trim() || text2;
+  if (topicChangeInFlight || payload?.sessionId && payload.sessionId !== state.agentSession?.id) {
+    throw new Error(translate("topicSessionChanged"));
+  }
   return submitInstruction(text2, displayText);
 });
 init();

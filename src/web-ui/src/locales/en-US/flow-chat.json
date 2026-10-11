@@ -1116,6 +1116,7 @@
     "emptyDirectory": "Empty directory",
     "rootDirectory": "Root",
     "goBack": "Go back",
+    "openDirectory": "Open folder",
     "navHint": "Navigate",
     "enterHint": "Enter",
     "backHint": "Back",
@@ -2002,7 +2003,12 @@
       "finished": "Generation ended"
     },
     "generativeWidget": {
-      "exportFileNamePrefix": "OpenBitFun-Widget"
+      "exportFileNamePrefix": "OpenBitFun-Widget",
+      "exportHtml": "Export HTML",
+      "exportingHtml": "Exporting HTML...",
+      "exportHtmlSuccess": "HTML exported",
+      "exportHtmlFailed": "Failed to export HTML",
+      "exportHtmlHostUnavailable": "This action requires OpenBitFun and is unavailable in the exported HTML."
     },
     "initMiniApp": {
       "title": "Initialize mini app",
@@ -3305,8 +3311,8 @@
       "manualUnavailable": "Your previous model is unavailable. Choose another model.",
       "smart": "Smart mode",
       "pool": "Battery mode",
-      "comingSoon": "Coming soon",
-      "developmentNotice": "This mode is not ready yet. It currently uses your primary model directly.",
+      "comingSoon": "Not available yet",
+      "developmentNotice": "This mode is not available yet. It currently uses your primary model directly.",
       "primaryRequired": "Configure a primary model first"
     },
     "model": "Model",
@@ -3325,6 +3331,7 @@
     "acpMode": "Mode",
     "acpModeLocked": "This conversation has already started, so its mode is fixed.",
     "acpModeFailed": "Failed to switch mode",
+    "defaultSaveFailed": "Model selected, but the default for future chats could not be saved.",
     "switchFailed": "Failed to switch model",
     "modelNotConfigured": "Not Configured",
     "openModelSettings": "Open model settings",

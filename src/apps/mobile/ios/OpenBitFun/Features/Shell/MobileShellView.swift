@@ -415,6 +415,9 @@ struct MobileShellView: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
+                // Keep the fade behind the home indicator. safeAreaInset
+                // reserves room for controls and the scroll content at rest.
+                .ignoresSafeArea(.container, edges: .bottom)
             )
             .background(
                 GeometryReader { proxy in

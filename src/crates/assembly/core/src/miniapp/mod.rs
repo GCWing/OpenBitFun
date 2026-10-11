@@ -2,6 +2,8 @@
 
 #[cfg(feature = "agent-runtime")]
 pub mod agent_context;
+#[cfg(feature = "agent-runtime")]
+pub mod agent_workspace;
 pub mod builtin;
 pub mod compiler;
 pub mod exporter;

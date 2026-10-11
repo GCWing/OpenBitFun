@@ -1,6 +1,6 @@
 import { workspaceIdRequest } from './legacyWorkspaceCompatibility';
-import { api } from './ApiClient';
-import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { invokePrepared } from './invokePrepared';
+import { getActiveSurfaceScope, isSurfaceChangedError, type SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { notifyMcpConfigChanged } from '@/infrastructure/mcp/configEvents';
 import { globalEventBus } from '@/infrastructure/event-bus';
 
@@ -1198,17 +1198,20 @@ export async function invokeExternalSourceCommand<T>(
   args: Record<string, unknown>,
 ): Promise<T> {
   try {
-    const request = args.request as Record<string, unknown> | undefined;
-    if (typeof request?.workspaceId === 'string') {
-      const { workspaceId, ...rest } = request;
-      const reference = await workspaceIdRequest(workspaceId, 'workspacePath');
-      // Old external-source DTOs reject extra SSH fields. Remote workspaces
-      // are unsupported by this local discovery surface on both versions.
-      const wire = 'workspaceId' in reference ? { workspaceId } : { workspacePath: reference.workspacePath };
-      args = { ...args, request: { ...rest, ...wire } };
-    }
-    return await api.invoke<T>(command, args);
+    return await invokePrepared<T>(command, async () => {
+      const request = args.request as Record<string, unknown> | undefined;
+      if (typeof request?.workspaceId === 'string') {
+        const { workspaceId, ...rest } = request;
+        const reference = await workspaceIdRequest(workspaceId, 'workspacePath');
+        // Old external-source DTOs reject extra SSH fields. Remote workspaces
+        // are unsupported by this local discovery surface on both versions.
+        const wire = 'workspaceId' in reference ? { workspaceId } : { workspacePath: reference.workspacePath };
+        return { ...args, request: { ...rest, ...wire } };
+      }
+      return args;
+    });
   } catch (error) {
+    if (isSurfaceChangedError(error)) throw error;
     const parsed = parseOperationError(error);
     let raw = typeof error === 'string'
       ? error
@@ -1251,7 +1254,9 @@ async function invokeSnapshot(
   command: string,
   args: Record<string, unknown>,
 ): Promise<ExternalSourceCatalogSnapshot> {
+  const scope = getActiveSurfaceScope();
   await invokeExternalSourceCommand<unknown>(command, args);
+  scope.assertCurrent('refresh external source catalog');
   const request = args.request && typeof args.request === 'object'
     ? args.request as Record<string, unknown>
     : {};
@@ -1297,9 +1302,11 @@ function legacySurfaceSnapshot(catalog: ExternalSourceCatalogSnapshot): External
 async function invokeCompatibleSurfaceSnapshot(
   args: Record<string, unknown>,
 ): Promise<ExternalSourceSurfaceSnapshot> {
+  const scope = getActiveSurfaceScope();
   try {
     return await invokeSurfaceSnapshot('get_external_source_control_snapshot', args);
   } catch (error) {
+    scope.assertCurrent('negotiate external source catalog');
     if (!(error instanceof ExternalSourceApiError) || error.code !== 'incompatible_version') {
       throw error;
     }
@@ -1339,7 +1346,8 @@ function controlRequest(
   };
 }
 
-function emitExternalAgentCatalogUpdated(workspaceId?: string) {
+function emitExternalAgentCatalogUpdated(scope: SurfaceScope, workspaceId?: string) {
+  scope.assertCurrent('publish external agent catalog update');
   globalEventBus.emit('mode:config:updated', {
     reason: 'external-agent-catalog-updated',
     workspaceId: normalizeOptionalWorkspaceId(workspaceId),
@@ -1394,6 +1402,7 @@ export const externalSourcesAPI = {
   },
 
   async getDiscoverySnapshot(workspaceId?: string, forceRefresh = false): Promise<ExternalSourceCatalogSnapshot> {
+    const scope = getActiveSurfaceScope();
     try {
       const value = await invokeExternalSourceCommand<{
         schemaVersion: number;
@@ -1432,6 +1441,7 @@ export const externalSourcesAPI = {
         },
       };
     } catch (error) {
+      scope.assertCurrent('negotiate external source discovery');
       if (!(error instanceof ExternalSourceApiError) || error.code !== 'incompatible_version') throw error;
       // Old hosts remain viewable, but never receive the new mutation.
       return this.getSnapshot(workspaceId, forceRefresh);
@@ -1439,6 +1449,7 @@ export const externalSourcesAPI = {
   },
 
   async setAutomaticDiscovery(workspaceId: string | undefined, enabled: boolean, expectedPreferenceRevision: number) {
+    const scope = getActiveSurfaceScope();
     const path = normalizeOptionalWorkspaceId(workspaceId);
     await invokeExternalSourceCommand('update_external_integration_policy_command', {
       request: {
@@ -1447,6 +1458,7 @@ export const externalSourcesAPI = {
           change: { operation: 'set_automatic_discovery', enabled } },
       },
     });
+    scope.assertCurrent('refresh external source discovery');
     return this.getDiscoverySnapshot(workspaceId);
   },
 
@@ -1552,6 +1564,7 @@ export const externalSourcesAPI = {
     enabled: boolean,
     expectedPreferenceRevision: number,
   ) {
+    const scope = getActiveSurfaceScope();
     const normalizedWorkspaceId = normalizeOptionalWorkspaceId(workspaceId);
     try {
       const surface = await invokeSurfaceSnapshot('apply_external_source_control_action_command', {
@@ -1563,9 +1576,10 @@ export const externalSourcesAPI = {
           ),
         },
       });
-      emitExternalAgentCatalogUpdated(workspaceId);
+      emitExternalAgentCatalogUpdated(scope, workspaceId);
       return surface.catalog;
     } catch (error) {
+      scope.assertCurrent('negotiate external source mutation');
       if (!(error instanceof ExternalSourceApiError) || error.code !== 'incompatible_version') {
         throw error;
       }
@@ -1577,7 +1591,7 @@ export const externalSourcesAPI = {
           expectedPreferenceRevision,
         },
       });
-      emitExternalAgentCatalogUpdated(workspaceId);
+      emitExternalAgentCatalogUpdated(scope, workspaceId);
       return catalog;
     }
   },
@@ -1675,6 +1689,7 @@ export const externalSourcesAPI = {
     expectedPreferenceRevision: number,
     decisionKey: string,
   ) {
+    const scope = getActiveSurfaceScope();
     const catalog = await invokeSnapshot('set_external_subagent_activation_command', {
       request: {
         workspaceId: normalizeOptionalWorkspaceId(workspaceId),
@@ -1685,7 +1700,7 @@ export const externalSourcesAPI = {
         decisionKey,
       },
     });
-    emitExternalAgentCatalogUpdated(workspaceId);
+    emitExternalAgentCatalogUpdated(scope, workspaceId);
     return catalog;
   },
 
@@ -1696,6 +1711,7 @@ export const externalSourcesAPI = {
     expectedSubagentGeneration: number,
     expectedPreferenceRevision: number,
   ) {
+    const scope = getActiveSurfaceScope();
     const catalog = await invokeSnapshot('set_external_subagents_enabled_command', {
       request: {
         workspaceId: normalizeOptionalWorkspaceId(workspaceId),
@@ -1705,7 +1721,7 @@ export const externalSourcesAPI = {
         expectedPreferenceRevision,
       },
     });
-    emitExternalAgentCatalogUpdated(workspaceId);
+    emitExternalAgentCatalogUpdated(scope, workspaceId);
     return catalog;
   },
 
@@ -1716,6 +1732,7 @@ export const externalSourcesAPI = {
     expectedSubagentGeneration: number,
     expectedPreferenceRevision: number,
   ) {
+    const scope = getActiveSurfaceScope();
     const catalog = await invokeSnapshot('set_external_subagent_model_binding_command', {
       request: {
         workspaceId: normalizeOptionalWorkspaceId(workspaceId),
@@ -1725,7 +1742,7 @@ export const externalSourcesAPI = {
         expectedPreferenceRevision,
       },
     });
-    emitExternalAgentCatalogUpdated(workspaceId);
+    emitExternalAgentCatalogUpdated(scope, workspaceId);
     return catalog;
   },
 
@@ -1737,6 +1754,7 @@ export const externalSourcesAPI = {
     expectedSubagentGeneration: number,
     expectedPreferenceRevision: number,
   ) {
+    const scope = getActiveSurfaceScope();
     const catalog = await invokeSnapshot('choose_external_subagent_conflict_command', {
       request: {
         workspaceId: normalizeOptionalWorkspaceId(workspaceId),
@@ -1747,7 +1765,7 @@ export const externalSourcesAPI = {
         expectedPreferenceRevision,
       },
     });
-    emitExternalAgentCatalogUpdated(workspaceId);
+    emitExternalAgentCatalogUpdated(scope, workspaceId);
     return catalog;
   },
 
@@ -1813,11 +1831,12 @@ export const externalSourcesAPI = {
     workspaceId: string | undefined,
     mutation: ExternalIntegrationPolicyMutation,
   ) {
+    const scope = getActiveSurfaceScope();
     const catalog = await invokeSnapshot(
       'update_external_integration_policy_command',
       { request: { workspaceId: normalizeOptionalWorkspaceId(workspaceId), mutation } },
     );
-    emitExternalAgentCatalogUpdated(workspaceId);
+    emitExternalAgentCatalogUpdated(scope, workspaceId);
     return catalog;
   },
 

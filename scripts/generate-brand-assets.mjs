@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { canonicalizeIcns } from './icns-container.mjs';
+import { COMPOSER_ICON, readMacosFallback } from './macos-icon-assets.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(SCRIPT_DIR, '..');
@@ -199,11 +199,10 @@ async function createAdaptiveForeground(applicationMark, size) {
     .toBuffer();
 }
 
-async function generateTauriContainers(applicationIcon, renderIcon) {
+async function generateWindowsIcon(applicationIcon, renderIcon) {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'openbitfun-tauri-icons-'));
   const inputPath = path.join(tempDir, 'openbitfun-app-icon.png');
   const tauriCliPath = path.join(ROOT_DIR, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
-
   try {
     await writeFile(inputPath, applicationIcon);
     execFileSync(
@@ -229,46 +228,7 @@ async function generateTauriContainers(applicationIcon, renderIcon) {
       icoOffset += png.length;
     }
 
-    // Let Tauri encode legacy RGB/mask chunks from the same application
-    // artwork; modern PNG representations use the matching exported sizes.
-    const icnsTemplate = await readFile(path.join(tempDir, 'icon.icns'));
-    const legacyChunks = new Map();
-    for (const [size, types] of [[16, ['is32', 's8mk']], [32, ['il32', 'l8mk']]]) {
-      const smallInput = path.join(tempDir, `input-${size}.png`);
-      const smallOutput = path.join(tempDir, `legacy-${size}`);
-      await writeFile(smallInput, await renderIcon(size));
-      execFileSync(process.execPath,
-        [tauriCliPath, 'icon', smallInput, '--output', smallOutput],
-        { cwd: ROOT_DIR, stdio: 'ignore', windowsHide: true });
-      const smallIcns = await readFile(path.join(smallOutput, 'icon.icns'));
-      for (let offset = 8; offset < smallIcns.length;) {
-        const length = smallIcns.readUInt32BE(offset + 4);
-        const type = smallIcns.toString('ascii', offset, offset + 4);
-        if (types.includes(type)) legacyChunks.set(type, smallIcns.subarray(offset, offset + length));
-        offset += length;
-      }
-    }
-    const icnsChunks = [];
-    for (let offset = 8; offset < icnsTemplate.length;) {
-      const length = icnsTemplate.readUInt32BE(offset + 4);
-      const chunk = icnsTemplate.subarray(offset, offset + length);
-      if (chunk.subarray(8, 16).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) {
-        const { width } = await sharp(chunk.subarray(8)).metadata();
-        const png = await renderIcon(width);
-        const header = Buffer.from(chunk.subarray(0, 8));
-        header.writeUInt32BE(png.length + 8, 4);
-        icnsChunks.push(Buffer.concat([header, png]));
-      } else {
-        icnsChunks.push(legacyChunks.get(chunk.toString('ascii', 0, 4)) ?? chunk);
-      }
-      offset += length;
-    }
-    const icnsHeader = Buffer.from(icnsTemplate.subarray(0, 8));
-    icnsHeader.writeUInt32BE(8 + icnsChunks.reduce((sum, chunk) => sum + chunk.length, 0), 4);
-    return {
-      ico: Buffer.concat([icoDirectory, ...icoFrames]),
-      icns: canonicalizeIcns(Buffer.concat([icnsHeader, ...icnsChunks])),
-    };
+    return Buffer.concat([icoDirectory, ...icoFrames]);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -282,15 +242,17 @@ async function removeLegacyApplicationAssets() {
 }
 
 async function generateBrandAssets() {
+  const applicationMark = await createApplicationMark(await normalizePng(SOURCE_APP_MARK));
+  await writePng(path.join(COMPOSER_ICON, 'Assets/Mark.png'), await resizePng(applicationMark, APP_ICON_SIZE));
+  if (process.argv.includes('--macos-source-only')) return;
+  const macosFallback = readMacosFallback();
   const svg = await readFile(SOURCE_SVG, 'utf8');
-  const [darkMark, lightMark, applicationSourceMark] = await Promise.all([
+  const [darkMark, lightMark] = await Promise.all([
     renderMark(svg, BRAND_SIZE, '#202020'),
     renderMark(svg, BRAND_SIZE, '#e8e8e8'),
-    normalizePng(SOURCE_APP_MARK),
   ]);
   await writePng(SOURCE_MARKS.dark, darkMark);
   await writePng(SOURCE_MARKS.light, lightMark);
-  const applicationMark = await createApplicationMark(applicationSourceMark);
   const applicationIcon = await createApplicationIcon(applicationMark);
   const applicationIconLarge = await resizePng(applicationIcon, APP_ICON_SIZE);
   const darkMarkSmall = await renderMark(svg, 128, '#202020');
@@ -305,7 +267,7 @@ async function generateBrandAssets() {
     }
     return iconCache.get(size);
   };
-  const tauriContainers = await generateTauriContainers(applicationIconLarge, renderIcon);
+  const windowsIcon = await generateWindowsIcon(applicationIconLarge, renderIcon);
 
   const exportDir = outputPath('assets', 'brand', 'exports');
   await mkdir(exportDir, { recursive: true });
@@ -329,8 +291,8 @@ async function generateBrandAssets() {
       await renderIcon(size),
     );
   }
-  await writeFile(path.join(exportDir, 'openbitfun-app-icon.ico'), tauriContainers.ico);
-  await writeFile(path.join(exportDir, 'openbitfun-app-icon.icns'), tauriContainers.icns);
+  await writeFile(path.join(exportDir, 'openbitfun-app-icon.ico'), windowsIcon);
+  await writeFile(path.join(exportDir, 'openbitfun-app-icon.icns'), macosFallback);
 
   await writePng(outputPath('src', 'miniapp-market-web', 'public', 'assets', 'openbitfun-email-mark.png'), darkMarkSmall);
 
@@ -348,8 +310,8 @@ async function generateBrandAssets() {
 
   const desktopIconDir = outputPath('src', 'apps', 'desktop', 'icons');
   await writePng(path.join(desktopIconDir, 'openbitfun-app-icon.png'), applicationIconLarge);
-  await writePng(path.join(desktopIconDir, 'openbitfun-app-icon.ico'), tauriContainers.ico);
-  await writePng(path.join(desktopIconDir, 'openbitfun-app-icon.icns'), tauriContainers.icns);
+  await writePng(path.join(desktopIconDir, 'openbitfun-app-icon.ico'), windowsIcon);
+  await writePng(path.join(desktopIconDir, 'openbitfun-app-icon.icns'), macosFallback);
   for (const size of DESKTOP_HICOLOR_SIZES) {
     const icon = await renderIcon(size);
     await writePng(
@@ -376,8 +338,8 @@ async function generateBrandAssets() {
   await writePng(path.join(installerBrandDir, 'openbitfun-app-icon.png'), applicationIcon);
   const installerIconDir = outputPath('OpenBitFun-Installer', 'src-tauri', 'icons');
   await writePng(path.join(installerIconDir, 'openbitfun-app-icon.png'), applicationIconLarge);
-  await writePng(path.join(installerIconDir, 'openbitfun-app-icon.ico'), tauriContainers.ico);
-  await writePng(path.join(installerIconDir, 'openbitfun-app-icon.icns'), tauriContainers.icns);
+  await writePng(path.join(installerIconDir, 'openbitfun-app-icon.ico'), windowsIcon);
+  await writePng(path.join(installerIconDir, 'openbitfun-app-icon.icns'), macosFallback);
 
   for (const directory of [webBrandDir, installerBrandDir,
     outputPath('src', 'mobile-web', 'public', 'brand'),

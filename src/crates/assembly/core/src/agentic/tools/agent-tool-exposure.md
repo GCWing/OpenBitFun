@@ -73,6 +73,7 @@ Notes:
 | `ReadCanvas` | Direct | None | - |
 | `UpdateCanvas` | Direct | None | - |
 | `PatchCanvas` | Direct | None | - |
+| `ListWorkspaces` | Deferred | None | - |
 | `SessionControl` | Deferred | None | - |
 | `SessionMessage` | Deferred | None | - |
 | `SessionHistory` | Deferred | None | - |

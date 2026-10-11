@@ -109,7 +109,6 @@ pub fn standard_harness_tools() -> Vec<String> {
         "Glob".to_string(),
         "WebSearch".to_string(),
         "WebFetch".to_string(),
-        "TodoWrite".to_string(),
         // Memory tools back the memory read path that these modes receive in
         // their user context policy.
         "MemorySearch".to_string(),

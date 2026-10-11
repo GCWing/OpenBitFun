@@ -189,6 +189,13 @@ export class RemoteUiState {
       return sessionModelId;
     }
     if (currentSelectedModelId.length > 0) {
+      // A semantic selector stays semantic while the host can still resolve it,
+      // so the composer keeps showing the role that will actually run. The
+      // canonical value is returned, not the padded one that came in.
+      const semanticModelId = RemoteUiState.resolveSemanticModelId(catalog, currentSelectedModelId);
+      if (semanticModelId.length > 0) {
+        return semanticModelId;
+      }
       const exists = catalog.models.some((model: RemoteModelConfig) => {
         return model.id === currentSelectedModelId && model.enabled;
       });
@@ -197,6 +204,39 @@ export class RemoteUiState {
       }
     }
     return catalog.default_models.primary || catalog.default_models.fast || currentSelectedModelId;
+  }
+
+  /**
+   * Keeps a semantic selector (`primary` / `fast`) only while it resolves to an
+   * enabled model, mirroring the host's own selection semantics including the
+   * fast-to-primary fallback. Returns an empty string for anything else.
+   *
+   * This repeats `ConversationModelPresentationPolicy.resolveModel` because the
+   * service layer may not import the page policy layer. Both sides trim, so a
+   * padded selector or default resolves the same way in either one.
+   */
+  private static resolveSemanticModelId(catalog: RemoteModelCatalog, modelId: string): string {
+    const value = (modelId || '').trim();
+    const primary = (catalog.default_models.primary || '').trim();
+    if (value === 'primary') {
+      return RemoteUiState.hasEnabledModel(catalog, primary) ? value : '';
+    }
+    if (value === 'fast') {
+      const fast = (catalog.default_models.fast || '').trim();
+      if (RemoteUiState.hasEnabledModel(catalog, fast)) {
+        return value;
+      }
+      return RemoteUiState.hasEnabledModel(catalog, primary) ? value : '';
+    }
+    return '';
+  }
+
+  private static hasEnabledModel(catalog: RemoteModelCatalog, modelId: string): boolean {
+    const value = (modelId || '').trim();
+    if (value.length === 0) {
+      return false;
+    }
+    return catalog.models.some((model: RemoteModelConfig) => model.id === value && model.enabled);
   }
 
   static seedMessage(title: string): ChatMessage {

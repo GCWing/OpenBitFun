@@ -7,10 +7,7 @@ use crate::agentic::WorkspaceBinding;
 use crate::infrastructure::{get_path_manager_arc, PathManager};
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use log::debug;
-use openbitfun_services_core::workspace_identity::{
-    normalize_remote_workspace_path, remote_root_to_mirror_subpath,
-    sanitize_ssh_hostname_for_mirror,
-};
+use openbitfun_services_core::workspace_identity::normalize_remote_workspace_path;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -230,10 +227,7 @@ impl WorkspaceRuntimeService {
 
     fn remote_workspace_runtime_root(&self, ssh_host: &str, remote_root_norm: &str) -> PathBuf {
         self.path_manager
-            .product_home_dir()
-            .join("remote_ssh")
-            .join(sanitize_ssh_hostname_for_mirror(ssh_host))
-            .join(remote_root_to_mirror_subpath(remote_root_norm))
+            .remote_workspace_runtime_root(ssh_host, remote_root_norm)
     }
 }
 

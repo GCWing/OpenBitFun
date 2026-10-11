@@ -1,6 +1,6 @@
 [package]
 name = "openbitfun-installer"
-version = "1.0.3"
+version = "1.0.5"
 authors = ["OpenBitFun Team"]
 edition = "2021"
 description = "OpenBitFun Custom Installer - Modern branded installation experience"

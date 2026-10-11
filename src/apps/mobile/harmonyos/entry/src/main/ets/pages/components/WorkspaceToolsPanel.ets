@@ -6,16 +6,36 @@ import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { CARD, CONTENT_ON_ACTION, INK, MEDIA_BACKGROUND, MUTED, PAGE_BG, LINE, SOFT, TRANSPARENT } from './Theme';
 import { SheetCloseButton } from './SheetCloseButton';
+import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 
 @ComponentV2
 export struct WorkspaceToolsPanel {
   @Param state: WorkspaceToolsState = new WorkspaceToolsState();
   @Event onIntent: (intent: WorkspaceToolsIntent) => void = (_intent: WorkspaceToolsIntent) => {};
   private filesScroller: Scroller = new Scroller();
+  /**
+   * The sheet's own bottom edge, in vp. The panel is a full-height sheet, so
+   * its scrolling viewport runs to the screen edge and its rows roll under the
+   * navigation indicator; the tail spacer and the fixed bottom controls are
+   * what keep the bar clear.
+   */
+  @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
   @Monitor('state.directory', 'state.connectionId', 'state.sort')
   private onFileLocationChanged(): void {
     this.filesScroller.scrollEdge(Edge.Top);
   }
+
+  aboutToAppear(): void {
+    const context = this.getUIContext().getHostContext();
+    if (context) {
+      this.insets.bind(this.getUIContext(), context);
+    }
+  }
+
+  aboutToDisappear(): void {
+    this.insets.unbind();
+  }
+
   build() {
     Column({ space: 0 }) {
       Row({ space: 12 }) {
@@ -44,7 +64,7 @@ export struct WorkspaceToolsPanel {
         TabContent() { this.Files() }.tabBar(new SubTabBarStyle(RemoteI18n.t('workspaceTools.files')).labelStyle({ selectedColor: INK, unselectedColor: MUTED }).indicator({ color: INK }))
         TabContent() { this.Terminal() }.tabBar(new SubTabBarStyle(RemoteI18n.t('workspaceTools.terminal')).labelStyle({ selectedColor: INK, unselectedColor: MUTED }).indicator({ color: INK }))
       }.barHeight(50).onChange((index: number) => this.onIntent({ type: 'panel', tab: index })).layoutWeight(1)
-    }.padding({ left: 16, right: 16, bottom: 16 }).width('100%').height('100%').backgroundColor(PAGE_BG)
+    }.padding({ left: 16, right: 16 }).width('100%').height('100%').backgroundColor(PAGE_BG)
   }
   @Builder
   private Files() {
@@ -87,7 +107,7 @@ export struct WorkspaceToolsPanel {
       }
       if (this.state.error) { Text(this.state.error).fontColor(MUTED).fontSize(MobileDesignTypography.bodySmall.size) }
       if (this.state.busy) { LoadingProgress().width(24).height(24).color(MUTED) }
-    }.padding({ left: 20, right: 20, top: 20, bottom: 24 }).width('100%').backgroundColor(CARD)
+    }.padding({ left: 20, right: 20, top: 20, bottom: this.insets.bottomPadding(24) }).width('100%').backgroundColor(CARD)
   }
   @Builder
   private FileDirectory() {
@@ -156,14 +176,25 @@ export struct WorkspaceToolsPanel {
           }
         }, (entry: WorkspaceFileEntry) => entry.path)
         if (this.state.hasMore) { ListItem() { Button(RemoteI18n.t('workspaceTools.more')).fontColor(INK).backgroundColor(TRANSPARENT).height(44).onClick(() => this.onIntent({ type: 'more' })) } }
+        // The list's tail spacer: the strip plus the panel's own breathing, so
+        // the viewport can run to the screen edge — rows roll under the
+        // navigation indicator while they are moving — while the last row
+        // still rests above the bar.
+        ListItem() {
+          Column().width('100%').height(this.insets.tailSpacing(16))
+        }
       }.divider({ strokeWidth: 1, color: LINE }).border({ width: 1, color: LINE }).borderRadius(8).layoutWeight(1).enabled(!this.state.busy)
-      if (this.state.downloadStatus) { Text(this.state.downloadStatus).fontColor(MUTED).fontSize(MobileDesignTypography.bodySmall.size) }
-      if (this.state.uploadPending) {
-        Progress({ value: this.state.uploadProgress, total: 100, type: ProgressType.Linear })
-        Row({ space: 8 }) {
-          Button(RemoteI18n.t('workspaceTools.resumeUpload')).fontColor(INK).backgroundColor(PAGE_BG).onClick(() => this.onIntent({ type: 'upload-resume' }))
-          Button(RemoteI18n.t('workspaceTools.cancelUpload')).fontColor(INK).backgroundColor(PAGE_BG).onClick(() => this.onIntent({ type: 'upload-cancel' }))
-        }.enabled(!this.state.busy)
+      if (this.state.downloadStatus || this.state.uploadPending) {
+        Column({ space: 8 }) {
+          if (this.state.downloadStatus) { Text(this.state.downloadStatus).fontColor(MUTED).fontSize(MobileDesignTypography.bodySmall.size) }
+          if (this.state.uploadPending) {
+            Progress({ value: this.state.uploadProgress, total: 100, type: ProgressType.Linear })
+            Row({ space: 8 }) {
+              Button(RemoteI18n.t('workspaceTools.resumeUpload')).fontColor(INK).backgroundColor(PAGE_BG).onClick(() => this.onIntent({ type: 'upload-resume' }))
+              Button(RemoteI18n.t('workspaceTools.cancelUpload')).fontColor(INK).backgroundColor(PAGE_BG).onClick(() => this.onIntent({ type: 'upload-cancel' }))
+            }.enabled(!this.state.busy)
+          }
+        }.width('100%').margin({ bottom: this.insets.bottomPadding(16) })
       }
       }.padding({ top: 12 }).width('100%').height('100%')
       .bindSheet(this.state.fileAction.length > 0, this.FileActionForm(), { height: SheetSize.FIT_CONTENT, showClose: false, backgroundColor: PAGE_BG, keyboardAvoidMode: SheetKeyboardAvoidMode.TRANSLATE_AND_RESIZE,
@@ -209,9 +240,15 @@ export struct WorkspaceToolsPanel {
             .onClick(() => this.onIntent({ type: 'editor-edit' }))
         }
       }.width('100%').justifyContent(FlexAlign.End)
+      // The editor is a WebView: its scrolling and its padding live inside the
+      // web renderer, so the panel cannot end it in an ArkUI tail spacer the
+      // way the file list does. The card is therefore fixed content, like the
+      // terminal key row: its bottom edge stops at the navigation bar's top,
+      // while the sheet's own fill still reaches the screen edge below it.
       WorkspaceFileEditorView({ content: this.state.content, editing: this.state.editing,
         lineNumbers: this.state.lineNumbers, onIntent: this.onIntent }).layoutWeight(1)
         .border({ width: 1, color: LINE }).borderRadius(8).backgroundColor(CARD)
+        .margin({ bottom: this.insets.bottomPadding(16) })
     }.padding({ top: 12 }).width('100%').height('100%')
   }
   private terminalOptions(): SelectOption[] {
@@ -263,6 +300,9 @@ export struct WorkspaceToolsPanel {
           .accessibilityText(RemoteI18n.t('workspaceTools.closeTerminal'))
           .onClick(() => this.onIntent({ type: 'terminal-close' }))
       }.width('100%').enabled(this.state.terminalId.length > 0)
+        // The key row is the tab's fixed bottom control; it keeps the strip
+        // clear so the terminal above it ends above the navigation bar.
+        .margin({ bottom: this.insets.bottomPadding(16) })
       }
     }.padding({ top: 8 }).width('100%').height('100%')
   }

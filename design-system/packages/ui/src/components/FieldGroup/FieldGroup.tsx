@@ -6,6 +6,7 @@ import {
 } from "react";
 import { classNames } from "../../internal/classNames";
 import { FieldSurfaceContext, type FieldSurface } from "../../internal/fieldSurface";
+import { OverflowText } from "../../primitives/OverflowText";
 import styles from "./FieldGroup.module.css";
 
 export type FieldGroupAppearance = "plain" | "subtle";
@@ -18,6 +19,8 @@ export interface FormSectionProps
   extends Omit<HTMLAttributes<HTMLElement>, "title"> {
   actions?: ReactNode;
   description?: ReactNode;
+  /** Keep compact section summaries beside the title instead of below it. */
+  descriptionLayout?: "stacked" | "inline";
   headingAs?: FormSectionHeading;
   leading?: ReactNode;
   title?: ReactNode;
@@ -41,6 +44,7 @@ export const FormSection = forwardRef<HTMLElement, FormSectionProps>(
     children,
     className,
     description,
+    descriptionLayout = "stacked",
     headingAs = "h2",
     leading,
     title,
@@ -51,6 +55,7 @@ export const FormSection = forwardRef<HTMLElement, FormSectionProps>(
         {...props}
         className={classNames(styles.section, className)}
         data-openbitfun-component="form-section"
+        data-description-layout={descriptionLayout}
         ref={ref}
       >
         {(title !== undefined && title !== null)
@@ -73,11 +78,15 @@ export const FormSection = forwardRef<HTMLElement, FormSectionProps>(
                             { className: styles.title, "data-openbitfun-part": "title" },
                             title,
                           )}
-                          {description !== undefined && description !== null && (
+                          {description !== undefined && description !== null && (descriptionLayout === "inline" ? (
+                            <OverflowText as="div" className={styles.description} data-openbitfun-part="description">
+                              {description}
+                            </OverflowText>
+                          ) : (
                             <div className={styles.description} data-openbitfun-part="description">
                               {description}
                             </div>
-                          )}
+                          ))}
                         </div>
                       ) : null}
                   </div>

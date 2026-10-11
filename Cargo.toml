@@ -41,7 +41,6 @@ members = [
     "src/crates/execution/agent-runtime",
     "src/crates/execution/agent-workflows",
     "src/crates/execution/agent-stream",
-    "src/crates/execution/tool-call-jsonrepair",
     "src/crates/execution/tool-contracts",
     "src/crates/execution/plugin-runtime-client",
     "src/crates/execution/runtime-services",
@@ -56,13 +55,14 @@ members = [
 exclude = [
     "OpenBitFun-Installer/src-tauri",
     "third_party/eioc",
+    "third_party/tao",
 ]
 
 resolver = "2"
 
 # Shared package metadata — single source of truth for version
 [workspace.package]
-version = "1.0.3" # x-release-please-version
+version = "1.0.5" # x-release-please-version
 authors = ["OpenBitFun Team"]
 edition = "2021"
 
@@ -96,10 +96,13 @@ futures-util = "0.3.31"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+jsonrepair-rs = { version = "0.2.6", default-features = false }
 serde_yaml = "0.9"
 
 # Document conversion
-anydoc = "=0.1.6"
+anydoc = "=0.2.4"
+pdf-inspector = { version = "1.17.0", default-features = false }
+roxmltree = { version = "0.21.1", default-features = false }
 
 # TypeScript binding generation (schema-first; gated by per-crate `ts` features)
 ts-rs = { version = "12", features = ["serde-json-impl", "no-serde-warnings"] }
@@ -302,6 +305,9 @@ rustls = { version = "0.23", default-features = false }
 [patch.crates-io]
 # Keep Socket.IO on the product-owned ring provider; see the patch note.
 eioc = { path = "third_party/eioc" }
+# Restore macOS traffic-light geometry after the queued native style reset.
+# See third_party/tao/OPENBITFUN-PATCH.md for the upstream source and removal condition.
+tao = { path = "third_party/tao" }
 # Tauri 2.11 loses keyboard focus for child webviews after Windows reactivates
 # an `unstable` multi-webview window. Use the upstream fix until released;
 # this revision also adopts tao 0.36, which includes the Windows input deadlock fix.

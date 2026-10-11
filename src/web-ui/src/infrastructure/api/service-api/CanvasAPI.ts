@@ -1,4 +1,4 @@
-import { api } from './ApiClient';
+import { invokePrepared } from './invokePrepared';
 import { workspaceScopedRequest } from './legacyWorkspaceCompatibility';
 
 export interface CanvasStateValue {
@@ -90,23 +90,23 @@ async function canvasRequest<T extends CanvasStateRequest>(request: T) {
 
 class CanvasAPI {
   async loadArtifact(request: CanvasStateRequest): Promise<CanvasArtifactResponse> {
-    return api.invoke('load_canvas_artifact', { request: await canvasRequest(request) });
+    return invokePrepared('load_canvas_artifact', async () => ({ request: await canvasRequest(request) }));
   }
 
   async loadState(request: CanvasStateRequest): Promise<CanvasStateResponse> {
-    return api.invoke('load_canvas_state', { request: await canvasRequest(request) });
+    return invokePrepared('load_canvas_state', async () => ({ request: await canvasRequest(request) }));
   }
 
   async saveState(request: SaveCanvasStateRequest): Promise<CanvasStateResponse> {
-    return api.invoke('save_canvas_state', { request: await canvasRequest(request) });
+    return invokePrepared('save_canvas_state', async () => ({ request: await canvasRequest(request) }));
   }
 
   async reportRuntimeError(request: ReportCanvasRuntimeErrorRequest): Promise<CanvasArtifactResponse> {
-    return api.invoke('report_canvas_runtime_error', { request: await canvasRequest(request) });
+    return invokePrepared('report_canvas_runtime_error', async () => ({ request: await canvasRequest(request) }));
   }
 
   async reportRuntimeReady(request: ReportCanvasRuntimeReadyRequest): Promise<CanvasArtifactResponse> {
-    return api.invoke('report_canvas_runtime_ready', { request: await canvasRequest(request) });
+    return invokePrepared('report_canvas_runtime_ready', async () => ({ request: await canvasRequest(request) }));
   }
 }
 

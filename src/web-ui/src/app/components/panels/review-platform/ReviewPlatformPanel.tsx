@@ -66,6 +66,7 @@ import {
   withGitRepositoryTrustRecovery,
 } from '@/shared/services/gitTrustService';
 import type { PullRequestContext } from '@/shared/types/context';
+import { getActiveSurfaceId, onSurfaceActivated, surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
 import {
   currentPullRequestReviewStatusText,
   effectivePullRequestReviewFreshness,
@@ -169,6 +170,14 @@ const detailPageCache = new Map<string, DetailPageCacheEntry>();
 const reviewLaunchesInFlight = new Set<string>();
 const EMPTY_REVIEW_THREADS: ReviewPlatformThread[] = [];
 
+// A device switch starts from fresh provider reads; a late response from the
+// departed device can only land under that device's own keys.
+onSurfaceActivated(() => {
+  snapshotCache.clear();
+  detailCache.clear();
+  detailPageCache.clear();
+});
+
 function detailPageInfo(pagination: ReviewPlatformPagination, itemCount: number): PageInfo {
   const pageIndex = Math.max(0, (pagination.page || 1) - 1);
   const perPage = Math.max(1, pagination.perPage || itemCount || 1);
@@ -190,22 +199,27 @@ function detailPageInfo(pagination: ReviewPlatformPagination, itemCount: number)
   };
 }
 
-// Caches are keyed by the owning workspace ID, never by path: two workspaces
-// (for example a local checkout and a remote one) may share a root path.
+// Caches are keyed by the rendered device and the owning workspace ID, never
+// by path: two workspaces (for example a local checkout and a remote one) may
+// share a root path, and same-path local workspaces share an ID across devices.
+function surfaceCachePrefix(): string {
+  return `${JSON.stringify(getActiveSurfaceId())}::`;
+}
+
 function snapshotCacheKey(workspaceId: string, remoteId: string | null, page: number, perPage: number, mode: 'list' | 'context', state: ListStateFilter): string {
-  return `${workspaceId}::${remoteId ?? 'default'}::${page}::${perPage}::${mode}::${state}`;
+  return `${surfaceCachePrefix()}${workspaceId}::${remoteId ?? 'default'}::${page}::${perPage}::${mode}::${state}`;
 }
 
 function detailCacheKey(workspaceId: string, remoteId: string, pullRequestId: string): string {
-  return `${workspaceId}::${remoteId}::${pullRequestId}`;
+  return `${surfaceCachePrefix()}${workspaceId}::${remoteId}::${pullRequestId}`;
 }
 
 function detailPageCacheKey(workspaceId: string, remoteId: string, pullRequestId: string, section: ReviewPlatformDetailSection, page: number, perPage: number): string {
-  return `${workspaceId}::${remoteId}::${pullRequestId}::${section}::${page}::${perPage}`;
+  return `${detailCacheKey(workspaceId, remoteId, pullRequestId)}::${section}::${page}::${perPage}`;
 }
 
 function clearDetailPageCacheForPullRequest(workspaceId: string, remoteId: string, pullRequestId: string): void {
-  const prefix = `${workspaceId}::${remoteId}::${pullRequestId}::`;
+  const prefix = `${detailCacheKey(workspaceId, remoteId, pullRequestId)}::`;
   for (const key of detailPageCache.keys()) {
     if (key.startsWith(prefix)) {
       detailPageCache.delete(key);
@@ -1601,11 +1615,11 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
         return samePullRequestIdentity(evidence?.pullRequest, freshIdentity)
           && pullRequestReviewFreshness(evidence, freshPullRequest) === 'current';
       });
-      sharedLaunchKey = pullRequestReviewLaunchKey({
+      sharedLaunchKey = surfaceScopedKey(getActiveSurfaceId(), pullRequestReviewLaunchKey({
         ...freshIdentity,
         baseRevision: freshPullRequest.baseRevision,
         headRevision: freshPullRequest.headRevision,
-      });
+      }));
       const cacheKey = detailCacheKey(workspaceId, selectedRemote.id, selectedPr.id);
       setDetail((current) => current ? { ...current, ...reviewTarget.pullRequest } : current);
       setSnapshot((current) => ({

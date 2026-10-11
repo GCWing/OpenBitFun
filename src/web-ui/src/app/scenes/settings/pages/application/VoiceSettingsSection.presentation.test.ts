@@ -34,7 +34,7 @@ describe('VoiceSettingsSection status presentation', () => {
     expect(summaryRule).toContain('font-size: var(--openbitfun-type-body-sm-font-size)');
     expect(summaryRule).toContain('line-height: var(--openbitfun-type-body-sm-line-height)');
     expect(summaryRule).toContain('text-align: start');
-    expect(warningRule).toContain('color: var(--openbitfun-color-status-warning-emphasis)');
+    expect(warningRule).toContain('color: inherit');
     expect(modelRule).toContain('color: var(--openbitfun-color-content-primary)');
     expect(modelRule).toContain('font-weight: var(--openbitfun-type-label-selected-font-weight)');
   });

@@ -670,8 +670,13 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     onClose();
   }, [onAddImage, onClose, onRetrySkills, onSelectContext, onSelectSkill, onSelectMcp, openSource]);
 
-  const handleItemClick = useCallback((selection: ContextPickerItem) => {
-    if (selection.kind === 'file' && selection.item.isDirectory && !isSearchMode) {
+  const handleItemClick = useCallback((selection: ContextPickerItem, event: React.MouseEvent<HTMLElement>) => {
+    // Browsing keeps its own affordance: the trailing chevron opens a directory,
+    // while a row click accepts the row exactly like Enter. Both input devices
+    // therefore select a directory without leaving the current level.
+    const clickedEnterAffordance = event.target instanceof Element
+      && Boolean(event.target.closest('[data-openbitfun-part="indicator"]'));
+    if (selection.kind === 'file' && selection.item.isDirectory && !isSearchMode && clickedEnterAffordance) {
       enterDirectory(selection.item);
       return;
     }
@@ -712,13 +717,13 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
       }
       case 'Enter':
       case 'Tab': {
+        // Accepting a row always selects it, including a directory. Browsing a
+        // directory stays on the explicitly navigational keys (ArrowRight in,
+        // ArrowLeft out) so acceptance and navigation never share one key.
         event.preventDefault();
         event.stopPropagation();
         const selected = displayItems[selectedIndex];
-        if (selected) {
-          if (event.key === 'Tab' && selected.kind !== 'source') handleSelect(selected);
-          else handleItemClick(selected);
-        }
+        if (selected) handleSelect(selected);
         break;
       }
       case 'Escape':
@@ -727,7 +732,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
         onClose();
         break;
     }
-  }, [canNavigateBack, displayItems, enterDirectory, goBack, handleItemClick, handleSelect, isOpen, isSearchMode, onClose, openSource, selectedIndex]);
+  }, [canNavigateBack, displayItems, enterDirectory, goBack, handleSelect, isOpen, isSearchMode, onClose, openSource, selectedIndex]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -893,6 +898,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
                     : 'chatInput.boostSkillsLoadFailed')
                   : session?.sessionName ?? skill?.name ?? mcp?.label ?? file?.name;
               const skillDescription = skill?.description?.trim() || undefined;
+              const isEnterableDirectory = Boolean(file?.isDirectory) && !isSearchMode;
               return (
                 <ListboxOption data-overflow-trigger
                   active={index === selectedIndex}
@@ -903,8 +909,13 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
                   data-openbitfun-context-kind={selection.kind === 'source' || selection.kind === 'action'
                     ? selection.id
                     : selection.kind === 'mcp' ? `mcp-${selection.item.kind}` : selection.kind}
-                  indicator={selection.kind === 'source' || (file?.isDirectory && !isSearchMode)
-                    ? <Icon name="chevron-right" size="lg" aria-hidden="true" />
+                  indicator={selection.kind === 'source' || isEnterableDirectory
+                    ? <Icon
+                        aria-hidden="true"
+                        name="chevron-right"
+                        size="lg"
+                        title={isEnterableDirectory ? t('contextPicker.openDirectory') : undefined}
+                      />
                     : undefined}
                   leading={selection.kind === 'source'
                     ? selection.id === 'mcp'
@@ -943,7 +954,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
                     ?? (file?.referenceStableKey
                       ? file.referenceDescription || file.path
                       : undefined)}
-                  onClick={() => handleItemClick(selection)}
+                  onClick={(event) => handleItemClick(selection, event)}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     if (file?.isDirectory) enterDirectory(file);

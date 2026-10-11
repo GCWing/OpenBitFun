@@ -75,22 +75,16 @@ pub async fn resolve_workspace_session_identity(
 
     None
 }
-/// Local directory where persisted sessions for this remote workspace root are stored.
+/// Runtime directory for this remote workspace root.
 pub fn remote_workspace_runtime_root(ssh_host: &str, remote_root_norm: &str) -> PathBuf {
-    openbitfun_services_integrations::remote_ssh::remote_workspace_runtime_root(
-        get_path_manager_arc().remote_ssh_mirror_root_dir(),
-        ssh_host,
-        remote_root_norm,
-    )
+    get_path_manager_arc().remote_workspace_runtime_root(ssh_host, remote_root_norm)
 }
 
-/// Local directory where persisted sessions for this remote workspace root are stored.
+/// Runtime sessions directory for this remote workspace root.
 pub fn remote_workspace_session_mirror_dir(ssh_host: &str, remote_root_norm: &str) -> PathBuf {
-    openbitfun_services_integrations::remote_ssh::remote_workspace_session_mirror_dir(
-        get_path_manager_arc().remote_ssh_mirror_root_dir(),
-        ssh_host,
-        remote_root_norm,
-    )
+    WorkspaceRuntimeService::new(get_path_manager_arc())
+        .context_for_remote_workspace(ssh_host, remote_root_norm)
+        .sessions_dir
 }
 
 /// Canonical local root [`PathBuf`] plus normalized string form (single `canonicalize` call).
@@ -296,7 +290,7 @@ impl RemoteWorkspaceStateManager {
 
     // ── Session storage ────────────────────────────────────────────
 
-    /// Local mirror directory for persisted sessions (`~/.openbitfun/remote_ssh/.../sessions`).
+    /// Runtime directory for persisted sessions (`~/.openbitfun/projects/<24-hex>/sessions`).
     pub fn get_remote_session_mirror_path(
         &self,
         ssh_host: &str,
@@ -306,8 +300,7 @@ impl RemoteWorkspaceStateManager {
     }
 
     /// Map a workspace path to the final on-disk sessions directory.
-    /// Local roots map to `~/.openbitfun/projects/<workspace-slug>/sessions`;
-    /// remote roots map to the local SSH mirror sessions dir.
+    /// Local and remote roots map to their compact runtime-key sessions dir.
     pub async fn get_effective_session_path(
         &self,
         workspace_path: &str,

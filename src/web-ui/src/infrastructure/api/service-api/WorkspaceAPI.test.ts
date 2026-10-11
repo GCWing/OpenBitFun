@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { workspaceAPI } from './WorkspaceAPI';
+import { activateSurface, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 
 const invokeMock = vi.hoisted(() => vi.fn());
 const listenMock = vi.hoisted(() => vi.fn(() => vi.fn()));
@@ -19,6 +20,7 @@ vi.mock('./ApiClient', () => ({
 
 describe('WorkspaceAPI', () => {
   beforeEach(() => {
+    activateSurface('local');
     invokeMock.mockReset();
     invokeMock.mockResolvedValue('file content');
     listenMock.mockReset();
@@ -246,6 +248,27 @@ describe('WorkspaceAPI', () => {
     expect(invokeMock.mock.calls.some(([command]) => (
       command === 'start_search_filenames_stream'
     ))).toBe(false);
+  });
+
+  it('cancels streaming on device activation without dispatching or cancelling on the next host', async () => {
+    streamCapabilityMock.supported = true;
+    let finish!: () => void;
+    waitForListenerRegistrationsMock.mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve; }));
+    const signal = new AbortController();
+    const onProgress = vi.fn();
+    const pending = workspaceAPI.searchFilenamesOnlyStreamDetailed(
+      'same-workspace', 'file', false, false, false, 'same-search', 30, true, { onProgress }, signal.signal,
+    );
+    const rejection = expect(pending).rejects.toSatisfy(isSurfaceChangedError);
+    await vi.waitFor(() => expect(waitForListenerRegistrationsMock).toHaveBeenCalledOnce());
+    activateSurface('peer-with-identical-workspace');
+    signal.abort();
+    finish();
+    await rejection;
+    await Promise.resolve();
+    expect(invokeMock).not.toHaveBeenCalled();
+    for (const result of listenMock.mock.results) expect(result.value).toHaveBeenCalledOnce();
+    expect(onProgress).not.toHaveBeenCalled();
   });
 
   it('resolves browser-dropped file paths through a structured host request', async () => {

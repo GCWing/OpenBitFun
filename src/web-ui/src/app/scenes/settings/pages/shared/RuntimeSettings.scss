@@ -139,18 +139,12 @@
     min-width: 0;
     min-height: 96px;
     padding: var(--openbitfun-space-2) var(--openbitfun-space-3);
-    border: 1px solid var(--openbitfun-color-border-default);
-    border-radius: var(--openbitfun-radius-md);
-    background: var(--openbitfun-color-surface-scene);
+    border: 0;
+    background: transparent;
     color: var(--openbitfun-color-content-primary);
     font: inherit;
     text-align: start;
     cursor: pointer;
-    transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-  }
-
-  &__pet-summary:hover {
-    background: var(--openbitfun-color-action-quiet-hover);
   }
 
   &__pet-summary:focus-visible {
@@ -190,10 +184,24 @@
   }
 
   &__pet-stack {
+    --_pet-stack-spread: 0px;
+    --_pet-stack-lift: 0px;
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    padding-inline: var(--openbitfun-space-1);
+    padding-inline: var(--openbitfun-space-3);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    &__pet-stack:hover {
+      --_pet-stack-spread: var(--openbitfun-space-2);
+      --_pet-stack-lift: var(--openbitfun-space-1);
+    }
+  }
+
+  &__pet-summary:focus-visible &__pet-stack {
+    --_pet-stack-spread: var(--openbitfun-space-2);
+    --_pet-stack-lift: var(--openbitfun-space-1);
   }
 
   &__pet-stack-card {
@@ -206,31 +214,26 @@
     border: 1px solid var(--openbitfun-color-border-default);
     border-radius: var(--openbitfun-radius-sm);
     background: var(--openbitfun-color-surface-scene);
-    transform: rotate(-6deg);
+    transform: translateX(calc(-1 * var(--_pet-stack-spread))) rotate(-6deg);
+    transition: transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
     & + & {
       margin-inline-start: -28px;
-      transform: rotate(-2deg);
+      transform: translateY(calc(-1 * var(--_pet-stack-lift))) rotate(-2deg);
     }
 
     &:last-child {
-      transform: rotate(4deg);
+      transform: translateX(var(--_pet-stack-spread)) rotate(4deg);
+    }
+
+    &:only-child {
+      transform: none;
     }
   }
 
   &__pet-stack-card &__pet-preview-sprite {
     width: 48px;
     height: 54px;
-  }
-
-  &__pet-summary-chevron {
-    flex: 0 0 auto;
-    color: var(--openbitfun-color-content-muted);
-    transition: transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-  }
-
-  &__pet-summary[aria-expanded='true'] &__pet-summary-chevron {
-    transform: rotate(180deg);
   }
 
   &__pet-gallery {
@@ -383,8 +386,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .openbitfun-runtime-settings {
-    &__pet-summary,
-    &__pet-summary-chevron,
+    &__pet-stack-card,
     &__pet-card-delete,
     &__pet-preview-sprite {
       animation: none;

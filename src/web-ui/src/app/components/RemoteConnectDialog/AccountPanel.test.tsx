@@ -152,6 +152,10 @@ it('does not offer an update check in a runtime that cannot install updates', as
   await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
   expect(container.textContent).toContain('accountLogin.relayFailureVersionRetired');
   expect(container.textContent).not.toContain('update.checkForUpdates');
+  // Without a banner action the section heading still offers a way forward.
+  const retryButtons = Array.from(container.querySelectorAll('button'))
+    .filter(node => node.textContent === 'accountLogin.retryConnect');
+  expect(retryButtons).toHaveLength(1);
 });
 
 it('offers a retry when the Relay is temporarily unavailable', async () => {
@@ -161,7 +165,10 @@ it('offers a retry when the Relay is temporarily unavailable', async () => {
   await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
   expect(container.textContent).toContain('accountLogin.relayFailureUnavailable');
   expect(container.textContent).not.toContain('502');
-  expect(container.textContent).toContain('accountLogin.retryConnect');
+  const retryButtons = Array.from(container.querySelectorAll('button'))
+    .filter(node => node.textContent === 'accountLogin.retryConnect');
+  expect(retryButtons).toHaveLength(1);
+  expect(retryButtons[0]!.closest('[data-openbitfun-part="error"]')).not.toBeNull();
 });
 
 async function retryConnection() {
@@ -440,4 +447,35 @@ it('still allows switching to a device whose compatibility flag is absent', asyn
   expect(peer).not.toBeNull();
   await act(async () => { peer!.click(); });
   expect(mocks.switchToDevice).toHaveBeenCalledWith('peer', 'Peer build');
+});
+
+it('groups the account and its devices into titled sections with fixed row columns', async () => {
+  mocks.accountConnectDevices.mockResolvedValue([]);
+  mocks.getDeviceInfo.mockReset().mockResolvedValue({ device_id: 'local' });
+  mocks.accountListDevices.mockResolvedValue([
+    { device_id: 'local', device_name: 'My computer', online: true },
+    { device_id: 'peer', device_name: 'Peer build', online: false },
+  ]);
+  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  const titles = Array.from(container.querySelectorAll('.account-panel__section-title')).map(node => node.textContent);
+  expect(titles).toEqual(['accountLogin.accountSectionTitle', 'accountLogin.linkedDevices']);
+  const statuses = Array.from(container.querySelectorAll('.account-panel__device-status'))
+    .map(node => node.getAttribute('data-openbitfun-state'));
+  expect(statuses).toEqual(['online', 'offline']);
+  for (const row of container.querySelectorAll('[data-openbitfun-part="deviceCard"]')) {
+    const children = Array.from(row.children).map(node => node.className);
+    expect(children).toEqual([
+      'account-panel__device-select',
+      'account-panel__device-actions',
+      'account-panel__device-chevron',
+    ]);
+  }
+});
+
+it('shows the sign-in action inside the account section when signed out', async () => {
+  mocks.identity = { resolved: true, status: 'signed-out', me: null };
+  mocks.accountStatus.mockReset().mockResolvedValue({ logged_in: false });
+  await act(async () => { root.render(<AccountPanel onCloseDialog={() => {}} />); });
+  expect(container.querySelector('.account-panel__section-title')?.textContent).toBe('accountLogin.accountSectionTitle');
+  expect(container.querySelector('[data-openbitfun-part="form"]')?.textContent).toContain('accountLogin.login');
 });

@@ -266,8 +266,6 @@ fn option_requires_presentation_commit(option: &ProductCapabilityOption) -> bool
 fn config_path_invalidates_ai_client(path: &str) -> bool {
     [
         "ai.models",
-        "ai.default_models",
-        "ai.agent_model_defaults",
         "ai.stream_idle_timeout_secs",
         "ai.stream_ttft_timeout_secs",
         "ai.proxy",
@@ -710,6 +708,17 @@ pub(crate) async fn set_config_from_gui(
     let state = app.state::<AppState>();
     let previous_value = state.config_service.get_config(Some(path)).await.ok();
     let applied = apply_legacy_config_mutation(&state.config_service, path, value).await?;
+    if !applied.changed {
+        return Ok(json!({
+            "catalogDigest": openbitfun_product_domains::product_control::catalog()?.digest.clone(),
+            "configured": true,
+            "changedPaths": [],
+            "controlledBindings": applied.controlled_bindings,
+            "effectiveValue": applied.effective_value,
+            "revision": current_revision(),
+            "presentationSync": [],
+        }));
+    }
     let backend_effect_result =
         match apply_backend_config_effects(app, &state, path, &applied.effective_value).await {
             Ok(()) => {
@@ -1233,8 +1242,6 @@ mod tests {
         for path in [
             "ai.models",
             "ai.models.providers.openai",
-            "ai.default_models.primary",
-            "ai.agent_model_defaults",
             "ai.stream_idle_timeout_secs",
             "ai.stream_ttft_timeout_secs",
             "ai.proxy",
@@ -1247,6 +1254,9 @@ mod tests {
         assert!(!config_path_invalidates_ai_client(
             "ai.tool_execution_timeout_secs"
         ));
+        for path in ["ai.default_models.primary", "ai.agent_model_defaults.mode"] {
+            assert!(!config_path_invalidates_ai_client(path));
+        }
 
         let appearance = product_capability("setting.application.appearance")
             .unwrap()

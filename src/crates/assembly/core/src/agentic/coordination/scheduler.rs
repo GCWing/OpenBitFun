@@ -900,7 +900,10 @@ impl DialogScheduler {
             turn_id: Some(resolved_turn_id.clone()),
             agent_type: delivery.agent_type,
             workspace_path: delivery.workspace_path,
-            workspace_id: None,
+            workspace_id: self
+                .session_manager
+                .get_session(&delivery.session_id)
+                .and_then(|session| session.config.workspace_id),
             remote_connection_id: delivery.remote_connection_id,
             remote_ssh_host: delivery.remote_ssh_host,
             policy: DialogSubmissionPolicy::new(DialogTriggerSource::AgentSession, queue_priority),
@@ -1000,13 +1003,14 @@ impl DialogScheduler {
         user_message_metadata: Option<serde_json::Value>,
         image_contexts: Option<Vec<ImageContextData>>,
     ) -> Result<DialogSubmitOutcome, String> {
-        self.submit_with_prepended_messages(
+        self.submit_with_workspace_reference(
             session_id,
             user_input,
             original_user_input,
             turn_id,
             agent_type,
             workspace_path,
+            None,
             remote_connection_id,
             remote_ssh_host,
             policy,
@@ -1035,6 +1039,47 @@ impl DialogScheduler {
         prepended_messages: Vec<Message>,
         image_contexts: Option<Vec<ImageContextData>>,
     ) -> Result<DialogSubmitOutcome, String> {
+        let workspace_id = self
+            .session_manager
+            .get_session(&session_id)
+            .and_then(|session| session.config.workspace_id);
+        self.submit_with_workspace_reference(
+            session_id,
+            user_input,
+            original_user_input,
+            turn_id,
+            agent_type,
+            workspace_path,
+            workspace_id,
+            remote_connection_id,
+            remote_ssh_host,
+            policy,
+            reply_route,
+            user_message_metadata,
+            prepended_messages,
+            image_contexts,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn submit_with_workspace_reference(
+        &self,
+        session_id: String,
+        user_input: String,
+        original_user_input: Option<String>,
+        turn_id: Option<String>,
+        agent_type: String,
+        workspace_path: Option<String>,
+        workspace_id: Option<String>,
+        remote_connection_id: Option<String>,
+        remote_ssh_host: Option<String>,
+        policy: DialogSubmissionPolicy,
+        reply_route: Option<AgentSessionReplyRoute>,
+        user_message_metadata: Option<serde_json::Value>,
+        prepended_messages: Vec<Message>,
+        image_contexts: Option<Vec<ImageContextData>>,
+    ) -> Result<DialogSubmitOutcome, String> {
         let resolved_turn_id = turn_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let queued_turn = QueuedTurn {
             user_input,
@@ -1043,7 +1088,7 @@ impl DialogScheduler {
             turn_id: Some(resolved_turn_id.clone()),
             agent_type,
             workspace_path,
-            workspace_id: None,
+            workspace_id,
             remote_connection_id,
             remote_ssh_host,
             policy,
@@ -1092,7 +1137,7 @@ impl DialogScheduler {
             turn_id: Some(resolved_turn_id.clone()),
             agent_type,
             workspace_path: session.config.workspace_path.clone(),
-            workspace_id: None,
+            workspace_id: session.config.workspace_id.clone(),
             remote_connection_id: session.config.remote_connection_id.clone(),
             remote_ssh_host: session.config.remote_ssh_host.clone(),
             policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::AgentSession),
@@ -1170,19 +1215,28 @@ impl DialogScheduler {
         let session = match self.session_manager.get_session(session_id) {
             Some(session) => session,
             None => {
-                let workspace_path = workspace_path.ok_or_else(|| {
-                    format!(
-                        "workspace_path is required when restoring session: {}",
-                        session_id
-                    )
-                })?;
-                let restore_path = Self::resolve_session_restore_path(
-                    workspace_path,
-                    remote_connection_id,
-                    remote_ssh_host,
-                )
-                .await
-                .map_err(|error| error.to_string())?;
+                let restore_path = match self
+                    .session_manager
+                    .require_session_storage_path(session_id)
+                    .await
+                {
+                    Ok(path) => path,
+                    Err(OpenBitFunError::NotFound(_)) => {
+                        let workspace_path = workspace_path.ok_or_else(|| {
+                            format!(
+                                "workspace_path is required when restoring session: {session_id}"
+                            )
+                        })?;
+                        self.resolve_session_restore_path(
+                            workspace_path,
+                            remote_connection_id,
+                            remote_ssh_host,
+                        )
+                        .await
+                        .map_err(|error| error.to_string())?
+                    }
+                    Err(error) => return Err(error.to_string()),
+                };
                 self.coordinator
                     .restore_session_from_storage_path(&restore_path, session_id)
                     .await
@@ -1198,6 +1252,7 @@ impl DialogScheduler {
     }
 
     async fn resolve_session_restore_path(
+        &self,
         workspace_path: &str,
         remote_connection_id: Option<&str>,
         remote_ssh_host: Option<&str>,
@@ -1208,7 +1263,7 @@ impl DialogScheduler {
             remote_ssh_host: remote_ssh_host.map(ToOwned::to_owned),
         };
 
-        CoreSessionStorePort::default()
+        CoreSessionStorePort::with_path_manager(self.session_manager.path_manager())
             .resolve_session_storage_path(request)
             .await
             .map(|resolution| resolution.effective_storage_path)
@@ -1289,19 +1344,15 @@ impl DialogScheduler {
             // the loaded session's authoritative local/remote storage binding.
             Some(
                 self.session_manager
-                    .effective_session_storage_path(&session_id)
+                    .require_session_storage_path(&session_id)
                     .await
-                    .ok_or_else(|| {
-                        SchedulerSubmitError::Message(
-                            "Host session storage binding unavailable".into(),
-                        )
-                    })?,
+                    .map_err(SchedulerSubmitError::Core)?,
             )
         } else if let Some(workspace_id) = requested_workspace_id.as_deref() {
             // ID-aware callers locate the session by its owning workspace; the
             // path on the request is only an execution-root projection.
             Some(
-                CoreSessionStorePort::default()
+                CoreSessionStorePort::with_path_manager(self.session_manager.path_manager())
                     .resolve_workspace_storage(workspace_id)
                     .await
                     .map(|resolution| resolution.effective_storage_path)
@@ -1309,7 +1360,7 @@ impl DialogScheduler {
             )
         } else if let Some(workspace_path) = queued_turn.workspace_path.as_deref() {
             Some(
-                Self::resolve_session_restore_path(
+                self.resolve_session_restore_path(
                     workspace_path,
                     queued_turn.remote_connection_id.as_deref(),
                     queued_turn.remote_ssh_host.as_deref(),
@@ -4252,6 +4303,62 @@ mod tests {
                 turn_id: "turn-submitted".to_string(),
             }
         );
+    }
+
+    #[tokio::test]
+    async fn internal_follow_up_keeps_workspace_id_when_a_remote_root_collides() {
+        let (scheduler, manager, _, root) = test_scheduler();
+        let workspace = fixture_workspace_dir(root.path().join("same-name"));
+        let session = manager
+            .create_session(
+                "Owner".into(),
+                "Standard".into(),
+                SessionConfig {
+                    workspace_path: Some(workspace.to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        crate::service::workspace::legacy_compat::register_remote_fixture(
+            &workspace.to_string_lossy(),
+            "other-connection",
+            "localhost",
+        )
+        .await;
+        manager
+            .update_session_state(
+                &session.session_id,
+                SessionState::Processing {
+                    current_turn_id: "running".into(),
+                    phase: ProcessingPhase::Thinking,
+                },
+            )
+            .await
+            .unwrap();
+        let outcome = scheduler
+            .submit_with_prepended_messages(
+                session.session_id.clone(),
+                "follow-up".into(),
+                None,
+                Some("next-turn".into()),
+                "Standard".into(),
+                Some(workspace.to_string_lossy().into_owned()),
+                None,
+                None,
+                DialogSubmissionPolicy::for_source(DialogTriggerSource::AgentSession),
+                None,
+                None,
+                Vec::new(),
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(outcome, DialogSubmitOutcome::Queued { .. }));
+        let queued =
+            remove_queued_turn_by_id(&scheduler.queues, &session.session_id, "next-turn").unwrap();
+        assert_eq!(queued.workspace_id, session.config.workspace_id);
+        assert_eq!(queued.workspace_path, None);
     }
 
     #[tokio::test]

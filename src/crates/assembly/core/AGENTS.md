@@ -190,6 +190,12 @@ Narrower local guides already exist for some subtrees:
 
 ## Verification
 
+For config-backed product-control option defaults, typed binding, and persisted readback:
+
+```bash
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,git --lib every_catalog_config_option
+```
+
 AI client construction and subscription credential compatibility:
 
 ```bash
@@ -212,6 +218,25 @@ or test-target layout. Workspace checks and product-wide tests are CI-backed and
 are not the default Core precheck. For documentation-only changes, run
 `git diff --check`.
 
+For assistant discovery, opened-state persistence, and reopening by workspace ID:
+`cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib service::workspace::service::tests::assistant_`.
+
+For local/SSH workspace identity collisions, SSH connection rebinding, committed
+session storage, legacy path compatibility, and queue admission, use the matching
+owner filter:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,remote-workspace --lib service::workspace::
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,remote-workspace --lib agentic::session::
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,remote-workspace --lib agentic::coordination::
+```
+
+The coordination filter includes the scheduler admission tests. These catalog and
+storage fixtures do not require or validate a live SSH connection. CI also runs
+them under `product-full`. `PathManager::with_user_root_for_tests` derives product
+home from the user root's parent, so a fixture that relocates managed paths must
+place its user root below the directory it means to exercise.
+
 For disk-backed history paging and legacy sessions without a catalog:
 `cargo test --locked -p openbitfun-core --no-default-features --features remote-connect,git --lib history_page_`.
 Also run the `staged_revert_catalog_projection` and `load_relay_session_turns_`
@@ -231,6 +256,20 @@ For built-in provider overlay, trusted endpoint validation, and reasoning catalo
 ```bash
 cargo test -p openbitfun-core --no-default-features --features ai-adapter-runtime --lib infrastructure::ai::
 ```
+
+For model selector latency, run the catalog and session mutation owner fixtures:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features model-catalog --lib infrastructure::ai::reasoning_catalog::tests
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib session_model_update
+cargo test --locked -p openbitfun-core --no-default-features --features remote-connect,git --lib remote_attach_and_mutation_paths_preserve_workspace_ownership_facts
+```
+
+Catalog snapshots remain usable during background refresh. Selector mutations
+must not restore cold transcripts or reserve active-session capacity; preserve
+writer ownership, unknown persisted fields, legacy metadata-only sessions, and
+both state/metadata projections on failure. These fixtures cover local storage
+and remote routing contracts, not live SSH/relay/peer/dispatch connections.
 
 Configuration persistence, account settings import, backup restore, legacy
 field/deletion compatibility, local-change notifications, and save/reload/model
@@ -281,6 +320,25 @@ Skill discovery, installation provenance, and local/remote registry regressions:
 
 ```bash
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::tools::implementations::skills::
+```
+
+SessionControl workspace selection, remote routing, and session-targeted actions:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib session_control_tool::tests
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib list_workspaces
+```
+
+MiniApp Agent appdata workspace registration and pre-ID session compatibility:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,tools-miniapp --lib miniapp::agent_workspace::tests
+```
+
+Workspace history upgrade compatibility and MiniApp record preservation:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib legacy_miniapp_history
 ```
 
 Skill hook activation, session cleanup, and tool preflight/permission ordering:

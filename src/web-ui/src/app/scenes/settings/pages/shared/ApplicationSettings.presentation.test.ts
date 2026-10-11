@@ -24,15 +24,16 @@ describe('Application settings presentation', () => {
     expect(source).toContain('{isTauri && (');
   });
 
-  it('keeps the previous-exit notice outside the settings section surface', () => {
+  it('only shows confirmed-crash notices outside the settings section surface', () => {
     const loggingSection = readFileSync(fileURLToPath(new URL('../data/DiagnosticsSettingsPage.tsx', import.meta.url)), 'utf8');
     const noticeStart = loggingSection.indexOf(
-      '{runtimeInfo?.previousUnexpectedExit?.detected && (',
+      "{runtimeInfo?.previousUnexpectedExit?.detected && runtimeInfo.previousUnexpectedExit.category === 'crash' && (",
     );
     const settingsSectionStart = loggingSection.indexOf('<ConfigPageSection');
     const settingsSectionEnd = loggingSection.indexOf('</ConfigPageSection>');
 
     expect(loggingSection).not.toBe('');
+    expect(loggingSection).not.toContain('logging.previousUncleanShutdown');
     expect(noticeStart).toBeGreaterThanOrEqual(0);
     expect(settingsSectionStart).toBeGreaterThan(noticeStart);
     expect(settingsSectionEnd).toBeGreaterThan(settingsSectionStart);

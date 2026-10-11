@@ -12,8 +12,9 @@ struct SettingsView: View {
     }
 
     private var selectedModelName: String {
-        model.modelOptions.first(where: \.selected)?.primaryLabel
-            ?? model.modelOptions.first?.primaryLabel
+        (model.modelOptions.first(where: \.selected) ?? model.modelOptions.first).map {
+            $0.roleLabelKey.map(model.localized) ?? $0.primaryLabel
+        }
             ?? model.localized("未配置")
     }
 

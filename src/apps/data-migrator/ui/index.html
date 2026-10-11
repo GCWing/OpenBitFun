@@ -103,6 +103,20 @@
           <button id="finish" class="primary" data-i18n="closeMigrator">Close Data Migrator</button>
         </div>
       </section>
+      <section class="card" aria-labelledby="reset-title">
+        <h2 id="reset-title" data-i18n="resetTitle"></h2>
+        <p class="muted" data-i18n="resetHelp"></p>
+        <div class="actions"><button id="preview-reset" data-i18n="previewReset"></button></div>
+        <div id="reset-preview" hidden>
+          <p class="warning" data-i18n="resetWarning"></p>
+          <div id="reset-directories" class="result-list"></div>
+          <label for="reset-confirmation" data-i18n="resetConfirmLabel"></label>
+          <input id="reset-confirmation" type="text" autocomplete="off" spellcheck="false" />
+          <div class="actions"><button id="reset-data" data-i18n="resetAction" disabled></button></div>
+        </div>
+        <p id="reset-progress" role="status" aria-live="polite" data-i18n="resetProgress" hidden></p>
+        <div id="reset-result" role="status" aria-live="polite" hidden></div>
+      </section>
       <div class="actions"><button id="new-task" data-i18n="newTask"></button><button id="close" class="quiet" data-i18n="closeMigrator"></button></div>
     </main>
   </body>

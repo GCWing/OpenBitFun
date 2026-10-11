@@ -99,6 +99,7 @@ const OverlaySurface = forwardRef<HTMLDivElement, OverlaySurfaceProps>(function 
   preventScroll = true,
   role = "dialog",
   size,
+  style,
   trapFocus = true,
   ...surfaceProps
 }, forwardedRef) {
@@ -110,20 +111,22 @@ const OverlaySurface = forwardRef<HTMLDivElement, OverlaySurfaceProps>(function 
   const titleId = `openbitfun-dialog-title-${useId()}`;
   const descriptionId = `openbitfun-dialog-description-${useId()}`;
   const { present, state } = usePresence(open, EXIT_DURATION_MS);
-  const lastOpenChildren = useRef<ReactNode>(null);
+  const presentation = { children, className, overlayProps, placement, size, style };
+  const lastOpenPresentation = useRef<typeof presentation | null>(null);
   const wasPresent = useRef(present);
   // Owners often clear selection or form state in the same update as closing.
-  // Keep the last committed content until the exit finishes to preserve geometry.
+  // Retain the content and its geometry together until the exit finishes.
   useLayoutEffect(() => {
-    if (open) lastOpenChildren.current = children;
-    else if (!present) lastOpenChildren.current = null;
-  }, [children, open, present]);
+    if (open) lastOpenPresentation.current = { children, className, overlayProps, placement, size, style };
+    else if (!present) lastOpenPresentation.current = null;
+  }, [children, className, open, overlayProps, placement, present, size, style]);
   useEffect(() => {
     const completed = wasPresent.current && !present && !open;
     wasPresent.current = present;
     if (completed) onExitComplete?.();
   }, [onExitComplete, open, present]);
-  const renderedChildren = open ? children : lastOpenChildren.current;
+  const rendered = open ? presentation : lastOpenPresentation.current ?? presentation;
+  const renderedChildren = rendered.children;
   const hasTitle = containsType(renderedChildren, DialogTitle);
   const hasDescription = containsType(renderedChildren, DialogDescription);
 
@@ -169,12 +172,12 @@ const OverlaySurface = forwardRef<HTMLDivElement, OverlaySurfaceProps>(function 
   return (
     <Portal target={resolvedPortalHost} open={open} modal preventScroll={preventScroll}>
       <div
-        {...overlayProps}
-        className={classNames(styles.overlay, overlayProps?.className)}
+        {...rendered.overlayProps}
+        className={classNames(styles.overlay, rendered.overlayProps?.className)}
         data-openbitfun-component={kind}
         data-openbitfun-part="overlay"
         data-openbitfun-native-webview-occlusion
-        data-placement={placement}
+        data-placement={rendered.placement}
         data-state={exiting ? "exiting" : "open"}
       >
         <DialogContext.Provider value={context}>
@@ -186,14 +189,15 @@ const OverlaySurface = forwardRef<HTMLDivElement, OverlaySurfaceProps>(function 
             aria-label={ariaLabel}
             aria-labelledby={ariaLabelledBy ?? (!ariaLabel && hasTitle ? titleId : undefined)}
             aria-modal="true"
-            className={classNames(styles.surface, className)}
+            className={classNames(styles.surface, rendered.className)}
             data-openbitfun-component={kind}
             data-openbitfun-part="surface"
-            data-placement={placement}
-            data-size={size}
+            data-placement={rendered.placement}
+            data-size={rendered.size}
             data-state={exiting ? "exiting" : "open"}
             ref={setSurfaceRef}
             role={role}
+            style={rendered.style}
             tabIndex={-1}
           >
             {renderedChildren}

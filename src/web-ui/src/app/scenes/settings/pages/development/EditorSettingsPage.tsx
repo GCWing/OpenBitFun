@@ -1,3 +1,4 @@
+import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
 
 
 import '@/app/scenes/settings/pages/development/EditorSettingsPage.scss';
@@ -249,9 +250,10 @@ const EditorSettingsPage: React.FC = () => {
   const renderLineHighlightOptionsTranslated = renderLineHighlightOptions.map(o => ({ ...o, label: t(o.labelKey) }));
 
 
-  const [config, setConfig] = useState<EditorConfigType>({ ...DEFAULT_EDITOR_CONFIG });
-  const [isLoading, setIsLoading] = useState(true);
-  const [supportsIndentDetection, setSupportsIndentDetection] = useState(false);
+  const seed = useConfigSeed(['editor']);
+  const [config, setConfig] = useState<EditorConfigType>(() => ({ ...DEFAULT_EDITOR_CONFIG, ...convertToCamelCase(seed.get('editor', {}) ?? {}) }));
+  const [isLoading, setIsLoading] = useState(!seed.loaded);
+  const [supportsIndentDetection, setSupportsIndentDetection] = useState(typeof seed.get<Record<string, unknown> | null>('editor', null)?.detect_indentation === 'boolean');
   const [loadFailed, setLoadFailed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'warning'; text: string } | null>(null);
@@ -272,7 +274,7 @@ const EditorSettingsPage: React.FC = () => {
 
   const loadConfig = useCallback(async () => {
     try {
-      setIsLoading(true);
+      setIsLoading(!seed.loaded);
       setLoadFailed(false);
       const backendConfig = await configManager.getConfig<Record<string, any>>('editor');
       if (backendConfig) {
@@ -289,11 +291,11 @@ const EditorSettingsPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [seed.loaded]);
 
   useEffect(() => {
-    loadConfig();
-  }, [loadConfig]);
+    if (!seed.loaded) void loadConfig();
+  }, [loadConfig, seed.loaded]);
 
 
   const doSave = useCallback((

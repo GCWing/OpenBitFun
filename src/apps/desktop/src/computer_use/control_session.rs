@@ -288,6 +288,7 @@ fn cleanup_async(ticket: u64) {
 }
 /// Native delegates pass the identity captured when their stream was created.
 /// Never call an unscoped "stop current" from a delayed native callback.
+#[cfg(target_os = "linux")]
 pub(crate) fn native_stopped_generation(generation: u64, reason: &str) {
     native_stopped_inner(generation, None, reason);
 }

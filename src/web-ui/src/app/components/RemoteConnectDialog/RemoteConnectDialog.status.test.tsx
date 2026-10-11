@@ -232,6 +232,45 @@ describe('Remote Connect shared status through the real dialog and sidebar', () 
     expect(attachedBot()).not.toBeNull();
   });
 
+  it('titles the overview with the same page header as the detail views', async () => {
+    await render();
+    expect(element('#remote-connect-view-title').textContent).toBe('remoteConnect.overviewTitle');
+    await openNetwork();
+    expect(element('#remote-connect-view-title').textContent).toBe('remoteConnect.mobileBrowserTitle');
+    await clickText('remoteConnect.backToOverview');
+    expect(element('#remote-connect-view-title').textContent).toBe('remoteConnect.overviewTitle');
+  });
+
+  it('shows a single connection status while an invitation is open', async () => {
+    await render();
+    await generateInvitation();
+    await tick();
+    const connections = element('[data-openbitfun-part="connections"]');
+    expect(connections.querySelector('.openbitfun-remote-connect__card-header [role="status"]')).toBeNull();
+    expect(connections.querySelectorAll('[data-openbitfun-component="status-pill"]')).toHaveLength(1);
+    expect(cardStatus()).toBe('remoteConnect.stateWaiting');
+    await clickText('remoteConnect.cancelInvitation');
+    expect(element('[data-openbitfun-part="connections"] .openbitfun-remote-connect__card-header [role="status"]').textContent)
+      .toBe('remoteConnect.stateConnected');
+  });
+
+  it('explains the single chat-app connection and labels the detail switch', async () => {
+    await render('bot');
+    await tick();
+    expect(element('#remote-connect-bot-tab-weixin').getAttribute('aria-selected')).toBe('true');
+    const detailSwitch = element('#remote-connect-bot-tabpanel input');
+    expect(detailSwitch.getAttribute('aria-labelledby')).toBe('remote-connect-bot-details-title');
+    expect(element('#remote-connect-bot-details-title').textContent).toBe('remoteConnect.botExecutionDetailsTitle');
+    expect(dialog().textContent).toContain('remoteConnect.botSingleConnectionHint');
+    expect(element('#remote-connect-bot-tab-telegram').getAttribute('title')).toBe('remoteConnect.botSingleConnectionHint');
+    expect((element('#remote-connect-bot-tab-telegram') as HTMLButtonElement).disabled).toBe(true);
+    await clickText('remoteConnect.disconnect');
+    await tick();
+    expect(boundary.stopBot).toHaveBeenCalledOnce();
+    expect(dialog().textContent).not.toContain('remoteConnect.botSingleConnectionHint');
+    expect((element('#remote-connect-bot-tab-telegram') as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('retains the Relay route across overview navigation and closing the dialog', async () => {
     await render();
     await generateInvitation();

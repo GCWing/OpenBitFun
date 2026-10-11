@@ -7,7 +7,7 @@ import { useI18n } from '@/infrastructure/i18n';
 import {
   confirmDanger,
 } from '@/infrastructure/confirm-dialog';
-import { LogIn, Pencil, Check, X } from 'lucide-react';
+import { LogIn, LogOut, Pencil, Check, X } from 'lucide-react';
 import { DeviceSystemGlyph } from '../NavPanel/components/DeviceSystemGlyph';
 import { reportedHostKind } from '../NavPanel/deviceInterconnectionOverview';
 import { remoteConnectAPI, deviceDisplayName, deviceMetadataLabel } from '@/infrastructure/api/service-api/RemoteConnectAPI';
@@ -139,15 +139,22 @@ interface FailureBannerProps {
 }
 
 /**
+ * The button a failure banner offers, if any. An update check only exists where
+ * updates can be installed; elsewhere the banner stays a statement instead of
+ * offering an action that cannot run.
+ */
+const failureBannerAction = (failure: PanelFailure): RelayFailureAction | null => (
+  failure.action === 'retry' || (failure.action === 'check-updates' && canCheckForAppUpdates())
+    ? failure.action
+    : null
+);
+
+/**
  * Red banner plus the single next step for a classified failure. A failure whose
  * action is the existing sign-in flow renders no extra button.
  */
 const FailureBanner: React.FC<FailureBannerProps> = ({ failure, t, busy, onClose, onAction }) => {
-  // An update check only exists where updates can be installed; elsewhere the
-  // banner stays a statement instead of offering an action that cannot run.
-  const actionable = failure.action === 'retry' || (failure.action === 'check-updates' && canCheckForAppUpdates())
-    ? failure.action
-    : null;
+  const actionable = failureBannerAction(failure);
   return (
     <div className="account-panel__error-banner" data-openbitfun-component="remote-account-panel" data-openbitfun-part="error">
       <Alert
@@ -803,6 +810,13 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
     }
   }, [handleCheckForUpdates, handleLogin, handleRetryConnect, view]);
 
+  const renderSectionHeading = (id: string, title: string, action?: React.ReactNode) => (
+    <div className="account-panel__section-heading">
+      <h3 id={id} className="account-panel__section-title">{title}</h3>
+      {action}
+    </div>
+  );
+
   return (
     <>
       <div data-openbitfun-component="remote-account-panel" data-openbitfun-part="root" data-openbitfun-view={view} className="account-panel">
@@ -824,63 +838,73 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
 
         {loading && view === 'devices' && (
           <div className="account-panel__loading-overlay" data-openbitfun-component="remote-account-panel" data-openbitfun-part="loading">
-            <Icon name="refresh" size="lg" className="spinning" style={{ width: 20, height: 20 }} />
+            <Icon name="refresh" size="lg" className="spinning" />
             <span>{t('accountLogin.processing')}</span>
           </div>
         )}
 
         {view === 'login' && (
           <ScrollArea className="account-panel__scroll" data-openbitfun-component="remote-account-panel" data-openbitfun-part="scroll">
-            <div className="account-panel__login-card" data-openbitfun-component="remote-account-panel" data-openbitfun-part="form">
-              <span className="account-panel__login-icon" aria-hidden="true"><Icon name="user" size="lg" /></span>
-              <p className="account-panel__value-prop">{t('accountLogin.loginValueProp')}</p>
-              <p className="account-panel__security-note">{t('accountLogin.securityNote')}</p>
-              <div className="account-panel__actions" data-openbitfun-component="remote-account-panel" data-openbitfun-part="actions">
-                <Button variant="primary" size="sm" leadingIcon={<LogIn />} onClick={handleLogin} loading={loading && identity.status !== 'authorizing'}>
-                  {identity.status === 'authorizing' ? t('accountLogin.reopen') : loading ? t('accountLogin.processing') : t('accountLogin.login')}
-                </Button>
+            <section className="account-panel__section" aria-labelledby="account-panel-account-title">
+              {renderSectionHeading('account-panel-account-title', t('accountLogin.accountSectionTitle'))}
+              <div className="account-panel__card account-panel__login-card" data-openbitfun-component="remote-account-panel" data-openbitfun-part="form">
+                <span className="account-panel__login-icon" aria-hidden="true"><Icon name="user" size="md" /></span>
+                <span className="account-panel__login-copy">
+                  <span className="account-panel__value-prop">{t('accountLogin.loginValueProp')}</span>
+                  <span className="account-panel__security-note">{t('accountLogin.securityNote')}</span>
+                </span>
+                <div className="account-panel__actions" data-openbitfun-component="remote-account-panel" data-openbitfun-part="actions">
+                  <Button variant="primary" size="sm" leadingIcon={<LogIn size={14} />} onClick={handleLogin} loading={loading && identity.status !== 'authorizing'}>
+                    {identity.status === 'authorizing' ? t('accountLogin.reopen') : loading ? t('accountLogin.processing') : t('accountLogin.login')}
+                  </Button>
+                </div>
               </div>
-            </div>
+            </section>
           </ScrollArea>
         )}
 
         {view === 'devices' && (
           <ScrollArea className="account-panel__scroll" data-openbitfun-component="remote-account-panel" data-openbitfun-part="scroll">
-            <div className="account-panel__identity-line">
-              <Avatar key={username} size="md" src={identity.me?.user.avatarUrl} alt={username} aria-label={username}>
-                {username.trim().charAt(0).toUpperCase() || <Icon name="user" />}
-              </Avatar>
-              <span className="account-panel__identity-copy">
-                <span className="account-panel__identity-label">{t('accountLogin.signedInAccount')}</span>
-                <OverflowText className="account-panel__identity-name" title={username}>{username.trim()}</OverflowText>
-              </span>
-              <Button variant="text" size="sm" onClick={handleLogout} disabled={loading}>
-                {t('accountLogin.logout')}
-              </Button>
-            </div>
-            <div className="account-panel__section-heading">
-              <h3>{t('accountLogin.linkedDevices')}</h3>
-              <Button variant="text" size="sm" leadingIcon={<Icon name="refresh" size="sm" />}
-                onClick={relayFailure ? handleRetryConnect : refreshDevices} disabled={loading}>
-                {t(relayFailure ? 'accountLogin.retryConnect' : 'accountLogin.refreshDevices')}
-              </Button>
-            </div>
-            <div className="account-panel__devices-card">
+            <section className="account-panel__section" aria-labelledby="account-panel-account-title">
+              {renderSectionHeading('account-panel-account-title', t('accountLogin.accountSectionTitle'))}
+              <div className="account-panel__card account-panel__identity-line">
+                <Avatar key={username} size="md" src={identity.me?.user.avatarUrl} alt={username} aria-label={username}>
+                  {username.trim().charAt(0).toUpperCase() || <Icon name="user" />}
+                </Avatar>
+                <span className="account-panel__identity-copy">
+                  <OverflowText className="account-panel__identity-name" title={username}>{username.trim()}</OverflowText>
+                  <span className="account-panel__identity-label">{t('accountLogin.signedInAccount')}</span>
+                </span>
+                <Button variant="outline" size="sm" leadingIcon={<LogOut size={14} />} onClick={handleLogout} disabled={loading}>
+                  {t('accountLogin.logout')}
+                </Button>
+              </div>
+            </section>
+            <section className="account-panel__section" aria-labelledby="account-panel-devices-title">
+              {renderSectionHeading('account-panel-devices-title', t('accountLogin.linkedDevices'), (
+                relayFailure && failureBannerAction(relayFailure) ? null : (
+                  <Button variant="text" size="xs" leadingIcon={<Icon name="refresh" size="sm" />}
+                    onClick={relayFailure ? handleRetryConnect : refreshDevices} disabled={loading}>
+                    {t(relayFailure ? 'accountLogin.retryConnect' : 'accountLogin.refreshDevices')}
+                  </Button>
+                )
+              ))}
               {aliasCapability === 'unsupported' && <Alert tone="info" message={t('accountLogin.deviceAliasUnsupported')} />}
               {relayFailure && (
                 <FailureBanner failure={relayFailure} t={t} busy={loading} onAction={runFailureAction} />
               )}
-              <div className="account-panel__device-list" data-openbitfun-component="remote-account-panel" data-openbitfun-part="deviceList">
-                {!relayFailure && devicesReady && devices.length === 0 && (
-                  <div className="account-panel__empty">{t('accountLogin.noDevices')}</div>
-                )}
-                {!relayFailure && !devicesReady && (
-                  <div className="account-panel__empty account-panel__empty--loading" role="status">
-                    <Icon name="refresh" size="sm" className="spinning" />
-                    {t('accountLogin.loadingDevices')}
-                  </div>
-                )}
-                {!relayFailure && sortedDevices.map((d) => {
+              {!relayFailure && <div className="account-panel__card account-panel__devices-card">
+                <div className="account-panel__device-list" data-openbitfun-component="remote-account-panel" data-openbitfun-part="deviceList">
+                  {devicesReady && devices.length === 0 && (
+                    <div className="account-panel__empty">{t('accountLogin.noDevices')}</div>
+                  )}
+                  {!devicesReady && (
+                    <div className="account-panel__empty account-panel__empty--loading" role="status">
+                      <Icon name="refresh" size="sm" className="spinning" />
+                      {t('accountLogin.loadingDevices')}
+                    </div>
+                  )}
+                  {sortedDevices.map((d) => {
                   const isLocal = localDeviceId === d.device_id;
                   // This machine is selectable while the window renders a peer,
                   // so the dialog can bring the UI back without disconnecting.
@@ -927,7 +951,9 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                         'aria-label': t('accountLogin.openDevice', { name: displayName }),
                       } : {})}
                     >
-                      <DeviceSystemGlyph device={systemFacts} />
+                      <span className="account-panel__device-glyph" aria-hidden="true">
+                        <DeviceSystemGlyph device={systemFacts} size={18} />
+                      </span>
                       <span className="account-panel__device-info">
                         {/* Renaming replaces the name in place: showing the old
                             name next to an editor reads as two device names. */}
@@ -986,12 +1012,11 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                           </span>
                         )}
                       </span>
-                      {isSelectable && <Icon name="chevron-right" size="sm" />}
                     </DeviceEntry>
                     {/* The open editor owns the row's actions; keeping rename and
                         delete beside it rendered two competing icon clusters. */}
                     {editingDeviceId !== d.device_id && (
-                      <>
+                      <span className="account-panel__device-actions">
                         <IconButton
                           aria-label={t('accountLogin.editDeviceAlias')}
                           disabled={loading || editingDeviceId !== null || !aliasSupported || savingAliasId !== null}
@@ -1010,13 +1035,17 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                           title={removeLabel}
                           variant="quiet"
                         />
-                      </>
+                      </span>
                     )}
+                    <span className="account-panel__device-chevron" aria-hidden="true">
+                      {isSelectable && editingDeviceId !== d.device_id && <Icon name="chevron-right" size="sm" />}
+                    </span>
                   </div>
                   );
                 })}
-              </div>
-            </div>
+                </div>
+              </div>}
+            </section>
           </ScrollArea>
         )}
       </div>

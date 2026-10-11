@@ -163,6 +163,14 @@
     }
   },
   "capabilities": {
+    "setting.application.input": {
+      "items": {
+        "auto-show-selection-toolbar": {
+          "pageId": "application.input",
+          "sectionId": "text-selection"
+        }
+      }
+    },
     "feature.computer-use": {
       "destination": {
         "pageId": "tools.desktop-control"

@@ -11,6 +11,7 @@ use openbitfun_product_domains::legacy_migration::{
     ConflictResolution, FindingSeverity, MigrationConflict, MigrationDiagnostic, MigrationDomainId,
     MigrationDomainResult, MigrationDomainState, ScanFinding,
 };
+use openbitfun_services_core::workspace_identity::canonical_ssh_connection_id as canonical_connection_id;
 use openbitfun_services_integrations::remote_persistence as owner;
 use owner::{
     KnownHostRecord, RemoteWorkspaceRecord, SavedAuthTypeRecord, SavedConnectionRecord,
@@ -777,17 +778,6 @@ fn record_unavailable_workspace_references(state: &SshState, outcome: &mut Remot
             ));
         }
     }
-}
-
-fn canonical_connection_id(id: &str) -> String {
-    if let Some(rest) = id.strip_prefix("ssh-") {
-        if let (Some(at), Some(colon)) = (rest.find('@'), rest.rfind(':')) {
-            if colon > at && rest[colon + 1..].parse::<u16>().is_ok() {
-                return format!("ssh-{}", &rest[..colon]);
-            }
-        }
-    }
-    id.to_string()
 }
 
 fn read_staged(context: &DomainContext<'_>) -> LegacyMigrationResult<SshState> {

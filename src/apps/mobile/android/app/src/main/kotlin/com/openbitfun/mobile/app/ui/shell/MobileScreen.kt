@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -440,13 +443,17 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
             // keeps the input bar above the keyboard. `union` rather than a
             // second padding: the IME inset already contains the navigation
             // bar's, and adding them would leave a gap the height of the bar.
-            contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime),
+            contentWindowInsets = (if (shell.surface == MobileSurface.REMOTE && routedSessionId != null) {
+                // The conversation owns the bottom strip: its viewport reaches
+                // the screen edge while the fixed composer clears navigation.
+                ScaffoldDefaults.contentWindowInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+            } else ScaffoldDefaults.contentWindowInsets).union(WindowInsets.ime),
             // HarmonyOS hides the platform title bar. Each product surface owns
             // its 44dp controls and title row, so a Material TopAppBar here would
             // add a second header above every conversation and remote page.
             topBar = {},
         ) { insets ->
-            Box(Modifier.padding(insets)) {
+            Box(Modifier.padding(insets).consumeWindowInsets(insets)) {
                 when (shell.surface) {
                     MobileSurface.REMOTE -> when (controlSummary.source) {
                         RemoteControlSource.ACCOUNT_DEVICE -> AccountRemoteScreen(
@@ -671,6 +678,10 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
         visible = shell.showSettings,
         placement = settingsPlacement,
         onDismissRequest = shell::dismissSettings,
+        // The settings body is one long scroll, so a pull-down has to scroll it
+        // rather than drag the page away. The page closes through its own close
+        // button, the back action, and a tap on the scrim.
+        draggable = false,
         content = settingsContent,
     )
     AdaptiveModalSurface(

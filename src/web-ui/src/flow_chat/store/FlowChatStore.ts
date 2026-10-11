@@ -130,6 +130,15 @@ import {
 
 const log = createLogger('FlowChatStore');
 
+/**
+ * Records that can own a pre-ID session projection. A linked worktree may be
+ * known to the host without being opened, so recent records are candidates too.
+ */
+function legacySessionWorkspaceCandidates(): WorkspaceInfo[] {
+  const state = workspaceManager.getState();
+  return [...state.openedWorkspaces.values(), ...(state.recentWorkspaces ?? [])];
+}
+
 function firstNonEmptyString(...values: unknown[]): string | undefined {
   for (const value of values) {
     if (typeof value === 'string' && value.trim()) {
@@ -4660,12 +4669,12 @@ export class FlowChatStore {
     });
   }
 
-  public updateSessionModelName(sessionId: string, modelName: string): void {
+  public updateSessionModelName(sessionId: string, modelName: string | undefined): void {
     this.setState(prev => {
       const session = prev.sessions.get(sessionId);
       if (!session) return prev;
 
-      const normalizedModelName = modelName.trim() || 'primary';
+      const normalizedModelName = modelName === undefined ? undefined : modelName.trim() || 'primary';
       if (session.config.modelName?.trim() === normalizedModelName) {
         return prev;
       }
@@ -5521,6 +5530,7 @@ export class FlowChatStore {
   public async cancelRunningSessionsForWorkspace(
     workspace: Pick<WorkspaceInfo, 'id' | 'rootPath' | 'connectionId' | 'sshHost'>
   ): Promise<string[]> {
+    const scope = getActiveSurfaceScope();
     const runningSessions = Array.from(this.state.sessions.values())
       .filter(session => sessionMatchesWorkspace(session, workspace))
       .filter(session => {
@@ -5541,7 +5551,6 @@ export class FlowChatStore {
       return [];
     }
 
-    const { agentAPI } = await import('@/infrastructure/api/service-api/AgentAPI');
     await Promise.allSettled(
       runningSessions.map(async session => {
         const sessionId = session.sessionId;
@@ -5554,11 +5563,12 @@ export class FlowChatStore {
             error,
           });
         } finally {
-          this.cancelSessionTask(sessionId);
+          if (scope.isCurrent()) this.cancelSessionTask(sessionId);
         }
       })
     );
 
+    scope.assertCurrent('cancel workspace sessions');
     return runningSessionIds;
   }
 
@@ -6778,7 +6788,7 @@ export class FlowChatStore {
   public rollbackTokenUsage(): void {
   }
 
-  public updateSessionMaxContextTokens(sessionId: string, maxContextTokens: number): void {
+  public updateSessionMaxContextTokens(sessionId: string, maxContextTokens: number | undefined): void {
     this.setState(prev => {
       const session = prev.sessions.get(sessionId);
       if (!session) return prev;
@@ -7364,14 +7374,15 @@ export class FlowChatStore {
           }
         }
 
+        const legacyRecords = legacySessionWorkspaceCandidates();
         const workspaceId = metadata.workspaceId ?? resolveLegacySessionWorkspace({
           workspacePath: metadata.workspacePath || workspacePath,
           projectWorkspacePath: metadata.projectWorkspacePath,
           remoteConnectionId, remoteSshHost,
-        }, [...workspaceManager.getState().openedWorkspaces.values()])?.id;
+        }, legacyRecords)?.id;
         const projectWorkspaceId = metadata.projectWorkspaceId ?? resolveLegacySessionWorkspace({
           workspacePath: metadata.projectWorkspacePath || workspacePath, remoteConnectionId, remoteSshHost,
-        }, [...workspaceManager.getState().openedWorkspaces.values()])?.id;
+        }, legacyRecords)?.id;
         const relationship = deriveSessionRelationshipFromMetadata(metadata);
         const lastFinishedAt = deriveLastFinishedAtFromMetadata(metadata);
         const titleState = deriveSessionTitleStateFromMetadata(metadata);
@@ -7836,14 +7847,15 @@ export class FlowChatStore {
             }
           }
 
+          const legacyRecords = legacySessionWorkspaceCandidates();
           const workspaceId = metadata.workspaceId ?? resolveLegacySessionWorkspace({
           workspacePath: metadata.workspacePath || workspacePath,
           projectWorkspacePath: metadata.projectWorkspacePath,
           remoteConnectionId, remoteSshHost,
-        }, [...workspaceManager.getState().openedWorkspaces.values()])?.id;
+        }, legacyRecords)?.id;
         const projectWorkspaceId = metadata.projectWorkspaceId ?? resolveLegacySessionWorkspace({
           workspacePath: metadata.projectWorkspacePath || workspacePath, remoteConnectionId, remoteSshHost,
-        }, [...workspaceManager.getState().openedWorkspaces.values()])?.id;
+        }, legacyRecords)?.id;
         const relationship = deriveSessionRelationshipFromMetadata(metadata);
           const lastFinishedAt = deriveLastFinishedAtFromMetadata(metadata);
           const titleState = deriveSessionTitleStateFromMetadata(metadata);

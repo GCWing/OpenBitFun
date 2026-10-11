@@ -3,13 +3,8 @@ import { LoadingState } from '@openbitfun/ui';
 import './ConfigPageState.scss';
 
 /**
- * Grace period before a section admits it is loading.
- *
- * Config sections read their state through ConfigManager, which serves warm paths
- * from cache and cold ones over IPC. Painting the placeholder unconditionally means
- * a page full of 200px "loading" blocks appears and collapses within one or two
- * frames on the first open of a tab. Staying invisible for a beat lets fast reads
- * land silently; only genuinely slow ones surface a placeholder.
+ * Reserve content geometry immediately; delay only the loading announcement.
+ * Returning null during the grace period collapses surrounding settings sections.
  */
 const LOADING_VISIBLE_DELAY_MS = 200;
 
@@ -18,12 +13,16 @@ export interface ConfigLoadingStateProps {
   className?: string;
   /** Override the grace period; 0 paints immediately. */
   graceMs?: number;
+  variant?: 'form' | 'list' | 'statistics';
+  rows?: number;
 }
 
 export const ConfigLoadingState: React.FC<ConfigLoadingStateProps> = ({
   label,
   className = '',
   graceMs = LOADING_VISIBLE_DELAY_MS,
+  variant = 'form',
+  rows = 3,
 }) => {
   const [visible, setVisible] = useState(graceMs <= 0);
 
@@ -38,15 +37,26 @@ export const ConfigLoadingState: React.FC<ConfigLoadingStateProps> = ({
     return () => window.clearTimeout(timer);
   }, [graceMs]);
 
-  if (!visible) return null;
-
   return (
     <div
       className={['openbitfun-config-loading-state', className].filter(Boolean).join(' ')}
+      aria-busy="true"
+      aria-label={label}
+      data-loading-variant={variant}
       data-openbitfun-component="config"
       data-openbitfun-part="loadingState"
     >
-      <LoadingState size="sm">{label}</LoadingState>
+      <div className="openbitfun-config-loading-state__skeleton" aria-hidden="true">
+        {Array.from({ length: rows }, (_, index) => (
+          <div className="openbitfun-config-loading-state__row" key={index}>
+            <span className="openbitfun-config-loading-state__copy" />
+            <span className="openbitfun-config-loading-state__control" />
+          </div>
+        ))}
+      </div>
+      <div className="openbitfun-config-loading-state__status" role="status" aria-live="polite">
+        {visible ? <LoadingState size="sm">{label}</LoadingState> : null}
+      </div>
     </div>
   );
 };

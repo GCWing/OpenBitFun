@@ -13,18 +13,11 @@ pub struct FileEditTool;
 
 const EDIT_TOOL_PROMPT: &str = r#"Performs exact string replacements in files.
 
-Usage:
-- You must read the current file contents before editing.
-- The `file_path` parameter must be a workspace-relative path, an absolute path inside the current workspace, or an exact `openbitfun://...` URI returned by another tool.
-- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: spaces + line number + tab. Everything after that is the actual file content to match. Never include any part of the line number prefix in the old_string or new_string.
-- Copy `old_string` verbatim from your latest Read of this file. Do not reformat HTML/CSS/JS, do not normalize indentation, and do not reconstruct the block from memory.
-- Use the smallest `old_string` that is clearly unique — usually 2-4 adjacent lines with stable surrounding context is sufficient.
-- If Read output was truncated or used start_line/limit, re-read until the full target block is visible before editing.
-- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
-- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
-- The edit will FAIL if `old_string` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use `replace_all` to change every instance of `old_string`.
-- Use `replace_all` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.
-- If an edit fails because the text was not found, call Read again on the target lines and retry with a freshly copied `old_string`."#;
+- Inspect the current source before editing. Copy `old_string` exactly, preserving whitespace; omit Read's line-number/tab prefix.
+- A focused Read window is sufficient when it contains the full target block. Truncated lines and extracted document Markdown are not exact source; obtain a complete source view before editing.
+- Choose the smallest unique `old_string`. If it occurs more than once, add context or use `replace_all` only when every occurrence should change.
+- If matching fails, inspect the current target again and correct the text or scope before retrying.
+- `file_path` accepts a workspace-relative path, an absolute path inside the workspace, or an exact `openbitfun://...` URI returned by a tool."#;
 
 impl Default for FileEditTool {
     fn default() -> Self {

@@ -1060,7 +1060,9 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({ tabs }) => {
                     icon={<Icon name="star" size="lg" />}
                   />
                 ))}
-                <span>{detail.ratingAverage.toFixed(1)} · {formatNumber(detail.ratingCount)}</span>
+                <span className="miniapp-market-detail__rating-summary">
+                  {detail.ratingAverage.toFixed(1)} · {formatNumber(detail.ratingCount)}
+                </span>
               </div>
             </section>
             <section>

@@ -1,3 +1,4 @@
+import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
 import '@/app/scenes/settings/pages/shared/RuntimeSettings.scss';
 import { ConfigPageRow, ConfigPageSection, ConfigRetryState } from '@/infrastructure/config/components/common';
 import { useModelSelectPresentation, type ModelSelectOption } from '@/infrastructure/config/components/ModelSelectPresentation';
@@ -7,7 +8,7 @@ import type { AIModelConfig, TaskModelSelection, TaskModelsConfig } from '@/infr
 import { notificationService, useNotification } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import { Combobox, Switch } from '@openbitfun/ui';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const log = createLogger('SessionTitleSection');
@@ -31,25 +32,29 @@ function normalizeSelectValue(value: string | number | (string | number)[]): str
 export const SessionTitleSection: React.FC = () => {
   const { t } = useTranslation('settings/models');
   const { success: notifySuccess, error: notifyError } = useNotification();
-  const [isLoading, setIsLoading] = useState(true);
+  const seed = useConfigSeed(['ai.models', 'ai.task_models']);
+  const [cachedSettings] = useState(() => aiExperienceConfigService.getCachedSettings());
+  const hasLoaded = useRef(Boolean(cachedSettings && seed.loaded));
+  const [isLoading, setIsLoading] = useState(!hasLoaded.current);
   const [loadError, setLoadError] = useState(false);
-  const [settings, setSettings] = useState<AIExperienceSettings | null>(null);
-  const [models, setModels] = useState<AIModelConfig[]>([]);
-  const [taskModels, setTaskModels] = useState<TaskModelsConfig>(DEFAULT_TASK_MODELS);
+  const [settings, setSettings] = useState<AIExperienceSettings | null>(cachedSettings);
+  const [models, setModels] = useState<AIModelConfig[]>(seed.get<AIModelConfig[] | null>('ai.models', null) ?? []);
+  const [taskModels, setTaskModels] = useState<TaskModelsConfig>(() => normalizeTaskModels(seed.get('ai.task_models', DEFAULT_TASK_MODELS)));
   const { buildModelOption } = useModelSelectPresentation();
 
   const loadData = useCallback(async () => {
-    setIsLoading(true);
+    setIsLoading(!hasLoaded.current);
     setLoadError(false);
     try {
       const [loadedSettings, allModels, taskModelsData] = await Promise.all([
-        aiExperienceConfigService.getSettingsAsync(),
+        aiExperienceConfigService.getSettingsAsync({ requireLoaded: true }),
         configManager.getConfig<AIModelConfig[]>('ai.models') || [],
         configManager.getConfig<Partial<TaskModelsConfig>>('ai.task_models'),
       ]);
       setSettings(loadedSettings);
       setModels(allModels ?? []);
       setTaskModels(normalizeTaskModels(taskModelsData));
+      hasLoaded.current = true;
     } catch (error) {
       log.error('Failed to load session title config', error);
       setLoadError(true);
@@ -59,7 +64,7 @@ export const SessionTitleSection: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    void loadData();
+    if (!cachedSettings || !seed.loaded) void loadData();
     const unwatchModels = configManager.watch('ai.models', () => void loadData());
     const unwatchTaskModels = configManager.watch('ai.task_models', () => void loadData());
     const unwatchSettings = aiExperienceConfigService.addChangeListener((next) => {
@@ -70,7 +75,7 @@ export const SessionTitleSection: React.FC = () => {
       unwatchTaskModels();
       unwatchSettings();
     };
-  }, [loadData]);
+  }, [cachedSettings, loadData, seed.loaded]);
 
   const enabledModels = models.filter((model) => model.enabled);
   const selectionValue = (selection: TaskModelSelection): string => (

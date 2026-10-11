@@ -615,7 +615,7 @@ export const AskUser = forwardRef<HTMLDivElement, AskUserProps>(function AskUser
 
       {showFooter && resolvedExpanded && (
         <div className={styles.footer} data-openbitfun-part="footer">
-          {paginated && navigation && activeQuestion && (
+          {paginated && navigation && activeQuestion?.selectionMode === "multiple" && (
             <span aria-live="polite" className={styles.counter} data-openbitfun-part="selection-count">
               {navigation.selectionLabel(
                 selectedCount,

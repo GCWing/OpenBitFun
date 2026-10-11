@@ -139,6 +139,22 @@ class ChatMessageBubbleTest {
         assertTrue(composeRule.onAllNodesWithText("Build step finished.").fetchSemanticsNodes().isEmpty())
     }
 
+
+    @Test
+    fun anOpenSubagentReceivesNewStepsWithoutClosing() {
+        var block by mutableStateOf(MessageBlock.Subagent("live-owner", "Live task", true, "",
+            listOf(MessageBlock.Text("first", "First step", false))))
+        composeRule.setContent { Bubble(row(kind = ConversationRowKind.ASSISTANT, blocks = listOf(block))) }
+        composeRule.onNodeWithText("Live task").performClick()
+        composeRule.runOnIdle {
+            block = block.copy(children = block.children + MessageBlock.Text("second", "Later step", false))
+        }
+        composeRule.onNodeWithText("Later step").assertIsDisplayed()
+        composeRule.runOnIdle { block = block.copy(running = false, status = "completed") }
+        composeRule.onNodeWithText("First step").assertIsDisplayed()
+        composeRule.onNodeWithText("Later step").assertIsDisplayed()
+    }
+
     @Test
     fun aRunningSubagentPreservesUserCollapseAcrossStreamUpdates() {
         var block by mutableStateOf(

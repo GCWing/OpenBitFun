@@ -231,8 +231,8 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
               <div className="miniapp-scene__preview-stage" role="region" aria-label={t('customize.previewTitle')} data-openbitfun-scene="miniapp" data-openbitfun-part="preview">
                 <div className="miniapp-scene__preview-stage-header">
                   <div>
-                    <span>{t('customize.previewTitle')}</span>
-                    <small>{t('customize.previewHint')}</small>
+                    <span className="miniapp-scene__preview-stage-title">{t('customize.previewTitle')}</span>
+                    <small className="miniapp-scene__preview-stage-hint">{t('customize.previewHint')}</small>
                   </div>
                   <Tooltip content={t('customize.hidePreview')}>
                     <IconButton

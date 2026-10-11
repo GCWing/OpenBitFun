@@ -74,7 +74,7 @@
       },
       "input": {
         "label": "輸入與互動",
-        "description": "設定語音轉文字與鍵盤快速鍵"
+        "description": "設定文字選取操作、語音轉文字與鍵盤快速鍵"
       },
       "sessionMemory": {
         "label": "工作階段與記憶",
@@ -95,6 +95,7 @@
       "json": "進階 JSON"
     },
     "sections": {
+      "text-selection": "文字選取",
       "voice": "語音",
       "shortcuts": "快捷鍵",
       "session": "工作階段預設行為",

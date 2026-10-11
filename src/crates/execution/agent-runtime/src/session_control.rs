@@ -2,7 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::path::Path;
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -143,10 +142,8 @@ fn validate_workspace_shape(workspace: &str) -> SessionControlValidationResult {
         return invalid("workspace is required and cannot be empty");
     }
 
-    if !Path::new(workspace.trim()).is_absolute() {
-        return invalid("workspace must be an absolute path");
-    }
-
+    // IDs are opaque. The host resolves a registered ID first, then validates
+    // an unmatched operand as an absolute path in the caller's environment.
     SessionControlValidationResult::default()
 }
 

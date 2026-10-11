@@ -1,6 +1,6 @@
 {
   "name": "openbitfun-installer",
-  "version": "1.0.3",
+  "version": "1.0.5",
   "private": true,
   "type": "module",
   "description": "OpenBitFun Custom Installer - Modern branded installation experience",
