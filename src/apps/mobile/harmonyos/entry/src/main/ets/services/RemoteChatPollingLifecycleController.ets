@@ -6,6 +6,7 @@ import {
   ChatSessionCursor,
   ChatSessionSnapshot
 } from './ChatSessionController';
+import { SubagentBranchCache } from './SubagentStreamCoordinator';
 import { RemoteSessionManager } from './RemoteSessionManager';
 
 export type RemoteChatPollingCursor = ChatSessionCursor;
@@ -22,9 +23,11 @@ export type RemoteChatPollingLifecycleCallbacks = ChatSessionControllerCallbacks
 export class RemoteChatPollingLifecycleController {
   private readonly controller: ChatSessionController;
 
-  constructor(sessionManager: RemoteSessionManager, callbacks: ChatSessionControllerCallbacks) {
+  constructor(sessionManager: RemoteSessionManager, callbacks: ChatSessionControllerCallbacks,
+    branchCache?: SubagentBranchCache) {
     this.controller = new ChatSessionController(sessionManager, callbacks, {
-      initialPollDelayMs: 400
+      initialPollDelayMs: 400,
+      branchCache: branchCache
     });
   }
 
@@ -44,6 +47,10 @@ export class RemoteChatPollingLifecycleController {
   async refreshModelCatalog(): Promise<void> { await this.controller.refreshModelCatalog(); }
 
   loadOlder(): void { this.controller.loadOlder(); }
+
+  ensureBranchSubscribed(ownerToolCallId: string): void {
+    this.controller.ensureBranchSubscribed(ownerToolCallId);
+  }
 
   nudge(): void {
     this.controller.nudge();

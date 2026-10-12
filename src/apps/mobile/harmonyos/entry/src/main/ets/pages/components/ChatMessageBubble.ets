@@ -8,6 +8,7 @@ import { ChatMessageStructurePolicy, StructuredRenderGroup } from '../policy/Cha
 import { AssistantProcessLayoutPolicy } from '../policy/AssistantProcessLayoutPolicy';
 import { ConversationMessageRenderPolicy } from '../policy/ConversationMessageRenderPolicy';
 import { ThinkingPresentationPolicy } from '../policy/ThinkingPresentationPolicy';
+import { SubagentBranchExpansionState } from '../state/SubagentBranchExpansionState';
 import { ACCENT, INK, LINE, STATUS_DANGER } from './Theme';
 import { MessageBodyMarkdown, MessageFileCards, MessageImageGallery, MessageMarkdown } from './ChatMessageContent';
 import {
@@ -89,6 +90,14 @@ export struct ChatMessageBubble {
   @Event onOpenFilePreview: (path: string, label: string) => void = (_path: string, _label: string) => {};
   @Event onBuildPlan: (path: string, name: string) => void = (_path: string, _name: string) => {};
   @Event onDownloadFile: (path: string) => void = (_path: string) => {};
+  /**
+   * Disclosure of the delegation cards in this message, owned by the
+   * conversation: the row and the structured subtree under it are rebuilt
+   * whenever the turn is republished, and disclosure has to outlive that.
+   */
+  @Param subagentBranches: SubagentBranchExpansionState = new SubagentBranchExpansionState();
+  /** Raised when the reader opens a delegation card, so its worker is followed. */
+  @Event onBranchExpanded: (branchId: string) => void = (_branchId: string) => {};
   private readonly fileReferenceCache: MessageFileReferenceProjectionCache =
     new MessageFileReferenceProjectionCache();
 
@@ -415,10 +424,13 @@ export struct ChatMessageBubble {
       interactionMailbox: this.interactionMailbox,
       title: this.subagentTitle(this.currentSubagentBranch(entry, path)),
       path: path,
+      branchId: entry.tool?.id || '',
       status: this.currentSubagentBranch(entry, path).tool?.status ||
         (activeScope ? 'running' : 'completed'),
       items: this.currentSubagentBranch(entry, path).subItems || [],
+      expansion: this.subagentBranches,
       renderRevision: this.renderRevision,
+      onBranchExpanded: this.onBranchExpanded,
       onApproveTool: this.onApproveTool,
       onRejectTool: this.onRejectTool,
       onCancelTool: this.onCancelTool,

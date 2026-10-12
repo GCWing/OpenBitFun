@@ -13,8 +13,10 @@ function load(name, dependencies = {}) {
 }
 const models = load('../model/InteractionMailbox');
 const { InteractionMailboxStore } = load('InteractionMailboxStore', { '../model/InteractionMailbox': models });
+const reducer = load('DurableSessionReducer');
 const { ChatSessionController } = load('ChatSessionController', {
-  './InteractionMailboxStore': { InteractionMailboxStore }, './DurableSessionReducer': load('DurableSessionReducer'),
+  './InteractionMailboxStore': { InteractionMailboxStore }, './DurableSessionReducer': reducer,
+  './SubagentStreamCoordinator': load('SubagentStreamCoordinator', { './DurableSessionReducer': reducer }),
 });
 const request = (id = 'approval', sessionId = 's') => ({ requestId: id, sessionId,
   toolCallId: 'tool', action: 'write', resources: ['/remote/file'], source: { identity: 'Agent' } });

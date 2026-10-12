@@ -22,6 +22,7 @@ import { AppRoute } from '../navigation/AppRouteContract';
 import { ConversationCoreState } from './ConversationCoreState';
 import { GeneralChatPageState } from './GeneralChatPageState';
 import { RemotePageState } from './RemotePageState';
+import { SubagentBranchExpansionState } from './SubagentBranchExpansionState';
 
 /** Immutable presentation state consumed by ConversationView. */
 export class ConversationViewState {
@@ -53,6 +54,11 @@ export class ConversationViewState {
   selectedImages: ConversationUiSelectedImage[] = [];
   isVoiceListening: boolean = false;
   chatInput: string = '';
+  /**
+   * Disclosure of the conversation's delegation cards; the projection carries the
+   * owner's instance so a card the reader opened stays open across repaints.
+   */
+  subagentBranches: SubagentBranchExpansionState = new SubagentBranchExpansionState();
 
   static project(
     route: AppRoute,
@@ -114,6 +120,7 @@ export class ConversationViewState {
     state.selectedImages = core.selectedImages.map((image) => toConversationUiSelectedImage(image));
     state.isVoiceListening = core.isVoiceListening;
     state.chatInput = core.chatInput;
+    state.subagentBranches = core.subagentBranches;
     return state;
   }
 

@@ -439,6 +439,15 @@ export interface RemoteToolStatusResponse {
   error_preview?: string;
   exit_code?: number;
   plan?: RemotePlanToolResponse;
+  /**
+   * Child Session a launching tool started, when this record is a delegation.
+   *
+   * The durable record names it (`subagent_session_id` on the item data), and
+   * this projection keeps the name instead of dropping it: a transcript restored
+   * from the phone's cache is the only thing a cold or offline session view has,
+   * and the link is what maps a stored child back to the branch that owns it.
+   */
+  subagent_session_id?: string;
 }
 
 export interface RemotePlanToolResponse {

@@ -158,7 +158,11 @@ export class DurableSessionReducer {
       if (entry.data.type === 'tool') {
         const tool: RemoteToolStatusResponse = { id: data.toolCall?.id || data.id, name: data.toolName, status: data.status || (data.toolResult ? (data.toolResult.success ? 'completed' : 'failed') : 'running'),
           tool_input: data.toolCall?.input, tool_output: data.toolResult?.result,
-          duration_ms: data.durationMs ?? data.toolResult?.durationMs, error_preview: data.toolResult?.error, start_ms: data.startTime };
+          duration_ms: data.durationMs ?? data.toolResult?.durationMs, error_preview: data.toolResult?.error, start_ms: data.startTime,
+          // The child Session this launch started, kept on the projection so a
+          // transcript that only exists on this phone still says which session a
+          // delegation drew its worker from.
+          subagent_session_id: data.subagentSessionId };
         item.tool = tool; tools.push(tool);
       }
       items.push(item);

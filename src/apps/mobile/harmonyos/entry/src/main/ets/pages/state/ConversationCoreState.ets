@@ -14,6 +14,7 @@ import {
   ChatTimelineRowStore
 } from '../../model/ChatTimelineModels';
 import { RemoteUiState } from '../../services/RemoteUiState';
+import { SubagentBranchExpansionState } from './SubagentBranchExpansionState';
 
 /** Shared observable state for General Chat and Remote Chat conversations. */
 @ObservedV2
@@ -35,6 +36,12 @@ export class ConversationCoreState {
   @Trace chatInput: string = '';
   @Trace selectedImages: SelectedImageAttachment[] = [];
   @Trace isVoiceListening: boolean = false;
+  /**
+   * Which delegation cards are open. Disclosures outlive the rows that draw
+   * them, so they are owned by the conversation rather than by a card, and they
+   * are shared by every surface that projects this conversation.
+   */
+  readonly subagentBranches: SubagentBranchExpansionState = new SubagentBranchExpansionState();
   private composerRevision: number = 0;
   private readonly defaultAgentType: string;
   private readonly timelineRevisionTracker: ChatTimelineRevisionTracker = new ChatTimelineRevisionTracker();

@@ -20,6 +20,7 @@ import { RemoteResponseMapper } from './RemoteResponseMapper';
 import { stampRemoteSessionsWorkspace } from './RemoteSessionIdentity';
 import { TranscriptIntegrityPolicy } from './TranscriptIntegrityPolicy';
 import { RemoteSessionClient } from './RemoteSessionController';
+import { SubagentStreamSource } from './SubagentStreamCoordinator';
 import { RemoteToolActionClient } from './RemoteToolActionController';
 
 /**
@@ -38,7 +39,7 @@ const ACCOUNT_HANDSHAKE_TIMEOUT_MS: number = 15000;
 interface PermissionReplyArgs { request: PermissionReplyRequest; }
 interface PermissionReplyRequest { requestId: string; reply: string; feedback?: string; updatedInput?: Object; }
 
-export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFileDownloadClient, RemoteModelClient, RemoteSessionClient, RemoteToolActionClient {
+export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFileDownloadClient, RemoteModelClient, RemoteSessionClient, RemoteToolActionClient, SubagentStreamSource {
   private transport?: RemoteCommandTransport;
   private transportGeneration: number = 0;
   private workspace?: WorkspaceInfo;

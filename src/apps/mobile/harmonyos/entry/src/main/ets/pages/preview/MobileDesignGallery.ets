@@ -57,7 +57,8 @@ struct MobileDesignGallery {
       CatalogRefreshPreview()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('model-role-selector')) {
       ModelRoleSelectorPreview()
-    } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('subagent-process')) {
+    } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('subagent-process') ||
+      (AppStorage.get<string>('scenarioId') || '').startsWith('subagent-swarm')) {
       SubagentProcessPreview()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('file-visibility')) {
       FileVisibilityPreview()

@@ -2,6 +2,7 @@ import { InteractionMailboxState } from '../../model/InteractionMailbox';
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { ConversationUiMessageItem, ConversationUiQuestionAnswer } from '../state/ConversationUiModels';
+import { SubagentBranchExpansionState } from '../state/SubagentBranchExpansionState';
 import { ChatMessageStructurePolicy } from '../policy/ChatMessageStructurePolicy';
 import {
   CARD,
@@ -31,6 +32,24 @@ export struct SubagentTaskCard {
    */
   @Param items: ConversationUiMessageItem[] = [];
   @Param renderRevision: number = 0;
+  /**
+   * The tool call that launched this worker; the key its disclosure is kept under.
+   *
+   * A branch is identified by what launched it. The render path is only a
+   * fallback for a host that sent no tool call id, and it is stable for as long
+   * as the branch is, which is all a key has to be.
+   */
+  @Param branchId: string = '';
+  /**
+   * Disclosure owned by the conversation, not by this card.
+   *
+   * The row this card sits in is rebuilt whenever the turn is republished, and
+   * with it every component below the row's keyed subtree. State kept here would
+   * be what the reader loses at that moment — which is what happened when a
+   * launch settled under an open card — so the boolean lives in owner state that
+   * outlives the row and this card only reads and writes it.
+   */
+  @Param expansion: SubagentBranchExpansionState = new SubagentBranchExpansionState();
   @Event onApproveTool: (toolId: string, updatedInput?: Object) => void =
     (_toolId: string, _updatedInput?: Object) => {};
   @Event onRejectTool: (toolId: string) => void = (_toolId: string) => {};
@@ -40,7 +59,11 @@ export struct SubagentTaskCard {
   @Event onOpenFilePreview: (path: string, label: string) => void =
     (_path: string, _label: string) => {};
   @Event onBuildPlan: (path: string, name: string) => void = (_path: string, _name: string) => {};
-  @Local expanded: boolean = false;
+  /**
+   * Raised when the reader opens this branch, so the owner of its records can
+   * make sure the worker is actually being followed.
+   */
+  @Event onBranchExpanded: (branchId: string) => void = (_branchId: string) => {};
 
   build() {
     Column() {
@@ -80,7 +103,7 @@ export struct SubagentTaskCard {
           .fontColor(this.isError() ? STATUS_DANGER : MUTED)
           .maxLines(1)
         if (this.hasProcessItems()) {
-          SymbolGlyph(this.expanded ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+          SymbolGlyph(this.isExpanded() ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
             .fontSize(13)
             .fontColor([MUTED])
             .width(16)
@@ -91,11 +114,9 @@ export struct SubagentTaskCard {
       .height(28)
       .alignItems(VerticalAlign.Center)
       .onClick(() => {
-        if (this.hasProcessItems()) {
-          this.expanded = !this.expanded;
-        }
+        this.toggleExpanded();
       })
-      if (this.expanded && this.hasProcessItems()) {
+      if (this.isExpanded() && this.hasProcessItems()) {
         this.ProcessItems()
       }
     }
@@ -106,9 +127,9 @@ export struct SubagentTaskCard {
       top: this.isEmphasized() ? 6 : 0,
       bottom: this.isEmphasized() ? 6 : 0
     })
-    .backgroundColor(this.isEmphasized() || this.expanded ? SOFT : TRANSPARENT)
+    .backgroundColor(this.isEmphasized() || this.isExpanded() ? SOFT : TRANSPARENT)
     .borderRadius(this.isEmphasized() ? 14 : 8)
-    .border({ width: this.isEmphasized() || this.expanded ? 1 : 0, color: LINE })
+    .border({ width: this.isEmphasized() || this.isExpanded() ? 1 : 0, color: LINE })
     .accessibilityText(`${this.title}, ${this.statusText()}`)
   }
 
@@ -167,6 +188,37 @@ export struct SubagentTaskCard {
    * Counting each kind separately keeps a child's key while siblings of other
    * kinds arrive, so a running Task cannot renumber what is already drawn.
    */
+  /**
+   * The reader's disclosure of this branch, read from the conversation that owns it.
+   *
+   * Reading it in `build` is what subscribes this card to it: the disclosure is
+   * `@Trace`, so opening or closing the branch repaints exactly this card.
+   */
+  private isExpanded(): boolean {
+    return this.expansion.isExpanded(this.branchKey());
+  }
+
+  /**
+   * Opens or closes the branch, and tells the owner of its records when it opened.
+   *
+   * An open branch is a request to see the worker: its stream may have been
+   * released (the cap releases a settled child, and a wide delegation holds only
+   * so many at once), so the same gesture both flips the disclosure and asks for
+   * the worker to be followed again. Re-attaching is idempotent, and does nothing
+   * for a branch that is already being followed.
+   */
+  private toggleExpanded(): void {
+    if (!this.hasProcessItems()) return;
+    if (this.expansion.toggle(this.branchKey())) {
+      this.onBranchExpanded(this.branchId);
+    }
+  }
+
+  /** What this branch's disclosure is remembered under. */
+  private branchKey(): string {
+    return this.branchId.length > 0 ? this.branchId : this.path;
+  }
+
   private processItemKey(index: number): string {
     const items = this.visibleProcessItems();
     const ordinals: Map<string, number> = new Map<string, number>();

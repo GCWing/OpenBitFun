@@ -13,6 +13,15 @@ function load(name, dependencies = {}) {
 const mailboxModule = load('InteractionMailboxStore', { '../model/InteractionMailbox': load('../model/InteractionMailbox') });
 const reducerModule = load('DurableSessionReducer');
 const { DurableSessionReducer } = reducerModule;
+// The controller opens a delegation tool's child sessions itself; the
+// coordinator is loaded from source with the reducer it reduces them with.
+const subagentModule = load('SubagentStreamCoordinator', { './DurableSessionReducer': reducerModule });
+function loadController() {
+  return load('ChatSessionController', {
+    './DurableSessionReducer': reducerModule, './InteractionMailboxStore': mailboxModule,
+    './SubagentStreamCoordinator': subagentModule
+  });
+}
 function record(revision, content, status = 'inprogress', itemId = 'text') {
   return { session_id: 'session', event: 'session-record', payload: {
     sessionId: 'session', id: `item/${itemId}`, revision,
@@ -41,7 +50,7 @@ test('late older child cannot regress completed parent, while its own unseen con
   assert.equal(reducer.messages()[1].renderVersion, 10);
 });
 test('controller hydrates from the same record log without transcript RPC', async () => {
-  const { ChatSessionController } = load('ChatSessionController', { './DurableSessionReducer': reducerModule, './InteractionMailboxStore': mailboxModule });
+  const { ChatSessionController } = loadController();
   let callbacks, snapshots = [];
   const manager = { getModelCatalog: async () => ({ version: 1, models: [], default_models: {} }), subscribeSession: (_id, next) => { callbacks = next; return { wake() {}, close() {} }; }, getSessionMessages: () => { throw new Error('Snapshot RPC is forbidden'); } };
   const controller = new ChatSessionController(manager, { onSnapshot: value => snapshots.push(value), canPoll: () => true, onError: error => { throw error; } });
@@ -87,7 +96,7 @@ test('command history entrypoints delegate to the same durable collection with n
 });
 
 test('initial and resumed mailbox restores questions independently of transcript lifetime', async () => {
-  const { ChatSessionController } = load('ChatSessionController', { './DurableSessionReducer': reducerModule, './InteractionMailboxStore': mailboxModule });
+  const { ChatSessionController } = loadController();
   let callbacks, snapshot, mailbox, mailboxReads = 0;
   const question = { questions: [{question:'Proceed?',options:[{label:'Yes'}]}] };
   const manager = {
@@ -232,7 +241,7 @@ test('a dropped turn stops being cached', () => {
 
 
 test('history publishes user and assistant together after reduction, including a concurrent model read', async () => {
-  const { ChatSessionController } = load('ChatSessionController', { './DurableSessionReducer': reducerModule, './InteractionMailboxStore': mailboxModule });
+  const { ChatSessionController } = loadController();
   let callbacks, resolveCatalog;
   const snapshots = [];
   const manager = {
@@ -272,9 +281,7 @@ async function durableTimelineHarness() {
   const timeline = new ChatTimelineStore();
   timeline.reset('session');
   let stream;
-  const { ChatSessionController } = load('ChatSessionController', {
-    './DurableSessionReducer': reducerModule, './InteractionMailboxStore': mailboxModule
-  });
+  const { ChatSessionController } = loadController();
   const controller = new ChatSessionController({
     getModelCatalog: async () => ({ version: 1, models: [], default_models: {} }),
     subscribeSession: (_id, callbacks) => { stream = callbacks; return { wake() {}, close() {} }; }
@@ -372,7 +379,7 @@ test('legacy partial snapshots still preserve omitted active content', () => {
   assert.deepEqual(timeline.snapshot().activeTurn.items, active.items);
 });
 test('host restart terminal record settles active turn without reporting successful completion', async () => {
-  const { ChatSessionController } = load('ChatSessionController', { './DurableSessionReducer': reducerModule, './InteractionMailboxStore': mailboxModule });
+  const { ChatSessionController } = loadController();
   let stream, snapshot;
   const timeline = new ChatTimelineStore(); timeline.reset('session');
   const controller = new ChatSessionController({ getModelCatalog: async () => ({version:1,models:[],default_models:{}}),
