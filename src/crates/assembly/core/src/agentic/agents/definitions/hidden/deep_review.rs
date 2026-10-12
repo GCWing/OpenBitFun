@@ -67,7 +67,6 @@ impl Agent for DeepReviewAgent {
         UserContextPolicy::empty()
             .with_workspace_context()
             .with_workspace_instructions()
-            .with_project_layout()
     }
 
     fn is_readonly(&self) -> bool {

@@ -62,9 +62,7 @@ impl Agent for ComputerUseMode {
     }
 
     fn user_context_policy(&self) -> UserContextPolicy {
-        UserContextPolicy::empty()
-            .with_workspace_instructions()
-            .with_project_layout()
+        UserContextPolicy::empty().with_workspace_instructions()
     }
 
     fn is_readonly(&self) -> bool {

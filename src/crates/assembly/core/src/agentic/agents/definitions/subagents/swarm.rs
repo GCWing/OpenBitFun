@@ -54,7 +54,6 @@ impl Agent for SwarmPlannerAgent {
         crate::agentic::agents::UserContextPolicy::empty()
             .with_workspace_context()
             .with_workspace_instructions()
-            .with_project_layout()
     }
 }
 
@@ -180,6 +179,5 @@ impl Agent for SwarmWorkerAgent {
         crate::agentic::agents::UserContextPolicy::empty()
             .with_workspace_context()
             .with_workspace_instructions()
-            .with_project_layout()
     }
 }

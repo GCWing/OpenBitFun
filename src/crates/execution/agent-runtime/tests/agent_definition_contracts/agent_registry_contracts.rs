@@ -186,7 +186,7 @@ fn mode_presentation_and_shared_context_policy_match_existing_mode_contract() {
 
     assert_eq!(
         standard_harness_user_context_policy().cache_scope_key(),
-        "workspace_context|workspace_instructions|project_layout|memory_summary"
+        "workspace_context|workspace_instructions|memory_summary"
     );
 }
 

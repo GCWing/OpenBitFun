@@ -1464,6 +1464,7 @@ impl ExecutionEngine {
         supports_image_understanding: bool,
         tool_listing_sections: ToolListingSections,
         runtime_context_needs: RuntimeContextNeeds,
+        user_context_policy: &UserContextPolicy,
     ) -> Option<PromptBuilderContext> {
         let workspace = context.workspace.as_ref()?;
         let remote_file_delivery_channel = context
@@ -1479,6 +1480,7 @@ impl ExecutionEngine {
             Some(supports_image_understanding),
             tool_listing_sections,
             runtime_context_needs,
+            user_context_policy,
         )
         .await
         .map(|prompt_context| {
@@ -1747,6 +1749,7 @@ impl ExecutionEngine {
             input.supports_image_understanding,
             input.tool_listing_sections,
             input.runtime_context_needs,
+            &input.current_agent.user_context_policy(),
         )
         .await;
         let prepended_prompt_reminders = self

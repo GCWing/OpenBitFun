@@ -150,6 +150,7 @@ impl PromptBuilderContext {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn build_prompt_context_for_workspace(
     workspace: &WorkspaceBinding,
     workspace_id: Option<&str>,
@@ -158,6 +159,7 @@ pub async fn build_prompt_context_for_workspace(
     supports_image_understanding: Option<bool>,
     tool_listing_sections: ToolListingSections,
     runtime_context_needs: RuntimeContextNeeds,
+    user_context_policy: &UserContextPolicy,
 ) -> Option<PromptBuilderContext> {
     let workspace_path = workspace.root_path_string();
 
@@ -203,6 +205,7 @@ pub async fn build_prompt_context_for_workspace(
 
     #[cfg(not(feature = "remote-workspace"))]
     {
+        let _ = user_context_policy;
         Some(base)
     }
 
@@ -232,7 +235,6 @@ pub async fn build_prompt_context_for_workspace(
         };
 
         let ssh_manager = manager.get_ssh_manager().await;
-        let file_service = manager.get_file_service().await;
         let (kernel_name, hostname) = if let Some(ref ssh) = ssh_manager {
             if let Some(info) = ssh.get_server_info(connection_id).await {
                 (info.os_type, info.hostname)
@@ -242,15 +244,24 @@ pub async fn build_prompt_context_for_workspace(
         } else {
             ("Linux".to_string(), "remote".to_string())
         };
-        let remote_layout = if let Some(ref fs) = file_service {
-            match build_remote_workspace_layout_preview(fs, connection_id, &workspace_path, 200)
+        let remote_layout = if user_context_policy.includes(UserContextSection::ProjectLayout) {
+            if let Some(fs) = manager.get_file_service().await {
+                match build_remote_workspace_layout_preview(
+                    &fs,
+                    connection_id,
+                    &workspace_path,
+                    200,
+                )
                 .await
-            {
-                Ok((_, preview)) => Some(preview),
-                Err(e) => {
-                    warn!("Remote workspace layout for prompt failed: {}", e);
-                    None
+                {
+                    Ok((_, preview)) => Some(preview),
+                    Err(e) => {
+                        warn!("Remote workspace layout for prompt failed: {}", e);
+                        None
+                    }
                 }
+            } else {
+                None
             }
         } else {
             None
@@ -328,6 +339,15 @@ impl PromptBuilder {
         if let Some(remote_layout) = &self.context.remote_project_layout {
             return render_project_layout(&ProjectLayoutFacts {
                 listing: remote_layout.clone(),
+                reached_limit: false,
+                max_entries: self.file_tree_max_entries,
+                remote: true,
+            });
+        }
+
+        if self.context.remote_execution.is_some() {
+            return render_project_layout(&ProjectLayoutFacts {
+                listing: "Remote workspace layout is unavailable.".to_string(),
                 reached_limit: false,
                 max_entries: self.file_tree_max_entries,
                 remote: true,
@@ -1097,6 +1117,7 @@ mod tests {
             None,
             ToolListingSections::default(),
             RuntimeContextNeeds::default(),
+            &UserContextPolicy::empty().with_workspace_context(),
         )
         .await
         .expect("prompt context should build");

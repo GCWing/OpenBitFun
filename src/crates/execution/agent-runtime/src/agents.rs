@@ -53,7 +53,6 @@ pub fn standard_harness_user_context_policy() -> UserContextPolicy {
     UserContextPolicy::empty()
         .with_workspace_context()
         .with_workspace_instructions()
-        .with_project_layout()
         .with_memory_summary()
 }
 
