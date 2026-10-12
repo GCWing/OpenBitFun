@@ -130,16 +130,22 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     searchPhrases: [],
     sections: [
       {
-        id: 'text-selection',
-        labelKey: 'navigation.sections.text-selection',
-        keywords: ['selection', 'annotation', 'excerpt', 'toolbar', 'popup', 'flowchat'],
-        searchPhrases: [phrase('settings/application', 'textSelection.title'), phrase('settings/application', 'textSelection.autoShowToolbar'), phrase('settings/application', 'textSelection.autoShowToolbarDescription')],
-      },
-      {
         id: 'voice',
         labelKey: 'navigation.sections.voice',
         keywords: ['voice', 'speech', 'microphone', 'dictation', 'transcription'],
         searchPhrases: [phrase('settings/voice-input', 'title'), phrase('settings/voice-input', 'subtitle')],
+      },
+      {
+        id: 'message-sending',
+        labelKey: 'navigation.sections.message-sending',
+        keywords: ['message', 'send', 'queue', 'immediate', 'steering', 'flowchat'],
+        searchPhrases: [phrase('settings/application', 'messageSending.title'), phrase('settings/application', 'messageSending.duringTurn'), phrase('settings/application', 'messageSending.description')],
+      },
+      {
+        id: 'text-selection',
+        labelKey: 'navigation.sections.text-selection',
+        keywords: ['selection', 'annotation', 'excerpt', 'toolbar', 'popup', 'flowchat'],
+        searchPhrases: [phrase('settings/application', 'textSelection.title'), phrase('settings/application', 'textSelection.autoShowToolbar'), phrase('settings/application', 'textSelection.autoShowToolbarDescription')],
       },
       {
         id: 'shortcuts',

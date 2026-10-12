@@ -4,6 +4,16 @@
   "common": {
     "retry": "Retry"
   },
+  "messageSending": {
+    "title": "Message sending",
+    "duringTurn": "Send messages while a conversation is running",
+    "description": "Native sessions send follow-up instructions to the current task immediately by default. Choose queue to wait for the current turn to finish. ACP sessions still wait for the current turn; dispatched sessions continue appending messages to the target task.",
+    "immediate": "Send immediately (default)",
+    "queue": "Queue messages",
+    "loading": "Loading message sending preferences…",
+    "loadFailed": "Failed to load message sending preferences",
+    "saveFailed": "Failed to save message sending preferences"
+  },
   "textSelection": {
     "title": "Text selection",
     "autoShowToolbar": "Automatically show text selection actions",

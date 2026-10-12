@@ -4,6 +4,16 @@
   "common": {
     "retry": "重试"
   },
+  "messageSending": {
+    "title": "消息发送",
+    "duringTurn": "对话执行期间发送消息",
+    "description": "原生会话默认立即向当前任务补充指令；选择排队则等待当前轮次结束。ACP 会话仍需等待当前轮次结束，远程派发会话保持向目标任务追加消息。",
+    "immediate": "立即发送（默认）",
+    "queue": "排队发送",
+    "loading": "正在加载消息发送偏好…",
+    "loadFailed": "加载消息发送偏好失败",
+    "saveFailed": "保存消息发送偏好失败"
+  },
   "textSelection": {
     "title": "文本选择",
     "autoShowToolbar": "自动显示选中文字操作栏",

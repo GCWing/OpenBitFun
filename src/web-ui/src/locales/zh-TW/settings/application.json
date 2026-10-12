@@ -4,6 +4,16 @@
   "common": {
     "retry": "重試"
   },
+  "messageSending": {
+    "title": "訊息傳送",
+    "duringTurn": "對話執行期間傳送訊息",
+    "description": "原生工作階段預設立即向目前任務補充指令；選擇排隊則等待目前輪次結束。ACP 工作階段仍需等待目前輪次結束，遠端派發工作階段維持向目標任務追加訊息。",
+    "immediate": "立即傳送（預設）",
+    "queue": "排隊傳送",
+    "loading": "正在載入訊息傳送偏好…",
+    "loadFailed": "載入訊息傳送偏好失敗",
+    "saveFailed": "儲存訊息傳送偏好失敗"
+  },
   "textSelection": {
     "title": "文字選取",
     "autoShowToolbar": "自動顯示選取文字操作列",

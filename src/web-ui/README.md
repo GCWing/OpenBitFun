@@ -29,6 +29,18 @@ configuration changes cannot silently overwrite one another. This management
 surface edits the local Desktop user's configuration; project-scoped editing,
 Peer Device management, and standalone Web management are not exposed by it.
 
+## Sending follow-up messages
+
+In **Settings → Input & interaction → Message sending**, choose how follow-up
+messages are sent during a native conversation. **Send immediately** is the
+default, including after upgrading: it delivers instructions to the running task
+through the existing send-now action. **Queue messages** waits for the current
+turn to finish. Buttons and keyboard submission share this preference.
+Already queued messages retain their individual send-now action. ACP sessions
+still wait for the current turn; Detached Dispatch sessions keep appending
+messages to the target task. In Peer Device Mode, the preference belongs to the
+active host, as do the other conversation settings.
+
 ## Floating conversations
 
 The bottom-right window opens the persistent OpenBitFun control conversation in

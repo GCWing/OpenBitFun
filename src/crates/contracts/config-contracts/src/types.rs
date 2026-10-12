@@ -440,6 +440,24 @@ pub struct AppFlowChatConfig {
     /// Automatically show excerpt actions after selecting transcript text.
     #[serde(default = "default_auto_show_selection_toolbar")]
     pub auto_show_selection_toolbar: bool,
+    /// How the shared composer submits follow-ups to a running native session.
+    #[serde(skip_serializing_if = "ChatInputSendDuringTurn::is_immediate")]
+    pub send_during_turn: ChatInputSendDuringTurn,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatInputSendDuringTurn {
+    Queue,
+    #[default]
+    #[serde(other)]
+    Immediate,
+}
+
+impl ChatInputSendDuringTurn {
+    fn is_immediate(&self) -> bool {
+        *self == Self::Immediate
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -469,6 +487,7 @@ impl Default for AppFlowChatConfig {
             last_mode_id: None,
             show_permission_mode_control: default_show_permission_mode_control(),
             auto_show_selection_toolbar: default_auto_show_selection_toolbar(),
+            send_during_turn: ChatInputSendDuringTurn::default(),
         }
     }
 }
@@ -3078,6 +3097,48 @@ mod tests {
             serde_json::json!({ "auto_show_selection_toolbar": true })
         );
         assert!(super::AppFlowChatConfig::default().auto_show_selection_toolbar);
+    }
+
+    #[test]
+    fn app_flow_chat_send_during_turn_defaults_and_round_trips() {
+        use super::{AppFlowChatConfig, ChatInputSendDuringTurn};
+
+        assert_eq!(
+            AppFlowChatConfig::default().send_during_turn,
+            ChatInputSendDuringTurn::Immediate
+        );
+        let legacy = serde_json::json!({
+            "default_mode_id": "Standard",
+            "auto_show_selection_toolbar": false
+        });
+        let config: AppFlowChatConfig = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(config.send_during_turn, ChatInputSendDuringTurn::Immediate);
+        let written = serde_json::to_value(config).unwrap();
+        assert_eq!(written, legacy);
+        let reloaded: AppFlowChatConfig = serde_json::from_value(written).unwrap();
+        assert_eq!(
+            reloaded.send_during_turn,
+            ChatInputSendDuringTurn::Immediate
+        );
+
+        let queued = serde_json::json!({
+            "send_during_turn": "queue",
+            "auto_show_selection_toolbar": true
+        });
+        let config: AppFlowChatConfig = serde_json::from_value(queued.clone()).unwrap();
+        assert_eq!(config.send_during_turn, ChatInputSendDuringTurn::Queue);
+        let written = serde_json::to_value(config).unwrap();
+        assert_eq!(written, queued);
+        let reloaded: AppFlowChatConfig = serde_json::from_value(written).unwrap();
+        assert_eq!(reloaded.send_during_turn, ChatInputSendDuringTurn::Queue);
+
+        for value in ["immediate", "future_policy"] {
+            let config: AppFlowChatConfig = serde_json::from_value(serde_json::json!({
+                "send_during_turn": value
+            }))
+            .unwrap();
+            assert_eq!(config.send_during_turn, ChatInputSendDuringTurn::Immediate);
+        }
     }
 
     #[test]

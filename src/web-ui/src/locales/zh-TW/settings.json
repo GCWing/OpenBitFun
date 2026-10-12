@@ -96,6 +96,7 @@
     },
     "sections": {
       "text-selection": "文字選取",
+      "message-sending": "訊息傳送",
       "voice": "語音",
       "shortcuts": "快捷鍵",
       "session": "工作階段預設行為",

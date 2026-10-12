@@ -117,6 +117,7 @@ export interface AppLoggingConfig {
 }
 
 export interface AppFlowChatConfig {
+  send_during_turn?: 'immediate' | 'queue';
   default_mode_strategy?: 'follow_last' | 'fixed' | null;
   default_mode_id?: string | null;
   last_mode_id?: string | null;
@@ -677,6 +678,7 @@ export type ConfigPath =
   | 'app.flow_chat.last_mode_id'
   | 'app.flow_chat.show_permission_mode_control'
   | 'app.flow_chat.auto_show_selection_toolbar'
+  | 'app.flow_chat.send_during_turn'
   | 'app.sidebar'
   | 'app.sidebar.width'
   | 'app.sidebar.collapsed'

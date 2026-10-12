@@ -9,6 +9,8 @@
  */
 
 import { useCallback } from 'react';
+import { getChatInputSendDuringTurn } from '@/infrastructure/config/services/ChatInputSendPreference';
+import { isAcpFlowSession } from '../utils/acpSession';
 import { FlowChatManager } from '../services/FlowChatManager';
 import { flowChatSessionConfigForCurrentWorkspace } from '@/app/utils/projectSessionWorkspace';
 import { notificationService } from '@/shared/notification-system';
@@ -91,6 +93,8 @@ interface UseMessageSenderReturn {
       /** Set false when the caller already cleared the full composer synchronously. */
       clearContextsOnSuccess?: boolean;
       execution?: AgentDialogTurnExecution;
+      /** Explicit submission intent takes precedence over the composer preference. */
+      sendImmediately?: boolean;
     }
   ) => Promise<void>;
   /** Whether a send is in progress */
@@ -124,6 +128,7 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
       };
       clearContextsOnSuccess?: boolean;
       execution?: AgentDialogTurnExecution;
+      sendImmediately?: boolean;
     }
   ) => {
     if (!message.trim()) {
@@ -158,6 +163,9 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
     });
 
     try {
+      const sendImmediately = options?.sendImmediately
+        ?? (await getChatInputSendDuringTurn() === 'immediate');
+      surfaceScope.assertCurrent('resolve composer send preference');
       const flowChatManager = FlowChatManager.getInstance();
       let agentTypeForSend = currentAgentType || 'Standard';
       if (options?.execution?.kind === 'fresh_external_subagent' && contexts.length > 0) {
@@ -268,6 +276,7 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
             pendingLargePastes: { ...(options?.composerDraft?.pendingLargePastes ?? {}) },
           },
           foregroundSubmission: true,
+          sendImmediately: sendImmediately && !isAcpFlowSession(targetSession),
           ...(userMessageMetadata ? { userMessageMetadata } : {}),
           ...(options?.execution ? { execution: options.execution } : {}),
           onSessionConflictRetryStart: () => {

@@ -96,6 +96,7 @@
     },
     "sections": {
       "text-selection": "Text selection",
+      "message-sending": "Message sending",
       "voice": "Voice",
       "shortcuts": "Keyboard Shortcuts",
       "session": "Session Defaults",

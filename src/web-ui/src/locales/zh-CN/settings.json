@@ -96,6 +96,7 @@
     },
     "sections": {
       "text-selection": "文本选择",
+      "message-sending": "消息发送",
       "voice": "语音",
       "shortcuts": "快捷键",
       "session": "会话默认行为",
