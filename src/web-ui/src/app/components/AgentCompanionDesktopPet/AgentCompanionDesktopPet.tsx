@@ -447,6 +447,8 @@ export const AgentCompanionDesktopPet: React.FC = () => {
   }, [typedOutputBySessionId]);
 
   const visibleTaskCountRef = useRef(0);
+  // Only the inline composer changes bubble layout; floating menus do not.
+  const composingSessionId = overlay?.kind === 'composer' ? overlay.sessionId : null;
 
   useLayoutEffect(() => {
     // Written here (not during render) so an abandoned/double render cannot
@@ -501,7 +503,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       .catch(error => {
         log.warn('Failed to resize Agent companion window', error);
       });
-  }, [activePetSize.height, activePetSize.width, overlay, bubbleTasks, visibleTasks.length]);
+  }, [activePetSize.height, activePetSize.width, composingSessionId, bubbleTasks, visibleTasks.length]);
 
   useEffect(() => {
     if (IS_WINDOWS_WEBVIEW && !trackPetLook) {

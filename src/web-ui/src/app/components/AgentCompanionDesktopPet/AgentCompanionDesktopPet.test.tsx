@@ -17,16 +17,15 @@ const controlledDragMock = vi.hoisted(() => vi.fn());
 const pointerDrag = vi.hoisted(() => ({ prepare: vi.fn(), move: vi.fn(), finish: vi.fn(), cancel: vi.fn() }));
 vi.mock('@/infrastructure/config/services/AgentCompanionDragService', () => ({ startAgentCompanionDrag: controlledDragMock }));
 vi.mock('@/infrastructure/config/services/AgentCompanionPointerDragService', () => ({ prepareAgentCompanionPointerDrag: pointerDrag.prepare }));
-/** Backs the Tauri IPC bridge, so window resize requests are observable. */
-const hostInvokeMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
 vi.mock('@tauri-apps/api/event', () => ({
   emit: emitMock,
   listen: listenMock,
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: invokeMock,
+// Mock the component's API boundary before ApiClient initializes a transport.
+vi.mock('@/infrastructure/api/service-api/ApiClient', () => ({
+  api: { invoke: invokeMock },
 }));
 
 vi.mock('@tauri-apps/api/window', () => ({
@@ -95,13 +94,6 @@ function typeInto(input: HTMLInputElement, value: string): void {
 }
 
 beforeAll(async () => {
-  // The pet resizes its own window through `invoke`; the dynamic import inside
-  // the component reaches the real Tauri core module, so stub the IPC bridge.
-  (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
-    invoke: hostInvokeMock,
-    transformCallback: (callback: unknown) => callback,
-  };
-
   i18n = createInstance();
   await i18n.use(initReactI18next).init({
     lng: 'en-US',
@@ -152,9 +144,9 @@ describe('AgentCompanionDesktopPet', () => {
   };
 
   beforeEach(async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     emitMock.mockClear();
     invokeMock.mockClear();
-    hostInvokeMock.mockClear();
     cursorPositionMock.mockReset();
     cursorPositionMock.mockResolvedValue({ x: 0, y: 0 });
     startDraggingMock.mockReset();
@@ -189,12 +181,13 @@ describe('AgentCompanionDesktopPet', () => {
     });
   });
 
-  afterEach(() => {
-    act(() => {
+  afterEach(async () => {
+    await act(async () => {
       root.unmount();
     });
     container.remove();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('provides the off-window pointer direction to v2 only while idle', async () => {
@@ -400,7 +393,11 @@ describe('AgentCompanionDesktopPet', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    hostInvokeMock.mockClear();
+    expect(invokeMock).toHaveBeenCalledWith(
+      'resize_agent_companion_desktop_pet',
+      expect.objectContaining({ width: expect.any(Number), height: expect.any(Number) }),
+    );
+    invokeMock.mockClear();
 
     dispatch(query('.openbitfun-agent-companion-window__bubble-shell')!, 'contextmenu');
     dispatch(query('.openbitfun-agent-companion-window__pet-hitbox')!, 'contextmenu');
@@ -410,9 +407,8 @@ describe('AgentCompanionDesktopPet', () => {
 
     // Resizing moves every bottom-right anchored element for a frame, which
     // reads as the pet and bubbles flashing.
-    expect(hostInvokeMock).not.toHaveBeenCalledWith(
+    expect(invokeMock).not.toHaveBeenCalledWith(
       'resize_agent_companion_desktop_pet',
-      expect.anything(),
       expect.anything(),
     );
   });
