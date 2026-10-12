@@ -22,7 +22,16 @@ export enum SettingsSheetKind {
    * it is placed by the same contract: an overlay sheet that must land inside a
    * foldable's leaf, and inside the operate half of a half-folded screen.
    */
-  UserMessageFullText = 'user_message_full_text'
+  UserMessageFullText = 'user_message_full_text',
+  /**
+   * The composer's skill picker. Same reasoning as the full-text panel: it is a
+   * large multi-step surface opened from the conversation, not an anchored menu,
+   * so a bottom sheet is its compact form and the placement contract decides
+   * where it lands on a folded or wide screen.
+   */
+  SkillPicker = 'skill_picker',
+  /** The composer's session usage report: a read-only metrics list. */
+  UsageReport = 'usage_report'
 }
 
 export class SettingsPlacement {
@@ -59,6 +68,9 @@ export class SettingsPlacementPolicy {
   static readonly SIDE_VERTICAL_MARGIN: number = 80;
   static readonly SESSION_DETAILS_HEIGHT: number = 560;
   static readonly REMOTE_VIEW_SETTINGS_HEIGHT: number = 520;
+  /** The skill picker's share of a phone screen, per its approved design. */
+  static readonly SKILL_PICKER_HEIGHT: number = 540;
+  static readonly USAGE_REPORT_HEIGHT: number = 560;
 
   static compactBottom(kind: SettingsSheetKind = SettingsSheetKind.Settings): SettingsPlacement {
     return SettingsPlacementPolicy.bottomPlacement(kind);
@@ -222,9 +234,20 @@ export class SettingsPlacementPolicy {
   }
 
   private static bottomPlacement(kind: SettingsSheetKind): SettingsPlacement {
-    const height = kind === SettingsSheetKind.RemoteViewSettings ?
-      SettingsPlacementPolicy.REMOTE_VIEW_SETTINGS_HEIGHT : 0;
-    return new SettingsPlacement(SettingsPlacementMode.Bottom, 0, height, 0);
+    return new SettingsPlacement(SettingsPlacementMode.Bottom, 0, SettingsPlacementPolicy.bottomHeight(kind), 0);
+  }
+
+  private static bottomHeight(kind: SettingsSheetKind): number {
+    if (kind === SettingsSheetKind.RemoteViewSettings) {
+      return SettingsPlacementPolicy.REMOTE_VIEW_SETTINGS_HEIGHT;
+    }
+    if (kind === SettingsSheetKind.SkillPicker) {
+      return SettingsPlacementPolicy.SKILL_PICKER_HEIGHT;
+    }
+    if (kind === SettingsSheetKind.UsageReport) {
+      return SettingsPlacementPolicy.USAGE_REPORT_HEIGHT;
+    }
+    return 0;
   }
 
   private static kindSideHeight(viewportHeight: number, kind: SettingsSheetKind): number {

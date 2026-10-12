@@ -9,6 +9,7 @@ import { ModelRoleSelectorPreview } from './ModelRoleSelectorPreview';
 import { SubagentProcessPreview } from './SubagentProcessPreview';
 import { FileVisibilityPreview } from './FileVisibilityPreview';
 import { ComposerOverflowPreview } from './ComposerOverflowPreview';
+import { CommandPalettePreview } from './CommandPalettePreview';
 import { ImmersiveBottomPreview } from './ImmersiveBottomPreview';
 import { WelcomeHome } from '../components/WelcomeHome';
 import { InteractionMailboxPreview } from './InteractionMailboxPreview';
@@ -63,6 +64,8 @@ struct MobileDesignGallery {
       FileVisibilityPreview()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('composer-overflow')) {
       ComposerOverflowPreview()
+    } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('command-palette')) {
+      CommandPalettePreview()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('immersive-bottom')) {
       ImmersiveBottomPreview()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('device-selector')) {

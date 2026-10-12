@@ -5,6 +5,7 @@ import { RemoteChatCommandController } from '../../services/RemoteChatCommandCon
 import { RemoteChatPollingLifecycleController } from '../../services/RemoteChatPollingLifecycleController';
 import { RemoteFileDownloadController } from '../../services/RemoteFileDownloadController';
 import { RemoteModelController } from '../../services/RemoteModelController';
+import { RemoteCommandPaletteController } from '../../services/RemoteCommandPaletteController';
 import { RemoteToolActionController } from '../../services/RemoteToolActionController';
 import { RemoteSessionManager } from '../../services/RemoteSessionManager';
 import { RemoteWorkspaceCoordinator } from '../../services/RemoteWorkspaceCoordinator';
@@ -35,6 +36,7 @@ export interface RemoteConversationDependencies {
   readonly chatCache: RemoteChatCache;
   readonly polling: RemoteChatPollingLifecycleController;
   readonly models: RemoteModelController;
+  readonly commandPalette: RemoteCommandPaletteController;
   readonly files: RemoteFileDownloadController;
   readonly tools: RemoteToolActionController;
   readonly connection: RemoteConnectionController;

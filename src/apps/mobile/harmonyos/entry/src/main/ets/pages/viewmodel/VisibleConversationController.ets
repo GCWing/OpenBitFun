@@ -1,6 +1,7 @@
 import { RemoteSession } from '../../model/RemoteModels';
 import { AppRoute } from '../navigation/AppRouteContract';
 import { RemotePageState } from '../state/RemotePageState';
+import { CommandPaletteRequest } from '../actions/ConversationIntent';
 import { RemoteConversationDependencies, requireRemoteRuntime } from './ConversationRuntime';
 import { RemoteCreateFlowController } from './RemoteCreateFlowController';
 import { RemoteTranscriptController } from './RemoteTranscriptController';
@@ -50,6 +51,10 @@ export class VisibleConversationController {
   async retryVisibleMessage(text: string): Promise<void> { this.transcript.retryRemoteMessage(text); }
   downloadVisibleFile(path: string): void { void this.transcript.downloadRemoteFile(path); }
   async selectVisibleModel(modelId: string): Promise<void> { await this.transcript.selectRemoteModel(modelId); }
+
+  async dispatchCommandPalette(request: CommandPaletteRequest): Promise<void> {
+    await this.transcript.dispatchCommandPalette(request);
+  }
 
   closeActiveChat(): void {
     const runtime = requireRemoteRuntime(this.remoteRuntime);

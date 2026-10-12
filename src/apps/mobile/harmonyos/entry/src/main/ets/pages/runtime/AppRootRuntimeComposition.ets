@@ -8,10 +8,12 @@ import { SidebarConnectionActionPolicy } from '../policy/SidebarConnectionAction
 import { accountDeviceLink } from '../../services/AccountDeviceLink';
 import {
   ChatMessage,
+  RemoteCommandCatalog,
   RemoteModelCatalog,
   RemotePermissionMode,
   RemoteQuestionAnswerPayload,
   RemoteSession,
+  RemoteSessionUsageReport,
   RecentWorkspaceEntry,
   SelectedImageAttachment,
   SessionSummary,
@@ -41,6 +43,7 @@ import { LocaleController } from '../viewmodel/LocaleController';
 import { ConversationController } from '../viewmodel/ConversationController';
 import { RemoteLogger } from '../../services/RemoteLogger';
 import { RemoteModelController } from '../../services/RemoteModelController';
+import { RemoteCommandPaletteController } from '../../services/RemoteCommandPaletteController';
 import { RemoteSessionController } from '../../services/RemoteSessionController';
 import { RemoteSessionListCache } from '../../services/RemoteSessionListCache';
 import { RemoteSessionListRdbStore } from '../../services/RemoteSessionListRdbStore';
@@ -53,7 +56,7 @@ import { AsyncLifecycleGate } from '../../services/AsyncLifecycleGate';
 import { RemoteUiState } from '../../services/RemoteUiState';
 import { VoiceInputLifecycleController } from '../../services/VoiceInputLifecycleController';
 import { VoiceInputService } from '../../services/VoiceInputService';
-import { ConversationIntent, MessageCopyScope } from '../actions/ConversationIntent';
+import { ConversationIntent, CommandPaletteRequest, MessageCopyScope } from '../actions/ConversationIntent';
 import { AppRootHostPort } from '../host/AppRootHostAdapter';
 import { AppRootPresentationActions } from '../actions/AppRootPresentationActions';
 import {
@@ -407,7 +410,7 @@ export abstract class AppRootRuntimeComposition {
           this.remoteSessionViewModel.settleTranscriptLoading();
         },
         onComposerPrepared: (sessionId: string, text: string, images: SelectedImageAttachment[]) => {
-          return this.remotePageState.conversation.prepareComposerSubmission(sessionId, text, images);
+          return this.remotePageState.prepareComposerSubmission(sessionId, text, images);
         },
         onSendSucceeded: (turnId: string, pendingActiveId: string, localMessageId: string) => {
           this.chatTimelineStore.acknowledgeOptimisticTurn(localMessageId, turnId);
@@ -584,6 +587,68 @@ export abstract class AppRootRuntimeComposition {
         this.remotePageState.setBusy(isBusy);
       }
     );
+  /**
+   * The composer command palette's host traffic.
+   *
+   * Every callback is fenced to the session that asked for it: a catalog read or
+   * a usage report that lands after the user moved to another conversation would
+   * otherwise paint one session's data over another's.
+   */
+  readonly remoteCommandPaletteController: RemoteCommandPaletteController =
+    new RemoteCommandPaletteController(
+      this.sessionManager,
+      {
+        onCatalogLoading: (sessionId: string): void => {
+          if (!this.isCommandPaletteSession(sessionId)) return;
+          this.remotePageState.commandPalette.setCatalogLoading();
+        },
+        onCatalogReady: (sessionId: string, catalog: RemoteCommandCatalog): void => {
+          if (!this.isCommandPaletteSession(sessionId)) return;
+          this.remotePageState.commandPalette.setCatalogReady(catalog);
+        },
+        onCatalogFailed: (sessionId: string, errorText: string, failure: string): void => {
+          if (!this.isCommandPaletteSession(sessionId)) return;
+          this.remotePageState.commandPalette.setCatalogFailed(errorText, failure);
+        },
+        onCommandStarted: (sessionId: string, wireAction: string): void => {
+          if (!this.isCommandPaletteSession(sessionId)) return;
+          this.remotePageState.commandPalette.beginCommand(wireAction);
+        },
+        onCommandSettled: (sessionId: string, wireAction: string, errorText: string, message: string): void => {
+          if (!this.isCommandPaletteSession(sessionId)) return;
+          this.remotePageState.commandPalette.settleCommand(wireAction, errorText);
+          if (errorText.length > 0) {
+            // The host's own words, kept out of the notice's one line so a long
+            // refusal does not push the composer's hint out of shape.
+            this.remotePageState.setStatusText(errorText);
+          } else if (message.length > 0) {
+            RemoteLogger.info(
+              `command palette completed session=${sessionId} action=${wireAction}`);
+          }
+        },
+        onCommandNoticeExpired: (sessionId: string, wireAction: string): void => {
+          if (!this.isCommandPaletteSession(sessionId)) return;
+          this.remotePageState.commandPalette.expireNotice(wireAction);
+        },
+        onUsageLoading: (sessionId: string): void => {
+          if (!this.isCommandPaletteSession(sessionId)) return;
+          this.remotePageState.commandPalette.setUsageLoading();
+        },
+        onUsageReady: (sessionId: string, report: RemoteSessionUsageReport | undefined): void => {
+          if (!this.isCommandPaletteSession(sessionId)) return;
+          this.remotePageState.commandPalette.setUsageReady(report);
+        },
+        onUsageFailed: (sessionId: string, errorText: string): void => {
+          if (!this.isCommandPaletteSession(sessionId)) return;
+          this.remotePageState.commandPalette.setUsageFailed(errorText);
+        }
+      }
+    );
+
+  private isCommandPaletteSession(sessionId: string): boolean {
+    return sessionId.length > 0 && this.remotePageState.activeSession.sessionId === sessionId;
+  }
+
   readonly remoteSessionViewModel: RemoteSessionViewModel =
     new RemoteSessionViewModel(
       this.remotePageState,
@@ -737,6 +802,7 @@ export abstract class AppRootRuntimeComposition {
         chatCache: this.remoteChatCache,
         polling: this.remoteChatPollingLifecycleController,
         models: this.remoteModelController,
+        commandPalette: this.remoteCommandPaletteController,
         files: this.remoteFileDownloadController,
         tools: this.remoteToolActionController,
         connection: this.remoteConnectionController,
@@ -791,6 +857,9 @@ export abstract class AppRootRuntimeComposition {
       downloadFile: (path: string): void => this.conversationController.downloadVisibleFile(path),
       buildPlan: async (path: string, name: string): Promise<void> => {
         await this.conversationController.buildRemotePlan(path, name);
+      },
+      commandPalette: async (request: CommandPaletteRequest): Promise<void> => {
+        await this.conversationController.dispatchCommandPalette(request);
       },
       send: async (): Promise<void> => { await this.conversationController.sendVisibleMessage(); },
       voiceInput: async (): Promise<void> => { await this.toggleVoiceInput(); },

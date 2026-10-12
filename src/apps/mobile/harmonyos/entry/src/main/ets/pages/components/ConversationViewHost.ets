@@ -22,6 +22,10 @@ export struct ConversationViewHost {
   @Param hoverOperateMode: boolean = false;
   @Param fullTextSheetPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UserMessageFullText);
+  @Param skillPickerSheetPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SkillPicker);
+  @Param usageReportSheetPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UsageReport);
   @Param onRestoreSidebar: () => void = () => {};
   @Param onIntent: (intent: ConversationIntent) => void = (_intent: ConversationIntent) => {};
 
@@ -45,6 +49,8 @@ export struct ConversationViewHost {
     options.composerInputId = this.composerInputId;
     options.hoverOperateMode = this.hoverOperateMode;
     options.fullTextSheetPlacement = this.fullTextSheetPlacement;
+    options.skillPickerSheetPlacement = this.skillPickerSheetPlacement;
+    options.usageReportSheetPlacement = this.usageReportSheetPlacement;
     return options;
   }
 

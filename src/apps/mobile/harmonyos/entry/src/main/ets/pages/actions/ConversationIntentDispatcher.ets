@@ -1,7 +1,7 @@
 import { InteractionMailboxAction } from '../../model/InteractionMailbox';
 import { RemoteQuestionAnswerPayload, RemoteSession } from '../../model/RemoteModels';
 import { AppRoute, AppRouteContract } from '../navigation/AppRouteContract';
-import { ConversationIntent, ConversationIntentType, MessageCopyScope } from './ConversationIntent';
+import { ConversationIntent, ConversationIntentType, CommandPaletteRequest, MessageCopyScope } from './ConversationIntent';
 import { toRemoteQuestionAnswer } from '../state/ConversationUiModels';
 import { FilePreviewRequest } from '../../model/FilePreviewTarget';
 
@@ -26,6 +26,7 @@ export interface ConversationIntentDispatcherHooks {
   readonly openFilePreview: (route: AppRoute, request: FilePreviewRequest) => void;
   readonly downloadFile: (path: string) => void;
   readonly buildPlan: (path: string, name: string) => Promise<void>;
+  readonly commandPalette: (request: CommandPaletteRequest) => Promise<void>;
   readonly send: () => Promise<void>;
   readonly voiceInput: () => Promise<void>;
   readonly inputChanged: (route: AppRoute, value: string) => void;
@@ -73,6 +74,13 @@ export class ConversationIntentDispatcher {
       case ConversationIntentType.Send: void this.hooks.send(); return;
       case ConversationIntentType.VoiceInput: void this.hooks.voiceInput(); return;
       case ConversationIntentType.ChatInputChanged: this.hooks.inputChanged(route, intent.value); return;
+      case ConversationIntentType.CommandPalette:
+        // Command palette verbs ride the same remote conversation as everything
+        // else, so a general-chat route must not reach the remote host with one.
+        if (route === AppRoute.RemoteChat && intent.commandPaletteRequest) {
+          void this.hooks.commandPalette(intent.commandPaletteRequest);
+        }
+        return;
     }
   }
 
