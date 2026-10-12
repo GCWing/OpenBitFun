@@ -7,9 +7,11 @@ import { useFlowChatVolatileContext } from '../components/modern/FlowChatContext
 import type { VirtualItem } from '../types/flow-chat-projection';
 import { ConversationDocumentProjection } from './document';
 import { useFlowChatReaderScope } from './readerState';
+import { useHostQueueTimeline } from './useHostQueueTimeline';
 
 export function useConversationTimeline(sources: VirtualItem[], sessionId: string | undefined, viewport: string) {
   const { t } = useI18n('flow-chat');
+  const transcriptSources = useHostQueueTimeline(sources, sessionId);
   const surface = getActiveSurfaceScope();
   const reader = useFlowChatReaderScope(`${surface.epoch}:${viewport}:${sessionId ?? ''}`);
   const revision = useSyncExternalStore(reader.subscribeProjection, reader.getProjectionRevision, reader.getProjectionRevision);
@@ -35,10 +37,10 @@ export function useConversationTimeline(sources: VirtualItem[], sessionId: strin
   const items = useMemo(() => {
     // Reader mutations can change a projection while the source array is stable.
     void revision;
-    return projection.project(sources, {
+    return projection.project(transcriptSources, {
       reader, sessionId, groupStates: groupStates ?? exploreGroupStates,
       expandedToolCapsules, pendingPermissionToolCallIds, toolLabels: labels,
     });
-  }, [projection, sources, reader, sessionId, revision, groupStates, exploreGroupStates, expandedToolCapsules, pendingPermissionToolCallIds, labels]);
+  }, [projection, transcriptSources, reader, sessionId, revision, groupStates, exploreGroupStates, expandedToolCapsules, pendingPermissionToolCallIds, labels]);
   return { items, reader };
 }

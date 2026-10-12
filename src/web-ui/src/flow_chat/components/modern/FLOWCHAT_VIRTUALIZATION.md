@@ -1,5 +1,26 @@
 # FlowChat Virtualization
 
+## Accepted steering display
+
+The host queue's optional `steeringDisplay` receipt projects an accepted message
+after its target Turn, without changing recorded rounds or writing a second
+history record. Full display text and composer references come from the host;
+pending attachments show their count rather than retransmitting image bytes.
+Accepted text messages use the ordinary user-message appearance without a pending
+status label; internal admission state still disables edit and rollback actions.
+Formal Turn handoff keeps the original queue Turn id and the preview's virtual
+key. Canonical history replaces the preview even when events precede the receipt.
+Queue disappearance alone is not consumption: the observer queries the receipt
+and retains the pending shell until history arrives. Blocked messages show a
+not-applied label and restore composer recovery controls.
+
+Only mounted transcript projections lease hidden queue rows. History windows
+without the target, older hosts without display receipts, and closed transcripts
+retain queue controls. Leases and previews are isolated by queue client, surface
+activation and host queue epoch. Restart recovery remains with the existing
+outbox; mobile retains its existing queue presentation. No scroll placement or
+mount animation is added, and execution order remains host-owned.
+
 ## Measured row spacing
 
 `VirtualItemRenderer` establishes a `flow-root` on the measured wrapper so

@@ -67,6 +67,8 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
               turnStatus={item.turnStatus}
               submissionPhase={item.submissionPhase}
               submissionError={item.submissionError}
+              hostQueueStatus={item.hostQueueStatus}
+              hostQueueAttachmentCount={item.hostQueueAttachmentCount}
             />
           );
 

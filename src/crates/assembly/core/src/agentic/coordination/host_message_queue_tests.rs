@@ -196,13 +196,15 @@ async fn host_queue_cancel_is_idempotent_and_never_cancels_active_turn() {
 #[tokio::test]
 async fn host_queue_steering_retains_payload_until_formal_turn_handoff_and_rejects_cancel() {
     let (scheduler, _, _root, epoch) = fixture().await;
+    let mut input = message("queued-a");
+    let display_content = "display text ".repeat(250);
+    input.display_content = Some(display_content.clone());
+    input.metadata.insert(
+        "composerPresentation".into(),
+        serde_json::json!({"version":1}),
+    );
     scheduler
-        .manage_host_queue(request(
-            Some(&epoch),
-            Action::Submit {
-                message: message("queued-a"),
-            },
-        ))
+        .manage_host_queue(request(Some(&epoch), Action::Submit { message: input }))
         .await
         .unwrap();
     let promote = request(
@@ -214,7 +216,16 @@ async fn host_queue_steering_retains_payload_until_formal_turn_handoff_and_rejec
         },
     );
     let snapshot = scheduler.manage_host_queue(promote.clone()).await.unwrap();
-    assert_eq!(snapshot.receipt.unwrap().status, Status::SteeringPending);
+    let receipt = snapshot.receipt.unwrap();
+    assert_eq!(receipt.status, Status::SteeringPending);
+    assert!(receipt.preview_truncated);
+    let display = receipt.steering_display.unwrap();
+    assert_eq!(display.target_turn_id, "active-turn");
+    assert_eq!(display.content, display_content);
+    assert_eq!(
+        display.composer_presentation,
+        Some(serde_json::json!({"version":1}))
+    );
     scheduler.manage_host_queue(promote).await.unwrap();
     let injections = scheduler
         .round_injection_source
@@ -254,7 +265,9 @@ async fn host_queue_steering_retains_payload_until_formal_turn_handoff_and_rejec
         ))
         .await
         .unwrap();
-    assert_eq!(result.receipt.unwrap().status, Status::Queued);
+    let receipt = result.receipt.unwrap();
+    assert_eq!(receipt.status, Status::Queued);
+    assert_eq!(receipt.steering_display.unwrap(), display);
     assert_eq!(result.used, 1);
     assert_eq!(scheduler.queues.depth("host-queue-session"), 1);
     assert_eq!(

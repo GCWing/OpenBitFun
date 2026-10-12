@@ -438,6 +438,34 @@ describe('UserMessageItem steering tag', () => {
     expect(container.querySelector('.user-message-item__actions')?.parentElement).toBe(meta);
   });
 
+  it.each(['pending', 'failed'] as const)('shows host queue %s feedback without edit or rollback actions', status => {
+    act(() => root.render(
+      <FlowChatContext.Provider value={{ allowUserMessageRollback: true, allowUserMessageEdit: true }}>
+        <UserMessageItem message={{ id: 'preview', content: 'Accepted instruction', timestamp: 1000 }}
+          turnId="queued-turn" hostQueueStatus={status} hostQueueAttachmentCount={2} />
+      </FlowChatContext.Provider>,
+    ));
+    if (status === 'failed') expect(container.querySelector('.user-message-item__steering-tag')?.textContent)
+      .toContain('steering.statusNotApplied');
+    expect(container.querySelector('.user-message-item__steering-tag')?.textContent).toContain('hostQueue.attachments');
+    expect(container.querySelector('.user-message-item__edit-btn')).toBeNull();
+    expect(container.querySelector('.user-message-item__rollback-btn')).toBeNull();
+    expect(container.querySelector('.user-message-item__copy-btn')).not.toBeNull();
+  });
+
+  it('renders an accepted text message without a pending status label', () => {
+    act(() => root.render(
+      <FlowChatContext.Provider value={{ allowUserMessageRollback: true, allowUserMessageEdit: true }}>
+        <UserMessageItem message={{ id: 'preview-text', content: 'Accepted instruction', timestamp: 1000 }}
+          turnId="queued-turn" hostQueueStatus="pending" />
+      </FlowChatContext.Provider>,
+    ));
+    expect(container.querySelector('.user-message-item__steering-tag')).toBeNull();
+    expect(container.textContent).toContain('Accepted instruction');
+    expect(container.querySelector('.user-message-item__edit-btn')).toBeNull();
+    expect(container.querySelector('.user-message-item__rollback-btn')).toBeNull();
+  });
+
   it('does not render a steering tag after steering is triggered', () => {
     act(() => {
       root.render(

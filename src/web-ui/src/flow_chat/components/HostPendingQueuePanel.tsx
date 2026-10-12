@@ -5,7 +5,8 @@ import { useI18n } from '@/infrastructure/i18n';
 import { Button, Icon, IconButton, OverflowText, Tooltip } from '@openbitfun/ui';
 import { RotateCw } from 'lucide-react';
 import './HostPendingQueuePanel.scss';
-import { HostDialogQueue, observeHostQueue, type QueueOutboxRecord, type QueueItem } from '../../../../shared/dialog-queue/HostDialogQueue';
+import { hostQueuePresentation, observePresentedHostQueue } from '../services/hostQueuePresentation';
+import { HostDialogQueue, type QueueOutboxRecord, type QueueItem } from '../../../../shared/dialog-queue/HostDialogQueue';
 import {
   ChatComposerQueue, ChatComposerQueueHeader, ChatComposerQueueTitle,
   ChatComposerQueueList, ChatComposerQueueItem, ChatComposerQueueItemContent, ChatComposerQueueItemActions,
@@ -14,12 +15,14 @@ import {
 export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQueue; onRestore: (item: QueuedMessage) => boolean }) {
   const { t } = useI18n('flow-chat');
   const view = useSyncExternalStore(queue.subscribe, queue.getSnapshot, queue.getSnapshot);
+  const presentation = hostQueuePresentation(queue);
+  const projected = useSyncExternalStore(presentation.subscribe, presentation.getSnapshot, presentation.getSnapshot);
   const [expanded, setExpanded] = useState(true);
   const [showHelp, setShowHelp] = useState(false);
   const listId = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => observeHostQueue(queue), [queue]);
+  useEffect(() => observePresentedHostQueue(queue), [queue]);
   const run = async (operation: () => Promise<unknown>) => {
     setBusy(true); setError(null);
     try { await operation(); } catch (e) { setError(String(e)); }
@@ -49,7 +52,7 @@ export function HostPendingQueuePanel({ queue, onRestore }: { queue: HostDialogQ
     }
     await queue.dismiss(saved);
   };
-  const items = view.snapshot?.items ?? [];
+  const items = (view.snapshot?.items ?? []).filter(item => item.status === 'blocked' || !projected.has(item.turnId));
   const visibleError = error || (view.error?.includes('Session is not loaded') ? null : view.error);
   if (!items.length && !view.pending.length && !visibleError) return null;
   return <ChatComposerQueue data-openbitfun-product-component="pending-queue-panel" data-openbitfun-product-part="root" className="host-pending-queue" aria-label={t('hostQueue.title')}>

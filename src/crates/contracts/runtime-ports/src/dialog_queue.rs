@@ -72,6 +72,16 @@ impl DialogQueueStatus {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DialogQueueSteeringDisplay {
+    /// The original target survives the brief queued handoff to a formal Turn.
+    pub target_turn_id: String,
+    pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composer_presentation: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DialogQueueItem {
     pub turn_id: String,
     pub display_content: String,
@@ -83,6 +93,10 @@ pub struct DialogQueueItem {
     pub reason: Option<String>,
     pub target_turn_id: Option<String>,
     pub steering_id: Option<String>,
+    /// Display-only receipt for accepted steering; never a second history record.
+    /// Older hosts omit this field and clients retain the composer queue UI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steering_display: Option<DialogQueueSteeringDisplay>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -131,5 +145,21 @@ mod tests {
             "turnId":"queued", "operationId":"op", "expectedActiveTurnId":"active"});
         let request: DialogQueueRequest = serde_json::from_value(input.clone()).unwrap();
         assert_eq!(serde_json::to_value(request).unwrap(), input);
+    }
+
+    #[test]
+    fn queue_item_legacy_and_display_receipts_round_trip() {
+        let legacy = serde_json::json!({"turnId":"next", "displayContent":"short",
+            "previewTruncated":true, "attachmentCount":2, "agentType":"Standard",
+            "createdAtMs":1, "status":"steering_pending", "reason":null,
+            "targetTurnId":"active", "steeringId":"steer"});
+        let item: DialogQueueItem = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(item.steering_display.is_none());
+        assert_eq!(serde_json::to_value(item).unwrap(), legacy);
+        let mut extended = legacy;
+        extended["steeringDisplay"] = serde_json::json!({"targetTurnId":"active", "content":"complete prompt",
+            "composerPresentation":{"version":1}});
+        let item: DialogQueueItem = serde_json::from_value(extended.clone()).unwrap();
+        assert_eq!(serde_json::to_value(item).unwrap(), extended);
     }
 }

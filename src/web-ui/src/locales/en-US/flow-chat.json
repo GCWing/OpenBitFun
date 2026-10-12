@@ -3507,6 +3507,7 @@
   "steering": {
     "title": "Steer",
     "injectedAt": "Injected before round {{round}}",
+    "statusNotApplied": "Not applied; retry in the message queue",
     "statusPending": "Waiting to trigger",
     "statusInjected": "Triggered"
   },

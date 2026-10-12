@@ -30,6 +30,10 @@ type VirtualContent =
       /** Display-only state for a foreground send before its Turn is projected. */
       submissionPhase?: 'forming' | 'failed';
       submissionError?: string;
+      /** Host queue preview only; canonical history is never mutated. */
+      hostQueueStatus?: 'pending' | 'failed';
+      hostQueueAttachmentCount?: number;
+      presentationKey?: string;
     }
   | {
       type: 'user-steering-message';

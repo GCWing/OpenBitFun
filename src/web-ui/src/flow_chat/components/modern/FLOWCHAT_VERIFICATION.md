@@ -16,6 +16,7 @@ each missing what the other had.
 
 | Test | Contract it holds |
 |---|---|
+| `../../timeline/hostQueueProjection.test.ts`, `../../timeline/useHostQueueTimeline.test.tsx`, `../HostPendingQueuePanel.test.tsx` | host-accepted preview, canonical handoff/event ordering, stable keys, blocked recovery, old-host fallback, history-window visibility and device lease cleanup; fixtures only, no live remote transport evidence |
 | `TurnFooter.test.tsx`, `modelRoundItemMemo.test.ts` | latest-turn identity, hover/focus across virtual rows, lease cleanup, no projection churn and the existing completion reveal gate; behavior only, not visual proof |
 | `../../../shared/ui/Tooltip.test.tsx` | shared metric click opening, immediate scroll dismissal, delayed-open cancellation, viewport-exit observer cleanup and no automatic reopening; DOM/observer behavior only, not native scrolling or visual proof |
 | `../../utils/turnUsageMetrics.test.ts` | cache denominator, whole-turn output rate, speed boundaries, invalid and unavailable telemetry |
@@ -344,6 +345,21 @@ Keyboard focus has its own outline and does not navigate until activation.
     neither retains the old navigation selection.
 11. With reduced motion enabled, the hover fan changes without animation. Touch
     navigation must not leave a hover fan behind.
+
+### Accepted steering
+
+1. Send immediately during a long tool/model round in the main transcript and
+   BTW pane. After host acceptance, verify the message uses the ordinary user-message
+   appearance without a pending label and leaves the composer queue. Confirm long text and attachment count.
+2. Let the formal Turn start. Verify one message remains and
+   attachments appear normally. Send multiple messages and check ordering.
+3. Exercise blocked handoff, history navigation, transcript closure, disconnect,
+   reconnect, host restart and device switching; recovery controls must remain
+   available and another device's preview must never appear.
+4. Repeat on a remote workspace and Peer Device host with two controllers, one
+   sending from mobile. Mobile retains its existing queue UI. Check an older
+   host without display receipts retains the existing desktop queue UI. Detached
+   dispatch and ACP use their existing paths and have no preview requirement.
 
 ### History paging demand
 

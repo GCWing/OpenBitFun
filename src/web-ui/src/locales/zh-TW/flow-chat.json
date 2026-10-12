@@ -3507,6 +3507,7 @@
   "steering": {
     "title": "立即引導",
     "injectedAt": "已在第 {{round}} 輪前插入",
+    "statusNotApplied": "未生效，請在訊息佇列中重試",
     "statusPending": "等待觸發",
     "statusInjected": "已觸發"
   },
