@@ -112,7 +112,7 @@ import { findExcerptSource, resolveExcerptRange } from '../../selection/flowChat
 import { highlightExcerptRange } from '../../selection/locateConversationExcerpt';
 import './VirtualMessageList.scss';
 import { Icon } from '@openbitfun/ui';
-import type { SubmittedMessageScrollIntent } from '../../services/submittedMessageScrollIntent';
+import { isSubmittedMessageScrollIntentPending, type SubmittedMessageScrollIntent } from '../../services/submittedMessageScrollIntent';
 
 const SEARCH_NAVIGATION_MAX_ATTEMPTS = 24;
 /** Consecutive quiet frames that mark the opening viewport as settled. */
@@ -455,6 +455,14 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   const headerElementRef = useRef<HTMLDivElement | null>(null);
   const extentElementRef = useRef<HTMLDivElement | null>(null);
   const [submissionKey, setSubmissionKey] = useState<string | null>(null);
+  const submissionKeyRef = useRef<string | null>(null);
+  const updateSubmissionKey = useCallback((key: string | null) => {
+    // Cancellation can run from layout and measurement in the same commit.
+    // Avoid dispatching another React update when the requested pin is unchanged.
+    if (submissionKeyRef.current === key) return;
+    submissionKeyRef.current = key;
+    setSubmissionKey(key);
+  }, []);
   const [scrollerElement, setScrollerElement] = useState<HTMLElement | null>(null);
   const [viewportHeightPx, setViewportHeightPx] = useState(0);
   const [viewportWidthPx, setViewportWidthPx] = useState(0);
@@ -696,20 +704,24 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     if (!getRenderedUserMessageElement(intent.turnId)) {
       // Materialize just this stable row before measuring it. Do not traverse
       // history or mount a whole Turn to get a user-message anchor.
-      setSubmissionKey(getVirtualItemStableKey(item));
+      updateSubmissionKey(getVirtualItemStableKey(item));
       return null;
     }
     virtualizer.cancelAim();
     virtualizer.measureRenderedItems();
+    // Measurement can synchronously deliver cancellation or a replacement.
+    // Revalidate before the old transaction changes geometry or scroll position.
+    if (!intent.scope.isCurrent() || !isSubmittedMessageScrollIntentPending(intent)
+      || activeSessionIdRef.current !== intent.sessionId || !isViewportActiveRef.current) return null;
     const top = resolveTurnTopScrollTop(intent.turnId);
     if (top === null) return null;
     extentElementRef.current.style.minHeight = `${top + scroller.clientHeight}px`;
     if (!viewportOwner.write({ owner: 'follow-output', topPx: top })) return null;
     virtualizer.syncViewportOffset(scroller.scrollTop);
     captureLeadingExtent(scroller.scrollTop, true);
-    setSubmissionKey(null);
+    updateSubmissionKey(null);
     return scroller.scrollTop;
-  }, [captureLeadingExtent, getRenderedUserMessageElement, resolveTurnTopScrollTop, viewportOwner, virtualItems, virtualizer]);
+  }, [captureLeadingExtent, getRenderedUserMessageElement, resolveTurnTopScrollTop, updateSubmissionKey, viewportOwner, virtualItems, virtualizer]);
   const outputTurns = useMemo(() => new Set(virtualItems.filter(item => item.type !== 'user-message').map(item => item.turnId)), [virtualItems]);
 
   const {
@@ -735,7 +747,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     readLayoutTarget,
     placeSubmittedMessage,
     hasRenderedOutput: turnId => outputTurns.has(turnId),
-    cancelPendingPlacement: () => setSubmissionKey(null),
+    cancelPendingPlacement: () => updateSubmissionKey(null),
     cancelNavigation: virtualizer.cancelAim,
     isOpeningViewport,
     onViewportOffset: publishFollowOffset,

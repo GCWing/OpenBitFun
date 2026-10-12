@@ -11,7 +11,7 @@ import type { FlowChatViewportOwnerApi } from './useFlowChatViewportOwner';
 import { easeFollowOffset, resolveAnimatedJumpBehavior } from './flowChatTailFollow';
 
 export type FollowOutputEnterReason = 'jump-to-latest' | 'session-open' | 'streaming-resumed' | 'turns-rolled-back' | 'reader-at-bottom';
-export type FollowOutputExitReason = 'session-changed' | 'user-scroll' | 'reader-interaction' | 'scroll-to-turn' | 'scroll-to-index';
+export type FollowOutputExitReason = 'session-changed' | 'viewport-inactive' | 'user-scroll' | 'reader-interaction' | 'scroll-to-turn' | 'scroll-to-index';
 export interface ViewportResizeInput { viewportHeightDeltaPx: number; wasAtTail: boolean }
 
 interface Options {
@@ -47,6 +47,7 @@ export function useFlowChatFollowOutput(options: Options) {
   const following = useRef(false);
   const phase = useRef<Phase>('reading');
   const pending = useRef<SubmittedMessageScrollIntent | null>(null);
+  const placingSubmission = useRef(false);
   const submittedTurn = useRef<string | null>(null);
   const target = useRef(0);
   const frame = useRef<number | null>(null);
@@ -56,6 +57,12 @@ export function useFlowChatFollowOutput(options: Options) {
   const session = useRef(options.activeSessionId);
   const run = useRef<(now: number) => void>(() => {});
   const refresh = useRef<() => void>(() => {});
+
+  const setFollowing = useCallback((value: boolean) => {
+    if (following.current === value) return;
+    following.current = value;
+    setIsFollowingOutput(value);
+  }, []);
 
   const stop = useCallback(() => {
     if (frame.current !== null) cancelAnimationFrame(frame.current);
@@ -73,27 +80,27 @@ export function useFlowChatFollowOutput(options: Options) {
     }
   }, [available]);
   const discardPending = useCallback(() => {
-    if (pending.current) finishSubmittedMessageScrollIntent(pending.current);
+    const discarded = pending.current;
+    pending.current = null;
+    if (discarded) finishSubmittedMessageScrollIntent(discarded);
     const o = current.current;
     const unbound = session.current ? claimSubmittedMessageScrollIntent(session.current, o.viewportId ?? 0, true) : null;
     if (unbound) finishSubmittedMessageScrollIntent(unbound);
-    pending.current = null;
-    current.current.cancelPendingPlacement();
+    if (discarded) o.cancelPendingPlacement();
   }, []);
   const exitFollowOutput = useCallback((reason: FollowOutputExitReason) => {
     const o = current.current;
-    following.current = false;
+    setFollowing(false);
     phase.current = 'reading';
     downward.current = null;
     discardPending();
-    setIsFollowingOutput(false);
     stop();
     o.viewportOwner.release('follow-output');
     traceViewportRepeating(`follow|exit|${reason}`, {
       location: 'followOutput.exit', message: 'The reader owns the viewport',
       data: () => ({ reason, viewportId: o.viewportId }),
     });
-  }, [discardPending, stop]);
+  }, [discardPending, setFollowing, stop]);
 
   run.current = now => {
     frame.current = null;
@@ -136,9 +143,8 @@ export function useFlowChatFollowOutput(options: Options) {
     o.viewportOwner.release('one-shot-navigation');
     if (reason !== 'reader-at-bottom') o.viewportOwner.release('user-gesture');
     o.viewportOwner.claim('follow-output');
-    following.current = true;
+    setFollowing(true);
     phase.current = 'following';
-    setIsFollowingOutput(true);
     target.current = o.readLayoutTarget();
     const scroller = o.scrollerRef.current!;
     const animate = reason === 'jump-to-latest' && resolveAnimatedJumpBehavior({
@@ -152,52 +158,76 @@ export function useFlowChatFollowOutput(options: Options) {
       data: () => ({ reason, viewportId: o.viewportId, targetPx: target.current }),
     });
     wake();
-  }, [available, discardPending, wake]);
+  }, [available, discardPending, setFollowing, wake]);
 
   const trySubmission = useCallback(() => {
+    // Measuring a placement synchronously notifies the virtualizer, which can
+    // call follow again before this transaction has consumed its intent.
+    // Treat that notification as handled; the outer placement reads the final
+    // geometry after measurement and must remain the only consumer.
+    if (placingSubmission.current) return true;
     const o = current.current;
     if (!o.activeSessionId || !available()) return false;
-    const wasCancelled = Boolean(pending.current && !isSubmittedMessageScrollIntentPending(pending.current));
-    if (wasCancelled) {
+    placingSubmission.current = true;
+    let placement: SubmittedMessageScrollIntent | null = null;
+    try {
+      const wasCancelled = Boolean(pending.current && !isSubmittedMessageScrollIntentPending(pending.current));
+      if (wasCancelled) {
+        pending.current = null;
+        submittedTurn.current = null;
+        o.cancelPendingPlacement();
+      }
+      const intent = claimSubmittedMessageScrollIntent(o.activeSessionId, o.viewportId ?? 0);
+      if (wasCancelled && !intent) {
+        // A failed or queued send no longer owns a placement. Do not let the
+        // former pending-send phase resume tail following on its next signal.
+        setFollowing(false);
+        phase.current = 'reading';
+        stop();
+        o.viewportOwner.release('follow-output');
+      }
+      if (intent && intent !== pending.current) {
+        if (pending.current) finishSubmittedMessageScrollIntent(pending.current);
+        pending.current = intent;
+        phase.current = 'pending-send';
+        stop();
+        o.cancelNavigation();
+        // Submission is a new explicit placement, including from a history view.
+        o.viewportOwner.release('one-shot-navigation');
+        o.viewportOwner.release('user-gesture');
+        o.viewportOwner.claim('follow-output');
+        setFollowing(true);
+      }
+      if (!pending.current) return false;
+      if (!pending.current.scope.isCurrent()) { exitFollowOutput('session-changed'); return false; }
+      placement = pending.current;
+      const placed = o.placeSubmittedMessage(placement);
+      // A measurement callback may cancel, replace, or move this submission to
+      // another surface/session. Never resurrect it or consume its replacement.
+      if (pending.current !== placement || !placement.scope.isCurrent()
+        || !isSubmittedMessageScrollIntentPending(placement)
+        || current.current.activeSessionId !== placement.sessionId || !available()) return true;
+      if (placed === null) return true;
+      submittedTurn.current = placement.turnId;
       pending.current = null;
-      submittedTurn.current = null;
-      o.cancelPendingPlacement();
+      finishSubmittedMessageScrollIntent(placement);
+      phase.current = 'awaiting-output';
+      target.current = placed;
+      initialized.current = true;
+      return true;
+    } catch (error) {
+      if (placement && pending.current === placement) {
+        pending.current = null;
+        finishSubmittedMessageScrollIntent(placement);
+        phase.current = 'reading';
+        setFollowing(false);
+        current.current.viewportOwner.release('follow-output');
+      }
+      throw error;
+    } finally {
+      placingSubmission.current = false;
     }
-    const intent = claimSubmittedMessageScrollIntent(o.activeSessionId, o.viewportId ?? 0);
-    if (wasCancelled && !intent) {
-      // A failed or queued send no longer owns a placement. Do not let the
-      // former pending-send phase resume tail following on its next signal.
-      following.current = false;
-      phase.current = 'reading';
-      setIsFollowingOutput(false);
-      stop();
-      o.viewportOwner.release('follow-output');
-    }
-    if (intent && intent !== pending.current) {
-      if (pending.current) finishSubmittedMessageScrollIntent(pending.current);
-      pending.current = intent;
-      phase.current = 'pending-send';
-      stop();
-      o.cancelNavigation();
-      // Submission is a new explicit placement, including from a history view.
-      o.viewportOwner.release('one-shot-navigation');
-      o.viewportOwner.release('user-gesture');
-      o.viewportOwner.claim('follow-output');
-      following.current = true;
-      setIsFollowingOutput(true);
-    }
-    if (!pending.current) return false;
-    if (!pending.current.scope.isCurrent()) { exitFollowOutput('session-changed'); return false; }
-    const placed = o.placeSubmittedMessage(pending.current);
-    if (placed === null) return true;
-    submittedTurn.current = pending.current.turnId;
-    finishSubmittedMessageScrollIntent(pending.current);
-    pending.current = null;
-    phase.current = 'awaiting-output';
-    target.current = placed;
-    initialized.current = true;
-    return true;
-  }, [available, exitFollowOutput, stop]);
+  }, [available, exitFollowOutput, setFollowing, stop]);
 
   const scheduleFollowToLatest = useCallback(() => {
     if (!available()) return;
@@ -254,7 +284,13 @@ export function useFlowChatFollowOutput(options: Options) {
       session.current = options.activeSessionId;
       initialized.current = false;
     }
-    if (!options.isViewportActive) { discardPending(); stop(); return; }
+    if (!options.isViewportActive) {
+      // Cancelling a deferred send also ends its pending-send phase. Keeping
+      // that phase would strand follow on reactivation with no intent to place.
+      if (phase.current === 'pending-send') exitFollowOutput('viewport-inactive');
+      else { discardPending(); stop(); }
+      return;
+    }
     if (trySubmission()) return;
     if (!initialized.current && options.virtualItemCount > 0 && available()) {
       initialized.current = true;

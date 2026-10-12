@@ -21,6 +21,7 @@ describe('desktop follow ownership and lifecycle (supplied geometry, not visual 
   let frames: Map<number, FrameRequestCallback>, frameId: number, now: number;
   let normalTarget: number, floor: number | null, sentTop: number, output: boolean, renderable: boolean;
   let cancelledPlacements: number;
+  let duringPlacement: (() => void) | undefined;
   let props: { session: string; active: boolean; suspended: boolean; opening: boolean; count: number; startAtTail: boolean; streaming: boolean };
   let reader: FlowChatReaderState;
   const placements: string[] = [];
@@ -40,6 +41,7 @@ describe('desktop follow ownership and lifecycle (supplied geometry, not visual 
         floor = sentTop;
         if (!owner.write({ owner: 'follow-output', topPx: sentTop })) return null;
         placements.push(intent.turnId);
+        duringPlacement?.();
         return sentTop;
       },
       hasRenderedOutput: () => output,
@@ -67,6 +69,7 @@ describe('desktop follow ownership and lifecycle (supplied geometry, not visual 
     document.body.append(host, scroller); root = createRoot(host);
     normalTarget = 1000; floor = null; sentTop = 1400; output = false; renderable = true;
     cancelledPlacements = 0;
+    duringPlacement = undefined;
     props = { session: 'session', active: true, suspended: false, opening: false, count: 2, startAtTail: true, streaming: true };
     reader = new FlowChatReaderState();
     frames = new Map(); frameId = 0; now = 0; placements.length = 0; readbacks.length = 0;
@@ -103,6 +106,61 @@ describe('desktop follow ownership and lifecycle (supplied geometry, not visual 
     await act(async () => { await Promise.resolve(); });
     expect(placements).toEqual(['turn-2']);
     expect(controller.isFollowingOutputNow()).toBe(true);
+  });
+  it('consumes a submission once when measurement synchronously reenters follow', async () => {
+    render();
+    duringPlacement = () => controller.scheduleFollowToLatest();
+    submit();
+    await act(async () => { await Promise.resolve(); });
+    expect(placements).toEqual(['turn-2']);
+    expect(claimSubmittedMessageScrollIntent(props.session, 1)).toBeNull();
+    expect(controller.getFollowTargetScrollTop()).toBe(1400);
+  });
+  it.each(['reader', 'device', 'cancel'] as const)('does not restore follow after %s invalidation inside placement', async reason => {
+    render();
+    duringPlacement = () => {
+      duringPlacement = undefined;
+      if (reason === 'reader') controller.exitFollowOutput('reader-interaction');
+      else if (reason === 'device') activateSurface('peer');
+      else finishSubmittedMessageScrollIntent(claimSubmittedMessageScrollIntent(props.session, 1)!);
+    };
+    submit();
+    await act(async () => { await Promise.resolve(); });
+    expect(controller.isFollowingOutputNow()).toBe(false);
+    expect(controller.getFollowTargetScrollTop()).toBeNull();
+    expect(owner.currentOwner()).not.toBe('follow-output');
+  });
+  it('preserves a replacement submission registered during measurement', async () => {
+    render();
+    duringPlacement = () => {
+      duringPlacement = undefined;
+      registerSubmittedMessageScrollIntent(getActiveSurfaceScope(), props.session, 'replacement', 'user-replacement');
+    };
+    submit();
+    await act(async () => { await Promise.resolve(); });
+    expect(placements).toEqual(['turn-2', 'replacement']);
+    expect(claimSubmittedMessageScrollIntent(props.session, 1)).toBeNull();
+    expect(controller.getFollowTargetScrollTop()).toBe(1400);
+  });
+  it('releases the placement guard after a measurement failure', () => {
+    render();
+    duringPlacement = () => { throw new Error('Measurement failed'); };
+    expect(() => submit()).toThrow('Measurement failed');
+    duringPlacement = undefined;
+    signal();
+    expect(placements).toEqual(['turn-2']);
+  });
+  it('cancels a deferred send once while inactive and accepts a fresh send after reactivation', async () => {
+    render(); renderable = false; submit();
+    props.active = false; render();
+    for (let i = 0; i < 5; i++) render();
+    expect(cancelledPlacements).toBe(1);
+    expect(controller.isFollowingOutputNow()).toBe(false);
+    props.active = true; renderable = true; render(); signal();
+    expect(placements).toEqual([]);
+    submit('fresh');
+    await act(async () => { await Promise.resolve(); });
+    expect(placements).toEqual(['fresh']);
   });
   it('does not let a tall user message start following before assistant output exists', () => {
     render(); submit(); normalTarget = 2100; signal(); settle(); expect(scroller.scrollTop).toBe(1400);
