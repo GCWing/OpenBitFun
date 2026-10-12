@@ -44,6 +44,10 @@ agent-facing tool surface.
   Whole-source transfer and parser limits still apply. Dependencies remain optional, with
   OCR/network features disabled; workspace byte IO and model-facing guidance
   stay with their existing providers and Core tool owner.
+- Local Glob uses the parallel `ignore` walker without an `rg` subprocess.
+  Keep matching after ignore filtering, include `.rgignore` when ignore rules
+  are enabled, and merge bounded worker results with exact totals and stable
+  depth/path selection. Remote shell and workspace-IO Glob paths remain separate.
 - Background exec-output and ExecCommand presentation helpers may own retained
   output buffers, cursors, lifecycle metadata, assistant response text, and
   provider-neutral completion shapes; concrete local/remote process managers

@@ -486,7 +486,7 @@ impl Tool for GlobTool {
                         }
                         Err(error) => {
                             warn!(
-                                "Glob tool workspace-search failed; falling back to local rg: {}",
+                                "Glob tool workspace-search failed; falling back to local filesystem glob: {}",
                                 error
                             );
                         }
@@ -495,12 +495,12 @@ impl Tool for GlobTool {
             }
         }
 
-        let resolved_str_for_rg = effective_glob.search_path.clone();
-        let pattern_for_rg = effective_glob.pattern.clone();
+        let local_search_path = effective_glob.search_path.clone();
+        let local_pattern = effective_glob.pattern.clone();
         let glob_result = tokio::task::spawn_blocking(move || {
             execute_local_glob(LocalGlobRequest {
-                search_path: PathBuf::from(resolved_str_for_rg),
-                pattern: pattern_for_rg,
+                search_path: PathBuf::from(local_search_path),
+                pattern: local_pattern,
                 limit,
             })
         })
@@ -677,7 +677,7 @@ mod tests {
     }
 
     #[test]
-    fn absolute_pattern_searches_its_external_parent_with_local_rg() {
+    fn absolute_pattern_searches_its_external_parent_with_local_walk() {
         let workspace_root = make_temp_dir("absolute-pattern-workspace");
         let transcript_dir = make_temp_dir("absolute-pattern-transcripts");
         fs::write(transcript_dir.join("session.log"), "transcript").unwrap();
@@ -758,7 +758,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_shallowest_matches_from_rg_results() {
+    fn keeps_shallowest_matches_from_local_results() {
         let root = make_temp_dir("limit");
         fs::create_dir_all(root.join("src/deep")).unwrap();
         fs::create_dir_all(root.join("tests")).unwrap();
