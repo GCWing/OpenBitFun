@@ -912,16 +912,10 @@ impl Default for SubagentModelDefaultsConfig {
     fn default() -> Self {
         Self {
             default_selection: default_subagent_model_selection(),
-            builtin: HashMap::from([
-                (
-                    "GeneralPurpose".to_string(),
-                    SubagentModelSelection::fixed("primary"),
-                ),
-                (
-                    "ResearchSpecialist".to_string(),
-                    SubagentModelSelection::Inherit,
-                ),
-            ]),
+            builtin: HashMap::from([(
+                "ResearchSpecialist".to_string(),
+                SubagentModelSelection::Inherit,
+            )]),
             fork: SubagentModelSelection::Inherit,
         }
     }
@@ -3231,7 +3225,7 @@ mod tests {
                 .subagents
                 .builtin
                 .get("GeneralPurpose"),
-            Some(&SubagentModelSelection::fixed("primary"))
+            None
         );
         assert_eq!(
             config
@@ -3352,22 +3346,65 @@ mod tests {
     }
 
     #[test]
-    fn general_purpose_uses_primary_unless_explicitly_overridden() {
+    fn general_purpose_uses_shared_default_unless_explicitly_overridden() {
         let mut defaults = AgentModelDefaultsConfig::default();
 
         assert_eq!(
             defaults.builtin_subagent_selection("GeneralPurpose"),
-            SubagentModelSelection::fixed("primary")
+            SubagentModelSelection::fixed("fast")
+        );
+
+        defaults.subagents.default_selection = SubagentModelSelection::Inherit;
+        assert_eq!(
+            defaults.builtin_subagent_selection("GeneralPurpose"),
+            SubagentModelSelection::Inherit
         );
 
         defaults.subagents.builtin.insert(
             "GeneralPurpose".to_string(),
-            SubagentModelSelection::fixed("fast"),
+            SubagentModelSelection::fixed("primary"),
         );
         assert_eq!(
             defaults.builtin_subagent_selection("GeneralPurpose"),
-            SubagentModelSelection::fixed("fast")
+            SubagentModelSelection::fixed("primary")
         );
+    }
+
+    #[test]
+    fn general_purpose_legacy_model_defaults_preserve_explicit_selections() {
+        for payload in [
+            serde_json::json!({}),
+            serde_json::json!({"subagents": {}}),
+            serde_json::json!({"subagents": {"builtin": {}}}),
+        ] {
+            let defaults: AgentModelDefaultsConfig = serde_json::from_value(payload).unwrap();
+            assert!(!defaults.subagents.builtin.contains_key("GeneralPurpose"));
+            assert_eq!(
+                defaults.builtin_subagent_selection("GeneralPurpose"),
+                SubagentModelSelection::fixed("fast")
+            );
+        }
+
+        for selection in [
+            SubagentModelSelection::fixed("primary"),
+            SubagentModelSelection::fixed("custom-model"),
+            SubagentModelSelection::Inherit,
+        ] {
+            let payload = serde_json::json!({
+                "subagents": {"builtin": {"GeneralPurpose": selection}}
+            });
+            let defaults: AgentModelDefaultsConfig = serde_json::from_value(payload).unwrap();
+            assert_eq!(
+                defaults.builtin_subagent_selection("GeneralPurpose"),
+                selection
+            );
+            let reloaded: AgentModelDefaultsConfig =
+                serde_json::from_value(serde_json::to_value(defaults).unwrap()).unwrap();
+            assert_eq!(
+                reloaded.builtin_subagent_selection("GeneralPurpose"),
+                selection
+            );
+        }
     }
 
     #[test]

@@ -12,7 +12,9 @@ use crate::agentic::agents::{
 use crate::agentic::deep_review_policy::canonical_review_worker_agent_type;
 use crate::agentic::tools::get_all_registered_tool_names;
 use crate::service::config::mode_config_canonicalizer::resolve_effective_tools;
-use openbitfun_agent_runtime::agents::subagent_source_presentation_rank;
+use openbitfun_agent_runtime::agents::{
+    subagent_source_presentation_rank, BuiltinSubagentExposure,
+};
 use std::collections::HashSet;
 
 /// Append the dynamically registered tool families a mode Agent may use.
@@ -302,7 +304,8 @@ impl AgentRegistry {
                 entry.visibility_policy.show_in_global_registry
             }
             SubagentListScope::TaskVisible => {
-                entry.visibility_policy.show_in_global_registry
+                // Management visibility must not expose hidden delegates to other parents.
+                entry.visibility_policy.exposure != BuiltinSubagentExposure::Hidden
                     || entry
                         .visibility_policy
                         .can_access_from_parent(query.parent_agent_type)

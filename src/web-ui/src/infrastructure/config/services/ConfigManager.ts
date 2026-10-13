@@ -444,9 +444,7 @@ class ConfigManagerImpl implements IConfigManager {
           mode: 'primary',
           subagents: {
             default: { kind: 'fixed', model_id: 'fast' },
-            builtin: {
-              GeneralPurpose: { kind: 'fixed', model_id: 'primary' },
-            },
+            builtin: {},
             fork: { kind: 'inherit' },
           },
         },
@@ -514,9 +512,7 @@ class ConfigManagerImpl implements IConfigManager {
           mode: 'primary',
           subagents: {
             default: { kind: 'fixed', model_id: 'fast' },
-            builtin: {
-              GeneralPurpose: { kind: 'fixed', model_id: 'primary' },
-            },
+            builtin: {},
             fork: { kind: 'inherit' },
           },
         } as T;

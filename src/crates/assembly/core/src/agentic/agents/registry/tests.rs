@@ -482,22 +482,40 @@ fn skill_tool_is_exposed_only_to_ultra_and_swarm_worker_within_the_swarm_catalog
     }
 }
 
-#[test]
-fn non_deep_review_builtin_subagents_default_to_primary() {
+#[tokio::test]
+async fn builtin_subagent_model_fallbacks_use_fast_except_memory_phase2() {
+    let registry = AgentRegistry::new();
     for agent_type in [
         "Explore",
         "CodeReview",
         "GeneralPurpose",
-        "MemoryPhase2",
         "SwarmPlanner",
         "SwarmWorker",
     ] {
         assert_eq!(
             default_model_id_for_builtin_agent(agent_type),
-            "primary",
-            "{agent_type} should default to the primary model slot"
+            "fast",
+            "{agent_type} should default to the fast model slot"
+        );
+        assert_eq!(
+            registry
+                .get_model_id_for_agent(agent_type, None)
+                .await
+                .unwrap(),
+            "fast"
         );
     }
+    assert_eq!(
+        default_model_id_for_builtin_agent("MemoryPhase2"),
+        "primary"
+    );
+    assert_eq!(
+        registry
+            .get_model_id_for_agent("MemoryPhase2", None)
+            .await
+            .unwrap(),
+        "primary"
+    );
 }
 
 #[test]
