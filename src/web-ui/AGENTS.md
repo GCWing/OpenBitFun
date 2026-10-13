@@ -122,6 +122,11 @@ also run the focused state contracts:
 pnpm --dir src/web-ui run test:run src/app/services/sessionSceneLifecycle.test.ts src/flow_chat/services/sessionActivation.test.ts src/flow_chat/services/storeSync.test.ts src/app/stores/sceneStore.test.ts
 ```
 
+For cross-device undo/redo/rollback history invalidation and settled-Turn fences,
+run `pnpm --dir src/web-ui run test:run src/flow_chat/services/flow-chat-manager/EventHandlerModule.test.ts`.
+Missing fence identities (including legacy payloads) must reload authoritative
+history; an explicit settled-Turn identity must preserve newer live Turns.
+
 For ecosystem discovery, import, or compatibility status presentation changes:
 
 ```bash

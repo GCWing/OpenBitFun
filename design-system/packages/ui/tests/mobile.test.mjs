@@ -5,10 +5,12 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   MobileActionSheet,
+  MobileAvatar,
   MobileBadge,
   MobileBanner,
   MobileButton,
   MobileCard,
+  MobileCheckbox,
   MobileChoiceSheet,
   MobileConfirmSheet,
   MobileComposer,
@@ -20,13 +22,20 @@ import {
   MobileListRow,
   MobileMessage,
   MobilePageHeader,
+  MobileRadioGroup,
   MobileScrim,
   MobileSection,
   MobileSegmentedControl,
+  MobileSelect,
   MobileSheet,
   MobileStatus,
+  MobileStepper,
+  MobileSwitch,
+  MobileTabBar,
+  MobileTag,
   MobileTextField,
   MobileTextarea,
+  MobileToolbar,
 } from "../dist/mobile.js";
 
 test("mobile entry exposes touch controls without product state", () => {
@@ -186,4 +195,87 @@ test("mobile stylesheet is isolated and uses semantic tokens", async () => {
   assert.match(styles, /--openbitfun-color-surface-panel/);
   assert.match(styles, /--openbitfun-shadow-base/);
   assert.doesNotMatch(styles, /#[0-9a-f]{3,8}\b/i);
+});
+
+test("mobile entry exposes the second round of touch controls", () => {
+  const markup = [
+    createElement(MobileSwitch, { defaultChecked: true, description: "/workspace", label: "Streaming" }),
+    createElement(MobileCheckbox, { indeterminate: true, label: "Include archived", name: "archived" }),
+    createElement(MobileRadioGroup, {
+      name: "density",
+      options: [{ label: "Comfortable", value: "comfortable" }, { label: "Compact", value: "compact" }],
+      value: "compact",
+    }),
+    createElement(MobileTag, { selected: true }, "TypeScript"),
+    createElement(MobileSelect, {
+      label: "Model",
+      options: [{ label: "Sonnet", value: "sonnet" }],
+      sheetTitle: "Model",
+      value: "sonnet",
+    }),
+    createElement(MobileStepper, {
+      decrementLabel: "Decrease",
+      incrementLabel: "Increase",
+      label: "Retries",
+      max: 5,
+      min: 0,
+      value: 3,
+    }),
+    createElement(MobileAvatar, { name: "Cindy", status: "online" }),
+    createElement(MobileTabBar, {
+      items: [{ label: "Chat", value: "chat" }, { label: "Files", value: "files" }],
+      label: "Sections",
+      value: "chat",
+    }),
+    createElement(MobileToolbar, { label: "Selection" }, "2 selected"),
+  ].map(example => renderToStaticMarkup(example));
+
+  for (const name of ["switch", "checkbox", "radio-group", "tag", "select", "stepper", "avatar", "tab-bar", "toolbar"]) {
+    assert.ok(markup.some(html => html.includes(`data-openbitfun-component="mobile-${name}"`)), `missing mobile-${name}`);
+  }
+});
+
+test("mobile touch controls keep native input semantics", () => {
+  const switchMarkup = renderToStaticMarkup(createElement(MobileSwitch, {
+    defaultChecked: true,
+    label: "Streaming",
+  }));
+  const checkboxMarkup = renderToStaticMarkup(createElement(MobileCheckbox, {
+    label: "Include archived",
+  }));
+  const radioMarkup = renderToStaticMarkup(createElement(MobileRadioGroup, {
+    name: "density",
+    options: [{ label: "Comfortable", value: "comfortable" }],
+    value: "comfortable",
+  }));
+
+  assert.match(switchMarkup, /<input[^>]*type="checkbox"/);
+  assert.match(switchMarkup, /<input[^>]*role="switch"/);
+  assert.match(switchMarkup, /checked=""/);
+  assert.match(checkboxMarkup, /<input[^>]*type="checkbox"/);
+  assert.match(radioMarkup, /<input[^>]*type="radio"/);
+  assert.match(radioMarkup, /<input[^>]*name="density"/);
+});
+
+test("mobile tag, tab bar and stepper expose filled selection state", () => {
+  const tag = renderToStaticMarkup(createElement(MobileTag, { selected: true }, "TypeScript"));
+  const tabBar = renderToStaticMarkup(createElement(MobileTabBar, {
+    items: [{ label: "Chat", value: "chat" }],
+    label: "Sections",
+    value: "chat",
+  }));
+  const stepper = renderToStaticMarkup(createElement(MobileStepper, {
+    decrementLabel: "Decrease",
+    incrementLabel: "Increase",
+    max: 1,
+    min: 0,
+    value: 1,
+  }));
+
+  assert.match(tag, /aria-pressed="true"/);
+  assert.match(tag, /data-selected="true"/);
+  assert.match(tabBar, /role="tablist"|aria-current="page"/);
+  assert.match(stepper, /role="spinbutton"/);
+  assert.match(stepper, /aria-valuenow="1"/);
+  assert.match(stepper, /aria-valuemax="1"/);
 });

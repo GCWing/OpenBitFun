@@ -1,0 +1,31 @@
+@layer openbitfun.components {
+  .root { display: flex; box-sizing: border-box; inline-size: 100%; min-block-size: 56px; align-items: stretch; gap: 0; padding-inline: var(--openbitfun-space-1); background: var(--openbitfun-color-surface-panel); }
+  .root[data-appearance="plain"] { background: transparent; }
+  /* The bar owns the bottom edge of the screen, so it owns the home indicator's space too. */
+  .root[data-safe-area="true"] { padding-block-end: env(safe-area-inset-bottom, 0px); }
+
+  .item { display: flex; box-sizing: border-box; min-inline-size: 0; min-block-size: 52px; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; gap: var(--openbitfun-space-1); margin: 0; padding: var(--openbitfun-space-2) var(--openbitfun-space-1); border: 0; border-radius: var(--openbitfun-radius-md); color: var(--openbitfun-color-content-secondary); background: transparent; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; font: inherit; transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard), color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard); }
+  /* Selection is a filled pill behind the icon: no underline, no border. */
+  .item[data-selected="true"] { color: var(--openbitfun-color-content-primary); }
+  .item[data-selected="true"] .icon { background: var(--openbitfun-color-selection-surface); }
+
+  @media (hover: hover) and (pointer: fine) {
+    .item:is(:hover, [data-openbitfun-preview-state="hover"]):not(:disabled),
+    .root[data-openbitfun-preview-state="hover"] .item:not(:disabled) { color: var(--openbitfun-color-content-primary); }
+    .item:is(:hover, [data-openbitfun-preview-state="hover"]):not(:disabled) .icon,
+    .root[data-openbitfun-preview-state="hover"] .item:not(:disabled) .icon { background: var(--openbitfun-color-action-neutral-surface-hover); }
+  }
+  .item:is(:active, [data-openbitfun-preview-state="active"]):not(:disabled) .icon,
+  .root[data-openbitfun-preview-state="active"] .item:not(:disabled) .icon { background: var(--openbitfun-color-action-neutral-surface-pressed); }
+  .item:is(:focus-visible, [data-openbitfun-preview-state="focus-visible"]),
+  .root[data-openbitfun-preview-state="focus-visible"] .item[data-selected="true"] { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: calc(var(--openbitfun-focus-offset) * -1); }
+  .item:disabled { color: var(--openbitfun-color-content-disabled); cursor: not-allowed; }
+
+  .icon { position: relative; display: grid; box-sizing: border-box; inline-size: 64px; block-size: 32px; place-items: center; border-radius: var(--openbitfun-radius-pill); transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard); }
+  .icon > :where(svg, img) { inline-size: 20px; block-size: 20px; }
+  .badge { position: absolute; inset-block-start: 0; inset-inline-start: 50%; margin-inline-start: 4px; }
+  .label { display: block; max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--openbitfun-type-label-sm-font-size); font-weight: var(--openbitfun-type-label-md-font-weight); }
+
+  @media (prefers-reduced-motion: reduce) { .item, .icon { transition: none; } }
+  @media (forced-colors: active) { .item:focus-visible { outline-color: Highlight; } .item[data-selected="true"] .icon { border: var(--openbitfun-border-width-default) solid Highlight; } }
+}

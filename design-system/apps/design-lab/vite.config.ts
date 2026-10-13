@@ -36,6 +36,10 @@ export default defineConfig(({ command }) => ({
               replacement: path.join(uiSourceDirectory, "flow-chat.ts"),
             },
             {
+              find: /^@openbitfun\/ui\/mobile$/,
+              replacement: path.join(uiSourceDirectory, "mobile.ts"),
+            },
+            {
               find: /^@openbitfun\/ui\/registry$/,
               replacement: path.join(uiSourceDirectory, "registry.ts"),
             },

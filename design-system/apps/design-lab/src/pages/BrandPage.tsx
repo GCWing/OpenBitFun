@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Code2, Pause, Play } from "lucide-react";
 import { SegmentedControl, Icon, IconButton, ThemeRoot } from "@openbitfun/ui";
 import {
@@ -6,7 +6,9 @@ import {
   OpenBitFunBrandMotion,
   OpenBitFunMark,
   OpenBitFunSolidMark,
+  SubagentHatch,
   VoiceParticleLogo,
+  type SubagentHatchPhase,
 } from "@openbitfun/ui/brand";
 import { useI18n, type MessageKey } from "../i18n";
 import { SUBAGENT_AVATAR_CATALOG } from "../assets/subagentAvatars";
@@ -62,11 +64,19 @@ export const brandResources: readonly BrandResource[] = [
   },
 ];
 
+/* The banner shows the family's own motion first: the hatch is the one animation the characters
+   have, and the banner is where a reader meets the brand. The three mark motions stay one click
+   away, because they are the brand's own vectors rather than product artwork. */
 const motionScenes = [
+  { name: "SubagentHatch", label: "brandAssets.characterMotion" },
   { name: "OpenBitFunMark", label: "brandAssets.breathe" },
   { name: "OpenBitFunBrandMotion", label: "brandAssets.flow" },
   { name: "VoiceParticleLogo", label: "brandAssets.particles" },
 ] as const;
+
+/* The banner leads with the lilac character: the family keeps all twenty. */
+const bannerCharacter = SUBAGENT_AVATAR_CATALOG.find(avatar => avatar.id === "robot-03") ?? SUBAGENT_AVATAR_CATALOG[0]!;
+const bannerCharacterSize = 256;
 type Background = "light" | "dark";
 type OpenComponent = (name: string) => void;
 
@@ -134,10 +144,31 @@ function IdentityTile({ resource, onOpenComponent }: { resource: BrandResource; 
 
 function BrandMotionShowcase({ onOpenComponent }: { onOpenComponent: OpenComponent }) {
   const { t } = useI18n();
-  const [selected, setSelected] = useState<(typeof motionScenes)[number]>(motionScenes[1]);
+  const [selected, setSelected] = useState<(typeof motionScenes)[number]>(motionScenes[0]);
   const [playing, setPlaying] = useState(true);
   const [background, setBackground] = useState<Background>("dark");
+  const [hatch, setHatch] = useState<SubagentHatchPhase>("incubating");
   const voice = selected.name === "VoiceParticleLogo";
+  const character = selected.name === "SubagentHatch";
+  /* The hatch is a one-shot reveal, so the banner runs it as a loop: the egg incubates, the
+     character comes out, and the loop starts again. Pausing settles the character instead of
+     freezing it mid-hatch, which is the state a reader wants to look at. */
+  useEffect(() => {
+    if (!character || !playing) {
+      setHatch("ready");
+      return;
+    }
+    let timer = 0;
+    let incubating = true;
+    setHatch("incubating");
+    const step = () => {
+      incubating = !incubating;
+      setHatch(incubating ? "incubating" : "ready");
+      timer = window.setTimeout(step, incubating ? 1800 : 3600);
+    };
+    timer = window.setTimeout(step, 1800);
+    return () => window.clearTimeout(timer);
+  }, [character, playing]);
   return (
     <section className="brand-gallery-section" id="brand-motion" aria-labelledby="brand-motion-title">
       <header className="brand-gallery-section-heading">
@@ -147,9 +178,26 @@ function BrandMotionShowcase({ onOpenComponent }: { onOpenComponent: OpenCompone
           options={motionScenes.map(scene => ({ value: scene.name, label: t(scene.label) }))} />
       </header>
       <ThemeRoot className="brand-gallery-motion" id="brand-motion-stage"
-        colorScheme={voice ? "dark" : background} density="compact" data-voice={voice || undefined}
+        colorScheme={voice ? "dark" : background} density="compact"
         role="group" aria-label={t(selected.label)}>
         <div className="brand-gallery-motion-art" key={selected.name}>
+          {/* The banner's own texture: the same mark drawn far larger than the frame and left
+              unlit, so the silk runs off both edges instead of stopping inside the banner. It
+              carries no label and never animates — the live graphic stays the one thing named
+              here. Both marks take their size from the frame (see the stylesheet); passing the
+              size prop would put an inline size on the mark and win over the frame. */}
+          {!voice && !character && (
+            <div className="brand-gallery-motion-texture" aria-hidden="true">
+              {selected.name === "OpenBitFunMark"
+                ? <OpenBitFunMark motion="breathe" active={false} />
+                : <OpenBitFunBrandMotion active={false} />}
+            </div>
+          )}
+          {character && (
+            <SubagentHatch phase={hatch} size={bannerCharacterSize} active={playing}>
+              <img src={bannerCharacter.src} alt="" draggable={false} width={bannerCharacterSize} height={bannerCharacterSize} />
+            </SubagentHatch>
+          )}
           {selected.name === "OpenBitFunMark" && <OpenBitFunMark size={216} motion="breathe" active={playing} />}
           {selected.name === "OpenBitFunBrandMotion" && <OpenBitFunBrandMotion size={320} active={playing} />}
           {voice && <div className="brand-gallery-voice"><VoiceParticleLogo active={playing} /></div>}

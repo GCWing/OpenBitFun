@@ -1603,6 +1603,8 @@ export function handleSessionStateChanged(context: FlowChatContext, event: any):
 }
 
 /**
+ * Reload the authoritative history after an out-of-lifecycle edit. A durable
+ * fence carrying a settled Turn identity only needs to re-read that Turn.
  * Re-read the terminal tail only after the Runtime announces that its Turn is
  * durable. DialogTurnCompleted is intentionally lower latency than the final
  * persistence write, so relying on that event alone can preserve a painted
@@ -1626,17 +1628,28 @@ export function handleSessionHistoryChanged(context: FlowChatContext, event: any
     return;
   }
 
-  const latestTurn = session.dialogTurns[session.dialogTurns.length - 1];
-  if (latestTurn && !['completed', 'cancelled', 'error'].includes(latestTurn.status)) {
+  const settledTurnId = event?.settledTurnId ?? event?.settled_turn_id;
+  if (!settledTurnId) {
+    // Undo/redo and rollback remove visible Turns. Repairing one old tail Turn
+    // cannot remove that suffix, including when the history becomes empty.
+    // Older hosts omit the optional identity, so use full invalidation there too.
+    context.pendingHistoryFenceSessions.delete(sessionId);
+    void context.flowChatStore.loadSessionHistory(sessionId, {
+      includeInternal: session.sessionKind === 'subagent',
+    }).catch(error => {
+      log.warn('Failed to reload changed session history', { sessionId, error });
+    });
+    return;
+  }
+
+  const settledTurn = session.dialogTurns.find(turn => turn.id === settledTurnId);
+  if (settledTurn && !['completed', 'cancelled', 'error'].includes(settledTurn.status)) {
     // The local projection has not settled yet (completion quiet window, or
     // the next Turn already started). Defer to the completion finalizer.
     context.pendingHistoryFenceSessions.add(sessionId);
     return;
   }
 
-  const settledTurn = [...session.dialogTurns]
-    .reverse()
-    .find(turn => ['completed', 'cancelled', 'error'].includes(turn.status));
   if (!settledTurn) {
     return;
   }

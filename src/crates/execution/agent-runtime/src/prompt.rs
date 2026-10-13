@@ -8,7 +8,7 @@ const SKILL_LISTING_GUIDANCE: &str = r#"A skill is a set of instructions provide
 If the user names a skill (with `[$SkillName]` or plain text) OR the task clearly matches a skill's description shown below, you must use that skill for that turn. Multiple mentions mean use them all. Do not carry skills across turns unless re-mentioned.
 Below is the list of skills that can be used with the Skill tool. Each entry includes a name and description"#;
 const AGENT_LISTING_TITLE: &str = "# Agent Listing";
-const AGENT_LISTING_GUIDANCE: &str = "Available subagent types for the Task tool:";
+const AGENT_LISTING_GUIDANCE: &str = "Available agent types for the AgentSpawn tool:";
 const TOOL_CALLING_GUIDANCE_TITLE: &str = "# Tool Calling Guide";
 const TOOL_CALLING_GUIDANCE: &str = "You can access two types of tools.";
 const DIRECT_TOOL_LISTING_TITLE: &str = "## Direct tools";

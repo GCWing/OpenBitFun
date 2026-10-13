@@ -5,6 +5,8 @@ import { componentRegistry } from "@openbitfun/ui/registry";
 
 const detailSource = new URL("../src/pages/ComponentDetailPage.tsx", import.meta.url);
 const catalogSource = new URL("../src/pages/ComponentsPage.tsx", import.meta.url);
+const componentIndexSource = new URL("../src/components/LabComponentIndex.tsx", import.meta.url);
+const componentNavigationSource = new URL("../src/componentNavigation.ts", import.meta.url);
 const appSource = new URL("../src/App.tsx", import.meta.url);
 const flowChatPreviewSource = new URL("../src/preview/FlowChatPreviewRegistry.tsx", import.meta.url);
 const flowChatGallerySource = new URL("../src/preview/FlowChatToolGallery.tsx", import.meta.url);
@@ -68,9 +70,10 @@ test("preview matrices define horizontal columns for every registered state coun
 });
 
 test("FlowChat component details are registry-driven and stack every state vertically", async () => {
-  const [detail, catalog, preview, styles] = await Promise.all([
+  const [detail, catalog, index, preview, styles] = await Promise.all([
     readFile(detailSource, "utf8"),
     readFile(catalogSource, "utf8"),
+    readFile(componentIndexSource, "utf8"),
     readFile(flowChatPreviewSource, "utf8"),
     readFile(stylesSource, "utf8"),
   ]);
@@ -80,7 +83,7 @@ test("FlowChat component details are registry-driven and stack every state verti
   assert.match(detail, /className="flow-chat-state-list__item"/);
   assert.match(detail, /data-component-name=\{component\.name\}/);
   assert.doesNotMatch(detail, /component-preview-matrix[^]*data-component="flow-chat-tool-card"/);
-  assert.match(catalog, /const catalogComponents = componentRegistry\.filter/);
+  assert.match(index, /const catalogComponents = componentRegistry\.filter/);
   assert.doesNotMatch(catalog, /definition\.section === "framework"/);
   assert.match(preview, /flowChatPreviewDefinitions/);
   assert.match(preview, /AmbientToolCard/);
@@ -100,9 +103,10 @@ test("FlowChat component details are registry-driven and stack every state verti
 });
 
 test("FlowChat gallery consumes the production inventory and shared lifecycle presenter", async () => {
-  const [app, catalog, gallery, preview, scenarios] = await Promise.all([
+  const [app, catalog, navigation, gallery, preview, scenarios] = await Promise.all([
     readFile(appSource, "utf8"),
     readFile(catalogSource, "utf8"),
+    readFile(componentNavigationSource, "utf8"),
     readFile(flowChatGallerySource, "utf8"),
     readFile(flowChatPreviewSource, "utf8"),
     readFile(new URL("../src/preview/FlowChatScenarios.tsx", import.meta.url), "utf8"),
@@ -111,7 +115,7 @@ test("FlowChat gallery consumes the production inventory and shared lifecycle pr
   assert.match(app, /const flowChatComponents = componentRegistry\.filter/);
   assert.match(app, /route === "flow-chat"/);
   assert.match(app, /\["components", "component", "mobile", "flow-chat"\]\.includes\(route\.page\)/);
-  assert.match(app, /route\.page === "flow-chat" \? "flow-chat" : undefined/);
+  assert.match(navigation, /page === "flow-chat" \? "flow-chat" : undefined/);
   assert.match(catalog, /category === "flow-chat"/);
   assert.match(catalog, /<FlowChatToolGallery onOpenComponent=\{onOpenComponent\} \/>/);
   assert.match(gallery, /<FlowChatComponentPreview/);

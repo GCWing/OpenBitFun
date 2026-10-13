@@ -410,7 +410,7 @@ test('after host restart the same conversation sends a new turn instead of steer
   });
   const remote = { chatInput:'continue after restart', selectedImages:[], isBusy:false, isVoiceListening:false,
     connectionState:'connected', activeSession:{sessionId:'session',agentType:'code'}, activeTurnMessage:timeline.activeTurnOrEmpty(),
-    supportsHostCapability:()=>true };
+    supportsHostCapability:()=>true, clearRollbackNotice:()=>{} };
   const controller = new RemoteTranscriptController(remote, {
     timeline, chat:command, connection:{ensureAvailable:()=>true}, polling:{nudge(){}}, hooks:{}
   }, ()=>{});

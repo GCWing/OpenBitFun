@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { ComponentDetailPage } from "./ComponentDetailPage";
 import { BrandPreview } from "../preview/BrandPreview";
 import { CapsulePreview } from "../preview/CapsulePreview";
@@ -12,7 +12,6 @@ import {
   Avatar,
   AvatarGroup,
   Button,
-  OverflowText,
   Card,
   CardHeader,
   ChangeCount,
@@ -70,10 +69,12 @@ import {
   type TokenOverrides,
 } from "@openbitfun/ui";
 import {
+  MobileAvatar,
   MobileBadge,
   MobileBanner,
   MobileButton,
   MobileCard,
+  MobileCheckbox,
   MobileComposer,
   MobileDisclosure,
   MobileFileButton,
@@ -83,19 +84,24 @@ import {
   MobileListRow,
   MobileMessage,
   MobilePageHeader,
+  MobileRadioGroup,
   MobileScrim,
   MobileSection,
   MobileSegmentedControl,
+  MobileSelect,
   MobileStatus,
+  MobileStepper,
+  MobileSwitch,
+  MobileTabBar,
+  MobileTag,
   MobileTextField,
   MobileTextarea,
-} from "@openbitfun/ui/mobile";
-import { componentRegistry, type ComponentMeta } from "@openbitfun/ui/registry";
+  MobileToolbar,
+}
+from "@openbitfun/ui/mobile";
+import { type ComponentMeta } from "@openbitfun/ui/registry";
 import { useI18n } from "../i18n";
-import {
-  getComponentCategoryLabel,
-  getComponentDescription,
-} from "../i18n/componentMetadata";
+import { defaultComponent } from "../componentNavigation";
 import {
   FlowChatComponentPreview,
   getFlowChatPreviewDefinition,
@@ -132,10 +138,12 @@ const componentIcons = {
   LoadingState: <AppWindow aria-hidden="true" size={19} />,
   Menu: <List aria-hidden="true" size={19} />,
   MobileActionSheet: <List aria-hidden="true" size={19} />,
+  MobileAvatar: <CatalogIcon name="session" style={{ width: 19, height: 19 }} />,
   MobileBadge: <CatalogIcon name="check-line" style={{ width: 19, height: 19 }} />,
   MobileBanner: <AppWindow aria-hidden="true" size={19} />,
   MobileButton: <MousePointerClick aria-hidden="true" size={19} />,
   MobileCard: <Rows3 aria-hidden="true" size={19} />,
+  MobileCheckbox: <CatalogIcon name="check-line" style={{ width: 19, height: 19 }} />,
   MobileChoiceSheet: <List aria-hidden="true" size={19} />,
   MobileConfirmSheet: <AppWindow aria-hidden="true" size={19} />,
   MobileComposer: <CatalogIcon name="arrow-up" style={{ width: 19, height: 19 }} />,
@@ -147,14 +155,21 @@ const componentIcons = {
   MobileListRow: <Rows3 aria-hidden="true" size={19} />,
   MobileMessage: <CatalogIcon name="session" style={{ width: 19, height: 19 }} />,
   MobilePageHeader: <Heading aria-hidden="true" size={19} />,
+  MobileRadioGroup: <List aria-hidden="true" size={19} />,
   MobileScrim: <AppWindow aria-hidden="true" size={19} />,
   MobileSection: <Rows3 aria-hidden="true" size={19} />,
   MobileSegmentedControl: <ToggleLeft aria-hidden="true" size={19} />,
+  MobileSelect: <Rows3 aria-hidden="true" size={19} />,
   MobileSheet: <AppWindow aria-hidden="true" size={19} />,
   MobileStatus: <AppWindow aria-hidden="true" size={19} />,
+  MobileStepper: <CatalogIcon name="plus" style={{ width: 19, height: 19 }} />,
+  MobileSwitch: <ToggleLeft aria-hidden="true" size={19} />,
+  MobileTabBar: <PanelTop aria-hidden="true" size={19} />,
+  MobileTag: <CatalogIcon name="check-line" style={{ width: 19, height: 19 }} />,
   MobileTextField: <CatalogIcon name="search" style={{ width: 19, height: 19 }} />,
   MobileTextarea: <CatalogIcon name="arrow-up" style={{ width: 19, height: 19 }} />,
   Dialog: <AppWindow aria-hidden="true" size={19} />,
+  MobileToolbar: <Heading aria-hidden="true" size={19} />,
   Sheet: <AppWindow aria-hidden="true" size={19} />,
   MultiSelect: <List aria-hidden="true" size={19} />,
   NavigationPanel: <CatalogIcon name="sidebar-left" style={{ width: 19, height: 19 }} />,
@@ -356,6 +371,100 @@ export function ComponentCardPreview({ component }: { component: ComponentMeta }
       return <MobileStatus description={t("components.preview.fieldDescription")} title={t("components.preview.cardTitle")} />;
     case "MobileTextarea":
       return <MobileTextarea aria-label={t("components.preview.composerPlaceholder")} placeholder={t("components.preview.composerPlaceholder")} readOnly />;
+    case "MobileAvatar":
+      return (
+        <Stack align="center" direction="horizontal" gap="3">
+          <MobileAvatar name={t("components.preview.session")} status="online" />
+          <MobileAvatar shape="rounded">BF</MobileAvatar>
+          <MobileAvatar size="sm">UI</MobileAvatar>
+        </Stack>
+      );
+    case "MobileCheckbox":
+      return (
+        <MobileCheckbox
+          defaultChecked
+          description={t("components.preview.fieldDescription")}
+          label={t("components.preview.notifications")}
+          tabIndex={-1}
+        />
+      );
+    case "MobileRadioGroup":
+      return (
+        <MobileRadioGroup
+          appearance="surface"
+          name="catalog-mobile-radio"
+          options={[
+            { label: t("components.preview.segmentedChat"), value: "chat" },
+            { label: t("components.preview.segmentedAgent"), value: "agent" },
+          ]}
+          tabIndex={-1}
+          value="chat"
+        />
+      );
+    case "MobileSelect":
+      return (
+        <MobileSelect
+          label={t("components.preview.mobileSelectLabel")}
+          options={[
+            { label: "deepseek-v4-pro", value: "pro" },
+            { label: "deepseek-v4-flash", value: "flash" },
+          ]}
+          sheetTitle={t("components.preview.mobileSelectLabel")}
+          tabIndex={-1}
+          value="pro"
+        />
+      );
+    case "MobileStepper":
+      return (
+        <MobileStepper
+          decrementLabel={t("components.preview.mobileDecrease")}
+          incrementLabel={t("components.preview.mobileIncrease")}
+          label={t("components.preview.mobileStepperLabel")}
+          max={5}
+          min={0}
+          value={3}
+        />
+      );
+    case "MobileSwitch":
+      return (
+        <MobileSwitch
+          defaultChecked
+          description={t("components.preview.fieldDescription")}
+          label={t("components.preview.notifications")}
+          tabIndex={-1}
+        />
+      );
+    case "MobileTabBar":
+      return (
+        <MobileTabBar
+          items={[
+            { icon: <CatalogIcon name="session" aria-hidden="true" />, label: t("components.preview.segmentedChat"), value: "chat" },
+            { icon: <CatalogIcon name="folder" aria-hidden="true" />, label: t("components.preview.segmentedAgent"), value: "agent" },
+            { icon: <CatalogIcon name="gear" aria-hidden="true" />, label: t("components.preview.settings"), value: "settings" },
+          ]}
+          label={t("components.preview.segmentedLabel")}
+          tabIndex={-1}
+          value="chat"
+        />
+      );
+    case "MobileTag":
+      return (
+        <Stack align="center" direction="horizontal" gap="2">
+          <MobileTag selected>Design</MobileTag>
+          <MobileTag>Frontend</MobileTag>
+          <MobileTag size="sm">Tokens</MobileTag>
+        </Stack>
+      );
+    case "MobileToolbar":
+      return (
+        <MobileToolbar
+          leading={<MobileIconButton appearance="plain" aria-label={t("components.preview.close")} icon={<CatalogIcon name="chevron-left" aria-hidden="true" />} size="sm" tabIndex={-1} />}
+          trailing={<MobileIconButton appearance="plain" aria-label={t("components.preview.more")} icon={<CatalogIcon name="more" aria-hidden="true" />} size="sm" tabIndex={-1} />}
+        >
+          {t("components.preview.mobileToolbarSelection")}
+        </MobileToolbar>
+      );
+
     case "Input":
       return (
         <Input
@@ -733,85 +842,13 @@ export function ComponentsPage({
   tokenOverrides,
 }: ComponentsPageProps) {
   const { t } = useI18n();
-  const [query, setQuery] = useState("");
-  const [catalogOpen, setCatalogOpen] = useState(false);
   const [toolReferenceOpen, setToolReferenceOpen] = useState(false);
-  const listRef = useRef<HTMLElement>(null);
-  const activeLinkRef = useRef<HTMLAnchorElement>(null);
-  const selectedComponent = component
-    ?? componentRegistry.find(item => category ? item.category === category : item.name === "Button")
-    ?? componentRegistry[0];
-  const categories = Array.from(new Set(componentRegistry.map(component => component.category)));
-  const normalizedQuery = query.trim().toLowerCase();
-  const catalogComponents = componentRegistry.filter(component =>
-    `${component.name} ${component.category} ${component.description} ${getComponentDescription(component.name, component.description, t)} ${getComponentCategoryLabel(component.category, t)}`.toLowerCase().includes(normalizedQuery),
-  );
-
-  useEffect(() => {
-    const list = listRef.current;
-    const activeLink = activeLinkRef.current;
-    if (!list) return;
-    if (!activeLink) {
-      list.scrollTop = 0;
-      return;
-    }
-    // Keep selection visible inside the directory without scrolling the preview.
-    const listBounds = list.getBoundingClientRect();
-    const linkBounds = activeLink.getBoundingClientRect();
-    if (linkBounds.top < listBounds.top) list.scrollTop += linkBounds.top - listBounds.top;
-    else if (linkBounds.bottom > listBounds.bottom) list.scrollTop += linkBounds.bottom - listBounds.bottom;
-  }, [selectedComponent?.name, normalizedQuery, catalogOpen]);
+  const selectedComponent = component ?? defaultComponent(category);
 
   return (
     <main className="lab-page design-component-library" id="components">
-      <aside className="design-library-sidebar" aria-labelledby="component-library-title" data-open={catalogOpen || undefined}>
-        <div className="design-library-heading">
-          <h2 id="component-library-title">{t("design.components")}</h2>
-          <span className="design-library-count" role="status">{t("design.results", { count: catalogComponents.length })}</span>
-          <IconButton className="design-library-toggle" aria-controls="component-library-index" aria-expanded={catalogOpen}
-            aria-label={t("design.browseComponents")} onClick={() => setCatalogOpen(open => !open)}
-            icon={<CatalogIcon name={catalogOpen ? "chevron-up" : "chevron-down"} />} />
-        </div>
-        <div className="design-library-index" id="component-library-index">
-          <SearchField aria-label={t("design.search")} placeholder={t("design.search")} value={query}
-            onChange={event => setQuery(event.target.value)} clearLabel={t("design.clear")} onClear={() => setQuery("")}
-            leadingIcon={<CatalogIcon name="search" />} />
-          <nav className="design-library-list" aria-label={t("design.all")} ref={listRef}>
-            {categories.map(group => {
-              const items = catalogComponents.filter(item => item.category === group).sort((a, b) => a.name.localeCompare(b.name));
-              if (!items.length) return null;
-              return (
-                <section className="design-library-group" key={group} aria-labelledby={`component-group-${group}`}>
-                  <h3 id={`component-group-${group}`}>{getComponentCategoryLabel(group, t)}</h3>
-                  <ul>
-                    {items.map(item => (
-                      <li key={item.name}>
-                        <a data-overflow-trigger className="design-library-link" href={`#component/${item.name.toLowerCase()}`}
-                          aria-current={selectedComponent?.name === item.name ? "page" : undefined}
-                          ref={selectedComponent?.name === item.name ? activeLinkRef : undefined}
-                          title={`${item.name} · ${getComponentDescription(item.name, item.description, t)}`}
-                          onClick={event => {
-                            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                            event.preventDefault();
-                            setCatalogOpen(false);
-                            onOpenComponent(item.name);
-                          }}>
-                          <OverflowText>{item.name}</OverflowText>
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              );
-            })}
-            {catalogComponents.length === 0 && <div className="design-library-empty"><p>{t("design.noResults")}</p><Button size="sm" variant="text" onClick={() => setQuery("")}>{t("design.clear")}</Button></div>}
-          </nav>
-          <footer className="design-library-footer">
-            <a href="#patterns">{t("design.contexts")}<CatalogIcon name="arrow-right" size="sm" /></a>
-            <a href="#flow-chat-mock">{t("design.conversation")}<CatalogIcon name="arrow-right" size="sm" /></a>
-          </footer>
-        </div>
-      </aside>
+      {/* The component directory is the rail's tree now, so this column is the preview alone:
+          one index for the whole section instead of a second one inside the page. */}
       {selectedComponent && (
         <div className="design-library-content">
           <ComponentDetailPage key={selectedComponent.name} embedded component={selectedComponent}

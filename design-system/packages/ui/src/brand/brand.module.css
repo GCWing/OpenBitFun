@@ -25,11 +25,26 @@
     flex: 0 0 auto;
     max-width: 100%;
     height: auto;
-    stroke-width: 0.7;
+    /* Thick enough to read as a ribbon at hero size; the 256 viewBox still thins it out for
+       the small sizes the brand pages use. */
+    stroke-width: 1.15;
     stroke-linecap: round;
     stroke-linejoin: round;
     user-select: none;
     pointer-events: none;
+    /* The sheen blends against the strands inside this box, never against the page behind it. */
+    isolation: isolate;
+  }
+
+  /* The travelling highlight is light, not paint: white screened over the strand lightens
+     whatever it crosses — ink to a flash on the light theme, pale to bright on the dark one —
+     so it borrows the one token that stays light in both schemes instead of a raw colour. Held
+     just above the resting strand width: wide enough to cover the strand it crosses, narrow
+     enough not to smear past it into a blob. */
+  .flowSheen {
+    stroke: var(--openbitfun-color-content-on-dark);
+    stroke-width: 1.5;
+    mix-blend-mode: screen;
   }
 
   .iconMotion {

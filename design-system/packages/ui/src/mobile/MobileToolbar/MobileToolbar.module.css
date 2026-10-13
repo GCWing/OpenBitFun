@@ -1,0 +1,11 @@
+@layer openbitfun.components {
+  .root { display: flex; box-sizing: border-box; inline-size: 100%; min-block-size: 56px; align-items: center; justify-content: space-between; gap: var(--openbitfun-space-3); padding: var(--openbitfun-space-2) var(--openbitfun-space-4); background: var(--openbitfun-color-surface-panel); box-shadow: var(--openbitfun-shadow-sm); }
+  .root[data-appearance="plain"] { background: transparent; box-shadow: none; }
+  .root[data-safe-area="true"] { padding-block-end: calc(var(--openbitfun-space-2) + env(safe-area-inset-bottom, 0px)); }
+  .root[data-sticky="true"] { position: sticky; inset-block-end: 0; z-index: var(--openbitfun-layer-sticky); }
+
+  .leading, .trailing { display: inline-flex; min-inline-size: 0; flex: 0 0 auto; align-items: center; gap: var(--openbitfun-space-2); }
+  .content { display: inline-flex; min-inline-size: 0; flex: 1 1 auto; align-items: center; justify-content: center; gap: var(--openbitfun-space-2); }
+
+  @media (forced-colors: active) { .root { border-block-start: var(--openbitfun-border-width-default) solid CanvasText; } }
+}
