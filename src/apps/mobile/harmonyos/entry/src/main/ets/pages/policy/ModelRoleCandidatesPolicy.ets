@@ -1,7 +1,8 @@
 import { RemoteModelCatalog, RemoteModelConfig } from '../../model/RemoteModels';
 import {
   RemoteModelDefaultsRole,
-  RemoteModelDefaultsRoles
+  RemoteModelDefaultsRoles,
+  RemoteModelDefaultsState
 } from '../../services/RemoteModelDefaultsController';
 
 /**
@@ -17,6 +18,33 @@ import {
  * capable, in the desktop's own order. Nothing here reorders, renames or repairs
  * that list.
  */
+
+/**
+ * What the role picker shows for one device state.
+ *
+ * The picker is a list only while the device is actually answering. A snapshot
+ * that the gate replaced with "unavailable" still carries its last roles, and a
+ * role that is null there reads as a choice the user made — "fast follows the
+ * primary" on a desktop that was never asked, or on one the phone can no longer
+ * reach. So the marks, the list and the sentence about an empty list are decided
+ * here together with the reason, from the same state the reason comes from.
+ */
+export interface ModelPickerView {
+  /** The reason card: the device refused the page, or the last read failed. */
+  reason: boolean;
+  /** The retry: the failure is a read this device can repeat. */
+  retry: boolean;
+  /** The reading card: nothing has been read for this device yet. */
+  reading: boolean;
+  /** The pinned row and the candidates are drawn. */
+  list: boolean;
+  /**
+   * The rows on screen are the device's own answer, so a selected mark and an
+   * empty list may be read from them. A closed gate, a failed read or a page that
+   * has not been read yet all say no.
+   */
+  answered: boolean;
+}
 
 /** What one role row of the device model settings page shows. */
 export interface ModelRoleRowProjection {
@@ -75,6 +103,40 @@ export class ModelRoleCandidatesPolicy {
   /** The desktop lists no model at all: the pickers have nothing to offer. */
   static isEmptyCatalog(catalog: RemoteModelCatalog): boolean {
     return catalog.models.length === 0;
+  }
+
+  /**
+   * The device cannot answer this page: it never advertised the command, or the
+   * phone is not connected to it, or the read itself failed. All three are the
+   * same fact to the picker — the list on screen is not an answer — and the
+   * controller has already resolved which sentence describes it into `error`.
+   */
+  static isUnavailable(state: RemoteModelDefaultsState): boolean {
+    return !state.available || state.error.length > 0;
+  }
+
+  /**
+   * Whether repeating the read is a way out. Only a device that can still answer
+   * can be asked again: a closed gate is the sheet's own business, and it re-arms
+   * by itself when the link or the desktop comes back.
+   */
+  static canRepeatRead(state: RemoteModelDefaultsState): boolean {
+    return state.available && state.error.length > 0;
+  }
+
+  /** The render decisions of one picker frame, all read from one state. */
+  static pickerView(state: RemoteModelDefaultsState): ModelPickerView {
+    const reason = ModelRoleCandidatesPolicy.isUnavailable(state);
+    const reading = state.available && !reason && !state.loaded;
+    return {
+      reason,
+      retry: ModelRoleCandidatesPolicy.canRepeatRead(state),
+      reading,
+      // A device that can still answer keeps its list even after a failed read:
+      // those rows are the last thing it said, and they are not what failed.
+      list: state.available && !reading,
+      answered: !reason && !reading
+    };
   }
 
   /**

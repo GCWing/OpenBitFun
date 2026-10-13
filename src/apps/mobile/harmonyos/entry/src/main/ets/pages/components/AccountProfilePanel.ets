@@ -278,6 +278,10 @@ export struct AccountProfilePanel {
       .backgroundColor(SOFT)
       .borderRadius(14)
       .opacity(this.deviceModelSettingsEnabled() ? 1 : 0.38)
+      // The two states of this pill are its whole contract, so the state is part
+      // of its identity: an enabled entry that still looked greyed would be the
+      // same bug as a greyed one that opened the page.
+      .id(`device-model-entry-${this.deviceModelSettingsEnabled() ? 'enabled' : 'degraded'}`)
       .onClick(() => {
         this.openDeviceModelSettings(device);
       })

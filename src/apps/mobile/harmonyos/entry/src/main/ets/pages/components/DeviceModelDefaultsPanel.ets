@@ -10,6 +10,7 @@ import { ModelRoleCandidatesPolicy, ModelRoleRowProjection } from '../policy/Mod
 import { toConversationUiModel } from '../state/ConversationUiModels';
 import { DeviceModelDefaultsSheetState } from '../state/DeviceModelDefaultsSheetState';
 import { SettingsSheetState } from '../state/SettingsSheetState';
+import { ModelUnavailableCard } from './ModelUnavailableCard';
 import { NavigationBackButton } from './NavigationBackButton';
 import { SheetCloseButton } from './SheetCloseButton';
 import { SHEET_HEADER_HEIGHT, SHEET_HEADER_SIDE_PADDING, SHEET_HORIZONTAL_PADDING } from './SheetLayout';
@@ -417,18 +418,23 @@ export struct DeviceModelDefaultsPanel {
    * the same reason, but the page is reachable from a stale capability set too,
    * so it states the reason itself — the controller already decided which of the
    * two it is, and this card does not re-judge it.
+   *
+   * The card is shared with the picker, which reaches it in one more state: a
+   * read that failed while the device could still answer. This page shows that
+   * case above its own rows instead, so the retry here never has work to do.
    */
   @Builder
   private UnavailableCard() {
-    Text(this.deviceModels.state.error.length > 0 ? this.deviceModels.state.error :
-      RemoteI18n.t('status.remoteUnavailable'))
-      .width('100%')
-      .fontSize(MobileDesignTypography.bodySmall.size)
-      .lineHeight(MobileDesignTypography.bodySmall.lineHeight)
-      .fontColor(STATUS_DANGER)
-      .padding({ left: 18, right: 18, top: 16, bottom: 16 })
-      .backgroundColor(CARD)
-      .borderRadius(MobileDesignGeometry.settingsCardRadius)
+    ModelUnavailableCard({
+      reason: this.deviceModels.state.error.length > 0 ? this.deviceModels.state.error :
+        RemoteI18n.t('status.remoteUnavailable'),
+      canRetry: ModelRoleCandidatesPolicy.canRepeatRead(this.deviceModelState()),
+      busy: this.deviceModels.state.loading || this.locked(),
+      cardId: 'device-model-unavailable',
+      onRetry: (): void => {
+        void this.deviceModels.retry();
+      }
+    })
   }
 
   private deviceLabel(): string {

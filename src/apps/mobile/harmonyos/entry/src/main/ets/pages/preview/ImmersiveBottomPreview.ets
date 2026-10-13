@@ -1,5 +1,10 @@
 import { ObservableChatTimelineItem } from '../../model/ChatTimelineModels';
-import { ChatMessage, RecentWorkspaceEntry, RemoteSession } from '../../model/RemoteModels';
+import {
+  ChatMessage,
+  RecentWorkspaceEntry,
+  RemoteSession,
+  REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1
+} from '../../model/RemoteModels';
 import { MiniAppSummary } from '../../model/MiniAppModels';
 import { CloudAccountDevice } from '../../services/CloudAccountClient';
 import { ChatSurface } from '../state/ChatSurface';
@@ -341,6 +346,11 @@ export struct ImmersiveBottomPreview {
       this.remotePageState.setControlTarget('account_device', 'account-desktop-1', 'Account desktop 1');
       this.remotePageState.setDesktopIdentity('Account desktop 1', 'account-desktop-1');
       this.remotePageState.connectionState = 'connected';
+      // The model settings entry on the controlled desktop's row is offered or
+      // greyed by the desktop's own capability set, and an empty set can only ever
+      // be the greyed state. This fixture is the connected desktop's, so it
+      // advertises the command and the sheet shows the entry it really shows.
+      this.remotePageState.setHostCapabilities([REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1]);
       this.previewActions = previewActionsWithDevices(settingsDevices());
       return;
     }

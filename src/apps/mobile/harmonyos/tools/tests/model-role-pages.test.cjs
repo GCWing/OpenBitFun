@@ -412,6 +412,103 @@ test('the page starts from the controller own unavailable snapshot', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The picker over a device that stopped answering
+// ---------------------------------------------------------------------------
+
+test('a gate that drops while the picker is open states the reason, not a choice', async () => {
+  const {ModelRoleCandidatesPolicy: policy} = policyModule();
+  const sheet = sheetWith({
+    getModelCatalog: async () => catalog({primary: 'm-primary'}),
+    setModelDefaults: async () => ({})
+  });
+  assert.equal(sheet.setGate(gate(true, true, 'desk-1')), true);
+  await sheet.ensureLoaded();
+
+  // The frame the picker draws for a device that is answering: the list is the
+  // device's, and the mark on the pinned row is the value it reported.
+  assert.deepEqual(policy.pickerView(sheet.state), {
+    reason: false, retry: false, reading: false, list: true, answered: true
+  });
+  assert.equal(policy.isUnsetSelected(sheet.state.roles, 'fast'), true);
+
+  // The link drops while the picker is up. The snapshot keeps the roles it was
+  // read with, so the raw predicate still calls the empty slot a choice — which
+  // is exactly the sentence the page must not draw from it.
+  assert.equal(sheet.setGate(gate(true, false, 'desk-1')), true);
+  assert.equal(sheet.state.error, 'status.remoteUnavailable');
+  assert.equal(policy.isUnsetSelected(sheet.state.roles, 'fast'), true);
+  const dropped = policy.pickerView(sheet.state);
+  assert.equal(dropped.reason, true, 'the page states the reason instead of a list');
+  assert.equal(dropped.answered, false, 'a snapshot the gate replaced answers nothing');
+  assert.equal(dropped.list, false, 'a device that cannot answer has no list to offer');
+  // Reconnecting is the sheet's own business: it re-arms the gate when the link
+  // returns, so there is nothing here for a retry to repeat.
+  assert.equal(dropped.retry, false);
+  assert.equal(policy.canRepeatRead(sheet.state), false);
+
+  // An older desktop is the same page, with the reason it has.
+  assert.equal(sheet.setGate(gate(false, true, 'desk-1')), true);
+  assert.equal(sheet.state.error, 'settings.model.unsupported');
+  assert.equal(policy.pickerView(sheet.state).reason, true);
+  assert.equal(policy.pickerView(sheet.state).retry, false);
+});
+
+test('a read that fails while the picker is open keeps the rows but not their marks', async () => {
+  const {ModelRoleCandidatesPolicy: policy} = policyModule();
+  let reads = 0;
+  const sheet = sheetWith({
+    getModelCatalog: async () => {
+      reads += 1;
+      if (reads === 2) {
+        throw new Error('The desktop stopped answering the model catalog.');
+      }
+      return catalog({primary: 'm-primary'});
+    },
+    setModelDefaults: async () => ({})
+  });
+  sheet.setGate(gate(true, true, 'desk-1'));
+  await sheet.ensureLoaded();
+
+  // Another desktop is a different answer, so the page reads again — and this
+  // read is the one that fails.
+  assert.equal(sheet.setGate(gate(true, true, 'desk-2')), true);
+  await sheet.load();
+  assert.equal(sheet.state.failure, 'load');
+  assert.equal(sheet.state.error, 'The desktop stopped answering the model catalog.');
+
+  const view = policy.pickerView(sheet.state);
+  assert.equal(view.reason, true, 'the host\'s own words are what the page states');
+  assert.equal(view.retry, true, 'repeating the read is the way out of a failed read');
+  assert.equal(view.list, true, 'the device can still answer, so its rows stay');
+  assert.equal(view.answered, false, 'but the last read is not this desktop\'s answer');
+  assert.equal(view.reading, false);
+
+  // The retry repeats that read and nothing else.
+  assert.equal(reads, 2);
+  await sheet.retry();
+  assert.equal(reads, 3);
+  assert.equal(sheet.state.error, '');
+  assert.deepEqual(policy.pickerView(sheet.state), {
+    reason: false, retry: false, reading: false, list: true, answered: true
+  });
+});
+
+test('a picker opened before the first read says so instead of blaming the catalog', () => {
+  const {ModelRoleCandidatesPolicy: policy} = policyModule();
+  const sheet = sheetWith({
+    getModelCatalog: async () => catalog(),
+    setModelDefaults: async () => ({})
+  });
+  // Armed, and not read: a sheet restored straight onto the picker is here.
+  assert.equal(sheet.setGate(gate(true, true, 'desk-1')), true);
+  const view = policy.pickerView(sheet.state);
+  assert.equal(view.reading, true);
+  assert.equal(view.list, false);
+  assert.equal(view.answered, false, 'a list nobody has read yet is not an empty catalog');
+  assert.equal(view.reason, false);
+});
+
+// ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
 
@@ -482,6 +579,64 @@ test('neither model page offers a manual refresh', () => {
   }
 });
 
+test('both model pages state a device that cannot answer', () => {
+  const picker = source('entry/src/main/ets/pages/components/ModelRolePickerPanel.ets');
+
+  // The card, the marks and the sentence about an empty list all come from one
+  // view of one state, so a dropped link cannot leave a marked row or an empty
+  // list being blamed on the catalog behind.
+  assert.match(picker, /if \(this\.view\(\)\.reason\) \{/, 'the reason has to replace the list');
+  assert.match(picker, /if \(this\.view\(\)\.reading\) \{/, 'and an unread page has to say so');
+  assert.match(picker, /if \(this\.view\(\)\.list\) \{/, 'the list is drawn only while it is an answer');
+  assert.match(picker, /this\.view\(\)\.answered && this\.candidates\(\)\.length === 0/,
+    'an empty list is only explained away when the device is the one saying it');
+  assert.match(picker, /view\(\)\.answered &&/, 'the marks have to come from the view');
+  assert.match(picker, /ModelUnavailableCard\(\{/, 'the picker states the reason in the shared card');
+  assert.match(picker, /deviceModels\.retry\(\)/, 'and offers the retry the state allows');
+
+  // The settings page reaches the same card, so the two pages cannot describe the
+  // same desktop differently.
+  const settings = source('entry/src/main/ets/pages/components/DeviceModelDefaultsPanel.ets');
+  assert.match(settings, /ModelUnavailableCard\(\{/, 'the settings page shares the card');
+  assert.match(settings, /canRepeatRead\(this\.deviceModelState\(\)\)/,
+    'and decides the retry from the same rule as the picker');
+});
+
+test('the connected desktop offers the model settings entry the previews shoot', () => {
+  const normalize = text => text.replace(/\s+/g, ' ');
+  const immersive = source('entry/src/main/ets/pages/preview/ImmersiveBottomPreview.ets');
+  const surfaces = source('entry/src/main/ets/pages/components/AppRootOverlaySurfaces.ets');
+  const profile = source('entry/src/main/ets/pages/components/AccountProfilePanel.ets');
+  const pageState = source('entry/src/main/ets/pages/state/RemotePageState.ets');
+  const models = source('entry/src/main/ets/model/RemoteModels.ets');
+
+  // The chain behind the pill, end to end: the capability the desktop advertised
+  // is what the sheet is told, and what the row draws.
+  assert.match(pageState, /setHostCapabilities\(capabilities: string\[\]\): void \{/,
+    'the host capability set is state the page carries');
+  assert.match(pageState, /supportsHostCapability\(capability: string\): boolean \{/,
+    'and the app asks it by capability');
+  assert.match(normalize(surfaces),
+    /supportsDeviceModelDefaults: this\.remotePageState\.supportsHostCapability\( REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1\)/,
+    'AppSettingsSurface has to hand the sheet the desktop\'s own capability');
+  assert.match(normalize(immersive), /setHostCapabilities\(\[REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1\]\)/,
+    'the settings fixture has to advertise it, or every shot of the entry is the greyed one');
+  // A literal here would advertise a capability the app does not look for, so both
+  // ends name the constant the wire value is declared once.
+  assert.match(models, /REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1: string = 'device_model_defaults_v1'/);
+  assert.equal(/['"]device_model_defaults_v1['"]/.test(immersive), false,
+    'the fixture has to name the constant, not its value');
+  assert.equal(/['"]device_model_defaults_v1['"]/.test(surfaces), false);
+
+  // The pill's enabled branch, distinct from the greyed one with its badge.
+  assert.match(profile, /entryEnabled\(this\.supportsDeviceModelDefaults\)/);
+  assert.match(profile, /\.opacity\(this\.deviceModelSettingsEnabled\(\) \? 1 : 0\.38\)/);
+  assert.match(profile, /if \(!this\.deviceModelSettingsEnabled\(\)\) \{/);
+  assert.match(profile, /settings\.model\.upgradeBadge/);
+  assert.match(profile, /\.id\(`device-model-entry-\$\{this\.deviceModelSettingsEnabled\(\) \? 'enabled' : 'degraded'\}`\)/,
+    'the pill has to say which of its two states it is in');
+});
+
 test('every key the two pages render exists in both catalogs', () => {
   const catalogs = locale => new Set(JSON.parse(
     source(`entry/src/main/resources/${locale}/element/string.json`)
@@ -549,10 +704,18 @@ test('the device-model scenarios are one family the launcher can open', () => {
     'the gallery has to route the family to the preview');
   for (const scenario of [
     'device-model-pick-fast', 'device-model-pick-multimodal', 'device-model-pick-primary',
+    'device-model-pick-failed', 'device-model-degraded-pick',
     'device-model-writing', 'device-model-updated', 'device-model-degraded', 'device-model-empty'
   ]) {
     assert.ok(preview.includes(`'${scenario}'`), `${scenario} has to be a state the fixture can mount`);
   }
+  // The two picker states with no list: a desktop that cannot answer the page and
+  // one that stopped answering it are different reasons, so they are different
+  // boards rather than one flag.
+  assert.match(preview, /this\.client\.failReads = scenario === 'device-model-pick-failed'/,
+    'a failed read has to be a state the fixture can be put in');
+  assert.match(preview, /scenario === 'device-model-degraded' \|\| scenario === 'device-model-degraded-pick'/,
+    'the older desktop has to cover its picker too');
   // `device-models` is the settings page itself: the state every other scenario
   // changes one thing away from, so it is the fixture's own default.
   assert.match(preview, /scenario === 'device-model-empty' \? \[\] : previewModels\(\)/,

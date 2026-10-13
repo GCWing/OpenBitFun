@@ -4,10 +4,11 @@ import { RemoteModelConfig } from '../../model/RemoteModels';
 import { RemoteModelDefaultsRole } from '../../services/RemoteModelDefaultsController';
 import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 import { ConversationModelPresentationPolicy } from '../policy/ConversationModelPresentationPolicy';
-import { ModelRoleCandidatesPolicy } from '../policy/ModelRoleCandidatesPolicy';
+import { ModelPickerView, ModelRoleCandidatesPolicy } from '../policy/ModelRoleCandidatesPolicy';
 import { toConversationUiModel } from '../state/ConversationUiModels';
 import { DeviceModelDefaultsSheetState } from '../state/DeviceModelDefaultsSheetState';
 import { SettingsSheetState } from '../state/SettingsSheetState';
+import { ModelUnavailableCard } from './ModelUnavailableCard';
 import { NavigationBackButton } from './NavigationBackButton';
 import { SheetCloseButton } from './SheetCloseButton';
 import { SHEET_HEADER_HEIGHT, SHEET_HEADER_SIDE_PADDING, SHEET_HORIZONTAL_PADDING } from './SheetLayout';
@@ -57,15 +58,27 @@ export struct ModelRolePickerPanel {
       this.PageHeader()
       Scroll() {
         Column({ space: 0 }) {
-          this.FilterLine()
-          if (this.allowsUnset()) {
-            this.UnsetRow()
+          // The card comes first: it is why the list below is what it is, and on a
+          // device that cannot answer there is no list at all.
+          if (this.view().reason) {
+            this.ReasonCard()
           }
-          ForEach(this.candidates(), (model: RemoteModelConfig) => {
-            this.CandidateRow(model)
-          }, (model: RemoteModelConfig): string => model.id)
-          if (this.candidates().length === 0) {
-            this.NoCandidatesLine()
+          if (this.view().reading) {
+            this.ReadingCard()
+          }
+          if (this.view().list) {
+            this.FilterLine()
+            if (this.allowsUnset()) {
+              this.UnsetRow()
+            }
+            ForEach(this.candidates(), (model: RemoteModelConfig) => {
+              this.CandidateRow(model)
+            }, (model: RemoteModelConfig): string => model.id)
+            // Only a list the device itself answered may be explained away: after a
+            // failed read it is short for a reason the card above already states.
+            if (this.view().answered && this.candidates().length === 0) {
+              this.NoCandidatesLine()
+            }
           }
         }
         .width('100%')
@@ -151,8 +164,7 @@ export struct ModelRolePickerPanel {
   private UnsetRow() {
     Column({ space: 0 }) {
       Row({ space: 10 }) {
-        this.SelectionMark(ModelRoleCandidatesPolicy.isUnsetSelected(
-          this.deviceModels.state.roles, this.role()))
+        this.SelectionMark(this.pinSelected())
         Column({ space: 2 }) {
           Text(RemoteI18n.t(ModelRoleCandidatesPolicy.unsetLabelKey(this.role())))
             .width('100%')
@@ -176,8 +188,7 @@ export struct ModelRolePickerPanel {
       .constraintSize({ minHeight: MobileDesignGeometry.modelAccountRowHeight })
       .padding({ left: 10, right: 10, top: 8, bottom: 8 })
       .alignItems(VerticalAlign.Center)
-      .backgroundColor(ModelRoleCandidatesPolicy.isUnsetSelected(
-        this.deviceModels.state.roles, this.role()) ? SOFT : TRANSPARENT)
+      .backgroundColor(this.pinSelected() ? SOFT : TRANSPARENT)
       .borderRadius(MobileDesignGeometry.composerModelSelectorRowRadius)
       .id('device-model-pick-unset')
       .enabled(!this.locked())
@@ -201,8 +212,7 @@ export struct ModelRolePickerPanel {
   @Builder
   private CandidateRow(model: RemoteModelConfig) {
     Row({ space: 10 }) {
-      this.SelectionMark(ModelRoleCandidatesPolicy.isCandidateSelected(
-        this.deviceModels.state.roles, this.role(), model.id))
+      this.SelectionMark(this.candidateSelected(model.id))
       Column({ space: 2 }) {
         Row({ space: 6 }) {
           Text(this.modelLabel(model))
@@ -237,8 +247,7 @@ export struct ModelRolePickerPanel {
     .constraintSize({ minHeight: MobileDesignGeometry.modelAccountRowHeight })
     .padding({ left: 10, right: 10, top: 8, bottom: 8 })
     .alignItems(VerticalAlign.Center)
-    .backgroundColor(ModelRoleCandidatesPolicy.isCandidateSelected(
-      this.deviceModels.state.roles, this.role(), model.id) ? SOFT : TRANSPARENT)
+    .backgroundColor(this.candidateSelected(model.id) ? SOFT : TRANSPARENT)
     .borderRadius(MobileDesignGeometry.composerModelSelectorRowRadius)
     .id(`device-model-pick-${model.id}`)
     .enabled(!this.locked())
@@ -283,6 +292,40 @@ export struct ModelRolePickerPanel {
   }
 
   /**
+   * The device stopped answering this page — the link dropped, the desktop was
+   * replaced by an older one, or the read itself failed — so the picker states
+   * the reason instead of a list. Without this a dropped link read as an empty
+   * catalog, and the null roles of the closed gate read as the user's choices.
+   */
+  @Builder
+  private ReasonCard() {
+    ModelUnavailableCard({
+      reason: this.reasonText(),
+      canRetry: this.view().retry,
+      busy: this.locked(),
+      cardId: 'device-model-pick-unavailable',
+      onRetry: (): void => {
+        void this.deviceModels.retry();
+      }
+    })
+  }
+
+  /** Nothing has been read for this device yet, so there is nothing to list. */
+  @Builder
+  private ReadingCard() {
+    Text(this.deviceModels.state.statusText.length > 0 ?
+      this.deviceModels.state.statusText : RemoteI18n.t('status.loadingModelDefaults'))
+      .width('100%')
+      .fontSize(MobileDesignTypography.bodySmall.size)
+      .lineHeight(MobileDesignTypography.bodySmall.lineHeight)
+      .fontColor(MUTED)
+      .padding({ left: 18, right: 18, top: 16, bottom: 16 })
+      .backgroundColor(CARD)
+      .borderRadius(MobileDesignGeometry.settingsCardRadius)
+      .id('device-model-pick-reading')
+  }
+
+  /**
    * The two labels a candidate row carries. The catalog is the protocol's own
    * shape, so it is projected through the shared presentation mapper before the
    * shared label policy reads it — one boundary, one naming rule.
@@ -319,6 +362,36 @@ export struct ModelRolePickerPanel {
 
   private candidates(): RemoteModelConfig[] {
     return ModelRoleCandidatesPolicy.candidatesForRole(this.role(), this.deviceModels.state.catalog);
+  }
+
+  /** What this frame may show, decided from the one state the page renders. */
+  private view(): ModelPickerView {
+    return ModelRoleCandidatesPolicy.pickerView(this.deviceModels.state);
+  }
+
+  /**
+   * The reason the card carries: the controller's own sentence for a state it
+   * judged, or the host's words when a read failed. The page never invents one.
+   */
+  private reasonText(): string {
+    const error = this.deviceModels.state.error;
+    return error.length > 0 ? error : RemoteI18n.t('status.remoteUnavailable');
+  }
+
+  /**
+   * Whether the pinned row carries the check. A role's value is only an answer
+   * while the device is answering: after the link dropped, every role reads as
+   * null, and drawing that as "this is your setting" would state a choice the
+   * user never made and the device never confirmed.
+   */
+  private pinSelected(): boolean {
+    return this.view().answered &&
+      ModelRoleCandidatesPolicy.isUnsetSelected(this.deviceModels.state.roles, this.role());
+  }
+
+  private candidateSelected(modelId: string): boolean {
+    return this.view().answered && ModelRoleCandidatesPolicy.isCandidateSelected(
+      this.deviceModels.state.roles, this.role(), modelId);
   }
 
   private locked(): boolean {

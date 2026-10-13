@@ -92,6 +92,8 @@ const PREVIEW_WRITE_MODEL: string = 'openbitfun:gpt-5-mini';
  */
 class PreviewModelDefaultsClient implements DeviceModelDefaultsRequestPath {
   hangWrites: boolean = false;
+  /** The desktop stops answering the catalog read, which is a state of its own. */
+  failReads: boolean = false;
   private models: RemoteModelConfig[];
   private stored: RemoteDefaultModels;
 
@@ -104,6 +106,9 @@ class PreviewModelDefaultsClient implements DeviceModelDefaultsRequestPath {
   // property-typed shape, and ArkTS does not treat a method as one of those.
   getModelCatalog: (sessionId?: string) => Promise<RemoteModelCatalog> =
     async (): Promise<RemoteModelCatalog> => {
+      if (this.failReads) {
+        throw new Error('The desktop stopped answering the model catalog.');
+      }
       return {
         version: 1,
         models: this.models.slice(),
@@ -195,6 +200,7 @@ export struct DeviceModelDefaultsPreview {
       previewDefaults()
     );
     this.client.hangWrites = scenario === 'device-model-writing';
+    this.client.failReads = scenario === 'device-model-pick-failed';
     this.remotePageState.setAccountUserId('octocat');
     this.remotePageState.setAccountUsername('octocat');
     this.remotePageState.setControlTarget('account_device', 'account-desktop-1', 'Account desktop 1');
@@ -202,7 +208,7 @@ export struct DeviceModelDefaultsPreview {
     this.remotePageState.connectionState = 'connected';
     // An older desktop is one that never advertised the command, so the page is
     // reached through the same capability check the app uses.
-    this.remotePageState.setHostCapabilities(scenario === 'device-model-degraded' ?
+    this.remotePageState.setHostCapabilities(this.degraded(scenario) ?
       ['workspace_id_references_v1'] : [REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1]);
     this.actions = previewActions(this.client);
     this.shellState.showSettings = true;
@@ -236,6 +242,11 @@ export struct DeviceModelDefaultsPreview {
     return scenario.endsWith('-dark') ? scenario.slice(0, scenario.length - 5) : scenario;
   }
 
+  /** The desktop never advertised the command, on the settings page or its picker. */
+  private degraded(scenario: string): boolean {
+    return scenario === 'device-model-degraded' || scenario === 'device-model-degraded-pick';
+  }
+
   /** The role the picker is opened on, or an empty string for the settings page. */
   private pickerRole(scenario: string): string {
     if (scenario === 'device-model-pick-fast') {
@@ -246,6 +257,11 @@ export struct DeviceModelDefaultsPreview {
     }
     if (scenario === 'device-model-pick-primary') {
       return 'primary';
+    }
+    // The picker in the two states it has no list for: a desktop that cannot
+    // answer this page at all, and one that stopped answering it.
+    if (scenario === 'device-model-degraded-pick' || scenario === 'device-model-pick-failed') {
+      return 'fast';
     }
     return '';
   }
