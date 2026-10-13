@@ -1,9 +1,12 @@
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { SettingsSheetState } from '../state/SettingsSheetState';
-import { CARD, INK, LINE, MUTED, PAGE_BG, STATUS_DANGER } from './Theme';
+import { DeviceModelDefaultsRequestPath } from '../state/DeviceModelDefaultsSheetState';
+import { CARD, INK, LINE, MUTED, PAGE_BG } from './Theme';
 import { CurrentControlSection } from './CurrentControlSection';
 import { AccountProfilePanel } from './AccountProfilePanel';
+import { DeviceModelDefaultsPanel } from './DeviceModelDefaultsPanel';
+import { ModelRolePickerPanel } from './ModelRolePickerPanel';
 import { LanguageSettingsPanel } from './LanguageSettingsPanel';
 import { SheetCloseHeader } from './SheetCloseHeader';
 import { SHEET_HORIZONTAL_PADDING, SHEET_TOP_RADIUS } from './SheetLayout';
@@ -69,10 +72,56 @@ export struct SettingsSheet {
     if (context) {
       this.insets.bind(this.getUIContext(), context);
     }
+    // The device model pages are answered by the sheet, not by themselves: the
+    // desktop they read and write is whichever one this sheet is open on, so the
+    // request path is bound here before either page can mount.
+    const modelDefaultsClient: DeviceModelDefaultsRequestPath = {
+      getModelCatalog: (): Promise<RemoteModelCatalog> => this.getDeviceModelCatalog(),
+      setModelDefaults: (
+        primary: string | null,
+        fast: string | null,
+        imageUnderstanding: string | null
+      ): Promise<RemoteDefaultModels> => {
+        return this.setDeviceModelDefaults(primary, fast, imageUnderstanding);
+      }
+    };
+    this.sheetState.deviceModels.bind(modelDefaultsClient);
+    this.applyDeviceModelGate();
   }
 
   aboutToDisappear(): void {
     this.insets.unbind();
+  }
+
+  /**
+   * Re-gates the device model pages whenever the desktop, the link or its
+   * capability set changes.
+   *
+   * Arming the gate is not reading: the page spends the read when it opens, so a
+   * sheet that is opened for the language setting does not ask the desktop about
+   * its models. A gate that changes while one of the two pages is already open is
+   * the other case — what is on screen belongs to the previous desktop — so that
+   * one is read again immediately.
+   */
+  private applyDeviceModelGate(): void {
+    const needsRead = this.sheetState.deviceModels.setGate({
+      supported: this.supportsDeviceModelDefaults,
+      connected: this.connectionState === 'connected',
+      deviceId: this.controlTargetDeviceId
+    });
+    if (needsRead && this.onDeviceModelPage()) {
+      void this.sheetState.deviceModels.load();
+    }
+  }
+
+  private onDeviceModelPage(): boolean {
+    const page = this.sheetState.page;
+    return page === 'deviceModels' || page === 'modelPick';
+  }
+
+  @Monitor('connectionState', 'supportsDeviceModelDefaults', 'controlTargetDeviceId')
+  private onDeviceModelTargetChanged(): void {
+    this.applyDeviceModelGate();
   }
 
   build() {
@@ -80,7 +129,9 @@ export struct SettingsSheet {
       if (this.sheetState.page === 'language') {
         this.LanguagePanel()
       } else if (this.sheetState.page === 'deviceModels') {
-        this.DeviceModelsPlaceholder()
+        this.DeviceModelSettingsPage()
+      } else if (this.sheetState.page === 'modelPick') {
+        this.ModelRolePickerPage()
       } else {
         this.SettingsHome()
       }
@@ -305,55 +356,31 @@ export struct SettingsSheet {
   }
 
   /**
-   * Device model role settings, reached from the connected device row.
-   *
-   * TODO(model-roles-pages): the device model defaults panel and the role picker
-   * page of this work package replace this placeholder. It exists so the entry
-   * navigates to a real destination, the sheet keeps one page model, and the
-   * degrade path stays visible, without pretending the pages are finished.
+   * Device model role settings, reached from the connected device row: the second
+   * level of the sheet's own page stack.
    */
   @Builder
-  DeviceModelsPlaceholder() {
-    Column() {
-      SheetCloseHeader({
-        title: RemoteI18n.t('settings.model.settingsTitle'),
-        showDivider: true,
-        onClose: () => {
-          this.sheetState.setPage('main');
-        }
-      })
-
-      Scroll() {
-        Column({ space: 0 }) {
-          this.SectionTitle(RemoteI18n.t('settings.model.section'))
-          Text(this.deviceModelsPlaceholderText())
-            .width('100%')
-            .fontSize(MobileDesignTypography.bodySmall.size)
-            .lineHeight(MobileDesignTypography.bodySmall.lineHeight)
-            .fontColor(this.supportsDeviceModelDefaults ? MUTED : STATUS_DANGER)
-            .padding({ left: 8, right: 8 })
-        }
-        .width('100%')
-        .padding({
-          left: SHEET_HORIZONTAL_PADDING,
-          right: SHEET_HORIZONTAL_PADDING,
-          top: 22,
-          bottom: this.insets.tailSpacing(34)
-        })
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .scrollBar(BarState.Off)
-    }
-    .width('100%')
-    .height('100%')
+  DeviceModelSettingsPage() {
+    DeviceModelDefaultsPanel({
+      sheetState: this.sheetState,
+      deviceModels: this.sheetState.deviceModels,
+      desktopName: this.desktopName,
+      desktopId: this.desktopId,
+      controlTargetType: this.controlTargetType,
+      connectionState: this.connectionState,
+      onClose: this.onClose
+    })
   }
 
-  private deviceModelsPlaceholderText(): string {
-    if (!this.supportsDeviceModelDefaults) {
-      return RemoteI18n.t('settings.model.unsupported');
-    }
-    const device = this.desktopName || this.desktopId;
-    return `${RemoteI18n.t('settings.model.default')} · ${device}`;
+  /** The role picker pushed above it; both pages share the sheet's controller. */
+  @Builder
+  ModelRolePickerPage() {
+    ModelRolePickerPanel({
+      sheetState: this.sheetState,
+      deviceModels: this.sheetState.deviceModels,
+      desktopName: this.desktopName,
+      desktopId: this.desktopId,
+      onClose: this.onClose
+    })
   }
 }

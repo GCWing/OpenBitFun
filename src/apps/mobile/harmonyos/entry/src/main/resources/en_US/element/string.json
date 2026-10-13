@@ -617,6 +617,14 @@
       "value": "Updated to %1$s · Re-read the current values on this device"
     },
     {
+      "name": "settings_model_imageUnderstandingUnset",
+      "value": "Without a multimodal model, image understanding is unavailable"
+    },
+    {
+      "name": "settings_model_pickEmpty",
+      "value": "No models on this device match this role yet"
+    },
+    {
       "name": "settings_devices_section",
       "value": "Devices"
     },

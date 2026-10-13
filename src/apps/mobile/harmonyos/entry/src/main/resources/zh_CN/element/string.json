@@ -617,6 +617,14 @@
       "value": "已更新为 %1$s · 已重新读取该设备上的当前值"
     },
     {
+      "name": "settings_model_imageUnderstandingUnset",
+      "value": "未指定多模态模型时，图片理解相关能力不可用"
+    },
+    {
+      "name": "settings_model_pickEmpty",
+      "value": "该设备暂无可用于该角色的模型"
+    },
+    {
       "name": "settings_devices_section",
       "value": "设备"
     },
