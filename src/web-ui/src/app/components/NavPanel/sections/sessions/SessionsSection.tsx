@@ -1,6 +1,9 @@
 import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { useDeviceDirectory, resolveDeviceName } from '@/infrastructure/account/deviceDirectory';
 import { requireSessionOwningWorkspaceId } from '@/flow_chat/utils/sessionOrdering';
+import { isSessionEmptyForCopy } from '@/flow_chat/utils/sessionCopy';
+import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
+import { canCopySessionsOnSurface } from '@/infrastructure/peer-device/peerCapabilityResolution';
 /**
  * SessionsSection — inline accordion content for the "Sessions" nav item.
  *
@@ -54,7 +57,7 @@ import { isDefaultSessionTitle, resolveSessionTitle } from '@/flow_chat/utils/se
 import { useSessionTitleNumbers } from '@/flow_chat/hooks/useSessionTitleNumbers';
 import { SessionTitleNumber } from '@/flow_chat/components/SessionTitleNumber';
 import { useSessionComposerStore } from '@/flow_chat/store/sessionComposerStore';
-import { getActiveSurfaceId, surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceId, isSurfaceChangedError, surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
 import { isSessionNavRowActive } from './sessionNavSelection';
 import { isSessionRowPointerTarget } from './sessionOpenPointer';
 import {
@@ -252,6 +255,11 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     | undefined;
   const [flowChatState, setFlowChatState] = useState<FlowChatState>(() =>
     flowChatStore.getState()
+  );
+  const peerDevice = usePeerDeviceModeOptional();
+  const canCopySessions = canCopySessionsOnSurface(
+    peerDevice?.peerMode.active ?? false,
+    peerDevice?.currentPeerCapabilities ?? null,
   );
   const backgroundSubagentActivities = useBackgroundSubagentActivityStore(state => state.activities);
   const dispatchTransportByJobId = useDispatchJobStore(state => state.transportByJobId);
@@ -1305,11 +1313,19 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
       setDuplicatingSessionId(sessionId);
       try {
         const copied = await flowChatManager.duplicateChatSession(sessionId);
-        notificationService.success(
-          t('nav.sessions.duplicateSuccess', { name: copied.sessionName }),
-          { duration: 3000 },
-        );
+        if (copied.metadataProjected) {
+          notificationService.success(
+            t('nav.sessions.duplicateSuccess', { name: copied.sessionName }),
+            { duration: 3000 },
+          );
+        } else {
+          notificationService.warning(
+            t('nav.sessions.duplicateCreatedRefreshFailed', { name: copied.sessionName }),
+            { duration: 5000 },
+          );
+        }
       } catch (error) {
+        if (isSurfaceChangedError(error)) return;
         log.error('Failed to copy session', { sessionId, error });
         notificationService.error(
           error instanceof Error && error.message
@@ -1983,13 +1999,19 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                             // history is not a stable copy boundary; a session
                             // owned by another device has no local history.
                             disabled={isDispatched
+                              || !canCopySessions
+                              || isSessionEmptyForCopy(session)
                               || runningSessionIds.has(session.sessionId)
                               || duplicatingSessionId === session.sessionId}
                             title={isDispatched
                               ? t('nav.sessions.duplicateDispatchUnsupported')
-                              : runningSessionIds.has(session.sessionId)
-                                ? t('nav.sessions.duplicateRunning')
-                                : undefined}
+                              : !canCopySessions
+                                ? t('nav.sessions.duplicateHostUnsupported')
+                                : isSessionEmptyForCopy(session)
+                                  ? t('nav.sessions.duplicateEmpty')
+                                  : runningSessionIds.has(session.sessionId)
+                                    ? t('nav.sessions.duplicateRunning')
+                                    : undefined}
                             data-testid="nav-session-menu-duplicate"
                             data-session-id={session.sessionId}
                           >

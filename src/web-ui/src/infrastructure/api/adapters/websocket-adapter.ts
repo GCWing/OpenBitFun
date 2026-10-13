@@ -78,9 +78,11 @@ export const AGENT_COMMAND_SCHEMA = {
   delete_session: { method: 'agent/deleteSession' },
   fork_session: {
     method: 'session/forkAtTurn',
-    // The typed slot covers the turn-selected form. A whole-session copy (no
-    // `source_turn_id`) rides `session/fork`; see `resolveWsMethodForBody`.
     request: null as unknown as AgentSessionForkAtTurnRequest,
+    response: null as unknown as ForkSessionResponse,
+  },
+  copy_session: {
+    method: 'session/fork',
     response: null as unknown as ForkSessionResponse,
   },
   archive_session: {
@@ -231,29 +233,6 @@ export function resolveWsMethod(action: string): string {
   return entry?.method ?? action;
 }
 
-/**
- * Resolve the app-server method for one request body.
- *
- * `fork_session` covers two app-server methods: `session/forkAtTurn` copies the
- * history through a caller-supplied turn, and `session/fork` copies the whole
- * session at the host's latest persisted turn. A body without a source turn id
- * asks for the whole-session copy, and that method rejects a missing turn id, so
- * it must not ride `session/forkAtTurn`.
- */
-export function resolveWsMethodForBody(action: string, body: unknown): string {
-  if (action === 'fork_session' && !forkBodyHasTurnId(body)) {
-    return 'session/fork';
-  }
-  return resolveWsMethod(action);
-}
-
-/** Whether a `fork_session` body selects an explicit source turn. */
-function forkBodyHasTurnId(body: unknown): boolean {
-  if (!body || typeof body !== 'object') return false;
-  const turnId = (body as Record<string, unknown>).source_turn_id;
-  return typeof turnId === 'string' && turnId.trim().length > 0;
-}
-
 // ---------------------------------------------------------------------------
 // Protocol conversion layer (Review2-Item2)
 // ---------------------------------------------------------------------------
@@ -290,15 +269,14 @@ export function encodeRequestBody(action: string, body: any): any {
     case 'respond_permission_batch':
       return encodePermissionResponseBody(body);
     case 'fork_session':
+    case 'copy_session':
       return {
         // The workspace ID selects the session's owner; the path and SSH
         // fields are the upgrade-only projection for pre-ID hosts.
         ...(body.workspace_id !== undefined ? { workspaceId: body.workspace_id } : {}),
         ...(body.workspace_path !== undefined ? { workspacePath: body.workspace_path } : {}),
         sourceSessionId: body.source_session_id,
-        // Omitted for a whole-session copy: the host resolves the copy boundary
-        // from the source session's own latest persisted turn.
-        ...(body.source_turn_id !== undefined ? { sourceTurnId: body.source_turn_id } : {}),
+        ...(action === 'fork_session' ? { sourceTurnId: body.source_turn_id } : {}),
         ...(body.remote_connection_id !== undefined
           ? { remoteConnectionId: body.remote_connection_id }
           : {}),
@@ -701,8 +679,7 @@ export class WebSocketTransportAdapter implements ITransportAdapter {
       : params ?? {};
     // Translate the frontend snake_case command to the app-server JSON-RPC
     // method so agent-kernel requests reach the app-server surface in web mode.
-    // A few commands cover more than one method; the body disambiguates them.
-    const method = resolveWsMethodForBody(action, envelope);
+    const method = resolveWsMethod(action);
     // Encode the frontend body into the app-server schema wire shape (field
     // names, tagged enums, attachment projection). Mirrors the conversions the
     // desktop host does in Rust (`agentic_api.rs`).

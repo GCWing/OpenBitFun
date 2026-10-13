@@ -294,6 +294,7 @@ export interface PeerDeviceTransportHooks {
   /** Enables MiniApp Agent runs with immutable virtual context files. */
   supportsMiniAppAgentContextFilesV1?: boolean;
   supportsWslWorkspacesV1?: boolean;
+  supportsWholeSessionCopyV1?: boolean;
   supportsComputerUseSharingV1?: boolean;
   /** Enables the versioned typed ProductControl HostInvoke contract. */
   supportsProductControlV1?: boolean;
@@ -430,6 +431,7 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       | 'supportsTokenUsageStatistics'
       | 'supportsMiniAppAgentContextFilesV1'
       | 'supportsWslWorkspacesV1'
+      | 'supportsWholeSessionCopyV1'
       | 'supportsComputerUseSharingV1'
       | 'supportsProductControlV1'
     >,
@@ -493,6 +495,12 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     }
 
     this.assertRenderedTransport(action);
+
+    if (action === 'copy_session' && this.hooks.supportsWholeSessionCopyV1 !== true) {
+      throw new PeerProductCommandError(
+        'whole_session_copy_v1_unsupported: The connected Peer host does not support whole-session copying',
+      );
+    }
 
     if (
       action === 'rollback_session_to_turn' &&

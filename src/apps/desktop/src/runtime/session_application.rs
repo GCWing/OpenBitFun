@@ -621,18 +621,12 @@ impl DesktopSessionApplication {
         Ok(report)
     }
 
-    /// Copies a session into a new independent session.
-    ///
-    /// `source_turn_id` selects a prefix of the source history. Omitting it
-    /// copies the whole session, which is the runtime's latest-persisted-turn
-    /// fork (`AgentSessionForkRequest`); the Desktop "Copy session" action uses
-    /// that form so the controller never has to load a session's turns just to
-    /// ask for a copy.
+    /// Forks a session through the caller's selected persisted turn.
     pub(crate) async fn fork_session(
         &self,
         request: DesktopSessionScopeRequest,
         source_session_id: String,
-        source_turn_id: Option<String>,
+        source_turn_id: String,
     ) -> DesktopSessionApplicationResult<SessionBranchResult> {
         let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)?;
@@ -640,9 +634,20 @@ impl DesktopSessionApplication {
             &self.agent_runtime,
             scope,
             source_session_id,
-            source_turn_id,
+            Some(source_turn_id),
         )
         .await
+    }
+
+    /// Copies the whole session using the existing runtime-owned fork algorithm.
+    pub(crate) async fn copy_session(
+        &self,
+        request: DesktopSessionScopeRequest,
+        source_session_id: String,
+    ) -> DesktopSessionApplicationResult<SessionBranchResult> {
+        let scope = self.resolved_scope(request).await?;
+        self.ensure_runtime_ownership(&scope)?;
+        fork_session_in_scope(&self.agent_runtime, scope, source_session_id, None).await
     }
 
     pub(crate) async fn set_session_archived(

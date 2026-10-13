@@ -40,6 +40,34 @@ describe('SessionAPI paged metadata reads', () => {
     expect(invokeMock).not.toHaveBeenCalled();
   });
 
+  it('does not copy an equal session ID on a peer selected during request preparation', async () => {
+    const pending = sessionAPI.duplicateSession('same-session-id', 'same-workspace-id');
+    activateSurface('peer-with-the-same-workspace');
+
+    await expect(pending).rejects.toSatisfy(isSurfaceChangedError);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it('copies with a dedicated ID-only command without loading history or workspace paths', async () => {
+    const result = { sessionId: 'copy', sessionName: 'Source (1)', agentType: 'Standard' };
+    invokeMock.mockResolvedValueOnce(result);
+
+    await expect(sessionAPI.duplicateSession('source', 'workspace-1')).resolves.toBe(result);
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith('copy_session', {
+      request: { source_session_id: 'source', workspace_id: 'workspace-1' },
+    });
+  });
+
+  it('keeps selected-turn forks on their original command and required turn payload', async () => {
+    const result = { sessionId: 'fork', sessionName: 'Source (1)', agentType: 'Standard' };
+    invokeMock.mockResolvedValueOnce(result);
+
+    await expect(sessionAPI.forkSession('source', 'turn-2', 'workspace-1')).resolves.toBe(result);
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith('fork_session', {
+      request: { source_session_id: 'source', source_turn_id: 'turn-2', workspace_id: 'workspace-1' },
+    });
+  });
+
   it.each(['local-project', 'remote-loopback', 'remote-project'])('reads %s by ID without path or SSH hints', async workspaceId => {
     const page = { sessions: [], hasMore: false };
     invokeMock.mockResolvedValueOnce(page);

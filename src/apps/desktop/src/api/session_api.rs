@@ -240,12 +240,7 @@ fn default_include_hidden_subagents() -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForkSessionRequest {
     pub source_session_id: String,
-    /// Turn to copy the history through. Omitted means "copy the whole
-    /// session": the host then forks at the session's latest persisted turn.
-    ///
-    /// The field stays on the wire for existing callers and older frontends.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_turn_id: Option<String>,
+    pub source_turn_id: String,
     #[serde(default)]
     pub workspace_id: Option<String>,
     #[serde(default)]
@@ -257,6 +252,14 @@ pub struct ForkSessionRequest {
 }
 
 pub type ForkSessionResponse = SessionBranchResult;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CopySessionRequest {
+    pub source_session_id: String,
+    pub workspace_id: String,
+}
+
+pub type CopySessionResponse = SessionBranchResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchiveSessionRequest {
@@ -728,8 +731,7 @@ pub async fn load_persisted_session_metadata(
     result
 }
 
-/// Forks a session through a selected turn, or copies the whole session when
-/// `source_turn_id` is omitted.
+/// Forks a session through the caller's selected persisted turn.
 #[tauri::command]
 pub async fn fork_session(
     request: ForkSessionRequest,
@@ -749,6 +751,22 @@ pub async fn fork_session(
         )
         .await
         .map_err(|error| format!("Failed to fork session: {}", desktop_session_error(error)))
+}
+
+/// Copies the whole session through its latest persisted turn.
+#[tauri::command]
+pub async fn copy_session(
+    request: CopySessionRequest,
+    runtime: State<'_, DesktopRuntimeContext>,
+) -> Result<CopySessionResponse, String> {
+    runtime
+        .session_application()
+        .copy_session(
+            desktop_session_scope(Some(request.workspace_id), String::new(), None, None),
+            request.source_session_id,
+        )
+        .await
+        .map_err(|error| format!("Failed to copy session: {}", desktop_session_error(error)))
 }
 
 #[tauri::command]

@@ -91,6 +91,7 @@ describe('PeerConnectionManager attach', () => {
             user_question_interaction_v1: true,
             miniapp_agent_context_files_v1: true,
             wsl_workspaces_v1: true,
+            whole_session_copy_v1: true,
             btw_initial_model_selection_v1: true,
           },
         },
@@ -105,6 +106,7 @@ describe('PeerConnectionManager attach', () => {
     expect(caps.chatMcpCatalogV1).toBe(true);
     expect(caps.miniAppAgentContextFilesV1).toBe(true);
     expect(caps.wslWorkspacesV1).toBe(true);
+    expect(caps.wholeSessionCopyV1).toBe(true);
     expect(caps.btwInitialModelSelectionV1).toBe(true);
   });
 
@@ -133,6 +135,7 @@ describe('PeerConnectionManager attach', () => {
     const desktop = await makeManager('desktop').connect('peer-1', 'Studio');
     expect(desktop.getState().capabilities.hostKind).toBe('desktop');
     expect(desktop.getState().capabilities.inlineImageAttachmentsV1).toBe(false);
+    expect(desktop.getState().capabilities.wholeSessionCopyV1).toBe(false);
     expect(desktop.getState().capabilities.btwInitialModelSelectionV1).toBe(false);
     expect(desktop.getState().capabilities.chatMcpCatalogV1).toBe(false);
 
@@ -507,6 +510,30 @@ describe('PeerConnectionManager disposal', () => {
     });
     // A snapshot was published for the capability change while staying ready.
     expect(snapshots.length).toBeGreaterThan(0);
+  });
+
+  it('withdraws session copying from UI and transport when a ready host downgrades', async () => {
+    let capabilities: Record<string, boolean> = { whole_session_copy_v1: true, tool_catalog: true };
+    const deviceRpc = vi.fn(async (_target: string, commandJson: string) => {
+      const parsed = JSON.parse(commandJson) as { command?: string };
+      return JSON.stringify({ resp: 'host_invoke_result', ok: true, value:
+        parsed.command === 'peer_mode_ping' ? { host_type: 'desktop', capabilities } : null,
+      });
+    });
+    const manager = createManager(deviceRpc);
+    const connection = await manager.connect('peer-1', 'Studio');
+    expect(connection.getState().capabilities.wholeSessionCopyV1).toBe(true);
+    const listener = vi.fn();
+    manager.subscribe(listener);
+    capabilities = { tool_catalog: true };
+    await vi.advanceTimersByTimeAsync(KEEPALIVE_MS);
+    expect(connection.getState().capabilities.wholeSessionCopyV1).toBe(false);
+    expect(listener).toHaveBeenCalled();
+    deviceRpc.mockClear();
+    await expect(connection.adapter.request('copy_session', {
+      request: { source_session_id: 'source', workspace_id: 'workspace-1' },
+    })).rejects.toThrow('whole_session_copy_v1_unsupported');
+    expect(deviceRpc).not.toHaveBeenCalled();
   });
 
   it('does not let a stale health probe classify a replacement connection', async () => {

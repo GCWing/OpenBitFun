@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canCopySessionsOnSurface,
   canQueryToolCatalogOnSurface,
   canSubmitUserQuestionsOnSurface,
 } from './peerCapabilityResolution';
@@ -19,6 +20,16 @@ function caps(overrides: Partial<PeerHostCapabilities>): PeerHostCapabilities {
     ...overrides,
   };
 }
+
+describe('canCopySessionsOnSurface', () => {
+  it('requires explicit peer support even for older Desktop hosts', () => {
+    expect(canCopySessionsOnSurface(false, null)).toBe(true);
+    expect(canCopySessionsOnSurface(true, null)).toBe(false);
+    expect(canCopySessionsOnSurface(true, caps({ hostKind: 'desktop' }))).toBe(false);
+    expect(canCopySessionsOnSurface(true, caps({ hostKind: 'cli' }))).toBe(false);
+    expect(canCopySessionsOnSurface(true, caps({ wholeSessionCopyV1: true }))).toBe(true);
+  });
+});
 
 describe('canQueryToolCatalogOnSurface', () => {
   it('is always queryable on the local (controller) surface', () => {

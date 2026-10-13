@@ -796,6 +796,21 @@ mod tests {
     }
 
     #[test]
+    fn whole_session_copy_runs_on_desktop_and_is_explicitly_unsupported_on_cli() {
+        let copy = operation("copy_session").unwrap();
+        assert_eq!(copy.remote_workspace, RemoteWorkspaceStance::Routed);
+        assert_eq!(copy.peer, PeerStance::Proxied);
+        assert_eq!(
+            peer_host_verdict("copy_session", PeerHostKind::Desktop),
+            PeerHostVerdict::Execute
+        );
+        assert!(matches!(
+            peer_host_verdict("copy_session", PeerHostKind::Cli),
+            PeerHostVerdict::Refuse(PeerRefusal::HostUnsupported { .. })
+        ));
+    }
+
+    #[test]
     fn remote_workspace_stance_keeps_historical_policy_names() {
         for (stance, expected) in [
             (RemoteWorkspaceStance::Routed, "RemoteRouted"),

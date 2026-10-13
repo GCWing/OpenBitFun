@@ -379,14 +379,14 @@ export class SessionAPI {
     workspaceId: string
   ): Promise<{ sessionId: string; sessionName: string; agentType: string }> {
     try {
-      return await invokePrepared('fork_session', async () => ({
+      return await invokePrepared('copy_session', async () => ({
         request: {
           source_session_id: sourceSessionId,
-          ...await sessionWorkspaceIdRequest(workspaceId),
+          workspace_id: workspaceId,
         }
       }));
     } catch (error) {
-      throw createTauriCommandError('fork_session', error, {
+      throw createTauriCommandError('copy_session', error, {
         sourceSessionId,
         workspaceId,
       });

@@ -1790,13 +1790,14 @@ describe('FlowChatStore historical session hydration state', () => {
     vi.unstubAllGlobals();
   });
 
-  it('loads persisted metadata as metadata-only historical sessions', async () => {
+  it.each([0, 3, undefined])('loads persisted metadata as metadata-only historical sessions (turns=%s)', async turnCount => {
     apiMocks.listSessions.mockResolvedValueOnce([
       {
         sessionId: 'history-1',
         title: 'Saved session',
         agentType: 'Standard',
         modelName: 'primary',
+        turnCount,
         createdAt: 10,
         lastActiveAt: 20,
       },
@@ -1809,6 +1810,7 @@ describe('FlowChatStore historical session hydration state', () => {
       sessionId: 'history-1',
       isHistorical: true,
       historyState: 'metadata-only',
+      persistedTurnCount: turnCount,
       dialogTurns: [],
     });
   });

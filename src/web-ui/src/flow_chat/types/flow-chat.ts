@@ -445,6 +445,8 @@ export interface Session {
    * - 'failed': hydrate failed and the UI should offer retry instead of showing a new session.
    */
   historyState?: SessionHistoryState;
+  /** Last authoritative metadata count; absent on legacy projections. */
+  persistedTurnCount?: number;
 
   /**
    * Backend runtime-context lifecycle for sessions restored through the fast

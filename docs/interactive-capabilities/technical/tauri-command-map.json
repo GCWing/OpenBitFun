@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "09e162e571595bbe38f6c2e10e061e0f7243baae9e6db56a2e5b8948304a0e32",
-  "commandCount": 673,
+  "catalogDigest": "dcea667ca017ed22790f12c28d5ccd4011314fca16d7e2ce9fc9cf87ff283825",
+  "commandCount": 674,
   "coverage": {
-    "commandCount": 673,
-    "documentedCommandCount": 625,
+    "commandCount": 674,
+    "documentedCommandCount": 626,
     "implementationCommandCount": 48,
     "implementationDigest": "f6d38a24a70708988cb47ada81d07eccf0668684e8734c9ee5155b9ffa7e3db8"
   },
@@ -1643,6 +1643,22 @@
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
       "signature": "fn control_deep_review_queue( request: ControlDeepReviewQueueRequest, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "copy_session",
+      "moduleId": "session",
+      "capabilityId": "feature.ai-assistant",
+      "capabilityIds": [
+        "feature.ai-assistant"
+      ],
+      "documentedItemIds": [
+        "feature.ai-assistant:session-lifecycle"
+      ],
+      "visibility": "documented",
+      "rustPath": "copy_session",
+      "sourceFile": "src/apps/desktop/src/api/session_api.rs",
+      "signature": "fn copy_session( request: CopySessionRequest, runtime: State<'_, DesktopRuntimeContext>, ) -> Result<CopySessionResponse, String>",
+      "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
       "id": "create_acp_flow_session",

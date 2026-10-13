@@ -1,4 +1,5 @@
 import { requireSessionOwningWorkspaceId } from '../../utils/sessionOrdering';
+import { isSessionEmptyForCopy } from '../../utils/sessionCopy';
 /**
  * Session management module
  * Handles session creation, switching, deletion, and other operations
@@ -841,7 +842,8 @@ export async function forkChatSession(
 export async function duplicateChatSession(
   context: FlowChatContext,
   sourceSessionId: string,
-): Promise<{ sessionId: string; sessionName: string }> {
+): Promise<{ sessionId: string; sessionName: string; metadataProjected: boolean }> {
+  const scope = getActiveSurfaceScope();
   const sourceSession = context.flowChatStore.getState().sessions.get(sourceSessionId);
   if (!sourceSession) {
     throw new Error(`Session does not exist: ${sourceSessionId}`);
@@ -849,16 +851,27 @@ export async function duplicateChatSession(
   if (driverForSession(sourceSessionId, sourceSession).id === 'dispatch') {
     throw new Error('Copying a detached dispatch session is not supported');
   }
+  if (isSessionEmptyForCopy(sourceSession)) {
+    throw new Error(i18nService.t('common:nav.sessions.duplicateEmpty'));
+  }
 
   const workspaceId = requireSessionOwningWorkspaceId(sourceSession);
   const response = await sessionAPI.duplicateSession(sourceSessionId, workspaceId);
+  scope.assertCurrent('copy session');
 
   // The host already created the copy. Metadata projection only decides when the
   // navigation list shows it, so a projection miss is reported, not rethrown.
-  const projected = await context.flowChatStore.ensurePersistedSessionMetadata(
-    response.sessionId,
-    workspaceId,
-  );
+  let projected = false;
+  try {
+    projected = await context.flowChatStore.ensurePersistedSessionMetadata(
+      response.sessionId,
+      workspaceId,
+    );
+  } catch (error) {
+    if (isSurfaceChangedError(error)) throw error;
+    log.warn('Failed to project copied session metadata', { sessionId: response.sessionId, error });
+  }
+  scope.assertCurrent('project copied session metadata');
   if (!projected) {
     log.warn('Copied session metadata is unavailable for the navigation list', {
       sessionId: response.sessionId,
@@ -867,7 +880,7 @@ export async function duplicateChatSession(
     });
   }
 
-  return { sessionId: response.sessionId, sessionName: response.sessionName };
+  return { sessionId: response.sessionId, sessionName: response.sessionName, metadataProjected: projected };
 }
 
 /**

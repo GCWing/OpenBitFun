@@ -124,6 +124,10 @@ For session storage directory access, run
 for session storage directory resolution (these tests do not launch a file manager),
 and `cargo test -p openbitfun-desktop --lib remote_workspace_policy` after registration changes.
 
+For whole-session copy routing, run
+`cargo test --locked -p openbitfun-desktop --lib whole_session_copy_uses_the_latest_persisted_turn_fork`.
+After command registration changes, also run the `remote_workspace_policy` filter.
+
 For model selector request compatibility and configuration effect routing:
 
 ```bash

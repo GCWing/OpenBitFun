@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "09e162e571595bbe38f6c2e10e061e0f7243baae9e6db56a2e5b8948304a0e32",
+  "catalogDigest": "dcea667ca017ed22790f12c28d5ccd4011314fca16d7e2ce9fc9cf87ff283825",
   "count": 216,
   "reasonCounts": {
     "externalAuth": 4,
@@ -13,8 +13,8 @@
     {
       "capabilityId": "feature.ai-assistant",
       "itemId": "session-lifecycle",
-      "titleZh": "重命名、归档、恢复、删除、分叉与导出会话",
-      "titleEn": "Rename, archive, restore, delete, fork, and export sessions",
+      "titleZh": "重命名、归档、恢复、删除、复制、分叉与导出会话",
+      "titleEn": "Rename, archive, restore, delete, copy, fork, and export sessions",
       "reasonCode": "visualSelection",
       "reasonZh": "这些操作依赖选中的会话、当前运行状态或删除确认；智能体可准确打开会话界面，但不把新建会话冒充为完整生命周期控制。",
       "reasonEn": "These actions depend on the selected session, its live state, or deletion confirmation; the Agent can open the exact session UI without pretending that session creation controls the full lifecycle.",
@@ -27,6 +27,7 @@
         "command:archive_session",
         "command:restore_session",
         "command:delete_session",
+        "command:copy_session",
         "command:fork_session",
         "command:export_session_transcript",
         "command:archive_all_sessions",

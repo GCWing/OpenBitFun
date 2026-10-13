@@ -242,3 +242,13 @@ listener alone recovers an interaction emitted before attachment.
     before RPC. Missing capability means unsupported, including older Desktop
     and CLI peers. Discovery reports the host's OS availability; it must never
     inspect or execute the controller's WSL installation as a fallback.
+
+19. **Session copying needs an explicitly negotiated request contract.**
+    `whole_session_copy_v1` enables the dedicated `copy_session` command.
+    Older Desktop hosts and CLI peer hosts do not implement that command.
+    Missing capability disables the copy action and rejects the request before
+    RPC; there is no fallback to `fork_session`. Explicit-turn forks retain
+    their existing payload with a required `source_turn_id`. Reconnect
+    replaces the capability, including when a host restarts on an older build.
+    Once a copy is acknowledged, a metadata-read failure reports the created
+    copy and asks for a list refresh; it must not replay the copy mutation.

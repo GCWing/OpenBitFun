@@ -749,7 +749,7 @@ export class FlowChatManager {
 
   async duplicateChatSession(
     sourceSessionId: string,
-  ): Promise<{ sessionId: string; sessionName: string }> {
+  ): Promise<{ sessionId: string; sessionName: string; metadataProjected: boolean }> {
     return duplicateChatSessionModule(this.context, sourceSessionId);
   }
 

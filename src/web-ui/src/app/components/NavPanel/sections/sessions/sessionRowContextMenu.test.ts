@@ -64,5 +64,10 @@ describe('SessionsSection session row context menu', () => {
     expect(source).toContain('|| duplicatingSessionId === session.sessionId}');
     expect(source).toContain("t('nav.sessions.duplicateDispatchUnsupported')");
     expect(source).toContain("t('nav.sessions.duplicateRunning')");
+    expect(source).toContain('|| !canCopySessions');
+    expect(source).toContain('|| isSessionEmptyForCopy(session)');
+    expect(source).toContain("t('nav.sessions.duplicateEmpty')");
+    expect(source).toContain("t('nav.sessions.duplicateHostUnsupported')");
+    expect(source).toContain("t('nav.sessions.duplicateCreatedRefreshFailed'");
   });
 });

@@ -19,8 +19,8 @@ Work with AI in project context, create sessions, continue tasks, answer permiss
 
 - **智能体可直接控制 / Direct Agent control** · 打开并新建一个 AI 会话
   - Open and create a new AI session
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 重命名、归档、恢复、删除、分叉与导出会话
-  - Rename, archive, restore, delete, fork, and export sessions
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 重命名、归档、恢复、删除、复制、分叉与导出会话
+  - Rename, archive, restore, delete, copy, fork, and export sessions
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 为会话选择模型、工作模式、记忆模式与权限模式
   - Choose the model, work mode, memory mode, and permission mode per session
 - **由专用智能体工具控制 / Delegated Agent tool** · `FrontendWorkbench` / `Read` / `Write` / `Edit` · 让创造模式扩展客户端界面与运行时能力

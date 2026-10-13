@@ -323,8 +323,8 @@
         },
         {
           "id": "session-lifecycle",
-          "titleZh": "重命名、归档、恢复、删除、分叉与导出会话",
-          "titleEn": "Rename, archive, restore, delete, fork, and export sessions",
+          "titleZh": "重命名、归档、恢复、删除、复制、分叉与导出会话",
+          "titleEn": "Rename, archive, restore, delete, copy, fork, and export sessions",
           "control": {
             "kind": "open",
             "reasonCode": "visualSelection",
@@ -336,6 +336,7 @@
             "command:archive_session",
             "command:restore_session",
             "command:delete_session",
+            "command:copy_session",
             "command:fork_session",
             "command:export_session_transcript",
             "command:archive_all_sessions",

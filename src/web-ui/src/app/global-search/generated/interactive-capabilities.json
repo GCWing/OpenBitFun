@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "09e162e571595bbe38f6c2e10e061e0f7243baae9e6db56a2e5b8948304a0e32",
+  "digest": "dcea667ca017ed22790f12c28d5ccd4011314fca16d7e2ce9fc9cf87ff283825",
   "ownerDigest": "c989ace53614c2a526fefe64816fdd6895ec71edcc28f44b6f80d1edb75bb33e",
   "searchAcceptance": [
     {
@@ -19435,8 +19435,8 @@
         },
         {
           "id": "session-lifecycle",
-          "titleZh": "重命名、归档、恢复、删除、分叉与导出会话",
-          "titleEn": "Rename, archive, restore, delete, fork, and export sessions",
+          "titleZh": "重命名、归档、恢复、删除、复制、分叉与导出会话",
+          "titleEn": "Rename, archive, restore, delete, copy, fork, and export sessions",
           "control": {
             "kind": "open",
             "reasonCode": "visualSelection",
@@ -19735,8 +19735,8 @@
         "Safely customize the running OpenBitFun frontend in Creative mode",
         "打开并新建一个 AI 会话",
         "Open and create a new AI session",
-        "重命名、归档、恢复、删除、分叉与导出会话",
-        "Rename, archive, restore, delete, fork, and export sessions",
+        "重命名、归档、恢复、删除、复制、分叉与导出会话",
+        "Rename, archive, restore, delete, copy, fork, and export sessions",
         "为会话选择模型、工作模式、记忆模式与权限模式",
         "Choose the model, work mode, memory mode, and permission mode per session",
         "让创造模式扩展客户端界面与运行时能力",

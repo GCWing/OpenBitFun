@@ -185,6 +185,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("confirm_frontend_update",                                    LocalOnly,   ControllerLocal,  REFUSED),
     op("control_background_command",                                 Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("control_deep_review_queue",                                  Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
+    op("copy_session",                                               Routed,      Proxied,          CLI_NOT_IMPLEMENTED),
     op("create_acp_flow_session",                                    Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("create_assistant_workspace",                                 Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("create_control_conversation",                                Agnostic,    Proxied,          HANDLED),

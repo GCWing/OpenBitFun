@@ -1,5 +1,13 @@
 import type { PeerHostCapabilities } from './PeerConnectionManager';
 
+/** Older Desktop and CLI peer hosts do not implement the dedicated copy command. */
+export function canCopySessionsOnSurface(
+  peerActive: boolean,
+  capabilities: PeerHostCapabilities | null,
+): boolean {
+  return !peerActive || capabilities?.wholeSessionCopyV1 === true;
+}
+
 /**
  * Resolve whether the currently rendered surface can be queried for the
  * read-only tool catalog (`get_all_tools_info`), so the UI skips the invoke

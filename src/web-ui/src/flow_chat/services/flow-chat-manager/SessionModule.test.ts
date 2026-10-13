@@ -645,6 +645,7 @@ describe('duplicateChatSession', () => {
     await expect(duplicateChatSession(context, source.sessionId)).resolves.toEqual({
       sessionId: 'copy-1',
       sessionName: 'Source (1)',
+      metadataProjected: true,
     });
 
     // The host resolves the copy boundary: no turn id leaves the controller.
@@ -657,6 +658,48 @@ describe('duplicateChatSession', () => {
     expect(flowChatStore.switchSession).not.toHaveBeenCalled();
     expect(flowChatStore.getState().activeSessionId).toBe('other-session');
     expect(flowChatStore.getState().sessions.has('copy-source')).toBe(true);
+  });
+
+  it.each(['missing', 'timeout'])('preserves copy success after a metadata %s', async failure => {
+    const source = createSession({ sessionId: 'copy-source', persistedTurnCount: 3 });
+    const { context, flowChatStore } = createContext(source);
+    sessionApiMocks.duplicateSession.mockResolvedValueOnce({
+      sessionId: 'copy-1', sessionName: 'Source (1)', agentType: 'Standard',
+    });
+    if (failure === 'missing') {
+      flowChatStore.ensurePersistedSessionMetadata.mockResolvedValueOnce(false);
+    } else {
+      flowChatStore.ensurePersistedSessionMetadata.mockRejectedValueOnce(new Error('metadata timed out'));
+    }
+    await expect(duplicateChatSession(context, source.sessionId)).resolves.toEqual({
+      sessionId: 'copy-1', sessionName: 'Source (1)', metadataProjected: false,
+    });
+    expect(sessionApiMocks.duplicateSession).toHaveBeenCalledTimes(1);
+    expect(flowChatStore.switchSession).not.toHaveBeenCalled();
+  });
+
+  it('does not read copied metadata on a device selected after the copy started', async () => {
+    const source = createSession({ sessionId: 'copy-source' });
+    const { context, flowChatStore } = createContext(source);
+    const pending = createDeferred<{ sessionId: string; sessionName: string; agentType: string }>();
+    sessionApiMocks.duplicateSession.mockReturnValueOnce(pending.promise);
+    const copy = duplicateChatSession(context, source.sessionId);
+    activateSurface('peer-other');
+    pending.resolve({ sessionId: 'copy-1', sessionName: 'Source (1)', agentType: 'Standard' });
+    await expect(copy).rejects.toMatchObject({ name: 'SurfaceChangedError' });
+    expect(flowChatStore.ensurePersistedSessionMetadata).not.toHaveBeenCalled();
+    activateSurface(LOCAL_SURFACE_ID);
+  });
+
+  it.each([
+    { historyState: 'new' as const },
+    { persistedTurnCount: 0 },
+  ])('rejects a known empty session before sending the copy mutation', async overrides => {
+    const source = createSession({ sessionId: 'copy-source', ...overrides });
+    const { context } = createContext(source);
+    await expect(duplicateChatSession(context, source.sessionId))
+      .rejects.toThrow('common:nav.sessions.duplicateEmpty');
+    expect(sessionApiMocks.duplicateSession).not.toHaveBeenCalled();
   });
 
   it('refuses a detached dispatch session before asking the host', async () => {

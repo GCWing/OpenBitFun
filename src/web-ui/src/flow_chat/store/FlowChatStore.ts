@@ -7442,6 +7442,7 @@ export class FlowChatStore {
             dialogTurns: [],
             status: 'idle',
             persistedStatus: metadata.status,
+            persistedTurnCount: metadata.turnCount,
             config: {
               agentType: validatedAgentType,
               modelName: metadata.modelName,
@@ -7894,6 +7895,7 @@ export class FlowChatStore {
               dialogTurns: [],
               status: 'idle',
               persistedStatus: metadata.status,
+              persistedTurnCount: metadata.turnCount,
               config: {
                 agentType: validatedAgentType,
                 modelName: metadata.modelName,

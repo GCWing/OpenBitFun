@@ -20,6 +20,46 @@ import {
 import { TauriTransportAdapter } from './tauri-adapter';
 import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 
+describe('whole-session copy capability', () => {
+  it('rejects copying before RPC on a host without the new request contract', async () => {
+    const deviceRpc = vi.fn();
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+    await expect(adapter.request('copy_session', {
+      request: { source_session_id: 'source', workspace_id: 'workspace-1' },
+    })).rejects.toThrow('whole_session_copy_v1_unsupported');
+    expect(deviceRpc).not.toHaveBeenCalled();
+  });
+
+  it('preserves explicit-turn fork payloads for an older host', async () => {
+    const result = { sessionId: 'copy-1', sessionName: 'Source (1)', agentType: 'Standard' };
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({
+      resp: 'host_invoke_result', ok: true, value: result,
+    }));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+    const params = { request: {
+      source_session_id: 'source', source_turn_id: 'turn-1', workspace_id: 'workspace-1',
+    } };
+    await expect(adapter.request('fork_session', params)).resolves.toEqual(result);
+    expect(JSON.parse(deviceRpc.mock.calls[0][1])).toMatchObject({ command: 'fork_session', args: params });
+  });
+
+  it('forwards the dedicated copy command once, then rejects it if the host downgrades', async () => {
+    const result = { sessionId: 'copy-1', sessionName: 'Source (1)', agentType: 'Standard' };
+    const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({
+      resp: 'host_invoke_result', ok: true, value: result,
+    }));
+    const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc, {
+      supportsWholeSessionCopyV1: true,
+    });
+    const params = { request: { source_session_id: 'source', workspace_id: 'workspace-1' } };
+    await expect(adapter.request('copy_session', params)).resolves.toEqual(result);
+    expect(JSON.parse(deviceRpc.mock.calls[0][1])).toMatchObject({ command: 'copy_session', args: params });
+    adapter.setHostCapabilities({ supportsWholeSessionCopyV1: false });
+    await expect(adapter.request('copy_session', params)).rejects.toThrow('whole_session_copy_v1_unsupported');
+    expect(deviceRpc).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('isPeerLocalOnlyCommand', () => {
   it('keeps file-search streaming on the negotiated response path', () => {
     const adapter = new PeerDeviceTransportAdapter('peer-1', vi.fn());
@@ -207,10 +247,11 @@ describe('peerInvokePriorityFor', () => {
     expect(isPeerRetryableReadCommand('start_dialog_turn')).toBe(false);
     expect(isPeerRetryableReadCommand('delete_session')).toBe(false);
     expect(isPeerRetryableReadCommand('respond_permission')).toBe(false);
-    // Copying a session rides `fork_session`. It carries no host-side
+    // Copying a session carries no host-side
     // idempotency key, so a retry would create a second copy of the session.
     expect(isPeerRetryableReadCommand('fork_session')).toBe(false);
-    expect(isPeerRetryableIdempotentMutation('fork_session', {
+    expect(isPeerRetryableReadCommand('copy_session')).toBe(false);
+    expect(isPeerRetryableIdempotentMutation('copy_session', {
       request: { workspace_id: 'workspace-1', source_session_id: 'session-1' },
     })).toBe(false);
   });
