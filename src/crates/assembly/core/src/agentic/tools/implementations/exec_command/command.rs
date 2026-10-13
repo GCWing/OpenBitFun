@@ -661,6 +661,9 @@ impl Tool for ExecCommandTool {
 
 Command availability:
 - The command is passed as supplied to the target environment's shell and uses its PATH and installed programs. ExecCommand does not translate commands or install missing programs.
+- For one-off computation or artifact generation, put a complete program in cmd using the target shell's native syntax, such as a quoted here-document or a PowerShell here-string piped to an available interpreter. Combine already-decided input processing, output generation, and related checks in that execution; inspect feedback before work that depends on new information. Do not stage a disposable helper file solely to execute it in a later call. Save user-requested or reusable source files.
+- Prefer file paths relative to the command's workdir where possible. An external program may interpret absolute path separators differently from the shell.
+- Check saved artifacts against their explicit structure, format, schema, and allowed-construct requirements as well as runtime behavior. Treat required literals and explicit whitelists exactly; successful execution alone does not establish those constraints. Combine related checks, and repeat or broaden successful verification when inputs changed, a failure occurred, or a specific material concern remains unresolved.
 - Built-in tools such as Grep are separate APIs; Grep can search workspace content even when the shell has no `rg` executable.
 - If a command is not found, inspect the actual output and exit status. Choose a built-in tool or a command verified to be available in the target environment for the next step. Do not automatically rewrite an explicitly requested command or install software to retry it.
 
