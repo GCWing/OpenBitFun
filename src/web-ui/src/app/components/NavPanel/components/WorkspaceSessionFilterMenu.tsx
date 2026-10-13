@@ -9,6 +9,7 @@ import { subscribeOverlayInteraction, createOverlayPortal, Icon, IconButton, Men
 import {
   DEFAULT_WORKSPACE_SESSION_VIEW,
   hasWorkspaceSessionFilters,
+  WORKSPACE_SESSION_ORDERING_MODES,
   type WorkspaceSessionEnvironment,
   type WorkspaceSessionOrdering,
   type WorkspaceSessionShow,
@@ -116,7 +117,9 @@ const WorkspaceSessionFilterMenu: React.FC = () => {
 
   const definitions = useMemo<Record<Submenu, MenuDefinition>>(() => ({
     ordering: {
-      kind: 'single', value: view.ordering, options: ['updated', 'status', 'created', 'name'] as WorkspaceSessionOrdering[], choose: value => view.setOrdering(value as WorkspaceSessionOrdering),
+      // The full mode list, so `manual` shows up as the current value and can be
+      // left again once a drag or a row-menu move switched the list to it.
+      kind: 'single', value: view.ordering, options: WORKSPACE_SESSION_ORDERING_MODES, choose: value => view.setOrdering(value as WorkspaceSessionOrdering),
     },
     show: {
       kind: 'single', value: view.show, options: ['all', 'unread', 'attention'] as WorkspaceSessionShow[], choose: value => view.setShow(value as WorkspaceSessionShow),

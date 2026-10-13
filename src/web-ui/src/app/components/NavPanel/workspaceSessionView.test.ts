@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment jsdom
+
+import { afterEach, describe, expect, it } from 'vitest';
 import type { Session } from '@/flow_chat/types/flow-chat';
 import {
   compareWorkspaceNavSessions,
@@ -10,7 +12,14 @@ import {
   getNextWorkspaceSessionGrouping,
   matchesWorkspaceSessionView,
   normalizeWorkspaceSessionGrouping,
+  normalizeWorkspaceSessionOrdering,
+  readManualOrder,
+  useWorkspaceSessionViewStore,
+  WORKSPACE_SESSION_ORDERING_MODES,
+  writeManualOrder,
 } from './workspaceSessionView';
+
+const WORKSPACE_SESSION_VIEW_STORAGE_KEY = 'openbitfun.workspace-session-view.v2';
 
 const session = (overrides: Partial<Session>): Session => ({
   sessionId: 'session',
@@ -96,5 +105,47 @@ describe('workspace session view model', () => {
       ...DEFAULT_WORKSPACE_SESSION_FILTERS,
       hiddenStatuses: ['completed'],
     }, false)).toBe(false);
+  });
+});
+
+describe('workspace session ordering preference', () => {
+  afterEach(() => {
+    window.localStorage.clear();
+    useWorkspaceSessionViewStore.setState({ manualOrder: {} });
+  });
+
+  it('accepts the manual mode and normalizes unavailable persisted values', () => {
+    expect(WORKSPACE_SESSION_ORDERING_MODES).toEqual(['updated', 'status', 'created', 'name', 'manual']);
+    for (const mode of WORKSPACE_SESSION_ORDERING_MODES) {
+      expect(normalizeWorkspaceSessionOrdering(mode)).toBe(mode);
+    }
+    expect(normalizeWorkspaceSessionOrdering('workspace')).toBe('updated');
+    expect(normalizeWorkspaceSessionOrdering(undefined)).toBe('updated');
+    expect(normalizeWorkspaceSessionOrdering(null)).toBe('updated');
+  });
+
+  it('persists the manual drag order per scope next to the other preferences', () => {
+    expect(readManualOrder('all')).toEqual([]);
+
+    writeManualOrder('workspace:ws-1', ['s2', 's1']);
+    writeManualOrder('all', ['s3']);
+
+    expect(readManualOrder('workspace:ws-1')).toEqual(['s2', 's1']);
+    expect(readManualOrder('all')).toEqual(['s3']);
+    const persisted = JSON.parse(window.localStorage.getItem(WORKSPACE_SESSION_VIEW_STORAGE_KEY) ?? 'null');
+    expect(persisted.state.manualOrder).toEqual({ 'workspace:ws-1': ['s2', 's1'], all: ['s3'] });
+  });
+
+  it('drops unusable stored scopes instead of failing to hydrate', () => {
+    window.localStorage.setItem(
+      WORKSPACE_SESSION_VIEW_STORAGE_KEY,
+      JSON.stringify({ state: { manualOrder: { all: ['s1', 4, 's1'], 'workspace:ws-1': 's2' } }, version: 3 }),
+    );
+
+    expect(() => useWorkspaceSessionViewStore.persist.rehydrate()).not.toThrow();
+
+    expect(readManualOrder('all')).toEqual(['s1']);
+    expect(readManualOrder('workspace:ws-1')).toEqual([]);
+    expect(useWorkspaceSessionViewStore.getState().manualOrder).toEqual({ all: ['s1'] });
   });
 });

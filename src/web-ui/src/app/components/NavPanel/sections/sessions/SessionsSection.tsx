@@ -108,6 +108,13 @@ import {
 import { useSessionRowRemovalTransition } from './sessionRowShift';
 import { SessionStatusIndicator } from './SessionStatusIndicator';
 import { createSessionsNavSelector } from './sessionsNavSelector';
+import {
+  orderSessionsForManualView,
+  sessionManualOrderScopeKey,
+  switchSessionViewToManualOrdering,
+  useSessionManualOrder,
+  useSessionManualReorder,
+} from './sessionManualReorder';
 import './SessionsSection.scss';
 
 const log = createLogger('SessionsSection');
@@ -738,6 +745,11 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     };
   }, [isExportScopeMenu, openMenuSessionId, updateContextSessionMenuPosition]);
 
+  // Manual ordering is per scope: one workspace group, or the flat "all sessions"
+  // projection, which renders without a workspace id.
+  const manualSessionOrderScopeKey = sessionManualOrderScopeKey(workspaceId);
+  const manualSessionOrder = useSessionManualOrder(manualSessionOrderScopeKey);
+
   const sessions = useMemo(
     () =>
       Array.from(flowChatState.sessions.values())
@@ -788,15 +800,22 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
         sessionNavStatusService.getSortTimestamp,
       );
 
+    // Manual ordering is the only mode that does not compare two rows: the stored
+    // order of this scope decides, and a row it has never seen keeps its place.
+    const isManualOrdering = sessionOrdering === 'manual';
+    const orderForCurrentView = (list: Session[]): Session[] => isManualOrdering
+      ? orderSessionsForManualView(list, manualSessionOrder)
+      : [...list].sort(compareForCurrentView);
+
     for (const [pid, list] of childMap) {
-      childMap.set(pid, [...list].sort(compareForCurrentView));
+      childMap.set(pid, orderForCurrentView(list));
     }
 
     return {
-      topLevelSessions: [...parents].sort(compareForCurrentView),
+      topLevelSessions: orderForCurrentView(parents),
       childrenByParent: childMap,
     };
-  }, [orderingRevision, runningSessionIds, sessionOrdering, sessions]);
+  }, [manualSessionOrder, orderingRevision, runningSessionIds, sessionOrdering, sessions]);
 
   const topLevelSessions = useMemo(
     () => allTopLevelSessions.filter(session => matchesWorkspaceSessionView(
@@ -1003,6 +1022,22 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     () => new Set(visibleItems.map(item => item.session.sessionId)),
     [visibleItems],
   );
+
+  const sessionReorder = useSessionManualReorder({
+    scopeKey: manualSessionOrderScopeKey,
+    // A draggable row would take the drag that selects text in the inline title
+    // editor, so the whole list stops being draggable while a row is edited.
+    enabled: useWorkspaceViewPreferences && editingSessionId === null,
+    // Loaded rows decide the stored order, but only the rendered ones can be
+    // reordered: the rows behind the render boundary must not swallow a step.
+    topLevelSessions: allTopLevelSessions,
+    childrenByParent,
+    renderedIds: visibleSessionIds,
+    listRef: sessionListRef,
+    // A committed reorder switches the view to the manual order it just wrote,
+    // without a notice: the mode control already shows the new mode.
+    onManualOrderCommit: switchSessionViewToManualOrdering,
+  });
 
   const visibleRowSignature = useMemo(
     () => visibleItems.map(item => item.session.sessionId).join('|'),
@@ -1733,6 +1768,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
               : false,
           });
           const showAssistantIdentity = Boolean(assistantIdentity && !isChildSession);
+          const isDraggingRow = sessionReorder.isDragging(session.sessionId);
+          const dropPosition = sessionReorder.dropPositionFor(session.sessionId);
           const row = (
             <div
               className={[
@@ -1743,6 +1780,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                 isRowActive && 'is-active',
                 isEditing && 'is-editing',
                 openMenuSessionId === session.sessionId && 'is-menu-open',
+                isDraggingRow && 'is-manual-dragging',
+                dropPosition && `is-manual-drop-${dropPosition}`,
               ]
                 .filter(Boolean)
                 .join(' ')}
@@ -1760,8 +1799,13 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
               data-session-kind={relationship.kind}
               data-session-level={String(level)}
               data-session-active={isRowActive ? 'true' : 'false'}
+              {...sessionReorder.rowDragProps(session.sessionId)}
               onPointerDown={event => handleSessionOpenPointerDown(event, session)}
-              onClick={() => handleSwitch(session.sessionId)}
+              onClick={() => {
+                // A committed drop must not open the row it reordered.
+                if (sessionReorder.isRowClickSuppressed()) return;
+                handleSwitch(session.sessionId);
+              }}
               onContextMenu={event => handleContextMenu(event, session.sessionId)}
             >
               {showAssistantIdentity && assistantIdentity ? (
@@ -2098,6 +2142,9 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                   )}
                 </>
               )}
+              {dropPosition ? (
+                <span className="openbitfun-nav-panel__inline-item-manual-drop-line" aria-hidden="true" />
+              ) : null}
             </div>
           );
           // Always wrapped, even while editing or with a row menu open: swapping

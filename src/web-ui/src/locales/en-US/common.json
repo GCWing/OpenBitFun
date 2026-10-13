@@ -314,7 +314,8 @@
           "updated": "Recently updated",
           "status": "Status",
           "created": "Recently created",
-          "name": "Name"
+          "name": "Name",
+          "manual": "Manual"
         },
         "show": {
           "label": "Show",
