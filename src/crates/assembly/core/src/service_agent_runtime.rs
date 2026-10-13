@@ -43,22 +43,22 @@ use openbitfun_services_integrations::remote_connect::{
     build_remote_model_catalog,
     normalize_remote_model_selection as normalize_remote_model_selection_contract,
     normalize_remote_session_model_id, project_remote_chat_user,
-    remote_dialog_submit_outcome_from_scheduler, remote_model_selection_needs_config, ChatMessage,
-    LocalModelsDevCatalogs, RemoteAssistantWorkspaceFacts, RemoteCancelRuntimeHost,
-    RemoteChatHistoryRound, RemoteChatHistoryTextItem, RemoteChatHistoryThinkingItem,
-    RemoteChatHistoryToolCall, RemoteChatHistoryToolItem, RemoteChatHistoryTurn,
-    RemoteConnectSubmissionSource, RemoteDefaultModelsConfig, RemoteDialogQueuePriority,
-    RemoteDialogResolvedSubmission, RemoteDialogRuntimeHost, RemoteDialogSchedulerOutcomeFact,
-    RemoteDialogSteerOutcome, RemoteDialogSteerRequest, RemoteDialogSubmissionPolicy,
-    RemoteDialogSubmitOutcome, RemoteDialogWorkspaceBinding, RemoteImageContext,
-    RemoteInitialSyncRuntimeHost, RemoteInteractionRuntimeHost, RemoteModelCapabilityFact,
-    RemoteModelCatalog, RemoteModelCatalogFacts, RemoteModelFacts, RemotePermissionMode,
-    RemotePollRuntimeHost, RemoteRecentWorkspaceFacts, RemoteSessionMetadata,
-    RemoteSessionModelSelection, RemoteSessionRollbackOutcome, RemoteSessionRuntimeHost,
-    RemoteSessionStateTracker, RemoteSessionTrackerHost, RemoteTerminalPrewarmRequest,
-    RemoteWorkspaceFacts, RemoteWorkspaceFileRuntimeHost,
-    RemoteWorkspaceKind as RemoteConnectWorkspaceKind, RemoteWorkspaceRuntimeHost,
-    RemoteWorkspaceUpdate,
+    remote_dialog_submit_outcome_from_scheduler, remote_model_selection_needs_config,
+    resolve_remote_model_default_slot, ChatMessage, LocalModelsDevCatalogs,
+    RemoteAssistantWorkspaceFacts, RemoteCancelRuntimeHost, RemoteChatHistoryRound,
+    RemoteChatHistoryTextItem, RemoteChatHistoryThinkingItem, RemoteChatHistoryToolCall,
+    RemoteChatHistoryToolItem, RemoteChatHistoryTurn, RemoteConnectSubmissionSource,
+    RemoteDefaultModelsConfig, RemoteDialogQueuePriority, RemoteDialogResolvedSubmission,
+    RemoteDialogRuntimeHost, RemoteDialogSchedulerOutcomeFact, RemoteDialogSteerOutcome,
+    RemoteDialogSteerRequest, RemoteDialogSubmissionPolicy, RemoteDialogSubmitOutcome,
+    RemoteDialogWorkspaceBinding, RemoteImageContext, RemoteInitialSyncRuntimeHost,
+    RemoteInteractionRuntimeHost, RemoteModelCapabilityFact, RemoteModelCatalog,
+    RemoteModelCatalogFacts, RemoteModelFacts, RemotePermissionMode, RemotePollRuntimeHost,
+    RemoteRecentWorkspaceFacts, RemoteSessionMetadata, RemoteSessionModelSelection,
+    RemoteSessionRollbackOutcome, RemoteSessionRuntimeHost, RemoteSessionStateTracker,
+    RemoteSessionTrackerHost, RemoteTerminalPrewarmRequest, RemoteWorkspaceFacts,
+    RemoteWorkspaceFileRuntimeHost, RemoteWorkspaceKind as RemoteConnectWorkspaceKind,
+    RemoteWorkspaceRuntimeHost, RemoteWorkspaceUpdate,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -87,7 +87,7 @@ use crate::infrastructure::ai::reasoning_catalog::{
 use crate::service::remote_connect::remote_server::RemoteExecutionDispatcher;
 
 #[cfg(feature = "remote-connect")]
-use crate::service::config::types::{AIConfig, GlobalConfig, ModelCapability};
+use crate::service::config::types::{AIConfig, DefaultModelsConfig, GlobalConfig, ModelCapability};
 #[cfg(feature = "remote-connect")]
 use crate::service::session::{DialogTurnData, ToolItemIdentityExt, TurnStatus};
 
@@ -888,6 +888,51 @@ fn remote_model_capability_fact(capability: ModelCapability) -> RemoteModelCapab
         ModelCapability::FunctionCalling => RemoteModelCapabilityFact::FunctionCalling,
         ModelCapability::SpeechRecognition => RemoteModelCapabilityFact::SpeechRecognition,
     }
+}
+
+/// Project the device `ai.default_models` object for a remote caller. Every
+/// slot travels because a controller renders the whole role mapping, including
+/// the slots only this device may write.
+#[cfg(feature = "remote-connect")]
+fn remote_default_models_config(defaults: &DefaultModelsConfig) -> RemoteDefaultModelsConfig {
+    RemoteDefaultModelsConfig {
+        primary: defaults.primary.clone(),
+        fast: defaults.fast.clone(),
+        search: defaults.search.clone(),
+        image_understanding: defaults.image_understanding.clone(),
+        image_generation: defaults.image_generation.clone(),
+        speech_recognition: defaults.speech_recognition.clone(),
+    }
+}
+
+/// Merge a controller's three managed role defaults over the device's current
+/// `ai.default_models`.
+///
+/// The managed slots are replaced as a whole object, so `None` clears a slot,
+/// and every provided id must name a model this device already configures. The
+/// other three slots are carried over untouched. Enablement and capability
+/// validity are deliberately not decided here: the config reconcile owns that
+/// repair and the caller reports its result.
+#[cfg(feature = "remote-connect")]
+fn merge_remote_model_defaults(
+    current: &DefaultModelsConfig,
+    primary: Option<&str>,
+    fast: Option<&str>,
+    image_understanding: Option<&str>,
+    is_known_model: &impl Fn(&str) -> bool,
+) -> Result<DefaultModelsConfig, String> {
+    Ok(DefaultModelsConfig {
+        primary: resolve_remote_model_default_slot("primary", primary, is_known_model)?,
+        fast: resolve_remote_model_default_slot("fast", fast, is_known_model)?,
+        image_understanding: resolve_remote_model_default_slot(
+            "image_understanding",
+            image_understanding,
+            is_known_model,
+        )?,
+        search: current.search.clone(),
+        image_generation: current.image_generation.clone(),
+        speech_recognition: current.speech_recognition.clone(),
+    })
 }
 
 /// An attachment recorded before pixels travelled inline holds a host path and
@@ -2283,14 +2328,7 @@ impl CoreServiceAgentRuntime {
             models,
             provider_catalog,
             models_dev_reasoning_catalog,
-            default_models: RemoteDefaultModelsConfig {
-                primary: ai_config.default_models.primary,
-                fast: ai_config.default_models.fast,
-                search: ai_config.default_models.search,
-                image_understanding: ai_config.default_models.image_understanding,
-                image_generation: ai_config.default_models.image_generation,
-                speech_recognition: ai_config.default_models.speech_recognition,
-            },
+            default_models: remote_default_models_config(&ai_config.default_models),
             session_model_id,
             session_reasoning_preset,
         }))
@@ -2463,6 +2501,46 @@ impl CoreServiceAgentRuntime {
         let _ = config_service
             .set_config("ai.agent_model_defaults.mode", model_id)
             .await;
+    }
+
+    /// Apply a controller's three device role defaults and report the device's
+    /// reconciled six-slot mapping.
+    ///
+    /// The whole `ai.default_models` object is written, so the slots a
+    /// controller may not write keep their device values, and the config
+    /// service reconciles the write. The reply is read back from the reconciled
+    /// config: a slot whose model is disabled or lacks the capability its role
+    /// needs reports the repaired value rather than what was requested.
+    #[cfg(feature = "remote-connect")]
+    pub(crate) async fn update_remote_model_defaults(
+        primary: Option<&str>,
+        fast: Option<&str>,
+        image_understanding: Option<&str>,
+    ) -> Result<RemoteDefaultModelsConfig, String> {
+        let config_service = crate::service::config::get_global_config_service()
+            .await
+            .map_err(|_| "Config service not available".to_string())?;
+        let ai_config: AIConfig = config_service
+            .get_config(Some("ai"))
+            .await
+            .map_err(|e| format!("Failed to load AI config: {e}"))?;
+        let merged = merge_remote_model_defaults(
+            &ai_config.default_models,
+            primary,
+            fast,
+            image_understanding,
+            &|model_id: &str| ai_config.models.iter().any(|model| model.id == model_id),
+        )?;
+        config_service
+            .set_config("ai.default_models", &merged)
+            .await
+            .map_err(|e| format!("Failed to persist device model defaults: {e}"))?;
+
+        let reconciled: AIConfig = config_service
+            .get_config(Some("ai"))
+            .await
+            .map_err(|e| format!("Failed to reload AI config: {e}"))?;
+        Ok(remote_default_models_config(&reconciled.default_models))
     }
 
     #[cfg(feature = "remote-connect")]
@@ -3568,6 +3646,18 @@ impl RemoteSessionRuntimeHost for CoreRemoteSessionRuntimeHost {
         .await
     }
 
+    /// Device-level role defaults: no session or workspace is involved, and the
+    /// reply is the device's reconciled mapping rather than the request.
+    async fn set_model_defaults(
+        &self,
+        primary: Option<&str>,
+        fast: Option<&str>,
+        image_understanding: Option<&str>,
+    ) -> Result<RemoteDefaultModelsConfig, String> {
+        CoreServiceAgentRuntime::update_remote_model_defaults(primary, fast, image_understanding)
+            .await
+    }
+
     async fn ensure_session_loaded(&self, session_id: &str) -> Result<(), String> {
         let binding = CoreServiceAgentRuntime::resolve_session_workspace_binding(session_id)
             .await
@@ -4276,6 +4366,143 @@ mod tests {
 
         assert!(body.contains("restore_session_view_from_storage_path_timed"));
         assert!(!body.contains("restore_session_from_storage_path"));
+    }
+
+    fn device_default_model_catalog() -> GlobalConfig {
+        let mut config = GlobalConfig::default();
+        config.ai = serde_json::from_value(serde_json::json!({
+            "models": [
+                {"id": "text-1", "name": "Text", "provider": "openai", "enabled": true,
+                 "capabilities": ["text_chat"]},
+                {"id": "vision-1", "name": "Vision", "provider": "openai", "enabled": true,
+                 "capabilities": ["image_understanding"]},
+                {"id": "retired-fast", "name": "Retired", "provider": "openai", "enabled": false,
+                 "capabilities": ["text_chat"]},
+                {"id": "search-1", "name": "Search", "provider": "openai", "enabled": true,
+                 "capabilities": ["search"]},
+                {"id": "image-1", "name": "Image", "provider": "openai", "enabled": true,
+                 "capabilities": ["image_generation"]},
+                {"id": "speech-1", "name": "Speech", "provider": "openai", "enabled": true,
+                 "capabilities": ["speech_recognition"]}
+            ],
+            "default_models": {
+                "primary": "text-1",
+                "search": "search-1",
+                "image_generation": "image-1",
+                "speech_recognition": "speech-1"
+            }
+        }))
+        .expect("device model catalog fixture");
+        config
+    }
+
+    #[test]
+    fn device_model_defaults_merge_owns_three_slots_and_preserves_host_slots() {
+        let mut config = device_default_model_catalog();
+        config.ai.default_models.fast = Some("retired-fast".to_string());
+        config.ai.default_models.image_understanding = Some("vision-1".to_string());
+        let current = config.ai.default_models.clone();
+        let is_known = |model_id: &str| config.ai.models.iter().any(|model| model.id == model_id);
+
+        // A cleared slot (absent field or explicit null) is a real write.
+        let cleared = merge_remote_model_defaults(&current, None, None, None, &is_known).unwrap();
+        assert_eq!(cleared.primary, None);
+        assert_eq!(cleared.fast, None);
+        assert_eq!(cleared.image_understanding, None);
+        // The three slots only this device writes survive untouched.
+        assert_eq!(cleared.search.as_deref(), Some("search-1"));
+        assert_eq!(cleared.image_generation.as_deref(), Some("image-1"));
+        assert_eq!(cleared.speech_recognition.as_deref(), Some("speech-1"));
+
+        let assigned = merge_remote_model_defaults(
+            &current,
+            Some("text-1"),
+            None,
+            Some("vision-1"),
+            &is_known,
+        )
+        .unwrap();
+        assert_eq!(assigned.primary.as_deref(), Some("text-1"));
+        assert_eq!(assigned.fast, None);
+        assert_eq!(assigned.image_understanding.as_deref(), Some("vision-1"));
+        assert_eq!(assigned.search.as_deref(), Some("search-1"));
+        assert_eq!(assigned.image_generation.as_deref(), Some("image-1"));
+        assert_eq!(assigned.speech_recognition.as_deref(), Some("speech-1"));
+
+        // A model this device does not configure, a semantic session selector,
+        // and an empty value are all rejected before anything is persisted.
+        assert_eq!(
+            merge_remote_model_defaults(&current, Some("model-gone"), None, None, &is_known)
+                .unwrap_err(),
+            "Unknown model selection: model-gone"
+        );
+        assert!(
+            merge_remote_model_defaults(&current, None, Some("fast"), None, &is_known).is_err()
+        );
+        assert!(merge_remote_model_defaults(&current, None, None, Some("  "), &is_known).is_err());
+    }
+
+    #[test]
+    fn device_model_defaults_echo_the_reconciled_device_state() {
+        use crate::service::config::reconcile_model_references;
+
+        let mut config = device_default_model_catalog();
+        let is_known = |model_id: &str| config.ai.models.iter().any(|model| model.id == model_id);
+        // `retired-fast` exists but is disabled, and `text-1` cannot understand
+        // images: both pass the verb's existence check, so the request is a real
+        // write and only the reconcile can repair it.
+        let requested = merge_remote_model_defaults(
+            &config.ai.default_models,
+            Some("text-1"),
+            Some("retired-fast"),
+            Some("text-1"),
+            &is_known,
+        )
+        .unwrap();
+        assert_eq!(requested.fast.as_deref(), Some("retired-fast"));
+        assert_eq!(requested.image_understanding.as_deref(), Some("text-1"));
+
+        config.ai.default_models = requested.clone();
+        reconcile_model_references(&mut config);
+
+        let echo = remote_default_models_config(&config.ai.default_models);
+        // The reply is the device's repaired truth, not what was requested.
+        assert_ne!(echo.fast, requested.fast);
+        assert_eq!(echo.fast.as_deref(), Some("text-1"));
+        assert_ne!(echo.image_understanding, requested.image_understanding);
+        assert_eq!(echo.image_understanding.as_deref(), Some("vision-1"));
+        assert_eq!(echo.primary.as_deref(), Some("text-1"));
+        // Host-only slots stay out of the repair entirely.
+        assert_eq!(echo.search.as_deref(), Some("search-1"));
+        assert_eq!(echo.image_generation.as_deref(), Some("image-1"));
+        assert_eq!(echo.speech_recognition.as_deref(), Some("speech-1"));
+    }
+
+    #[test]
+    fn device_model_defaults_write_goes_through_the_reconciling_config_service() {
+        let source = include_str!("service_agent_runtime.rs");
+        let body = source
+            .split("pub(crate) async fn update_remote_model_defaults")
+            .nth(1)
+            .and_then(|source| {
+                source
+                    .split("pub(crate) fn remote_control_state_port")
+                    .next()
+            })
+            .expect("device model defaults writer");
+
+        // One whole-object write of the managed slots, then a read-back of the
+        // reconciled config: no per-slot write may bypass the reconcile, and the
+        // echo must not be built from the merged request.
+        assert!(body.contains("merge_remote_model_defaults("));
+        assert!(body.contains(r#".set_config("ai.default_models", &merged)"#));
+        assert!(body.contains("remote_default_models_config(&reconciled.default_models)"));
+        for slot in ["search", "image_generation", "speech_recognition"] {
+            assert!(
+                !body.contains(&format!(".set_config(\"ai.default_models.{slot}\"")),
+                "host-only slot {slot} must not be written by the remote verb"
+            );
+        }
     }
 
     #[test]
