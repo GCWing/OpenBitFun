@@ -108,12 +108,8 @@ pub fn render_mcp_tool_result_for_assistant(
     result: &MCPToolResult,
     max_result_text_chars: usize,
 ) -> String {
-    if result.is_error {
-        return format!("Error executing MCP tool '{}'", tool_name);
-    }
-
-    if let Some(contents) = result.content.as_ref() {
-        let rendered = contents
+    let rendered_content = result.content.as_ref().map(|contents| {
+        contents
             .iter()
             .map(|c| match c {
                 MCPToolResultContent::Text { text } => text.clone(),
@@ -131,7 +127,24 @@ pub fn render_mcp_tool_result_for_assistant(
                 }
             })
             .collect::<Vec<_>>()
-            .join("\n");
+            .join("\n")
+    });
+
+    if result.is_error {
+        let error_message = format!("Error executing MCP tool '{}'", tool_name);
+        let details = rendered_content
+            .filter(|content| !content.trim().is_empty())
+            .or_else(|| result.structured_content.as_ref().map(ToString::to_string));
+        return match details {
+            Some(details) => truncate_for_assistant(
+                format!("{}\n{}", error_message, details),
+                max_result_text_chars,
+            ),
+            None => error_message,
+        };
+    }
+
+    if let Some(rendered) = rendered_content {
         return truncate_for_assistant(rendered, max_result_text_chars);
     }
 
