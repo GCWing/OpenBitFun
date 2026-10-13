@@ -559,6 +559,11 @@ pub const REMOTE_CAPABILITY_DIALOG_STEER_V1: &str = "dialog_steer_v1";
 pub const REMOTE_CAPABILITY_USER_QUESTION_INTERACTION_V1: &str = "user_question_interaction_v1";
 pub const REMOTE_CAPABILITY_SESSION_ROLLBACK_V1: &str = "session_rollback_v1";
 pub const REMOTE_CAPABILITY_PLAN_BUILD_V1: &str = "plan_build_v1";
+/// Device-level role defaults (primary / fast / image understanding) are
+/// readable and writable over the typed `set_model_defaults` verb. A caller
+/// must check this string before offering the write; a host without it can
+/// still answer `get_model_catalog` read-only.
+pub const REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1: &str = "device_model_defaults_v1";
 pub use host_stream::REMOTE_CAPABILITY_HOST_STREAM_V1;
 
 fn remote_host_capabilities() -> Vec<String> {
@@ -571,6 +576,7 @@ fn remote_host_capabilities() -> Vec<String> {
         REMOTE_CAPABILITY_SESSION_ROLLBACK_V1.to_string(),
         REMOTE_CAPABILITY_USER_QUESTION_INTERACTION_V1.to_string(),
         REMOTE_CAPABILITY_HOST_STREAM_V1.to_string(),
+        REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1.to_string(),
     ]
 }
 
@@ -1353,6 +1359,16 @@ pub fn remote_session_model_updated_response(
     }
 }
 
+/// Report the host's post-reconcile device role defaults. The payload is the
+/// host's own mapping, never an echo of the request: a slot the host had to
+/// repair (disabled model, missing capability) already shows the repaired
+/// value, so a controller can display the truth instead of an optimistic copy.
+pub fn remote_model_defaults_updated_response(
+    default_models: RemoteDefaultModelsConfig,
+) -> RemoteResponse {
+    RemoteResponse::ModelDefaultsUpdated { default_models }
+}
+
 pub fn remote_messages_response(
     session_id: impl Into<String>,
     messages: Vec<ChatMessage>,
@@ -1434,6 +1450,22 @@ pub trait RemoteSessionRuntimeHost: Send + Sync {
         model_id: &str,
         reasoning_preset: Option<Option<&str>>,
     ) -> Result<RemoteSessionModelSelection, String>;
+    /// Replace the three device role defaults a controller configures for this
+    /// host (`primary`, `fast`, `image_understanding`); host-only slots such as
+    /// `search` and `image_generation` always keep their device values. `None`
+    /// clears a slot. The returned mapping is the host's reconciled truth for
+    /// all six slots, not the requested patch.
+    ///
+    /// A host that cannot configure device defaults reports an unsupported
+    /// error here instead of answering with an unchanged-looking success.
+    async fn set_model_defaults(
+        &self,
+        _primary: Option<&str>,
+        _fast: Option<&str>,
+        _image_understanding: Option<&str>,
+    ) -> Result<RemoteDefaultModelsConfig, String> {
+        Err("Host does not support device model defaults".to_string())
+    }
     async fn ensure_session_loaded(&self, session_id: &str) -> Result<(), String>;
     async fn update_session_title(&self, session_id: &str, title: &str) -> Result<String, String>;
     async fn resolve_session_storage_dir(&self, session_id: &str) -> Option<PathBuf>;
@@ -1674,6 +1706,26 @@ where
             Ok(selection) => remote_session_model_updated_response(session_id.clone(), selection),
             Err(message) => RemoteResponse::Error { message },
         },
+        RemoteCommand::SetModelDefaults {
+            primary,
+            fast,
+            image_understanding,
+        } => {
+            // Device-level: the command names no session or workspace. The
+            // three fields are a whole-object write, so an absent field is
+            // already a cleared slot by deserialization.
+            match host
+                .set_model_defaults(
+                    primary.as_deref(),
+                    fast.as_deref(),
+                    image_understanding.as_deref(),
+                )
+                .await
+            {
+                Ok(default_models) => remote_model_defaults_updated_response(default_models),
+                Err(message) => RemoteResponse::Error { message },
+            }
+        }
         RemoteCommand::UpdateSessionTitle { session_id, title } => {
             if let Err(message) = host.ensure_session_loaded(session_id).await {
                 return RemoteResponse::Error { message };
@@ -2184,6 +2236,32 @@ pub fn normalize_remote_model_selection(
 
     resolve_model_reference(requested_model_id)
         .ok_or_else(|| format!("Unknown model selection: {requested_model_id}"))
+}
+
+/// Validate one managed device role-default slot of `set_model_defaults`.
+///
+/// A provided value must name a concrete model the device already configures;
+/// the semantic selectors (`primary`, `fast`, `auto`, `default`) choose a
+/// *session* model and are never a device default value. `None` clears the
+/// slot. Whether the named model is enabled or carries the capability its slot
+/// needs is deliberately not decided here: the config reconcile owns that
+/// repair and the response reports its result.
+pub fn resolve_remote_model_default_slot(
+    slot: &str,
+    model_id: Option<&str>,
+    is_known_model: impl Fn(&str) -> bool,
+) -> Result<Option<String>, String> {
+    let Some(model_id) = model_id else {
+        return Ok(None);
+    };
+    let model_id = model_id.trim();
+    if model_id.is_empty() {
+        return Err(format!("{slot} model id is required"));
+    }
+    if !is_known_model(model_id) {
+        return Err(format!("Unknown model selection: {model_id}"));
+    }
+    Ok(Some(model_id.to_string()))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2710,6 +2788,24 @@ pub enum RemoteCommand {
         #[serde(default, deserialize_with = "deserialize_present_nullable")]
         reasoning_preset: Option<Option<String>>,
     },
+    /// Replace the device-level role defaults (`ai.default_models.primary` /
+    /// `.fast` / `.image_understanding`) of the receiving host.
+    ///
+    /// This is a whole-object write of the three managed slots: an absent field
+    /// and an explicit `null` both clear that slot, so the command has no
+    /// tri-state ambiguity — a caller that wants to keep a slot must send its
+    /// current catalog value. Host-only slots (`search`, `image_generation`,
+    /// `speech_recognition`) are never part of the request and keep their
+    /// device values. Values must be concrete catalog model ids; a semantic
+    /// selector is rejected. Requires the `device_model_defaults_v1` capability.
+    SetModelDefaults {
+        #[serde(default)]
+        primary: Option<String>,
+        #[serde(default)]
+        fast: Option<String>,
+        #[serde(default)]
+        image_understanding: Option<String>,
+    },
     UpdateSessionTitle {
         session_id: String,
         title: String,
@@ -2985,6 +3081,12 @@ pub enum RemoteResponse {
         model_id: String,
         reasoning_preset: Option<String>,
     },
+    /// All six device role-default slots after the host reconciled the write.
+    /// The body is a role mapping only: it carries model ids, never model
+    /// credentials.
+    ModelDefaultsUpdated {
+        default_models: RemoteDefaultModelsConfig,
+    },
     SessionTitleUpdated {
         session_id: String,
         title: String,
@@ -3217,6 +3319,7 @@ where
         | RemoteCommand::CreateSession { .. }
         | RemoteCommand::GetModelCatalog { .. }
         | RemoteCommand::SetSessionModel { .. }
+        | RemoteCommand::SetModelDefaults { .. }
         | RemoteCommand::UpdateSessionTitle { .. }
         | RemoteCommand::GetSessionMessages { .. }
         | RemoteCommand::DeleteSession { .. }
@@ -4736,6 +4839,8 @@ mod tests {
         created_requests: Mutex<Vec<AgentSessionCreateRequest>>,
         list_identities: Mutex<Vec<RemoteSessionWorkspaceIdentity>>,
         model_updates: Mutex<Vec<(String, String, Option<Option<String>>)>>,
+        model_default_updates: Mutex<Vec<(Option<String>, Option<String>, Option<String>)>>,
+        model_defaults_error: Option<String>,
         removed_trackers: Mutex<Vec<String>>,
         history_error: Option<String>,
         rollback_requests: Mutex<Vec<(String, String, Option<usize>)>>,
@@ -4897,6 +5002,34 @@ mod tests {
 
         async fn ensure_session_loaded(&self, _session_id: &str) -> Result<(), String> {
             Ok(())
+        }
+
+        async fn set_model_defaults(
+            &self,
+            primary: Option<&str>,
+            fast: Option<&str>,
+            image_understanding: Option<&str>,
+        ) -> Result<RemoteDefaultModelsConfig, String> {
+            self.model_default_updates.lock().unwrap().push((
+                primary.map(str::to_string),
+                fast.map(str::to_string),
+                image_understanding.map(str::to_string),
+            ));
+            if let Some(error) = self.model_defaults_error.as_ref() {
+                return Err(error.clone());
+            }
+            // The fake answers with the host's reconciled mapping, not the
+            // request, mirroring a config service that repaired a slot.
+            Ok(RemoteDefaultModelsConfig {
+                primary: primary
+                    .map(str::to_string)
+                    .or(Some("primary-fallback".into())),
+                fast: fast.map(str::to_string),
+                search: Some("device-search".to_string()),
+                image_understanding: image_understanding.map(str::to_string),
+                image_generation: Some("device-image-generation".to_string()),
+                speech_recognition: Some("device-speech".to_string()),
+            })
         }
 
         async fn update_session_title(
@@ -5238,6 +5371,186 @@ mod tests {
         assert_eq!(
             host.removed_trackers.lock().unwrap().as_slice(),
             ["session-a"]
+        );
+    }
+
+    #[tokio::test]
+    async fn remote_session_handler_forwards_device_model_defaults() {
+        let host = FakeSessionHost::default();
+
+        let response = handle_remote_session_command(
+            &host,
+            &RemoteCommand::SetModelDefaults {
+                primary: Some("model-primary".to_string()),
+                fast: None,
+                image_understanding: Some("model-vision".to_string()),
+            },
+        )
+        .await;
+
+        // The response is the host's reconciled mapping, including the slots
+        // the request never carries.
+        assert_eq!(
+            response,
+            RemoteResponse::ModelDefaultsUpdated {
+                default_models: RemoteDefaultModelsConfig {
+                    primary: Some("model-primary".to_string()),
+                    fast: None,
+                    search: Some("device-search".to_string()),
+                    image_understanding: Some("model-vision".to_string()),
+                    image_generation: Some("device-image-generation".to_string()),
+                    speech_recognition: Some("device-speech".to_string()),
+                },
+            }
+        );
+        assert_eq!(
+            host.model_default_updates.lock().unwrap().as_slice(),
+            [(
+                Some("model-primary".to_string()),
+                None,
+                Some("model-vision".to_string()),
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn remote_session_handler_reports_device_model_defaults_error() {
+        let host = FakeSessionHost {
+            model_defaults_error: Some("Unknown model selection: model-gone".to_string()),
+            ..FakeSessionHost::default()
+        };
+
+        let response = handle_remote_session_command(
+            &host,
+            &RemoteCommand::SetModelDefaults {
+                primary: Some("model-gone".to_string()),
+                fast: None,
+                image_understanding: None,
+            },
+        )
+        .await;
+
+        assert_eq!(
+            response,
+            RemoteResponse::Error {
+                message: "Unknown model selection: model-gone".to_string(),
+            }
+        );
+    }
+
+    /// A host that does not implement device role defaults must say so instead
+    /// of answering with an unchanged-looking success.
+    #[tokio::test]
+    async fn remote_session_host_without_device_model_defaults_reports_unsupported() {
+        struct LegacySessionHost;
+
+        #[async_trait::async_trait]
+        impl RemoteSessionRuntimeHost for LegacySessionHost {
+            async fn resolve_legacy_workspace(
+                &self,
+                _workspace_path: &str,
+                _remote_connection_id: Option<&str>,
+                _remote_ssh_host: Option<&str>,
+            ) -> Result<Option<RemoteWorkspaceFacts>, String> {
+                Ok(None)
+            }
+
+            async fn list_session_metadata(
+                &self,
+                _workspace_path: &Path,
+                _workspace_identity: RemoteSessionWorkspaceIdentity,
+            ) -> Result<Vec<RemoteSessionMetadata>, String> {
+                Ok(Vec::new())
+            }
+
+            async fn resolve_default_assistant_workspace(
+                &self,
+            ) -> Result<RemoteWorkspaceFacts, String> {
+                Err("no assistant workspace".to_string())
+            }
+
+            async fn create_session(
+                &self,
+                _request: AgentSessionCreateRequest,
+            ) -> Result<String, String> {
+                Err("no session creation".to_string())
+            }
+
+            async fn load_model_catalog(
+                &self,
+                _session_id: Option<&str>,
+            ) -> Result<RemoteModelCatalog, String> {
+                Err("no catalog".to_string())
+            }
+
+            async fn update_session_model_selection(
+                &self,
+                _session_id: &str,
+                _model_id: &str,
+                _reasoning_preset: Option<Option<&str>>,
+            ) -> Result<RemoteSessionModelSelection, String> {
+                Err("no session model selection".to_string())
+            }
+
+            async fn ensure_session_loaded(&self, _session_id: &str) -> Result<(), String> {
+                Err("no session restore".to_string())
+            }
+
+            async fn update_session_title(
+                &self,
+                _session_id: &str,
+                _title: &str,
+            ) -> Result<String, String> {
+                Err("no title update".to_string())
+            }
+
+            async fn resolve_session_storage_dir(&self, _session_id: &str) -> Option<PathBuf> {
+                None
+            }
+
+            async fn load_remote_chat_messages(
+                &self,
+                _session_storage_dir: &Path,
+                _session_id: &str,
+            ) -> Result<(Vec<ChatMessage>, bool), String> {
+                Err("no history".to_string())
+            }
+
+            async fn rollback_session_to_turn(
+                &self,
+                _session_id: &str,
+                _target_turn_id: &str,
+                _expected_storage_turn_index: Option<usize>,
+            ) -> Result<RemoteSessionRollbackOutcome, String> {
+                Err("no rollback".to_string())
+            }
+
+            async fn delete_session(
+                &self,
+                _session_storage_dir: &Path,
+                _session_id: &str,
+            ) -> Result<(), String> {
+                Err("no delete".to_string())
+            }
+
+            fn remove_tracker(&self, _session_id: &str) {}
+        }
+
+        let response = handle_remote_session_command(
+            &LegacySessionHost,
+            &RemoteCommand::SetModelDefaults {
+                primary: None,
+                fast: None,
+                image_understanding: None,
+            },
+        )
+        .await;
+
+        assert_eq!(
+            response,
+            RemoteResponse::Error {
+                message: "Host does not support device model defaults".to_string(),
+            }
         );
     }
 
