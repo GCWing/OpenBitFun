@@ -37,9 +37,19 @@ import {
   type ReviewDetailExecutionState,
 } from '../../utils/reviewDetailState';
 import {
+  closeBtwSessionInAuxPane,
+  ensureBtwSessionAvailableAndSettle,
+  hasBtwSessionAuxPaneTab,
   loadBtwSessionHistory,
+  type BtwSessionPanelChildIdentity,
   type BtwSessionViewKind,
 } from '../../services/btwSessionPane';
+import {
+  createBtwSessionHydrationTracker,
+  type BtwSessionHydrationStatus,
+  type BtwSessionHydrationTracker,
+} from '../../services/btwSessionHydration';
+import { hasRenderableSessionContent } from '../../services/sessionOpenIntent';
 import {findLatestCodeReviewResult, findLatestCodeReviewResultState} from '../../utils/reviewSessionSummary';
 import {
   deriveDeepReviewInterruption,
@@ -94,7 +104,7 @@ function findReviewChildByRequestId(
 }
 import './BtwSessionPanel.scss';
 
-export interface BtwSessionPanelProps {
+export interface BtwSessionPanelProps extends BtwSessionPanelChildIdentity {
   isActive?: boolean;
   childSessionId?: string;
   parentSessionId?: string;
@@ -147,7 +157,169 @@ const isSameReviewResult = (left: unknown, right: unknown): boolean => {
   }
 };
 
-const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & { viewState: BtwPanelViewState }> = ({
+interface BtwSessionHydrationView {
+  status: BtwSessionHydrationStatus;
+  /** A load can be attempted for this child: the pane knows the parent to rebuild it from. */
+  canRetry: boolean;
+  retry: () => void;
+  /** An auxiliary-pane tab holds this child, so closing it is an action that works. */
+  canCloseTab: boolean;
+  closeTab: () => void;
+}
+
+/**
+ * Whether the flow-chat store still holds the child session record. Selected as
+ * a boolean so unrelated session updates never re-render a mounted tab.
+ */
+function useChildSessionRecordPresence(childSessionId?: string): boolean {
+  const subscribe = useCallback((notify: () => void) => (
+    childSessionId
+      ? flowChatStore.subscribeSelector(state => state.sessions.has(childSessionId), notify)
+      : () => {}
+  ), [childSessionId]);
+  const getSnapshot = useCallback(
+    () => Boolean(childSessionId && flowChatStore.getState().sessions.has(childSessionId)),
+    [childSessionId],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/**
+ * A canvas tab outlives its child session whenever the record is removed while
+ * the tab stays (delete, rollback, workspace reset). Nothing else re-hydrates
+ * it, so the pane owns the recovery: one load attempt per absence, and an
+ * actionable state when it fails.
+ *
+ * The recovery lives in the wrapper so a tab that is activated later still
+ * heals, but an inactive tab keeps the contract of this folder: no session
+ * subscription, no work — it hydrates when it becomes the visible view.
+ */
+function useBtwSessionHydration(params: {
+  childSessionId?: string;
+  parentSessionId?: string;
+  workspaceId?: string;
+  workspacePath?: string;
+  identity?: BtwSessionPanelChildIdentity;
+  isActive: boolean;
+}): BtwSessionHydrationView {
+  const {
+    childSessionId,
+    parentSessionId,
+    workspaceId,
+    workspacePath,
+    identity,
+    isActive,
+  } = params;
+  const hasRecord = useChildSessionRecordPresence(isActive ? childSessionId : undefined);
+  // Recreating a missing record needs both ends of the relationship: a pane that
+  // only knows the child id explains itself instead of loading forever.
+  const canStartAttempt = Boolean(childSessionId && parentSessionId);
+  const trackerRef = useRef<BtwSessionHydrationTracker | null>(null);
+  if (trackerRef.current === null) {
+    trackerRef.current = createBtwSessionHydrationTracker();
+  }
+  const tracker = trackerRef.current;
+  // A tab with no record starts in the state its recovery is in: loading when an
+  // attempt can be armed below, and the actionable state when this pane cannot
+  // load at all. Either way it must not claim "nothing is open" first.
+  const [status, setStatus] = useState<BtwSessionHydrationStatus>(
+    () => (childSessionId && !hasRecord ? (canStartAttempt ? 'loading' : 'unavailable') : 'idle'),
+  );
+  const [retryToken, setRetryToken] = useState(0);
+  // The attempt outlives the effect run that started it: hydrating a missing
+  // record publishes the record it recreates, which re-runs this effect.
+  const childSessionIdRef = useRef(childSessionId);
+  childSessionIdRef.current = childSessionId;
+  const parentSessionIdRef = useRef(parentSessionId);
+  parentSessionIdRef.current = parentSessionId;
+  const identityRef = useRef(identity);
+  identityRef.current = identity;
+
+  useEffect(() => {
+    if (!isActive) return;
+    const decision = tracker.observe({ childSessionId, hasRecord, canStartAttempt });
+    setStatus(previous => (previous === decision.status ? previous : decision.status));
+    // The tracker only arms a pane that can start, so `shouldAttempt` implies both
+    // ids; they are repeated here to keep them narrowed for the call below.
+    if (!decision.shouldAttempt || !childSessionId || !parentSessionId) return;
+
+    void ensureBtwSessionAvailableAndSettle({
+      childSessionId,
+      parentSessionId,
+      workspaceId,
+      workspacePath,
+      ...identityRef.current,
+    })
+      .then(
+        () => 'loaded' as const,
+        // The failure is rendered, not retried: `settle` keeps the once-only guard.
+        () => 'failed' as const,
+      )
+      .then(outcome => {
+        // A superseded tab must not settle this pane; the tracker ignores a
+        // settle for another id as well.
+        if (childSessionIdRef.current !== childSessionId) return;
+        tracker.settle(childSessionId, outcome);
+        const settled = tracker.observe({
+          childSessionId,
+          hasRecord: flowChatStore.getState().sessions.has(childSessionId),
+          // Read now, not captured when the attempt was armed: a pane that lost
+          // its parent while the load ran cannot be told to start another one.
+          canStartAttempt: Boolean(childSessionIdRef.current && parentSessionIdRef.current),
+        });
+        // This callback can only settle, never start. A decision to attempt here
+        // cannot be run, so release the arm it made — a load nobody runs must not
+        // keep the pane in flight — and keep the state actionable instead of
+        // claiming a load: a retry re-arms and runs it for real.
+        if (settled.shouldAttempt) {
+          tracker.settle(childSessionId, 'failed');
+          setStatus('unavailable');
+          return;
+        }
+        setStatus(settled.status);
+      });
+  }, [
+    childSessionId,
+    parentSessionId,
+    workspaceId,
+    workspacePath,
+    hasRecord,
+    isActive,
+    canStartAttempt,
+    retryToken,
+    tracker,
+  ]);
+
+  const retry = useCallback(() => {
+    // Without both ends of the relationship there is nothing to load, so the
+    // retry must not pretend to start one.
+    if (!childSessionId || !canStartAttempt) return;
+    tracker.rearm(childSessionId);
+    setStatus('loading');
+    setRetryToken(token => token + 1);
+  }, [childSessionId, canStartAttempt, tracker]);
+
+  const closeTab = useCallback(() => {
+    if (!childSessionId) return;
+    closeBtwSessionInAuxPane(childSessionId);
+  }, [childSessionId]);
+
+  // The pane is not always a tab — the MiniApp customize chat embeds it — and a
+  // control that silently does nothing reads as broken. Report what actually
+  // works; an inactive tab has nothing rendered to act on.
+  const canCloseTab = Boolean(isActive && childSessionId)
+    && hasBtwSessionAuxPaneTab(childSessionId!);
+
+  return useMemo(
+    () => ({ status, canRetry: canStartAttempt, retry, canCloseTab, closeTab }),
+    [status, canStartAttempt, retry, canCloseTab, closeTab],
+  );
+}
+
+const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & {
+  viewState: BtwPanelViewState;
+  hydration?: BtwSessionHydrationView;
+}> = ({
   childSessionId,
   parentSessionId,
   workspaceId,
@@ -155,6 +327,7 @@ const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & { viewState: BtwPa
   viewKind,
   displayTitle,
   viewState,
+  hydration,
 }) => {
   const { t } = useTranslation('flow-chat');
   useEffect(() => childSessionId ? flowChatStore.retainSessionHistory(childSessionId) : undefined, [childSessionId]);
@@ -1048,11 +1221,48 @@ const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & { viewState: BtwPa
     void FlowChatManager.getInstance().cancelSessionTask(childSessionId);
   }, [childKind, childSessionId, isTurnProcessing]);
 
-  if (!childSessionId || !childSession) {
+  // A child tab with nothing to show is either the generic "no tab open" state
+  // or a tab whose session is being reloaded / could not be reloaded. Recovery
+  // never hides a transcript that is already renderable.
+  const hydrationStatus = hydration?.status ?? 'idle';
+  const childRecovery = hydrationStatus !== 'idle'
+    && !(childSession && hasRenderableSessionContent(childSession));
+  if (!childSessionId || !childSession || childRecovery) {
+    const hasChildTab = Boolean(childSessionId);
+    const unavailable = hasChildTab && hydrationStatus === 'unavailable';
     return (
-      <div className="btw-session-panel btw-session-panel--empty" data-openbitfun-component="btw-session-panel" data-openbitfun-part="root" data-openbitfun-view="empty">
+      <div className="btw-session-panel btw-session-panel--empty" data-openbitfun-component="btw-session-panel" data-openbitfun-part="root" data-openbitfun-view={unavailable ? 'unavailable' : hasChildTab ? 'loading' : 'empty'}>
         <div className="btw-session-panel__empty-state" data-openbitfun-component="btw-session-panel" data-openbitfun-part="empty">
-          {t('btw.emptyThreadLabel', { label: t('btw.threadLabel') })}
+          {unavailable ? (
+            <>
+              <span>{t('btw.unavailableThreadLabel', { label: t('btw.threadLabel') })}</span>
+              {/* Only the actions this pane can actually perform: an embedded
+                  pane has no tab to close, and one without a parent cannot
+                  reload. A button that silently does nothing would be worse. */}
+              {hydration?.canRetry ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={hydration.retry}
+                  data-testid="btw-session-panel-retry"
+                >
+                  {t('btw.retryThread')}
+                </Button>
+              ) : null}
+              {hydration?.canCloseTab ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={hydration.closeTab}
+                  data-testid="btw-session-panel-close-tab"
+                >
+                  {t('btw.closeThreadTab')}
+                </Button>
+              ) : null}
+            </>
+          ) : hasChildTab
+            ? t('btw.loadingThreadLabel', { label: t('btw.threadLabel') })
+            : t('btw.emptyThreadLabel', { label: t('btw.threadLabel') })}
         </div>
       </div>
     );
@@ -1276,10 +1486,26 @@ const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & { viewState: BtwPa
 export const BtwSessionPanel: React.FC<BtwSessionPanelProps> = (props) => {
   const surfaceId = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceId, getActiveSurfaceId);
   const viewState = useMemo(createBtwPanelViewState, [surfaceId, props.childSessionId, props.viewKind]);
+  // The wrapper owns the recovery so an inactive tab heals as soon as it is
+  // shown: it still runs its hooks while it renders null.
+  const hydration = useBtwSessionHydration({
+    childSessionId: props.childSessionId,
+    parentSessionId: props.parentSessionId,
+    workspaceId: props.workspaceId,
+    workspacePath: props.workspacePath,
+    identity: {
+      sessionKind: props.sessionKind,
+      sessionTitle: props.sessionTitle,
+      parentToolCallId: props.parentToolCallId,
+      subagentType: props.subagentType,
+    },
+    isActive: props.isActive !== false,
+  });
   return props.isActive === false ? null : (
     <BtwSessionPanelContent
       key={`${surfaceId}:${props.childSessionId}:${props.viewKind ?? ''}`}
       {...props}
+      hydration={hydration}
       viewState={viewState}
     />
   );

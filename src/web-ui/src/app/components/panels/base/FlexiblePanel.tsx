@@ -856,6 +856,10 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
               workspacePath={content.data?.workspacePath || workspacePath}
               viewKind={content.data?.viewKind}
               displayTitle={content.data?.displayTitle}
+              sessionKind={content.data?.sessionKind}
+              sessionTitle={content.data?.sessionTitle}
+              parentToolCallId={content.data?.parentToolCallId}
+              subagentType={content.data?.subagentType}
             />
           </React.Suspense>
         );

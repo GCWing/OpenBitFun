@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ensureBtwSessionAvailable, openBtwSessionInAuxPane } from './btwSessionPane';
+import {
+  ensureBtwSessionAvailable,
+  ensureBtwSessionAvailableAndSettle,
+  openBtwSessionInAuxPane,
+} from './btwSessionPane';
 import { openMainSession } from './sessionActivation';
 
 const mocks = vi.hoisted(() => ({
@@ -209,6 +213,55 @@ describe('openBtwSessionInAuxPane', () => {
       'DeepReview',
       'D:\\workspace\\repo',
       expect.objectContaining({ sessionKind: 'subagent' }),
+      undefined,
+      undefined,
+    );
+  });
+
+  it('records the child identity on the tab so a later heal can rebuild it', () => {
+    sessions.set('parent-session', {
+      sessionId: 'parent-session',
+      workspaceId: 'parent-workspace-id',
+      projectWorkspaceId: 'project-id',
+      workspacePath: 'D:\\workspace\\repo',
+      mode: 'Standard',
+    });
+
+    openBtwSessionInAuxPane({
+      childSessionId: 'subagent-child',
+      parentSessionId: 'parent-session',
+      workspaceId: 'child-worktree-id',
+      sessionKind: 'subagent',
+      sessionTitle: 'Subagent: verify the pane',
+      parentToolCallId: 'task-call-1',
+      subagentType: 'Explore',
+      expand: false,
+    });
+
+    expect(mocks.addTab).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          childSessionId: 'subagent-child',
+          sessionKind: 'subagent',
+          sessionTitle: 'Subagent: verify the pane',
+          parentToolCallId: 'task-call-1',
+          subagentType: 'Explore',
+        }),
+      }),
+      'active',
+    );
+    expect(mocks.addExternalSession).toHaveBeenCalledWith(
+      'subagent-child',
+      'Subagent: verify the pane',
+      'Standard',
+      'D:\\workspace\\repo',
+      expect.objectContaining({
+        parentSessionId: 'parent-session',
+        sessionKind: 'subagent',
+        parentToolCallId: 'task-call-1',
+        subagentType: 'Explore',
+        workspaceId: 'child-worktree-id',
+      }),
       undefined,
       undefined,
     );
@@ -526,6 +579,122 @@ describe('openBtwSessionInAuxPane', () => {
       }),
     );
     expect(mocks.hydrateSessionHistoryForDetail).not.toHaveBeenCalled();
+  });
+});
+
+describe('ensureBtwSessionAvailableAndSettle', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    mocks.addExternalSession.mockReset();
+    mocks.addExternalSession.mockImplementation(
+      (sessionId: string, title: string, mode: string, workspacePath: string, meta?: Record<string, unknown>) => {
+        // Mirrors FlowChatStore.addExternalSession: a shell record with no turns.
+        sessions.set(sessionId, {
+          sessionId,
+          title,
+          mode,
+          workspacePath,
+          workspaceId: meta?.workspaceId,
+          sessionKind: meta?.sessionKind ?? 'btw',
+          parentSessionId: meta?.parentSessionId,
+          dialogTurns: [],
+          isHistorical: false,
+          historyState: 'new',
+          config: { workspaceId: meta?.workspaceId },
+        });
+      },
+    );
+    mocks.ensurePersistedSessionMetadata.mockReset();
+    mocks.ensurePersistedSessionMetadata.mockImplementation(async (sessionId: string) => {
+      sessions.set(sessionId, { ...sessions.get(sessionId), sessionId, workspaceId: 'child-worktree-id', config: {} });
+      return true;
+    });
+    mocks.hydrateSessionHistoryForDetail.mockReset();
+    mocks.hydrateSessionHistoryForDetail.mockResolvedValue(undefined);
+    sessions = new Map();
+    activeSessionId = 'parent-session';
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects for a missing child session instead of swallowing the load failure', async () => {
+    sessions.set('parent-session', {
+      sessionId: 'parent-session',
+      workspaceId: 'parent-workspace-id',
+      workspacePath: 'D:\\workspace\\repo',
+      mode: 'Standard',
+    });
+    mocks.hydrateSessionHistoryForDetail.mockRejectedValueOnce(new Error('child session is gone'));
+
+    await expect(ensureBtwSessionAvailableAndSettle({
+      childSessionId: 'subagent-child',
+      parentSessionId: 'parent-session',
+      sessionKind: 'subagent',
+      workspaceId: 'child-worktree-id',
+    })).rejects.toThrow('child session is gone');
+
+    expect(sessions.get('subagent-child')).toBeDefined();
+    expect(mocks.hydrateSessionHistoryForDetail).toHaveBeenCalledWith('subagent-child');
+  });
+
+  it('reads the history of a record a failed heal left behind', async () => {
+    sessions.set('parent-session', {
+      sessionId: 'parent-session',
+      workspaceId: 'parent-workspace-id',
+      workspacePath: 'D:\\workspace\\repo',
+      mode: 'Standard',
+    });
+    // What `ensureBtwSessionAvailable` leaves after a failed first attempt.
+    sessions.set('subagent-child', {
+      sessionId: 'subagent-child',
+      workspaceId: 'child-worktree-id',
+      sessionKind: 'subagent',
+      isHistorical: false,
+      historyState: 'new',
+      dialogTurns: [],
+      config: { workspaceId: 'child-worktree-id' },
+    });
+
+    await ensureBtwSessionAvailableAndSettle({
+      childSessionId: 'subagent-child',
+      parentSessionId: 'parent-session',
+      sessionKind: 'subagent',
+    });
+
+    expect(mocks.addExternalSession).not.toHaveBeenCalled();
+    expect(mocks.hydrateSessionHistoryForDetail).toHaveBeenCalledTimes(1);
+    expect(mocks.hydrateSessionHistoryForDetail).toHaveBeenCalledWith('subagent-child');
+  });
+
+  it('keeps the fire-and-forget entry point unobserved', async () => {
+    sessions.set('parent-session', {
+      sessionId: 'parent-session',
+      workspaceId: 'parent-workspace-id',
+      workspacePath: 'D:\\workspace\\repo',
+      mode: 'Standard',
+    });
+    mocks.hydrateSessionHistoryForDetail.mockRejectedValueOnce(new Error('child session is gone'));
+
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      expect(ensureBtwSessionAvailable({
+        childSessionId: 'subagent-child',
+        parentSessionId: 'parent-session',
+        sessionKind: 'subagent',
+        workspaceId: 'child-worktree-id',
+      })).toBeUndefined();
+      await vi.waitFor(() => expect(mocks.hydrateSessionHistoryForDetail).toHaveBeenCalledTimes(1));
+      await new Promise(resolve => setTimeout(resolve, 0));
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+
+    expect(unhandled).toEqual([]);
   });
 });
 

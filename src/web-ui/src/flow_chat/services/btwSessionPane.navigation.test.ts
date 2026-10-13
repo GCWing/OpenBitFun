@@ -10,7 +10,7 @@ import { activateSurface, getActiveSurfaceId } from '@/infrastructure/peer-devic
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import { flowChatStore } from '../store/FlowChatStore';
 import type { Session } from '../types/flow-chat';
-import { openBtwSessionInAuxPane } from './btwSessionPane';
+import { openBtwSessionInAuxPane, ensureBtwSessionAvailableAndSettle, hasBtwSessionAuxPaneTab } from './btwSessionPane';
 import { flowChatManager } from './FlowChatManager';
 
 vi.mock('@/infrastructure/services/business/workspaceManager', () => ({
@@ -115,5 +115,102 @@ describe('subagent pane navigation through production stores', () => {
     expect(useAgentCanvasStore.getState().primaryGroup.tabs[0].content.data.childSessionId).toBe('child');
     switchAgentCanvasScope('other');
     expect(useAgentCanvasStore.getState().primaryGroup.tabs[0].content.data).toBe('retained');
+  });
+
+  it('recreates and reloads a child record that a session removal left behind', async () => {
+    openParent();
+    vi.mocked(flowChatManager.hydrateSessionHistoryForDetail).mockClear();
+    const metadata = vi.spyOn(flowChatStore, 'ensurePersistedSessionMetadata').mockResolvedValue(true);
+    // What delete / archive / rollback do to the tab's child while the tab stays.
+    flowChatStore.setState(state => {
+      const sessions = new Map(state.sessions);
+      sessions.delete('child');
+      return { ...state, sessions };
+    });
+    expect(flowChatStore.getState().sessions.has('child')).toBe(false);
+
+    await ensureBtwSessionAvailableAndSettle({
+      childSessionId: 'child',
+      parentSessionId: 'parent',
+      sessionKind: 'subagent',
+      workspaceId: 'project',
+    });
+
+    expect(metadata).toHaveBeenCalledWith('child', 'project');
+    expect(flowChatStore.getState().sessions.get('child')?.sessionKind).toBe('subagent');
+    expect(flowChatManager.hydrateSessionHistoryForDetail).toHaveBeenCalledWith('child');
+  });
+
+  it('recreates a missing subagent child from the identity its tab recorded', async () => {
+    openParent();
+    vi.spyOn(flowChatStore, 'ensurePersistedSessionMetadata').mockResolvedValue(true);
+    vi.mocked(flowChatManager.hydrateSessionHistoryForDetail).mockClear();
+    openBtwSessionInAuxPane({
+      childSessionId: 'hidden-child',
+      parentSessionId: 'parent',
+      sessionKind: 'subagent',
+      sessionTitle: 'Subagent: verify the pane',
+      parentToolCallId: 'task-call-1',
+      subagentType: 'Explore',
+      workspaceId: 'project',
+    });
+
+    // The tab keeps the child identity: it is the only thing left that knows this
+    // child after its record is gone.
+    const data = useAgentCanvasStore.getState().primaryGroup.tabs[0].content.data;
+    expect(data).toMatchObject({
+      childSessionId: 'hidden-child',
+      sessionKind: 'subagent',
+      sessionTitle: 'Subagent: verify the pane',
+      parentToolCallId: 'task-call-1',
+      subagentType: 'Explore',
+    });
+
+    flowChatStore.setState(state => {
+      const sessions = new Map(state.sessions);
+      sessions.delete('hidden-child');
+      return { ...state, sessions };
+    });
+    expect(flowChatStore.getState().sessions.has('hidden-child')).toBe(false);
+
+    // What the pane does for a mounted tab whose record is missing.
+    await ensureBtwSessionAvailableAndSettle({
+      childSessionId: data.childSessionId,
+      parentSessionId: data.parentSessionId,
+      sessionKind: data.sessionKind,
+      sessionTitle: data.sessionTitle,
+      parentToolCallId: data.parentToolCallId,
+      subagentType: data.subagentType,
+      workspaceId: 'project',
+    });
+
+    const healed = flowChatStore.getState().sessions.get('hidden-child');
+    expect(healed?.sessionKind).toBe('subagent');
+    expect(healed?.title).toBe('Subagent: verify the pane');
+    expect(healed?.parentToolCallId).toBe('task-call-1');
+    expect(healed?.subagentType).toBe('Explore');
+    expect(flowChatManager.hydrateSessionHistoryForDetail).toHaveBeenCalledWith('hidden-child');
+  });
+
+  it('propagates a failed child reload so the pane can render it', async () => {
+    openParent();
+    vi.mocked(flowChatManager.hydrateSessionHistoryForDetail)
+      .mockRejectedValueOnce(new Error('child session is gone'));
+
+    await expect(ensureBtwSessionAvailableAndSettle({
+      childSessionId: 'child',
+      parentSessionId: 'parent',
+      sessionKind: 'subagent',
+      workspaceId: 'project',
+    })).rejects.toThrow('child session is gone');
+  });
+
+  it('reports tab ownership so an embedded pane knows it cannot close one', async () => {
+    openParent();
+    expect(hasBtwSessionAuxPaneTab('child')).toBe(false);
+
+    openBtwSessionInAuxPane({ childSessionId: 'child', parentSessionId: 'parent', sessionKind: 'subagent' });
+    await vi.waitFor(() => expect(hasBtwSessionAuxPaneTab('child')).toBe(true));
+    expect(hasBtwSessionAuxPaneTab('unknown-child')).toBe(false);
   });
 });
