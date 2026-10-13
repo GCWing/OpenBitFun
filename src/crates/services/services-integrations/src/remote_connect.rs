@@ -1452,9 +1452,12 @@ pub trait RemoteSessionRuntimeHost: Send + Sync {
     ) -> Result<RemoteSessionModelSelection, String>;
     /// Replace the three device role defaults a controller configures for this
     /// host (`primary`, `fast`, `image_understanding`); host-only slots such as
-    /// `search` and `image_generation` always keep their device values. `None`
-    /// clears a slot. The returned mapping is the host's reconciled truth for
-    /// all six slots, not the requested patch.
+    /// `search` and `image_generation` always keep their device values. A slot
+    /// sent as `None` is written as unset: `fast` then follows primary, and
+    /// `image_understanding` is unconfigured. A cleared `primary` does not stay
+    /// unset — the device reconcile re-fills it with the first enabled
+    /// text-capable model. The returned mapping is the host's reconciled truth
+    /// for all six slots, not the requested patch.
     ///
     /// A host that cannot configure device defaults reports an unsupported
     /// error here instead of answering with an unchanged-looking success.
@@ -2792,12 +2795,16 @@ pub enum RemoteCommand {
     /// `.fast` / `.image_understanding`) of the receiving host.
     ///
     /// This is a whole-object write of the three managed slots: an absent field
-    /// and an explicit `null` both clear that slot, so the command has no
+    /// and an explicit `null` both leave that slot unset, so the command has no
     /// tri-state ambiguity — a caller that wants to keep a slot must send its
-    /// current catalog value. Host-only slots (`search`, `image_generation`,
-    /// `speech_recognition`) are never part of the request and keep their
-    /// device values. Values must be concrete catalog model ids; a semantic
-    /// selector is rejected. Requires the `device_model_defaults_v1` capability.
+    /// current catalog value. Clearing is not uniform: unset `fast` follows
+    /// primary and unset `image_understanding` stays unconfigured, while unset
+    /// `primary` falls back to the device's first enabled text-capable model
+    /// once the host reconciles, so the echoed mapping stays authoritative.
+    /// Host-only slots (`search`, `image_generation`, `speech_recognition`) are
+    /// never part of the request and keep their device values. Values must be
+    /// concrete catalog model ids; a semantic selector is rejected. Requires the
+    /// `device_model_defaults_v1` capability.
     SetModelDefaults {
         #[serde(default)]
         primary: Option<String>,
