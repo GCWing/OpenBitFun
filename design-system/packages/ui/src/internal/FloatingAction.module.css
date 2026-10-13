@@ -33,11 +33,13 @@
       opacity: 0;
     }
 
-    .host:is(:hover, :focus-within, [data-openbitfun-preview-state="hover"], [data-openbitfun-preview-state="focus-visible"]) > .action {
+    /* Dialogs restore focus to their trigger. Pointer focus should not keep
+       actions exposed after hover ends; keyboard focus must still reveal them. */
+    .host:is(:hover, :focus-visible, :has(:focus-visible), [data-openbitfun-preview-state="hover"], [data-openbitfun-preview-state="focus-visible"]) > .action {
       pointer-events: auto;
     }
 
-    .host:is(:hover, :focus-within, [data-openbitfun-preview-state="hover"], [data-openbitfun-preview-state="focus-visible"]) > .action > button {
+    .host:is(:hover, :focus-visible, :has(:focus-visible), [data-openbitfun-preview-state="hover"], [data-openbitfun-preview-state="focus-visible"]) > .action > button {
       opacity: 1;
     }
   }

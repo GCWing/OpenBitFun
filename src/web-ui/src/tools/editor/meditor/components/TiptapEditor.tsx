@@ -27,6 +27,7 @@ import { getMotionAwareScrollBehavior } from '@/shared/utils/motionPreference';
 import { activeEditTargetService } from '@/tools/editor/services/ActiveEditTargetService';
 import { MarkdownAlignmentExtension } from '../extensions/MarkdownAlignmentExtension';
 import { BlockIdExtension } from '../extensions/BlockIdExtension';
+import { BlockHighlightExtension, blockHighlightPluginKey } from '../extensions/BlockHighlightExtension';
 import { SoftBreakExtension } from '../extensions/SoftBreakExtension';
 import { MarkdownImage } from '../extensions/MarkdownImageExtension';
 import {
@@ -575,6 +576,7 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, TiptapEditorPro
       }),
       MarkdownAlignmentExtension,
       BlockIdExtension,
+      BlockHighlightExtension,
       SoftBreakExtension,
       MarkdownImage.configure({
         fileAccess,
@@ -886,24 +888,38 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, TiptapEditorPro
       return;
     }
 
+    let blockPosition = 0;
+    instance.state.doc.forEach((node, offset) => {
+      if (node.attrs.blockId === blockId) blockPosition = offset;
+    });
+    // Move the selection and highlight through editor state, without rewriting
+    // the editable DOM or adding navigation to the document's undo history.
+    instance.view.dispatch(instance.state.tr
+      .setSelection(Selection.near(instance.state.doc.resolve(blockPosition + 1)))
+      .setMeta(blockHighlightPluginKey, highlight ? blockId : null)
+      .setMeta('addToHistory', false));
+    focusEditorWithoutScroll(instance);
+
     element.scrollIntoView({
       behavior: getMotionAwareScrollBehavior('smooth'),
       block: 'center',
     });
 
-    if (highlight) {
-      element.classList.add('m-editor-tiptap-block-highlighted');
-
-      if (highlightTimerRef.current) {
-        window.clearTimeout(highlightTimerRef.current);
-      }
-
-      highlightTimerRef.current = window.setTimeout(() => {
-        element.classList.remove('m-editor-tiptap-block-highlighted');
-      }, 3000);
+    if (highlightTimerRef.current) {
+      window.clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = null;
     }
 
-    instance.commands.focus();
+    if (highlight) {
+      highlightTimerRef.current = window.setTimeout(() => {
+        highlightTimerRef.current = null;
+        if (!instance.isDestroyed) {
+          instance.view.dispatch(instance.state.tr
+            .setMeta(blockHighlightPluginKey, null)
+            .setMeta('addToHistory', false));
+        }
+      }, 3000);
+    }
   }, []);
 
   const handleContinueWriting = useCallback(async (

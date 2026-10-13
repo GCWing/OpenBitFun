@@ -143,6 +143,51 @@ describe('MEditorErrorBoundary', () => {
     expect(ref.current?.getValue()).toBe(`${markdown} Added.`);
   });
 
+  it('navigates and highlights a rich-text block without editing the imported Markdown', async () => {
+    const markdown = '# Title\n\n[badge](https://example.com?a=1&b=2)\n\n## Target\n\nWrapped\nparagraph.';
+    const scrollIntoView = vi.fn();
+    const previousScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    try {
+      const { ref, onDirtyChange } = await renderEditor(markdown);
+      const editor = getEditor();
+      const originalDocument = editor.state.doc;
+      const updates = vi.fn();
+      editor.on('update', updates);
+      const target = container.querySelector('h2')!;
+      let targetPosition = -1;
+      editor.state.doc.forEach((node, offset) => {
+        if (node.type.name === 'heading' && node.attrs.level === 2) targetPosition = offset + 1;
+      });
+      onDirtyChange.mockClear();
+      act(() => ref.current?.scrollToLine?.(5, true));
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+      expect(target.classList.contains('m-editor-tiptap-block-highlighted')).toBe(true);
+      expect(scrollIntoView).toHaveBeenCalled();
+      expect(editor.state.doc.eq(originalDocument)).toBe(true);
+      expect(updates).not.toHaveBeenCalled();
+      expect(ref.current?.getValue()).toBe(markdown);
+      expect(ref.current?.isDirty).toBe(false);
+      expect(onDirtyChange).not.toHaveBeenCalledWith(true);
+      expect(editor.state.selection.from).toBe(targetPosition);
+      expect(editor.isFocused).toBe(true);
+      act(() => ref.current?.scrollToLine?.(1, false));
+      expect(container.querySelector('.m-editor-tiptap-block-highlighted')).toBeNull();
+      expect(editor.state.selection.from).toBe(1);
+      act(() => ref.current?.scrollToLine?.(5, true));
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 3100)); });
+      expect(container.querySelector('.m-editor-tiptap-block-highlighted')).toBeNull();
+      expect(editor.state.selection.from).toBe(targetPosition);
+      expect(editor.state.doc.eq(originalDocument)).toBe(true);
+      expect(updates).not.toHaveBeenCalled();
+      expect(ref.current?.getValue()).toBe(markdown);
+      expect(ref.current?.isDirty).toBe(false);
+      expect(editor.can().undo()).toBe(false);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = previousScrollIntoView;
+    }
+  });
+
   it('retains link metadata, literal syntax and code spaces across edits, save, undo and reload', async () => {
     const markdown = '# Before\n\n[label](<https://example.com/a b> "a & title")\n\n\\# literal\n\n``  padded  ``\n\nAfter';
     const { ref, onSave, setDocumentValue } = await renderEditor(markdown);
