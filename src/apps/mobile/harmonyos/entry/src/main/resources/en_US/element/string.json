@@ -569,6 +569,54 @@
       "value": "Default model"
     },
     {
+      "name": "settings_model_settingsTitle",
+      "value": "Model settings"
+    },
+    {
+      "name": "settings_model_upgradeBadge",
+      "value": "Update"
+    },
+    {
+      "name": "settings_model_unsupported",
+      "value": "The OpenBitFun app on this device is too old to configure model defaults. Update OpenBitFun on that device to continue."
+    },
+    {
+      "name": "settings_model_scopeNewSessions",
+      "value": "These defaults apply to new sessions on this device; sessions already running are unaffected."
+    },
+    {
+      "name": "settings_model_scopeFastFollowsPrimary",
+      "value": "When the fast model is not set, it follows the primary model."
+    },
+    {
+      "name": "settings_model_scopeImageUnderstanding",
+      "value": "The multimodal model is used for image understanding only and does not replace the primary model."
+    },
+    {
+      "name": "settings_model_capabilityImageUnderstanding",
+      "value": "Image understanding"
+    },
+    {
+      "name": "settings_model_emptyTitle",
+      "value": "This device has no models configured yet"
+    },
+    {
+      "name": "settings_model_emptyText",
+      "value": "Add models in OpenBitFun on that device, then come back to set role defaults."
+    },
+    {
+      "name": "settings_model_filterTextChat",
+      "value": "Only enabled models that support text chat (text_chat) are listed · Applies to new sessions on %1$s"
+    },
+    {
+      "name": "settings_model_filterImageUnderstanding",
+      "value": "Only models that support image understanding (image_understanding) are listed · Applies to new sessions on %1$s"
+    },
+    {
+      "name": "settings_model_updatedResult",
+      "value": "Updated to %1$s · Re-read the current values on this device"
+    },
+    {
       "name": "settings_devices_section",
       "value": "Devices"
     },
@@ -1889,6 +1937,14 @@
       "value": "Fast"
     },
     {
+      "name": "chat_modelImage",
+      "value": "Multimodal model"
+    },
+    {
+      "name": "chat_modelFollowPrimary",
+      "value": "Follow the primary model"
+    },
+    {
       "name": "chat_loadOlder",
       "value": "Load older messages"
     },
@@ -2407,6 +2463,26 @@
     {
       "name": "status_modelSwitched",
       "value": "Model switched"
+    },
+    {
+      "name": "status_loadingModelDefaults",
+      "value": "Reading the device's model defaults"
+    },
+    {
+      "name": "status_updatingModelDefaults",
+      "value": "Saving the device's model defaults"
+    },
+    {
+      "name": "status_modelDefaultsUpdated",
+      "value": "Updated"
+    },
+    {
+      "name": "status_modelDefaultsLoadFailed",
+      "value": "Could not read the device's model defaults. Try again."
+    },
+    {
+      "name": "status_modelDefaultsUpdateFailed",
+      "value": "Could not save the device's model defaults. Try again."
     },
     {
       "name": "status_loadOlderMessages",
