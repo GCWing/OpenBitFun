@@ -237,6 +237,16 @@ them under `product-full`. `PathManager::with_user_root_for_tests` derives produ
 home from the user root's parent, so a fixture that relocates managed paths must
 place its user root below the directory it means to exercise.
 
+For direct user follow-ups to reusable subagent sessions, legacy route defaults,
+source binding, and FreshOnly admission:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib subagent_conversation_
+```
+
+These fixtures cover local turn admission and SSH-workspace agent resolution;
+they do not exercise live SSH, relay, peer, or dispatch connections.
+
 For disk-backed history paging and legacy sessions without a catalog:
 `cargo test --locked -p openbitfun-core --no-default-features --features remote-connect,git --lib history_page_`.
 Also run the `staged_revert_catalog_projection` and `load_relay_session_turns_`
