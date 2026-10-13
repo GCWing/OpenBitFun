@@ -1,7 +1,7 @@
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { SettingsSheetState } from '../state/SettingsSheetState';
-import { CARD, INK, LINE, MUTED, PAGE_BG } from './Theme';
+import { CARD, INK, LINE, MUTED, PAGE_BG, STATUS_DANGER } from './Theme';
 import { CurrentControlSection } from './CurrentControlSection';
 import { AccountProfilePanel } from './AccountProfilePanel';
 import { LanguageSettingsPanel } from './LanguageSettingsPanel';
@@ -9,7 +9,7 @@ import { SheetCloseHeader } from './SheetCloseHeader';
 import { SHEET_HORIZONTAL_PADDING, SHEET_TOP_RADIUS } from './SheetLayout';
 import { CloudAccountDevice } from '../../services/CloudAccountClient';
 import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
-import { RemotePermissionMode } from '../../model/RemoteModels';
+import { RemoteDefaultModels, RemoteModelCatalog, RemotePermissionMode } from '../../model/RemoteModels';
 import { RemotePermissionSection } from './RemotePermissionSection';
 
 @ComponentV2
@@ -25,6 +25,8 @@ export struct SettingsSheet {
   @Param controlTargetType: string = 'none';
   @Param controlTargetDeviceId: string = '';
   @Param connectionState: string = 'idle';
+  /** The connected desktop advertises `device_model_defaults_v1`. */
+  @Param supportsDeviceModelDefaults: boolean = false;
   @Param statusText: string = '';
   @Event onClose: () => void = () => {};
   @Event onOpenAccount: () => void = () => {};
@@ -39,6 +41,25 @@ export struct SettingsSheet {
   @Event getPermissionMode: () => Promise<RemotePermissionMode> = async (): Promise<RemotePermissionMode> => 'ask';
   @Event setPermissionMode: (mode: RemotePermissionMode) => Promise<RemotePermissionMode> =
     async (mode: RemotePermissionMode): Promise<RemotePermissionMode> => mode;
+  /** Device-level model catalog of the connected desktop (no session id). */
+  @Event getDeviceModelCatalog: () => Promise<RemoteModelCatalog> =
+    async (): Promise<RemoteModelCatalog> => ({ version: 0, models: [], default_models: {} });
+  /** Whole-object write of the three phone-managed model slots. */
+  @Event setDeviceModelDefaults: (
+    primary: string | null,
+    fast: string | null,
+    imageUnderstanding: string | null
+  ) => Promise<RemoteDefaultModels> = async (
+    primary: string | null,
+    fast: string | null,
+    imageUnderstanding: string | null
+  ): Promise<RemoteDefaultModels> => {
+    return {
+      primary,
+      fast,
+      image_understanding: imageUnderstanding
+    };
+  };
   @Event onSetLanguage: (language: string) => Promise<void> = async (_language: string) => {};
   /** The sheet's own bottom edge, so its scrolling rows can run under the bar and still rest above it. */
   @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
@@ -58,6 +79,8 @@ export struct SettingsSheet {
     Stack({ alignContent: Alignment.TopEnd }) {
       if (this.sheetState.page === 'language') {
         this.LanguagePanel()
+      } else if (this.sheetState.page === 'deviceModels') {
+        this.DeviceModelsPlaceholder()
       } else {
         this.SettingsHome()
       }
@@ -96,11 +119,15 @@ export struct SettingsSheet {
             controlTargetType: this.controlTargetType,
             controlTargetDeviceId: this.controlTargetDeviceId,
             connectionState: this.connectionState,
+            supportsDeviceModelDefaults: this.supportsDeviceModelDefaults,
             cloudLogout: this.cloudLogout,
             cloudListDevices: this.cloudListDevices,
             cloudSelectDevice: this.cloudSelectDevice,
             onReconnect: this.onReconnect,
             onOpenAccount: this.onOpenAccount,
+            onOpenDeviceModelSettings: () => {
+              this.sheetState.setPage('deviceModels');
+            },
             onLoggedOut: this.onClose,
             connection: () => {
               this.CurrentConnectionSection()
@@ -275,5 +302,58 @@ export struct SettingsSheet {
         return this.onSetLanguage(language);
       }
     })
+  }
+
+  /**
+   * Device model role settings, reached from the connected device row.
+   *
+   * TODO(model-roles-pages): the device model defaults panel and the role picker
+   * page of this work package replace this placeholder. It exists so the entry
+   * navigates to a real destination, the sheet keeps one page model, and the
+   * degrade path stays visible, without pretending the pages are finished.
+   */
+  @Builder
+  DeviceModelsPlaceholder() {
+    Column() {
+      SheetCloseHeader({
+        title: RemoteI18n.t('settings.model.settingsTitle'),
+        showDivider: true,
+        onClose: () => {
+          this.sheetState.setPage('main');
+        }
+      })
+
+      Scroll() {
+        Column({ space: 0 }) {
+          this.SectionTitle(RemoteI18n.t('settings.model.section'))
+          Text(this.deviceModelsPlaceholderText())
+            .width('100%')
+            .fontSize(MobileDesignTypography.bodySmall.size)
+            .lineHeight(MobileDesignTypography.bodySmall.lineHeight)
+            .fontColor(this.supportsDeviceModelDefaults ? MUTED : STATUS_DANGER)
+            .padding({ left: 8, right: 8 })
+        }
+        .width('100%')
+        .padding({
+          left: SHEET_HORIZONTAL_PADDING,
+          right: SHEET_HORIZONTAL_PADDING,
+          top: 22,
+          bottom: this.insets.tailSpacing(34)
+        })
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  private deviceModelsPlaceholderText(): string {
+    if (!this.supportsDeviceModelDefaults) {
+      return RemoteI18n.t('settings.model.unsupported');
+    }
+    const device = this.desktopName || this.desktopId;
+    return `${RemoteI18n.t('settings.model.default')} · ${device}`;
   }
 }

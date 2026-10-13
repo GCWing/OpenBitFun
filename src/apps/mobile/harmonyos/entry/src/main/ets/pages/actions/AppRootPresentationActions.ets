@@ -1,5 +1,5 @@
 import { WorkspaceToolsIntent } from '../state/WorkspaceToolsState';
-import { RemotePermissionMode, RemoteSession } from '../../model/RemoteModels';
+import { RemoteDefaultModels, RemoteModelCatalog, RemotePermissionMode, RemoteSession } from '../../model/RemoteModels';
 import { CloudAccountDevice } from '../../services/CloudAccountClient';
 import { ConversationIntent } from './ConversationIntent';
 import { AppRoute } from '../navigation/AppRouteContract';
@@ -87,6 +87,21 @@ export interface SettingsPresentationActions {
   readonly cloudSelectDevice: (device: CloudAccountDevice) => Promise<void>;
   readonly getPermissionMode: () => Promise<RemotePermissionMode>;
   readonly setPermissionMode: (mode: RemotePermissionMode) => Promise<RemotePermissionMode>;
+  /**
+   * Device-level model catalog of the connected desktop: read without a session
+   * id, so the projection carries the defaults that belong to the desktop.
+   */
+  readonly getDeviceModelCatalog: () => Promise<RemoteModelCatalog>;
+  /**
+   * Writes the three phone-managed slots as one object. `null` is a value:
+   * the fast model then follows the primary one and the others are left
+   * unconfigured. The answer is the desktop's reconciled projection.
+   */
+  readonly setDeviceModelDefaults: (
+    primary: string | null,
+    fast: string | null,
+    imageUnderstanding: string | null
+  ) => Promise<RemoteDefaultModels>;
   readonly setLanguage: (language: string) => Promise<void>;
 }
 
@@ -131,6 +146,18 @@ export function emptyAppRootPresentationActions(): AppRootPresentationActions {
       cloudListDevices: async () => [], cloudSelectDevice: async () => {},
       getPermissionMode: async () => 'ask',
       setPermissionMode: async (mode: RemotePermissionMode) => mode,
+      getDeviceModelCatalog: async () => ({ version: 0, models: [], default_models: {} }),
+      setDeviceModelDefaults: async (
+        primary: string | null,
+        fast: string | null,
+        imageUnderstanding: string | null
+      ) => {
+        return {
+          primary,
+          fast,
+          image_understanding: imageUnderstanding
+        };
+      },
       setLanguage: async () => {}
     },
     onConnect: {

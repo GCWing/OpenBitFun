@@ -219,6 +219,8 @@ function previewActionsWithDevices(devices: CloudAccountDevice[]): AppRootPresen
       cloudSelectDevice: base.onSettings.cloudSelectDevice,
       getPermissionMode: base.onSettings.getPermissionMode,
       setPermissionMode: base.onSettings.setPermissionMode,
+      getDeviceModelCatalog: base.onSettings.getDeviceModelCatalog,
+      setDeviceModelDefaults: base.onSettings.setDeviceModelDefaults,
       setLanguage: base.onSettings.setLanguage
     },
     onConnect: base.onConnect,
