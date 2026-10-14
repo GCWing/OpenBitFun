@@ -44,7 +44,13 @@ blocks, a connector run inside one thinking block, and the usage bypass.
 
 Compression evidence (an LZ77 proxy redundancy estimate over a 4 KiB span,
 threshold 0.60) is computed alongside these kinds as supporting evidence rather
-than as its own verdict.
+than as its own verdict. It is also the only detector-level factor that promotes a
+`near_repetition` verdict inside the ambiguous 0.85–0.90 similarity band into the
+strong band: a corroborated near-repetition is reported at 0.88 confidence and
+does not ask for arbitration, which is what makes it hard-stop eligible without a
+judge confirmation, while an uncorroborated one stays at 0.60, requests
+arbitration, and cannot stop a turn on its own. `window_compression_ratio_min`
+therefore moves the band boundary itself rather than only a supporting statistic.
 
 `predictable_drift` is deliberately separate from a loop and is reported with low
 confidence: a counter series repeats, but the change is expected, so it may only
@@ -375,6 +381,14 @@ Recorded deliberately, so this page can be updated as each closes.
     detector has no clock (deliberate), so the configured rate acts as the
     minimum reasoning-token growth of one round sample. Re-deriving it from
     measured round durations is a calibration-phase task.
+12. **The two loop-steer reminder kinds persist into session history.**
+    `thinking_loop_recovery` and `output_loop_recovery` are written into the
+    session's message record like every other internal reminder, and
+    `InternalReminderKind` has no catch-all variant, so a build that predates them
+    fails to deserialize that field of such a session instead of degrading it.
+    This is the enum's existing property — every historical variant was added the
+    same way — and a tolerant catch-all is a contract change of its own scope, not
+    part of this feature.
 
 ## Calibration plan
 
@@ -411,6 +425,14 @@ reasoning tokens). `judge_verdict_confidence_min` is a fourth one, of a differen
 kind: it does not change what the detectors report, only how much a judge
 confirmation is worth, and it is not tier-scaled.
 
+`window_compression_ratio_min` is high-leverage for the same reason the
+strong-similarity band is: compression corroboration is the only detector-level
+factor that promotes a `near_repetition` verdict in the 0.85–0.90 similarity band
+into the strong band (0.88 confidence, no arbitration, hard-stop eligible without
+a judge). Moving it changes how many near-repetition verdicts can end a turn on
+their own, so the calibration report should record the compression-redundancy
+distribution of the near-repetition verdicts it observed before that value moves.
+
 ### Before `enforce` becomes the default
 
 The report needs, per context profile and per model capability, the number of
@@ -419,6 +441,13 @@ the outcome distribution of the arbitrations. A steer is cheap enough to tolerat
 occasionally; a hard stop is not, because it ends a turn the user cannot resume
 in place. Flips of the default, and any promotion of a capped kind to a hard stop,
 are a review decision on that report, not a side effect of this feature shipping.
+
+For the near-repetition band the report also needs the compression-redundancy
+distribution of the verdicts it saw: corroboration is what promotes a 0.85–0.90
+verdict into the strong, hard-stop-eligible band, so
+`window_compression_ratio_min` decides how many band verdicts could ever end a
+turn by themselves. Reviewing that distribution is the check that keeps a
+compression-proxy false positive from turning into an unexplained stopped turn.
 
 ## Source map
 
