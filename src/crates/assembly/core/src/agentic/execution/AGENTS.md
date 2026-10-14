@@ -23,10 +23,11 @@ cargo test --locked -p openbitfun-core --no-default-features --features agent-ru
 ```
 
 For agent loop detection (tier-to-detector translation, the intervention ladder,
-and the L2 arbitration port), use:
+the L2 arbitration port, and the model-backed judge adapter), use:
 
 ```bash
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::execution::loop_detection
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::execution::loop_arbiter
 ```
 
 Detection is observation-first: every verdict is logged in every mode, a steer is
@@ -36,6 +37,17 @@ and the hard fallback reuses the three-attempt pattern with
 judge-confirmed confidence-capped kind is the single exception. Detector state
 belongs to the turn (`LoopInterventionLadder` owns it), and `mode=off` or a
 closed session escape hatch must never feed the detectors.
+
+The arbitration port stays model-free and the judge stays session-free;
+`loop_detection/model_arbiter.rs` is the only place they meet, and it owns the
+whole conversion: the observed round's model becomes the judge's avoided model,
+and `loop`/`not_loop`/`unclear` map to confirmed/rejected/indeterminate, with
+every unusable judge outcome (disabled, no eligible model, budget spent, timeout,
+failure, malformed reply) keeping the heuristic verdict. Session hosts install
+the judge's process-wide arbiter at assembly only when
+`ai.loop_detection.judge.enabled` is set in the same configuration snapshot the
+engine reads; otherwise the engine keeps its no-arbiter default. Do not add a
+second arbitration trait or install the arbiter per session.
 
 For complete shell constraint checks, use:
 

@@ -39,13 +39,13 @@
 //! * **Defensive parsing.** A malformed, empty, filtered, or tool-calling reply
 //!   is [`LoopJudgeSkip::MalformedReply`], never an error and never a guess.
 //!
-//! # INTEGRATION TODO (remove once the `LoopArbiter` port exists)
+//! # Port integration
 //!
-//! The engine-wiring branch owns the `LoopArbiter` port and its call site. Adapt
-//! by implementing that trait for [`ModelLoopArbiter`] in the port's own module:
-//! convert the port's arbitration input into [`LoopJudgeRequest`], delegate to
-//! [`ModelLoopArbiter::arbitrate`], and map [`LoopJudgeOutcome`] onto the port's
-//! verdict/skip shape. Do not define a second `LoopArbiter` trait here.
+//! The engine's `LoopArbiter` port is implemented for [`ModelLoopArbiter`] in
+//! `loop_detection/model_arbiter.rs`: that adapter converts the port's
+//! arbitration input into [`LoopJudgeRequest`], delegates to
+//! [`ModelLoopArbiter::arbitrate`], and maps [`LoopJudgeOutcome`] onto the port's
+//! decision. Never define a second `LoopArbiter` trait here.
 //!
 //! # Deviations from the plan's wording (documented on purpose)
 //!
@@ -575,8 +575,8 @@ impl ModelLoopArbiter {
     /// [`LoopJudgeOutcome::Indeterminate`], so the detector's verdict stands and
     /// the judge can never break the L1 path.
     pub async fn arbitrate(&self, request: LoopJudgeRequest) -> LoopJudgeOutcome {
-        // INTEGRATION TODO: this is the single entry point the `LoopArbiter` port
-        // should delegate to. See the module header for the adaptation steps.
+        // The single entry point the engine's `LoopArbiter` port delegates to;
+        // `loop_detection/model_arbiter.rs` owns that adaptation.
         let settings = match self.environment.judge_settings().await {
             Ok(settings) => settings,
             Err(error) => {

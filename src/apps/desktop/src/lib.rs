@@ -2039,6 +2039,10 @@ async fn init_agentic_system() -> anyhow::Result<(
     ));
 
     let execution_config = execution::execution_engine_config_from_global_config().await;
+    // The L2 loop-detection judge is installed from the same configuration
+    // snapshot the engine itself reads, so a disabled judge never builds an
+    // arbiter the engine would never consult.
+    let loop_judge_enabled = execution_config.loop_detection.judge_enabled;
 
     let execution_engine = Arc::new(execution::ExecutionEngine::new(
         round_executor,
@@ -2047,6 +2051,12 @@ async fn init_agentic_system() -> anyhow::Result<(
         context_compressor,
         execution_config,
     ));
+
+    if let Some(arbiter) =
+        execution::loop_detection::configured_model_loop_arbiter(loop_judge_enabled)
+    {
+        execution_engine.install_loop_arbiter(arbiter);
+    }
 
     let runtime_ownership = Arc::new(
         openbitfun_core::runtime_ownership::CoreRuntimeOwnership::embedded(
