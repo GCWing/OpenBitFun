@@ -20,6 +20,7 @@ export const ALL_NAMESPACES = [
   'scenes/miniapp',
   'scenes/pages',
   'scenes/profile',
+  'scenes/personal-overview',
   'scenes/skills',
   'scenes/todos',
   'settings',

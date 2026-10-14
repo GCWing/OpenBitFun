@@ -90,9 +90,8 @@ export default function EcosystemPets({ supported, refreshVersion, open, onOpenC
     <div role="row" className="ecosystem-compatibility__content-summary">
       <span role="cell" className="ecosystem-compatibility__import-item">
         <span className="ecosystem-compatibility__import-item-icon"><Icon glyph={PawPrint} size="md" /></span>
-        <span className="ecosystem-compatibility__import-item-copy"><strong>{t('capabilities.pet')}</strong><small>{t('content.pets.description')}</small></span>
+        <span className="ecosystem-compatibility__import-item-copy"><strong><OverflowText>{t('capabilities.pet')}</OverflowText></strong></span>
       </span>
-      <span role="cell">Codex</span>
       <span role="cell" className="ecosystem-compatibility__content-summary-state">
         <StatusPill tone="neutral">{state === 'available' ? t('content.itemCount', { count: formatNumber(entries.length) }) : state === 'loading' ? t('loading') : t(`content.pets.states.${state}`)}</StatusPill>
         <IconButton size="sm" variant="quiet" icon={<Icon name="chevron-right" size="sm" />} aria-haspopup="dialog" aria-controls={id}

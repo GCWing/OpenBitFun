@@ -7,7 +7,7 @@
  * Section groups:
  *   - workspace: project workspace essentials (sessions, files)
  *   - assistant: assistant persona / nursery (profile)
- *   - extensions: top strip expand row → agents / skills (each own scene tab, MainNav stays visible)
+ *   - ecosystem compatibility: footer More menu entry; catalogs live in Personal Overview
  */
 
 import type { NavSection } from './types';

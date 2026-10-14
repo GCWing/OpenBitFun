@@ -26,23 +26,29 @@ export class MiniAppsPage extends BasePage {
     return `${this.detailDialog()} ${this.appAttribute(appId)}`;
   }
 
-  private navActivity(appId: string): string {
-    return `[data-testid="nav-miniapp-activity-item"]${this.appAttribute(appId)}`;
+  private overviewActivity(appId: string): string {
+    return `[data-testid="personal-overview-miniapp-activity"]${this.appAttribute(appId)}`;
   }
 
   private async ensureGlobalNavigation(): Promise<void> {
-    const miniAppsEntry = await $('[data-testid="nav-miniapps-entry"]');
-    if (await miniAppsEntry.isDisplayed()) return;
+    const overviewEntry = await $('[data-testid="nav-personal-overview"]');
+    if (await overviewEntry.isDisplayed()) return;
 
     const sessionTab = await this.waitForElement('[role="tab"][data-scene-id="session"]', 10000);
     await sessionTab.waitForClickable({ timeout: 10000 });
     await sessionTab.click();
-    await miniAppsEntry.waitForDisplayed({ timeout: 10000 });
+    await overviewEntry.waitForDisplayed({ timeout: 10000 });
+  }
+
+  async openOverview(): Promise<void> {
+    await this.ensureGlobalNavigation();
+    await this.clickByTestId('nav-personal-overview', 20000);
+    await this.waitForElement('[data-openbitfun-scene="personal-overview"][data-openbitfun-part="miniApps"][data-catalog-status="ready"]', 20000);
   }
 
   async openGallery(): Promise<void> {
-    await this.ensureGlobalNavigation();
-    await this.clickByTestId('nav-miniapps-entry', 20000);
+    await this.openOverview();
+    await this.clickByTestId('personal-overview-more-miniapps', 20000);
     await this.waitForElement('[data-openbitfun-scene="miniapp-gallery"]', 20000);
     await this.waitForElement('[data-testid="miniapp-running-zone"]', 20000);
   }
@@ -93,12 +99,14 @@ export class MiniAppsPage extends BasePage {
     await this.waitForElement(this.runner(appId), 20000);
   }
 
-  async waitForNavActivity(appId: string): Promise<WebdriverIO.Element> {
-    return this.waitForElement(this.navActivity(appId), 10000);
+  async waitForOverviewActivity(appId: string): Promise<WebdriverIO.Element> {
+    await this.openOverview();
+    return this.waitForElement(this.overviewActivity(appId), 10000);
   }
 
-  async getNavActivityIds(): Promise<string[]> {
-    const items = await browser.$$('[data-testid="nav-miniapp-activity-item"]');
+  async getOverviewActivityIds(): Promise<string[]> {
+    await this.openOverview();
+    const items = await browser.$$('[data-testid="personal-overview-miniapp-activity"]');
     const ids: string[] = [];
     const count = await items.length;
     for (let index = 0; index < count; index += 1) {
@@ -111,8 +119,8 @@ export class MiniAppsPage extends BasePage {
     return ids;
   }
 
-  async getNavActivityHorizontalBounds(): Promise<Array<{ x: number; width: number }>> {
-    const items = await browser.$$('[data-testid="nav-miniapp-activity-item"]');
+  async getOverviewActivityHorizontalBounds(): Promise<Array<{ x: number; width: number }>> {
+    const items = await browser.$$('[data-testid="personal-overview-miniapp-activity"]');
     const bounds: Array<{ x: number; width: number }> = [];
     const count = await items.length;
     for (let index = 0; index < count; index += 1) {
@@ -125,8 +133,7 @@ export class MiniAppsPage extends BasePage {
   }
 
   async returnToGallery(): Promise<void> {
-    await this.clickByTestId('nav-miniapps-entry', 10000);
-    await this.waitForElement('[data-openbitfun-scene="miniapp-gallery"]', 10000);
+    await this.openGallery();
   }
 
   async waitForRunningCard(appId: string): Promise<WebdriverIO.Element> {
@@ -165,7 +172,7 @@ export class MiniAppsPage extends BasePage {
   }
 
   async waitForStopped(appId: string): Promise<void> {
-    const selectors = [this.runner(appId), this.navActivity(appId), this.runningCard(appId)];
+    const selectors = [this.runner(appId), this.runningCard(appId)];
     await browser.waitUntil(async () => {
       const states = await Promise.all(selectors.map(async (selector) => {
         const element = await $(selector);
@@ -177,6 +184,9 @@ export class MiniAppsPage extends BasePage {
       interval: 100,
       timeoutMsg: `MiniApp ${appId} remained active after Stop`,
     });
+    await this.openOverview();
+    const overviewActivity = await $(this.overviewActivity(appId));
+    await overviewActivity.waitForExist({ reverse: true, timeout: 10000 });
   }
 }
 

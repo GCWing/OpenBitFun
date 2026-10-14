@@ -22,14 +22,6 @@ async function waitForDisplayed(selector: string, timeout = 20_000) {
   return element;
 }
 
-async function openExtensions(): Promise<void> {
-  const entry = await waitForDisplayed('[data-testid="agent-skill-entry"]');
-  if (await entry.getAttribute('aria-expanded') !== 'true') {
-    await entry.click();
-  }
-  await waitForDisplayed('[data-testid="agent-tab"]');
-}
-
 async function readButtonSpacing(selector: string): Promise<ButtonSpacing | null> {
   return browser.execute((targetSelector: string) => {
     const button = document.querySelector<HTMLElement>(targetSelector);
@@ -73,20 +65,19 @@ function expectSmallFilledButton(spacing: ButtonSpacing | null): void {
 
 describe('L0 design-system Button integration', () => {
   it('keeps component-owned spacing for New Agent and Add Skill actions', async () => {
-    await openExtensions();
-
-    await $('[data-testid="agent-tab"]').click();
+    const overview = await waitForDisplayed('[data-testid="nav-personal-overview"]');
+    await overview.click();
+    const agentsEntry = await waitForDisplayed('[data-testid="personal-overview-agents"]');
+    await agentsEntry.click();
     await waitForDisplayed('[data-testid="agents-create-agent-btn"]');
     const newAgentSpacing = await readButtonSpacing('[data-testid="agents-create-agent-btn"]');
     console.log('[L0] New Agent Button spacing:', newAgentSpacing);
     expectSmallFilledButton(newAgentSpacing);
 
-    await $('[data-testid="skill-tab"]').click();
+    await overview.click();
+    const skillsEntry = await waitForDisplayed('[data-testid="personal-overview-skills"]');
+    await skillsEntry.click();
     await waitForDisplayed('[data-openbitfun-scene="skills"][data-openbitfun-part="root"]');
-    const allSkillsCategory = await waitForDisplayed(
-      '[data-openbitfun-scene="skills"][data-openbitfun-part="sidebarItem"][data-openbitfun-category="all"]',
-    );
-    await allSkillsCategory.click();
     await waitForDisplayed('[data-testid="skills-add-skill-btn"]');
     const addSkillSpacing = await readButtonSpacing('[data-testid="skills-add-skill-btn"]');
     console.log('[L0] Add Skill Button spacing:', addSkillSpacing);

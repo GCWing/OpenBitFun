@@ -71,12 +71,15 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant }) 
       : t('nav.workspaces.emptySessionGroups');
   const workspaceScopes = useMemo<WorkspaceSessionScope[]>(() => (
     variant !== 'assistants'
-      ? workspaces.map(workspace => ({
+      ? sessionGroups.filter(group => group.kind === 'project').map(({ workspace }) => ({
           workspaceId: workspace.id,
           workspaceName: workspace.name,
         }))
       : []
-  ), [variant, workspaces]);
+  ), [variant, sessionGroups]);
+  const visibleGroups = grouping === 'all' && variant !== 'assistants'
+    ? sessionGroups.filter(group => group.kind === 'assistant')
+    : sessionGroups;
 
   const workspaceSignature = sessionGroups.map(group => group.groupId).join(':');
 
@@ -233,16 +236,7 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant }) 
       data-testid="nav-workspace-list"
       data-workspace-list={variant}
     >
-      {variant !== 'assistants' && grouping === 'all' && workspaces.length > 0 ? (
-        <div className="openbitfun-nav-panel__workspace-all-sessions" data-testid="nav-workspace-all-sessions">
-          <SessionsSection
-            workspaceScopes={workspaceScopes}
-            isVisible
-            layout="flat"
-            useWorkspaceViewPreferences
-          />
-        </div>
-      ) : workspaces.length === 0 ? (
+      {workspaces.length === 0 ? (
         <div
           data-openbitfun-component="workspace-list-section"
           data-openbitfun-part="empty"
@@ -253,7 +247,7 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant }) 
           {emptyLabel}
         </div>
       ) : (
-        sessionGroups.map(group => {
+        visibleGroups.map(group => {
           const workspace = group.workspace;
           return (
             <div
@@ -295,6 +289,16 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant }) 
             </div>
           );
         })
+      )}
+      {grouping === 'all' && workspaceScopes.length > 0 && (
+        <div className="openbitfun-nav-panel__workspace-all-sessions" data-testid="nav-workspace-all-sessions">
+          <SessionsSection
+            workspaceScopes={workspaceScopes}
+            isVisible
+            layout="flat"
+            useWorkspaceViewPreferences
+          />
+        </div>
       )}
     </div>
   );

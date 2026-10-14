@@ -1,5 +1,8 @@
 {
-  "title": "Ecosystem Compatibility",
+  "title": "External Import",
+  "applications": {
+    "title": "External apps"
+  },
   "loading": "Checking compatibility…",
   "partialLoad": "Some status could not be read: {{sources}} {{acp}}. Other available content is still shown.",
   "retry": "Retry",
@@ -52,7 +55,7 @@
     "notice": "“{{name}}” is in development."
   },
   "capabilities": {
-    "account": "Accounts",
+    "account": "Account subscriptions",
     "settings": "Settings & preferences",
     "command": "Commands",
     "tool": "Tools",
@@ -149,7 +152,7 @@
         "failed": "Failed to save the subagent profile for {{name}}"
       }
     },
-    "openManager": "Manage ACP agents",
+    "openManager": "ACP connection",
     "managerLabel": "ACP agent management",
     "managerScope": "Install, enable, or adjust ACP agents for this ecosystem.",
     "loadingManager": "Loading ACP agent management…",
@@ -253,7 +256,7 @@
     },
     "repairSource": "Repair source label",
     "nativeUserTarget": "OpenBitFun · User configuration",
-    "undoAll": "Undo all",
+    "undoAll": "Undo",
     "importSelected": "Import selected",
     "undoSelected": "Undo selected",
     "selectedCount": "{{count}} selected",

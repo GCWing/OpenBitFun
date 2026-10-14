@@ -39,8 +39,7 @@
   },
   "toolbar": {
     "searchPlaceholder": "Search skills...",
-    "addTooltip": "Add Skill",
-    "hideDuplicates": "Hide duplicates"
+    "addTooltip": "Add Skill"
   },
   "filters": {
     "source": "{{source}}",
@@ -256,5 +255,11 @@
     "disabled": "disabled",
     "revealPathFailed": "Could not open in file explorer: {{error}}",
     "copyPathFailed": "Failed to copy path: {{error}}"
+  },
+  "pagination": {
+    "label": "Skills pages",
+    "page": "Page {{page}}",
+    "range": "{{start}}–{{end}} of {{total}} skills",
+    "rangeMore": "{{start}}–{{end}} · {{total}} skills loaded"
   }
 }

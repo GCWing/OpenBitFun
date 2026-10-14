@@ -1069,17 +1069,6 @@
                 background var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
                 box-shadow var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
-    &:hover {
-      .openbitfun-nav-panel__assistant-item-group-icon {
-        opacity: 0;
-        transform: scale(0.7);
-      }
-
-      .openbitfun-nav-panel__assistant-item-icon-toggle {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
   }
 
   &__assistant-item:not(.is-active) &__assistant-item-card {
@@ -1099,7 +1088,7 @@
     }
   }
 
-  &__assistant-item-collapse-btn {
+  &__assistant-item-open-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1113,22 +1102,9 @@
     color: inherit;
     cursor: pointer;
 
-    &:hover {
-      background: color-mix(in srgb, var(--openbitfun-color-action-neutral-surface-hover) 60%, transparent);
-
-      .openbitfun-nav-panel__assistant-item-group-icon {
-        opacity: 0;
-        transform: scale(0.7);
-      }
-
-      .openbitfun-nav-panel__assistant-item-icon-toggle {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
   }
 
-  &__assistant-item:not(.is-active) &__assistant-item-collapse-btn:hover {
+  &__assistant-item:not(.is-active) &__assistant-item-open-btn:hover {
     background: transparent;
   }
 
@@ -1145,7 +1121,7 @@
     color: inherit;
     /* Match the compact workspace icons: semantic row color owns contrast. */
     opacity: 1;
-    overflow: hidden;
+    overflow: visible;
 
     &.is-group-icon {
       border-radius: 0;
@@ -1159,30 +1135,6 @@
 
   &__assistant-item.is-active &__assistant-item-avatar {
     opacity: 1;
-  }
-
-  &__assistant-item-group-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-                transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  &__assistant-item-icon-toggle {
-    position: absolute;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    inset: 0;
-    opacity: 0;
-    transform: scale(0.7);
-    color: var(--openbitfun-color-content-primary);
-    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-                transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
   }
 
   &__assistant-item-name-btn {
@@ -1259,42 +1211,7 @@
     }
   }
 
-  &__assistant-item-sessions {
-    position: relative;
-    z-index: 0;
-    min-width: 0;
-    max-width: 100%;
-    overflow-x: clip;
-    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-    opacity: 1;
 
-    &.is-collapsed {
-      max-height: 0;
-      opacity: 0;
-      overflow: hidden;
-      pointer-events: none;
-    }
-
-    .openbitfun-nav-panel__inline-list {
-      // Let the row own the full selection surface; indent only its content below.
-      margin-left: 0;
-      margin-right: 0;
-      padding-top: 0;
-      padding-left: 0;
-      padding-right: 0;
-      // Shared by the rows below and by the "show more" toggle, which is their
-      // sibling — without this the toggle label sits 26px left of the titles.
-      --openbitfun-nav-session-rail: 30px;
-    }
-
-    .openbitfun-nav-panel__inline-item {
-      height: 30px;
-    }
-
-    .openbitfun-nav-panel__inline-empty {
-      padding-left: var(--openbitfun-space-1);
-    }
-  }
 }
 
 @keyframes openbitfun-status-dot-pulse {
@@ -1357,8 +1274,7 @@
 
   // Workspace activity selects the group and its current session together. When
   // the nested row is visible as the selection owner, avoid a competing parent fill.
-  &__workspace-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__workspace-item-card,
-  &__assistant-item.is-active:has(&__assistant-item-sessions &__inline-item.is-active) &__assistant-item-card {
+  &__workspace-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__workspace-item-card {
     background: transparent;
   }
 
@@ -1380,8 +1296,7 @@
       color 120ms ease;
   }
 
-  &__workspace-item-sessions,
-  &__assistant-item-sessions {
+  &__workspace-item-sessions {
     transition: none;
   }
 
@@ -1410,8 +1325,7 @@
     @include shell-surfaces.navigation-selection-feedback;
   }
 
-  .openbitfun-nav-panel__workspace-item.is-active:has(.openbitfun-nav-panel__workspace-item-sessions .openbitfun-nav-panel__inline-item.is-active) .openbitfun-nav-panel__workspace-item-card:hover,
-  .openbitfun-nav-panel__assistant-item.is-active:has(.openbitfun-nav-panel__assistant-item-sessions .openbitfun-nav-panel__inline-item.is-active) .openbitfun-nav-panel__assistant-item-card:hover {
+  .openbitfun-nav-panel__workspace-item.is-active:has(.openbitfun-nav-panel__workspace-item-sessions .openbitfun-nav-panel__inline-item.is-active) .openbitfun-nav-panel__workspace-item-card:hover {
     background: transparent;
   }
 }
@@ -1444,7 +1358,7 @@
   &__workspace-item-card,
   &__assistant-item-card,
   &__workspace-item-collapse-btn,
-  &__assistant-item-collapse-btn,
+  &__assistant-item-open-btn,
   &__workspace-item-name-btn,
   &__assistant-item-name-btn {
     min-height: 30px;
@@ -1465,13 +1379,11 @@
     @include nav-font.nav-panel-text-row-active;
   }
 
-  &__workspace-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__workspace-item-label,
-  &__assistant-item.is-active:has(&__assistant-item-sessions &__inline-item.is-active) &__assistant-item-label {
+  &__workspace-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__workspace-item-label {
     @include nav-font.nav-panel-text-row;
   }
 
-  &__workspace-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__workspace-item-icon,
-  &__assistant-item.is-active:has(&__assistant-item-sessions &__inline-item.is-active) &__assistant-item-avatar {
+  &__workspace-item.is-active:has(&__workspace-item-sessions &__inline-item.is-active) &__workspace-item-icon {
     color: var(--openbitfun-color-content-secondary);
   }
 

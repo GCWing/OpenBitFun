@@ -3,11 +3,11 @@
  *
  * Layout (top to bottom):
  *   1. Search
- *   2. AI Assistant, Task Board, Mini Apps, then Extensions & Compatibility
+ *   2. Personal Overview and Task Board
  *   3. Unified Sessions (all or grouped by project / assistant)
  */
 
-import React, { useCallback, useState, useMemo, useEffect, useRef, useSyncExternalStore } from 'react';
+import React, { useCallback, useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { subscribeOverlayInteraction, createOverlayPortal, OverflowText,
   Icon,
   IconButton,
@@ -27,7 +27,7 @@ import { subscribeOverlayInteraction, createOverlayPortal, OverflowText,
 } from '@openbitfun/ui';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { isImeOwnedKeyboardEvent } from '@/shared/utils/ime';
-import { FolderOpen, FolderPlus, Network, Server, Users } from 'lucide-react';
+import { FolderOpen, FolderPlus, House, Server } from 'lucide-react';
 // import { PanelsTopLeft } from 'lucide-react'; // temporarily hidden: Pages nav entry
 import { useSceneManager } from '../../hooks/useSceneManager';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
@@ -35,7 +35,6 @@ import SectionHeader from './components/SectionHeader';
 import StickySectionHeader from './components/StickySectionHeader';
 import WorkspaceSessionGroupingToggle from './components/WorkspaceSessionGroupingToggle';
 import WorkspaceSessionFilterMenu from './components/WorkspaceSessionFilterMenu';
-import MiniAppEntry from './components/MiniAppEntry';
 import WorkspaceListSection from './sections/workspaces/WorkspaceListSection';
 import { useSceneStore } from '../../stores/sceneStore';
 import { useMiniAppCatalogSync } from '../../scenes/miniapps/hooks/useMiniAppCatalogSync';
@@ -53,7 +52,6 @@ import {
   splitGlobalSearchShortcutLabel,
   subscribeGlobalSearchShortcut,
 } from '@/app/global-search/globalSearchShortcut';
-import { useExternalAppAwareness } from '@/infrastructure/config/components/external-sources/useExternalAppAwareness';
 
 import './NavPanel.scss';
 
@@ -71,6 +69,10 @@ const MainNav: React.FC = () => {
 
   const { openScene } = useSceneManager();
   const activeTabId = useSceneStore(s => s.activeTabId);
+  const isOverviewActive = typeof activeTabId === 'string' && (
+    ['personal-overview', 'assistant', 'profile', 'agents', 'skills', 'miniapps'].includes(activeTabId)
+    || activeTabId.startsWith('miniapp:')
+  );
   const { t } = useI18n('common');
   const searchShortcutLabel = useSyncExternalStore(
     subscribeGlobalSearchShortcut,
@@ -92,11 +94,6 @@ const MainNav: React.FC = () => {
     initialLoad: 'idle',
   });
 
-  const activeMiniAppId = useMemo(
-    () => (typeof activeTabId === 'string' && activeTabId.startsWith('miniapp:') ? activeTabId.slice('miniapp:'.length) : null),
-    [activeTabId]
-  );
-
   const workspaceMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const workspaceMenuRef = useRef<HTMLDivElement | null>(null);
   const sectionsScrollRef = useRef<HTMLDivElement | null>(null);
@@ -104,7 +101,6 @@ const MainNav: React.FC = () => {
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [workspaceMenuClosing, setWorkspaceMenuClosing] = useState(false);
   const [workspaceMenuPos, setWorkspaceMenuPos] = useState({ top: 0, left: 0 });
-  const [isExtensionsOpen, setIsExtensionsOpen] = useState(false);
 
   const closeWorkspaceMenu = useCallback(() => {
     setWorkspaceMenuClosing(true);
@@ -228,34 +224,9 @@ const MainNav: React.FC = () => {
     };
   }, [workspaceMenuOpen, updateWorkspaceMenuPos]);
 
-  const handleOpenAgents = useCallback(() => {
-    void activateProductAction('surface.agents.open');
-  }, []);
-
   const handleOpenTodos = useCallback(() => {
     void activateProductAction('surface.todos.open');
   }, []);
-
-  const handleOpenSkills = useCallback(() => {
-    void activateProductAction('surface.skills.open');
-  }, []);
-
-  const handleOpenEcosystemCompatibility = useCallback(() => {
-    void activateProductAction('surface.ecosystemCompatibility.open');
-  }, []);
-
-  const isAgentsActive = activeTabId === 'agents';
-  const isSkillsActive = activeTabId === 'skills';
-  const isEcosystemCompatibilityActive = activeTabId === 'ecosystem-compatibility';
-  const hasUnseenEcosystemCompatibility = useExternalAppAwareness(
-    isEcosystemCompatibilityActive,
-  );
-
-  useEffect(() => {
-    if (isAgentsActive || isSkillsActive || isEcosystemCompatibilityActive) {
-      setIsExtensionsOpen(true);
-    }
-  }, [isAgentsActive, isEcosystemCompatibilityActive, isSkillsActive]);
 
   const workspaceMenuPortal = workspaceMenuOpen ? createOverlayPortal(
     <Menu
@@ -337,15 +308,7 @@ const MainNav: React.FC = () => {
   ) : null;
 
   const addSessionGroupTooltip = t('nav.tooltips.addSessionGroup');
-  const agentsTooltip = t('nav.tooltips.agents');
-  const skillsTooltip = t('nav.tooltips.skills');
-  const ecosystemCompatibilityTooltip = hasUnseenEcosystemCompatibility
-    ? t('nav.tooltips.ecosystemCompatibilityUnseen')
-    : t('nav.tooltips.ecosystemCompatibility');
-  const assistantManagerLabel = t('nav.items.assistant');
   const taskBoardLabel = t('nav.items.todos');
-  const extensionsLabel = t('nav.sections.extensions');
-  const isAssistantManagerActive = activeTabId === 'assistant' || activeTabId === 'profile';
   const isTaskBoardActive = activeTabId === 'todos';
   return (
     <>
@@ -391,28 +354,21 @@ const MainNav: React.FC = () => {
         <NavigationPanelContent className="openbitfun-nav-panel__main-nav-content">
         <div data-testid="nav-sections" className="openbitfun-nav-panel__sections-slot">
         <div data-openbitfun-component="nav-panel" data-openbitfun-part="topActions" className="openbitfun-nav-panel__top-actions">
-          <Tooltip content={assistantManagerLabel} placement="right" followCursor>
+          <Tooltip content={t('nav.items.personalOverview')} placement="right" followCursor>
             <NavigationPanelItem
               className="openbitfun-nav-panel__top-action-item openbitfun-nav-panel__top-action-item--root"
-              triggerClassName={[
-                'openbitfun-nav-panel__top-action-btn',
-                isAssistantManagerActive ? 'is-active' : '',
-              ].filter(Boolean).join(' ')}
+              triggerClassName={`openbitfun-nav-panel__top-action-btn${isOverviewActive ? ' is-active' : ''}`}
               data-openbitfun-component="nav-panel"
               data-openbitfun-part="topAction"
-              data-openbitfun-action="assistant-manager"
-              data-openbitfun-state={isAssistantManagerActive ? 'active' : ''}
-              onClick={handleOpenAssistantManager}
-              aria-label={assistantManagerLabel}
-              data-testid="nav-assistant-manager"
-              leading={(
-                <span className="openbitfun-nav-panel__top-action-icon-slot">
-                  <Icon name="user" size="sm" />
-                </span>
-              )}
-              selected={isAssistantManagerActive}
+              data-openbitfun-action="personal-overview"
+              data-openbitfun-state={isOverviewActive ? 'active' : ''}
+              onClick={() => openScene('personal-overview')}
+              aria-label={t('nav.items.personalOverview')}
+              data-testid="nav-personal-overview"
+              leading={<span className="openbitfun-nav-panel__top-action-icon-slot"><Icon glyph={House} size="sm" /></span>}
+              selected={isOverviewActive}
             >
-              {assistantManagerLabel}
+              {t('nav.items.personalOverview')}
             </NavigationPanelItem>
           </Tooltip>
 
@@ -440,152 +396,6 @@ const MainNav: React.FC = () => {
               {taskBoardLabel}
             </NavigationPanelItem>
           </Tooltip>
-
-          <div className="openbitfun-nav-panel__miniapp-navigation" data-openbitfun-component="nav-panel" data-openbitfun-part="miniAppFooter">
-            <MiniAppEntry
-              isActive={activeTabId === 'miniapps' || !!activeMiniAppId}
-              activeMiniAppId={activeMiniAppId}
-              onOpenMiniApps={() => openScene('miniapps')}
-              onOpenMiniApp={(appId) => openScene(`miniapp:${appId}`)}
-            />
-          </div>
-
-          <div className="openbitfun-nav-panel__top-action-expand" data-openbitfun-component="nav-panel" data-openbitfun-part="extensionGroup" data-openbitfun-state={isExtensionsOpen ? 'open' : ''} data-testid="agent-skill-panel">
-            <Tooltip content={extensionsLabel} placement="right" followCursor>
-              <NavigationPanelItem
-                className="openbitfun-nav-panel__top-action-item openbitfun-nav-panel__top-action-item--root"
-                triggerClassName={[
-                  'openbitfun-nav-panel__top-action-btn',
-                  'openbitfun-nav-panel__top-action-btn--expand',
-                  isExtensionsOpen ? 'is-open' : '',
-                ].filter(Boolean).join(' ')}
-                data-openbitfun-component="nav-panel"
-                data-openbitfun-part="topAction"
-                data-openbitfun-action="extensions"
-                data-openbitfun-state={isExtensionsOpen ? 'open' : ''}
-                onClick={() => setIsExtensionsOpen(v => !v)}
-                aria-expanded={isExtensionsOpen}
-                aria-label={extensionsLabel}
-                data-testid="agent-skill-entry"
-                leading={(
-                  <span
-                    className="openbitfun-nav-panel__top-action-icon-slot openbitfun-nav-panel__top-action-expand-icons"
-                  >
-                    <Icon
-                      name="extension"
-                      size="sm"
-                      className="openbitfun-nav-panel__top-action-expand-icon-default"
-                    />
-                    <Icon
-                      name="chevron-down"
-                      size="sm"
-                      className={[
-                        'openbitfun-nav-panel__top-action-expand-icon-chevron',
-                        isExtensionsOpen ? 'is-open' : '',
-                      ].filter(Boolean).join(' ')}
-                    />
-                  </span>
-                )}
-              >
-                {extensionsLabel}
-              </NavigationPanelItem>
-            </Tooltip>
-
-            <div
-              className={`openbitfun-nav-panel__top-action-sublist${isExtensionsOpen ? ' is-open' : ''}`}
-              data-testid="agent-skill-tabs"
-              aria-hidden={!isExtensionsOpen}
-              {...(!isExtensionsOpen ? { inert: '' } : {})}
-            >
-              <div className="openbitfun-nav-panel__top-action-sublist-inner">
-                <Tooltip content={agentsTooltip} placement="right" followCursor>
-                  <NavigationPanelItem
-                    className="openbitfun-nav-panel__top-action-item openbitfun-nav-panel__top-action-item--sub"
-                    triggerClassName={[
-                      'openbitfun-nav-panel__top-action-btn',
-                      'openbitfun-nav-panel__top-action-btn--sub',
-                      isAgentsActive ? 'is-active' : '',
-                    ].filter(Boolean).join(' ')}
-                    data-openbitfun-component="nav-panel"
-                    data-openbitfun-part="topAction"
-                    data-openbitfun-action="agents"
-                    data-openbitfun-state={isAgentsActive ? 'active' : ''}
-                    onClick={handleOpenAgents}
-                    aria-label={agentsTooltip}
-                    data-testid="agent-tab"
-                    leading={(
-                      <span className="openbitfun-nav-panel__top-action-icon-slot">
-                        <Icon glyph={Users} size="sm" />
-                      </span>
-                    )}
-                    selected={isAgentsActive}
-                  >
-                    {t('nav.items.agents')}
-                  </NavigationPanelItem>
-                </Tooltip>
-
-                <Tooltip content={skillsTooltip} placement="right" followCursor>
-                  <NavigationPanelItem
-                    className="openbitfun-nav-panel__top-action-item openbitfun-nav-panel__top-action-item--sub"
-                    triggerClassName={[
-                      'openbitfun-nav-panel__top-action-btn',
-                      'openbitfun-nav-panel__top-action-btn--sub',
-                      isSkillsActive ? 'is-active' : '',
-                    ].filter(Boolean).join(' ')}
-                    data-openbitfun-component="nav-panel"
-                    data-openbitfun-part="topAction"
-                    data-openbitfun-action="skills"
-                    data-openbitfun-state={isSkillsActive ? 'active' : ''}
-                    onClick={handleOpenSkills}
-                    aria-label={skillsTooltip}
-                    data-testid="skill-tab"
-                    leading={(
-                      <span className="openbitfun-nav-panel__top-action-icon-slot">
-                        <Icon name="book-open" size="sm" />
-                      </span>
-                    )}
-                    selected={isSkillsActive}
-                  >
-                    {t('nav.items.skills')}
-                  </NavigationPanelItem>
-                </Tooltip>
-
-                <Tooltip content={ecosystemCompatibilityTooltip} placement="right" followCursor>
-                  <NavigationPanelItem
-                    className="openbitfun-nav-panel__top-action-item openbitfun-nav-panel__top-action-item--sub"
-                    triggerClassName={[
-                      'openbitfun-nav-panel__top-action-btn',
-                      'openbitfun-nav-panel__top-action-btn--sub',
-                      isEcosystemCompatibilityActive ? 'is-active' : '',
-                    ].filter(Boolean).join(' ')}
-                    data-openbitfun-component="nav-panel"
-                    data-openbitfun-part="topAction"
-                    data-openbitfun-action="ecosystem-compatibility"
-                    data-openbitfun-state={isEcosystemCompatibilityActive ? 'active' : ''}
-                    onClick={handleOpenEcosystemCompatibility}
-                    aria-label={ecosystemCompatibilityTooltip}
-                    data-testid="ecosystem-compatibility-tab"
-                    metadata={hasUnseenEcosystemCompatibility ? (
-                      <span
-                        className="openbitfun-nav-panel__top-action-unseen"
-                        data-openbitfun-component="nav-panel"
-                        data-openbitfun-part="topActionUnseen"
-                        aria-hidden="true"
-                      />
-                    ) : null}
-                    leading={(
-                      <span className="openbitfun-nav-panel__top-action-icon-slot">
-                        <Icon glyph={Network} size="sm" />
-                      </span>
-                    )}
-                    selected={isEcosystemCompatibilityActive}
-                  >
-                    {t('nav.items.ecosystemCompatibility')}
-                  </NavigationPanelItem>
-                </Tooltip>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Unified sessions */}

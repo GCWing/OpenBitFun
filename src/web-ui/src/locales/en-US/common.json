@@ -73,6 +73,7 @@
     "backShortcut": "Back (Alt+←)",
     "forwardShortcut": "Forward (Alt+→)",
     "items": {
+      "personalOverview": "Home",
       "sessions": "Sessions",
       "project": "Project",
       "persona": "Smart Members",
@@ -81,7 +82,7 @@
       "longTermTracking": "Long-term Tracking",
       "agents": "Agents",
       "skills": "Skills",
-      "ecosystemCompatibility": "Ecosystem Compatibility",
+      "ecosystemCompatibility": "External Import",
       "tools": "Tools",
       "terminal": "Shell",
       "git": "Git",
@@ -94,8 +95,8 @@
       "longTermTracking": "Long-term Tracking — ongoing tasks and conversations",
       "agents": "Which agents it can call",
       "skills": "What it knows — specialized knowledge files",
-      "ecosystemCompatibility": "Ecosystem Compatibility — manage compatible capabilities and extensions from other AI apps",
-      "ecosystemCompatibilityUnseen": "Ecosystem Compatibility — new compatible applications were found",
+      "ecosystemCompatibility": "External Import — import content from other AI apps, integrate and manage available capabilities",
+      "ecosystemCompatibilityUnseen": "External Import — new external apps were found",
       "tools": "What it can use — built-in tools & MCP services",
       "addWorkspace": "Add workspace",
       "addSessionGroup": "Add a project or personal assistant"
@@ -159,7 +160,7 @@
         "openInsights": "Open insights",
         "openSettings": "Open settings",
         "openKeyboardShortcuts": "Open keyboard shortcuts",
-        "openIntegrations": "Open ecosystem compatibility"
+        "openIntegrations": "Open External Import"
       },
       "actionDescriptions": {
         "newSession": "Start a conversation using the canonical session flow",
@@ -175,7 +176,7 @@
         "openInsights": "Review activity and usage insights",
         "openSettings": "Configure OpenBitFun",
         "openKeyboardShortcuts": "Review and customize keyboard shortcuts",
-        "openIntegrations": "Manage compatible capabilities and runtimes from external AI apps"
+        "openIntegrations": "Import content from other AI apps, integrate and manage available capabilities"
       },
       "badges": {
         "userMessage": "You",
@@ -388,6 +389,17 @@
       "showAll": "{{count}} more (show all)",
       "showAllLabel": "Show all",
       "showLess": "Show less",
+      "history": "Session history",
+      "assistantHistory": "{{name}} · Session history",
+      "openFailed": "Could not open the session",
+      "openAssistant": "Open assistant conversation",
+      "defaultSession": "Default",
+      "setDefault": "Set as default session",
+      "clearDefault": "Clear default session",
+      "defaultUnsupported": "This host does not support default assistant sessions. Update the host to use this action.",
+      "defaultReadFailed": "Could not read the default session. Retry",
+      "defaultSaveFailed": "Could not save the default session",
+      "defaultUnavailable": "The default session is unavailable. Choose another session in history.",
       "assistantOwner": "Assistant: {{name}}",
       "parentSession": "Parent session",
       "childSourceWithoutTurn": "From {{parentTitle}}",
@@ -581,7 +593,7 @@
       "emptyAssistants": "No personal assistants",
       "emptySessionGroups": "No projects or assistants yet",
       "closeFailed": "Failed to close workspace",
-      "closeAssistantUnsupported": "This host does not support closing and reopening assistants. Update the host to enable this action.",
+      "closeAssistantUnsupported": "This host does not support hiding and reopening assistants. Update the host to enable this action.",
       "createAssistantFailed": "Failed to create personal assistant",
       "deleteAssistantFailed": "Failed to delete personal assistant",
       "assistantDeleted": "Personal assistant deleted",
@@ -620,7 +632,8 @@
         "newSession": "New session",
         "newAssistant": "New personal assistant",
         "deleteAssistant": "Delete personal assistant",
-        "closeAssistant": "Close assistant",
+        "manageAssistant": "Manage assistant",
+        "closeAssistant": "Hide assistant",
         "resetWorkspace": "Reset workspace",
         "manageRelatedPaths": "Related directories",
         "manageProjectPermissions": "Project permissions",

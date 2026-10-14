@@ -24,8 +24,7 @@
     "dueSoon": "Due within 24 hours"
   },
   "calendar": {
-    "title": "Later",
-    "hint": "Every scheduled run, including the next 24 hours.",
+    "title": "Calendar",
     "previousMonth": "Previous month",
     "nextMonth": "Next month",
     "today": "Today",

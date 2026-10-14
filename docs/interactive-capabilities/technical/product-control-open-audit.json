@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "dcea667ca017ed22790f12c28d5ccd4011314fca16d7e2ce9fc9cf87ff283825",
-  "count": 216,
+  "catalogDigest": "71da99ced9aeda777cc830d0c7ef377f6053bbb062fdc5957e79b605d6e4e100",
+  "count": 212,
   "reasonCounts": {
     "externalAuth": 4,
     "secretEntry": 5,
-    "unstructuredInteraction": 184,
+    "unstructuredInteraction": 180,
     "visualSelection": 23
   },
   "entries": [
@@ -319,7 +319,10 @@
         "command:get_available_tools",
         "command:get_tool_info",
         "command:get_readonly_tools_info",
-        "command:get_runtime_capabilities"
+        "command:get_runtime_capabilities",
+        "command:get_all_tools_info",
+        "command:get_agent_profile_config",
+        "command:get_agent_profile_configs"
       ]
     },
     {
@@ -337,7 +340,10 @@
       "evidence": [
         "command:list_agent_tool_names",
         "source:src/web-ui/src/app/scenes/agents/components/ToolGroupPicker.tsx#ToolGroupPicker",
-        "source:src/web-ui/src/app/scenes/agents/components/SkillGroupPicker.tsx#SkillGroupPicker"
+        "source:src/web-ui/src/app/scenes/agents/components/SkillGroupPicker.tsx#SkillGroupPicker",
+        "command:set_agent_profile_config",
+        "command:reset_agent_profile_config",
+        "source:src/web-ui/src/app/scenes/agents/hooks/useAgentsList.ts#useAgentsList"
       ]
     },
     {
@@ -433,93 +439,17 @@
     },
     {
       "capabilityId": "feature.personal-assistants",
-      "itemId": "default-skills",
-      "titleZh": "为新助理选择默认 Skills，识别用户级与项目级来源、遮蔽关系和当前可用状态",
-      "titleEn": "Choose default Skills for new assistants while seeing user/project sources, shadowing, and availability",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“为新助理选择默认 Skills，识别用户级与项目级来源、遮蔽关系和当前可用状态”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Choose default Skills for new assistants while seeing user/project sources, shadowing, and availability” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "profile"
-      },
-      "evidence": [
-        "command:get_mode_skill_configs",
-        "command:set_mode_skill_disabled",
-        "source:src/web-ui/src/app/scenes/profile/views/AssistantDefaultsPage.tsx#skillRows"
-      ]
-    },
-    {
-      "capabilityId": "feature.personal-assistants",
-      "itemId": "default-builtin-tools",
-      "titleZh": "逐个或批量启用默认内置工具，并查看说明、只读或可执行属性及产品默认状态",
-      "titleEn": "Enable default built-in tools individually or in groups and inspect descriptions, read-only or executable access, and product defaults",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“逐个或批量启用默认内置工具，并查看说明、只读或可执行属性及产品默认状态”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Enable default built-in tools individually or in groups and inspect descriptions, read-only or executable access, and product defaults” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "profile"
-      },
-      "evidence": [
-        "command:get_all_tools_info",
-        "command:get_agent_profile_config",
-        "command:set_agent_profile_config",
-        "source:src/web-ui/src/app/scenes/profile/views/AssistantDefaultsPage.tsx#builtinRows",
-        "command:get_agent_profile_configs"
-      ]
-    },
-    {
-      "capabilityId": "feature.personal-assistants",
-      "itemId": "default-mcp-tools",
-      "titleZh": "按 MCP 服务器查看连接状态、工具详情与传输信息，并为新助理启用整个服务或单个工具",
-      "titleEn": "Inspect MCP server status, tool details, and transport, then enable a whole server or individual tools for new assistants",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“按 MCP 服务器查看连接状态、工具详情与传输信息，并为新助理启用整个服务或单个工具”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Inspect MCP server status, tool details, and transport, then enable a whole server or individual tools for new assistants” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "profile"
-      },
-      "evidence": [
-        "command:get_mcp_servers",
-        "source:src/web-ui/src/app/scenes/profile/views/AssistantDefaultsPage.tsx#mcpGroups",
-        "source:src/web-ui/src/app/scenes/profile/views/AssistantDefaultsPage.tsx#handleGroupToggleAll"
-      ]
-    },
-    {
-      "capabilityId": "feature.personal-assistants",
-      "itemId": "defaults-discovery-reset",
-      "titleZh": "按 Skills、内置工具或 MCP 分类搜索，筛选启用、停用、已更改或不可用项，查看详情并恢复产品默认值",
-      "titleEn": "Search Skills, built-in tools, or MCP entries; filter enabled, disabled, changed, or unavailable items; inspect details; and restore product defaults",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“按 Skills、内置工具或 MCP 分类搜索，筛选启用、停用、已更改或不可用项，查看详情并恢复产品默认值”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Search Skills, built-in tools, or MCP entries; filter enabled, disabled, changed, or unavailable items; inspect details; and restore product defaults” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "scene",
-        "sceneId": "profile"
-      },
-      "evidence": [
-        "command:reset_agent_profile_config",
-        "source:src/web-ui/src/app/scenes/profile/views/AssistantDefaultsPage.tsx#statusFilter",
-        "source:src/web-ui/src/app/scenes/profile/views/AssistantDefaultsPage.tsx#searchQuery",
-        "command:canonicalize_agent_profile_configs"
-      ]
-    },
-    {
-      "capabilityId": "feature.personal-assistants",
       "itemId": "assistant-sessions",
-      "titleZh": "从助理卡片新建会话，或在助理详情中选择模型、输入消息并查看该助理的历史会话",
-      "titleEn": "Start a session from an assistant card, or choose a model, send a message, and browse that assistant's sessions from its detail page",
+      "titleZh": "在助理详情中选择模型、输入消息并查看该助理的历史会话",
+      "titleEn": "Choose a model, send a message, and browse an assistant's sessions from its detail page",
       "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“从助理卡片新建会话，或在助理详情中选择模型、输入消息并查看该助理的历史会话”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Start a session from an assistant card, or choose a model, send a message, and browse that assistant's sessions from its detail page” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
+      "reasonZh": "“在助理详情中选择模型、输入消息并查看该助理的历史会话”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
+      "reasonEn": "“Choose a model, send a message, and browse an assistant's sessions from its detail page” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
       "presentationTarget": {
         "kind": "scene",
         "sceneId": "profile"
       },
       "evidence": [
-        "source:src/web-ui/src/app/scenes/profile/views/NurseryGallery.tsx#handleNewAssistantSession",
         "source:src/web-ui/src/app/scenes/profile/views/AssistantQuickInput.tsx#handleSend",
         "source:src/web-ui/src/app/scenes/profile/views/AssistantConfigPage.tsx#SessionsSection"
       ]

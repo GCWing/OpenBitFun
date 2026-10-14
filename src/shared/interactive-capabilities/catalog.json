@@ -147,8 +147,8 @@
     "automation": {
       "titleZh": "扩展与自动化",
       "titleEn": "Extensions & automation",
-      "descriptionZh": "Skills、Mini Apps、任务、Hooks 与生态兼容。",
-      "descriptionEn": "Skills, Mini Apps, tasks, hooks, and ecosystem compatibility."
+      "descriptionZh": "Skills、Mini Apps、任务、Hooks、外部导入。",
+      "descriptionEn": "Skills, Mini Apps, tasks, hooks, and External Import."
     },
     "connect": {
       "titleZh": "连接与发布",
@@ -214,7 +214,8 @@
     "genericConfigPrimitives": [
       "get_config",
       "get_configs",
-      "set_config"
+      "set_config",
+      "canonicalize_agent_profile_configs"
     ],
     "modelCatalogEnrichment": [
       "get_local_models_dev_catalogs"
@@ -807,7 +808,10 @@
             "command:get_available_tools",
             "command:get_tool_info",
             "command:get_readonly_tools_info",
-            "command:get_runtime_capabilities"
+            "command:get_runtime_capabilities",
+            "command:get_all_tools_info",
+            "command:get_agent_profile_config",
+            "command:get_agent_profile_configs"
           ]
         },
         {
@@ -823,7 +827,10 @@
           "evidence": [
             "command:list_agent_tool_names",
             "source:src/web-ui/src/app/scenes/agents/components/ToolGroupPicker.tsx#ToolGroupPicker",
-            "source:src/web-ui/src/app/scenes/agents/components/SkillGroupPicker.tsx#SkillGroupPicker"
+            "source:src/web-ui/src/app/scenes/agents/components/SkillGroupPicker.tsx#SkillGroupPicker",
+            "command:set_agent_profile_config",
+            "command:reset_agent_profile_config",
+            "source:src/web-ui/src/app/scenes/agents/hooks/useAgentsList.ts#useAgentsList"
           ]
         },
         {
@@ -883,8 +890,8 @@
       "categoryId": "assistant",
       "titleZh": "个人助理",
       "titleEn": "Personal assistants",
-      "summaryZh": "在助理空间中创建和管理自己的长期 AI 助理，定义身份与人设、配置默认能力，并从同一处开始会话或安排定时任务。",
-      "summaryEn": "Create and manage persistent AI assistants, define their identity and persona, configure default capabilities, and start chats or scheduled work from one place.",
+      "summaryZh": "在助理空间中创建和管理自己的长期 AI 助理，定义身份与人设，并从同一处开始会话或安排定时任务。",
+      "summaryEn": "Create and manage persistent AI assistants, define their identity and persona, and start chats or scheduled work from one place.",
       "keywordsZh": [
         "助理",
         "个人助理",
@@ -893,9 +900,7 @@
         "身份",
         "头像",
         "人设",
-        "Persona",
-        "默认工具",
-        "默认技能"
+        "Persona"
       ],
       "keywordsEn": [
         "assistant",
@@ -904,19 +909,17 @@
         "primary assistant",
         "identity",
         "avatar",
-        "persona",
-        "default tools",
-        "default skills"
+        "persona"
       ],
       "highlightsZh": [
         "创建、设为主助理或删除助理",
         "编辑身份、头像与 Persona 文档",
-        "配置默认 Skills、内置工具和 MCP 工具"
+        "创建时自动使用默认配置，随后开始会话或安排定时任务"
       ],
       "highlightsEn": [
         "Create, select a primary assistant, or delete assistants",
         "Edit identity, avatar, and persona documents",
-        "Configure default Skills, built-in tools, and MCP tools"
+        "Start with defaults at creation, then begin chats or schedule tasks"
       ],
       "items": [
         {
@@ -1001,84 +1004,16 @@
           ]
         },
         {
-          "id": "default-skills",
-          "titleZh": "为新助理选择默认 Skills，识别用户级与项目级来源、遮蔽关系和当前可用状态",
-          "titleEn": "Choose default Skills for new assistants while seeing user/project sources, shadowing, and availability",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“为新助理选择默认 Skills，识别用户级与项目级来源、遮蔽关系和当前可用状态”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Choose default Skills for new assistants while seeing user/project sources, shadowing, and availability” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "command:get_mode_skill_configs",
-            "command:set_mode_skill_disabled",
-            "source:src/web-ui/src/app/scenes/profile/views/AssistantDefaultsPage.tsx#skillRows"
-          ]
-        },
-        {
-          "id": "default-builtin-tools",
-          "titleZh": "逐个或批量启用默认内置工具，并查看说明、只读或可执行属性及产品默认状态",
-          "titleEn": "Enable default built-in tools individually or in groups and inspect descriptions, read-only or executable access, and product defaults",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“逐个或批量启用默认内置工具，并查看说明、只读或可执行属性及产品默认状态”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Enable default built-in tools individually or in groups and inspect descriptions, read-only or executable access, and product defaults” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "command:get_all_tools_info",
-            "command:get_agent_profile_config",
-            "command:set_agent_profile_config",
-            "source:src/web-ui/src/app/scenes/profile/views/AssistantDefaultsPage.tsx#builtinRows",
-            "command:get_agent_profile_configs"
-          ]
-        },
-        {
-          "id": "default-mcp-tools",
-          "titleZh": "按 MCP 服务器查看连接状态、工具详情与传输信息，并为新助理启用整个服务或单个工具",
-          "titleEn": "Inspect MCP server status, tool details, and transport, then enable a whole server or individual tools for new assistants",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“按 MCP 服务器查看连接状态、工具详情与传输信息，并为新助理启用整个服务或单个工具”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Inspect MCP server status, tool details, and transport, then enable a whole server or individual tools for new assistants” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "command:get_mcp_servers",
-            "source:src/web-ui/src/app/scenes/profile/views/AssistantDefaultsPage.tsx#mcpGroups",
-            "source:src/web-ui/src/app/scenes/profile/views/AssistantDefaultsPage.tsx#handleGroupToggleAll"
-          ]
-        },
-        {
-          "id": "defaults-discovery-reset",
-          "titleZh": "按 Skills、内置工具或 MCP 分类搜索，筛选启用、停用、已更改或不可用项，查看详情并恢复产品默认值",
-          "titleEn": "Search Skills, built-in tools, or MCP entries; filter enabled, disabled, changed, or unavailable items; inspect details; and restore product defaults",
-          "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“按 Skills、内置工具或 MCP 分类搜索，筛选启用、停用、已更改或不可用项，查看详情并恢复产品默认值”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Search Skills, built-in tools, or MCP entries; filter enabled, disabled, changed, or unavailable items; inspect details; and restore product defaults” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
-          },
-          "evidence": [
-            "command:reset_agent_profile_config",
-            "source:src/web-ui/src/app/scenes/profile/views/AssistantDefaultsPage.tsx#statusFilter",
-            "source:src/web-ui/src/app/scenes/profile/views/AssistantDefaultsPage.tsx#searchQuery",
-            "command:canonicalize_agent_profile_configs"
-          ]
-        },
-        {
           "id": "assistant-sessions",
-          "titleZh": "从助理卡片新建会话，或在助理详情中选择模型、输入消息并查看该助理的历史会话",
-          "titleEn": "Start a session from an assistant card, or choose a model, send a message, and browse that assistant's sessions from its detail page",
+          "titleZh": "在助理详情中选择模型、输入消息并查看该助理的历史会话",
+          "titleEn": "Choose a model, send a message, and browse an assistant's sessions from its detail page",
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“从助理卡片新建会话，或在助理详情中选择模型、输入消息并查看该助理的历史会话”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Start a session from an assistant card, or choose a model, send a message, and browse that assistant's sessions from its detail page” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "reasonZh": "“在助理详情中选择模型、输入消息并查看该助理的历史会话”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
+            "reasonEn": "“Choose a model, send a message, and browse an assistant's sessions from its detail page” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
           },
           "evidence": [
-            "source:src/web-ui/src/app/scenes/profile/views/NurseryGallery.tsx#handleNewAssistantSession",
             "source:src/web-ui/src/app/scenes/profile/views/AssistantQuickInput.tsx#handleSend",
             "source:src/web-ui/src/app/scenes/profile/views/AssistantConfigPage.tsx#SessionsSection"
           ]
@@ -1101,21 +1036,21 @@
       "stepsZh": [
         "打开“助理”",
         "创建助理或选择现有助理",
-        "编辑身份与人设，配置默认能力，然后开始会话或定时任务"
+        "编辑身份与人设，然后开始会话或定时任务"
       ],
       "stepsEn": [
         "Open Assistants",
         "Create an assistant or choose an existing one",
-        "Edit its identity and persona, configure defaults, then start a chat or scheduled task"
+        "Edit its identity and persona, then start a chat or scheduled task"
       ],
       "agentExamplesZh": [
         "打开我的个人助理",
-        "带我去育苗场配置助理的默认工具",
+        "帮我创建一个新的个人助理",
         "我想修改主助理的人设"
       ],
       "agentExamplesEn": [
         "Open my personal assistants",
-        "Take me to the nursery to configure default assistant tools",
+        "Help me create a new personal assistant",
         "I want to edit my primary assistant's persona"
       ],
       "destination": {
@@ -3924,11 +3859,12 @@
       "id": "feature.ecosystem-compatibility",
       "kind": "feature",
       "categoryId": "automation",
-      "titleZh": "外部 AI 生态兼容",
-      "titleEn": "External AI ecosystem compatibility",
+      "titleZh": "外部导入",
+      "titleEn": "External Import",
       "summaryZh": "查看五类外部 AI 生态的内容与状态，导入受支持的 Skill、MCP 和 Hook 副本，并查看 Command、Tool、子智能体的兼容使用状态。",
       "summaryEn": "Inspect content and status from five external AI ecosystems, import supported Skill, MCP and Hook copies, and review compatibility usage for commands, tools and subagents.",
       "keywordsZh": [
+        "外部导入",
         "生态兼容",
         "外部 AI",
         "迁移配置",
@@ -3938,6 +3874,8 @@
         "导入"
       ],
       "keywordsEn": [
+        "external import",
+        "external imports",
         "ecosystem compatibility",
         "external AI",
         "configuration migration",
@@ -4110,25 +4048,25 @@
         }
       ],
       "stepsZh": [
-        "打开“生态兼容”并选择智能体",
+        "打开“外部导入”并选择应用",
         "在左侧导航搜索框上方切换自动发现，悬停查看说明；关闭后保留结果，也可手动刷新",
         "查看分类状态，打开分类弹窗浏览、搜索并选择内容",
         "审阅可导入项目并确认创建副本；Command、Tool、子智能体按已有兼容功能使用",
         "前往对应管理页确认副本启用或连接；当前页不将“已导入”视为可用"
       ],
       "stepsEn": [
-        "Open Ecosystem Compatibility and choose an agent",
+        "Open External Import and choose an app",
         "Toggle automatic discovery above the sidebar search and hover for details; pausing retains results and manual refresh remains available",
         "Inspect category status, then open a category dialog to browse, search, and select content",
         "Review importable items and confirm copies; use commands, tools and subagents through existing compatibility features",
         "Confirm copy activation or connection in the relevant settings; Imported does not mean available"
       ],
       "agentExamplesZh": [
-        "打开外部 AI 生态兼容",
+        "打开外部导入",
         "我想迁移 Claude Code 的配置"
       ],
       "agentExamplesEn": [
-        "Open external AI ecosystem compatibility",
+        "Open External Import",
         "I want to migrate my Claude Code configuration"
       ],
       "destination": {

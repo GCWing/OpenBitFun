@@ -15,15 +15,15 @@ function source(relativePath: string): string {
 
 describe('ecosystem compatibility scene presentation contract', () => {
   it('opens as a standalone scene instead of a settings destination', () => {
-    const mainNav = source('../../components/NavPanel/MainNav.tsx');
+    const footerActions = source('../../components/NavPanel/components/PersistentFooterActions.tsx');
     const activator = source('../../global-search/productActionActivator.ts');
     const navigation = source('./ecosystemCompatibilityStore.ts');
     const viewport = source('../SceneViewport.tsx');
 
-    expect(mainNav).toContain("activateProductAction('surface.ecosystemCompatibility.open')");
-    expect(mainNav).not.toContain("activateProductAction('settings.external-sources.open')");
-    expect(mainNav).toContain('useExternalAppAwareness(');
-    expect(mainNav).toContain('openbitfun-nav-panel__top-action-unseen');
+    expect(footerActions).toContain("activateProductAction('surface.ecosystemCompatibility.open')");
+    expect(footerActions).not.toContain("activateProductAction('settings.external-sources.open')");
+    expect(footerActions).toContain('useExternalAppAwareness(');
+    expect(footerActions).toContain('openbitfun-nav-panel__top-action-unseen');
     expect(activator).toContain("case 'surface.ecosystemCompatibility.open':");
     expect(activator).toContain('openEcosystemCompatibility();');
     expect(navigation).toContain("openScene('ecosystem-compatibility')");
@@ -275,7 +275,7 @@ describe('ecosystem compatibility scene presentation contract', () => {
     expect(importPosition).toBeGreaterThan(runPosition);
     expect(scene).toContain('ecosystem-compatibility__unified-stack');
     expect(scene).not.toContain('renderDiagnostics');
-    expect(scene).toContain('refreshControlRef={externalContentRef}');
+    expect(scene).toContain('actionsRef={externalContentRef}');
     expect(scene).not.toContain('<MoreHorizontal');
     expect(scene).not.toContain("t('diagnostics.refresh')");
     expect(scene).not.toContain('role="tablist"');
@@ -347,7 +347,7 @@ describe('ecosystem compatibility scene presentation contract', () => {
       expect(source(`${assetRoot}${file}`)).toContain('<svg');
       expect(scene).toContain(`/assets/ecosystem-compatibility/${file}`);
     }
-    expect(scene).toContain('<EcosystemProductIcon productId={runtime.spec.id} size={22} />');
+    expect(scene).toContain('<EcosystemProductIcon productId={runtime.spec.id} />');
     expect(scene).toContain('<EcosystemProductIcon productId={selectedRuntime.spec.id} size={38} />');
     expect(scene).not.toContain('PRODUCT_FALLBACK_ICONS');
     expect(scene).not.toContain("'other-acp'");

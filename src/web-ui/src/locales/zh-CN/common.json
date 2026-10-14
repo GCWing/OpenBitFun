@@ -73,6 +73,7 @@
     "backShortcut": "后退 (Alt+←)",
     "forwardShortcut": "前进 (Alt+→)",
     "items": {
+      "personalOverview": "首页",
       "sessions": "会话",
       "project": "项目",
       "persona": "智能成员",
@@ -81,7 +82,7 @@
       "longTermTracking": "长期跟踪",
       "agents": "智能体",
       "skills": "技能",
-      "ecosystemCompatibility": "生态兼容",
+      "ecosystemCompatibility": "外部导入",
       "tools": "工具",
       "terminal": "Shell",
       "git": "Git",
@@ -94,8 +95,8 @@
       "longTermTracking": "长期跟踪 — 持续任务与长期对话",
       "agents": "它能调用哪些智能体",
       "skills": "它懂什么专项知识 — 技能知识文件",
-      "ecosystemCompatibility": "生态兼容 — 管理其他 AI 应用的兼容能力与扩展",
-      "ecosystemCompatibilityUnseen": "生态兼容 — 发现了新的兼容应用",
+      "ecosystemCompatibility": "外部导入 — 导入其他 AI 应用的内容，集成并管理可用能力",
+      "ecosystemCompatibilityUnseen": "外部导入 — 发现了新的外部应用",
       "tools": "它能用什么工具 — 内置工具与 MCP 服务",
       "addWorkspace": "添加工作区",
       "addSessionGroup": "添加项目或个人助理"
@@ -159,7 +160,7 @@
         "openInsights": "打开洞察",
         "openSettings": "打开设置",
         "openKeyboardShortcuts": "打开键盘快捷键",
-        "openIntegrations": "打开生态兼容"
+        "openIntegrations": "打开外部导入"
       },
       "actionDescriptions": {
         "newSession": "通过统一会话流程开始新对话",
@@ -175,7 +176,7 @@
         "openInsights": "查看活动与使用洞察",
         "openSettings": "配置 OpenBitFun",
         "openKeyboardShortcuts": "查看和自定义键盘快捷键",
-        "openIntegrations": "管理外部 AI 应用中的兼容能力与运行方式"
+        "openIntegrations": "导入其他 AI 应用的内容，集成并管理可用能力"
       },
       "badges": {
         "userMessage": "你",
@@ -388,6 +389,17 @@
       "showAll": "还有 {{count}} 个（展开全部）",
       "showAllLabel": "展开全部",
       "showLess": "收起",
+      "history": "历史会话",
+      "assistantHistory": "{{name}} · 历史会话",
+      "openFailed": "无法打开会话",
+      "openAssistant": "打开助理会话",
+      "defaultSession": "默认",
+      "setDefault": "设为默认会话",
+      "clearDefault": "取消默认会话",
+      "defaultUnsupported": "当前宿主不支持设置助理默认会话，请更新宿主后使用。",
+      "defaultReadFailed": "无法读取默认会话，点击重试",
+      "defaultSaveFailed": "无法保存默认会话",
+      "defaultUnavailable": "默认会话已不可用，请在历史会话中选择其他会话。",
       "assistantOwner": "所属助理：{{name}}",
       "parentSession": "父会话",
       "childSourceWithoutTurn": "来自 {{parentTitle}}",
@@ -581,7 +593,7 @@
       "emptyAssistants": "暂无个人助理",
       "emptySessionGroups": "暂无项目或助理",
       "closeFailed": "关闭工作区失败",
-      "closeAssistantUnsupported": "当前宿主不支持关闭和重新打开助理，请更新宿主后使用。",
+      "closeAssistantUnsupported": "当前宿主不支持隐藏和重新显示助理，请更新宿主后使用。",
       "createAssistantFailed": "新建个人助理失败",
       "deleteAssistantFailed": "删除个人助理失败",
       "assistantDeleted": "已删除个人助理",
@@ -620,7 +632,8 @@
         "newSession": "新建会话",
         "newAssistant": "新建个人助理",
         "deleteAssistant": "删除个人助理",
-        "closeAssistant": "关闭助理",
+        "manageAssistant": "管理助理",
+        "closeAssistant": "隐藏助理",
         "resetWorkspace": "重置工作区",
         "manageRelatedPaths": "关联目录",
         "manageProjectPermissions": "项目权限",

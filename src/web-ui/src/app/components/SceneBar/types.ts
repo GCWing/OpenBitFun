@@ -19,6 +19,7 @@ export type SceneTabId =
   | 'settings'
   | 'file-viewer'
   | 'profile'
+  | 'personal-overview'
   | 'agents'
   | 'skills'
   | 'ecosystem-compatibility'

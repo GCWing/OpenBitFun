@@ -48,7 +48,7 @@ describe('L1 MiniApp detail card', () => {
     await miniApps.openDetails(INTERACTIVE_APP_ID);
     await miniApps.startFromDetails(INTERACTIVE_APP_ID);
 
-    const navActivity = await miniApps.waitForNavActivity(INTERACTIVE_APP_ID);
-    expect(await navActivity.isDisplayed()).toBe(true);
+    const overviewActivity = await miniApps.waitForOverviewActivity(INTERACTIVE_APP_ID);
+    expect(await overviewActivity.isDisplayed()).toBe(true);
   });
 });

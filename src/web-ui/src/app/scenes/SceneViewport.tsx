@@ -37,6 +37,7 @@ import './SceneViewport.scss';
 const TerminalScene   = lazyWithRecovery(() => import('./terminal/TerminalScene'));
 const GitScene        = lazyWithRecovery(() => import('./git/GitScene'));
 const ProfileScene    = lazyWithRecovery(() => import('./profile/ProfileScene'));
+const PersonalOverviewScene = lazyWithRecovery(() => import('./personal-overview/PersonalOverviewScene'));
 const AgentsScene       = lazyWithRecovery(() => import('./agents/AgentsScene'));
 const SkillsScene     = lazyWithRecovery(() => import('./skills/SkillsScene'));
 const EcosystemCompatibilityScene = lazyWithRecovery(
@@ -314,6 +315,8 @@ function renderScene(
       return <SettingsScene isActive={isActive} />;
     case 'profile':
       return <ProfileScene />;
+    case 'personal-overview':
+      return <PersonalOverviewScene isActive={isActive} />;
     case 'agents':
       return <AgentsScene />;
     case 'skills':

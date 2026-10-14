@@ -215,6 +215,15 @@ interface SessionsSectionProps {
   workspaceScopes?: WorkspaceSessionScope[];
   /** Navigation geometry for nested workspace rows versus the flat aggregate list. */
   layout?: 'nested' | 'flat';
+  /** Close a containing history surface after explicit session navigation. */
+  onSessionOpened?: () => void;
+  /** Assistant history owns persistence; ordinary project rows do not expose this action. */
+  defaultSessionAction?: {
+    sessionId: string | null;
+    disabled: boolean;
+    disabledReason?: string;
+    onChange: (sessionId: string | null) => void;
+  };
 }
 
 export interface WorkspaceSessionScope {
@@ -232,6 +241,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   useWorkspaceViewPreferences = false,
   workspaceScopes,
   layout = 'nested',
+  onSessionOpened,
+  defaultSessionAction,
 }) => {
   useDeviceDirectory();
   const { t } = useI18n('common');
@@ -1105,6 +1116,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
             workspaceId: targetWorkspaceId,
             workspacePath: session.workspacePath,
           });
+          onSessionOpened?.();
           return;
         }
 
@@ -1113,6 +1125,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
             workspaceId: targetWorkspaceId,
             activateWorkspace,
           });
+          onSessionOpened?.();
           return;
         }
 
@@ -1120,6 +1133,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
           workspaceId: targetWorkspaceId,
           activateWorkspace,
         });
+        onSessionOpened?.();
         window.dispatchEvent(
           new CustomEvent('flowchat:switch-session', { detail: { sessionId } })
         );
@@ -1130,6 +1144,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     [
       activeSessionId,
       dispatchHistoryOpenIntentForSession,
+      onSessionOpened,
       editingSessionId,
       setActiveWorkspace,
       workspaceId,
@@ -1832,6 +1847,9 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                         <span className="openbitfun-nav-panel__inline-item-title">
                           <OverflowText behavior="marquee" title="" className="openbitfun-nav-panel__inline-item-label">{sessionTitle}</OverflowText>
                           <SessionTitleNumber number={titleNumber} />
+                          {defaultSessionAction?.sessionId === session.sessionId && (
+                            <StatusPill tone="neutral">{t('nav.sessions.defaultSession')}</StatusPill>
+                          )}
                         </span>
                     {isChildSession ? (
                       <StatusPill className="openbitfun-nav-panel__inline-item-btw-badge" tone="neutral">
@@ -1905,6 +1923,25 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                       data-openbitfun-part="actions"
                       data-openbitfun-state={openMenuSessionId === session.sessionId ? 'menuOpen' : undefined}
                     >
+                      {defaultSessionAction && !isChildSession && !session.isTransient && session.persistedStatus !== 'archived' && (
+                        <Tooltip content={defaultSessionAction.disabledReason ?? t(
+                          defaultSessionAction.sessionId === session.sessionId ? 'nav.sessions.clearDefault' : 'nav.sessions.setDefault',
+                        )}>
+                          <IconButton
+                            size="xs"
+                            disabled={defaultSessionAction.disabled}
+                            aria-label={t(defaultSessionAction.sessionId === session.sessionId ? 'nav.sessions.clearDefault' : 'nav.sessions.setDefault')}
+                            aria-pressed={defaultSessionAction.sessionId === session.sessionId}
+                            icon={<Icon name="pin" size="xs" />}
+                            onClick={event => {
+                              event.stopPropagation();
+                              defaultSessionAction.onChange(defaultSessionAction.sessionId === session.sessionId ? null : session.sessionId);
+                            }}
+                            data-testid="nav-session-default-btn"
+                            data-session-id={session.sessionId}
+                          />
+                        </Tooltip>
+                      )}
                       <button
                         type="button"
                         ref={openMenuSessionId === session.sessionId ? sessionMenuAnchorRef : undefined}

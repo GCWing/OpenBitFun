@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "dcea667ca017ed22790f12c28d5ccd4011314fca16d7e2ce9fc9cf87ff283825",
+  "catalogDigest": "71da99ced9aeda777cc830d0c7ef377f6053bbb062fdc5957e79b605d6e4e100",
   "commandCount": 674,
   "coverage": {
     "commandCount": 674,
-    "documentedCommandCount": 626,
-    "implementationCommandCount": 48,
-    "implementationDigest": "f6d38a24a70708988cb47ada81d07eccf0668684e8734c9ee5155b9ffa7e3db8"
+    "documentedCommandCount": 625,
+    "implementationCommandCount": 49,
+    "implementationDigest": "bc5063388e1b0dc13add3e967dd1b9c8638ee5e17d05ebcc680b419830c859ff"
   },
   "commands": [
     {
@@ -1078,14 +1078,12 @@
     {
       "id": "canonicalize_agent_profile_configs",
       "moduleId": "config",
-      "capabilityId": "feature.personal-assistants",
+      "capabilityId": "setting.application.general",
       "capabilityIds": [
-        "feature.personal-assistants"
+        "setting.application.general"
       ],
-      "documentedItemIds": [
-        "feature.personal-assistants:defaults-discovery-reset"
-      ],
-      "visibility": "documented",
+      "documentedItemIds": [],
+      "visibility": "implementation",
       "rustPath": "api::config_api::canonicalize_agent_profile_configs",
       "sourceFile": "src/apps/desktop/src/api/config_api.rs",
       "signature": "fn canonicalize_agent_profile_configs( _state: State<'_, AppState>, ) -> Result<Value, String>",
@@ -2811,12 +2809,12 @@
     {
       "id": "get_agent_profile_config",
       "moduleId": "config",
-      "capabilityId": "feature.personal-assistants",
+      "capabilityId": "feature.agents",
       "capabilityIds": [
-        "feature.personal-assistants"
+        "feature.agents"
       ],
       "documentedItemIds": [
-        "feature.personal-assistants:default-builtin-tools"
+        "feature.agents:capability-summary"
       ],
       "visibility": "documented",
       "rustPath": "get_agent_profile_config",
@@ -2827,12 +2825,12 @@
     {
       "id": "get_agent_profile_configs",
       "moduleId": "config",
-      "capabilityId": "feature.personal-assistants",
+      "capabilityId": "feature.agents",
       "capabilityIds": [
-        "feature.personal-assistants"
+        "feature.agents"
       ],
       "documentedItemIds": [
-        "feature.personal-assistants:default-builtin-tools"
+        "feature.agents:capability-summary"
       ],
       "visibility": "documented",
       "rustPath": "get_agent_profile_configs",
@@ -2877,12 +2875,12 @@
       "moduleId": "tool",
       "capabilityId": null,
       "capabilityIds": [
-        "feature.ai-assistant",
-        "feature.personal-assistants"
+        "feature.agents",
+        "feature.ai-assistant"
       ],
       "documentedItemIds": [
-        "feature.ai-assistant:tool-activity",
-        "feature.personal-assistants:default-builtin-tools"
+        "feature.agents:capability-summary",
+        "feature.ai-assistant:tool-activity"
       ],
       "visibility": "documented",
       "rustPath": "get_all_tools_info",
@@ -3497,13 +3495,11 @@
     {
       "id": "get_mcp_servers",
       "moduleId": "mcp",
-      "capabilityId": null,
+      "capabilityId": "setting.tools.mcp",
       "capabilityIds": [
-        "feature.personal-assistants",
         "setting.tools.mcp"
       ],
       "documentedItemIds": [
-        "feature.personal-assistants:default-mcp-tools",
         "setting.tools.mcp:status"
       ],
       "visibility": "documented",
@@ -3614,13 +3610,11 @@
     {
       "id": "get_mode_skill_configs",
       "moduleId": "skill",
-      "capabilityId": null,
+      "capabilityId": "feature.skills",
       "capabilityIds": [
-        "feature.personal-assistants",
         "feature.skills"
       ],
       "documentedItemIds": [
-        "feature.personal-assistants:default-skills",
         "feature.skills:mode-selection"
       ],
       "visibility": "documented",
@@ -7718,12 +7712,12 @@
     {
       "id": "reset_agent_profile_config",
       "moduleId": "config",
-      "capabilityId": "feature.personal-assistants",
+      "capabilityId": "feature.agents",
       "capabilityIds": [
-        "feature.personal-assistants"
+        "feature.agents"
       ],
       "documentedItemIds": [
-        "feature.personal-assistants:defaults-discovery-reset"
+        "feature.agents:tools-skills"
       ],
       "visibility": "documented",
       "rustPath": "reset_agent_profile_config",
@@ -8698,12 +8692,12 @@
     {
       "id": "set_agent_profile_config",
       "moduleId": "config",
-      "capabilityId": "feature.personal-assistants",
+      "capabilityId": "feature.agents",
       "capabilityIds": [
-        "feature.personal-assistants"
+        "feature.agents"
       ],
       "documentedItemIds": [
-        "feature.personal-assistants:default-builtin-tools"
+        "feature.agents:tools-skills"
       ],
       "visibility": "documented",
       "rustPath": "set_agent_profile_config",
@@ -8980,13 +8974,11 @@
     {
       "id": "set_mode_skill_disabled",
       "moduleId": "skill",
-      "capabilityId": null,
+      "capabilityId": "feature.skills",
       "capabilityIds": [
-        "feature.personal-assistants",
         "feature.skills"
       ],
       "documentedItemIds": [
-        "feature.personal-assistants:default-skills",
         "feature.skills:mode-selection"
       ],
       "visibility": "documented",

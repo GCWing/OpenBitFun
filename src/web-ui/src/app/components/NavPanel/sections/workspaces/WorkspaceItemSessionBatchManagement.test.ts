@@ -8,7 +8,7 @@ const workspaceItemSource = readFileSync(
 );
 
 describe('WorkspaceItem session batch management', () => {
-  it('exposes the shared batch manager from both assistant and project items', () => {
+  it('keeps batch management on projects and out of the assistant menu', () => {
     const assistantBranchStart = workspaceItemSource.indexOf(
       'if (workspace.workspaceKind === WorkspaceKind.Assistant)',
     );
@@ -20,7 +20,8 @@ describe('WorkspaceItem session batch management', () => {
     const assistantBranch = workspaceItemSource.slice(assistantBranchStart, projectBranchStart);
     const projectBranch = workspaceItemSource.slice(projectBranchStart);
 
-    for (const branch of [assistantBranch, projectBranch]) {
+    expect(assistantBranch).not.toContain('data-testid="nav-workspace-menu-manage-sessions"');
+    for (const branch of [projectBranch]) {
       expect(branch).toContain('data-testid="nav-workspace-menu-manage-sessions"');
       expect(branch).toContain('onClick={handleOpenSessionBatchModal}');
       expect(branch).toContain('<RetainedMountBoundary present={sessionBatchModalOpen}>');

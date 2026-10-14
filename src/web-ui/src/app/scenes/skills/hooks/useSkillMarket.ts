@@ -11,6 +11,8 @@ import { createLogger } from '@/shared/utils/logger';
 const log = createLogger('SkillsScene:useSkillMarket');
 
 const DEFAULT_PAGE_SIZE = 10;
+// Fetch batches are independent of the viewport so resizing never restarts a query.
+const FETCH_BATCH_SIZE = 20;
 const MAX_TOTAL_SKILLS = 500;
 
 interface UseSkillMarketOptions {
@@ -40,6 +42,14 @@ export function useSkillMarket({
   const [downloadingPackage, setDownloadingPackage] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const pageSizeRef = useRef(pageSize);
+  useLayoutEffect(() => {
+    const previousSize = pageSizeRef.current;
+    pageSizeRef.current = pageSize;
+    if (previousSize !== pageSize) {
+      setCurrentPage(page => Math.floor(page * previousSize / pageSize));
+    }
+  }, [pageSize]);
   const marketRequestIdRef = useRef(0);
   const capabilityKey = `${enabled}\u0000${workspace?.id ?? ''}\u0000${isRemoteWorkspace}`;
   const capabilityRef = useRef({ key: capabilityKey, epoch: 0, enabled });
@@ -75,18 +85,19 @@ export function useSkillMarket({
     const requestId = ++marketRequestIdRef.current;
 
     setMarketLoading(true);
+    setLoadingMore(false);
     setMarketError(null);
     setSourceErrors([]);
     setCurrentPage(0);
     try {
-      const result = await fetchSkills(query, pageSize);
+      const result = await fetchSkills(query, FETCH_BATCH_SIZE);
       if (requestId !== marketRequestIdRef.current || !capabilityIsCurrent(capabilityEpoch)) {
         return;
       }
       const skillList = result.skills;
       setSourceErrors(result.sourceErrors);
       setMarketSkills(skillList);
-      setHasMore(skillList.length >= pageSize);
+      setHasMore(skillList.length >= FETCH_BATCH_SIZE);
     } catch (err) {
       if (requestId !== marketRequestIdRef.current || !capabilityIsCurrent(capabilityEpoch)) {
         return;
@@ -98,7 +109,7 @@ export function useSkillMarket({
         setMarketLoading(false);
       }
     }
-  }, [capabilityIsCurrent, currentCapabilityEpoch, fetchSkills, pageSize]);
+  }, [capabilityIsCurrent, currentCapabilityEpoch, fetchSkills]);
 
   useEffect(() => {
     marketRequestIdRef.current += 1;
@@ -156,57 +167,42 @@ export function useSkillMarket({
     (currentPage + 1) * pageSize,
   ), [currentPage, displayMarketSkills, pageSize]);
 
-  const goToPrevPage = useCallback(() => {
-    if (currentCapabilityEpoch() === null) {
-      return;
-    }
-    setCurrentPage((page) => Math.max(0, page - 1));
-  }, [currentCapabilityEpoch]);
-
-  const goToNextPage = useCallback(async () => {
+  const goToPage = useCallback(async (page: number) => {
     const capabilityEpoch = currentCapabilityEpoch();
-    if (capabilityEpoch === null) {
-      return;
-    }
-    const requestId = ++marketRequestIdRef.current;
+    if (capabilityEpoch === null || loadingMore) return;
 
-    const nextPage = currentPage + 1;
+    const nextPage = Math.max(0, Math.min(page, totalPages - 1));
+    const firstIndex = nextPage * pageSize;
     const neededCount = Math.min((nextPage + 1) * pageSize, MAX_TOTAL_SKILLS);
-
-    if (displayMarketSkills.length >= neededCount) {
-      setCurrentPage(nextPage);
+    if (displayMarketSkills.length >= neededCount || !hasMore) {
+      setCurrentPage(Math.min(nextPage, Math.max(0, loadedPages - 1)));
       return;
     }
 
-    if (!hasMore) {
-      return;
-    }
-
-    setCurrentPage(nextPage);
-
+    const requestId = ++marketRequestIdRef.current;
+    const limit = Math.min(MAX_TOTAL_SKILLS, Math.max(neededCount, displayMarketSkills.length + FETCH_BATCH_SIZE));
     try {
+      // Keep the current cards visible while fetching the next page.
       setLoadingMore(true);
-      const result = await fetchSkills(searchQuery || undefined, neededCount);
-      if (requestId !== marketRequestIdRef.current || !capabilityIsCurrent(capabilityEpoch)) {
-        return;
-      }
+      const result = await fetchSkills(searchQuery || undefined, limit);
+      if (requestId !== marketRequestIdRef.current || !capabilityIsCurrent(capabilityEpoch)) return;
       const skillList = result.skills;
       setSourceErrors(result.sourceErrors);
       setMarketSkills(skillList);
-      const hitCap = neededCount >= MAX_TOTAL_SKILLS;
-      setHasMore(!hitCap && skillList.length >= neededCount);
+      setHasMore(limit < MAX_TOTAL_SKILLS && skillList.length >= limit);
+      // An exhausted source may return no new entries. Stay on a populated page,
+      // including when the viewport capacity changed during the request.
+      setCurrentPage(Math.floor(Math.min(firstIndex, Math.max(0, skillList.length - 1)) / pageSizeRef.current));
     } catch (err) {
-      if (requestId !== marketRequestIdRef.current || !capabilityIsCurrent(capabilityEpoch)) {
-        return;
-      }
+      if (requestId !== marketRequestIdRef.current || !capabilityIsCurrent(capabilityEpoch)) return;
       log.error('Failed to load more skills', err);
-      setCurrentPage(currentPage);
     } finally {
-      if (requestId === marketRequestIdRef.current && capabilityIsCurrent(capabilityEpoch)) {
-        setLoadingMore(false);
-      }
+      if (requestId === marketRequestIdRef.current && capabilityIsCurrent(capabilityEpoch)) setLoadingMore(false);
     }
-  }, [capabilityIsCurrent, currentCapabilityEpoch, currentPage, displayMarketSkills.length, fetchSkills, hasMore, pageSize, searchQuery]);
+  }, [capabilityIsCurrent, currentCapabilityEpoch, displayMarketSkills.length, fetchSkills, hasMore, loadedPages, loadingMore, pageSize, searchQuery, totalPages]);
+
+  const goToPrevPage = useCallback(() => goToPage(currentPage - 1), [currentPage, goToPage]);
+  const goToNextPage = useCallback(() => goToPage(currentPage + 1), [currentPage, goToPage]);
 
   const handleDownload = useCallback(async (skill: SkillMarketItem, targetLevel: SkillLevel = 'project') => {
     const capabilityEpoch = currentCapabilityEpoch();
@@ -259,6 +255,7 @@ export function useSkillMarket({
     currentPage,
     totalPages,
     refresh,
+    goToPage,
     goToPrevPage,
     goToNextPage,
     handleDownload,

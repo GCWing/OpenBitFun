@@ -5,17 +5,20 @@ import { BasePage } from './BasePage';
 export interface TaskBoardLayoutMetrics {
   rootWidth: number;
   rootScrollOverflow: number;
+  contentWidth: number;
+  contentCenterDelta: number;
   headerHeight: number;
   newButtonHeight: number;
   todayButtonHeight: number;
   navigationButtonHeight: number;
   listWidthRatio: number;
   panesTopDelta: number;
-  panesBottomDelta: number;
-  listBottomDelta: number;
+  calendarAfterListGap: number;
+  moduleWidthDelta: number;
+  nestedScrollAreas: number;
   calendarCellAspectRatio: number;
-  overviewInsideList: boolean;
-  calendarInsideRoot: boolean;
+  overviewBeforeList: boolean;
+  calendarInsideContent: boolean;
   weekdayColumns: number;
   calendarCells: number;
 }
@@ -160,6 +163,7 @@ export class TaskBoardPage extends BasePage {
     await emptyCell.click();
     const emptyState = await this.waitForTestId('todos-day-empty', 10_000);
     await emptyState.waitForDisplayed({ timeout: 10_000 });
+    await emptyState.scrollIntoView({ block: 'end' });
 
     let metrics: TaskBoardDayDetailMetrics | null = null;
     await browser.waitUntil(async () => {
@@ -196,6 +200,7 @@ export class TaskBoardPage extends BasePage {
   async getLayoutMetrics(): Promise<TaskBoardLayoutMetrics | null> {
     return browser.execute(() => {
       const root = document.querySelector<HTMLElement>('[data-testid="todos-scene"]');
+      const content = document.querySelector<HTMLElement>('[data-testid="todos-content"]');
       const header = document.querySelector<HTMLElement>('.openbitfun-todos__head');
       const panes = document.querySelector<HTMLElement>('[data-openbitfun-part="panes"]');
       const list = document.querySelector<HTMLElement>('[data-testid="todos-list-pane"]');
@@ -207,11 +212,12 @@ export class TaskBoardPage extends BasePage {
       const weekdays = Array.from(document.querySelectorAll<HTMLElement>('.openbitfun-todos__calendar-weekday'));
       const cells = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="todos-calendar-cell"]'));
       if (
-        !root || !header || !panes || !list || !overview || !calendar
+        !root || !content || !header || !panes || !list || !overview || !calendar
         || !newButton || !todayButton || !navigationButton
       ) return null;
 
       const rootRect = root.getBoundingClientRect();
+      const contentRect = content.getBoundingClientRect();
       const headerRect = header.getBoundingClientRect();
       const panesRect = panes.getBoundingClientRect();
       const listRect = list.getBoundingClientRect();
@@ -223,23 +229,25 @@ export class TaskBoardPage extends BasePage {
       return {
         rootWidth: rootRect.width,
         rootScrollOverflow: root.scrollWidth - root.clientWidth,
+        contentWidth: contentRect.width,
+        contentCenterDelta: Math.abs((contentRect.left + contentRect.right - rootRect.left - rootRect.right) / 2),
         headerHeight: headerRect.height,
         newButtonHeight: newButton.getBoundingClientRect().height,
         todayButtonHeight: todayButton.getBoundingClientRect().height,
         navigationButtonHeight: navigationButton.getBoundingClientRect().height,
         listWidthRatio: listRect.width / panesRect.width,
         panesTopDelta: Math.abs(panesRect.top - headerRect.bottom),
-        panesBottomDelta: Math.abs(rootRect.bottom - panesRect.bottom),
-        listBottomDelta: Math.abs(panesRect.bottom - listRect.bottom),
+        calendarAfterListGap: calendarRect.top - listRect.bottom,
+        moduleWidthDelta: Math.abs(calendarRect.width - listRect.width),
+        nestedScrollAreas: content.querySelectorAll('[data-openbitfun-component="scroll-area"]').length,
         calendarCellAspectRatio: firstCellRect
           ? firstCellRect.width / firstCellRect.height
           : 0,
-        overviewInsideList: overviewRect.left >= listRect.left
-          && overviewRect.right <= listRect.right
-          && overviewRect.top >= listRect.top,
-        calendarInsideRoot: calendarRect.left >= rootRect.left
-          && calendarRect.right <= rootRect.right
-          && calendarRect.bottom <= rootRect.bottom + 1,
+        overviewBeforeList: overviewRect.bottom <= listRect.top
+          && !list.contains(overview),
+        calendarInsideContent: calendarRect.left >= contentRect.left
+          && calendarRect.right <= contentRect.right
+          && calendarRect.bottom <= contentRect.bottom + 1,
         weekdayColumns,
         calendarCells: cells.length,
       };
@@ -248,11 +256,13 @@ export class TaskBoardPage extends BasePage {
 
   async getDayDetailMetrics(): Promise<TaskBoardDayDetailMetrics | null> {
     return browser.execute(() => {
+      const root = document.querySelector<HTMLElement>('[data-testid="todos-scene"]');
       const pane = document.querySelector<HTMLElement>('[data-testid="todos-calendar-pane"]');
       const detail = document.querySelector<HTMLElement>('[data-testid="todos-day-detail"]');
       const emptyState = document.querySelector<HTMLElement>('[data-testid="todos-day-empty"]');
-      if (!pane || !detail || !emptyState) return null;
+      if (!root || !pane || !detail || !emptyState) return null;
 
+      const rootRect = root.getBoundingClientRect();
       const paneRect = pane.getBoundingClientRect();
       const detailRect = detail.getBoundingClientRect();
       const emptyRect = emptyState.getBoundingClientRect();
@@ -261,7 +271,9 @@ export class TaskBoardPage extends BasePage {
         detailBottomDelta: paneRect.bottom - detailRect.bottom,
         detailScrollOverflow: detail.scrollHeight - detail.clientHeight,
         emptyStateFullyVisible: emptyRect.top >= paneRect.top - 1
-          && emptyRect.bottom <= paneRect.bottom + 1,
+          && emptyRect.bottom <= paneRect.bottom + 1
+          && emptyRect.top >= rootRect.top - 1
+          && emptyRect.bottom <= rootRect.bottom + 1,
       };
     });
   }

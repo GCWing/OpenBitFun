@@ -56,9 +56,8 @@ export default function EcosystemAccounts({ provider, supported, refreshVersion,
     <div className="ecosystem-compatibility__content-summary" role="row">
       <span role="cell" className="ecosystem-compatibility__import-item">
         <span className="ecosystem-compatibility__import-item-icon"><Icon glyph={CircleUserRound} size="md" /></span>
-        <span className="ecosystem-compatibility__import-item-copy"><strong>{t('capabilities.account')}</strong><small>{t('content.accounts.description')}</small></span>
+        <span className="ecosystem-compatibility__import-item-copy"><strong><OverflowText>{t('capabilities.account')}</OverflowText></strong></span>
       </span>
-      <span role="cell"><OverflowText>{t(`content.accounts.providers.${provider}`)}</OverflowText></span>
       <span role="cell" className="ecosystem-compatibility__content-summary-state">
         <StatusPill tone="neutral" title={t(`content.accounts.states.${state}`)}>{state === 'loading' ? t('loading') : t(`content.accounts.labels.${state}`)}</StatusPill>
         <IconButton size="sm" variant="quiet" icon={<Icon name={expanded ? 'chevron-down' : 'chevron-right'} size="sm" />}
@@ -66,7 +65,7 @@ export default function EcosystemAccounts({ provider, supported, refreshVersion,
           aria-expanded={expanded} aria-controls={id} onClick={() => { if (!expanded) setRevision((value) => value + 1); onToggle(); }} />
       </span>
     </div>
-    <div role="row" hidden={!expanded}><div id={id} role="cell" aria-colspan={3} className="ecosystem-compatibility__content-expanded">
+    <div role="row" hidden={!expanded}><div id={id} role="cell" aria-colspan={2} className="ecosystem-compatibility__content-expanded">
       {expanded ? <Card appearance="subtle" padding="sm" radius="none" className="ecosystem-compatibility__account-panel">
         <CardHeader
           title={<OverflowText>{account?.account || t(`content.accounts.providers.${provider}`)}</OverflowText>}

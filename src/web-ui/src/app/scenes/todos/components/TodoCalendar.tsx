@@ -7,7 +7,8 @@
  * Jobs with nothing left to run are the only ones left out.
  */
 
-import { OverflowText, ScrollArea } from '@openbitfun/ui';
+import { Button, Icon, IconButton, OverflowText, Tooltip } from '@openbitfun/ui';
+import { CalendarDays } from 'lucide-react';
 import React, { useMemo } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import {
@@ -27,6 +28,8 @@ export interface TodoCalendarProps {
   selectedDayKey: string | null;
   nowMs: number;
   onSelectDay: (dayKey: string | null) => void;
+  onShiftMonth: (delta: number) => void;
+  onToday: () => void;
 }
 
 const TodoCalendar: React.FC<TodoCalendarProps> = ({
@@ -35,6 +38,8 @@ const TodoCalendar: React.FC<TodoCalendarProps> = ({
   selectedDayKey,
   nowMs,
   onSelectDay,
+  onShiftMonth,
+  onToday,
 }) => {
   const { t, formatDate } = useI18n('scenes/todos');
 
@@ -42,6 +47,7 @@ const TodoCalendar: React.FC<TodoCalendarProps> = ({
   const byDay = useMemo(() => groupOccurrencesByDay(occurrences), [occurrences]);
 
   const anchorDate = useMemo(() => new Date(monthAnchorMs), [monthAnchorMs]);
+  const monthLabel = formatDate(anchorDate, { year: 'numeric', month: 'long' });
   const anchorMonth = anchorDate.getMonth();
   const todayKey = localDayKey(nowMs);
 
@@ -53,7 +59,7 @@ const TodoCalendar: React.FC<TodoCalendarProps> = ({
   );
 
   return (
-    <ScrollArea
+    <section
       className="openbitfun-todos__calendar"
       aria-label={t('calendar.title')}
       data-openbitfun-scene="todos"
@@ -61,9 +67,46 @@ const TodoCalendar: React.FC<TodoCalendarProps> = ({
       data-testid="todos-calendar"
     >
       <header className="openbitfun-todos__calendar-head" data-openbitfun-scene="todos" data-openbitfun-part="calendarHead">
-        <div className="openbitfun-todos__calendar-heading">
-          <h3 className="openbitfun-todos__pane-title">{t('calendar.title')}</h3>
-          <p className="openbitfun-todos__pane-hint">{t('calendar.hint')}</p>
+        <h3 className="openbitfun-todos__pane-title">{t('calendar.title')}</h3>
+        <div className="openbitfun-todos__calendar-actions">
+          <div
+            className="openbitfun-todos__month-navigation"
+            data-openbitfun-scene="todos"
+            data-openbitfun-part="monthNavigation"
+          >
+            <Tooltip content={t('calendar.previousMonth')}>
+              <IconButton
+                type="button"
+                size="sm"
+                aria-label={t('calendar.previousMonth')}
+                icon={<Icon name="chevron-left" size="lg" />}
+                onClick={() => onShiftMonth(-1)}
+                data-testid="todos-calendar-prev"
+              />
+            </Tooltip>
+            <span className="openbitfun-todos__month-label" data-testid="todos-calendar-month">
+              <CalendarDays size={14} aria-hidden="true" />
+              <span>{monthLabel}</span>
+            </span>
+            <Tooltip content={t('calendar.nextMonth')}>
+              <IconButton
+                type="button"
+                size="sm"
+                aria-label={t('calendar.nextMonth')}
+                icon={<Icon name="chevron-right" size="lg" />}
+                onClick={() => onShiftMonth(1)}
+                data-testid="todos-calendar-next"
+              />
+            </Tooltip>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="openbitfun-todos__today-button"
+            onClick={onToday}
+          >
+            {t('calendar.today')}
+          </Button>
         </div>
       </header>
 
@@ -133,7 +176,7 @@ const TodoCalendar: React.FC<TodoCalendarProps> = ({
           );
         })}
       </div>
-    </ScrollArea>
+    </section>
   );
 };
 

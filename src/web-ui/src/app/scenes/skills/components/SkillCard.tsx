@@ -1,140 +1,87 @@
 import React from 'react';
-import { Button, Card, CardBody, CardFooter, CardHeader, Icon, OverflowText } from '@openbitfun/ui';
+import { Icon, IconButton, OverflowText } from '@openbitfun/ui';
+import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import './SkillCard.scss';
 
-type SkillCardActionTone = 'primary' | 'danger' | 'success' | 'muted';
-
-export interface SkillCardAction {
-  id: string;
+interface SkillCardAction {
   icon: React.ReactNode;
-  ariaLabel: string;
-  label?: string;
-  loading?: boolean;
+  label: string;
   title?: string;
+  loading?: boolean;
   disabled?: boolean;
-  tone?: SkillCardActionTone;
   onClick: () => void;
 }
 
 interface SkillCardProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'children'> {
   name: string;
   description?: string;
-  source?: string;
-  index?: number;
-  accentSeed?: string;
+  ariaLabel?: string;
   iconKind?: 'skill' | 'market';
-  badges?: React.ReactNode;
-  meta?: React.ReactNode;
-  actions?: SkillCardAction[];
-  onOpenDetails?: () => void;
+  level?: 'user' | 'project';
+  shadowed?: boolean;
+  builtin?: boolean;
+  globallyDisabled?: boolean;
+  action?: SkillCardAction;
+  onOpenDetails: () => void;
 }
 
 const SkillCard: React.FC<SkillCardProps> = ({
-  name,
-  description,
-  source,
-  index = 0,
-  accentSeed: _accentSeed,
-  iconKind = 'skill',
-  badges,
-  meta,
-  actions = [],
-  onOpenDetails,
-  className,
-  style,
-  ...rootProps
+  name, description, ariaLabel, iconKind = 'skill', level, shadowed, builtin, globallyDisabled,
+  action, onOpenDetails, className, ...rootProps
 }) => {
+  const { t } = useI18n('scenes/skills');
   return (
-    <div data-openbitfun-component="skill-card" data-openbitfun-part="root"
+    <div
       {...rootProps}
-      className={['skill-card', className].filter(Boolean).join(' ')}
-      style={{
-        ...style,
-        '--surface-stagger-index': index,
-      } as React.CSSProperties}
+      className={['skills-card', shadowed && 'is-shadowed', globallyDisabled && 'is-globally-disabled', className].filter(Boolean).join(' ')}
+      role="listitem"
+      data-openbitfun-component="skill-card"
+      data-openbitfun-part="root"
       data-openbitfun-variant={iconKind}
+      data-openbitfun-level={level}
+      data-openbitfun-state={[shadowed && 'shadowed', builtin && 'builtin'].filter(Boolean).join(' ') || undefined}
       data-overflow-trigger
     >
-      <Card appearance="subtle" padding="md" gap="md" className="skill-card__surface">
-        {onOpenDetails && (
-          <button
-            type="button"
-            className="skill-card__open"
-            aria-label={name}
-            onClick={onOpenDetails}
-          />
-        )}
-        <CardHeader
-          align="center"
-          className="skill-card__header"
-          leading={(
-            <div className="skill-card__icon-area" data-openbitfun-component="skill-card" data-openbitfun-part="iconArea">
-              <div className="skill-card__icon" data-openbitfun-component="skill-card" data-openbitfun-part="icon">
-                <Icon name="book-open" size="md" />
-              </div>
-            </div>
-          )}
-          title={(
-            <div className="skill-card__title-row" data-openbitfun-component="skill-card" data-openbitfun-part="titleRow">
-              <span className="skill-card__name" data-openbitfun-component="skill-card" data-openbitfun-part="name">
-                <OverflowText>{name}</OverflowText>
-              </span>
-              {badges && <div className="skill-card__badges" data-openbitfun-component="skill-card" data-openbitfun-part="badges">{badges}</div>}
-            </div>
-          )}
-          description={source?.trim() ? (
-            <span className="skill-card__source" data-openbitfun-component="skill-card" data-openbitfun-part="source">
-              <OverflowText>{source.trim()}</OverflowText>
-            </span>
-          ) : undefined}
+      <div className="skills-card__top" data-openbitfun-component="skill-card" data-openbitfun-part="header">
+        <button
+          type="button"
+          className="skills-card__open"
+          aria-label={ariaLabel ?? name}
+          onClick={onOpenDetails}
           data-openbitfun-component="skill-card"
-          data-openbitfun-part="header"
+          data-openbitfun-part="open"
         />
-
-        <CardBody data-openbitfun-component="skill-card" data-openbitfun-part="body">
-          {description?.trim() && (
-            <OverflowText as="p" lines={2} className="skill-card__desc" data-openbitfun-component="skill-card" data-openbitfun-part="description">{description.trim()}</OverflowText>
-          )}
-        </CardBody>
-
-        {(meta || actions.length > 0) && (
-          <CardFooter align="between" className="skill-card__footer" data-openbitfun-component="skill-card" data-openbitfun-part="footer">
-            {meta && (
-              <div className="skill-card__meta" data-openbitfun-component="skill-card" data-openbitfun-part="meta">
-                {meta}
-              </div>
-            )}
-            <div className="skill-card__actions" data-openbitfun-component="skill-card" data-openbitfun-part="actions">
-              {actions.map((action) => (
-                <span
-                  key={action.id}
-                  className="skill-card__action"
-                  data-openbitfun-component="skill-card"
-                  data-openbitfun-part="action"
-                  data-openbitfun-tone={action.tone}
-                  data-openbitfun-state={action.disabled || action.loading ? 'disabled' : undefined}
-                >
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    tone={action.tone === 'danger' ? 'danger' : 'neutral'}
-                    leadingIcon={action.icon}
-                    onClick={action.onClick}
-                    disabled={action.disabled}
-                    loading={action.loading}
-                    aria-label={action.ariaLabel}
-                    title={action.title ?? action.ariaLabel}
-                    data-testid="skills-card-action"
-                    data-skill-action={action.id}
-                  >
-                    {action.label ?? action.ariaLabel}
-                  </Button>
-                </span>
-              ))}
-            </div>
-          </CardFooter>
-        )}
-      </Card>
+        <div className="skills-card__icon" aria-hidden="true" data-openbitfun-component="skill-card" data-openbitfun-part="icon">
+          <Icon name="book-open" size="sm" />
+        </div>
+        <div className="skills-card__info" data-openbitfun-component="skill-card" data-openbitfun-part="body">
+          <div className="skills-card__title-row" data-openbitfun-component="skill-card" data-openbitfun-part="titleRow">
+            <span className="skills-card__name" data-testid="skill-list-item-title" data-openbitfun-component="skill-card" data-openbitfun-part="name">
+              <OverflowText behavior="marquee" title="">{name}</OverflowText>
+            </span>
+          </div>
+          <OverflowText title="" className="skills-card__desc" data-testid="skill-list-item-description" data-openbitfun-component="skill-card" data-openbitfun-part="description">
+            {description?.trim() || t('market.item.noDescription')}
+          </OverflowText>
+        </div>
+      </div>
+      <div className="skills-card__actions" data-openbitfun-component="skill-card" data-openbitfun-part="actions">
+        <IconButton
+          size="sm"
+          variant="quiet"
+          tabIndex={action ? undefined : -1}
+          onClick={action?.onClick ?? onOpenDetails}
+          aria-label={action?.label ?? t('list.item.detail')}
+          title={action?.title ?? action?.label ?? t('list.item.detail')}
+          disabled={action?.disabled}
+          loading={action?.loading}
+          icon={action?.icon ?? <Icon name="arrow-right" size="sm" />}
+          data-testid={action ? 'skills-card-action' : undefined}
+          data-skill-action={action ? 'download' : undefined}
+          data-openbitfun-component="skill-card"
+          data-openbitfun-part="action"
+        />
+      </div>
     </div>
   );
 };

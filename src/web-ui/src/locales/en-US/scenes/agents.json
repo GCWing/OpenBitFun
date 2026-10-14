@@ -284,7 +284,7 @@
     "editAgent": "Edit",
     "deleteAgent": "Delete",
     "externalActions": "External agent",
-    "manageExternalAgent": "Manage in Ecosystem Compatibility",
+    "manageExternalAgent": "Manage in External Import",
     "deleteConfirm": "Delete custom agent \"{{name}}\"? This cannot be undone.",
     "deleteSuccess": "Deleted \"{{name}}\"",
     "deleteFailed": "Delete failed: ",

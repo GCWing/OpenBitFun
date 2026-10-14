@@ -34,12 +34,9 @@ import { MarketList } from '@/app/components/GalleryLayout/MarketList';
 import { MarketImage } from '@/app/components/GalleryLayout/MarketImage';
 import { getInteractionMotion } from '@/shared/utils/motionPreference';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
-import { openMainSession } from '@/flow_chat/services/sessionActivation';
 import { useGallerySceneAutoRefresh } from '@/app/hooks/useGallerySceneAutoRefresh';
 import { useSceneManager } from '@/app/hooks/useSceneManager';
-import { flowChatSessionConfigForCurrentWorkspace } from '@/app/utils/projectSessionWorkspace';
 import { AccountIdentityControls } from '@/features/market-account';
-import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
 import type {
   MiniAppMeta,
   MiniAppPermissions,
@@ -70,6 +67,7 @@ import MiniAppLibraryRow, {
 import { useMiniAppActivity } from '../hooks/useMiniAppActivity';
 import { getMiniAppSceneId, stopMiniAppActivity } from '../miniAppActivity';
 import { useMiniAppStore } from '../miniAppStore';
+import { useMiniAppCreation } from '../hooks/useMiniAppCreation';
 import { loadInstalledMarketOrigins } from '../utils/loadInstalledMarketOrigins';
 import { getMiniAppShowcaseAsset } from '../utils/miniAppIcons';
 import { pickLocalizedString, pickLocalizedTags } from '../utils/pickLocalizedString';
@@ -142,7 +140,7 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({ tabs }) => {
     inspection: MarketPackageInspection;
   } | null>(null);
   const [importMenuOpen, setImportMenuOpen] = useState(false);
-  const [creatingWithCreative, setCreatingWithCreative] = useState(false);
+  const { creating: creatingWithCreative, createMiniApp } = useMiniAppCreation();
   const importTriggerRef = useRef<HTMLButtonElement>(null);
   const importMenuRef = useRef<HTMLDivElement>(null);
   const catalogRequestRef = useRef(0);
@@ -412,39 +410,10 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({ tabs }) => {
     }
   };
 
-  const handleCreateWithCreative = useCallback(async () => {
-    if (creatingWithCreative) return;
-    if (!workspace) {
-      notification.error(t('creationMode.noWorkspace'));
-      return;
-    }
-    if (isRemoteWorkspace(workspace)) {
-      notification.error(t('creationMode.remoteUnsupported'));
-      return;
-    }
-
-    setCreatingWithCreative(true);
+  const handleCreateWithCreative = useCallback(() => {
     closeImportMenu();
-    try {
-      const sessionId = await flowChatManager.createChatSession(
-        flowChatSessionConfigForCurrentWorkspace(workspace),
-        'Creative',
-      );
-      await openMainSession(sessionId);
-      notification.success(t('creationMode.started'));
-    } catch (error) {
-      log.error('Failed to start Creative MiniApp session', error);
-      notification.error(t('creationMode.startFailed'));
-    } finally {
-      setCreatingWithCreative(false);
-    }
-  }, [
-    closeImportMenu,
-    creatingWithCreative,
-    notification,
-    t,
-    workspace,
-  ]);
+    return createMiniApp();
+  }, [closeImportMenu, createMiniApp]);
 
   const fetchMarketDetail = useCallback(async (summary: MarketListingSummary) => {
     const [loaded, status] = await Promise.all([

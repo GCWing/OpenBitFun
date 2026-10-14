@@ -150,7 +150,7 @@ export const PRODUCT_ACTION_CATALOG: readonly ProductActionDefinition[] = [
     id: 'surface.ecosystemCompatibility.open',
     labelKey: 'nav.search.actions.openIntegrations',
     descriptionKey: 'nav.search.actionDescriptions.openIntegrations',
-    aliases: ['ecosystem compatibility', 'external connections', 'integrations', 'external ai apps', 'opencode', 'claude code', 'codex'],
+    aliases: ['external import', 'external imports', 'ecosystem compatibility', 'external connections', 'integrations', 'external ai apps', 'opencode', 'claude code', 'codex'],
     icon: 'network',
     defaultPriority: 58,
   },

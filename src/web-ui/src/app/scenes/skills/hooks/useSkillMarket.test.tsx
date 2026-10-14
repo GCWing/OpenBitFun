@@ -51,11 +51,12 @@ vi.mock('@/shared/notification-system', () => ({
 
 let currentMarket: ReturnType<typeof useSkillMarket> | null = null;
 
-function Harness({ enabled, installedMarketIds = new Set<string>() }: { enabled: boolean; installedMarketIds?: Set<string> }) {
+function Harness({ enabled, installedMarketIds = new Set<string>(), pageSize = 10 }: { enabled: boolean; installedMarketIds?: Set<string>; pageSize?: number }) {
   const market = useSkillMarket({
     searchQuery: '',
     installedMarketIds,
     enabled,
+    pageSize,
     onInstalledChanged: installedChangedMock,
   });
   currentMarket = market;
@@ -67,6 +68,7 @@ describe('useSkillMarket', () => {
   let root: Root;
 
   beforeEach(() => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -145,6 +147,57 @@ describe('useSkillMarket', () => {
     });
 
     expect(listSkillMarketMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses loaded results and keeps the current skill visible when capacity changes', async () => {
+    const items = Array.from({ length: 20 }, (_, index) => ({
+      id: `skill-${index}`, installId: `skill-${index}`, name: `Skill ${index + 1}`,
+      source: 'test', description: '', url: '', installs: 100 - index,
+    }));
+    listSkillMarketMock.mockResolvedValue(items);
+    await act(async () => root.render(<Harness enabled />));
+    await act(async () => currentMarket?.goToPage(1));
+    expect(currentMarket?.marketSkills[0].name).toBe('Skill 11');
+    await act(async () => root.render(<Harness enabled pageSize={6} />));
+    expect(currentMarket?.marketSkills).toHaveLength(6);
+    expect(currentMarket?.marketSkills.map(skill => skill.name)).toContain('Skill 11');
+    expect(listSkillMarketMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains the current cards while loading and honors a resize during the request', async () => {
+    const items = Array.from({ length: 40 }, (_, index) => ({
+      id: `skill-${index}`, installId: `skill-${index}`, name: `Skill ${index + 1}`,
+      source: 'test', description: '', url: '', installs: 100 - index,
+    }));
+    listSkillMarketMock.mockResolvedValueOnce(items.slice(0, 20));
+    await act(async () => root.render(<Harness enabled />));
+    await act(async () => currentMarket?.goToPage(1));
+    let resolveMore!: (skills: SkillMarketItem[]) => void;
+    listSkillMarketMock.mockReturnValueOnce(new Promise<SkillMarketItem[]>(resolve => { resolveMore = resolve; }));
+    let request: Promise<void> | undefined;
+    await act(async () => { request = currentMarket?.goToNextPage(); });
+    expect(currentMarket?.loadingMore).toBe(true);
+    expect(currentMarket?.marketSkills[0].name).toBe('Skill 11');
+    await act(async () => root.render(<Harness enabled pageSize={4} />));
+    await act(async () => { resolveMore(items); await request; });
+    expect(currentMarket?.loadingMore).toBe(false);
+    expect(currentMarket?.marketSkills.map(skill => skill.name)).toEqual(['Skill 21', 'Skill 22', 'Skill 23', 'Skill 24']);
+    expect(listSkillMarketMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays on a populated page when the next request finds an exact end of results', async () => {
+    const items = Array.from({ length: 20 }, (_, index) => ({
+      id: `skill-${index}`, installId: `skill-${index}`, name: `Skill ${index + 1}`,
+      source: 'test', description: '', url: '', installs: 100 - index,
+    }));
+    listSkillMarketMock.mockResolvedValue(items);
+    await act(async () => root.render(<Harness enabled />));
+    await act(async () => currentMarket?.goToPage(1));
+    await act(async () => currentMarket?.goToNextPage());
+    expect(currentMarket?.hasMore).toBe(false);
+    expect(currentMarket?.currentPage).toBe(1);
+    expect(currentMarket?.totalPages).toBe(2);
+    expect(currentMarket?.marketSkills).toHaveLength(10);
   });
 
   it('ignores a market load that finishes after switching away', async () => {

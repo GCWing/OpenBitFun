@@ -121,7 +121,7 @@ const AssistantAvatarPicker: React.FC<AssistantAvatarPickerProps> = ({
           emoji={displayedValue}
           stableKey={stableKey}
           name={assistantName}
-          size={58}
+          size={74}
         />
         <span className="acp-avatar-picker__edit-cue" aria-hidden="true">
           <Icon name="edit" size="2xs" />

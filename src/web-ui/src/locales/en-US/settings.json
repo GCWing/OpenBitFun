@@ -57,7 +57,7 @@
         "description": "Connect MCP servers to give agents access to external tools and data"
       },
       "acp": {
-        "label": "External Agents",
+        "label": "ACP",
         "description": "Connect external agents on this host or an SSH host through ACP"
       },
       "usage": {

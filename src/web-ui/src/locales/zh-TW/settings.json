@@ -57,7 +57,7 @@
         "description": "連線 MCP 服務，為智能體提供外部工具與資料來源"
       },
       "acp": {
-        "label": "外部智慧體",
+        "label": "ACP",
         "description": "透過 ACP 接入本機或 SSH 主機上的外部智慧體"
       },
       "usage": {

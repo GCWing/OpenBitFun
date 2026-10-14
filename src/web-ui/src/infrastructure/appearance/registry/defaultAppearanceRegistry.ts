@@ -30,7 +30,6 @@ import { appLayoutAppearanceDescriptor } from '@/app/layout/AppLayout.appearance
 import { skillGroupPickerAppearanceDescriptor } from '@/app/scenes/agents/components/SkillGroupPicker.appearance';
 import { workingCopyViewAppearanceDescriptor } from '@/app/scenes/git/views/WorkingCopyView.appearance';
 import { assistantConfigPageAppearanceDescriptor } from '@/app/scenes/profile/views/AssistantConfigPage.appearance';
-import { assistantDefaultsPageAppearanceDescriptor } from '@/app/scenes/profile/views/AssistantDefaultsPage.appearance';
 import { taskDetailPanelAppearanceDescriptor } from '@/flow_chat/components/TaskDetailPanel/TaskDetailPanel.appearance';
 import { toolbarModeAppearanceDescriptor } from '@/flow_chat/components/toolbar-mode/ToolbarMode.appearance';
 import { mcpToolDisplayAppearanceDescriptor } from '@/flow_chat/tool-cards/MCPToolDisplay.appearance';
@@ -75,6 +74,8 @@ import { miniAppAppearanceDescriptor, miniAppGalleryAppearanceDescriptor } from 
 import { insightsAppearanceDescriptor } from '@/app/scenes/my-agent/appearance';
 import { pagesAppearanceDescriptor } from '@/app/scenes/pages/appearance';
 import { profileAppearanceDescriptor } from '@/app/scenes/profile/appearance';
+import { personalOverviewAppearanceDescriptor } from '@/app/scenes/personal-overview/appearance';
+import { usageActivityGridAppearanceDescriptor } from '@/infrastructure/config/components/UsageActivityGrid.appearance';
 import { sessionAppearanceDescriptor } from '@/app/scenes/session/appearance';
 import { settingsAppearanceDescriptor } from '@/app/scenes/settings/appearance';
 import { ecosystemCompatibilityAppearanceDescriptor } from '@/app/scenes/ecosystem-compatibility/appearance';
@@ -284,7 +285,6 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(skillGroupPickerAppearanceDescriptor)
     .registerComponent(workingCopyViewAppearanceDescriptor)
     .registerComponent(assistantConfigPageAppearanceDescriptor)
-    .registerComponent(assistantDefaultsPageAppearanceDescriptor)
     .registerComponent(taskDetailPanelAppearanceDescriptor)
     .registerComponent(toolbarModeAppearanceDescriptor)
     .registerComponent(mcpToolDisplayAppearanceDescriptor)
@@ -481,6 +481,7 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(turnCompletionNoticeAppearanceDescriptor)
     .registerComponent(turnFailureNoticeAppearanceDescriptor)
     .registerComponent(virtualItemAppearanceDescriptor)
+    .registerComponent(usageActivityGridAppearanceDescriptor)
     .registerScene(workbenchAppearanceDescriptor)
     .registerScene(welcomeAppearanceDescriptor)
     .registerScene(shellAppearanceDescriptor)
@@ -493,6 +494,7 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerScene(insightsAppearanceDescriptor)
     .registerScene(pagesAppearanceDescriptor)
     .registerScene(profileAppearanceDescriptor)
+    .registerScene(personalOverviewAppearanceDescriptor)
     .registerScene(sessionAppearanceDescriptor)
     .registerScene(settingsAppearanceDescriptor)
     .registerScene(ecosystemCompatibilityAppearanceDescriptor)

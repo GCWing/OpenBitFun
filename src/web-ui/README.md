@@ -84,6 +84,15 @@ shared voice history requires a host advertising `control_conversation_v1`.
 The standalone web server does not yet expose this control-conversation contract;
 use Desktop or a capable peer host.
 
+## Personal assistants
+
+The left navigation shows each assistant as a static joystick avatar. Select it to open its default session, or its most recently active session when no default is set (starting one if it has none). Use the history button to browse sessions in a separate dialog, or the plus button to start a new session. Assistant sessions do not appear inline, including in the all-sessions view; assistant rows have no resource-area shortcut. In history, use the pin button to set or clear a default. Defaults are stored per assistant on the serving host; older hosts keep latest-session navigation and disable default selection. The assistant menu opens the selected assistant’s management page and hides assistants without deleting their data and omits project permissions, filesystem reveal, session storage, and batch session management.
+
+New assistants start with the existing default configuration. The assistant
+gallery provides creation, identity and persona editing, conversations, and
+scheduled tasks; it does not expose an editor for shared assistant defaults.
+Existing assistant data and saved configuration remain intact.
+
 ## Tech stack
 
 - React 18.3
@@ -257,9 +266,9 @@ preserve omitted source fields and existing app storage when updating.
 2. **Keep Web compatibility** in mind (some capabilities may not exist in browsers).
 3. **Prefer CSS variables** over hard-coded colors/sizes.
 
-## Ecosystem compatibility status checks
+## External Import status checks
 
-Open a disposable local workspace in Desktop and select an agent under Ecosystem Compatibility.
+Open a disposable local workspace in Desktop and select an app under External Import.
 Use test content or reversible imported copies. Category discovery coverage is independent of copy import and execution support.
 
 | Check | Action | Expected result |

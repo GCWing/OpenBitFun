@@ -284,7 +284,7 @@
     "editAgent": "编辑",
     "deleteAgent": "删除",
     "externalActions": "外部智能体",
-    "manageExternalAgent": "前往生态兼容管理",
+    "manageExternalAgent": "前往外部导入管理",
     "deleteConfirm": "确定删除自定义智能体「{{name}}」？此操作不可恢复。",
     "deleteSuccess": "已删除「{{name}}」",
     "deleteFailed": "删除失败：",

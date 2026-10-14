@@ -916,11 +916,6 @@ describe('AppearanceCompiler', () => {
             persona: { states: { selected: { borderColor: accent } } },
           },
         },
-        'assistant-defaults-page': {
-          parts: {
-            skill: { states: { covered: { backgroundColor: accent } } },
-          },
-        },
         'task-detail-panel': {
           parts: {
             root: { states: { empty: { backgroundColor: accent } } },
@@ -1054,7 +1049,6 @@ describe('AppearanceCompiler', () => {
     expect(snapshot.cssText).toContain('[data-openbitfun-product-component="skill-group-picker"][data-openbitfun-product-part="token"][data-openbitfun-state~="selected"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-component="working-copy-view"][data-openbitfun-part="file"][data-openbitfun-state~="selected"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-component="assistant-config-page"][data-openbitfun-part="persona"][data-openbitfun-state~="selected"]');
-    expect(snapshot.cssText).toContain('[data-openbitfun-component="assistant-defaults-page"][data-openbitfun-part="skill"][data-openbitfun-state~="covered"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-product-component="task-detail-panel"][data-openbitfun-product-part="root"][data-openbitfun-state~="empty"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-product-component="toolbar-mode"][data-openbitfun-product-part="root"][data-openbitfun-state~="expanded"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-component="mcp-tool-display"][data-openbitfun-part="expanded"][data-openbitfun-state~="expanded"]');

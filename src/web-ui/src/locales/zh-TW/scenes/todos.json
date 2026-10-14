@@ -24,8 +24,7 @@
     "dueSoon": "未來 24 小時待執行"
   },
   "calendar": {
-    "title": "更晚",
-    "hint": "全部排程執行時間，含 24 小時內的任務",
+    "title": "日曆",
     "previousMonth": "上個月",
     "nextMonth": "下個月",
     "today": "今天",

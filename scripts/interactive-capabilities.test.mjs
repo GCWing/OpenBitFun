@@ -371,7 +371,7 @@ test('docs, runtime, and technical views are generated projections of one semant
   assert.ok(interactionAudit.files.some(({ sourceFile }) =>
     sourceFile.endsWith('/BrowserPanel.tsx')));
   assert.ok(interactionAudit.files.some(({ sourceFile }) =>
-    sourceFile.endsWith('/AssistantDefaultsPage.tsx')));
+    sourceFile.endsWith('/AssistantConfigPage.tsx')));
   assert.ok(interactionAudit.files.some(({ sourceFile }) =>
     sourceFile.endsWith('/LanguageSettingsSection.tsx')));
   assert.ok(interactionAudit.files.some(({ sourceFile }) =>

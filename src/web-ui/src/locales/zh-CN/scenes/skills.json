@@ -39,8 +39,7 @@
   },
   "toolbar": {
     "searchPlaceholder": "搜索技能...",
-    "addTooltip": "添加技能",
-    "hideDuplicates": "隐藏重复项"
+    "addTooltip": "添加技能"
   },
   "filters": {
     "source": "{{source}}",
@@ -256,5 +255,11 @@
     "disabled": "禁用",
     "revealPathFailed": "无法在资源管理器中打开: {{error}}",
     "copyPathFailed": "复制路径失败: {{error}}"
+  },
+  "pagination": {
+    "label": "技能分页",
+    "page": "第 {{page}} 页",
+    "range": "第 {{start}}–{{end}} 项，共 {{total}} 个技能",
+    "rangeMore": "第 {{start}}–{{end}} 项 · 已加载 {{total}} 项"
   }
 }

@@ -15,7 +15,7 @@ const NAV_ENTRY_SELECTORS = [
   '.openbitfun-nav-panel__workspace-item-name-btn',
   '.openbitfun-nav-panel__inline-item',
   '.openbitfun-nav-panel__workspace-create-main',
-  '.openbitfun-nav-panel__miniapp-entry',
+  '.openbitfun-nav-panel__top-action-btn',
 ];
 
 async function getNavigationEntryCounts(): Promise<Record<string, number>> {
@@ -170,7 +170,7 @@ describe('L1 Navigation', () => {
         return;
       }
 
-      const activeItems = await browser.$$('.openbitfun-nav-panel__item.is-active, .openbitfun-nav-panel__inline-item.is-active, .openbitfun-nav-panel__miniapp-entry.is-active');
+      const activeItems = await browser.$$('.openbitfun-nav-panel__item.is-active, .openbitfun-nav-panel__inline-item.is-active, .openbitfun-nav-panel__top-action-btn.is-active');
       const activeCount = activeItems.length;
       console.log('[L1] Active navigation items:', activeCount);
 
@@ -191,7 +191,7 @@ describe('L1 Navigation', () => {
       }
 
       // Get initial active item
-      const initialActive = await browser.$$('.openbitfun-nav-panel__item.is-active, .openbitfun-nav-panel__inline-item.is-active, .openbitfun-nav-panel__miniapp-entry.is-active');
+      const initialActive = await browser.$$('.openbitfun-nav-panel__item.is-active, .openbitfun-nav-panel__inline-item.is-active, .openbitfun-nav-panel__top-action-btn.is-active');
       const initialActiveCount = initialActive.length;
       console.log('[L1] Initial active items:', initialActiveCount);
 
@@ -229,7 +229,7 @@ describe('L1 Navigation', () => {
       }
 
       // Check for active state (don't fail if state doesn't change)
-      const afterActive = await browser.$$('.openbitfun-nav-panel__item.is-active, .openbitfun-nav-panel__inline-item.is-active, .openbitfun-nav-panel__miniapp-entry.is-active');
+      const afterActive = await browser.$$('.openbitfun-nav-panel__item.is-active, .openbitfun-nav-panel__inline-item.is-active, .openbitfun-nav-panel__top-action-btn.is-active');
       console.log('[L1] Active items after click:', afterActive.length);
 
       // Verify active state detection completed

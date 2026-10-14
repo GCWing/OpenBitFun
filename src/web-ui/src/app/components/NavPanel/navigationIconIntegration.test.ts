@@ -3,39 +3,30 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 describe('navigation icon integration', () => {
-  it('uses the standard extension icon in the expandable entry', () => {
+  it('uses the standard cable icon in the ecosystem menu entry', () => {
     const source = readFileSync(
-      fileURLToPath(new URL('./MainNav.tsx', import.meta.url)),
+      fileURLToPath(new URL('./components/PersistentFooterActions.tsx', import.meta.url)),
       'utf8',
     );
-    const entryStart = source.indexOf('data-testid="agent-skill-entry"');
-    const entryEnd = source.indexOf('</NavigationPanelItem>', entryStart);
+    const entryStart = source.lastIndexOf('<MenuItem', source.indexOf('data-testid="ecosystem-compatibility-tab"'));
+    const entryEnd = source.indexOf('</MenuItem>', entryStart);
     const entryMarkup = source.slice(entryStart, entryEnd);
 
     expect(entryStart).toBeGreaterThanOrEqual(0);
     expect(entryEnd).toBeGreaterThan(entryStart);
-    expect(entryMarkup).toContain(
-      'className="openbitfun-nav-panel__top-action-icon-slot openbitfun-nav-panel__top-action-expand-icons"',
-    );
-    expect(entryMarkup).toContain('name="extension"');
+    expect(entryMarkup).toContain('glyph={Cable}');
+    expect(entryMarkup).not.toContain('chevron-down');
     expect(entryMarkup).toContain('size="sm"');
   });
 
-  it('keeps extension subnavigation icons at one optical weight', () => {
+  it('keeps the moved MiniApp and Skill icons in the overview sections', () => {
     const source = readFileSync(
-      fileURLToPath(new URL('./MainNav.tsx', import.meta.url)),
+      fileURLToPath(new URL('../../scenes/personal-overview/PersonalOverviewScene.tsx', import.meta.url)),
       'utf8',
     );
-    const sublistStart = source.indexOf('data-testid="agent-skill-tabs"');
-    const sublistEnd = source.indexOf('</div>', sublistStart);
-    const sublistMarkup = source.slice(sublistStart, sublistEnd);
-
-    expect(sublistStart).toBeGreaterThanOrEqual(0);
-    expect(sublistEnd).toBeGreaterThan(sublistStart);
-    expect(sublistMarkup).toContain('<Icon glyph={Users} size="sm" />');
-    expect(sublistMarkup).toContain('<Icon name="book-open" size="sm" />');
-    expect(sublistMarkup).toContain('<Icon glyph={Network} size="sm" />');
-    expect(sublistMarkup).not.toContain('strokeWidth');
+    expect(source).toContain('<Icon name="mini-app" size="lg" />');
+    expect(source).toContain('<Icon name="book-open" size="lg" />');
+    expect(source).not.toContain('strokeWidth');
   });
 
   it('uses the reference clock icon for Task Board', () => {

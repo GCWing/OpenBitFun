@@ -12,12 +12,13 @@ import React from 'react';
 import { Icon, type IconName } from '@openbitfun/ui';
 import {
   CircleUserRound,
+  House,
   Users,
   Boxes,
   PanelsTopLeft,
   BarChart3,
   CalendarClock,
-  Network,
+  Cable,
 } from 'lucide-react';
 import type { SceneTabDef, SceneTabIcon, SceneTabId } from '../components/SceneBar/types';
 import { getSceneViewId } from '../components/SceneBar/types';
@@ -29,6 +30,15 @@ function catalogSceneIcon(name: IconName): SceneTabIcon {
 }
 
 export const SCENE_TAB_REGISTRY: SceneTabDef[] = [
+  {
+    id: 'personal-overview',
+    label: 'Home',
+    labelKey: 'nav.items.personalOverview',
+    Icon: House,
+    pinned: false,
+    singleton: true,
+    defaultOpen: false,
+  },
   {
     id: 'session' as SceneTabId,
     label: 'Session',
@@ -92,9 +102,9 @@ export const SCENE_TAB_REGISTRY: SceneTabDef[] = [
   },
   {
     id: 'ecosystem-compatibility' as SceneTabId,
-    label: 'Ecosystem Compatibility',
+    label: 'External Import',
     labelKey: 'nav.items.ecosystemCompatibility',
-    Icon: Network,
+    Icon: Cable,
     pinned: false,
     singleton: true,
     defaultOpen: false,

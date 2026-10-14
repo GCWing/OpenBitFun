@@ -1,11 +1,13 @@
 import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import React, { Suspense, useState, useCallback, useEffect, useRef } from 'react';
+import { Cable } from 'lucide-react';
 
 import { createOverlayPortal,
   Icon,
   IconButton,
   Menu,
   MenuItem,
+  MenuSection,
   MenuSeparator,
   Tooltip,
   Dialog,
@@ -17,6 +19,8 @@ import { createOverlayPortal,
 import { RetainedMountBoundary } from '@/shared/presence';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { activateProductAction } from '@/app/global-search/productActionActivator';
+import { useSceneStore } from '@/app/stores/sceneStore';
+import { useExternalAppAwareness } from '@/infrastructure/config/components/external-sources/useExternalAppAwareness';
 import { useToolbarModeContext } from '@/flow_chat/components/toolbar-mode/ToolbarModeContext';
 import { remoteConnectAPI } from '@/infrastructure/api/service-api/RemoteConnectAPI';
 import NotificationButton from '../../TitleBar/NotificationButton';
@@ -41,6 +45,11 @@ const RemoteConnectDialog = lazyWithRecovery(() => import('../../RemoteConnectDi
 
 const PersistentFooterActions: React.FC = () => {
   const { t } = useI18n('common');
+  const isEcosystemCompatibilityActive = useSceneStore(state => state.activeTabId === 'ecosystem-compatibility');
+  const hasUnseenEcosystemCompatibility = useExternalAppAwareness(isEcosystemCompatibilityActive);
+  const ecosystemCompatibilityTooltip = hasUnseenEcosystemCompatibility
+    ? t('nav.tooltips.ecosystemCompatibilityUnseen')
+    : t('nav.tooltips.ecosystemCompatibility');
   const { enableToolbarMode } = useToolbarModeContext();
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuClosing, setMenuClosing] = useState(false);
@@ -109,6 +118,11 @@ const PersistentFooterActions: React.FC = () => {
   const handleOpenSettings = useCallback(() => {
     closeMenu();
     void activateProductAction('settings.open');
+  }, [closeMenu]);
+
+  const handleOpenEcosystemCompatibility = useCallback(() => {
+    closeMenu();
+    void activateProductAction('surface.ecosystemCompatibility.open');
   }, [closeMenu]);
 
   const handleOpenAppearanceSettings = useCallback(() => {
@@ -240,6 +254,27 @@ const PersistentFooterActions: React.FC = () => {
                     onCloseParentMenu={closeMenu}
                     onOpenAppearanceSettings={handleOpenAppearanceSettings}
                   />
+                  <MenuSeparator />
+                  <MenuSection aria-label={t('nav.items.ecosystemCompatibility')}>
+                    <Tooltip content={ecosystemCompatibilityTooltip} placement="right">
+                      <MenuItem
+                        leading={<Icon glyph={Cable} size="sm" aria-hidden="true" />}
+                        onClick={handleOpenEcosystemCompatibility}
+                        aria-current={isEcosystemCompatibilityActive ? 'page' : undefined}
+                        data-testid="ecosystem-compatibility-tab"
+                        metadata={hasUnseenEcosystemCompatibility ? (
+                          <span
+                            className="openbitfun-nav-panel__top-action-unseen"
+                            data-openbitfun-component="nav-panel"
+                            data-openbitfun-part="topActionUnseen"
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                      >
+                        {t('nav.items.ecosystemCompatibility')}
+                      </MenuItem>
+                    </Tooltip>
+                  </MenuSection>
                   <MenuSeparator />
                   <UpdateMenuItems onCloseMenu={closeMenu} />
                   <MenuItem

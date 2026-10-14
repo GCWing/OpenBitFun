@@ -73,6 +73,7 @@
     "backShortcut": "後退 (Alt+←)",
     "forwardShortcut": "前進 (Alt+→)",
     "items": {
+      "personalOverview": "首頁",
       "sessions": "會話",
       "project": "項目",
       "persona": "智能成員",
@@ -81,7 +82,7 @@
       "longTermTracking": "長期跟蹤",
       "agents": "智能體",
       "skills": "技能",
-      "ecosystemCompatibility": "生態兼容",
+      "ecosystemCompatibility": "外部匯入",
       "tools": "工具",
       "terminal": "Shell",
       "git": "Git",
@@ -94,8 +95,8 @@
       "longTermTracking": "長期跟蹤 — 持續任務與長期對話",
       "agents": "它能調用哪些智能體",
       "skills": "它懂什麼專項知識 — 技能知識檔案",
-      "ecosystemCompatibility": "生態兼容 — 管理其他 AI 應用的兼容能力與擴展",
-      "ecosystemCompatibilityUnseen": "生態兼容 — 發現了新的兼容應用",
+      "ecosystemCompatibility": "外部匯入 — 匯入其他 AI 應用程式的內容，整合並管理可用能力",
+      "ecosystemCompatibilityUnseen": "外部匯入 — 發現了新的外部應用程式",
       "tools": "它能用什麼工具 — 內置工具與 MCP 服務",
       "addWorkspace": "新增工作區",
       "addSessionGroup": "新增項目或個人助理"
@@ -159,7 +160,7 @@
         "openInsights": "開啟洞察",
         "openSettings": "開啟設定",
         "openKeyboardShortcuts": "開啟鍵盤快速鍵",
-        "openIntegrations": "開啟生態兼容"
+        "openIntegrations": "開啟外部匯入"
       },
       "actionDescriptions": {
         "newSession": "透過統一會話流程開始新對話",
@@ -175,7 +176,7 @@
         "openInsights": "查看活動與使用洞察",
         "openSettings": "設定 OpenBitFun",
         "openKeyboardShortcuts": "查看和自訂鍵盤快速鍵",
-        "openIntegrations": "管理外部 AI 應用中的兼容能力與執行方式"
+        "openIntegrations": "匯入其他 AI 應用程式的內容，整合並管理可用能力"
       },
       "badges": {
         "userMessage": "你",
@@ -388,6 +389,17 @@
       "showAll": "還有 {{count}} 個（展開全部）",
       "showAllLabel": "展開全部",
       "showLess": "收起",
+      "history": "歷史會話",
+      "assistantHistory": "{{name}} · 歷史會話",
+      "openFailed": "無法開啟會話",
+      "openAssistant": "開啟助理會話",
+      "defaultSession": "預設",
+      "setDefault": "設為預設會話",
+      "clearDefault": "取消預設會話",
+      "defaultUnsupported": "目前宿主不支援設定助理預設會話，請更新宿主後使用。",
+      "defaultReadFailed": "無法讀取預設會話，點擊重試",
+      "defaultSaveFailed": "無法儲存預設會話",
+      "defaultUnavailable": "預設會話已無法使用，請在歷史會話中選擇其他會話。",
       "assistantOwner": "所屬助理：{{name}}",
       "parentSession": "父會話",
       "childSourceWithoutTurn": "來自 {{parentTitle}}",
@@ -581,7 +593,7 @@
       "emptyAssistants": "暫無個人助理",
       "emptySessionGroups": "暫無項目或助理",
       "closeFailed": "關閉工作區失敗",
-      "closeAssistantUnsupported": "目前宿主不支援關閉和重新開啟助理，請更新宿主後使用。",
+      "closeAssistantUnsupported": "目前宿主不支援隱藏和重新顯示助理，請更新宿主後使用。",
       "createAssistantFailed": "新增個人助理失敗",
       "deleteAssistantFailed": "刪除個人助理失敗",
       "assistantDeleted": "已刪除個人助理",
@@ -620,7 +632,8 @@
         "newSession": "新增會話",
         "newAssistant": "新增個人助理",
         "deleteAssistant": "刪除個人助理",
-        "closeAssistant": "關閉助理",
+        "manageAssistant": "管理助理",
+        "closeAssistant": "隱藏助理",
         "resetWorkspace": "重設工作區",
         "manageRelatedPaths": "關聯目錄",
         "manageProjectPermissions": "專案權限",

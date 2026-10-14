@@ -3,11 +3,11 @@
 id: feature.ecosystem-compatibility
 kind: feature
 category: automation
-title_zh: "外部 AI 生态兼容"
-title_en: "External AI ecosystem compatibility"
+title_zh: "外部导入"
+title_en: "External Import"
 ---
 
-# 外部 AI 生态兼容 / External AI ecosystem compatibility
+# 外部导入 / External Import
 
 > 功能 / Feature
 
@@ -38,8 +38,8 @@ Inspect content and status from five external AI ecosystems, import supported Sk
 
 ## 怎么用 / How to use it
 
-1. 打开“生态兼容”并选择智能体
-   Open Ecosystem Compatibility and choose an agent
+1. 打开“外部导入”并选择应用
+   Open External Import and choose an app
 2. 在左侧导航搜索框上方切换自动发现，悬停查看说明；关闭后保留结果，也可手动刷新
    Toggle automatic discovery above the sidebar search and hover for details; pausing retains results and manual refresh remains available
 3. 查看分类状态，打开分类弹窗浏览、搜索并选择内容
@@ -65,8 +65,8 @@ Inspect content and status from five external AI ecosystems, import supported Sk
 
 ## 可以直接对智能体说 / Try saying
 
-- “打开外部 AI 生态兼容”
-  - “Open external AI ecosystem compatibility”
+- “打开外部导入”
+  - “Open External Import”
 - “我想迁移 Claude Code 的配置”
   - “I want to migrate my Claude Code configuration”
 

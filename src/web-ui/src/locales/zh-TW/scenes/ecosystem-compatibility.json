@@ -1,5 +1,8 @@
 {
-  "title": "生態兼容",
+  "title": "外部匯入",
+  "applications": {
+    "title": "外部應用"
+  },
   "loading": "正在檢查兼容狀態…",
   "partialLoad": "部分狀態未能讀取：{{sources}} {{acp}}。已保留其餘可用內容。",
   "retry": "重試",
@@ -52,7 +55,7 @@
     "notice": "「{{name}}」正在開發中。"
   },
   "capabilities": {
-    "account": "帳號",
+    "account": "帳號訂閱",
     "settings": "設定與偏好",
     "command": "命令",
     "tool": "工具",
@@ -149,7 +152,7 @@
         "failed": "儲存 {{name}} 的子智能體設定失敗"
       }
     },
-    "openManager": "管理 ACP 智能體",
+    "openManager": "ACP連線",
     "managerLabel": "ACP 智能體管理",
     "managerScope": "安裝、啟用或調整目前生態的 ACP 智能體。",
     "loadingManager": "正在載入 ACP 智能體管理…",
@@ -253,7 +256,7 @@
     },
     "repairSource": "補齊來源",
     "nativeUserTarget": "OpenBitFun · 使用者設定",
-    "undoAll": "一鍵復原",
+    "undoAll": "復原",
     "importSelected": "匯入所選",
     "undoSelected": "復原所選",
     "selectedCount": "已選 {{count}} 項",

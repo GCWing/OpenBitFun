@@ -77,6 +77,8 @@ export interface AppConfig {
   /** Controller-owned end-to-end realtime voice-call settings. */
   voice_call?: VoiceCallSettings;
   user_tool_groups?: UserToolGroupsConfig;
+  /** Absent on hosts that predate assistant entry-session preferences. */
+  assistant_default_sessions?: Record<string, string>;
   user_skill_groups?: UserSkillGroupsConfig;
 }
 

@@ -1,0 +1,73 @@
+{
+  "loadingValue": "…",
+  "unavailableValue": "—",
+  "retry": "刷新",
+  "account": {
+    "signIn": "登录账号",
+    "signOut": "退出登录",
+    "signOutFailed": "退出登录失败，请稍后重试。",
+    "continue": "继续登录",
+    "expired": "登录授权已过期，请重新登录。",
+    "failed": "登录失败，请稍后重试。"
+  },
+  "greetings": {
+    "spotted": "嘿，你被我发现啦！",
+    "mystery": "哟，神秘来客！",
+    "ideas": "嗨，灵感正在冒泡～",
+    "create": "来都来了，整点活？",
+    "energy": "你一来，我就精神了！",
+    "ready": "搭子就位，等你开场！"
+  },
+  "metrics": {
+    "title": "使用概览",
+    "totalTokens": "累计 Token 数",
+    "peakTokens": "单日 Token 峰值",
+    "longestTask": "最长任务用时",
+    "longestStreak": "最长连续天数",
+    "currentStreak": "当前连续天数",
+    "days": "{{count}} 天",
+    "partial": "峰值与连续天数仅覆盖保留的活动历史。"
+  },
+  "agents": {
+    "title": "智能体",
+    "loading": "正在加载智能体…",
+    "failed": "无法加载当前主机的智能体，请检查连接后重试。",
+    "assistants": {
+      "description": "与你长期协作，拥有独立记忆。"
+    },
+    "description": "内置与自定义智能体，处理各类任务。",
+    "create": "创建智能体",
+    "createAssistant": "创建助理",
+    "createAssistantFailed": "无法创建助理，请稍后重试。"
+  },
+  "usage": {
+    "loading": "正在加载 Token 活动…",
+    "failed": "无法加载当前主机的用量，请检查连接后重试。",
+    "unsupported": "当前主机不支持用量统计，请更新主机后查看 Token 活动。"
+  },
+  "activity": {
+    "title": "Token 活动"
+  },
+  "miniApps": {
+    "create": "创建小应用",
+    "manage": "管理小应用",
+    "more": "更多 {{count}} 个",
+    "loading": "正在加载小应用…",
+    "failed": "无法加载当前主机的小应用，请检查连接与主机支持后重试。",
+    "empty": "暂无小应用"
+  },
+  "skills": {
+    "add": "添加技能",
+    "loading": "正在加载技能…",
+    "failed": "无法加载当前工作区的技能，请检查连接与主机支持后重试。",
+    "incomplete": "部分技能来源未能完整读取，请进入技能管理查看详情。",
+    "diagnosticsUnavailable": "当前主机未提供扫描诊断，以上为主机返回的技能数量。",
+    "installed": "已安装技能",
+    "installedCount": "共 {{count}} 个技能",
+    "discover": "搜索更多技能",
+    "discoverDescription": "发现更多可复用的技能。"
+  },
+  "catalog": {
+    "datesIncomplete": "部分项目缺少更新时间，未参与最近排序。"
+  }
+}

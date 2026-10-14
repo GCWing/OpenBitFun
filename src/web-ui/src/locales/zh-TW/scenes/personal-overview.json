@@ -1,0 +1,73 @@
+{
+  "loadingValue": "…",
+  "unavailableValue": "—",
+  "retry": "重新整理",
+  "account": {
+    "signIn": "登入帳號",
+    "signOut": "登出帳號",
+    "signOutFailed": "登出失敗，請稍後重試。",
+    "continue": "繼續登入",
+    "expired": "登入授權已過期，請重新登入。",
+    "failed": "登入失敗，請稍後重試。"
+  },
+  "greetings": {
+    "spotted": "嘿，被我發現你啦！",
+    "mystery": "唷，神祕訪客！",
+    "ideas": "嗨，靈感正在冒泡～",
+    "create": "都來了，搞點新花樣？",
+    "energy": "你一來，我就有精神了！",
+    "ready": "夥伴就位，等你開場！"
+  },
+  "metrics": {
+    "title": "使用概覽",
+    "totalTokens": "累計 Token 數",
+    "peakTokens": "單日 Token 峰值",
+    "longestTask": "最長任務用時",
+    "longestStreak": "最長連續天數",
+    "currentStreak": "目前連續天數",
+    "days": "{{count}} 天",
+    "partial": "峰值與連續天數僅涵蓋保留的活動歷史。"
+  },
+  "agents": {
+    "title": "智能體",
+    "loading": "正在載入智能體…",
+    "failed": "無法載入目前主機的智能體，請檢查連線後重試。",
+    "assistants": {
+      "description": "與你長期協作，擁有獨立記憶。"
+    },
+    "description": "內建與自訂智能體，處理各類任務。",
+    "create": "建立智能體",
+    "createAssistant": "建立助理",
+    "createAssistantFailed": "無法建立助理，請稍後重試。"
+  },
+  "usage": {
+    "loading": "正在載入 Token 活動…",
+    "failed": "無法載入目前主機的用量，請檢查連線後重試。",
+    "unsupported": "目前主機不支援用量統計，請更新主機後查看 Token 活動。"
+  },
+  "activity": {
+    "title": "Token 活動"
+  },
+  "miniApps": {
+    "create": "建立小應用",
+    "manage": "管理小應用",
+    "more": "更多 {{count}} 個",
+    "loading": "正在載入小應用…",
+    "failed": "無法載入目前主機的小應用，請檢查連線與主機支援後重試。",
+    "empty": "暫無小應用"
+  },
+  "skills": {
+    "add": "新增技能",
+    "loading": "正在載入技能…",
+    "failed": "無法載入目前工作區的技能，請檢查連線與主機支援後重試。",
+    "incomplete": "部分技能來源未能完整讀取，請進入技能管理查看詳情。",
+    "diagnosticsUnavailable": "目前主機未提供掃描診斷，以上為主機傳回的技能數量。",
+    "installed": "已安裝技能",
+    "installedCount": "共 {{count}} 個技能",
+    "discover": "搜尋更多技能",
+    "discoverDescription": "探索更多可重複使用的技能。"
+  },
+  "catalog": {
+    "datesIncomplete": "部分項目缺少更新時間，未參與最近排序。"
+  }
+}

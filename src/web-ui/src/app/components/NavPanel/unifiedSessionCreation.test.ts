@@ -104,24 +104,28 @@ describe('unified project session creation', () => {
     expect(projection).toContain("WorkspaceBackedSessionGroupKind = 'assistant' | 'project'");
   });
 
-  it('places Task Board below AI Assistant, before Mini Apps and capability management', () => {
+  it('keeps Personal Overview and Task Board as direct entries and External Import in More', () => {
     const mainNav = source('./MainNav.tsx');
-    const assistantIndex = mainNav.indexOf('data-testid="nav-assistant-manager"');
+    const footerActions = source('./components/PersistentFooterActions.tsx');
+    const overviewIndex = mainNav.indexOf('data-testid="nav-personal-overview"');
     const taskBoardIndex = mainNav.indexOf('data-testid="nav-todos-btn"');
-    const miniAppsIndex = mainNav.indexOf('className="openbitfun-nav-panel__miniapp-navigation"');
-    const extensionIndex = mainNav.indexOf('data-testid="agent-skill-entry"');
     const sessionsIndex = mainNav.indexOf('data-openbitfun-section="sessions"');
 
-    expect(taskBoardIndex).toBeGreaterThan(assistantIndex);
-    expect(miniAppsIndex).toBeGreaterThan(taskBoardIndex);
-    expect(extensionIndex).toBeGreaterThan(miniAppsIndex);
-    expect(sessionsIndex).toBeGreaterThan(extensionIndex);
+    expect(overviewIndex).toBeGreaterThanOrEqual(0);
+    expect(taskBoardIndex).toBeGreaterThan(overviewIndex);
+    expect(mainNav).not.toContain('data-testid="nav-assistant-manager"');
+    expect(mainNav).not.toContain('data-testid="agent-tab"');
+    expect(sessionsIndex).toBeGreaterThan(taskBoardIndex);
+    expect(mainNav).not.toContain('<MiniAppEntry');
+    expect(mainNav).not.toContain('data-testid="skill-tab"');
+    expect(mainNav).not.toContain('data-testid="agent-skill-entry"');
     expect(mainNav).toContain("t('nav.items.todos')");
     expect(mainNav).not.toContain('data-testid="nav-bottom-bar"');
-    expect(mainNav).toContain('className="openbitfun-nav-panel__top-action-expand"');
-    expect(mainNav).toContain('data-testid="ecosystem-compatibility-tab"');
-    expect(mainNav).toContain("activateProductAction('surface.ecosystemCompatibility.open')");
-    expect(mainNav).not.toContain("activateProductAction('settings.external-sources.open')");
+    expect(mainNav).not.toContain('className="openbitfun-nav-panel__top-action-expand"');
+    expect(mainNav).not.toContain('data-testid="ecosystem-compatibility-tab"');
+    expect(footerActions).toContain('data-testid="ecosystem-compatibility-tab"');
+    expect(footerActions).toContain("activateProductAction('surface.ecosystemCompatibility.open')");
+    expect(footerActions).not.toContain("activateProductAction('settings.external-sources.open')");
   });
 
   it('keeps the settings gear and places update checks before Settings in its utility menu, independently of About', () => {
@@ -130,6 +134,7 @@ describe('unified project session creation', () => {
     const floatingIndex = footerActions.indexOf('data-testid="nav-settings-floating-item"');
     const notificationIndex = footerActions.indexOf('<NotificationButton menuItem');
     const appearanceIndex = footerActions.indexOf('<AppearanceQuickSwitchMenuItem');
+    const ecosystemIndex = footerActions.indexOf('data-testid="ecosystem-compatibility-tab"');
     const updateIndex = footerActions.indexOf('<UpdateMenuItems');
     const openSettingsIndex = footerActions.indexOf('data-testid="nav-settings-open-item"');
     const aboutIndex = footerActions.indexOf('data-testid="nav-settings-about-item"');
@@ -144,7 +149,9 @@ describe('unified project session creation', () => {
     expect(floatingIndex).toBeGreaterThan(-1);
     expect(notificationIndex).toBeGreaterThan(floatingIndex);
     expect(appearanceIndex).toBeGreaterThan(notificationIndex);
-    expect(updateIndex).toBeGreaterThan(appearanceIndex);
+    expect(ecosystemIndex).toBeGreaterThan(appearanceIndex);
+    expect(updateIndex).toBeGreaterThan(ecosystemIndex);
+    expect(footerActions).toMatch(/<MenuSeparator \/>\s*<MenuSection aria-label=\{t\('nav.items.ecosystemCompatibility'\)\}>[\s\S]*?<\/MenuSection>\s*<MenuSeparator \/>\s*<UpdateMenuItems/);
     expect(openSettingsIndex).toBeGreaterThan(updateIndex);
     expect(aboutIndex).toBeGreaterThan(openSettingsIndex);
     expect(footerActions.slice(footerActions.indexOf('onClick={handleShowAbout}'), aboutIndex)).not.toContain('UpdateIndicator');
