@@ -24,7 +24,6 @@ interface SkillGroupPickerProps {
 interface SkillGroupSummaryProps {
   skills: GroupableSkill[];
   selectedSkillKeys: readonly string[];
-  runtimeSkillKeys?: ReadonlySet<string>;
   userGroups: UserSkillGroup[];
 }
 
@@ -237,7 +236,6 @@ export const SkillGroupPicker: React.FC<SkillGroupPickerProps> = ({
 export const SkillGroupSummary: React.FC<SkillGroupSummaryProps> = ({
   skills,
   selectedSkillKeys,
-  runtimeSkillKeys,
   userGroups,
 }) => {
   const { t } = useI18n('scenes/agents');
@@ -253,15 +251,6 @@ export const SkillGroupSummary: React.FC<SkillGroupSummaryProps> = ({
 
   return (
     <div data-openbitfun-product-component="skill-group-picker" data-openbitfun-product-part="summary" className="skill-group-summary">
-      <Toolbar
-        bordered={false}
-        leading={<span className="skill-group-summary__count">
-          {t('agentsOverview.skillGroupPicker.enabledCount', { count: new Set(selectedSkillKeys).size })}
-        </span>}
-        trailing={runtimeSkillKeys ? <span className="skill-group-summary__count">
-          {t('agentsOverview.skillGroupPicker.runtimeCount', { count: runtimeSkillKeys.size })}
-        </span> : undefined}
-      />
       {groups.map((group) => (
         <FormSection key={group.id} headingAs="h4" title={group.label}
           data-openbitfun-product-component="skill-group-picker" data-openbitfun-product-part="summaryGroup">
@@ -275,15 +264,13 @@ export const SkillGroupSummary: React.FC<SkillGroupSummaryProps> = ({
                   description={skill.description}
                   fields={tooltipFields}
                 >
-                  <span className="skill-group-summary__item" data-overflow-trigger>
-                    <OverflowText>{skillDisplayName(skill, duplicateNames)}</OverflowText>
-                    <StatusPill
-                      tone={runtimeSkillKeys?.has(skill.key) ? 'success' : skill.isShadowed ? 'warning' : 'neutral'}
-                      leading={runtimeSkillKeys?.has(skill.key) ? <Icon name="check-line" size="xs" /> : undefined}
-                    >
-                      {skill.runtimeStatus ?? t('agentsOverview.capabilityEnabled')}
-                    </StatusPill>
-                  </span>
+                  <StatusPill
+                    tone="neutral"
+                    className="skill-group-summary__item"
+                    leading={<Icon name="check-line" size="xs" />}
+                  >
+                    {skillDisplayName(skill, duplicateNames)}
+                  </StatusPill>
                 </AgentCapabilityTooltip>
               );
             })}

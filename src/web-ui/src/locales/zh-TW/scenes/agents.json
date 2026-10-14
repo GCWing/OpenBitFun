@@ -24,22 +24,27 @@
     "flowCaption": "同一任務 · 四種策略 · 一個結果",
     "task": "任務",
     "result": "結果",
+    "replay": "重播動畫",
     "profiles": {
       "Minimal": {
         "name": "$t(shared:agents.Minimal)",
-        "purpose": "精簡流程，快速推進"
+        "purpose": "更少干預，更多自主",
+        "description": "精簡提示詞與工具，讓新一代旗艦模型充分發揮，適合程式開發等任務。"
       },
       "Standard": {
         "name": "$t(shared:agents.Standard)",
-        "purpose": "平衡效率與品質"
+        "purpose": "工具齊備，支援程式設計與日常工作",
+        "description": "以清晰的任務指引和完整工具，支援程式設計，也能勝任資訊處理、內容創作等日常工作。"
       },
       "Ultimate": {
         "name": "$t(shared:agents.Ultimate)",
-        "purpose": "深度拆解與智能協同"
+        "purpose": "分工協作，完成複雜專案",
+        "description": "多個智能體並行推進、獨立審查，適合複雜專案與大型改造。"
       },
       "Creative": {
         "name": "$t(shared:agents.Creative)",
-        "purpose": "OpenBitFun 的定製與創造"
+        "purpose": "創造應用，客製你的體驗",
+        "description": "用自然語言建立小應用、客製介面，讓 OpenBitFun 更貼合你的工作方式。"
       }
     }
   },
@@ -123,6 +128,14 @@
     "filterProject": "項目級",
     "backToOverview": "返回總覽",
     "detail": {
+      "overview": "概覽",
+      "backToOverview": "返回概覽",
+      "cards": {
+        "tools": "查看與管理智能體可使用的工具",
+        "skills": "選擇智能體可使用的 Skills",
+        "subagents": "設定任務委派與協作成員",
+        "model": "選擇子智能體執行任務時使用的模型"
+      },
       "configuration": "配置",
       "basicInfo": "基本資訊",
       "basicInfoHint": "智能體的身份、用途與運行屬性",
@@ -368,15 +381,17 @@
     "Cowork": "辦公協作智能體：協助處理辦公與研究任務，在關鍵步驟與您確認。",
     "ComputerUse": "電腦操作子智能體：受委派操作瀏覽器、桌面應用程式與檔案系統。",
     "DeepResearch": "深度研究智能體：對複雜主題進行系統性調研和分析",
+    "ResearchSpecialist": "聚焦網路調研，檢索可靠資料並整理有來源依據的研究結論。",
+    "GeneralPurpose": "結合檢索、分析與程式設計能力，獨立完成多步驟任務。",
     "Explore": "探索子智能體：快速瀏覽程式碼庫，理解專案結構和關鍵檔案",
     "CodeReview": "程式碼審查子智能體：對程式碼進行品質檢查和改進建議",
     "DeepReview": "嚴格審查相容子智能體：用於歷史會話或命令中的審查流程。",
     "Init": "初始化智能體：幫助設定專案結構和初始設定",
     "ReviewFixer": "審查修復子智能體：根據審查結果自動修復程式碼問題",
     "Claw": "個人助理：結合您的偏好與上下文，協助處理日常任務。",
-    "Standard": "透過規劃、工具與子智能體協作完成一般任務。",
-    "Ultimate": "拆解複雜任務，協調並行子智能體並審查結果。",
-    "Minimal": "使用精簡執行流程與固定的小型工具集。",
-    "Creative": "創造與客製 OpenBitFun 體驗及能力。"
+    "Standard": "以清晰的任務指引和完整工具，支援程式設計，也能勝任資訊處理、內容創作等日常工作。",
+    "Ultimate": "多個智能體並行推進、獨立審查，適合複雜專案與大型改造。",
+    "Minimal": "精簡提示詞與工具，讓新一代旗艦模型充分發揮，適合程式開發等任務。",
+    "Creative": "用自然語言建立小應用、客製介面，讓 OpenBitFun 更貼合你的工作方式。"
   }
 }

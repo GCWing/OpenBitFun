@@ -387,7 +387,7 @@ const MainNav: React.FC = () => {
         </div>
         </div>
       </NavigationPanelHeader>
-      <NavigationPanelBody className="openbitfun-nav-panel__sections" ref={sectionsScrollRef}>
+      <NavigationPanelBody className="openbitfun-nav-panel__sections" ref={sectionsScrollRef} scrollbarVisibility="hidden">
         <NavigationPanelContent className="openbitfun-nav-panel__main-nav-content">
         <div data-testid="nav-sections" className="openbitfun-nav-panel__sections-slot">
         <div data-openbitfun-component="nav-panel" data-openbitfun-part="topActions" className="openbitfun-nav-panel__top-actions">
@@ -565,7 +565,7 @@ const MainNav: React.FC = () => {
                     onClick={handleOpenEcosystemCompatibility}
                     aria-label={ecosystemCompatibilityTooltip}
                     data-testid="ecosystem-compatibility-tab"
-                    actionContent={hasUnseenEcosystemCompatibility ? (
+                    metadata={hasUnseenEcosystemCompatibility ? (
                       <span
                         className="openbitfun-nav-panel__top-action-unseen"
                         data-openbitfun-component="nav-panel"

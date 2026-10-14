@@ -426,10 +426,10 @@ $todos-compact-breakpoint: 720px;
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
-    container-type: inline-size;
     gap: var(--openbitfun-space-3);
     min-width: 0;
     min-height: 0;
+    scrollbar-gutter: stable;
     overscroll-behavior-y: contain;
     scroll-padding-block: var(--openbitfun-space-3);
   }
@@ -465,10 +465,11 @@ $todos-compact-breakpoint: 720px;
   &__calendar-grid {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
-    // WebKit can retain auto row heights after aspect-ratio cells resize.
-    // Size the tracks from the current calendar width, including column gaps,
-    // and let cells stretch into them so rows and cells always resize together.
-    grid-template-rows: repeat(6, calc((100cqi - 6 * var(--openbitfun-space-2)) / 7 / 1.06));
+    // Keep sizing on the grid itself: querying the scrolling viewport's inline
+    // size can reflow the whole calendar when WebKit updates hovered scrollbars.
+    // Explicit equal tracks also avoid stale auto row heights after resizing.
+    aspect-ratio: 7.42 / 6;
+    grid-template-rows: repeat(6, minmax(0, 1fr));
     gap: var(--openbitfun-space-2);
     flex: 0 0 auto;
     min-height: 0;
@@ -1057,7 +1058,6 @@ $todos-compact-breakpoint: 720px;
     }
 
     &__calendar-grid {
-      grid-template-rows: repeat(6, calc((100cqi - 6 * var(--openbitfun-space-1)) / 7 / 1.06));
       min-height: 0;
       gap: var(--openbitfun-space-1);
     }

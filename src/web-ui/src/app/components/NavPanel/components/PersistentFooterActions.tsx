@@ -127,15 +127,14 @@ const PersistentFooterActions: React.FC = () => {
     enableToolbarMode();
   };
 
-  const handleRemoteConnect = useCallback(() => {
+  const handleRemoteConnect = useCallback((group?: 'account') => {
+    setRemoteInitialGroup(group);
     if (hasAgreedRemoteDisclaimer || getRemoteConnectDisclaimerAgreed()) {
       setHasAgreedRemoteDisclaimer(true);
-      setRemoteInitialGroup(undefined);
       setShowRemoteConnect(true);
       return;
     }
 
-    setRemoteInitialGroup(undefined);
     setShowRemoteDisclaimer(true);
   }, [hasAgreedRemoteDisclaimer]);
 

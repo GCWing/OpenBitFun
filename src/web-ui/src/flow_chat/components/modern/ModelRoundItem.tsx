@@ -392,7 +392,7 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
       open: isCopyMenuOpen,
       anchorRef: copyButtonRef,
       popoverRef: copyMenuRef,
-      preferredPlacement: 'top',
+      preferredPlacement: 'bottom',
       alignment: 'end',
       gap: 4,
     });
@@ -806,7 +806,7 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
                         ref={copyMenuRef}
                         className="model-round-item__copy-menu"
                         data-testid="model-round-copy-menu"
-                        data-openbitfun-placement={copyMenuLayout?.placement ?? 'top'}
+                        data-openbitfun-placement={copyMenuLayout?.placement ?? 'bottom'}
                         style={{
                           top: `${copyMenuLayout?.top ?? 0}px`,
                           left: `${copyMenuLayout?.left ?? 0}px`,

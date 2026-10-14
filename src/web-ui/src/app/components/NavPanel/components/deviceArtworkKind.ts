@@ -24,6 +24,6 @@ export function getDeviceArtworkKind(device: DeviceArtworkFacts): DeviceArtworkK
   if (device.kind !== 'desktop') return 'device';
   // Device names can identify a model, but the controller's OS cannot identify
   // a remote machine. Unrecognized names deliberately use neutral artwork.
-  if (/\bmacbook[\s._-]*air\b/i.test(device.name)) return 'macbook-air';
+  if (/macbook[\s._-]*air\b/i.test(device.name)) return 'macbook-air';
   return deviceSystemKeyFromOs(device.os) ?? 'device';
 }

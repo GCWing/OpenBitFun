@@ -114,6 +114,22 @@
     }
   }
 
+  &__option-title {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+
+    strong {
+      flex: 0 1 auto;
+      min-width: 0;
+    }
+  }
+
+  &__device-status {
+    flex: none;
+  }
+
   &__status {
     display: flex;
     align-items: center;

@@ -30,6 +30,7 @@ import {
   TokenUsage,
 } from '../types/flow-chat';
 import { createLogger } from '@/shared/utils/logger';
+import { canonicalAgentId } from '@/shared/agents/identity';
 import { optimisticTurnAdoptionKey } from '../utils/optimisticTurnAdoption';
 import {
   isRemoteTraceContext,
@@ -337,18 +338,6 @@ function sameDispatchTargetIdentity(
   }
 }
 
-// Retired built-in ids remain readable for historical sessions and older peer
-// hosts; new-session selection filters them from the current Agent catalog.
-const VALID_AGENT_TYPES = new Set([
-  'Standard',
-  'Multitask',
-  'debug',
-  'Plan',
-  'Cowork',
-  'Claw',
-  'DeepResearch',
-  'Ultimate',
-]);
 const METADATA_LIST_RECENT_DEDUPE_TTL_MS = 1000;
 const HISTORICAL_SESSION_INITIAL_REMOTE_TAIL_TURN_COUNT = 3;
 const HISTORICAL_SESSION_INITIAL_LOCAL_TAIL_TURN_COUNT = 3;
@@ -1905,8 +1894,9 @@ function restoreCommandSupportKey(
   );
 }
 
-function isValidPersistedAgentType(agentType: string): boolean {
-  return VALID_AGENT_TYPES.has(agentType) || agentType.startsWith('acp:');
+/** Decode built-in aliases without replacing custom, external, or retired bindings. */
+function resolveRestoredAgentType(...agentTypes: (string | null | undefined)[]): string {
+  return canonicalAgentId(firstNonEmptyString(...agentTypes)?.trim() || 'Standard');
 }
 
 interface SelectorListener<T = any> {
@@ -3899,6 +3889,9 @@ export class FlowChatStore {
       );
       remainingBefore = startIndex;
 
+      const restoredAgentType = resolveRestoredAgentType(
+        projection.restoredSessionInfo?.agentType, session.mode, session.config.agentType,
+      );
       const newSessions = new Map(prev.sessions);
       newSessions.set(sessionId, {
         ...session,
@@ -3908,7 +3901,8 @@ export class FlowChatStore {
         totalTurnCount,
         contextRestoreState:
           session.contextRestoreState === 'ready' ? 'ready' : projection.contextRestoreState,
-        mode: projection.restoredSessionInfo?.agentType || session.mode,
+        config: { ...session.config, agentType: restoredAgentType },
+        mode: restoredAgentType,
         lastUserDialogMode: projection.restoredLastUserDialogMode,
         lastSubmittedMode:
           projection.restoredSessionInfo?.lastSubmittedAgentType ?? session.lastSubmittedMode,
@@ -3987,6 +3981,9 @@ export class FlowChatStore {
         (count, turn) => count + (currentDialogTurnsById.get(turn.id) === turn ? 1 : 0),
         0,
       );
+      const restoredAgentType = resolveRestoredAgentType(
+        projection.restoredSessionInfo?.agentType, session.mode, session.config.agentType,
+      );
       const newSessions = new Map(prev.sessions);
       newSessions.set(sessionId, {
         ...session,
@@ -4000,7 +3997,8 @@ export class FlowChatStore {
         ),
         contextRestoreState:
           session.contextRestoreState === 'ready' ? 'ready' : projection.contextRestoreState,
-        mode: projection.restoredSessionInfo?.agentType || session.mode,
+        config: { ...session.config, agentType: restoredAgentType },
+        mode: restoredAgentType,
         lastUserDialogMode: projection.restoredLastUserDialogMode,
         lastSubmittedMode:
           projection.restoredSessionInfo?.lastSubmittedAgentType ?? session.lastSubmittedMode,
@@ -7420,15 +7418,10 @@ export class FlowChatStore {
             return { ...prev, sessions };
           }
 
-          const rawAgentType = metadata.agentType || 'Standard';
-          const validatedAgentType = isValidPersistedAgentType(rawAgentType) ? rawAgentType : 'Standard';
-          const restoredCurrentTokenUsage = isAcpAgentType(validatedAgentType)
+          const restoredAgentType = resolveRestoredAgentType(metadata.agentType);
+          const restoredCurrentTokenUsage = isAcpAgentType(restoredAgentType)
             ? undefined
             : deriveRestoredCurrentTokenUsage(persistedCurrentContextUsage);
-
-          if (rawAgentType !== validatedAgentType) {
-            log.warn('Invalid agentType, falling back to agentic', { sessionId: metadata.sessionId, rawAgentType, validatedAgentType });
-          }
 
           const session: Session = {
             sessionId: metadata.sessionId,
@@ -7444,7 +7437,7 @@ export class FlowChatStore {
             persistedStatus: metadata.status,
             persistedTurnCount: metadata.turnCount,
             config: {
-              agentType: validatedAgentType,
+              agentType: restoredAgentType,
               modelName: metadata.modelName,
               workspaceId, projectWorkspaceId,
               workspacePath: metadata.workspacePath || workspacePath,
@@ -7460,7 +7453,7 @@ export class FlowChatStore {
             todos: (metadata as any).todos || [],
             maxContextTokens,
             currentTokenUsage: restoredCurrentTokenUsage,
-            mode: validatedAgentType,
+            mode: restoredAgentType,
             lastUserDialogMode: metadata.lastUserDialogAgentType,
             lastSubmittedMode: metadata.lastSubmittedAgentType,
             workspacePath: (metadata as any).workspacePath || workspacePath,
@@ -7873,15 +7866,10 @@ export class FlowChatStore {
               return prev;
             }
 
-            const rawAgentType = metadata.agentType || 'Standard';
-            const validatedAgentType = isValidPersistedAgentType(rawAgentType) ? rawAgentType : 'Standard';
-            const restoredCurrentTokenUsage = isAcpAgentType(validatedAgentType)
+            const restoredAgentType = resolveRestoredAgentType(metadata.agentType);
+            const restoredCurrentTokenUsage = isAcpAgentType(restoredAgentType)
               ? undefined
               : deriveRestoredCurrentTokenUsage(persistedCurrentContextUsage);
-
-            if (rawAgentType !== validatedAgentType) {
-              log.warn('Invalid agentType, falling back to agentic', { sessionId: metadata.sessionId, rawAgentType, validatedAgentType });
-            }
 
             const session: Session = {
               sessionId: metadata.sessionId,
@@ -7897,7 +7885,7 @@ export class FlowChatStore {
               persistedStatus: metadata.status,
               persistedTurnCount: metadata.turnCount,
               config: {
-                agentType: validatedAgentType,
+                agentType: restoredAgentType,
                 modelName: metadata.modelName,
               workspaceId, projectWorkspaceId,
                 workspacePath: metadata.workspacePath || workspacePath,
@@ -7913,7 +7901,7 @@ export class FlowChatStore {
               todos: (metadata as any).todos || [],
               maxContextTokens,
               currentTokenUsage: restoredCurrentTokenUsage,
-              mode: validatedAgentType,
+              mode: restoredAgentType,
               lastUserDialogMode: metadata.lastUserDialogAgentType,
               lastSubmittedMode: metadata.lastSubmittedAgentType,
               workspacePath: (metadata as any).workspacePath || workspacePath,
@@ -8203,8 +8191,9 @@ export class FlowChatStore {
       const turnCatalog = restored.turnCatalog?.sessionId === sessionId
         ? selectPreferredTurnCatalog(session.turnCatalog, restored.turnCatalog)
         : session.turnCatalog;
-      const restoredAgentType =
-        restored.session.agentType || session.mode || session.config.agentType;
+      const restoredAgentType = resolveRestoredAgentType(
+        restored.session.agentType, session.mode, session.config.agentType,
+      );
       const currentTokenUsage = reconcileRestoreViewCurrentTokenUsage(
         session.currentTokenUsage,
         restored.currentContextUsage,
@@ -8216,6 +8205,7 @@ export class FlowChatStore {
         !turnsChanged
         && turnCatalog === session.turnCatalog
         && restoredAgentType === session.mode
+        && restoredAgentType === session.config.agentType
         && currentTokenUsage === session.currentTokenUsage
       ) {
         return prev;
@@ -8241,6 +8231,7 @@ export class FlowChatStore {
         turnCatalog,
         config: {
           ...session.config,
+          agentType: restoredAgentType,
           ...(restored.session.modelName
             ? { modelName: restored.session.modelName }
             : {}),
@@ -8835,8 +8826,9 @@ export class FlowChatStore {
         const session = prev.sessions.get(sessionId);
         if (!session) return prev;
 
-        const restoredAgentType =
-          restoredSessionInfo?.agentType || session.mode || session.config.agentType;
+        const restoredAgentType = resolveRestoredAgentType(
+          restoredSessionInfo?.agentType, session.mode, session.config.agentType,
+        );
         const mergedTurns = dialogTurns.map(loaded => {
           const existing = session.dialogTurns.find(turn => turn.id === loaded.id);
           // Disk hydrate is the persisted record, so the same ownership rule
@@ -8869,6 +8861,7 @@ export class FlowChatStore {
           error: null,
           config: {
             ...session.config,
+            agentType: restoredAgentType,
             ...(restoredSessionInfo?.modelName
               ? { modelName: restoredSessionInfo.modelName }
               : {}),

@@ -702,12 +702,12 @@
     "multimodalTools": "Multimodal Tools",
     "notifications": "Notifications",
     "settingsMenu": {
-      "floatingWindow": "Floating window",
+      "floatingWindow": "Floating Window",
       "theme": "Theme",
-      "themeConfiguration": "Theme configuration",
+      "themeConfiguration": "Theme Settings",
       "appearanceSwitchFailed": "Could not switch the theme. Try again.",
-      "openSettings": "Open settings",
-      "about": "About"
+      "openSettings": "$t(shared:features.settings)",
+      "about": "About OpenBitFun"
     }
   },
   "window": {
@@ -760,6 +760,18 @@
   "deviceOverview": {
     "devicesAndConnections": "Devices & Connections",
     "connectDevice": "Connect to this device",
+    "inUse": "Controlling",
+    "localDevice": "Local device",
+    "connectAndUse": "Connect & use",
+    "switchUse": "Switch to device",
+    "disconnectAction": "Disconnect",
+    "cancelRemoteControl": "Stop remote control",
+    "disconnectActionHint": "Disconnect and return to this device; tasks on the remote device keep running",
+    "returnLocalAction": "Return here",
+    "unavailableAction": "Unavailable",
+    "connectingAction": "Connecting…",
+    "switchingAction": "Switching…",
+    "disconnectingAction": "Disconnecting…",
     "previousDevice": "Previous device",
     "nextDevice": "Next device",
     "title": "Device status",
@@ -777,11 +789,12 @@
     "footerControlledBy": "{{device}} is controlling",
     "footerDistributedExecution": "{{count}} devices executing",
     "current": "Current",
-    "currentUse": "In use",
-    "currentLocalDevice": "Current local device",
+    "currentUse": "Remote",
+    "currentLocalDevice": "Local",
     "controlling": "Controlling",
     "executingTasks": "{{count}} tasks",
     "connectedDevices": "Connected devices",
+    "deviceCount": "{{formattedCount}} devices",
     "connectionService": "Connection service",
     "accountService": "Account service",
     "controllers": "Controllers",
@@ -1175,7 +1188,7 @@
     "updateSectionHint": "Keep OpenBitFun up to date for the latest fixes and features."
   },
   "update": {
-    "checkForUpdates": "Check for updates",
+    "checkForUpdates": "Check for Updates",
     "checking": "Checking…",
     "noUpdate": "You are on the latest version.",
     "checkFailed": "Update check failed.",

@@ -49,12 +49,11 @@
     "avatarPickerHint": "选择一个标识，或输入自定义符号",
     "avatarPickerClose": "关闭头像选择",
     "avatarPresets": "头像选项",
-    "avatarOfficialPresets": "Claw 头像",
+    "avatarOfficialPresets": "IP 头像",
     "avatarEmojiPresets": "表情符号",
     "avatarUseOfficialPreset": "使用{{name}}头像",
     "avatarFamilies": {
-      "claw": "标准造型",
-      "clawOrbit": "星轨造型"
+      "joystick": "黑色摇杆伙伴"
     },
     "avatarUsePreset": "使用 {{emoji}} 作为头像",
     "avatarCustom": "自定义头像符号",

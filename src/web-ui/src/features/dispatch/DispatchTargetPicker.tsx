@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 import { FolderGit2, Laptop, Loader2, MonitorSmartphone, Server } from 'lucide-react';
 
-import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Icon, Menu, MenuItem, MenuSection, MenuSeparator, Tooltip } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Icon, Menu, MenuItem, MenuSection, MenuSeparator, StatusPill, Tooltip } from '@openbitfun/ui';
 import { SSHConnectionDialog } from '@/features/ssh-remote/SSHConnectionDialog';
 import { useAccountLoginState } from '@/infrastructure/account/useAccountLoginState';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
@@ -57,6 +57,7 @@ export const DispatchTargetPicker: React.FC<DispatchTargetPickerProps> = ({
 }) => {
   useDeviceDirectory();
   const { t } = useI18n('flow-chat');
+  const { t: tCommon } = useI18n('common');
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -230,6 +231,7 @@ export const DispatchTargetPicker: React.FC<DispatchTargetPickerProps> = ({
               checked={selected}
               className="dispatch-target-picker__option-row"
               disabled={!online || incompatible}
+              labelBehavior="static"
               leading={<MonitorSmartphone size={15} aria-hidden />}
               metadata={selected ? <Icon name="check-line" size="sm" aria-hidden /> : null}
               onClick={() => {
@@ -239,14 +241,27 @@ export const DispatchTargetPicker: React.FC<DispatchTargetPickerProps> = ({
               }}
             >
               <span className="dispatch-target-picker__option-copy">
-                <strong><OverflowText>{option.displayName}</OverflowText></strong>
-                <small><OverflowText>
-                  {incompatible
-                    ? t('chatInput.dispatch.deviceIncompatible')
-                    : online
-                      ? t('chatInput.dispatch.deviceDescription')
-                      : t('chatInput.dispatch.deviceOffline')}
-                </OverflowText></small>
+                <span className="dispatch-target-picker__option-title">
+                  <strong><OverflowText>{option.displayName}</OverflowText></strong>
+                  {incompatible ? (
+                    <Tooltip content={t('chatInput.dispatch.deviceIncompatible')} placement="right">
+                      <StatusPill
+                        className="dispatch-target-picker__device-status"
+                        tone="warning"
+                        aria-label={t('chatInput.dispatch.deviceIncompatible')}
+                      >
+                        {tCommon('accountLogin.deviceClientIncompatibleTag')}
+                      </StatusPill>
+                    </Tooltip>
+                  ) : !online ? (
+                    <StatusPill className="dispatch-target-picker__device-status" tone="neutral">
+                      {t('chatInput.dispatch.deviceOffline')}
+                    </StatusPill>
+                  ) : null}
+                </span>
+                {online && !incompatible ? (
+                  <small><OverflowText>{t('chatInput.dispatch.deviceDescription')}</OverflowText></small>
+                ) : null}
               </span>
             </MenuItem>
           );

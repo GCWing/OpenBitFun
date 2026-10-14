@@ -23,6 +23,13 @@
     padding-bottom: var(--openbitfun-space-4);
   }
 
+  &__header-avatar {
+    display: block;
+    inline-size: calc(var(--openbitfun-control-height-lg) + var(--openbitfun-space-3));
+    block-size: calc(var(--openbitfun-control-height-lg) + var(--openbitfun-space-3));
+    object-fit: contain;
+  }
+
   .gallery-zones {
     gap: var(--openbitfun-space-6);
     padding-top: var(--openbitfun-space-3);
@@ -108,46 +115,43 @@
   }
 
   &__harness-presentation {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: 1fr;
+    gap: var(--openbitfun-space-3);
     margin: 0;
     padding: 0;
     list-style: none;
-    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-    border-radius: var(--openbitfun-layout-card-radius-md);
-    background: var(--openbitfun-color-surface-panel);
-    overflow: hidden;
     min-width: 0;
   }
 
   &__harness-profile-item {
     min-width: 0;
     margin: 0;
-
-    // The outer list clips the fill once, against its own border contour.
-    &:has(> .openbitfun-agents-scene__harness-profile:hover:not(:disabled)) {
-      background-color: var(--openbitfun-color-surface-subtle);
-    }
-
-    & + & {
-      border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-    }
   }
 
   &__harness-profile {
-    background: transparent;
-    border: 0;
-    border-radius: 0;
-    padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
+    background: var(--openbitfun-color-surface-panel);
+    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    border-radius: var(--openbitfun-layout-card-radius-md);
+    padding: var(--openbitfun-space-4);
     width: 100%;
-    min-height: 72px;
+    height: 100%;
+    min-height: 160px;
     box-sizing: border-box;
     font: inherit;
     text-align: start;
     cursor: pointer;
     display: grid;
-    grid-template-columns: 24px 120px minmax(0, 1fr) clamp(160px, 28cqi, 280px);
+    grid-template-columns: 24px minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto;
     align-items: center;
-    column-gap: var(--openbitfun-space-4);
+    gap: var(--openbitfun-space-3);
     min-width: 0;
+
+    &:hover:not(:disabled) {
+      background: var(--openbitfun-color-surface-subtle);
+    }
 
     &:hover:not(:disabled) .openbitfun-agents-scene__harness-route-node,
     &:hover:not(:disabled) .openbitfun-agents-scene__harness-route-arrow {
@@ -156,7 +160,7 @@
 
     &:focus-visible {
       outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
-      outline-offset: calc(-1 * var(--openbitfun-focus-width));
+      outline-offset: var(--openbitfun-focus-offset);
     }
 
     &:disabled {
@@ -193,6 +197,9 @@
   }
 
   &__harness-profile-purpose {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    align-self: start;
     min-width: 0;
     color: var(--openbitfun-color-content-secondary);
     font-size: var(--openbitfun-type-label-sm-font-size);
@@ -201,6 +208,8 @@
   }
 
   &__harness-route {
+    grid-column: 1 / -1;
+    grid-row: 3;
     position: relative;
     height: 36px;
     min-width: 0;
@@ -276,50 +285,15 @@
   }
 }
 
-@container agent-harness (max-width: 680px) {
-  .openbitfun-agents-scene {
-    &__harness-profile {
-      grid-template-columns: 24px minmax(0, 1fr) minmax(120px, 32%);
-      grid-template-rows: auto auto;
-      column-gap: var(--openbitfun-space-3);
-      row-gap: var(--openbitfun-space-1);
-    }
-
-    &__harness-profile-icon {
-      grid-column: 1;
-      grid-row: 1 / 3;
-    }
-
-    &__harness-profile-name {
-      grid-column: 2;
-      grid-row: 1;
-      align-self: end;
-    }
-
-    &__harness-profile-purpose {
-      grid-column: 2;
-      grid-row: 2;
-      align-self: start;
-    }
-
-    &__harness-route {
-      grid-column: 3;
-      grid-row: 1 / 3;
-    }
-  }
-}
-
 @container agent-harness (max-width: 480px) {
   .openbitfun-agents-scene {
-    &__harness-profile {
-      grid-template-columns: 24px minmax(0, 1fr);
-      padding-inline: var(--openbitfun-space-3);
+    &__harness-presentation {
+      gap: var(--openbitfun-space-2);
     }
 
-    &__harness-route {
-      grid-column: 2;
-      grid-row: 3;
-      margin-top: var(--openbitfun-space-2);
+    &__harness-profile {
+      padding: var(--openbitfun-space-3);
+      gap: var(--openbitfun-space-2);
     }
   }
 }

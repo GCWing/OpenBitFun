@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AssistantAvatarPicker from './AssistantAvatarPicker';
 import { firstAvatarGrapheme } from './assistantAvatar';
+import inkMintAvatar from '@/flow_chat/assets/subagent-avatars/robot-04.svg';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -129,19 +130,19 @@ describe('AssistantAvatarPicker', () => {
     const officialOption = officialOptions[0];
     act(() => officialOption?.click());
 
-    expect(officialOptions).toHaveLength(2);
+    expect(officialOptions).toHaveLength(1);
     expect(officialOption.querySelector('img')?.getAttribute('src'))
-      .toBe('/assets/assistant/claw-avatar.webp');
-    expect(onPresetChange).toHaveBeenCalledWith('claw');
+      .toBe(inkMintAvatar);
+    expect(onPresetChange).toHaveBeenCalledWith('joystick-ink-mint');
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it('shows a legacy preset value as its corresponding new Claw avatar', () => {
+  it.each(['claw', 'claw-orbit', 'orbit-nova'])('shows the black IP selected for legacy preset %s', (presetValue) => {
     act(() => {
       root.render(
         <AssistantAvatarPicker
           value="🧭"
-          presetValue="orbit-nova"
+          presetValue={presetValue}
           saveStatus="idle"
           onChange={vi.fn()}
           onPresetChange={vi.fn()}
@@ -151,13 +152,13 @@ describe('AssistantAvatarPicker', () => {
 
     const trigger = container.querySelector('.acp-avatar-picker__trigger') as HTMLButtonElement;
     expect(trigger.querySelector('img')?.getAttribute('src'))
-      .toBe('/assets/assistant/claw-avatar-alt.webp');
+      .toBe(inkMintAvatar);
     act(() => trigger.click());
 
     const selectedOption = document.querySelector<HTMLButtonElement>(
       '.acp-avatar-picker__option.is-official.is-selected',
     );
     expect(selectedOption?.querySelector('img')?.getAttribute('src'))
-      .toBe('/assets/assistant/claw-avatar-alt.webp');
+      .toBe(inkMintAvatar);
   });
 });

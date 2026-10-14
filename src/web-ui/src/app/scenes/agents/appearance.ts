@@ -6,8 +6,10 @@ export const agentsAppearanceDescriptor: AppearanceSurfaceDescriptor = {
     { id: 'root' },
     { id: 'zones' },
     { id: 'harnessPresentation' },
+    { id: 'harnessPreview', visualRole: 'content' },
     { id: 'filters' },
     { id: 'catalogGrid' },
     { id: 'detailSection' },
+    { id: 'capabilityCards', visualRole: 'content' },
   ],
 };

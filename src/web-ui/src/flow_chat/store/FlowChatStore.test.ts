@@ -17,6 +17,7 @@ import { projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
 import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
 import { resetLiveSessionInteractionStoreForTest } from '../services/liveSessionInteractionStore';
 import { resourceBudget } from '@/shared/utils/resourceBudget';
+import { HARNESS_IDS } from '@/shared/agents/identity';
 import {
   askUserQuestionDraftKey,
   askUserQuestionDraftStore,
@@ -1756,6 +1757,155 @@ describe('FlowChatStore session model selection', () => {
     expect(
       flowChatStore.getState().sessions.get(session.sessionId)?.config.reasoningPreset,
     ).toBe('low');
+  });
+});
+
+describe('FlowChatStore persisted agent identity restoration', () => {
+  const workspacePath = 'D:/workspace/OpenBitFun';
+  const sessionId = 'restart-identity';
+  const identityCases: [string | undefined, string][] = [
+    ...HARNESS_IDS.map(id => [id, id] as [string, string]),
+    ['minimal', 'Minimal'],
+    [' creative ', 'Creative'],
+    ['agentic', 'Standard'],
+    ['balanced', 'Standard'],
+    ['Ultra', 'Ultimate'],
+    ['Plan', 'Plan'],
+    ['PlannerPlus', 'PlannerPlus'],
+    ['external::Ultra', 'external::Ultra'],
+    ['acp:codex', 'acp:codex'],
+    [undefined, 'Standard'],
+    ['', 'Standard'],
+    ['  ', 'Standard'],
+  ];
+
+  beforeEach(() => {
+    resetStore();
+    peerModeFlagMock.active = false;
+    vi.clearAllMocks();
+    apiMocks.listSessions.mockReset();
+    apiMocks.listSessionsPage.mockReset();
+    apiMocks.restoreSessionView.mockReset();
+    apiMocks.loadSessionTurns.mockReset();
+  });
+
+  afterEach(() => {
+    peerModeFlagMock.active = false;
+    resetStore();
+  });
+
+  async function loadMetadata(
+    source: 'full-list' | 'paged-list',
+    agentType: string | undefined,
+    workspaceId = fixtureWorkspaceId(workspacePath),
+  ): Promise<void> {
+    const metadata = { sessionId, title: 'Saved session', agentType, turnCount: 1,
+      createdAt: 10, lastActiveAt: 20 };
+    if (source === 'full-list') {
+      apiMocks.listSessions.mockResolvedValueOnce([metadata]);
+      await flowChatStore.initializeFromDisk(workspaceId, 'identity-regression');
+    } else {
+      apiMocks.listSessionsPage.mockResolvedValueOnce({ sessions: [metadata],
+        totalTopLevelCount: 1, loadedTopLevelCount: 1, hasMore: false });
+      await flowChatStore.loadSessionMetadataPage(workspaceId, 5, undefined, 'identity-regression');
+    }
+  }
+
+  function expectIdentity(agentType: string): void {
+    expect(flowChatStore.getState().sessions.get(sessionId)).toMatchObject({
+      mode: agentType, config: { agentType },
+    });
+  }
+
+  describe.each(['full-list', 'paged-list'] as const)('%s', source => {
+    it.each(identityCases)('restores persisted %s as %s in both identity fields', async (persisted, expected) => {
+      await loadMetadata(source, persisted);
+      expectIdentity(expected);
+      expect(flowChatStore.getState().sessions.get(sessionId)?.historyState).toBe('metadata-only');
+      expect(apiMocks.restoreSessionView).not.toHaveBeenCalled();
+    });
+
+    it.each(['Minimal', 'Creative'])('preserves %s in an SSH workspace projection', async agentType => {
+      const workspaceId = fixtureWorkspaceId('/srv/project', 'ssh-identity', 'host.example');
+      await loadMetadata(source, agentType, workspaceId);
+      expectIdentity(agentType);
+      expect(flowChatStore.getState().sessions.get(sessionId)).toMatchObject({
+        remoteConnectionId: 'ssh-identity', remoteSshHost: 'host.example',
+      });
+    });
+
+    it.each(['Minimal', 'Creative'])('preserves %s on the selected peer surface', async agentType => {
+      activateSurface('identity-peer');
+      peerModeFlagMock.active = true;
+      await loadMetadata(source, agentType);
+      expectIdentity(agentType);
+      activateSurface(LOCAL_SURFACE_ID);
+      expect(flowChatStore.getState().sessions.has(sessionId)).toBe(false);
+    });
+  });
+
+  it.each(['Minimal', 'Creative'])('repairs stale config when fully restoring %s', async agentType => {
+    flowChatStore.setState(() => ({
+      sessions: new Map([[sessionId, createSession({ sessionId, isHistorical: true,
+        historyState: 'metadata-only', mode: agentType, config: { agentType: 'Standard' } })]]),
+      activeSessionId: sessionId,
+    }));
+    apiMocks.restoreSessionView.mockResolvedValueOnce({
+      session: { sessionId, agentType: agentType.toLowerCase(), state: 'Idle', turnCount: 1 },
+      turns: [createPersistedTurn(0, sessionId)], contextRestoreState: 'ready',
+    });
+    await flowChatStore.loadSessionHistory(sessionId);
+    expectIdentity(agentType);
+    expect(flowChatStore.getState().sessions.get(sessionId)?.historyState).toBe('ready');
+  });
+
+  it.each(['Minimal', 'Creative'])('retains %s when backend restore falls back to turns only', async agentType => {
+    await loadMetadata('full-list', agentType.toLowerCase());
+    apiMocks.restoreSessionView.mockRejectedValueOnce(new Error('restore failed'));
+    apiMocks.loadSessionTurns.mockResolvedValueOnce([createPersistedTurn(0, sessionId)]);
+    await flowChatStore.loadSessionHistory(sessionId);
+    expectIdentity(agentType);
+    expect(flowChatStore.getState().sessions.get(sessionId)?.historyState).toBe('ready');
+  });
+
+  it.each(['Minimal', 'Creative'])('repairs stale config on an otherwise unchanged peer snapshot for %s', async agentType => {
+    activateSurface('identity-peer');
+    flowChatStore.setState(() => ({
+      sessions: new Map([[sessionId, createSession({ sessionId, historyState: 'ready',
+        mode: agentType, config: { agentType: 'Standard' } })]]), activeSessionId: sessionId,
+    }));
+    apiMocks.restoreSessionView.mockResolvedValueOnce({
+      session: { sessionId, agentType, state: 'Idle', turnCount: 0 },
+      turns: [], contextRestoreState: 'ready',
+    });
+    const result = await flowChatStore.refreshPeerSessionSnapshot(sessionId);
+    expect(result.applied).toBe(true);
+    expectIdentity(agentType);
+  });
+
+  describe.each(['full-history', 'previous-window'] as const)('%s', source => {
+    it.each(['Minimal', 'Creative'])('keeps %s identities consistent when revealing deferred history', async agentType => {
+      const dialogTurns = (flowChatStore as any).convertToDialogTurns([
+        createPersistedTurn(0, sessionId), createPersistedTurn(1, sessionId),
+      ]);
+      flowChatStore.setState(() => ({
+        sessions: new Map([[sessionId, createSession({ sessionId, historyState: 'ready',
+          mode: agentType, config: { agentType: 'Standard' }, isPartial: true,
+          dialogTurns: [dialogTurns[1]] })]]), activeSessionId: sessionId,
+      }));
+      (flowChatStore as any).deferredFullHistoryProjections.set(sessionId, {
+        dialogTurns, expectedDialogTurnIds: [dialogTurns[1].id],
+        restoredSessionInfo: { agentType: agentType.toLowerCase() },
+        contextRestoreState: 'ready', remote: false, requireActiveSession: true,
+      });
+      if (source === 'full-history') {
+        expect(await flowChatStore.ensureSessionFullHistory(sessionId, 'identity-regression')).toBe(true);
+      } else {
+        expect(flowChatStore.revealPreviousSessionHistoryWindow(sessionId, 'identity-regression')).toBe(true);
+      }
+      expectIdentity(agentType);
+      expect(flowChatStore.getState().sessions.get(sessionId)?.dialogTurns).toHaveLength(2);
+    });
   });
 });
 

@@ -49,12 +49,11 @@
     "avatarPickerHint": "Pick a marker or enter your own symbol",
     "avatarPickerClose": "Close avatar picker",
     "avatarPresets": "Avatar choices",
-    "avatarOfficialPresets": "Claw avatars",
+    "avatarOfficialPresets": "IP avatars",
     "avatarEmojiPresets": "Emoji",
     "avatarUseOfficialPreset": "Use {{name}} avatar",
     "avatarFamilies": {
-      "claw": "primary portrait",
-      "clawOrbit": "orbit portrait"
+      "joystick": "black joystick companion"
     },
     "avatarUsePreset": "Use {{emoji}} as avatar",
     "avatarCustom": "Custom avatar symbol",

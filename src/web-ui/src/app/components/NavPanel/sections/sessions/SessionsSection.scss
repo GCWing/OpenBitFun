@@ -25,7 +25,7 @@
     margin: 0 var(--openbitfun-space-1) 0 calc(var(--openbitfun-space-1) + 4px);
 
     &.is-flat-workspace-view {
-      margin: 0 6px;
+      margin: 0 var(--openbitfun-space-3);
       padding: 2px 0;
     }
   }
@@ -776,7 +776,7 @@
 // response. Running/attention motion remains because it communicates state.
 .openbitfun-nav-panel {
   &__inline-list {
-    margin: 0 6px 0 var(--openbitfun-space-3);
+    margin: 0 var(--openbitfun-space-3);
     padding: 2px 0;
   }
 

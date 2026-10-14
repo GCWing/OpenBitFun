@@ -207,7 +207,7 @@ describe('unified project session creation', () => {
     expect(sectionsIndex).toBeGreaterThan(brandHeaderIndex);
     expect(contentIndex).toBeGreaterThan(-1);
     expect(persistentFooterIndex).toBeGreaterThan(contentIndex);
-    expect(mainNav).toContain('<NavigationPanelBody className="openbitfun-nav-panel__sections" ref={sectionsScrollRef}>');
+    expect(mainNav).toContain('<NavigationPanelBody className="openbitfun-nav-panel__sections" ref={sectionsScrollRef} scrollbarVisibility="hidden">');
     expect(mainNav).toContain('<StickySectionHeader scrollRootRef={sectionsScrollRef} contentRef={sessionContentRef}>');
     expect(mainNav).not.toContain('expandedSections');
     expect(mainNav).not.toContain('toggleSection');

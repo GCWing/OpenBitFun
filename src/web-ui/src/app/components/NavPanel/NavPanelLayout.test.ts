@@ -71,7 +71,7 @@ describe('NavPanel layout styles', () => {
 
     // The sticky section header and the rows below it live in different
     // stylesheets, so their trailing edges only agree if both resolve to the same
-    // column: the 6px list inset plus the row's own transparent 1px border plus
+    // column: the 12px list inset plus the row's own transparent 1px border plus
     // the 4px row-action offset. The header override has to give up exactly that
     // border width, or its icons sit 3px inside the workspace row actions.
     const trailingHeaderOverrides = [...navStylesheet.matchAll(/&__section-header\s*\{(?<body>[^}]*)\}/g)]
@@ -93,10 +93,10 @@ describe('NavPanel layout styles', () => {
     const headerTrailing = trailingHeaderOverrides[0]!;
     const itemsTrailing = itemsOverrides[itemsOverrides.length - 1]!;
 
-    expect(itemsTrailing).toContain('padding: 2px 6px;');
+    expect(itemsTrailing).toContain('padding: 2px var(--openbitfun-space-3);');
     expect(workspaceItemBlock).toContain('border: 1px solid transparent;');
     expect(workspaceActionsBlock).toContain('right: 4px;');
-    expect(headerTrailing).toContain('margin: 0 6px;');
+    expect(headerTrailing).toContain('margin: 0 var(--openbitfun-space-3);');
     expect(headerTrailing).toContain(
       'padding-right: calc(var(--openbitfun-space-1) + var(--openbitfun-border-width-default));',
     );
@@ -158,7 +158,7 @@ describe('NavPanel layout styles', () => {
 
     expect(footerBlocks).toHaveLength(2);
     expect(footerBlocks[0]).toContain('padding: 2px var(--openbitfun-space-2);');
-    expect(footerBlocks[1]).toContain('padding: 2px 6px;');
+    expect(footerBlocks[1]).toContain('padding: 2px var(--openbitfun-space-3);');
   });
 
   it('keeps the compact settings button while using a more legible gear icon', () => {

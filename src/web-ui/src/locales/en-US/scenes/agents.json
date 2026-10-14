@@ -24,22 +24,27 @@
     "flowCaption": "One task · Four strategies · One result",
     "task": "Task",
     "result": "Result",
+    "replay": "Replay animation",
     "profiles": {
       "Minimal": {
         "name": "$t(shared:agents.Minimal)",
-        "purpose": "Lean flow, fast progress"
+        "purpose": "Less intervention, more autonomy",
+        "description": "Minimal prompting and a focused tool set give next-generation flagship models room to excel at coding and other tasks."
       },
       "Standard": {
         "name": "$t(shared:agents.Standard)",
-        "purpose": "Balance speed and quality"
+        "purpose": "A complete toolkit for coding and everyday work",
+        "description": "Clear guidance and a complete toolkit support coding as well as everyday work such as handling information and creating content."
       },
       "Ultimate": {
         "name": "$t(shared:agents.Ultimate)",
-        "purpose": "Deep planning and collaboration"
+        "purpose": "Work together on complex projects",
+        "description": "Multiple agents work in parallel, with independent review for complex projects and large-scale changes."
       },
       "Creative": {
         "name": "$t(shared:agents.Creative)",
-        "purpose": "Customize and build on OpenBitFun"
+        "purpose": "Create apps, shape your experience",
+        "description": "Create MiniApps and customize the interface in natural language, shaping OpenBitFun around the way you work."
       }
     }
   },
@@ -123,6 +128,14 @@
     "filterProject": "Project",
     "backToOverview": "Back to Overview",
     "detail": {
+      "overview": "Overview",
+      "backToOverview": "Back to overview",
+      "cards": {
+        "tools": "View and manage the tools this agent can use",
+        "skills": "Choose the Skills available to this agent",
+        "subagents": "Configure delegation and collaborating agents",
+        "model": "Choose the model used by this subagent"
+      },
       "configuration": "Configuration",
       "basicInfo": "Basic information",
       "basicInfoHint": "Identity, purpose, and runtime properties",
@@ -368,15 +381,17 @@
     "Cowork": "Office collaboration Agent: help with office and research tasks, confirming key steps with you.",
     "ComputerUse": "Computer use SubAgent: perform delegated work in browsers, desktop apps, and file systems.",
     "DeepResearch": "Deep research agent: conduct systematic investigation and analysis on complex topics",
+    "ResearchSpecialist": "Finds and evaluates web sources to deliver focused research with clear supporting evidence.",
+    "GeneralPurpose": "Combines search, analysis, and coding to complete multi-step tasks independently.",
     "Explore": "Explore SubAgent: quickly browse the codebase to understand project structure and key files",
     "CodeReview": "Code review SubAgent: perform quality checks and provide improvement suggestions",
     "DeepReview": "Strict Review compatibility SubAgent: supports review workflows in historical sessions and commands.",
     "Init": "Init agent: help set up project structure and initial configuration",
     "ReviewFixer": "Review fixer SubAgent: automatically fix code issues based on review results",
     "Claw": "Personal assistant: help with daily tasks using your preferences and context.",
-    "Standard": "General task execution with planning, tools, and delegated work.",
-    "Ultimate": "Decompose complex tasks, coordinate parallel SubAgents, and review their results.",
-    "Minimal": "A compact execution loop with a fixed, small tool set.",
-    "Creative": "Create and customize OpenBitFun experiences and capabilities."
+    "Standard": "Clear guidance and a complete toolkit support coding as well as everyday work such as handling information and creating content.",
+    "Ultimate": "Multiple agents work in parallel, with independent review for complex projects and large-scale changes.",
+    "Minimal": "Minimal prompting and a focused tool set give next-generation flagship models room to excel at coding and other tasks.",
+    "Creative": "Create MiniApps and customize the interface in natural language, shaping OpenBitFun around the way you work."
   }
 }

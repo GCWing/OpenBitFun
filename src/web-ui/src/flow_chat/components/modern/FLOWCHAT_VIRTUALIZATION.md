@@ -48,7 +48,11 @@ elapsed time with the existing actions on the right. Only elapsed time is shown
 inline; its shared Tooltip exposes the completion timestamp and elapsed time.
 Metric typography and Lucide glyph sizing belong to `@openbitfun/ui`.
 The completed-turn copy menu contains one export-as-image action alongside the
-copy actions, without sections. It opens a shared Dialog with two selectable
+copy actions, without sections. It prefers opening below the copy button, aligned
+to its trailing edge, and flips above when the lower viewport space is insufficient.
+The shared anchored-position hook keeps it attached during nested scrolling and
+viewport or content resizing, with viewport-edge clamping and no transcript writes.
+The export action opens a shared Dialog with two selectable
 cards with matching 224×168px footprints, reducing only their width in narrow
 panes. Public CardHeader actions and CardBody slots compose the checkbox and
 preview without overriding Checkbox anatomy. Whole-card activation selects the
