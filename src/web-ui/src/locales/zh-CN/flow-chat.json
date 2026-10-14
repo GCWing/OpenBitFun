@@ -3529,9 +3529,17 @@
     "maxRounds": {
       "title": "该轮触达 round 上限"
     },
+    "loopDetected": {
+      "title": "检测到重复输出，该轮已结束"
+    },
     "generic": {
       "title": "该轮以非标准方式结束"
     }
+  },
+  "loopDetection": {
+    "title": "检测到重复输出",
+    "steeredMessage": "智能体开始重复输出，已注入纠正提示，该轮继续运行。",
+    "stoppedMessage": "多次纠正后仍在重复输出，该轮已停止。"
   },
   "errors": {
     "sendFailed": "发送消息失败"

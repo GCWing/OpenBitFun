@@ -740,6 +740,28 @@ export interface UserSteeringInjectedEvent extends AgenticEvent {
   displayContent: string;
 }
 
+/** Detector signal kind reported by the loop-detection ladder. */
+export type LoopDetectionKind =
+  | 'verbatim_block'
+  | 'near_repetition'
+  | 'phrase_stuck'
+  | 'periodic_sequence'
+  | 'predictable_drift'
+  | 'thinking_stagnation'
+  | 'reasoning_runaway';
+
+/** How far the loop-detection ladder went for one decision. */
+export type LoopDetectionEscalation = 'noted' | 'steered' | 'stopped';
+
+/** One loop-detection ladder decision: what it saw and what it did. */
+export interface LoopDetectionNotedEvent extends AgenticEvent {
+  turnId: string;
+  kind: LoopDetectionKind | string;
+  confidence: number;
+  escalation: LoopDetectionEscalation | string;
+  judgeArbitrated?: boolean;
+}
+
 export interface ModelRoundCompletedEvent extends AgenticEvent {
   turnId: string;
   roundId: string;
@@ -1481,6 +1503,12 @@ export class AgentAPI {
     callback: (event: UserSteeringInjectedEvent) => void,
   ): () => void {
     return api.listen<UserSteeringInjectedEvent>('agentic://user-steering-injected', callback);
+  }
+
+  onLoopDetectionNoted(
+    callback: (event: LoopDetectionNotedEvent) => void,
+  ): () => void {
+    return api.listen<LoopDetectionNotedEvent>('agentic://loop-detection-noted', callback);
   }
 
    

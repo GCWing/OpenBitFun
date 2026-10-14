@@ -32,6 +32,7 @@ const {
   buildBuiltInBrowserTabOptions,
   handleCompressionCompleted,
   handleTokenUsageUpdate,
+  handleLoopDetectionNoted,
 } = __test_only__;
 
 vi.mock('../../../shared/notification-system/services/NotificationService', () => ({
@@ -2146,5 +2147,68 @@ describe('handleTokenUsageUpdate', () => {
 
     const session = FlowChatStore.getInstance().getState().sessions.get('session-1');
     expect(session?.currentTokenUsage).toBeUndefined();
+  });
+});
+
+describe('loop detection notices', () => {
+  beforeEach(() => {
+    resetFlowChatStore();
+    stateMachineManager.clear();
+    vi.clearAllMocks();
+  });
+  afterEach(() => {
+    resetFlowChatStore();
+    stateMachineManager.clear();
+  });
+
+  it('announces a steer and a stop without blocking the turn', () => {
+    handleLoopDetectionNoted({
+      sessionId: 'session-loop',
+      turnId: 'turn-loop',
+      kind: 'verbatim_block',
+      confidence: 0.93,
+      escalation: 'steered',
+      judgeArbitrated: false,
+    } as any);
+    expect(notificationService.warning).toHaveBeenCalledTimes(1);
+    expect((notificationService.warning as any).mock.calls[0][1]).toMatchObject({
+      metadata: { sessionId: 'session-loop', turnId: 'turn-loop', escalation: 'steered' },
+    });
+
+    handleLoopDetectionNoted({
+      sessionId: 'session-loop',
+      turnId: 'turn-loop',
+      kind: 'thinking_stagnation',
+      confidence: 0.88,
+      escalation: 'stopped',
+      judgeArbitrated: true,
+    } as any);
+    expect(notificationService.warning).toHaveBeenCalledTimes(2);
+    expect((notificationService.warning as any).mock.calls[1][1]).toMatchObject({
+      metadata: { escalation: 'stopped' },
+    });
+  });
+
+  it('stays silent for report-only decisions and malformed payloads', () => {
+    handleLoopDetectionNoted({
+      sessionId: 'session-loop',
+      turnId: 'turn-loop',
+      kind: 'near_repetition',
+      confidence: 0.86,
+      escalation: 'noted',
+      judgeArbitrated: false,
+    } as any);
+    // A level written by a newer host must not become a notice this build
+    // cannot explain.
+    handleLoopDetectionNoted({
+      sessionId: 'session-loop',
+      turnId: 'turn-loop',
+      kind: 'near_repetition',
+      confidence: 0.86,
+      escalation: 'paused',
+    } as any);
+    handleLoopDetectionNoted({ escalation: 'stopped' } as any);
+
+    expect(notificationService.warning).not.toHaveBeenCalled();
   });
 });

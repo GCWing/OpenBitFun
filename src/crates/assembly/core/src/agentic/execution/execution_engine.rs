@@ -2,6 +2,12 @@
 //!
 //! Executes complete dialog turns, managing loops of multiple model rounds
 
+use super::loop_detection::{
+    judge_confidence_min, loop_detector_config, round_text_and_reasoning,
+    visible_completion_tokens, ArbiterDecision, LoopArbiter, LoopArbiterContext,
+    LoopDetectionRuntime, LoopHealthFields, LoopInterventionLadder, LoopLadderAction,
+    LoopLadderSettings, LoopRoundObservation, LoopSteer, LoopUsageSample,
+};
 use super::model_exchange_trace::{
     prepare_model_exchange_trace_for_workspace, ModelExchangeTraceOperation,
 };
@@ -54,7 +60,8 @@ use crate::infrastructure::ai::reasoning_catalog::reasoning_preset_runtime_finge
 use crate::native_hooks::{self, NativeHookSessionFacts};
 use crate::service::config::get_global_config_service;
 use crate::service::config::types::{
-    automatic_max_output_tokens, model_runtime_binding_fingerprint, ModelCapability, ModelCategory,
+    automatic_max_output_tokens, model_runtime_binding_fingerprint, LoopDetectionConfig,
+    LoopDetectionMode, LoopDetectionThresholdOverridesConfig, ModelCapability, ModelCategory,
 };
 use crate::service::instruction_context::{
     build_local_workspace_instruction_files_context_with_fs_detailed,
@@ -171,6 +178,82 @@ pub struct ExecutionEngineConfig {
     pub max_rounds: usize,
     /// Max consecutive rounds with identical tool-call signatures before loop detection triggers.
     pub max_consecutive_same_tool: usize,
+    /// Agent loop-detection settings resolved from `ai.loop_detection`.
+    pub loop_detection: LoopDetectionSettings,
+}
+
+/// Loop-detection outcome of one model round.
+#[derive(Debug, Clone, Copy, Default)]
+struct LoopRoundDecision {
+    /// A steer reminder was injected, so the turn continues.
+    steered: bool,
+    /// The ladder ended the turn; value is the finalization reason.
+    hard_stop_reason: Option<&'static str>,
+}
+
+/// What the turn loop must do with one round's loop-detection decision.
+///
+/// The three cases are mutually exclusive on purpose: a steer keeps the turn
+/// alive so the model can react to the reminder, a hard stop ends it with the
+/// finalization reason the completion report carries, and "nothing" leaves the
+/// turn on its normal path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoopTurnEffect {
+    /// No loop-detection decision for this round.
+    Continue,
+    /// A steer reminder was injected; the turn continues into the next round.
+    Steered,
+    /// The ladder ended the turn with this finalization reason.
+    Finalize(&'static str),
+}
+
+impl LoopRoundDecision {
+    fn turn_effect(&self) -> LoopTurnEffect {
+        if let Some(reason) = self.hard_stop_reason {
+            return LoopTurnEffect::Finalize(reason);
+        }
+        if self.steered {
+            LoopTurnEffect::Steered
+        } else {
+            LoopTurnEffect::Continue
+        }
+    }
+}
+
+/// Agent loop-detection settings from `ai.loop_detection`.
+///
+/// Plain configuration data only: the detectors, the ladder, and the arbitration
+/// port are runtime state and live in [`LoopDetectionRuntime`].
+#[derive(Debug, Clone)]
+pub struct LoopDetectionSettings {
+    /// Detection and intervention level. `Telemetry` is the calibration default.
+    pub mode: LoopDetectionMode,
+    /// Default state of the per-session clear-detection escape hatch.
+    pub session_enabled: bool,
+    /// Explicit threshold overrides; empty keeps the tier-scaled baselines.
+    pub thresholds: LoopDetectionThresholdOverridesConfig,
+    /// Whether the L2 judge may be consulted.
+    pub judge_enabled: bool,
+    /// Hard cap on arbitration requests per turn.
+    pub max_verdicts_per_turn: u32,
+}
+
+impl Default for LoopDetectionSettings {
+    fn default() -> Self {
+        Self::from_config(&LoopDetectionConfig::default())
+    }
+}
+
+impl LoopDetectionSettings {
+    fn from_config(config: &LoopDetectionConfig) -> Self {
+        Self {
+            mode: config.mode,
+            session_enabled: config.session_enabled,
+            thresholds: config.thresholds.clone(),
+            judge_enabled: config.judge.enabled,
+            max_verdicts_per_turn: config.judge.max_verdicts_per_turn,
+        }
+    }
 }
 
 impl Default for ExecutionEngineConfig {
@@ -178,6 +261,7 @@ impl Default for ExecutionEngineConfig {
         Self {
             max_rounds: crate::service::config::types::DEFAULT_MAX_ROUNDS,
             max_consecutive_same_tool: 3,
+            loop_detection: LoopDetectionSettings::default(),
         }
     }
 }
@@ -186,6 +270,7 @@ impl ExecutionEngineConfig {
     pub fn from_ai_config(ai_config: &crate::service::config::types::AIConfig) -> Self {
         Self {
             max_rounds: ai_config.max_rounds,
+            loop_detection: LoopDetectionSettings::from_config(&ai_config.loop_detection),
             ..Self::default()
         }
     }
@@ -370,6 +455,8 @@ struct ContextHealthSnapshot {
     compression_failure_count: u32,
     repeated_tool_signature_count: usize,
     consecutive_failed_commands: usize,
+    /// Loop-detection telemetry of the round this snapshot describes.
+    loop_detection: LoopHealthFields,
 }
 
 impl ContextHealthSnapshot {
@@ -388,7 +475,14 @@ impl ContextHealthSnapshot {
                 recent_tool_signatures,
             ),
             consecutive_failed_commands: Self::consecutive_failed_commands(messages),
+            loop_detection: LoopHealthFields::default(),
         }
+    }
+
+    /// Attaches this round's loop-detection telemetry.
+    fn with_loop_detection(mut self, loop_detection: LoopHealthFields) -> Self {
+        self.loop_detection = loop_detection;
+        self
     }
 
     fn token_usage_ratio(current_tokens: usize, context_window: usize) -> f32 {
@@ -400,7 +494,7 @@ impl ContextHealthSnapshot {
 
     fn log(&self, session_id: &str, turn_id: &str, round_index: usize, stage: &str) {
         debug!(
-            "Context health snapshot: session_id={}, turn_id={}, round_index={}, stage={}, token_usage={:.3}, full_compression_count={}, compression_failure_count={}, repeated_tool_signature_count={}, consecutive_failed_commands={}",
+            "Context health snapshot: session_id={}, turn_id={}, round_index={}, stage={}, token_usage={:.3}, full_compression_count={}, compression_failure_count={}, repeated_tool_signature_count={}, consecutive_failed_commands={}, loop_source={}, loop_verdict_kind={}, loop_verdict_confidence={:?}, loop_verdict_count={}, loop_steer_attempts={}, loop_escalation={}",
             session_id,
             turn_id,
             round_index,
@@ -409,7 +503,13 @@ impl ContextHealthSnapshot {
             self.full_compression_count,
             self.compression_failure_count,
             self.repeated_tool_signature_count,
-            self.consecutive_failed_commands
+            self.consecutive_failed_commands,
+            self.loop_detection.signal_source.unwrap_or("none"),
+            self.loop_detection.verdict_kind.unwrap_or("none"),
+            self.loop_detection.verdict_confidence,
+            self.loop_detection.verdict_count,
+            self.loop_detection.steer_attempts,
+            self.loop_detection.escalation.as_str()
         );
     }
 
@@ -441,6 +541,28 @@ impl ContextHealthSnapshot {
                 policy.profile,
                 self.consecutive_failed_commands,
                 policy.consecutive_failed_command_threshold
+            );
+        }
+
+        // Every loop-detection verdict is logged, in every mode. Report-only
+        // `Telemetry` is the calibration default precisely so verdicts can be
+        // counted without changing turn behavior, and `Enforce` needs the same
+        // record to explain an escalation. The escalation level says whether
+        // anything acted on the verdict.
+        if let Some(kind) = self.loop_detection.verdict_kind {
+            warn!(
+                "Loop detection verdict: session_id={}, turn_id={}, round_index={}, profile={:?}, source={}, kind={}, confidence={:?}, verdict_count={}, steer_attempts={}, arbitration={}, escalation={}",
+                session_id,
+                turn_id,
+                round_index,
+                policy.profile,
+                self.loop_detection.signal_source.unwrap_or("none"),
+                kind,
+                self.loop_detection.verdict_confidence,
+                self.loop_detection.verdict_count,
+                self.loop_detection.steer_attempts,
+                self.loop_detection.arbitration.unwrap_or("none"),
+                self.loop_detection.escalation.as_str()
             );
         }
     }
@@ -612,6 +734,9 @@ pub struct ExecutionEngine {
     config: ExecutionEngineConfig,
     generation_messages: DashMap<(String, String), Vec<Message>>,
     prompt_suggestions: PromptSuggestionRuntime,
+    /// Loop-detection runtime state: the installed L2 arbitration port and the
+    /// per-session clear-detection escape hatch.
+    loop_detection: LoopDetectionRuntime,
 }
 
 impl ExecutionEngine {
@@ -619,6 +744,7 @@ impl ExecutionEngine {
     const MAX_COMPRESSION_OVERFLOW_ATTEMPTS: usize = 4;
     const MAX_MAIN_CONTEXT_OVERFLOW_RECOVERIES: usize = 2;
     const FINALIZE_AFTER_REPEATED_TOOL_FAILURES_REMINDER: &'static str = "This turn must end now because repeated tool failures have prevented further progress. Ignore any unfinished work. Your task now is to give the user a final answer. Do not call any more tools; any tool call will fail. Respond in plain text only. Summarize what was completed, what failed, the evidence available from the tool results, and the single best next step for the user.";
+    const FINALIZE_AFTER_LOOP_DETECTED_REMINDER: &'static str = "This turn must end now because its output stopped making progress: it was repeating itself instead of advancing the task. Ignore any unfinished work. Your task now is to give the user a final answer. Do not call any more tools; any tool call will fail. Respond in plain text only. Do not repeat or restate anything you already wrote. State what was completed, what is still unresolved, and the single best next step for the user.";
     const FINALIZE_AFTER_MAX_ROUNDS_REMINDER: &'static str = "This turn must end now because it has reached the round limit. Ignore any unfinished work. Your task now is to give the user a final answer. Do not call any more tools; any tool call will fail. Respond in plain text only. Summarize the most useful completed work and evidence collected so far, and clearly distinguish resolved items from anything still unresolved.";
     const FINALIZE_TOOL_DENIED_MESSAGE: &'static str =
         "Tool use is disabled for finalize. Respond with plain text only.";
@@ -693,7 +819,46 @@ impl ExecutionEngine {
             config,
             generation_messages: DashMap::new(),
             prompt_suggestions: PromptSuggestionRuntime::new(),
+            loop_detection: LoopDetectionRuntime::default(),
         }
+    }
+
+    /// Installs the L2 arbitration port for agent loop detection.
+    ///
+    /// Optional by design and last-writer-wins. Without an installed arbiter,
+    /// boundary-level verdicts keep the heuristic outcome, and a
+    /// confidence-capped kind can never be upgraded to a hard stop.
+    pub fn install_loop_arbiter(&self, arbiter: Arc<dyn LoopArbiter>) {
+        self.loop_detection.install_arbiter(arbiter);
+    }
+
+    /// Session-scoped clear-detection escape hatch (`clearDetection`).
+    ///
+    /// Detection stops for this session regardless of the persisted mode, and
+    /// no other session is affected. Detection state is dropped when the flag
+    /// closes, so re-enabling starts from fresh evidence.
+    pub fn set_session_loop_detection_enabled(&self, session_id: &str, enabled: bool) {
+        self.loop_detection.set_session_enabled(session_id, enabled);
+    }
+
+    /// Whether loop detection is currently armed for `session_id`.
+    pub fn session_loop_detection_enabled(&self, session_id: &str) -> bool {
+        self.loop_detection
+            .session_enabled(session_id, self.config.loop_detection.session_enabled)
+    }
+
+    /// Whether loop detection can observe anything for `session_id`.
+    ///
+    /// `false` when the configured mode is `off` or the session escape hatch is
+    /// closed, which is the zero-overhead path: the detectors are never fed.
+    pub fn loop_detection_active(&self, session_id: &str) -> bool {
+        self.config.loop_detection.mode != LoopDetectionMode::Off
+            && self.session_loop_detection_enabled(session_id)
+    }
+
+    /// Loop-detection settings this engine was configured with.
+    pub fn loop_detection_settings(&self) -> &LoopDetectionSettings {
+        &self.config.loop_detection
     }
 
     fn remember_generation_message(&self, session_id: &str, turn_id: &str, message: &Message) {
@@ -2538,6 +2703,261 @@ impl ExecutionEngine {
         .filter(|text| !text.is_empty())
     }
 
+    /// Builds the durable reminder message for one loop-detection steer.
+    ///
+    /// Same shape as the failed-tool recovery reminder: a persisted
+    /// internal-reminder user message carrying the turn id, so the model sees it
+    /// in the next round's request and the record survives for the transcript.
+    fn loop_steer_message(steer: &LoopSteer, turn_id: &str) -> Message {
+        Message::internal_reminder(steer.reminder_kind, steer.text.clone())
+            .with_turn_id(turn_id.to_string())
+    }
+
+    /// Product event for one loop-detection ladder decision.
+    ///
+    /// One event per decision, never one per detector candidate: the payload is
+    /// the ladder's own report of what it did, so a round that fed several
+    /// detectors still produces at most one signal. `None` means the round
+    /// produced no verdict at all — detection off, the session escape hatch, or
+    /// a clean round — which is not a decision worth reporting.
+    ///
+    /// The payload deliberately carries no excerpt of the repeated text (the
+    /// same DITTO guard the steer reminder follows) and no session-scoped state:
+    /// surfaces key it by `session_id`, which is how a hidden subagent's loop
+    /// reaches its parent projection.
+    fn loop_detection_event(
+        session_id: &str,
+        turn_id: &str,
+        health: LoopHealthFields,
+        judge_arbitrated: bool,
+    ) -> Option<AgenticEvent> {
+        let kind = health.verdict_kind?;
+        Some(AgenticEvent::LoopDetectionNoted {
+            session_id: session_id.to_string(),
+            turn_id: turn_id.to_string(),
+            kind: kind.to_string(),
+            confidence: health.verdict_confidence.unwrap_or(0.0),
+            escalation: health.escalation.event_escalation(),
+            judge_arbitrated,
+        })
+    }
+
+    /// Builds one dialog turn's loop-detection ladder.
+    ///
+    /// One ladder owns exactly one turn: the detectors' analysis windows, the
+    /// thinking-block history, the arbitration budget, and the steer counter all
+    /// live here, so a loop spanning several rounds is still one loop and no
+    /// state leaks into the next turn. Thresholds are the context profile tier's
+    /// values for this agent and model with the configured overrides applied on
+    /// top, and the session escape hatch is read from the runtime state.
+    fn loop_ladder_for_turn(
+        &self,
+        session_id: &str,
+        context_profile_policy: &ContextProfilePolicy,
+    ) -> LoopInterventionLadder {
+        LoopInterventionLadder::new(LoopLadderSettings {
+            mode: self.config.loop_detection.mode,
+            session_enabled: self.session_loop_detection_enabled(session_id),
+            detector_config: loop_detector_config(
+                context_profile_policy,
+                &self.config.loop_detection.thresholds,
+            ),
+            judge_enabled: self.config.loop_detection.judge_enabled,
+            max_arbitration_requests_per_turn: self.config.loop_detection.max_verdicts_per_turn,
+            judge_confidence_min: judge_confidence_min(&self.config.loop_detection.thresholds),
+        })
+    }
+
+    /// Closing reminder for a turn that ended without a usable final answer.
+    ///
+    /// A turn stopped by the loop-detection hard fallback has no usable final
+    /// answer either — its last assistant message is the degenerate one — so it
+    /// asks for one explicitly, exactly like the tool-failure fallback.
+    fn finalize_reminder_for(reason: &str) -> Option<&'static str> {
+        match reason {
+            "repeated_tool_failures" => Some(Self::FINALIZE_AFTER_REPEATED_TOOL_FAILURES_REMINDER),
+            "max_rounds" => Some(Self::FINALIZE_AFTER_MAX_ROUNDS_REMINDER),
+            "loop_detected" => Some(Self::FINALIZE_AFTER_LOOP_DETECTED_REMINDER),
+            _ => None,
+        }
+    }
+
+    /// Whether a finished turn counts as successful.
+    ///
+    /// The abnormal endings that still produce an explainable result are
+    /// successful: the UI explains the termination inline instead of showing a
+    /// failure. Everything else (empty round, truncated partial answer) is not.
+    fn turn_success(has_final_response: bool, effective_finish_reason: &str) -> bool {
+        has_final_response
+            || matches!(
+                effective_finish_reason,
+                "max_rounds" | "repeated_tool_failures" | "user_steering" | "loop_detected"
+            )
+    }
+
+    /// Observes one completed round through the loop-detection ladder, consults
+    /// the arbitration port when the ladder asks for it, and applies the
+    /// resulting intervention.
+    ///
+    /// Observation happens once per round and never on the stream hot path: the
+    /// round boundary already holds the round's visible text, its completed
+    /// thinking block, and its usage deltas. The detector state lives in the
+    /// turn's ladder, so a loop spanning several rounds is still one loop here.
+    async fn drive_loop_detection(
+        &self,
+        context: &ExecutionContext,
+        messages: &mut Vec<Message>,
+        ladder: &mut LoopInterventionLadder,
+        round_result: &RoundResult,
+        round_index: usize,
+        model_id: &str,
+    ) -> LoopRoundDecision {
+        let (output_text, thinking_block) =
+            round_text_and_reasoning(&round_result.assistant_message);
+        let usage = round_result.usage.as_ref().map(|usage| {
+            let reasoning_tokens = u64::from(usage.reasoning_token_count.unwrap_or(0));
+            LoopUsageSample::new(
+                reasoning_tokens,
+                visible_completion_tokens(
+                    usage.candidates_token_count,
+                    usage.reasoning_token_count,
+                ),
+            )
+        });
+        // The session escape hatch is a runtime switch, so re-read it every
+        // round: a mid-turn clear stops detection immediately (and drops the
+        // detector state) instead of waiting for the next turn.
+        ladder.set_session_enabled(self.session_loop_detection_enabled(&context.session_id));
+        let step = ladder.observe(&LoopRoundObservation {
+            output_text,
+            thinking_block,
+            usage,
+        });
+
+        if let Some(observed) = step.verdict.as_ref() {
+            warn!(
+                "Loop detection observation: session_id={}, turn_id={}, round_index={}, source={}, kind={}, confidence={:.2}, pending_arbitration={}, escalation={}",
+                context.session_id,
+                context.dialog_turn_id,
+                round_index,
+                observed.source.as_str(),
+                observed.verdict.kind.as_str(),
+                observed.verdict.confidence,
+                step.pending_arbitration,
+                ladder.health_fields().escalation.as_str()
+            );
+        }
+
+        // `judge_arbitrated` must mean the L2 judge actually decided: the ladder
+        // is also asked (and answers `Indeterminate`) when no arbiter is
+        // installed, and that fallback is the pure heuristic, not a judge verdict.
+        let (action, judge_arbitrated) = if step.pending_arbitration {
+            match (step.verdict.as_ref(), self.loop_detection.arbiter()) {
+                (Some(observed), Some(arbiter)) => {
+                    let arbitrated = arbiter
+                        .arbitrate(
+                            &observed.verdict,
+                            &LoopArbiterContext {
+                                session_id: context.session_id.clone(),
+                                turn_id: context.dialog_turn_id.clone(),
+                                round_index,
+                                model_id: model_id.to_string(),
+                                agent_type: context.agent_type.clone(),
+                                signal_source: observed.source,
+                            },
+                        )
+                        .await;
+                    debug!(
+                        "Loop detection arbitration: session_id={}, turn_id={}, round_index={}, decision={}, judge_confidence={}",
+                        context.session_id,
+                        context.dialog_turn_id,
+                        round_index,
+                        arbitrated.as_str(),
+                        arbitrated
+                            .confidence()
+                            .map(|value| format!("{value:.2}"))
+                            .unwrap_or_else(|| "none".to_string())
+                    );
+                    (ladder.confirm(arbitrated), true)
+                }
+                // No arbiter installed: the heuristic verdict stands.
+                _ => (ladder.confirm(ArbiterDecision::Indeterminate), false),
+            }
+        } else {
+            (step.action, false)
+        };
+
+        // Report the decision before applying it, so a surface sees the signal
+        // that caused the intervention ahead of its effect.
+        if let Some(event) = Self::loop_detection_event(
+            &context.session_id,
+            &context.dialog_turn_id,
+            ladder.health_fields(),
+            judge_arbitrated,
+        ) {
+            self.emit_event(event, EventPriority::Normal).await;
+        }
+
+        match action {
+            LoopLadderAction::None => LoopRoundDecision::default(),
+            LoopLadderAction::Steer(steer) => {
+                warn!(
+                    "Loop detection steer injected: session_id={}, turn_id={}, round_index={}, source={}, kind={}, confidence={:.2}, attempt={}",
+                    context.session_id,
+                    context.dialog_turn_id,
+                    round_index,
+                    steer.source.as_str(),
+                    steer.kind.as_str(),
+                    steer.confidence,
+                    ladder.steer_attempts()
+                );
+                // Same durability as the failed-tool recovery reminder: the
+                // model must see the nudge in the next request, and the record
+                // has to survive for the turn's transcript.
+                let reminder = Self::loop_steer_message(&steer, &context.dialog_turn_id);
+                messages.push(reminder.clone());
+                self.remember_generation_message(
+                    &context.session_id,
+                    &context.dialog_turn_id,
+                    &reminder,
+                );
+                if let Err(error) = self
+                    .session_manager
+                    .add_message(&context.session_id, reminder)
+                    .await
+                {
+                    warn!("Failed to persist loop detection steer reminder: {}", error);
+                }
+                LoopRoundDecision {
+                    steered: true,
+                    hard_stop_reason: None,
+                }
+            }
+            LoopLadderAction::HardStop {
+                reason,
+                source,
+                kind,
+                confidence,
+            } => {
+                warn!(
+                    "Loop detection hard stop: session_id={}, turn_id={}, round_index={}, source={}, kind={}, confidence={:.2}, steer_attempts={}, reason={}",
+                    context.session_id,
+                    context.dialog_turn_id,
+                    round_index,
+                    source.as_str(),
+                    kind.as_str(),
+                    confidence,
+                    ladder.steer_attempts(),
+                    reason
+                );
+                LoopRoundDecision {
+                    steered: false,
+                    hard_stop_reason: Some(reason),
+                }
+            }
+        }
+    }
+
     /// Native hook session facts for a compaction or turn-lifecycle dispatch.
     fn native_hook_facts<'a>(
         session_id: &'a str,
@@ -3327,6 +3747,22 @@ impl ExecutionEngine {
         let mut stop_hook_continuations: usize = 0;
         const MAX_STOP_HOOK_CONTINUATIONS: usize = 3;
 
+        // Loop detection is per turn: this ladder owns the detectors' windows,
+        // the thinking-block memory, and the attempt counters, so detector state
+        // survives this turn's rounds without leaking into the next turn. The
+        // thresholds come from the context profile tier for this agent and model,
+        // with explicit configuration overrides applied on top.
+        let mut loop_ladder =
+            self.loop_ladder_for_turn(&context.session_id, &context_profile_policy);
+        if !loop_ladder.active() {
+            debug!(
+                "Loop detection disabled for this turn: session_id={}, mode={:?}, session_enabled={}",
+                context.session_id,
+                self.config.loop_detection.mode,
+                loop_ladder.session_enabled()
+            );
+        }
+
         // Add detailed logging showing the execution context messages.
         debug!(
             "Executing dialog turn: dialog_turn_id={}, mode={}, agent={}, initial_messages={}, messages_len={}",
@@ -3398,6 +3834,9 @@ impl ExecutionEngine {
 
         // Loop to execute model rounds
         loop {
+            // A loop-detection steer is a round-boundary injection: it keeps the
+            // turn alive so the model can react, exactly like human steering.
+            let mut loop_detection_steered = false;
             if self
                 .round_executor
                 .is_dialog_turn_cancelled(&dialog_turn_id)
@@ -4066,6 +4505,30 @@ impl ExecutionEngine {
                 failed_tool_recovery_attempts = 0;
             }
 
+            // Loop detection observes the round that just finished, then applies
+            // the intervention ladder. A hard stop ends the turn here, before the
+            // failed-tool ladder below: both ladders cap at three attempts, and
+            // a text/reasoning loop is observable one round earlier than a tool
+            // failure that has to run to completion first.
+            let loop_decision = self
+                .drive_loop_detection(
+                    &context,
+                    &mut messages,
+                    &mut loop_ladder,
+                    &round_result,
+                    round_index,
+                    &ai_client.config.model,
+                )
+                .await;
+            match loop_decision.turn_effect() {
+                LoopTurnEffect::Continue => {}
+                LoopTurnEffect::Steered => loop_detection_steered = true,
+                LoopTurnEffect::Finalize(reason) => {
+                    finalization_reason = Some(reason);
+                    break;
+                }
+            }
+
             let after_round_pressure = Self::estimate_auto_compression_pressure(
                 &messages,
                 tool_definitions.as_deref(),
@@ -4079,7 +4542,8 @@ impl ExecutionEngine {
                 compression_failure_count,
                 &recent_tool_signatures,
                 &messages,
-            );
+            )
+            .with_loop_detection(loop_ladder.health_fields());
             after_round_health.log(
                 &context.session_id,
                 &context.dialog_turn_id,
@@ -4330,8 +4794,9 @@ impl ExecutionEngine {
             //   (write the answer), and continue.
             // - Model emitted nothing at all     -> partial recovery / truncation.
             //   Retrying without new context will not help, so end the turn.
-            if injection_applied {
-                // fall through to next round so the model can respond to the steering
+            if injection_applied || loop_detection_steered {
+                // fall through to next round so the model can respond to the
+                // steering or to the loop-detection reminder
             } else if !round_result.has_more_rounds {
                 if round_result.had_assistant_text {
                     if let Some(ref reason) = round_result.partial_recovery_reason {
@@ -4534,13 +4999,7 @@ impl ExecutionEngine {
         let mut used_local_final_response_synthesis = false;
 
         if let Some(reason) = finalization_reason {
-            let finalize_reminder = match reason {
-                "repeated_tool_failures" => {
-                    Some(Self::FINALIZE_AFTER_REPEATED_TOOL_FAILURES_REMINDER)
-                }
-                "max_rounds" => Some(Self::FINALIZE_AFTER_MAX_ROUNDS_REMINDER),
-                _ => None,
-            };
+            let finalize_reminder = Self::finalize_reminder_for(reason);
 
             if let Some(finalize_reminder) = finalize_reminder {
                 let finalize_round_group_id = Some(format!(
@@ -4686,11 +5145,7 @@ impl ExecutionEngine {
         // Some abnormal turn endings still go through the completed-event path
         // so the UI can explain the termination cause inline even when the turn
         // ended without a final assistant reply.
-        let success = has_final_response
-            || matches!(
-                effective_finish_reason,
-                "max_rounds" | "repeated_tool_failures" | "user_steering"
-            );
+        let success = Self::turn_success(has_final_response, effective_finish_reason);
 
         // Post-processing hook: when a DeepResearch dialog turn finishes
         // successfully, renumber `cit_XXX` references in the final report
@@ -4888,17 +5343,25 @@ impl ExecutionEngine {
 mod compression_tests;
 
 #[cfg(test)]
+#[path = "loop_detection_turn_tests.rs"]
+mod loop_detection_turn_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{
         activate_conditional_instructions_after_round, manual_compaction_terminal_error,
         reached_fixed_model_round_limit, resolve_round_permission_mode,
         runtime_context_needs_for_manifest, skill_agent_listing_reminders, ContextHealthSnapshot,
-        ExecutionEngine, ExecutionEngineConfig, RoundResult, TurnPromptScaffold,
+        ExecutionEngine, ExecutionEngineConfig, LoopSteer, RoundResult, TurnPromptScaffold,
     };
     use crate::agentic::agents::{
         PrependedPromptReminders, PromptBuilderContext, ToolListingSections, UserContextPolicy,
     };
     use crate::agentic::core::{InternalReminderKind, Message, MessageRole, ToolCall, ToolResult};
+    use crate::agentic::events::{AgenticEvent, LoopDetectionEscalation};
+    use crate::agentic::execution::loop_detection::{
+        judge_confidence_min, LoopEscalationLevel, LoopHealthFields, LoopSignalSource,
+    };
     use crate::agentic::persistence::PersistenceManager;
     use crate::agentic::session::{
         ContextCompressor, PromptCachePolicy, SessionContextStore, SessionManager,
@@ -4912,6 +5375,9 @@ mod tests {
     use crate::instruction_sources::test_support::{lock_environment, EnvironmentGuard};
     use crate::service::config::types::AIConfig;
     use crate::service::config::types::AIModelConfig;
+    use crate::service::config::types::{
+        LoopDetectionMode, DEFAULT_LOOP_DETECTION_MAX_VERDICTS_PER_TURN,
+    };
     use crate::service::remote_ssh::workspace_state::workspace_session_identity;
     use crate::util::types::ToolDefinition;
     use openbitfun_runtime_ports::{
@@ -6567,6 +7033,212 @@ mod tests {
         assert_eq!(snapshot.repeated_tool_signature_count, 0);
         assert_eq!(snapshot.consecutive_failed_commands, 2);
         assert_eq!(snapshot.compression_failure_count, 2);
+    }
+
+    #[test]
+    fn context_health_snapshot_defaults_to_no_loop_verdict() {
+        let snapshot = ContextHealthSnapshot::from_runtime_observations(0.1, 0, 0, &[], &[]);
+
+        assert!(!snapshot.loop_detection.has_verdict());
+        assert_eq!(snapshot.loop_detection.verdict_count, 0);
+        assert_eq!(snapshot.loop_detection.escalation, LoopEscalationLevel::Off);
+    }
+
+    #[test]
+    fn context_health_snapshot_carries_loop_detection_telemetry() {
+        let snapshot = ContextHealthSnapshot::from_runtime_observations(0.1, 0, 0, &[], &[])
+            .with_loop_detection(LoopHealthFields {
+                signal_source: Some("thinking"),
+                verdict_kind: Some("thinking_stagnation"),
+                verdict_confidence: Some(0.75),
+                verdict_count: 2,
+                steer_attempts: 1,
+                arbitration: Some("indeterminate"),
+                escalation: LoopEscalationLevel::Steer,
+            });
+
+        assert!(snapshot.loop_detection.has_verdict());
+        assert_eq!(
+            snapshot.loop_detection.verdict_kind,
+            Some("thinking_stagnation")
+        );
+        assert_eq!(snapshot.loop_detection.verdict_confidence, Some(0.75));
+        assert_eq!(snapshot.loop_detection.verdict_count, 2);
+        assert_eq!(snapshot.loop_detection.steer_attempts, 1);
+        assert_eq!(
+            snapshot.loop_detection.escalation,
+            LoopEscalationLevel::Steer
+        );
+    }
+
+    #[test]
+    fn loop_detection_event_reports_the_ladder_decision() {
+        let event = ExecutionEngine::loop_detection_event(
+            "session-1",
+            "turn-1",
+            LoopHealthFields {
+                signal_source: Some("output"),
+                verdict_kind: Some("verbatim_block"),
+                verdict_confidence: Some(0.93),
+                verdict_count: 2,
+                steer_attempts: 1,
+                arbitration: Some("confirmed"),
+                escalation: LoopEscalationLevel::Steer,
+            },
+            true,
+        )
+        .expect("a reported verdict must produce an event");
+
+        assert!(matches!(
+            event,
+            AgenticEvent::LoopDetectionNoted {
+                ref session_id,
+                ref turn_id,
+                ref kind,
+                escalation: LoopDetectionEscalation::Steered,
+                judge_arbitrated: true,
+                ..
+            } if session_id == "session-1"
+                && turn_id == "turn-1"
+                && kind == "verbatim_block"
+        ));
+    }
+
+    #[test]
+    fn loop_detection_event_maps_the_hard_stop_to_the_stopped_level() {
+        let event = ExecutionEngine::loop_detection_event(
+            "session-1",
+            "turn-1",
+            LoopHealthFields {
+                verdict_kind: Some("thinking_stagnation"),
+                verdict_confidence: Some(0.81),
+                escalation: LoopEscalationLevel::HardStop,
+                arbitration: Some("confirmed"),
+                ..LoopHealthFields::default()
+            },
+            true,
+        )
+        .expect("hard stop event");
+
+        assert!(matches!(
+            event,
+            AgenticEvent::LoopDetectionNoted {
+                escalation: LoopDetectionEscalation::Stopped,
+                confidence,
+                judge_arbitrated: true,
+                ..
+            } if (confidence - 0.81).abs() < 1e-6
+        ));
+    }
+
+    #[test]
+    fn loop_detection_event_reports_a_telemetry_verdict_as_noted() {
+        let event = ExecutionEngine::loop_detection_event(
+            "session-1",
+            "turn-1",
+            LoopHealthFields {
+                verdict_kind: Some("near_repetition"),
+                verdict_confidence: Some(0.86),
+                verdict_count: 1,
+                escalation: LoopEscalationLevel::Telemetry,
+                ..LoopHealthFields::default()
+            },
+            false,
+        )
+        .expect("report-only verdict event");
+
+        assert!(matches!(
+            event,
+            AgenticEvent::LoopDetectionNoted {
+                escalation: LoopDetectionEscalation::Noted,
+                judge_arbitrated: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn loop_detection_event_skips_rounds_without_a_verdict() {
+        assert!(ExecutionEngine::loop_detection_event(
+            "session-1",
+            "turn-1",
+            LoopHealthFields::default(),
+            false,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn execution_engine_config_reads_loop_detection_settings() {
+        let mut ai_config = AIConfig::default();
+        ai_config.loop_detection.mode = LoopDetectionMode::Enforce;
+        ai_config.loop_detection.session_enabled = false;
+        ai_config.loop_detection.judge.enabled = false;
+        ai_config.loop_detection.judge.max_verdicts_per_turn = 5;
+        ai_config
+            .loop_detection
+            .thresholds
+            .ngram_window_similarity_min = Some(0.8);
+        ai_config
+            .loop_detection
+            .thresholds
+            .judge_verdict_confidence_min = Some(0.92);
+
+        let config = ExecutionEngineConfig::from_ai_config(&ai_config);
+
+        assert_eq!(config.loop_detection.mode, LoopDetectionMode::Enforce);
+        assert!(!config.loop_detection.session_enabled);
+        assert!(!config.loop_detection.judge_enabled);
+        assert_eq!(config.loop_detection.max_verdicts_per_turn, 5);
+        assert_eq!(
+            config.loop_detection.thresholds.ngram_window_similarity_min,
+            Some(0.8)
+        );
+        // The ladder's confidence gate is resolved from this same snapshot.
+        assert_eq!(
+            judge_confidence_min(&config.loop_detection.thresholds),
+            0.92
+        );
+    }
+
+    #[test]
+    fn execution_engine_config_defaults_to_telemetry_loop_detection() {
+        let config = ExecutionEngineConfig::default();
+
+        assert_eq!(config.loop_detection.mode, LoopDetectionMode::Telemetry);
+        assert!(config.loop_detection.session_enabled);
+        assert!(config.loop_detection.judge_enabled);
+        assert_eq!(
+            config.loop_detection.max_verdicts_per_turn,
+            DEFAULT_LOOP_DETECTION_MAX_VERDICTS_PER_TURN
+        );
+    }
+
+    #[test]
+    fn loop_steer_message_is_a_turn_scoped_internal_reminder() {
+        let steer = LoopSteer {
+            reminder_kind: InternalReminderKind::ThinkingLoopRecovery,
+            source: LoopSignalSource::Thinking,
+            kind: openbitfun_agent_stream::LoopKind::ThinkingStagnation,
+            confidence: 0.75,
+            text: "Internal reasoning loop detected: signal=thinking_stagnation. Do not restate what you already reasoned through.".to_string(),
+        };
+
+        let message = ExecutionEngine::loop_steer_message(&steer, "turn-1");
+
+        assert_eq!(message.role, MessageRole::User);
+        assert_eq!(
+            message.internal_reminder_kind(),
+            Some(InternalReminderKind::ThinkingLoopRecovery)
+        );
+        assert_eq!(
+            message.metadata.semantic_kind,
+            Some(crate::agentic::core::MessageSemanticKind::InternalReminder)
+        );
+        assert_eq!(message.metadata.turn_id.as_deref(), Some("turn-1"));
+        let text = message.content.to_string();
+        assert!(text.starts_with("<system_reminder>"), "got: {text}");
+        assert!(text.contains("thinking_stagnation"));
     }
 
     #[test]

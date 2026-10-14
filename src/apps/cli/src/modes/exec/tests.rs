@@ -15,7 +15,8 @@ use openbitfun_agent_runtime::sdk::{
     PermissionRequestSourceKind, PortError, PortErrorKind, RuntimeError,
 };
 use openbitfun_events::{
-    AgenticEvent, AgenticEventEnvelope, AgenticEventPriority, ToolEventIdentity,
+    AgenticEvent, AgenticEventEnvelope, AgenticEventPriority, LoopDetectionEscalation,
+    ToolEventIdentity,
 };
 use serde_json::json;
 use std::collections::BTreeSet;
@@ -529,6 +530,30 @@ fn exec_turn_filter_accepts_session_correlated_system_errors() {
         &event,
         "session-other",
         "turn-current"
+    ));
+}
+
+#[test]
+fn exec_turn_filter_keeps_loop_detection_notes_on_their_own_turn() {
+    let event = AgenticEvent::LoopDetectionNoted {
+        session_id: "session-1".to_string(),
+        turn_id: "turn-current".to_string(),
+        kind: "verbatim_block".to_string(),
+        confidence: 0.9,
+        escalation: LoopDetectionEscalation::Steered,
+        judge_arbitrated: false,
+    };
+
+    assert_eq!(event_turn_id(&event), Some("turn-current"));
+    assert!(event_belongs_to_exec_turn(
+        &event,
+        "session-1",
+        "turn-current"
+    ));
+    assert!(!event_belongs_to_exec_turn(
+        &event,
+        "session-1",
+        "turn-other"
     ));
 }
 

@@ -117,6 +117,12 @@ pub enum InternalReminderKind {
     SessionMessageReply,
     LoopRecovery,
     PeriodicLoopRecovery,
+    /// Repeated internal reasoning was detected; the agent is asked to abandon
+    /// the line it is repeating and act on its conclusion.
+    ThinkingLoopRecovery,
+    /// Repeated user-visible output was detected; the agent is asked to stop
+    /// restating itself and finish or continue from new ground.
+    OutputLoopRecovery,
     UserSteering,
     BackgroundResult,
     InterruptedContinue,
@@ -158,6 +164,11 @@ impl InternalReminderKind {
                 | Self::AgentListingDiff
                 | Self::LoopRecovery
                 | Self::PeriodicLoopRecovery
+                // Loop-detection steers join their recovery siblings: they
+                // describe a situation that has passed once the context they
+                // were injected into is compacted away.
+                | Self::ThinkingLoopRecovery
+                | Self::OutputLoopRecovery
                 | Self::InterruptedContinue
                 | Self::ThinkingOnlyRescue
                 | Self::FinalizeCacheAnchor

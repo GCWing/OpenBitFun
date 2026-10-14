@@ -1080,6 +1080,172 @@ impl TaskModelsConfig {
     }
 }
 
+/// Agent loop detection mode.
+///
+/// Calibration default is report-only `Telemetry`: loop detection must earn the
+/// right to intervene with measured false-positive rates before `Enforce` can
+/// become a default, and `Off` stays selectable as the user escape hatch. A mode
+/// string written by a newer build that this build does not know degrades to
+/// `Telemetry` instead of failing configuration deserialization, so an older
+/// build never turns an unknown stronger mode into a silent hard stop.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LoopDetectionMode {
+    /// No detection, no telemetry.
+    Off,
+    /// Detect and apply the intervention ladder (steer first, hard stop last).
+    Enforce,
+    /// Detect and report through context-health telemetry, never intervene.
+    ///
+    /// `serde(other)` must stay on the last variant, and it is what makes an
+    /// unknown mode string the report-only default rather than a deserialization
+    /// failure.
+    #[default]
+    #[serde(other)]
+    Telemetry,
+}
+
+/// Optional threshold overrides for agent loop detection.
+///
+/// `None` keeps the detector's calibrated baseline. A value set here wins
+/// outright over the profile/model tier scale owned by the agent runtime context
+/// profile policy, so these are the knobs the calibration phase writes after
+/// measuring false-positive rates. Unset values stay unset in the persisted
+/// document, so a calibration report can tell a tuned knob from an untouched one.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct LoopDetectionThresholdOverridesConfig {
+    /// Repeated-block evidence: characters hashed into one block (initial 50).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exact_block_hash_chars: Option<u32>,
+    /// Repeated-block evidence: occurrences of the same block before the signal
+    /// fires (initial 4).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exact_block_min_occurrences: Option<u32>,
+    /// Repeated-block evidence: maximum mean distance between repeats, in
+    /// characters (initial 400).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exact_block_max_mean_gap_chars: Option<u32>,
+    /// n-gram window similarity that counts as repetition (initial 0.85).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ngram_window_similarity_min: Option<f32>,
+    /// n-gram window similarity that is strong enough to skip the judge
+    /// (initial 0.9).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ngram_window_strong_similarity: Option<f32>,
+    /// Adjacent thinking-block similarity that counts as one stalled step
+    /// (initial 0.7).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_block_similarity_min: Option<f32>,
+    /// Consecutive stalled thinking steps before the thinking loop is
+    /// suspicious (initial 2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_stall_steps: Option<u32>,
+    /// Repeats of a connective short n-gram that count as a stuck phrase
+    /// (initial 8).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stuck_phrase_min_repeats: Option<u32>,
+    /// Window compression ratio that counts as degenerate text (initial 0.6).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_compression_ratio_min: Option<f32>,
+    /// Reasoning-token growth per second that indicates a bypass loop. The
+    /// detection plan leaves this value to calibration, so unset means the
+    /// detector default applies.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_bypass_min_tokens_per_sec: Option<u32>,
+    /// Rounds a reasoning bypass must persist before it is reported
+    /// (initial 2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_bypass_min_rounds: Option<u32>,
+    /// Judge confidence required before acting on a verdict (initial 0.9).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub judge_verdict_confidence_min: Option<f32>,
+}
+
+impl LoopDetectionThresholdOverridesConfig {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// L2 judge settings for agent loop detection.
+///
+/// The judge is an arbitration layer over ambiguous L1 evidence, so it is
+/// optional: when it is unavailable or disabled, detection degrades to the pure
+/// heuristics instead of failing. The judge model follows
+/// `ai.default_models.fast` with a fallback to `ai.default_models.primary`; this
+/// section deliberately does not add another model selector.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct LoopDetectionJudgeConfig {
+    /// Whether the judge may be consulted at all.
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub enabled: bool,
+    /// Hard cap on judge verdicts per dialog turn.
+    #[serde(default = "default_loop_detection_max_verdicts_per_turn")]
+    pub max_verdicts_per_turn: u32,
+}
+
+impl Default for LoopDetectionJudgeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_verdicts_per_turn: default_loop_detection_max_verdicts_per_turn(),
+        }
+    }
+}
+
+impl LoopDetectionJudgeConfig {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// Agent loop detection configuration.
+///
+/// Detection is a session-level concern: a session can clear detection for
+/// itself at runtime, and `session_enabled` decides the state a new session
+/// starts from without touching the persisted mode. Every field is optional, so
+/// a configuration document written before this section existed still loads.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct LoopDetectionConfig {
+    /// Detection and intervention level.
+    #[serde(default)]
+    pub mode: LoopDetectionMode,
+    /// Default state of the per-session clear-detection escape hatch. Setting it
+    /// false keeps detection off for every session while preserving `mode` for
+    /// other surfaces.
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub session_enabled: bool,
+    /// Explicit threshold overrides; empty keeps the detector baselines.
+    #[serde(
+        default,
+        skip_serializing_if = "LoopDetectionThresholdOverridesConfig::is_default"
+    )]
+    pub thresholds: LoopDetectionThresholdOverridesConfig,
+    /// Judge (arbitration layer) settings.
+    #[serde(default, skip_serializing_if = "LoopDetectionJudgeConfig::is_default")]
+    pub judge: LoopDetectionJudgeConfig,
+}
+
+impl Default for LoopDetectionConfig {
+    fn default() -> Self {
+        Self {
+            mode: LoopDetectionMode::default(),
+            session_enabled: true,
+            thresholds: LoopDetectionThresholdOverridesConfig::default(),
+            judge: LoopDetectionJudgeConfig::default(),
+        }
+    }
+}
+
+impl LoopDetectionConfig {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
 /// AI configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -1160,6 +1326,12 @@ pub struct AIConfig {
     /// Enable the evaluation-oriented edit constraint guard.
     #[serde(default, skip_serializing_if = "is_false")]
     pub enable_edit_constraint_guard: bool,
+
+    /// Agent loop detection (text-level repetition and thinking-loop signals).
+    /// Omitted while it stays at the calibrating default, so existing config
+    /// documents are unchanged until the user or the calibration phase acts.
+    #[serde(default, skip_serializing_if = "LoopDetectionConfig::is_default")]
+    pub loop_detection: LoopDetectionConfig,
 
     /// Allows broad JSON repair for non-Write tool arguments only after a
     /// provider confirms a normal tool-use completion.
@@ -1616,6 +1788,13 @@ fn default_max_rounds() -> usize {
     DEFAULT_MAX_ROUNDS
 }
 
+/// Judge verdicts allowed per dialog turn for agent loop detection.
+pub const DEFAULT_LOOP_DETECTION_MAX_VERDICTS_PER_TURN: u32 = 2;
+
+fn default_loop_detection_max_verdicts_per_turn() -> u32 {
+    DEFAULT_LOOP_DETECTION_MAX_VERDICTS_PER_TURN
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentSubagentOverrideState {
@@ -2062,6 +2241,7 @@ impl Default for AIConfig {
             enable_deferred_tool_loading: default_enable_deferred_tool_loading(),
             enable_context_compression_prefetch: true,
             enable_edit_constraint_guard: false,
+            loop_detection: LoopDetectionConfig::default(),
             allow_tool_json_repair: true,
             computer_use_enabled: false,
             browser_control_preferred_browser: String::new(),
@@ -2343,9 +2523,11 @@ mod tests {
     use super::{
         AIConfig, AIExperienceConfig, AIModelConfig, AgentModelDefaultsConfig, AgentProfileConfig,
         AgentProfileView, AppConfig, AppLoggingConfig, AuthConfig, ChatInputDefaultModeStrategy,
-        EditorConfig, GlobalConfig, MemoryExternalContextPolicy, ModelExchangeTracingMode,
-        NotificationConfig, OpenCodePlan, SubagentBatchExecutionPolicy, SubagentModelSelection,
-        SubscriptionProvider, UserSkillGroupsConfig, UserToolGroupsConfig, WebSearchConfig,
+        EditorConfig, GlobalConfig, LoopDetectionConfig, LoopDetectionMode,
+        LoopDetectionThresholdOverridesConfig, MemoryExternalContextPolicy,
+        ModelExchangeTracingMode, NotificationConfig, OpenCodePlan, SubagentBatchExecutionPolicy,
+        SubagentModelSelection, SubscriptionProvider, UserSkillGroupsConfig, UserToolGroupsConfig,
+        WebSearchConfig, DEFAULT_LOOP_DETECTION_MAX_VERDICTS_PER_TURN,
     };
     use openbitfun_product_domains::tool_permissions::ToolPermissionConfig;
 
@@ -3317,6 +3499,159 @@ mod tests {
         assert_eq!(payload["enable_context_compression_prefetch"], false);
         let reloaded: AIConfig = serde_json::from_value(payload).unwrap();
         assert!(!reloaded.enable_context_compression_prefetch);
+    }
+
+    #[test]
+    fn loop_detection_defaults_to_telemetry_for_legacy_config() {
+        assert_eq!(LoopDetectionMode::default(), LoopDetectionMode::Telemetry);
+
+        let legacy: AIConfig = serde_json::from_value(serde_json::json!({"max_rounds": 42}))
+            .expect("config without a loop-detection section should deserialize");
+        assert_eq!(legacy.loop_detection.mode, LoopDetectionMode::Telemetry);
+        assert!(legacy.loop_detection.session_enabled);
+        assert!(legacy.loop_detection.judge.enabled);
+        assert_eq!(
+            legacy.loop_detection.judge.max_verdicts_per_turn,
+            DEFAULT_LOOP_DETECTION_MAX_VERDICTS_PER_TURN
+        );
+        assert_eq!(
+            legacy.loop_detection.thresholds,
+            LoopDetectionThresholdOverridesConfig::default()
+        );
+
+        // The calibrating default is omitted, so writes do not rewrite the
+        // persisted document for users who never touch the setting.
+        let payload = serde_json::to_value(&legacy).unwrap();
+        assert!(payload.get("loop_detection").is_none());
+        assert_eq!(payload["max_rounds"], 42);
+        let reloaded: AIConfig = serde_json::from_value(payload).unwrap();
+        assert_eq!(reloaded.loop_detection, LoopDetectionConfig::default());
+    }
+
+    #[test]
+    fn loop_detection_mode_round_trips_and_degrades_unknown_values() {
+        for (stored, expected) in [
+            ("off", LoopDetectionMode::Off),
+            ("telemetry", LoopDetectionMode::Telemetry),
+            ("enforce", LoopDetectionMode::Enforce),
+        ] {
+            let config: AIConfig = serde_json::from_value(serde_json::json!({
+                "loop_detection": {"mode": stored}
+            }))
+            .expect("every supported mode should deserialize");
+            assert_eq!(config.loop_detection.mode, expected);
+
+            let payload = serde_json::to_value(&config).unwrap();
+            if expected == LoopDetectionMode::Telemetry {
+                assert!(payload.get("loop_detection").is_none());
+            } else {
+                assert_eq!(payload["loop_detection"]["mode"], stored);
+            }
+            let reloaded: AIConfig = serde_json::from_value(payload).unwrap();
+            assert_eq!(reloaded.loop_detection.mode, expected);
+        }
+
+        // A mode written by a newer build must not fail the whole config, and
+        // must not silently escalate to a hard stop on an older build.
+        let newer: AIConfig = serde_json::from_value(serde_json::json!({
+            "loop_detection": {"mode": "audit_only"}
+        }))
+        .expect("unknown mode should degrade instead of failing");
+        assert_eq!(newer.loop_detection.mode, LoopDetectionMode::Telemetry);
+
+        // The default mode still writes its own name once the section is
+        // persisted for another reason.
+        let telemetry: AIConfig = serde_json::from_value(serde_json::json!({
+            "loop_detection": {"mode": "telemetry", "session_enabled": false}
+        }))
+        .unwrap();
+        let payload = serde_json::to_value(&telemetry).unwrap();
+        assert_eq!(payload["loop_detection"]["mode"], "telemetry");
+    }
+
+    #[test]
+    fn loop_detection_overrides_and_judge_settings_round_trip_exactly() {
+        let config: AIConfig = serde_json::from_value(serde_json::json!({
+            "loop_detection": {
+                "mode": "enforce",
+                "session_enabled": false,
+                "thresholds": {
+                    "exact_block_hash_chars": 64,
+                    "exact_block_min_occurrences": 6,
+                    "exact_block_max_mean_gap_chars": 512,
+                    "ngram_window_similarity_min": 0.9,
+                    "ngram_window_strong_similarity": 0.95,
+                    "thinking_block_similarity_min": 0.75,
+                    "thinking_stall_steps": 3,
+                    "stuck_phrase_min_repeats": 10,
+                    "window_compression_ratio_min": 0.62,
+                    "reasoning_bypass_min_tokens_per_sec": 25,
+                    "reasoning_bypass_min_rounds": 2,
+                    "judge_verdict_confidence_min": 0.92
+                },
+                "judge": {"enabled": false, "max_verdicts_per_turn": 1}
+            }
+        }))
+        .expect("explicit loop-detection settings should deserialize");
+
+        assert_eq!(config.loop_detection.mode, LoopDetectionMode::Enforce);
+        assert!(!config.loop_detection.session_enabled);
+        assert!(!config.loop_detection.judge.enabled);
+        assert_eq!(config.loop_detection.judge.max_verdicts_per_turn, 1);
+        let thresholds = &config.loop_detection.thresholds;
+        assert_eq!(thresholds.exact_block_hash_chars, Some(64));
+        assert_eq!(thresholds.exact_block_min_occurrences, Some(6));
+        assert_eq!(thresholds.exact_block_max_mean_gap_chars, Some(512));
+        assert_eq!(thresholds.ngram_window_similarity_min, Some(0.9));
+        assert_eq!(thresholds.ngram_window_strong_similarity, Some(0.95));
+        assert_eq!(thresholds.thinking_block_similarity_min, Some(0.75));
+        assert_eq!(thresholds.thinking_stall_steps, Some(3));
+        assert_eq!(thresholds.stuck_phrase_min_repeats, Some(10));
+        assert_eq!(thresholds.window_compression_ratio_min, Some(0.62));
+        assert_eq!(thresholds.reasoning_bypass_min_tokens_per_sec, Some(25));
+        assert_eq!(thresholds.reasoning_bypass_min_rounds, Some(2));
+        assert_eq!(thresholds.judge_verdict_confidence_min, Some(0.92));
+
+        let payload = serde_json::to_value(&config).unwrap();
+        let saved = &payload["loop_detection"];
+        assert_eq!(saved["mode"], "enforce");
+        assert_eq!(saved["session_enabled"], false);
+        assert_eq!(
+            saved["judge"],
+            serde_json::json!({"enabled": false, "max_verdicts_per_turn": 1})
+        );
+        let reloaded: AIConfig = serde_json::from_value(payload).unwrap();
+        assert_eq!(reloaded.loop_detection, config.loop_detection);
+
+        // Untouched thresholds stay absent instead of being frozen into the file.
+        let untouched: AIConfig = serde_json::from_value(serde_json::json!({
+            "loop_detection": {"thresholds": {"stuck_phrase_min_repeats": 12}}
+        }))
+        .unwrap();
+        let payload = serde_json::to_value(&untouched).unwrap();
+        assert_eq!(
+            payload["loop_detection"]["thresholds"],
+            serde_json::json!({"stuck_phrase_min_repeats": 12})
+        );
+        assert!(payload["loop_detection"].get("judge").is_none());
+    }
+
+    #[test]
+    fn loop_detection_section_tolerates_unknown_fields_from_newer_builds() {
+        let config: AIConfig = serde_json::from_value(serde_json::json!({
+            "loop_detection": {
+                "mode": "telemetry",
+                "future_signal_weight": 0.4,
+                "thresholds": {"future_knob": 3}
+            }
+        }))
+        .expect("unknown loop-detection fields should be ignored");
+
+        assert_eq!(config.loop_detection.mode, LoopDetectionMode::Telemetry);
+        assert_eq!(
+            config.loop_detection.thresholds,
+            LoopDetectionThresholdOverridesConfig::default()
+        );
     }
 
     #[test]

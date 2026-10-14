@@ -20,7 +20,7 @@ use std::sync::{
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast::error::TryRecvError;
 
-use openbitfun_events::{AgenticEvent, ToolEventData, ToolEventIdentity};
+use openbitfun_events::{AgenticEvent, LoopDetectionEscalation, ToolEventData, ToolEventIdentity};
 use openbitfun_product_domains::account::AccountSnapshotProjection;
 use openbitfun_product_domains::agent_catalog::{SkillSummary, SubagentSummary};
 use openbitfun_product_domains::native_hooks::{
@@ -146,6 +146,31 @@ enum TranscriptTerminalOutcome {
     SystemError(String),
 }
 
+/// Transcript status line for one loop-detection intervention.
+///
+/// Only a steer is reported from the event: a hard stop is reported from the
+/// turn's `loop_detected` finalization reason instead, so one stopped turn never
+/// renders two lines for the same decision. Report-only decisions
+/// (`ai.loop_detection.mode` calibration) stay in the log.
+fn loop_detection_status_line(
+    kind: &str,
+    confidence: f32,
+    escalation: LoopDetectionEscalation,
+) -> Option<String> {
+    if escalation != LoopDetectionEscalation::Steered {
+        return None;
+    }
+    Some(format!(
+        "[loop detection] The agent started repeating itself ({kind} signal, confidence {confidence:.2}). A correction reminder was injected and the turn continues."
+    ))
+}
+
+/// Transcript status line for a turn ended by the loop-detection fallback.
+fn loop_detected_turn_status_line() -> String {
+    "[loop detection] The turn was stopped because the agent kept repeating itself after correction attempts."
+        .to_string()
+}
+
 /// Shared event-to-transcript projection used by the root conversation and a
 /// read-only inspected descendant. Host notifications and git refresh remain
 /// root-only side effects in the caller.
@@ -214,13 +239,29 @@ fn project_transcript_event(
                 outcome.changed = true;
             }
         }
+        AgenticEvent::LoopDetectionNoted {
+            turn_id,
+            kind,
+            confidence,
+            escalation,
+            ..
+        } if chat_state.current_turn_id() == Some(turn_id.as_str()) => {
+            if let Some(status_line) = loop_detection_status_line(kind, *confidence, *escalation) {
+                chat_state.add_system_message(status_line);
+                outcome.changed = true;
+            }
+        }
         AgenticEvent::DialogTurnCompleted {
             turn_id,
             total_rounds,
             total_tools,
+            finish_reason,
             ..
         } if chat_state.current_turn_id() == Some(turn_id.as_str()) => {
             chat_state.handle_turn_completed(*total_rounds, *total_tools);
+            if finish_reason.as_deref() == Some("loop_detected") {
+                chat_state.add_system_message(loop_detected_turn_status_line());
+            }
             outcome.changed = true;
             outcome.terminal = Some(TranscriptTerminalOutcome::Completed);
         }

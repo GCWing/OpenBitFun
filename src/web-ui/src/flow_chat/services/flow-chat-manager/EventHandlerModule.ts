@@ -35,6 +35,7 @@ import { normalizeSessionContinuationPolicy } from '../../utils/sessionMetadata'
 import type {
   DeepReviewQueueStateChangedEvent,
   ImageAnalysisEvent,
+  LoopDetectionNotedEvent,
   ModelRoundStartedEvent,
   ModelRoundCompletedEvent,
   ModelRoundAttemptSupersededEvent,
@@ -100,6 +101,7 @@ import {
   stripOptimisticTurnAdoption,
 } from '../../utils/optimisticTurnAdoption';
 import { isAcpFlowSession } from '../../utils/acpSession';
+import { i18nService } from '@/infrastructure/i18n';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import { resolveLegacySessionWorkspace } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
 
@@ -214,6 +216,7 @@ export const __test_only__ = {
   handleDialogTurnRecovered,
   handleDialogTurnCancelled,
   buildBuiltInBrowserTabOptions,
+  handleLoopDetectionNoted,
 };
 
 function eventOwnsLatestSessionTurn(
@@ -944,6 +947,9 @@ export async function initializeEventListeners(
     },
     onUserSteeringInjected: (event) => {
       handleUserSteeringInjected(context, event);
+    },
+    onLoopDetectionNoted: (event) => {
+      handleLoopDetectionNoted(event);
     }
   };
 
@@ -1543,6 +1549,69 @@ function handleUserSteeringInjected(_context: FlowChatContext, event: any): void
     content,
     roundIndex,
   });
+}
+
+/**
+ * Report one loop-detection ladder decision as a non-blocking notice.
+ *
+ * The turn is not blocked and nothing is written to the transcript: a `steered`
+ * note means the runtime already injected a correction reminder at the model
+ * round boundary, and `stopped` is additionally explained by the turn
+ * completion notice. `noted` decisions are report-only (`ai.loop_detection.mode`
+ * calibration) and stay in the log instead of becoming user-visible noise.
+ */
+function handleLoopDetectionNoted(event: LoopDetectionNotedEvent): void {
+  const sessionId = event?.sessionId ?? (event as any)?.session_id;
+  const turnId = event?.turnId ?? (event as any)?.turn_id;
+  const escalation = event?.escalation;
+  const kind = event?.kind;
+
+  if (!sessionId || !turnId || typeof escalation !== 'string') {
+    log.warn('LoopDetectionNoted: missing fields', { event });
+    return;
+  }
+
+  if (escalation !== 'steered' && escalation !== 'stopped') {
+    log.debug('Loop detection observation is report-only', {
+      sessionId,
+      turnId,
+      kind,
+      escalation,
+    });
+    return;
+  }
+
+  if (!shouldProcessEvent(sessionId, turnId, 'state_sync', 'LoopDetectionNoted')) {
+    return;
+  }
+
+  // `sessionId` is the session that produced the signal. A hidden subagent's
+  // loop therefore resolves to the parent conversation that spawned it, which is
+  // the surface the user is looking at; when that link is not known yet, the
+  // child session itself is the honest owner of the notice.
+  const linkedParentInfo = getLinkedSubagentParentInfo(sessionId);
+  log.warn('Loop detection intervention applied', {
+    sessionId,
+    parentSessionId: linkedParentInfo?.sessionId,
+    turnId,
+    kind,
+    escalation,
+    confidence: event?.confidence,
+    judgeArbitrated: event?.judgeArbitrated,
+  });
+
+  notificationService.warning(
+    i18nService.t(
+      escalation === 'stopped'
+        ? 'flow-chat:loopDetection.stoppedMessage'
+        : 'flow-chat:loopDetection.steeredMessage',
+    ),
+    {
+      title: i18nService.t('flow-chat:loopDetection.title'),
+      duration: 8000,
+      metadata: { sessionId, turnId, kind, escalation },
+    },
+  );
 }
 
 /**

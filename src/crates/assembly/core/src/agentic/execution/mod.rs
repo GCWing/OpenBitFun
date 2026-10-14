@@ -7,6 +7,8 @@ pub(super) mod compression_request;
 pub(crate) mod conditional_instructions;
 pub mod edit_constraint_guard;
 pub mod execution_engine;
+pub mod loop_arbiter;
+pub mod loop_detection;
 pub(crate) mod model_exchange_trace;
 mod prompt_suggestion;
 pub mod round_executor;

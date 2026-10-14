@@ -26,6 +26,7 @@ import type {
   AcpContextUsageUpdatedEvent,
   OpenBuiltInBrowserEvent,
   InterruptedDialogTurnEvent,
+  LoopDetectionNotedEvent,
 } from '@/infrastructure/api/service-api/AgentAPI';
 import { createLogger } from '@/shared/utils/logger';
 import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
@@ -86,6 +87,7 @@ export interface AgenticEventCallbacks {
     event: SessionReasoningPresetAutoClearedEvent
   ) => void;
   onUserSteeringInjected?: (event: UserSteeringInjectedEvent) => void;
+  onLoopDetectionNoted?: (event: LoopDetectionNotedEvent) => void;
 }
 
 export class AgenticEventListener {
@@ -335,6 +337,17 @@ export class AgenticEventListener {
         this.unlistenFunctions.push(unlisten);
       }
 
+      if (callbacks.onLoopDetectionNoted) {
+        const unlisten = agentAPI.onLoopDetectionNoted((event) => {
+          logger.debug('Loop detection noted:', {
+            sessionId: event.sessionId,
+            escalation: event.escalation,
+          });
+          callbacks.onLoopDetectionNoted?.(event);
+        });
+        this.unlistenFunctions.push(unlisten);
+      }
+
       if (callbacks.onSessionModelFallbackApplied) {
         const unlisten = agentAPI.onSessionModelFallbackApplied((event) => {
           logger.debug('Session model fallback applied', event);
@@ -484,6 +497,9 @@ export class AgenticEventListener {
         break;
       case 'agentic://user-steering-injected':
         callbacks.onUserSteeringInjected?.(payload as unknown as UserSteeringInjectedEvent);
+        break;
+      case 'agentic://loop-detection-noted':
+        callbacks.onLoopDetectionNoted?.(payload as unknown as LoopDetectionNotedEvent);
         break;
       default:
         logger.debug('Ignoring unsupported external agentic event', { eventName });

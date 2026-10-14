@@ -15,7 +15,8 @@ mod tests {
         external_hook_help_text, external_integration_policy_lines,
         external_operation_error_status, external_tool_mutation_result_label,
         external_tool_pending_notice_key, external_tool_result_is_stale, external_tool_review_text,
-        external_tool_run_location_label, mark_active_turn_failed,
+        external_tool_run_location_label, loop_detected_turn_status_line,
+        loop_detection_status_line, mark_active_turn_failed,
         merge_external_agent_mutation_snapshot, native_command_choice_is_active,
         native_command_reconfirmation_is_required, native_hook_help_text,
         parse_external_agent_review_action, parse_external_control_action,
@@ -42,7 +43,7 @@ mod tests {
     use crate::ui::command_menu::{ExternalCommandProjection, NativeCommandCollisionProjection};
     use crate::ui::theme::Theme;
     use crossterm::event::Event;
-    use openbitfun_events::{AgenticEvent, ToolEventData};
+    use openbitfun_events::{AgenticEvent, LoopDetectionEscalation, ToolEventData};
     use openbitfun_product_domains::external_hook_catalog::{
         ExternalHookCatalogEntry, ExternalHookCatalogSnapshotV1, ExternalHookHandlerKind,
         ExternalHookMatcherSummary, ExternalHookNativeActivation, ExternalHookProjectionStatus,
@@ -71,6 +72,27 @@ mod tests {
         let snapshot: RawExternalSourceCatalogSnapshot =
             serde_json::from_value(value).expect("parse raw external source test snapshot");
         snapshot.into()
+    }
+
+    #[test]
+    fn loop_detection_reports_one_line_per_intervention() {
+        let steered =
+            loop_detection_status_line("verbatim_block", 0.91, LoopDetectionEscalation::Steered)
+                .expect("a steer is user visible");
+        assert!(steered.contains("verbatim_block"));
+        assert!(steered.contains("0.91"));
+
+        // Report-only decisions stay in the log, and a hard stop is reported from
+        // the turn's finalization reason so the stopped turn never prints twice.
+        assert!(
+            loop_detection_status_line("phrase_stuck", 0.8, LoopDetectionEscalation::Noted)
+                .is_none()
+        );
+        assert!(
+            loop_detection_status_line("phrase_stuck", 0.8, LoopDetectionEscalation::Stopped)
+                .is_none()
+        );
+        assert!(loop_detected_turn_status_line().contains("stopped"));
     }
 
     #[test]
