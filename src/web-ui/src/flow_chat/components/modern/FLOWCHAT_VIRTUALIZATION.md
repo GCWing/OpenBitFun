@@ -282,12 +282,6 @@ owner's displacement is applied before the new size enters the cache, while
 the anchor remains responsible for restoring relationships across larger layout
 transactions.
 
-The measurement decision is recorded as the switch-gated, coalesced
-`virtualizer.itemResize` probe: item identity, estimated and measured sizes,
-the above-viewport decision, and the real scroll geometry before and after the
-owner's displacement. It deliberately omits flow-item contents, which made the
-temporary investigation probe too large for a lasting diagnostic trail.
-
 **Measurement is forced before any position is read in the commit that changed
 the items.** The library skips its inline resize while the reader is scrolling,
 which is exactly when history arrives, so the cache holds reserved estimates

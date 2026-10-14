@@ -657,28 +657,18 @@ Older Turns are paged in when the viewport reaches the head of the loaded
 window. Every way that handshake can fail is **silent and identical in the UI**:
 the boundary status returns to `idle` and no indicator is shown, so "declined to
 load" is indistinguishable from "there is no more history". The failure is also
-intermittent, so it is traced permanently rather than reproduced on demand.
+intermittent, so refusal warnings include a bounded recent-event trail.
 
 `historySessionDiagnostics` keeps a per-session ring buffer shared with the
-hydration timeline, and the two log channels carry different things:
-
-| | `flowchat.log` | `webview.log` |
-|---|---|---|
-| carries | the full paging step stream | the refusal alarm + its trail |
-| enabled by | `app.logging.flow_chat_diagnostics` | always on |
-| written via | `flowChatDiagnostics.trace` | `log.warn` |
-
-The in-memory trail is kept regardless of the flag, so
-`warnHistoryPagingRefusedWithPendingTurns` is **self-sufficient** — the recent
-events travel with the warning and no one has to reproduce the fault with
-diagnostics turned on first. It warns once per session, so scrolling against a
-dead boundary cannot flood the log. Turn the flag on only when the trail's
-30-event cap is not enough.
+hydration timeline. `warnHistoryPagingRefusedWithPendingTurns` writes the refusal
+and its recent events through `log.warn` once per session, so scrolling against
+a dead boundary cannot flood the log. The opt-in `flowchat.log` step stream has
+been removed; `app.logging.flow_chat_diagnostics` remains in configuration.
 
 The container raises this warning for an inconsistent `beyond-known-total`
 answer or a declined viewport preparation. The former session-wide
 `latched-exhausted-while-partial` detector in the list has been replaced by the
-pager's window-scoped exhaustion and request-phase diagnostics. A partial live
+pager's window-scoped exhaustion and request phases. A partial live
 tail alone does not prove that a particular rendered history boundary has more
 content.
 
@@ -689,11 +679,6 @@ viewport paging controller, which is why it keeps working. The accompanying
 `FlowChat history paging trail` warning carries the preceding events, including
 `anchor_capture_failed` — `captureHistoryPrependAnchor` returning `false`
 cancels a window that was already fetched.
-
-The viewport side of the same junction is traced separately; see *Diagnosing the
-Viewport* in `FLOWCHAT_VIEWPORT_REGISTER.md`, and in particular the pair of
-numbers that separates "the compensation overshot" from "the transcript
-re-measured".
 
 ## Related Files
 

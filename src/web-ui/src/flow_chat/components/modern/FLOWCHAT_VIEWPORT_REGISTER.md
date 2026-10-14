@@ -242,125 +242,21 @@ scroll anchoring is off. A library write is attributed to whoever asked for the
 aim, which is also what lets a gesture preempt a navigation still chasing its
 Turn.
 
-## Diagnosing the Viewport
+## Diagnostics Cleanup
 
-Viewport faults are intermittent, leave nothing in the DOM once they are over,
-and read identically to two or three other causes: a Turn that lands and is
-dragged away and a Turn that never landed are the same complaint. So the trail
-is permanent, in `flowchat.log`, behind `app.logging.flow_chat_diagnostics` —
-the same switch history paging uses — and tagged `viewport`.
+The stability investigation's viewport, placement, tail-follow, and item-resize
+probes have been removed. The viewport register still owns every deliberate
+write, and the anchor and pager retain their behavior and focused tests.
 
-`flowChatViewportDiagnostics.ts` records two different kinds of thing:
+The `app.logging.flow_chat_diagnostics` configuration and diagnostic log
+transport remain available, but the viewport no longer emits that trail.
 
-| | Where | What |
-|---|---|---|
-| **Writes** | the register, `viewportOwner.write` / `.claim` / `.release` | who moved the viewport, from where to where, and **who was refused** |
-| **Decisions** | each writer | why it wanted to move, and why it did not |
-
-The second half is the one that pays. A write that never happened leaves nothing
-at the register to find, and "nothing happened" has been the report more often
-than a wrong move has: a deferred new Turn, an anchor whose Turn left the
-rendered window, a boundary declined because the transcript was opening, or a
-boundary that never re-armed. Each of those is now one line saying
-which.
-
-**A placement is recorded with what became of it.** `traceViewportPlacement`
-samples the offset on the next frame and again once things have settled, and
-reports the drift from the target. Read against the register's writes in the
-same window, the drift says *who* took it away. Every deliberate write now goes
-through the register; the two that did not are both gone, and what the sampling
-found before they went is worth keeping, because in both cases it was not what
-the probe was written to catch.
-
-**The focus request was overriding, not overridden.** A usage-report click
-lands a Turn navigation through the register and then centres the flow item
-that was actually clicked — a tool call inside the Turn. The comment on the
-second write predicted the anchor undoing it, since a focus request carries no
-gesture. It never did: measured over four clicks the anchor stood down 93 times
-and the register refused nothing, and the two item aims drifted 0px. The drift
-was on the *first* write. The Turn navigation settled 178px and 334.7px from
-where it had put itself, because the item aim arrived 41ms — three frames —
-later, and `nextFramePx` equalled the Turn placement both times, so the reader
-watched the transcript land and then move. The aim now goes through
-`focusFlowItem` on the list, which is a register write, and is attempted in the
-same task as the Turn navigation so that only the final position is painted.
-When the item is not rendered yet the retry loop still runs, and the Turn
-placement is what is on screen until it lands — that part is unavoidable.
-
-**The sticky Task indicator had never run at all.** Its selector wanted
-`.flowchat-flow-item[data-flow-item-id][data-tool-name]` on one element, and
-`data-tool-name` has only ever been on the tool card *inside* that wrapper —
-added two months later, by a commit adding e2e locators, for an unrelated
-reason. So its probe could not have fired either, which is why there was no
-evidence rather than no problem. Deleted; if the affordance is wanted again it
-needs registering as well as fixing.
-
-`traceViewportPlacement` stays for the next writer that has to sit outside the
-register, and for what it proved here: read against the register's writes, it
-answers *which of two placements won* as readily as *who undid one*.
-
-Everything here can fire on every frame, so repeated identical events collapse
-into one entry per 500ms carrying the count and travel it stands for. The key
-includes whatever makes one run a different run — the owner, the outcome, the
-direction — so a *transition* always emits immediately. A thousand copies of a
-steady state would only bury the transitions, which are the point.
-
-**A duration is reported once, when it ends.** Coalescing is what makes the
-per-frame traces readable, and it is also why they cannot answer "how long did
-that last": only the first of a run is emitted, and the rest are a count.
-`anchor.turnReturned` and `anchor.waitAbandoned` therefore report the whole of a
-wait for the anchored Turn — milliseconds, settle frames, restore attempts, and
-the reader travel carried through it — at the one moment the whole of it exists.
-That wait is what decides whether a junction is seen, so it is the number to
-read first. These are the only traces here that go through `traceViewport`
-rather than the coalescer, because they fire once per wait and their payload is
-the point rather than a sample of it.
-
-**Read the state out before the state changes.** A `data` callback is evaluated
-by `flowChatDiagnostics.trace`, synchronously, so a thunk over refs is normally
-exactly right. It is not right when the caller resets those refs on the next
-line, and the wait report does: it takes its numbers eagerly and closes over
-them.
-
-**Two numbers say whether a correction was a mistake.** `scrollRangePx` is
-recorded on `prependCompensated` and on every `anchor.correct`, because a
-correction and the reason for one read the same otherwise. Measured over five
-junctions, the correction equalled the change in the scroll range every time
-(−94/−93.4, +76/+76.5, +26/+30.7, +8/+7.6): the compensation had not over-shot,
-the transcript above the reader had re-measured, and the anchor was following
-it. A correction with the range *unchanged* would be the other diagnosis.
-
-Nothing evaluates a payload while the switch is off.
-
-### Reading the log
-
-```text
-pnpm run flowchat:log:analyze -- <path-to-flowchat.log> [--around <sequence>]
-```
-
-`scripts/diagnostics/analyze-flowchat-log.mjs` reports, in this order:
-
-1. **Episodes** of viewport activity, worst *churn* first — travel per pixel of
-   progress. A clean move is 1; a much larger number distinguishes "it moved
-   wrongly" from "two writers fought".
-2. **Placements that did not stick**, ranked by drift. A placement with no
-   outcome sampled is listed separately rather than counted as clean.
-3. **Refusals**, as owner × who outranked them.
-4. **Declines**, as writer × reason.
-
-Two things it is careful about, because both would otherwise flatter the
-result: a coalesced entry is weighed by the run it stands for, not as one event;
-and dropped entries are reported at the top, since every count below one is a
-lower bound.
-
-The paging side of the same fault is traced separately; see *Diagnosing History
-Paging* in `FLOWCHAT_HISTORY_PAGING.md`.
+The log analyzer can still inspect logs captured before this cleanup.
 
 ## Related Files
 
 - `flowChatViewportOwnership.ts`
 - `useFlowChatViewportOwner.ts`
-- `@/infrastructure/diagnostics/flowChatViewportDiagnostics.ts`
 - `VirtualMessageList.tsx`
 - `useFlowChatNavigation.ts`
 - `scripts/diagnostics/analyze-flowchat-log.mjs`

@@ -14,10 +14,6 @@ import { useTypewriter } from '../hooks/useTypewriter';
 import { useReportTypewriterReveal } from '../hooks/typewriterRevealGateContext';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
 import { useContainedTailFollow } from '@openbitfun/flow-chat-presentation/scroll';
-import {
-  isTailFollowDiagnosticsEnabled,
-  noteTailFollowStep,
-} from '@/infrastructure/diagnostics/flowChatTailFollowDiagnostics';
 import { latestReasoningSummaryPreview } from '../utils/reasoningSummaryPresentation';
 import { ThinkingMarkdownRenderer } from '@/infrastructure/markdown';
 import { useFlowChatContext } from '../components/modern/FlowChatContext';
@@ -188,9 +184,6 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
     // Only the expanded reading viewport follows the bounded inner tail.
     enabled: isContentExpanded && scrollViewportExpanded, active: isVisuallyStreaming, contentVersion: renderedContent,
     followOnOpen: !revealStreamingContent,
-    onStep: step => {
-      if (isTailFollowDiagnosticsEnabled()) noteTailFollowStep('thinking', step);
-    },
   });
   useLayoutEffect(() => {
     const previous = previousStreamViewport.current;

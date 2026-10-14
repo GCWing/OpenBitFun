@@ -79,10 +79,6 @@ import {
   shouldUseLatestTurnFollowOutput,
 } from '../../utils/flowChatTurnScrollPolicy';
 import { isRemoteTraceContext, startupTrace } from '@/shared/utils/startupTrace';
-import {
-  traceViewport,
-  traceViewportRepeating,
-} from '@/infrastructure/diagnostics/flowChatViewportDiagnostics';
 import { scheduleAfterStartupPaint } from '@/shared/utils/startupTaskScheduling';
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import { notificationService } from '@/shared/notification-system';
@@ -593,22 +589,6 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
 
   const acceptViewportSnapshot = useCallback((snapshot: FlowChatViewportSnapshot) => {
     rememberSessionViewportState(snapshot.sessionId, { snapshot });
-    traceViewportRepeating(`sessionSnapshot|${snapshot.sessionId}|${snapshot.presentationMode}`, {
-      location: 'viewport.sessionSnapshotCaptured',
-      message: 'FlowChat stored a semantic viewport snapshot for a session',
-      data: () => ({
-        sessionId: snapshot.sessionId,
-        presentationMode: snapshot.presentationMode,
-        viewportMode: snapshot.viewportMode,
-        historyWindow: snapshot.historyWindow,
-        anchorItemKey: snapshot.anchorItemKey,
-        anchorItemType: snapshot.anchorItemType,
-        anchorTurnId: snapshot.anchorTurnId,
-        anchorOffsetPx: snapshot.anchorOffsetPx,
-        scrollTopPx: snapshot.scrollTopPx,
-        isAtTail: snapshot.isAtTail,
-      }),
-    });
   }, [rememberSessionViewportState]);
 
   const handleViewportSnapshot = useCallback((snapshot: FlowChatViewportSnapshot) => {
@@ -616,19 +596,6 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       viewportRestorePendingSessionIdRef.current === snapshot.sessionId
       || restoreGateSessionId === snapshot.sessionId
     ) {
-      traceViewportRepeating(`sessionSnapshotIgnored|${snapshot.sessionId}`, {
-        location: 'viewport.sessionSnapshotIgnoredDuringRestore',
-        message: 'FlowChat ignored a provisional viewport snapshot while restoring a session',
-        data: () => ({
-          sessionId: snapshot.sessionId,
-          anchorItemKey: snapshot.anchorItemKey,
-          anchorItemType: snapshot.anchorItemType,
-          anchorTurnId: snapshot.anchorTurnId,
-          anchorOffsetPx: snapshot.anchorOffsetPx,
-          scrollTopPx: snapshot.scrollTopPx,
-          isAtTail: snapshot.isAtTail,
-        }),
-      });
       return;
     }
     acceptViewportSnapshot(snapshot);
@@ -814,17 +781,6 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
       if (!restoredHistoryPresentation && !bookmark) {
         flowChatStore.restoreSessionTailPresentation(sessionId);
       }
-      traceViewport({
-        location: 'viewport.sessionStateRestored',
-        message: 'FlowChat restored the remembered session viewport state',
-        data: () => ({
-          sessionId,
-          previousSessionId,
-          restoredPresentationMode: restoredHistoryPresentation ? 'history-window' : 'tail',
-          restoredViewportIntent: restoredIntent,
-          snapshot: rememberedSnapshot,
-        }),
-      });
     }
     if (sessionId && bookmark && !cached && activeSession?.historyState === 'ready') {
       setHistoryRestore({ sessionId, status: 'loading' });

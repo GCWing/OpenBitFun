@@ -13,7 +13,7 @@ Also follow the repository and Web UI instructions in the parent guides.
 |---|---|
 | the tail spacer, the follow target, new-Turn revealing, holding, resizing, the footer | `FLOWCHAT_SCROLL_STABILITY.md` |
 | history paging, the prepend, the viewport anchor, history presentation | `FLOWCHAT_HISTORY_PAGING.md` |
-| anything that writes `scrollTop`, one-shot navigation, the diagnostic trail | `FLOWCHAT_VIEWPORT_REGISTER.md` |
+| anything that writes `scrollTop`, one-shot navigation | `FLOWCHAT_VIEWPORT_REGISTER.md` |
 | the virtualizer, item measurement, item keys, anything a row renders | `FLOWCHAT_VIRTUALIZATION.md` |
 
 `FLOWCHAT_SCROLL_STABILITY.md` also carries *Known Gaps* for all four — check it
@@ -78,19 +78,7 @@ before reporting a defect as new.
   order and to its test, not adding a condition to anyone else's predicate.
 - The virtualizer's own writes are registered through its `scrollToFn` option
   and attributed to whoever asked for the aim. Do not bypass it.
-- A writer that declines to move the viewport says so through
-  `flowChatViewportDiagnostics.ts`. The register records the writes; a write
-  that never happened is invisible everywhere else, and "nothing happened" is
-  the more common report. Anything reachable every frame goes through
-  `traceViewportRepeating`, keyed by what distinguishes one run from another —
-  **including the magnitude a reader would feel and the subject it is about**. A
-  run collapses to its first sample and turns the rest into a sum, so a key too
-  coarse to separate a rounding correction from a 400px one hides exactly the
-  events worth having: two rounds of diagnosis in a row read `0.7px` against
-  458.7px of suppressed travel spanning three different anchors.
-- There are no viewport writes outside the register. Adding one means wrapping
-  it in `traceViewportPlacement` and having a reason it cannot be a register
-  write; both writers that used to be outside are gone.
+- There are no viewport writes outside the register.
 - One user action gets one painted placement. A focus request that first
   navigates to a Turn and then aims at an item inside it does both in the same
   task — two placements a few frames apart are two movements the reader sees,

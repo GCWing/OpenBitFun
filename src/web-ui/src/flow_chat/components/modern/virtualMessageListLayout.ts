@@ -1,9 +1,5 @@
-import type { AnyFlowItem, FlowItem, FlowToolItem } from '../../types/flow-chat';
 import type { VirtualItem } from '../../store/modernFlowChatStore';
-import { getEffectiveToolName } from '../../utils/toolInvocationIdentity';
-import { getProjectedModelRoundGroups } from './modelRoundItemGrouping';
 import {
-  estimateFlowItemHeight as estimateFlowItemHeightByOwner,
   estimateVirtualItemHeight as estimateVirtualItemHeightByOwner,
   type VirtualItemHeightEstimateContext,
 } from './virtualItemHeightEstimators';
@@ -61,83 +57,6 @@ export function estimateTextHeightFromLength(textLength: number, basePx: number,
   const ESTIMATED_TEXT_CHARS_PER_LINE = 60;
   const lineCount = Math.max(1, Math.ceil(textLength / ESTIMATED_TEXT_CHARS_PER_LINE));
   return basePx + lineCount * lineHeightPx;
-}
-
-function describeFlowItemEstimate(
-  item: FlowItem,
-  index: number,
-  totalCount: number,
-  expandedThinkingItemIds: readonly string[],
-): Record<string, unknown> {
-  const content = item.type === 'text' || item.type === 'thinking' || item.type === 'user-steering'
-    ? (item as AnyFlowItem & { content: string }).content
-    : null;
-  return {
-    index,
-    type: item.type,
-    ...(item.type === 'tool'
-      ? {
-          toolName: getEffectiveToolName(item as FlowToolItem),
-          status: item.status,
-          isStreaming: (item as FlowToolItem).isParamsStreaming ?? false,
-        }
-      : {}),
-    ...(content === null
-      ? {}
-      : {
-          contentLength: content.length,
-          lineCount: content.length === 0 ? 0 : content.split('\n').length,
-        }),
-    isLastItem: index === totalCount - 1,
-    estimatedHeightPx: estimateFlowItemHeightByOwner(item as AnyFlowItem, {
-      expandedThinkingItemIds,
-    }).heightPx,
-  };
-}
-
-/** Bounded, content-free estimate details for FlowChat viewport diagnostics. */
-export function describeVirtualItemEstimate(item: VirtualItem): Record<string, unknown> {
-  if (item.type === 'model-round') {
-    const flowItems = getProjectedModelRoundGroups(item).flatMap(group => group.type !== 'critical' ? group.items : [group.item]);
-    const expandedThinkingItemIds = item.layoutHints?.expandedThinkingItemIds ?? [];
-    const itemEstimates = flowItems.map((flowItem, index) => describeFlowItemEstimate(
-      flowItem,
-      index,
-      flowItems.length,
-      expandedThinkingItemIds,
-    ));
-    return {
-      estimateKind: 'model-round',
-      isLastRound: item.isLastRound,
-      isTurnComplete: item.isTurnComplete,
-      isStreaming: item.data.isStreaming,
-      expandedThinkingItemIds,
-      baseHeightPx: 80,
-      contentEstimatePx: itemEstimates.reduce(
-        (total, entry) => total + Number(entry.estimatedHeightPx ?? 0),
-        0,
-      ),
-      itemEstimates,
-    };
-  }
-
-  if (item.type === 'explore-group') {
-    const itemEstimates = item.data.allItems.map((flowItem, index) => describeFlowItemEstimate(
-      flowItem as AnyFlowItem,
-      index,
-      item.data.allItems.length,
-      [],
-    ));
-    return {
-      estimateKind: 'explore-group',
-      itemCount: item.data.allItems.length,
-      defaultExpanded: false,
-      estimatedHeightPx: estimateVirtualItemHeightByOwner(item).heightPx,
-      itemEstimates,
-    };
-  }
-
-  return { estimateKind: item.type };
 }
 
 export function estimateVirtualMessageItemHeight(item: VirtualItem): number {
