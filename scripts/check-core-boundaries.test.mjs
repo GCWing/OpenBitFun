@@ -72,6 +72,31 @@ const MODULES = [
 
 const TEST_ROOT = join('C:', 'repo');
 
+test('builtin agent catalog requires the GeneralPurpose fast model default', () => {
+  const rule = requiredContentRules.find(
+    rule => rule.path === 'src/crates/execution/agent-runtime/src/agents.rs'
+      && rule.patterns.some(pattern => pattern.message.includes('GeneralPurpose')),
+  );
+  assert.ok(rule);
+  const mapping = `builtin_agent_spec(
+    "GeneralPurpose",
+    SubAgent,
+    "fast",
+    SubagentVisibilityPolicy::public(),
+  )`;
+  const catalog = `fn builtin_agent_definition_specs() {
+    ${mapping};
+    SubagentVisibilityPolicy::restricted(["Claw"]);
+  }`;
+  const accepts = text => rule.patterns.every(({ regex }) => regex.test(text));
+  assert.ok(accepts(catalog));
+  assert.ok(!accepts(catalog.replace(mapping, '')));
+  assert.ok(!accepts(catalog.replace('"fast"', '"primary"')));
+  assert.ok(!accepts(catalog.replace('SubAgent,', 'Mode,')));
+  assert.ok(!accepts(catalog.replace('"GeneralPurpose"', '"Explore"')));
+  assert.ok(!accepts(catalog.replace('SubagentVisibilityPolicy::restricted(["Claw"]);', '')));
+});
+
 test('tool-runtime search regex stays available without enabling HTML extractors', () => {
   const rule = requiredContentRules.find(
     rule => rule.path === 'src/crates/execution/tool-execution/Cargo.toml',

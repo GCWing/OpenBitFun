@@ -25,14 +25,15 @@
  * scroll has been corrected but the items have not moved yet.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react';
+import { flushSync } from 'react-dom';
 import {
   observeElementOffset as observeTanStackElementOffset,
   observeElementRect as observeTanStackElementRect,
   measureElement as measureTanStackElement,
-  useVirtualizer,
+  Virtualizer,
   type Rect,
-  type Virtualizer,
+  type VirtualizerOptions,
 } from '@tanstack/react-virtual';
 import {
   roundViewportPx,
@@ -45,6 +46,80 @@ import {
   describeVirtualItemEstimate,
   type VirtualItemHeightEstimateContext,
 } from './virtualMessageListLayout';
+
+// Leave room for descendant refs and follow effects within React's nested
+// update limit. Ordinary opening settles synchronously; a long measurement
+// cascade must yield even when every individual correction is making progress.
+const MAX_SYNCHRONOUS_VIRTUALIZER_COMMITS = 16;
+
+/**
+ * Core adapter: geometry stays synchronous, but React notification is bounded.
+ * The upstream React adapter dispatches before its onChange callback, so that
+ * callback cannot gate rendering. Keep its core mount/update lifecycle here.
+ */
+function useMeasuredVirtualizer(options: VirtualizerOptions<HTMLElement, HTMLElement>) {
+  const [, rerender] = useReducer((revision: number) => revision + 1, 0);
+  const [instance] = useState(() => new Virtualizer(options));
+  const mounted = useRef(false);
+  const frame = useRef<number | null>(null);
+  const commits = useRef(0);
+  const requested = useRef(false);
+  const pending = useRef(false);
+  // Descendant layout effects can publish measurements before our own layout
+  // effect runs. A request from the previous render cannot cover those writes.
+  requested.current = false;
+
+  const requestRender = useCallback((sync: boolean) => {
+    if (!mounted.current || (!sync && requested.current)) return;
+    pending.current = true;
+    if (frame.current === null) {
+      frame.current = requestAnimationFrame(() => {
+        frame.current = null;
+        commits.current = 0;
+        if (!mounted.current || !pending.current) return;
+        pending.current = false;
+        // The frame starts a new React update chain. Subsequent notifications
+        // arm the next frame and share its budget instead of replaying offsets.
+        requested.current = true;
+        commits.current = 1;
+        rerender();
+      });
+    }
+    if (commits.current >= MAX_SYNCHRONOUS_VIRTUALIZER_COMMITS) return;
+    pending.current = false;
+    requested.current = true;
+    commits.current += 1;
+    if (sync) flushSync(rerender);
+    else rerender();
+  }, []);
+
+  instance.setOptions({
+    ...options,
+    onChange: (virtualizer, sync) => {
+      // Reconcile against the updated cache before asking React to select a
+      // window. Deferring this callback would replay stale scroll ownership.
+      options.onChange?.(virtualizer, sync);
+      requestRender(sync);
+    },
+  });
+  useLayoutEffect(() => {
+    mounted.current = true;
+    const cleanup = instance._didMount();
+    return () => {
+      mounted.current = false;
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+      frame.current = null;
+      pending.current = false;
+      requested.current = false;
+      commits.current = 0;
+      cleanup();
+    };
+  }, [instance]);
+  useLayoutEffect(() => {
+    instance._willUpdate();
+  });
+  return instance;
+}
 
 /** A nearby pixel window, bounded in leaves so dense groups mount incrementally. */
 export function timelineOverscanRange(start: number, end: number, count: number, viewportPx: number,
@@ -452,7 +527,7 @@ export function useFlowChatVirtualizer<T>({
   const attachingRowsRef = useRef(new Set<HTMLElement>());
   const measurementBatchRef = useRef<Map<Element, number> | null>(null);
 
-  const virtualizer = useVirtualizer({
+  const virtualizer = useMeasuredVirtualizer({
     // A live-tail open previously mounted rows 0..13 before moving to 22..33;
     // the first head measurement flushed 372.3ms of pending layout in a trace.
     // Seed the last item's estimated start without reading DOM geometry. This

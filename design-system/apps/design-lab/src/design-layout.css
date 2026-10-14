@@ -85,6 +85,26 @@
   line-height: var(--openbitfun-type-body-md-line-height);
 }
 .lab-shell [hidden] { display: none !important; }
+/* Product-site typography belongs to the shell; previews retain their published type roles. */
+.lab-shell .lab-page.design-home,
+.lab-topbar,
+.design-home-slogan {
+  font-family: var(--_lab-font);
+}
+/* Both brand lockups share the shell's typography, with spacing and color owned locally. */
+.design-wordmark-link,
+.design-home-footer-wordmark {
+  font-size: var(--_lab-wordmark-size);
+  font-weight: var(--_lab-wordmark-weight);
+  letter-spacing: var(--_lab-wordmark-tracking);
+  line-height: var(--_lab-wordmark-leading);
+}
+/* Keep the full-bleed footer aligned with the shell column at every viewport width. */
+.design-home-footer {
+  inline-size: 100vw;
+  margin-inline: calc(50% - 50vw);
+  padding-inline: max(var(--openbitfun-space-6), calc((100vw - var(--_lab-content-width)) / 2 + var(--openbitfun-space-6)));
+}
 /* The homepage's closing band is the one block that leaves the centred column and runs edge to edge
    (see .design-home-footer). Where the platform reserves space for a scrollbar, 100vw is wider than
    what is visible, so the band is clipped instead of widening the document. clip is not a scroll
@@ -130,10 +150,6 @@
   gap: var(--openbitfun-space-3);
   color: var(--openbitfun-color-content-primary);
   text-decoration: none;
-  font-size: var(--_lab-wordmark-size);
-  font-weight: var(--_lab-wordmark-weight);
-  letter-spacing: var(--_lab-wordmark-tracking);
-  line-height: var(--_lab-wordmark-leading);
 }
 /* The app mark is silver artwork on a transparent canvas. The site flattens it to solid ink in
    its light header; the Lab does the same, and lifts it back for the dark theme. */

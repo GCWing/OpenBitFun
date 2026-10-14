@@ -27,7 +27,7 @@
   position: relative;
   inline-size: var(--_morph-w);
   block-size: var(--_morph-h);
-  border: var(--_lab-rule);
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
   border-radius: var(--_morph-r);
   overflow: hidden;
   background: var(--openbitfun-color-surface-canvas);
@@ -105,7 +105,7 @@
 }
 
 .design-morph-phone-head {
-  border-block-end: var(--_lab-rule);
+  border-block-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
 }
 
 .design-morph-phone-thread {
@@ -149,7 +149,7 @@
   content: "";
   position: absolute;
   inset: var(--openbitfun-space-3);
-  border: var(--_lab-rule);
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
   border-radius: var(--openbitfun-radius-pill);
 }
 
@@ -166,7 +166,7 @@
 
 .design-morph-watch-wave > i {
   inline-size: 3px;
-  block-size: var(--_morph-wave, 40%);
+  block-size: var(--_morph-wave);
   border-radius: var(--openbitfun-radius-pill);
   background: var(--openbitfun-color-accent-default);
 }
@@ -196,7 +196,7 @@
   gap: var(--openbitfun-space-4);
   inline-size: min(calc(100% - var(--openbitfun-space-16)), 640px);
   padding: var(--openbitfun-space-3) var(--openbitfun-space-5);
-  border: var(--_lab-rule);
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
   border-radius: var(--openbitfun-radius-2xl);
   background: var(--openbitfun-color-surface-panel);
   color: var(--openbitfun-color-content-primary);

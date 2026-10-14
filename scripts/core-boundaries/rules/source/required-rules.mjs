@@ -7827,8 +7827,8 @@ export const requiredContentRules = [
         message: 'missing builtin agent definition catalog owner',
       },
       {
-        regex: /builtin_agent_spec\(\s*"GeneralPurpose",\s*SubAgent,\s*"primary"/,
-        message: 'missing GeneralPurpose runtime default model mapping',
+        regex: /builtin_agent_spec\(\s*"GeneralPurpose",\s*SubAgent,\s*"fast"/,
+        message: 'missing GeneralPurpose runtime fast default model mapping',
       },
       {
         regex: /SubagentVisibilityPolicy::restricted\(\["Claw"\]\)/,
