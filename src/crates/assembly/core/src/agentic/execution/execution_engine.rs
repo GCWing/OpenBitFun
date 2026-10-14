@@ -191,6 +191,35 @@ struct LoopRoundDecision {
     hard_stop_reason: Option<&'static str>,
 }
 
+/// What the turn loop must do with one round's loop-detection decision.
+///
+/// The three cases are mutually exclusive on purpose: a steer keeps the turn
+/// alive so the model can react to the reminder, a hard stop ends it with the
+/// finalization reason the completion report carries, and "nothing" leaves the
+/// turn on its normal path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoopTurnEffect {
+    /// No loop-detection decision for this round.
+    Continue,
+    /// A steer reminder was injected; the turn continues into the next round.
+    Steered,
+    /// The ladder ended the turn with this finalization reason.
+    Finalize(&'static str),
+}
+
+impl LoopRoundDecision {
+    fn turn_effect(&self) -> LoopTurnEffect {
+        if let Some(reason) = self.hard_stop_reason {
+            return LoopTurnEffect::Finalize(reason);
+        }
+        if self.steered {
+            LoopTurnEffect::Steered
+        } else {
+            LoopTurnEffect::Continue
+        }
+    }
+}
+
 /// Agent loop-detection settings from `ai.loop_detection`.
 ///
 /// Plain configuration data only: the detectors, the ladder, and the arbitration
@@ -2713,6 +2742,59 @@ impl ExecutionEngine {
         })
     }
 
+    /// Builds one dialog turn's loop-detection ladder.
+    ///
+    /// One ladder owns exactly one turn: the detectors' analysis windows, the
+    /// thinking-block history, the arbitration budget, and the steer counter all
+    /// live here, so a loop spanning several rounds is still one loop and no
+    /// state leaks into the next turn. Thresholds are the context profile tier's
+    /// values for this agent and model with the configured overrides applied on
+    /// top, and the session escape hatch is read from the runtime state.
+    fn loop_ladder_for_turn(
+        &self,
+        session_id: &str,
+        context_profile_policy: &ContextProfilePolicy,
+    ) -> LoopInterventionLadder {
+        LoopInterventionLadder::new(LoopLadderSettings {
+            mode: self.config.loop_detection.mode,
+            session_enabled: self.session_loop_detection_enabled(session_id),
+            detector_config: loop_detector_config(
+                context_profile_policy,
+                &self.config.loop_detection.thresholds,
+            ),
+            judge_enabled: self.config.loop_detection.judge_enabled,
+            max_arbitration_requests_per_turn: self.config.loop_detection.max_verdicts_per_turn,
+            judge_confidence_min: judge_confidence_min(&self.config.loop_detection.thresholds),
+        })
+    }
+
+    /// Closing reminder for a turn that ended without a usable final answer.
+    ///
+    /// A turn stopped by the loop-detection hard fallback has no usable final
+    /// answer either — its last assistant message is the degenerate one — so it
+    /// asks for one explicitly, exactly like the tool-failure fallback.
+    fn finalize_reminder_for(reason: &str) -> Option<&'static str> {
+        match reason {
+            "repeated_tool_failures" => Some(Self::FINALIZE_AFTER_REPEATED_TOOL_FAILURES_REMINDER),
+            "max_rounds" => Some(Self::FINALIZE_AFTER_MAX_ROUNDS_REMINDER),
+            "loop_detected" => Some(Self::FINALIZE_AFTER_LOOP_DETECTED_REMINDER),
+            _ => None,
+        }
+    }
+
+    /// Whether a finished turn counts as successful.
+    ///
+    /// The abnormal endings that still produce an explainable result are
+    /// successful: the UI explains the termination inline instead of showing a
+    /// failure. Everything else (empty round, truncated partial answer) is not.
+    fn turn_success(has_final_response: bool, effective_finish_reason: &str) -> bool {
+        has_final_response
+            || matches!(
+                effective_finish_reason,
+                "max_rounds" | "repeated_tool_failures" | "user_steering" | "loop_detected"
+            )
+    }
+
     /// Observes one completed round through the loop-detection ladder, consults
     /// the arbitration port when the ladder asks for it, and applies the
     /// resulting intervention.
@@ -3670,17 +3752,8 @@ impl ExecutionEngine {
         // survives this turn's rounds without leaking into the next turn. The
         // thresholds come from the context profile tier for this agent and model,
         // with explicit configuration overrides applied on top.
-        let mut loop_ladder = LoopInterventionLadder::new(LoopLadderSettings {
-            mode: self.config.loop_detection.mode,
-            session_enabled: self.session_loop_detection_enabled(&context.session_id),
-            detector_config: loop_detector_config(
-                &context_profile_policy,
-                &self.config.loop_detection.thresholds,
-            ),
-            judge_enabled: self.config.loop_detection.judge_enabled,
-            max_arbitration_requests_per_turn: self.config.loop_detection.max_verdicts_per_turn,
-            judge_confidence_min: judge_confidence_min(&self.config.loop_detection.thresholds),
-        });
+        let mut loop_ladder =
+            self.loop_ladder_for_turn(&context.session_id, &context_profile_policy);
         if !loop_ladder.active() {
             debug!(
                 "Loop detection disabled for this turn: session_id={}, mode={:?}, session_enabled={}",
@@ -4447,12 +4520,13 @@ impl ExecutionEngine {
                     &ai_client.config.model,
                 )
                 .await;
-            if loop_decision.steered {
-                loop_detection_steered = true;
-            }
-            if let Some(reason) = loop_decision.hard_stop_reason {
-                finalization_reason = Some(reason);
-                break;
+            match loop_decision.turn_effect() {
+                LoopTurnEffect::Continue => {}
+                LoopTurnEffect::Steered => loop_detection_steered = true,
+                LoopTurnEffect::Finalize(reason) => {
+                    finalization_reason = Some(reason);
+                    break;
+                }
             }
 
             let after_round_pressure = Self::estimate_auto_compression_pressure(
@@ -4925,17 +4999,7 @@ impl ExecutionEngine {
         let mut used_local_final_response_synthesis = false;
 
         if let Some(reason) = finalization_reason {
-            let finalize_reminder = match reason {
-                "repeated_tool_failures" => {
-                    Some(Self::FINALIZE_AFTER_REPEATED_TOOL_FAILURES_REMINDER)
-                }
-                "max_rounds" => Some(Self::FINALIZE_AFTER_MAX_ROUNDS_REMINDER),
-                // A loop-detected turn has no usable final answer (the last
-                // assistant message is the degenerate one), so the turn asks for
-                // one explicitly, exactly like the tool-failure fallback.
-                "loop_detected" => Some(Self::FINALIZE_AFTER_LOOP_DETECTED_REMINDER),
-                _ => None,
-            };
+            let finalize_reminder = Self::finalize_reminder_for(reason);
 
             if let Some(finalize_reminder) = finalize_reminder {
                 let finalize_round_group_id = Some(format!(
@@ -5081,11 +5145,7 @@ impl ExecutionEngine {
         // Some abnormal turn endings still go through the completed-event path
         // so the UI can explain the termination cause inline even when the turn
         // ended without a final assistant reply.
-        let success = has_final_response
-            || matches!(
-                effective_finish_reason,
-                "max_rounds" | "repeated_tool_failures" | "user_steering" | "loop_detected"
-            );
+        let success = Self::turn_success(has_final_response, effective_finish_reason);
 
         // Post-processing hook: when a DeepResearch dialog turn finishes
         // successfully, renumber `cit_XXX` references in the final report
@@ -5281,6 +5341,10 @@ impl ExecutionEngine {
 #[cfg(test)]
 #[path = "compression_tests.rs"]
 mod compression_tests;
+
+#[cfg(test)]
+#[path = "loop_detection_turn_tests.rs"]
+mod loop_detection_turn_tests;
 
 #[cfg(test)]
 mod tests {

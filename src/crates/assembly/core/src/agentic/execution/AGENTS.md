@@ -28,7 +28,14 @@ the L2 arbitration port, and the model-backed judge adapter), use:
 ```bash
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::execution::loop_detection
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::execution::loop_arbiter
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib loop_detection_turn_tests
 ```
+
+The last command drives the engine-level mounting point: real scripted rounds
+through the provider fixture in `round_executor::tests`, the production
+round-boundary entry point, a real session manager, and a real event queue. It is
+the regression net for the observe-steer-hard-stop chain; add a case there (not a
+ladder-only unit test) whenever that chain changes.
 
 Detection is observation-first: every verdict is logged in every mode, a steer is
 injected at the round boundary like the existing failed-tool recovery reminder,

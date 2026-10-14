@@ -1717,7 +1717,7 @@ pub(super) mod tests {
         }
     }
 
-    fn test_round_context() -> RoundContext {
+    pub(in crate::agentic::execution) fn test_round_context() -> RoundContext {
         RoundContext {
             session_id: "session-1".to_string(),
             subagent_parent_info: None,
