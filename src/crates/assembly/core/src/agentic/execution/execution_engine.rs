@@ -2713,6 +2713,10 @@ impl ExecutionEngine {
                 ),
             )
         });
+        // The session escape hatch is a runtime switch, so re-read it every
+        // round: a mid-turn clear stops detection immediately (and drops the
+        // detector state) instead of waiting for the next turn.
+        ladder.set_session_enabled(self.session_loop_detection_enabled(&context.session_id));
         let step = ladder.observe(&LoopRoundObservation {
             output_text,
             thinking_block,

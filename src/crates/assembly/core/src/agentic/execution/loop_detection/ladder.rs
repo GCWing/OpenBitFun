@@ -284,7 +284,9 @@ impl LoopInterventionLadder {
     ///
     /// Turning detection off for a session also clears detector state and the
     /// attempt counters, so a session that re-enables detection starts clean
-    /// instead of inheriting a window from before the escape hatch.
+    /// instead of inheriting a window from before the escape hatch. The engine
+    /// re-reads the session flag every round, which is what makes a mid-turn
+    /// clear effective immediately.
     pub fn set_session_enabled(&mut self, enabled: bool) {
         if self.session_enabled == enabled {
             return;
