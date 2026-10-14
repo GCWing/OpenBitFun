@@ -4153,6 +4153,7 @@ test('Services Core accepts only the reviewed feature-owned Tokio runtime graph'
         'tokio/sync',
         'tokio/time',
       ],
+      'session-recovery': ['local-storage', 'workspace-persistence', 'dep:anyhow'],
       permission: ['dep:tokio', 'tokio/rt'],
       'session-search': ['dep:tokio', 'tokio/rt'],
       'process-runtime': [
