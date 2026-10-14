@@ -141,6 +141,11 @@ establish visual fidelity):
 pnpm --dir src/web-ui run test:run src/infrastructure/update src/infrastructure/api/service-api/SystemAPI.test.ts src/shared/notification-system/components/NotificationContainer.test.tsx
 ```
 
+For Markdown parse prewarming or dependency resolution, run
+`pnpm --dir src/web-ui run test:run src/infrastructure/markdown/markdownParse.worker.test.ts src/infrastructure/markdown/markdownParseCache.test.ts`.
+This builds the real Worker entry with the product aliases, checks parsing without
+a DOM, and covers failure fallback. Build configuration changes also need `pnpm run build:web`.
+
 For shared overlay ordering, dismissal, focus or presence changes, run the
 focused DOM and ownership contracts in addition to `check:web` (these do not
 establish visual or remote transport behavior):
