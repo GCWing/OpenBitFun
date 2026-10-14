@@ -6,6 +6,8 @@
 //! describes what detection saw and how far the ladder went, instead of forcing
 //! log archaeology across the detector, the ladder, and the arbiter.
 
+use openbitfun_events::LoopDetectionEscalation;
+
 /// How far the loop-detection ladder escalated for the signal it was watching.
 ///
 /// This is an action record, not a detector state: `Telemetry` also covers a
@@ -32,6 +34,21 @@ impl LoopEscalationLevel {
             Self::Telemetry => "telemetry",
             Self::Steer => "steer",
             Self::HardStop => "hard_stop",
+        }
+    }
+
+    /// Level reported on the product event for one ladder decision.
+    ///
+    /// The mapping is total on purpose. `Off` cannot coexist with a reported
+    /// verdict — `LoopInterventionLadder::observe` returns before recording one
+    /// while detection is disabled — and collapsing it into the report-only
+    /// level keeps the emission site free of an unreachable branch that would
+    /// otherwise have to guess.
+    pub const fn event_escalation(self) -> LoopDetectionEscalation {
+        match self {
+            Self::Steer => LoopDetectionEscalation::Steered,
+            Self::HardStop => LoopDetectionEscalation::Stopped,
+            Self::Off | Self::Telemetry => LoopDetectionEscalation::Noted,
         }
     }
 }
@@ -69,6 +86,7 @@ impl LoopHealthFields {
 #[cfg(test)]
 mod tests {
     use super::{LoopEscalationLevel, LoopHealthFields};
+    use openbitfun_events::LoopDetectionEscalation;
 
     #[test]
     fn escalation_levels_have_stable_labels() {
@@ -77,6 +95,26 @@ mod tests {
         assert_eq!(LoopEscalationLevel::Telemetry.as_str(), "telemetry");
         assert_eq!(LoopEscalationLevel::Steer.as_str(), "steer");
         assert_eq!(LoopEscalationLevel::HardStop.as_str(), "hard_stop");
+    }
+
+    #[test]
+    fn product_event_levels_match_the_ladder_action() {
+        assert_eq!(
+            LoopEscalationLevel::Telemetry.event_escalation(),
+            LoopDetectionEscalation::Noted
+        );
+        assert_eq!(
+            LoopEscalationLevel::Off.event_escalation(),
+            LoopDetectionEscalation::Noted
+        );
+        assert_eq!(
+            LoopEscalationLevel::Steer.event_escalation(),
+            LoopDetectionEscalation::Steered
+        );
+        assert_eq!(
+            LoopEscalationLevel::HardStop.event_escalation(),
+            LoopDetectionEscalation::Stopped
+        );
     }
 
     #[test]

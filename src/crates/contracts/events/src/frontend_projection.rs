@@ -531,6 +531,24 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
                 "displayContent": display_content,
             }),
         )),
+        AgenticEvent::LoopDetectionNoted {
+            session_id,
+            turn_id,
+            kind,
+            confidence,
+            escalation,
+            judge_arbitrated,
+        } => Some(AgenticFrontendEvent::new(
+            "agentic://loop-detection-noted",
+            json!({
+                "sessionId": session_id,
+                "turnId": turn_id,
+                "kind": kind,
+                "confidence": confidence,
+                "escalation": escalation,
+                "judgeArbitrated": judge_arbitrated,
+            }),
+        )),
         AgenticEvent::SystemError { .. } => None,
     }
 }
@@ -839,5 +857,34 @@ mod tests {
         assert_eq!(projected.payload["sessionId"], "session-1");
         assert_eq!(projected.payload["previousPresetId"], "high");
         assert_eq!(projected.payload["reason"], "reasoning_catalog_updated");
+    }
+
+    #[test]
+    fn loop_detection_note_projects_camel_case_status_payload() {
+        let projected = project_agentic_frontend_event(AgenticEvent::LoopDetectionNoted {
+            session_id: "session-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            kind: "phrase_stuck".to_string(),
+            confidence: 0.82,
+            escalation: crate::LoopDetectionEscalation::Stopped,
+            judge_arbitrated: false,
+        })
+        .expect("projected");
+
+        assert_eq!(projected.event_name, "agentic://loop-detection-noted");
+        assert_eq!(projected.payload["sessionId"], "session-1");
+        assert_eq!(projected.payload["turnId"], "turn-1");
+        assert_eq!(projected.payload["kind"], "phrase_stuck");
+        assert_eq!(projected.payload["escalation"], "stopped");
+        assert_eq!(projected.payload["judgeArbitrated"], false);
+        // Confidence crosses the f32 -> JSON number boundary; compare it as one.
+        assert!(
+            (projected.payload["confidence"]
+                .as_f64()
+                .expect("numeric confidence")
+                - 0.82)
+                .abs()
+                < 1e-6
+        );
     }
 }

@@ -435,6 +435,60 @@ pub enum AgenticEvent {
         previous_preset_id: String,
         reason: String,
     },
+
+    /// One decision of the agent loop-detection intervention ladder.
+    ///
+    /// Emitted at the round boundary, after the round's verdict has been
+    /// escalated (and arbitrated, when the ladder asked the L2 judge). It reports
+    /// what detection saw and how far it went, and it is a status signal only: no
+    /// transcript content, no blocking interaction, and no surfaced excerpt of
+    /// the repeated text. Surfaces are expected to render the `steered` and
+    /// `stopped` levels and to stay silent for `noted`, which is the calibration
+    /// default's report-only traffic. `session_id` identifies the session that
+    /// produced the signal, so a hidden subagent's loop reaches its parent
+    /// surface through the existing session-keyed forwarding paths.
+    LoopDetectionNoted {
+        session_id: String,
+        /// Dialog turn that was running when the ladder decided.
+        turn_id: String,
+        /// Detector signal that fired. Stable identifiers from
+        /// `LoopKind::as_str`: `verbatim_block`, `near_repetition`,
+        /// `phrase_stuck`, `periodic_sequence`, `predictable_drift`,
+        /// `thinking_stagnation`, `reasoning_runaway`.
+        kind: String,
+        /// Detector confidence in `0.0..=1.0`.
+        confidence: f32,
+        /// How far the ladder went for this decision.
+        escalation: LoopDetectionEscalation,
+        /// Whether the L2 judge actually returned a verdict for this signal.
+        /// `false` means the heuristic decision stands on its own (no judge
+        /// installed, the per-turn budget was spent, or the verdict needed no
+        /// arbitration). Defaulted so a payload from a host that predates the
+        /// field still deserializes.
+        #[serde(default)]
+        judge_arbitrated: bool,
+    },
+}
+
+/// How far the loop-detection ladder escalated for one signal.
+///
+/// This is an action record, not a detector state: `Noted` covers both
+/// report-only mode and a signal the ladder deliberately refused to act on
+/// (arbitration rejected it, or a confidence-capped kind spent its attempts).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoopDetectionEscalation {
+    /// A steer reminder was injected at the round boundary.
+    Steered,
+    /// The turn was stopped with the `loop_detected` finalization reason.
+    Stopped,
+    /// Observed and reported only; no intervention was applied.
+    ///
+    /// `serde(other)` must stay on the last variant: an escalation level written
+    /// by a newer build degrades to the least invasive reading instead of
+    /// failing the whole event payload on an older consumer.
+    #[serde(other)]
+    Noted,
 }
 
 /// Diagnostic evidence collected for an attempt that was superseded by an
@@ -694,7 +748,8 @@ impl AgenticEvent {
             | Self::UserSteeringInjected { session_id, .. }
             | Self::DeepReviewQueueStateChanged { session_id, .. }
             | Self::SessionModelFallbackApplied { session_id, .. }
-            | Self::SessionReasoningPresetAutoCleared { session_id, .. } => Some(session_id),
+            | Self::SessionReasoningPresetAutoCleared { session_id, .. }
+            | Self::LoopDetectionNoted { session_id, .. } => Some(session_id),
             Self::SystemError { session_id, .. } => session_id.as_deref(),
         }
     }
@@ -719,7 +774,8 @@ impl AgenticEvent {
             | Self::ThinkingChunk { turn_id, .. }
             | Self::ToolEvent { turn_id, .. }
             | Self::DeepReviewQueueStateChanged { turn_id, .. }
-            | Self::UserSteeringInjected { turn_id, .. } => Some(turn_id),
+            | Self::UserSteeringInjected { turn_id, .. }
+            | Self::LoopDetectionNoted { turn_id, .. } => Some(turn_id),
             _ => None,
         }
     }
@@ -756,6 +812,7 @@ impl AgenticEvent {
             | Self::ContextCompressionStarted { .. }
             | Self::ThreadGoalUpdated { .. }
             | Self::UserSteeringInjected { .. }
+            | Self::LoopDetectionNoted { .. }
             | Self::PromptSuggestionGenerated { .. }
             | Self::ContextCompressionCompleted { .. } => AgenticEventPriority::Normal,
 
@@ -1180,5 +1237,88 @@ mod tests {
         let serialized = serde_json::to_value(event).expect("serialize event");
         assert_eq!(serialized["type"], "SessionReasoningPresetAutoCleared");
         assert_eq!(serialized["previous_preset_id"], "high");
+    }
+
+    #[test]
+    fn loop_detection_note_serializes_the_ladder_decision() {
+        let event = AgenticEvent::LoopDetectionNoted {
+            session_id: "session-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            kind: "thinking_stagnation".to_string(),
+            confidence: 0.75,
+            escalation: LoopDetectionEscalation::Steered,
+            judge_arbitrated: true,
+        };
+
+        assert_eq!(event.session_id(), Some("session-1"));
+        assert_eq!(event.turn_id(), Some("turn-1"));
+        assert_eq!(event.default_priority(), AgenticEventPriority::Normal);
+
+        let serialized = serde_json::to_value(event).expect("serialize event");
+        assert_eq!(serialized["type"], "LoopDetectionNoted");
+        assert_eq!(serialized["session_id"], "session-1");
+        assert_eq!(serialized["turn_id"], "turn-1");
+        assert_eq!(serialized["kind"], "thinking_stagnation");
+        assert_eq!(serialized["confidence"], 0.75);
+        assert_eq!(serialized["escalation"], "steered");
+        assert_eq!(serialized["judge_arbitrated"], true);
+    }
+
+    #[test]
+    fn loop_detection_escalation_levels_round_trip() {
+        for (level, wire) in [
+            (LoopDetectionEscalation::Noted, "noted"),
+            (LoopDetectionEscalation::Steered, "steered"),
+            (LoopDetectionEscalation::Stopped, "stopped"),
+        ] {
+            assert_eq!(serde_json::to_value(level).expect("serialize level"), wire);
+            assert_eq!(
+                serde_json::from_value::<LoopDetectionEscalation>(json!(wire))
+                    .expect("deserialize level"),
+                level
+            );
+        }
+    }
+
+    #[test]
+    fn loop_detection_note_accepts_a_payload_from_an_older_host() {
+        let event: AgenticEvent = serde_json::from_value(json!({
+            "type": "LoopDetectionNoted",
+            "session_id": "session-1",
+            "turn_id": "turn-1",
+            "kind": "verbatim_block",
+            "confidence": 0.91,
+            "escalation": "noted"
+        }))
+        .expect("legacy loop detection note");
+
+        assert!(matches!(
+            event,
+            AgenticEvent::LoopDetectionNoted {
+                judge_arbitrated: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn unknown_loop_detection_escalation_degrades_to_the_least_invasive_level() {
+        let event: AgenticEvent = serde_json::from_value(json!({
+            "type": "LoopDetectionNoted",
+            "session_id": "session-1",
+            "turn_id": "turn-1",
+            "kind": "periodic_sequence",
+            "confidence": 0.88,
+            "escalation": "spin_off"
+        }))
+        .expect("a newer escalation level must not fail the event");
+
+        assert!(matches!(
+            event,
+            AgenticEvent::LoopDetectionNoted {
+                escalation: LoopDetectionEscalation::Noted,
+                ..
+            }
+        ));
     }
 }

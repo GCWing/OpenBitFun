@@ -2684,6 +2684,35 @@ impl ExecutionEngine {
             .with_turn_id(turn_id.to_string())
     }
 
+    /// Product event for one loop-detection ladder decision.
+    ///
+    /// One event per decision, never one per detector candidate: the payload is
+    /// the ladder's own report of what it did, so a round that fed several
+    /// detectors still produces at most one signal. `None` means the round
+    /// produced no verdict at all — detection off, the session escape hatch, or
+    /// a clean round — which is not a decision worth reporting.
+    ///
+    /// The payload deliberately carries no excerpt of the repeated text (the
+    /// same DITTO guard the steer reminder follows) and no session-scoped state:
+    /// surfaces key it by `session_id`, which is how a hidden subagent's loop
+    /// reaches its parent projection.
+    fn loop_detection_event(
+        session_id: &str,
+        turn_id: &str,
+        health: LoopHealthFields,
+        judge_arbitrated: bool,
+    ) -> Option<AgenticEvent> {
+        let kind = health.verdict_kind?;
+        Some(AgenticEvent::LoopDetectionNoted {
+            session_id: session_id.to_string(),
+            turn_id: turn_id.to_string(),
+            kind: kind.to_string(),
+            confidence: health.verdict_confidence.unwrap_or(0.0),
+            escalation: health.escalation.event_escalation(),
+            judge_arbitrated,
+        })
+    }
+
     /// Observes one completed round through the loop-detection ladder, consults
     /// the arbitration port when the ladder asks for it, and applies the
     /// resulting intervention.
@@ -2737,7 +2766,10 @@ impl ExecutionEngine {
             );
         }
 
-        let action = if step.pending_arbitration {
+        // `judge_arbitrated` must mean the L2 judge actually decided: the ladder
+        // is also asked (and answers `Indeterminate`) when no arbiter is
+        // installed, and that fallback is the pure heuristic, not a judge verdict.
+        let (action, judge_arbitrated) = if step.pending_arbitration {
             match (step.verdict.as_ref(), self.loop_detection.arbiter()) {
                 (Some(observed), Some(arbiter)) => {
                     let arbitrated = arbiter
@@ -2760,14 +2792,25 @@ impl ExecutionEngine {
                         round_index,
                         arbitrated.as_str()
                     );
-                    ladder.confirm(arbitrated)
+                    (ladder.confirm(arbitrated), true)
                 }
                 // No arbiter installed: the heuristic verdict stands.
-                _ => ladder.confirm(ArbiterDecision::Indeterminate),
+                _ => (ladder.confirm(ArbiterDecision::Indeterminate), false),
             }
         } else {
-            step.action
+            (step.action, false)
         };
+
+        // Report the decision before applying it, so a surface sees the signal
+        // that caused the intervention ahead of its effect.
+        if let Some(event) = Self::loop_detection_event(
+            &context.session_id,
+            &context.dialog_turn_id,
+            ladder.health_fields(),
+            judge_arbitrated,
+        ) {
+            self.emit_event(event, EventPriority::Normal).await;
+        }
 
         match action {
             LoopLadderAction::None => LoopRoundDecision::default(),
@@ -5246,6 +5289,7 @@ mod tests {
         PrependedPromptReminders, PromptBuilderContext, ToolListingSections, UserContextPolicy,
     };
     use crate::agentic::core::{InternalReminderKind, Message, MessageRole, ToolCall, ToolResult};
+    use crate::agentic::events::{AgenticEvent, LoopDetectionEscalation};
     use crate::agentic::execution::loop_detection::{
         LoopEscalationLevel, LoopHealthFields, LoopSignalSource,
     };
@@ -6956,6 +7000,103 @@ mod tests {
             snapshot.loop_detection.escalation,
             LoopEscalationLevel::Steer
         );
+    }
+
+    #[test]
+    fn loop_detection_event_reports_the_ladder_decision() {
+        let event = ExecutionEngine::loop_detection_event(
+            "session-1",
+            "turn-1",
+            LoopHealthFields {
+                signal_source: Some("output"),
+                verdict_kind: Some("verbatim_block"),
+                verdict_confidence: Some(0.93),
+                verdict_count: 2,
+                steer_attempts: 1,
+                arbitration: Some("confirmed"),
+                escalation: LoopEscalationLevel::Steer,
+            },
+            true,
+        )
+        .expect("a reported verdict must produce an event");
+
+        assert!(matches!(
+            event,
+            AgenticEvent::LoopDetectionNoted {
+                ref session_id,
+                ref turn_id,
+                ref kind,
+                escalation: LoopDetectionEscalation::Steered,
+                judge_arbitrated: true,
+                ..
+            } if session_id == "session-1"
+                && turn_id == "turn-1"
+                && kind == "verbatim_block"
+        ));
+    }
+
+    #[test]
+    fn loop_detection_event_maps_the_hard_stop_to_the_stopped_level() {
+        let event = ExecutionEngine::loop_detection_event(
+            "session-1",
+            "turn-1",
+            LoopHealthFields {
+                verdict_kind: Some("thinking_stagnation"),
+                verdict_confidence: Some(0.81),
+                escalation: LoopEscalationLevel::HardStop,
+                arbitration: Some("confirmed"),
+                ..LoopHealthFields::default()
+            },
+            true,
+        )
+        .expect("hard stop event");
+
+        assert!(matches!(
+            event,
+            AgenticEvent::LoopDetectionNoted {
+                escalation: LoopDetectionEscalation::Stopped,
+                confidence,
+                judge_arbitrated: true,
+                ..
+            } if (confidence - 0.81).abs() < 1e-6
+        ));
+    }
+
+    #[test]
+    fn loop_detection_event_reports_a_telemetry_verdict_as_noted() {
+        let event = ExecutionEngine::loop_detection_event(
+            "session-1",
+            "turn-1",
+            LoopHealthFields {
+                verdict_kind: Some("near_repetition"),
+                verdict_confidence: Some(0.86),
+                verdict_count: 1,
+                escalation: LoopEscalationLevel::Telemetry,
+                ..LoopHealthFields::default()
+            },
+            false,
+        )
+        .expect("report-only verdict event");
+
+        assert!(matches!(
+            event,
+            AgenticEvent::LoopDetectionNoted {
+                escalation: LoopDetectionEscalation::Noted,
+                judge_arbitrated: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn loop_detection_event_skips_rounds_without_a_verdict() {
+        assert!(ExecutionEngine::loop_detection_event(
+            "session-1",
+            "turn-1",
+            LoopHealthFields::default(),
+            false,
+        )
+        .is_none());
     }
 
     #[test]

@@ -10,8 +10,8 @@ pub use openbitfun_events::agentic::ErrorCategory;
 pub use openbitfun_events::{
     AgenticEvent as BaseAgenticEvent, AgenticEventEnvelope as EventEnvelope,
     AgenticEventPriority as EventPriority, DeepReviewQueueReason, DeepReviewQueueState,
-    DeepReviewQueueStatus, ModelRoundAttemptDiagnostic, ModelRoundAttemptToolDiagnostic,
-    SubagentParentInfo, ToolEventData,
+    DeepReviewQueueStatus, LoopDetectionEscalation, ModelRoundAttemptDiagnostic,
+    ModelRoundAttemptToolDiagnostic, SubagentParentInfo, ToolEventData,
 };
 
 // ============ Core layer AgenticEvent extension ============
