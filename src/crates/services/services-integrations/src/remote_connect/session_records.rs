@@ -31,6 +31,17 @@ pub fn session_event_publication(name: &str, payload: &Value) -> SessionEventPub
             persist_control: true,
         };
     }
+    // A loop-detection note is a live status signal for controllers, not
+    // transcript content: it reports a detector verdict and the ladder's action,
+    // and the round events around it already carry every record change. Keeping
+    // it out of record synchronization also keeps a calibration run's report-only
+    // notes from rebuilding the same turn record on every looped round.
+    if name == "agentic://loop-detection-noted" {
+        return SessionEventPublication {
+            synchronize_records: false,
+            persist_control: true,
+        };
+    }
     if name == "agentic://tool-event" {
         let kind = payload["toolEvent"]["event_type"].as_str().unwrap_or("");
         return SessionEventPublication {
@@ -166,6 +177,15 @@ mod publication_tests {
         let policy = session_event_publication(
             "agentic://prompt-suggestion",
             &json!({"sessionId":"session","sourceTurnId":"turn","suggestion":"Run the tests"}),
+        );
+        assert!(!policy.synchronize_records);
+        assert!(policy.persist_control);
+    }
+    #[test]
+    fn loop_detection_note_reaches_controllers_without_record_synchronization() {
+        let policy = session_event_publication(
+            "agentic://loop-detection-noted",
+            &json!({"sessionId":"session","turnId":"turn","kind":"verbatim_block","escalation":"steered"}),
         );
         assert!(!policy.synchronize_records);
         assert!(policy.persist_control);
