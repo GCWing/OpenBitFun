@@ -182,13 +182,21 @@ export function toConversationUiModelCatalog(source: RemoteModelCatalog): Conver
     version: source.version,
     models: source.models.map((model: RemoteModelConfig) => toConversationUiModel(model)),
     default_models: {
-      primary: source.default_models.primary,
-      fast: source.default_models.fast,
-      search: source.default_models.search,
-      image_understanding: source.default_models.image_understanding
+      primary: projectedDefaultModelId(source.default_models.primary),
+      fast: projectedDefaultModelId(source.default_models.fast),
+      search: projectedDefaultModelId(source.default_models.search),
+      image_understanding: projectedDefaultModelId(source.default_models.image_understanding)
     },
     session_model_id: source.session_model_id
   };
+}
+
+/**
+ * The wire says `null` for a slot with no model; this projection says the same
+ * by leaving the id absent. Both mean "nothing configured" to every reader.
+ */
+function projectedDefaultModelId(value: string | null | undefined): string | undefined {
+  return value === undefined || value === null || value.length === 0 ? undefined : value;
 }
 
 export function toConversationUiSelectedImage(source: SelectedImageAttachment): ConversationUiSelectedImage {

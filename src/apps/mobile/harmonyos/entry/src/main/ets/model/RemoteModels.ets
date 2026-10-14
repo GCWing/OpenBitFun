@@ -156,6 +156,12 @@ export interface RemoteCommand {
   tool_id?: string;
   updated_input?: Object;
   model_id?: string;
+  // set_model_defaults carries the whole object in one write, so all three
+  // managed slots are always present. A missing key means the same thing as an
+  // explicit null: no model configured (and, for `fast`, follow the primary).
+  primary?: string | null;
+  fast?: string | null;
+  image_understanding?: string | null;
   reason?: string;
   mode?: RemotePermissionMode;
   answers?: Object;
@@ -403,6 +409,8 @@ export const REMOTE_CAPABILITY_HARNESS_PROFILES_V1: string = 'harness_profiles_v
 export const REMOTE_CAPABILITY_SESSION_ROLLBACK_V1: string = 'session_rollback_v1';
 /** The host resolves `workspace_id` in commands and stamps it on its projections. */
 export const REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1: string = 'workspace_id_references_v1';
+/** The host reads and writes the device-level model role defaults. */
+export const REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1: string = 'device_model_defaults_v1';
 
 export interface RemoteModelConfig {
   id: string;
@@ -437,11 +445,21 @@ export interface RemoteReasoningCatalogProjection {
   presets?: RemoteReasoningPresetDescriptor[];
 }
 
+/**
+ * Device-level model role defaults, exactly as the host persists them.
+ *
+ * All six slots are always projected; only `primary`, `fast` and
+ * `image_understanding` are writable from the phone. `null` is a real value and
+ * means "no model configured" (`fast` then follows `primary`), so every reader
+ * must treat it as such rather than as an absent field.
+ */
 export interface RemoteDefaultModels {
-  primary?: string;
-  fast?: string;
-  search?: string;
-  image_understanding?: string;
+  primary?: string | null;
+  fast?: string | null;
+  search?: string | null;
+  image_understanding?: string | null;
+  image_generation?: string | null;
+  speech_recognition?: string | null;
 }
 
 export interface RemoteModelCatalog {
@@ -458,6 +476,18 @@ export interface ModelCatalogResponse extends CommandStatusResponse {
 export interface SetSessionModelResponse extends CommandStatusResponse {
   session_id?: string;
   model_id?: string;
+}
+
+/**
+ * `set_model_defaults` acknowledgement.
+ *
+ * `default_models` is the reconcile result the host read back, all six slots
+ * included. A host that only acknowledges the command without the payload
+ * leaves it undefined, which the client answers with its own authoritative
+ * re-read instead of guessing.
+ */
+export interface ModelDefaultsUpdatedResponse extends CommandStatusResponse {
+  default_models?: RemoteDefaultModels;
 }
 
 export interface RemoteToolStatusResponse {

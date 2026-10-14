@@ -181,6 +181,23 @@ export class RemoteCommandFactory {
     };
   }
 
+  /**
+   * Writes the three phone-managed device model slots as one object.
+   *
+   * `null` is a value, not an omission: fast follows the primary model and the
+   * other two are left unconfigured. Every slot is always sent so a host can
+   * never read an absent key as "leave unchanged", which would make the write
+   * ambiguous between the two meanings.
+   */
+  static setModelDefaults(primary: string | null, fast: string | null, imageUnderstanding: string | null): RemoteCommand {
+    return {
+      cmd: 'set_model_defaults',
+      primary,
+      fast,
+      image_understanding: imageUnderstanding
+    };
+  }
+
   static pollSession(
     sessionId: string,
     sinceVersion: number,

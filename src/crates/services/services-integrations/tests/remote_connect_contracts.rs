@@ -23,7 +23,8 @@ use openbitfun_services_integrations::remote_connect::{
     remote_dialog_submit_outcome_from_scheduler, remote_dialog_submit_response,
     remote_file_chunk_response, remote_file_content_response, remote_file_display_name,
     remote_file_info_response, remote_initial_sync_response, remote_interaction_accepted_response,
-    remote_messages_response, remote_model_catalog_poll_delta, remote_model_selection_needs_config,
+    remote_messages_response, remote_model_catalog_poll_delta,
+    remote_model_defaults_updated_response, remote_model_selection_needs_config,
     remote_no_change_poll_response, remote_persisted_poll_response, remote_plan_build_content,
     remote_recent_workspaces_response, remote_session_created_response,
     remote_session_deleted_response, remote_session_info, remote_session_list_response,
@@ -31,9 +32,10 @@ use openbitfun_services_integrations::remote_connect::{
     remote_snapshot_poll_response, remote_task_cancel_response, remote_workspace_info_response,
     remote_workspace_updated_response, resolve_remote_agent_type, resolve_remote_cancel_decision,
     resolve_remote_execution_image_contexts, resolve_remote_file_chunk_range,
-    resolve_remote_workspace_path, should_send_remote_model_catalog, submit_remote_dialog,
-    ActiveTurnSnapshot, ChatImageAttachment, ChatMessage, ChatMessageItem, ImageAttachment,
-    QrGenerator, RemoteAssistantWorkspaceFacts, RemoteCancelDecision, RemoteCancelRuntimeHost,
+    resolve_remote_model_default_slot, resolve_remote_workspace_path,
+    should_send_remote_model_catalog, submit_remote_dialog, ActiveTurnSnapshot,
+    ChatImageAttachment, ChatMessage, ChatMessageItem, ImageAttachment, QrGenerator,
+    RemoteAssistantWorkspaceFacts, RemoteCancelDecision, RemoteCancelRuntimeHost,
     RemoteCancelTaskRequest, RemoteChatHistoryRound, RemoteChatHistoryTextItem,
     RemoteChatHistoryThinkingItem, RemoteChatHistoryToolCall, RemoteChatHistoryToolItem,
     RemoteChatHistoryTurn, RemoteCommand, RemoteCommandRuntimeHost, RemoteConnectSubmissionSource,
@@ -47,7 +49,8 @@ use openbitfun_services_integrations::remote_connect::{
     RemoteSessionTrackerHost, RemoteSessionTrackerRegistry, RemoteSessionWorkspaceIdentity,
     RemoteTerminalPrewarmRequest, RemoteToolStatus, RemoteWorkspaceFacts, RemoteWorkspaceFileChunk,
     RemoteWorkspaceFileContent, RemoteWorkspaceFileInfo, RemoteWorkspaceFileRuntimeHost,
-    RemoteWorkspaceKind, RemoteWorkspaceUpdate, TrackerEvent, REMOTE_CAPABILITY_DIALOG_STEER_V1,
+    RemoteWorkspaceKind, RemoteWorkspaceUpdate, TrackerEvent,
+    REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1, REMOTE_CAPABILITY_DIALOG_STEER_V1,
     REMOTE_CAPABILITY_HARNESS_PROFILES_V1, REMOTE_CAPABILITY_HOST_STREAM_V1,
     REMOTE_CAPABILITY_PLAN_BUILD_V1, REMOTE_CAPABILITY_SESSION_ROLLBACK_V1,
     REMOTE_FILE_MAX_CHUNK_BYTES, REMOTE_FILE_MAX_READ_BYTES,
@@ -2227,7 +2230,8 @@ fn remote_connect_workspace_response_helpers_own_wire_shape() {
             REMOTE_CAPABILITY_PLAN_BUILD_V1,
             REMOTE_CAPABILITY_SESSION_ROLLBACK_V1,
             "user_question_interaction_v1",
-            REMOTE_CAPABILITY_HOST_STREAM_V1
+            REMOTE_CAPABILITY_HOST_STREAM_V1,
+            REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1
         ])
     );
     let mut legacy_info_json = info_json.clone();
@@ -2474,7 +2478,8 @@ fn remote_connect_session_response_helpers_own_pagination_and_timestamps() {
             REMOTE_CAPABILITY_PLAN_BUILD_V1,
             REMOTE_CAPABILITY_SESSION_ROLLBACK_V1,
             "user_question_interaction_v1",
-            REMOTE_CAPABILITY_HOST_STREAM_V1
+            REMOTE_CAPABILITY_HOST_STREAM_V1,
+            REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1
         ])
     );
     let mut legacy_initial_json = initial_json;
@@ -3687,4 +3692,199 @@ fn dialog_queue_wire_keeps_legacy_send_messages_readable() {
     }});
     let command: RemoteCommand = serde_json::from_value(queue.clone()).unwrap();
     assert_eq!(serde_json::to_value(command).unwrap(), queue);
+}
+
+#[test]
+fn device_model_defaults_command_is_a_whole_object_write_of_three_slots() {
+    // Absent fields and explicit nulls both clear a slot, so the command has no
+    // tri-state ambiguity; the host-only slots are not part of the request.
+    let empty: RemoteCommand =
+        serde_json::from_value(serde_json::json!({ "cmd": "set_model_defaults" }))
+            .expect("deserialize empty device defaults command");
+    assert_eq!(
+        empty,
+        RemoteCommand::SetModelDefaults {
+            primary: None,
+            fast: None,
+            image_understanding: None,
+        }
+    );
+    let explicit_nulls: RemoteCommand = serde_json::from_value(serde_json::json!({
+        "cmd": "set_model_defaults",
+        "primary": null,
+        "fast": "fast-model",
+        "image_understanding": null
+    }))
+    .expect("deserialize explicit null slots");
+    assert_eq!(
+        explicit_nulls,
+        RemoteCommand::SetModelDefaults {
+            primary: None,
+            fast: Some("fast-model".to_string()),
+            image_understanding: None,
+        }
+    );
+    let host_slots_are_ignored: RemoteCommand = serde_json::from_value(serde_json::json!({
+        "cmd": "set_model_defaults",
+        "primary": "model-1",
+        "search": "search-model",
+        "speech_recognition": "speech-model"
+    }))
+    .expect("host-only slots are not part of the request");
+    assert_eq!(
+        host_slots_are_ignored,
+        RemoteCommand::SetModelDefaults {
+            primary: Some("model-1".to_string()),
+            fast: None,
+            image_understanding: None,
+        }
+    );
+
+    let serialized = serde_json::to_value(RemoteCommand::SetModelDefaults {
+        primary: Some("model-1".to_string()),
+        fast: None,
+        image_understanding: Some("vision-1".to_string()),
+    })
+    .expect("serialize device defaults command");
+    assert_eq!(
+        serialized,
+        serde_json::json!({
+            "cmd": "set_model_defaults",
+            "primary": "model-1",
+            "fast": null,
+            "image_understanding": "vision-1"
+        })
+    );
+}
+
+#[test]
+fn device_model_defaults_response_carries_role_mappings_only() {
+    let default_models = RemoteDefaultModelsConfig {
+        primary: Some("model-1".to_string()),
+        fast: Some("fast-model".to_string()),
+        search: Some("search-model".to_string()),
+        image_understanding: Some("vision-model".to_string()),
+        image_generation: Some("image-model".to_string()),
+        speech_recognition: Some("speech-model".to_string()),
+    };
+    let response = remote_model_defaults_updated_response(default_models.clone());
+    assert_eq!(
+        response,
+        RemoteResponse::ModelDefaultsUpdated {
+            default_models: default_models.clone(),
+        }
+    );
+
+    let json = serde_json::to_value(&response).expect("serialize device defaults response");
+    assert_eq!(json["resp"], "model_defaults_updated");
+    let mut response_keys: Vec<String> = json
+        .as_object()
+        .expect("response is an object")
+        .keys()
+        .cloned()
+        .collect();
+    response_keys.sort();
+    assert_eq!(response_keys, ["default_models", "resp"]);
+
+    // All six slots travel; the three host-only slots are reported even though
+    // the request never carries them.
+    let slots = json["default_models"]
+        .as_object()
+        .expect("default models is an object");
+    let mut slot_keys: Vec<String> = slots.keys().cloned().collect();
+    slot_keys.sort();
+    assert_eq!(
+        slot_keys,
+        [
+            "fast",
+            "image_generation",
+            "image_understanding",
+            "primary",
+            "search",
+            "speech_recognition"
+        ]
+    );
+    assert!(slots.values().all(serde_json::Value::is_string));
+    assert_eq!(slots["search"], "search-model");
+
+    // The payload is a role mapping, never a model record: no credential,
+    // endpoint, or provider field may appear anywhere in it.
+    let body = serde_json::to_string(&response).expect("serialize device defaults response");
+    for forbidden in [
+        "api_key",
+        "apikey",
+        "secret",
+        "token",
+        "credential",
+        "password",
+        "base_url",
+        "provider",
+    ] {
+        assert!(
+            !body.contains(forbidden),
+            "device model defaults response must not carry {forbidden}: {body}"
+        );
+    }
+}
+
+fn device_default_known_model(model_id: &str) -> bool {
+    matches!(model_id, "text-1" | "vision-1")
+}
+
+#[test]
+fn device_model_default_slots_reject_unknown_and_semantic_ids() {
+    assert_eq!(
+        resolve_remote_model_default_slot("primary", None, device_default_known_model)
+            .expect("a cleared slot is valid"),
+        None
+    );
+    assert_eq!(
+        resolve_remote_model_default_slot(
+            "primary",
+            Some("  text-1  "),
+            device_default_known_model
+        )
+        .expect("a catalog model is valid"),
+        Some("text-1".to_string())
+    );
+    assert_eq!(
+        resolve_remote_model_default_slot("fast", Some("model-gone"), device_default_known_model)
+            .expect_err("unknown model ids are rejected"),
+        "Unknown model selection: model-gone"
+    );
+    assert_eq!(
+        resolve_remote_model_default_slot(
+            "image_understanding",
+            Some("model-gone"),
+            device_default_known_model
+        )
+        .expect_err("unknown model ids are rejected"),
+        "Unknown model selection: model-gone"
+    );
+    // The semantic selectors name a session role, never a device default value.
+    for semantic in ["primary", "fast", "auto", "default"] {
+        assert!(
+            resolve_remote_model_default_slot("fast", Some(semantic), device_default_known_model)
+                .is_err(),
+            "{semantic} must not be accepted as a device default model id"
+        );
+    }
+    assert_eq!(
+        resolve_remote_model_default_slot("primary", Some("   "), device_default_known_model)
+            .expect_err("an empty model id is not a cleared slot"),
+        "primary model id is required"
+    );
+}
+
+#[test]
+fn device_model_defaults_capability_is_advertised_by_the_host() {
+    assert_eq!(
+        REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1,
+        "device_model_defaults_v1"
+    );
+    let RemoteResponse::WorkspaceInfo { capabilities, .. } = remote_workspace_info_response(None)
+    else {
+        panic!("workspace info response");
+    };
+    assert!(capabilities.contains(&REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1.to_string()));
 }

@@ -2,7 +2,7 @@ import { WorkspaceCatalog, projectWorkspaceCatalog } from './WorkspaceCatalog';
 import { RuntimeFileLocation } from '../model/RemoteModels';
 import { HostSessionCallbacks, HostSessionStream, REMOTE_CAPABILITY_HOST_STREAM_V1 } from './HostSessionStream';
 import { SavedRuntimeConnection, SavedRuntimeConnectionsResponse } from '../model/RemoteModels';
-import { AssistantEntry, AssistantListResponse, ChatMessageItemResponse, ChatMessageResponse, CommandStatusResponse, CreateSessionOptions, CreateSessionResponse, FileInfo, FileInfoResponse, InitialSyncResult, ModelCatalogResponse, PermissionModeResponse, PollSessionResponse, PollSessionResult, ReadFileChunkResponse, ReadFileChunkResult, ReadFileResult, RecentWorkspaceEntry, RecentWorkspaceListResponse, RemoteCommand, RemoteImageContext, RemoteModelCatalog, RemotePermissionMode, RemoteQuestionAnswerPayload, RemoteSession, RemoteWorkspaceIdentity, REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1, SendMessageResponse, SessionListResponse, SessionListResult, SessionMessagesResponse, SessionMessagesResult, SessionRolledBackResponse, SessionRolledBackResult, SessionSummary, SetAssistantResponse, SetSessionModelResponse, SetWorkspaceResponse, SteerTurnResponse, SteerTurnResult, WorkspaceInfo, WorkspaceInfoResponse } from '../model/RemoteModels';
+import { AssistantEntry, AssistantListResponse, ChatMessageItemResponse, ChatMessageResponse, CommandStatusResponse, CreateSessionOptions, CreateSessionResponse, FileInfo, FileInfoResponse, InitialSyncResult, ModelCatalogResponse, ModelDefaultsUpdatedResponse, PermissionModeResponse, PollSessionResponse, PollSessionResult, ReadFileChunkResponse, ReadFileChunkResult, ReadFileResult, RecentWorkspaceEntry, RecentWorkspaceListResponse, RemoteCommand, RemoteDefaultModels, RemoteImageContext, RemoteModelCatalog, RemotePermissionMode, RemoteQuestionAnswerPayload, RemoteSession, RemoteWorkspaceIdentity, REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1, SendMessageResponse, SessionListResponse, SessionListResult, SessionMessagesResponse, SessionMessagesResult, SessionRolledBackResponse, SessionRolledBackResult, SessionSummary, SetAssistantResponse, SetSessionModelResponse, SetWorkspaceResponse, SteerTurnResponse, SteerTurnResult, WorkspaceInfo, WorkspaceInfoResponse } from '../model/RemoteModels';
 import { Encoding } from './Encoding';
 import { CloudAccountClient, CloudAccountRequestError, CloudAccountSession } from './CloudAccountClient';
 import { RemoteI18n } from '../i18n/RemoteI18n';
@@ -16,6 +16,7 @@ import { RemoteChatCommandClient } from './RemoteChatCommandController';
 import { RemoteFileDownloadClient } from './RemoteFileDownloadController';
 import { RemoteLogger } from './RemoteLogger';
 import { RemoteModelClient } from './RemoteModelController';
+import { RemoteModelDefaultsClient } from './RemoteModelDefaultsController';
 import { RemoteResponseMapper } from './RemoteResponseMapper';
 import { stampRemoteSessionsWorkspace } from './RemoteSessionIdentity';
 import { TranscriptIntegrityPolicy } from './TranscriptIntegrityPolicy';
@@ -38,7 +39,7 @@ const ACCOUNT_HANDSHAKE_TIMEOUT_MS: number = 15000;
 interface PermissionReplyArgs { request: PermissionReplyRequest; }
 interface PermissionReplyRequest { requestId: string; reply: string; feedback?: string; updatedInput?: Object; }
 
-export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFileDownloadClient, RemoteModelClient, RemoteSessionClient, RemoteToolActionClient {
+export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFileDownloadClient, RemoteModelClient, RemoteModelDefaultsClient, RemoteSessionClient, RemoteToolActionClient {
   private transport?: RemoteCommandTransport;
   private transportGeneration: number = 0;
   private workspace?: WorkspaceInfo;
@@ -445,6 +446,58 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
   async setSessionModel(sessionId: string, modelId: string): Promise<string> {
     const response = await this.send<SetSessionModelResponse>(RemoteCommandFactory.setSessionModel(sessionId, modelId));
     return response.model_id || modelId;
+  }
+
+  /**
+   * Writes the desktop's model role defaults and answers with what is stored.
+   *
+   * All six slots come back because the desktop reconciles on every write: a
+   * model that was removed can leave a role pointing at another model, and the
+   * caller must show the result rather than the request. A host that only
+   * acknowledges the command without echoing the slots leaves the answer to an
+   * authoritative read, exactly like a legacy permission-mode acknowledgement.
+   */
+  async setModelDefaults(
+    primary: string | null,
+    fast: string | null,
+    imageUnderstanding: string | null
+  ): Promise<RemoteDefaultModels> {
+    const response = await this.send<ModelDefaultsUpdatedResponse>(
+      RemoteCommandFactory.setModelDefaults(primary, fast, imageUnderstanding)
+    );
+    const defaults = response.default_models;
+    if (!defaults) {
+      const catalog = await this.getModelCatalog();
+      return RemoteSessionManager.modelDefaults(catalog.default_models);
+    }
+    return RemoteSessionManager.modelDefaults(defaults);
+  }
+
+  /**
+   * Normalizes an echoed defaults projection into all six slots.
+   *
+   * A slot that is neither a string nor null cannot be a stored selection, so
+   * it is refused instead of being shown as a configured model.
+   */
+  private static modelDefaults(defaults: RemoteDefaultModels): RemoteDefaultModels {
+    return {
+      primary: RemoteSessionManager.modelDefaultsSlot(defaults.primary),
+      fast: RemoteSessionManager.modelDefaultsSlot(defaults.fast),
+      search: RemoteSessionManager.modelDefaultsSlot(defaults.search),
+      image_understanding: RemoteSessionManager.modelDefaultsSlot(defaults.image_understanding),
+      image_generation: RemoteSessionManager.modelDefaultsSlot(defaults.image_generation),
+      speech_recognition: RemoteSessionManager.modelDefaultsSlot(defaults.speech_recognition)
+    };
+  }
+
+  private static modelDefaultsSlot(value: string | null | undefined): string | null {
+    if (value === undefined || value === null) {
+      return null;
+    }
+    if (typeof value !== 'string') {
+      throw new Error('Model defaults unavailable');
+    }
+    return value;
   }
 
   async pollSession(

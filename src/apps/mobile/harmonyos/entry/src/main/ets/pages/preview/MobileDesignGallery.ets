@@ -11,6 +11,7 @@ import { SubagentProcessPreview } from './SubagentProcessPreview';
 import { FileVisibilityPreview } from './FileVisibilityPreview';
 import { ComposerOverflowPreview } from './ComposerOverflowPreview';
 import { ImmersiveBottomPreview } from './ImmersiveBottomPreview';
+import { DeviceModelDefaultsPreview } from './DeviceModelDefaultsPreview';
 import { WelcomeHome } from '../components/WelcomeHome';
 import { InteractionMailboxPreview } from './InteractionMailboxPreview';
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
@@ -68,6 +69,8 @@ struct MobileDesignGallery {
       ImmersiveBottomPreview()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('device-selector')) {
       DeviceSelectorPreview()
+    } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('device-model')) {
+      DeviceModelDefaultsPreview()
     } else if (AppStorage.get<string>('scenarioId') === 'welcome-home') {
       WelcomeHome()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('copy-selection')) {

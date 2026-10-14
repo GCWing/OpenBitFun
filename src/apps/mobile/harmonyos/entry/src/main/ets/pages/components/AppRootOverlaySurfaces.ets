@@ -13,7 +13,7 @@ import { SettingsPagePolicy } from '../policy/SettingsPagePolicy';
 import { GeneralChatPageState } from '../state/GeneralChatPageState';
 import { DeviceDirectoryState } from '../state/DeviceDirectoryState';
 import { RemotePageState } from '../state/RemotePageState';
-import { REMOTE_CAPABILITY_HARNESS_PROFILES_V1 } from '../../model/RemoteModels';
+import { REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1, REMOTE_CAPABILITY_HARNESS_PROFILES_V1 } from '../../model/RemoteModels';
 import { AppSidebar } from './AppSidebar';
 import { ConnectView } from './ConnectView';
 import { AccountLoginSheet } from './AccountLoginSheet';
@@ -156,6 +156,8 @@ export struct AppSettingsSurface {
         controlTargetType: this.remotePageState.controlTargetType,
         controlTargetDeviceId: this.remotePageState.controlTargetDeviceId,
         connectionState: this.remotePageState.connectionState,
+        supportsDeviceModelDefaults: this.remotePageState.supportsHostCapability(
+          REMOTE_CAPABILITY_DEVICE_MODEL_DEFAULTS_V1),
         statusText: this.remotePageState.conversation.statusText,
         onOpenAccount: this.actions.onSettings.openAccount,
         onDisconnect: this.actions.onSettings.disconnect,
@@ -166,6 +168,8 @@ export struct AppSettingsSurface {
         cloudSelectDevice: this.actions.onSettings.cloudSelectDevice,
         getPermissionMode: this.actions.onSettings.getPermissionMode,
         setPermissionMode: this.actions.onSettings.setPermissionMode,
+        getDeviceModelCatalog: this.actions.onSettings.getDeviceModelCatalog,
+        setDeviceModelDefaults: this.actions.onSettings.setDeviceModelDefaults,
         onSetLanguage: this.actions.onSettings.setLanguage,
         onClose: this.actions.onSettings.close
       })

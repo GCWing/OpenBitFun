@@ -569,6 +569,62 @@
       "value": "默认模型"
     },
     {
+      "name": "settings_model_settingsTitle",
+      "value": "模型设置"
+    },
+    {
+      "name": "settings_model_upgradeBadge",
+      "value": "升级"
+    },
+    {
+      "name": "settings_model_unsupported",
+      "value": "该设备上的 OpenBitFun 版本过旧，不支持配置模型默认值。请升级该设备上的 OpenBitFun 后继续。"
+    },
+    {
+      "name": "settings_model_scopeNewSessions",
+      "value": "这些默认值作用于该设备上的新会话，进行中的会话不受影响。"
+    },
+    {
+      "name": "settings_model_scopeFastFollowsPrimary",
+      "value": "快速模型未配置时，跟随主力模型。"
+    },
+    {
+      "name": "settings_model_scopeImageUnderstanding",
+      "value": "多模态模型只用于图片理解，不替换主力模型。"
+    },
+    {
+      "name": "settings_model_capabilityImageUnderstanding",
+      "value": "图片理解"
+    },
+    {
+      "name": "settings_model_emptyTitle",
+      "value": "该设备尚未配置任何模型"
+    },
+    {
+      "name": "settings_model_emptyText",
+      "value": "请先在该设备的 OpenBitFun 里添加模型，再回到这里设置角色默认值。"
+    },
+    {
+      "name": "settings_model_filterTextChat",
+      "value": "仅显示已启用且支持文本对话（text_chat）的模型 · 作用于 %1$s 上的新会话"
+    },
+    {
+      "name": "settings_model_filterImageUnderstanding",
+      "value": "仅显示支持图片理解（image_understanding）的模型 · 作用于 %1$s 上的新会话"
+    },
+    {
+      "name": "settings_model_updatedResult",
+      "value": "已更新为 %1$s · 已重新读取该设备上的当前值"
+    },
+    {
+      "name": "settings_model_imageUnderstandingUnset",
+      "value": "未指定多模态模型时，图片理解相关能力不可用"
+    },
+    {
+      "name": "settings_model_pickEmpty",
+      "value": "该设备暂无可用于该角色的模型"
+    },
+    {
       "name": "settings_devices_section",
       "value": "设备"
     },
@@ -1889,6 +1945,14 @@
       "value": "快速"
     },
     {
+      "name": "chat_modelImage",
+      "value": "多模态模型"
+    },
+    {
+      "name": "chat_modelFollowPrimary",
+      "value": "跟随主力"
+    },
+    {
       "name": "chat_loadOlder",
       "value": "加载更早消息"
     },
@@ -2435,6 +2499,26 @@
     {
       "name": "status_modelSwitched",
       "value": "模型已切换"
+    },
+    {
+      "name": "status_loadingModelDefaults",
+      "value": "正在读取模型默认值"
+    },
+    {
+      "name": "status_updatingModelDefaults",
+      "value": "正在保存模型默认值"
+    },
+    {
+      "name": "status_modelDefaultsUpdated",
+      "value": "已更新"
+    },
+    {
+      "name": "status_modelDefaultsLoadFailed",
+      "value": "读取模型默认值失败，请重试。"
+    },
+    {
+      "name": "status_modelDefaultsUpdateFailed",
+      "value": "保存模型默认值失败，请重试。"
     },
     {
       "name": "status_loadOlderMessages",
