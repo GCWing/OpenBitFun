@@ -1290,7 +1290,7 @@ impl ChatState {
         parent_tool_id: &str,
         event: &openbitfun_events::AgenticEvent,
     ) {
-        use openbitfun_events::AgenticEvent;
+        use openbitfun_events::{AgenticEvent, LoopDetectionEscalation};
 
         match event {
             AgenticEvent::ToolEvent { tool_event, .. } => match tool_event {
@@ -1353,6 +1353,28 @@ impl ChatState {
                         .get_or_insert_with(SubagentProgress::default);
                     progress.current_tool_name = None;
                     progress.current_tool_title = Some(format!("Round {}", round_index + 1));
+                });
+                self.rebuild_streaming_message();
+            }
+            // A subagent's loop-detection intervention belongs to the parent Task
+            // card the user is actually watching: the child session is hidden, and
+            // the event only carries its own session id, so the forwarding that
+            // routes child events here is what bubbles the signal up.
+            AgenticEvent::LoopDetectionNoted {
+                kind, escalation, ..
+            } if *escalation != LoopDetectionEscalation::Noted => {
+                let title = match escalation {
+                    LoopDetectionEscalation::Stopped => {
+                        format!("Loop detected ({kind}); stopped the subagent turn")
+                    }
+                    _ => format!("Loop detected ({kind}); asked the subagent to change course"),
+                };
+                self.update_tool(parent_tool_id, |tool| {
+                    let progress = tool
+                        .subagent_progress
+                        .get_or_insert_with(SubagentProgress::default);
+                    progress.current_tool_name = None;
+                    progress.current_tool_title = Some(title);
                 });
                 self.rebuild_streaming_message();
             }

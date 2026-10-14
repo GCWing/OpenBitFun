@@ -17,7 +17,7 @@ use openbitfun_agent_runtime::sdk::{
 };
 use openbitfun_agent_runtime::thread_goal::{ThreadGoalRunDisposition, ThreadGoalRunTracker};
 use openbitfun_agent_tools::effective_tool_invocation;
-use openbitfun_events::{AgenticEvent, ToolEventIdentity};
+use openbitfun_events::{AgenticEvent, LoopDetectionEscalation, ToolEventIdentity};
 use tokio::time::Instant;
 
 use crate::agent::runtime_client::CliAgentRuntimeClient;
@@ -116,6 +116,7 @@ pub(super) fn event_turn_id(event: &AgenticEvent) -> Option<&str> {
         | AgenticEvent::ThinkingChunk { turn_id, .. }
         | AgenticEvent::ToolEvent { turn_id, .. }
         | AgenticEvent::DeepReviewQueueStateChanged { turn_id, .. }
+        | AgenticEvent::LoopDetectionNoted { turn_id, .. }
         | AgenticEvent::UserSteeringInjected { turn_id, .. } => Some(turn_id),
         _ => None,
     }
@@ -1386,6 +1387,26 @@ impl ExecMode {
                     }
                     _ => {}
                 }
+            }
+            // Report-only loop-detection decisions are calibration telemetry and
+            // stay out of the terminal; an intervention is worth one status line.
+            AgenticEvent::LoopDetectionNoted {
+                turn_id: event_turn_id,
+                escalation,
+                kind,
+                confidence,
+                ..
+            } if event_turn_id == turn_id && *escalation != LoopDetectionEscalation::Noted => {
+                let next_action = match escalation {
+                    LoopDetectionEscalation::Stopped => "stopping this turn",
+                    _ => "injected a correction reminder",
+                };
+                self.print_text(|| {
+                    eprintln!(
+                        "\n   [!] Loop detection: repeated {} signal (confidence {:.2}); {}",
+                        kind, confidence, next_action
+                    )
+                });
             }
             _ => {}
         }
