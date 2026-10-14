@@ -80,11 +80,17 @@
 //!   pinned, so an identical block repeated at a long interval is reported through
 //!   the interval-scale similarity (with a near-1.0 ratio) instead of a loosened
 //!   verbatim rule.
-//! * **Predictable enumeration is reported only when it explains something.**
-//!   [`LoopKind::PredictableDrift`] needs an otherwise-repetitive region (a
-//!   verbatim, periodic, or near-repetition candidate) to explain; a bare counter
-//!   series that produces no repetition candidate has nothing to explain and is
-//!   not reported.
+//! * **Predictable enumeration gets its own verdict, with or without an
+//!   explanation.** A counter or letter progression of at least
+//!   `predictable_drift_min_samples` lines is reported as
+//!   [`LoopKind::PredictableDrift`] in two situations: when it occupies at least
+//!   half of an otherwise-repetitive region (then the exact-block, periodic, and
+//!   similarity candidates stay silent for that analysis and the progression is
+//!   reported instead), and when nothing else in the window matched at all.
+//!   Reporting a bare series is deliberate: the caller can then read a
+//!   repeating-looking window as "enumeration, not loop" instead of guessing why
+//!   it produced no signal. The low `predictable_drift_confidence` is what keeps
+//!   that verdict from escalating.
 //! * **Duplicate suppression.** Dedup is kind-scoped, as described above.
 //!   Escalation on a *strengthening* loop is the intervention ladder's job, since
 //!   it owns the attempt counters.
