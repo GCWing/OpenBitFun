@@ -3,10 +3,15 @@
 //! Processes AI streaming responses, supports tool pre-detection and parameter streaming
 
 mod hidden_text;
+pub mod loop_detection;
 pub mod retry;
 pub mod tool_call_accumulator;
 mod unified;
 
+pub use loop_detection::{
+    LoopDetectionState, LoopDetectorConfig, LoopEvidence, LoopKind, LoopVerdict,
+    OutputLoopDetector, ThinkingLoopDetector, ThinkingLoopState,
+};
 pub use tool_call_accumulator::{ToolArgumentRepairKind, ToolCallCompletion};
 
 use crate::tool_call_accumulator::{
