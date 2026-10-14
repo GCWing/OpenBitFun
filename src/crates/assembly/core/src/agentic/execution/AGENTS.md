@@ -22,6 +22,21 @@ For model retry admission and recovery, use:
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::execution::round_executor::tests
 ```
 
+For agent loop detection (tier-to-detector translation, the intervention ladder,
+and the L2 arbitration port), use:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::execution::loop_detection
+```
+
+Detection is observation-first: every verdict is logged in every mode, a steer is
+injected at the round boundary like the existing failed-tool recovery reminder,
+and the hard fallback reuses the three-attempt pattern with
+`finalization_reason=loop_detected`. Only high-confidence kinds may hard stop; a
+judge-confirmed confidence-capped kind is the single exception. Detector state
+belongs to the turn (`LoopInterventionLadder` owns it), and `mode=off` or a
+closed session escape hatch must never feed the detectors.
+
 For complete shell constraint checks, use:
 
 ```bash
