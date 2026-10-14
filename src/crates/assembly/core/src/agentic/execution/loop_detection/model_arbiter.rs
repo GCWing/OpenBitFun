@@ -16,7 +16,7 @@
 //!
 //!   | judge outcome | arbitration decision |
 //!   |---|---|
-//!   | `Judged(loop)` | [`ArbiterDecision::Confirmed`] |
+//!   | `Judged(loop)` | [`ArbiterDecision::Confirmed`] carrying the judge's stated confidence |
 //!   | `Judged(not_loop)` | [`ArbiterDecision::Rejected`] |
 //!   | `Judged(unclear)` | [`ArbiterDecision::Indeterminate`] |
 //!   | `Indeterminate(_)` | [`ArbiterDecision::Indeterminate`] |
@@ -28,10 +28,12 @@
 //!   heuristic verdict stands with the kind's own caps, so a missing or broken
 //!   judge can never take L1 detection down with it.
 //!
-//! The arbiter answers; it never acts. It does not steer, cancel, or escalate,
-//! and it applies no confidence gate of its own: the wiring contract makes a
-//! judge-confirmed confidence-capped kind the single exception that may hard stop,
-//! and that exception belongs to the ladder.
+//! The arbiter answers; it never acts. It does not steer, cancel, or escalate. It
+//! reports the judge's confidence rather than judging it, because the threshold
+//! that decides how much a confirmation is worth is configuration
+//! (`ai.loop_detection.thresholds.judge_verdict_confidence_min`) and the ladder
+//! applies it to the port decision
+//! ([`ArbiterDecision::gated_by_confidence`]).
 //!
 //! # Known deviation
 //!
@@ -96,15 +98,33 @@ pub fn judge_request_for(verdict: &LoopVerdict, context: &LoopArbiterContext) ->
 /// A judge that abstains must be indistinguishable from no judge at all:
 /// anything other than an answered `loop` or `not_loop` keeps the heuristic
 /// verdict, so thin evidence can never silently suppress a real loop.
+///
+/// A `loop` answer carries the judge's own confidence into
+/// [`ArbiterDecision::Confirmed`], where the ladder's configured gate decides
+/// whether that is authoritative. The judge reports `0.0` for a reply it could not
+/// parse a confidence out of, and documents that a confidence-gated caller ignores
+/// such a reply, so this adapter passes [`None`] instead of a literal zero: an
+/// unstating judge must not look like a maximally cautious but real answer.
 pub fn arbitration_decision_for(outcome: &LoopJudgeOutcome) -> ArbiterDecision {
     match outcome {
         LoopJudgeOutcome::Judged(judgement) => match judgement.verdict {
-            LoopJudgeVerdict::Loop => ArbiterDecision::Confirmed,
+            LoopJudgeVerdict::Loop => ArbiterDecision::Confirmed {
+                confidence: stated_judge_confidence(judgement.confidence),
+            },
             LoopJudgeVerdict::NotLoop => ArbiterDecision::Rejected,
             LoopJudgeVerdict::Unclear => ArbiterDecision::Indeterminate,
         },
         LoopJudgeOutcome::Indeterminate(_) => ArbiterDecision::Indeterminate,
     }
+}
+
+/// The judge's confidence when it stated a usable one.
+///
+/// A non-finite or non-positive confidence is "no usable confidence" rather than a
+/// number: the judge's own parser returns `0.0` for a missing or non-numeric
+/// field, and a ratio of zero cannot be distinguished from that sentinel.
+fn stated_judge_confidence(confidence: f32) -> Option<f32> {
+    (confidence.is_finite() && confidence > 0.0).then_some(confidence)
 }
 
 /// The arbiter a session host installs when its configured judge is enabled.
@@ -270,7 +290,12 @@ mod tests {
     #[test]
     fn answered_verdicts_map_onto_the_port_decisions() {
         for (verdict, expected) in [
-            (LoopJudgeVerdict::Loop, ArbiterDecision::Confirmed),
+            (
+                LoopJudgeVerdict::Loop,
+                ArbiterDecision::Confirmed {
+                    confidence: Some(0.42),
+                },
+            ),
             (LoopJudgeVerdict::NotLoop, ArbiterDecision::Rejected),
             (LoopJudgeVerdict::Unclear, ArbiterDecision::Indeterminate),
         ] {
@@ -281,6 +306,22 @@ mod tests {
                 expected,
                 "judge verdict {} must map to its port decision",
                 verdict.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn a_loop_verdict_without_a_usable_confidence_carries_no_confidence() {
+        // The judge reports 0.0 for a confidence it could not parse, and its own
+        // contract says a confidence-gated caller ignores such a reply; the port
+        // must not turn that into a confident zero.
+        for unstating in [0.0, -0.5, f32::NAN, f32::INFINITY] {
+            let outcome = LoopJudgeOutcome::Judged(judgement(LoopJudgeVerdict::Loop, unstating));
+
+            assert_eq!(
+                arbitration_decision_for(&outcome),
+                ArbiterDecision::Confirmed { confidence: None },
+                "confidence {unstating} is not a stated confidence"
             );
         }
     }
@@ -353,8 +394,16 @@ mod tests {
         let confirmed = LoopArbiter::arbitrate(&arbiter, &verdict, &context).await;
         let rejected = LoopArbiter::arbitrate(&arbiter, &verdict, &context).await;
 
-        assert_eq!(confirmed, ArbiterDecision::Confirmed);
+        assert_eq!(
+            confirmed,
+            ArbiterDecision::Confirmed {
+                confidence: Some(0.92)
+            },
+            "the judge's stated confidence must reach the port decision"
+        );
+        assert_eq!(confirmed.confidence(), Some(0.92));
         assert_eq!(rejected, ArbiterDecision::Rejected);
+        assert_eq!(rejected.confidence(), None);
         assert_eq!(arbiter.arbitrations_for_turn("session-1", "turn-1"), 2);
         assert_eq!(server.requests.lock().unwrap().len(), 2);
         assert_eq!(environment.reported_usage.lock().unwrap().len(), 2);

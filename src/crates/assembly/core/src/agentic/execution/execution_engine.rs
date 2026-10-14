@@ -3,10 +3,10 @@
 //! Executes complete dialog turns, managing loops of multiple model rounds
 
 use super::loop_detection::{
-    loop_detector_config, round_text_and_reasoning, visible_completion_tokens, ArbiterDecision,
-    LoopArbiter, LoopArbiterContext, LoopDetectionRuntime, LoopHealthFields,
-    LoopInterventionLadder, LoopLadderAction, LoopLadderSettings, LoopRoundObservation, LoopSteer,
-    LoopUsageSample,
+    judge_confidence_min, loop_detector_config, round_text_and_reasoning,
+    visible_completion_tokens, ArbiterDecision, LoopArbiter, LoopArbiterContext,
+    LoopDetectionRuntime, LoopHealthFields, LoopInterventionLadder, LoopLadderAction,
+    LoopLadderSettings, LoopRoundObservation, LoopSteer, LoopUsageSample,
 };
 use super::model_exchange_trace::{
     prepare_model_exchange_trace_for_workspace, ModelExchangeTraceOperation,
@@ -2786,11 +2786,15 @@ impl ExecutionEngine {
                         )
                         .await;
                     debug!(
-                        "Loop detection arbitration: session_id={}, turn_id={}, round_index={}, decision={}",
+                        "Loop detection arbitration: session_id={}, turn_id={}, round_index={}, decision={}, judge_confidence={}",
                         context.session_id,
                         context.dialog_turn_id,
                         round_index,
-                        arbitrated.as_str()
+                        arbitrated.as_str(),
+                        arbitrated
+                            .confidence()
+                            .map(|value| format!("{value:.2}"))
+                            .unwrap_or_else(|| "none".to_string())
                     );
                     (ladder.confirm(arbitrated), true)
                 }
@@ -3675,6 +3679,7 @@ impl ExecutionEngine {
             ),
             judge_enabled: self.config.loop_detection.judge_enabled,
             max_arbitration_requests_per_turn: self.config.loop_detection.max_verdicts_per_turn,
+            judge_confidence_min: judge_confidence_min(&self.config.loop_detection.thresholds),
         });
         if !loop_ladder.active() {
             debug!(
@@ -5291,7 +5296,7 @@ mod tests {
     use crate::agentic::core::{InternalReminderKind, Message, MessageRole, ToolCall, ToolResult};
     use crate::agentic::events::{AgenticEvent, LoopDetectionEscalation};
     use crate::agentic::execution::loop_detection::{
-        LoopEscalationLevel, LoopHealthFields, LoopSignalSource,
+        judge_confidence_min, LoopEscalationLevel, LoopHealthFields, LoopSignalSource,
     };
     use crate::agentic::persistence::PersistenceManager;
     use crate::agentic::session::{
@@ -7110,6 +7115,10 @@ mod tests {
             .loop_detection
             .thresholds
             .ngram_window_similarity_min = Some(0.8);
+        ai_config
+            .loop_detection
+            .thresholds
+            .judge_verdict_confidence_min = Some(0.92);
 
         let config = ExecutionEngineConfig::from_ai_config(&ai_config);
 
@@ -7120,6 +7129,11 @@ mod tests {
         assert_eq!(
             config.loop_detection.thresholds.ngram_window_similarity_min,
             Some(0.8)
+        );
+        // The ladder's confidence gate is resolved from this same snapshot.
+        assert_eq!(
+            judge_confidence_min(&config.loop_detection.thresholds),
+            0.92
         );
     }
 

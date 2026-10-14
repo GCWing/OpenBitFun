@@ -13,9 +13,15 @@
 //!
 //! Decision semantics, which the ladder depends on:
 //!
-//! * [`ArbiterDecision::Confirmed`] — the judge agrees. The ladder may escalate
-//!   this verdict, including to a hard stop and including confidence-capped
-//!   kinds it may otherwise never stop on.
+//! * [`ArbiterDecision::Confirmed`] — the judge agrees, and states how sure it
+//!   was. The ladder may escalate this verdict, including to a hard stop and
+//!   including confidence-capped kinds it may otherwise never stop on, once the
+//!   stated confidence reaches
+//!   `ai.loop_detection.thresholds.judge_verdict_confidence_min`
+//!   ([`ArbiterDecision::gated_by_confidence`]). A confirmation below that
+//!   threshold — or one without a usable confidence — is applied as
+//!   [`ArbiterDecision::Indeterminate`], so it keeps the heuristic verdict and
+//!   the kind's own caps instead of silently gaining hard-stop authority.
 //! * [`ArbiterDecision::Rejected`] — the judge disagrees. The verdict is dropped:
 //!   no steer, no hard stop, no attempt counting. Telemetry still records it,
 //!   because a rejected verdict is exactly the calibration data the plan wants.
@@ -27,10 +33,19 @@ use super::ladder::LoopSignalSource;
 use openbitfun_agent_stream::LoopVerdict;
 
 /// What the arbitration layer decided about one L1 verdict.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ArbiterDecision {
     /// The judge agrees the repetition is degenerate.
-    Confirmed,
+    ///
+    /// The confidence travels with the decision because the ladder must not treat
+    /// a confirmation as authoritative beyond the configured
+    /// `judge_verdict_confidence_min`; see [`Self::gated_by_confidence`].
+    Confirmed {
+        /// Judge confidence in `0.0..=1.0`, absent when the judge answered
+        /// without a usable one. An absent confidence is not a pass: a judge that
+        /// cannot state how sure it is does not get to end a capped signal's turn.
+        confidence: Option<f32>,
+    },
     /// The judge disagrees; the verdict must not drive an intervention.
     Rejected,
     /// No usable judgement; keep the heuristic verdict and its caps.
@@ -41,9 +56,43 @@ impl ArbiterDecision {
     /// Stable identifier for logs and telemetry.
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Confirmed => "confirmed",
+            Self::Confirmed { .. } => "confirmed",
             Self::Rejected => "rejected",
             Self::Indeterminate => "indeterminate",
+        }
+    }
+
+    /// The judge's stated confidence, when this decision is a confirmation.
+    pub fn confidence(self) -> Option<f32> {
+        match self {
+            Self::Confirmed { confidence } => confidence,
+            Self::Rejected | Self::Indeterminate => None,
+        }
+    }
+
+    /// Applies the configured confidence gate to this decision.
+    ///
+    /// A confirmation whose stated confidence is below `minimum` — or missing,
+    /// because the judge answered `loop` without a usable confidence — is applied
+    /// exactly like [`ArbiterDecision::Indeterminate`]: the heuristic verdict
+    /// stands with the kind's own caps and the steer path stays available, but the
+    /// confirmation does not become hard-stop authority over a capped signal. The
+    /// judge reports its own confidence rules, and the judge module documents that
+    /// a reply without a usable confidence is a `0.0` a confidence-gated caller
+    /// ignores, so absent and below-threshold are the same answer here.
+    ///
+    /// `Rejected` and `Indeterminate` pass through unchanged: the gate only ever
+    /// removes authority, never grants it.
+    pub fn gated_by_confidence(self, minimum: f32) -> Self {
+        match self {
+            Self::Confirmed { confidence } => {
+                if confidence.is_some_and(|value| value.is_finite() && value >= minimum) {
+                    self
+                } else {
+                    Self::Indeterminate
+                }
+            }
+            other => other,
         }
     }
 }

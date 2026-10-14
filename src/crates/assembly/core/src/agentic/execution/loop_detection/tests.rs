@@ -13,7 +13,10 @@ use super::ladder::{
     LoopRoundObservation, LoopSignalSource, LoopUsageSample, LOOP_DETECTED_FINALIZATION_REASON,
     MAX_LOOP_RECOVERY_ATTEMPTS,
 };
-use super::policy::{loop_detector_config, structure_exclusions_enabled};
+use super::policy::{
+    judge_confidence_min, loop_detector_config, structure_exclusions_enabled,
+    DEFAULT_JUDGE_VERDICT_CONFIDENCE_MIN,
+};
 use super::runtime::LoopDetectionRuntime;
 use crate::agentic::core::{InternalReminderKind, Message};
 use openbitfun_agent_runtime::context_profile::{
@@ -44,6 +47,14 @@ fn settings(mode: LoopDetectionMode) -> LoopLadderSettings {
         detector_config: LoopDetectorConfig::default(),
         judge_enabled: true,
         max_arbitration_requests_per_turn: DEFAULT_LOOP_DETECTION_MAX_VERDICTS_PER_TURN,
+        judge_confidence_min: DEFAULT_JUDGE_VERDICT_CONFIDENCE_MIN,
+    }
+}
+
+/// A confirmation at a confidence the configured gate accepts.
+fn confident_judge() -> ArbiterDecision {
+    ArbiterDecision::Confirmed {
+        confidence: Some(0.95),
     }
 }
 
@@ -518,7 +529,7 @@ fn confidence_capped_kinds_never_hard_stop_on_heuristics_alone() {
     let mut ladder = LoopInterventionLadder::new(settings(LoopDetectionMode::Enforce));
     ladder.observe_verdict(drift());
     assert_eq!(
-        steered_kind(&ladder.confirm(ArbiterDecision::Confirmed)),
+        steered_kind(&ladder.confirm(confident_judge())),
         Some(InternalReminderKind::OutputLoopRecovery)
     );
     for _ in 0..=MAX_LOOP_RECOVERY_ATTEMPTS {
@@ -610,7 +621,7 @@ fn confirmed_arbitration_upgrades_a_capped_kind_to_a_hard_stop() {
         "a capped signal past its cap asks the judge whether it may upgrade"
     );
 
-    let action = ladder.confirm(ArbiterDecision::Confirmed);
+    let action = ladder.confirm(confident_judge());
 
     match action {
         LoopLadderAction::HardStop { reason, kind, .. } => {
@@ -619,6 +630,184 @@ fn confirmed_arbitration_upgrades_a_capped_kind_to_a_hard_stop() {
         }
         other => panic!("a confirmed capped signal may end the turn, got {other:?}"),
     }
+}
+
+// --------------------------- ladder: confidence gate ---------------------------
+
+#[test]
+fn a_confirmation_below_the_configured_confidence_keeps_the_heuristic_caps() {
+    let mut ladder = LoopInterventionLadder::new(settings(LoopDetectionMode::Enforce));
+    for _ in 0..MAX_LOOP_RECOVERY_ATTEMPTS {
+        ladder.observe_verdict(Some(thinking_verdict(
+            LoopKind::ReasoningRunaway,
+            0.35,
+            false,
+        )));
+    }
+    let step = ladder.observe_verdict(Some(thinking_verdict(
+        LoopKind::ReasoningRunaway,
+        0.35,
+        false,
+    )));
+    assert!(step.pending_arbitration);
+
+    // The judge says `loop`, but only with 0.60: below the 0.9 baseline gate.
+    let action = ladder.confirm(ArbiterDecision::Confirmed {
+        confidence: Some(0.60),
+    });
+
+    assert_eq!(
+        action,
+        LoopLadderAction::None,
+        "a below-threshold confirmation may not end a capped signal's turn"
+    );
+    let health = ladder.health_fields();
+    assert_eq!(
+        health.arbitration,
+        Some(ArbiterDecision::Indeterminate.as_str()),
+        "a gated confirmation is applied as an indeterminate answer"
+    );
+    assert_eq!(health.escalation, LoopEscalationLevel::Telemetry);
+    assert_eq!(
+        ladder.steer_attempts(),
+        MAX_LOOP_RECOVERY_ATTEMPTS,
+        "gating must not spend another steer attempt"
+    );
+}
+
+#[test]
+fn the_confidence_gate_is_configurable() {
+    // A calibration run can move the bar: 0.60 then confirms the same signal.
+    let mut gated = settings(LoopDetectionMode::Enforce);
+    gated.judge_confidence_min = 0.5;
+    let mut ladder = LoopInterventionLadder::new(gated);
+    for _ in 0..MAX_LOOP_RECOVERY_ATTEMPTS {
+        ladder.observe_verdict(Some(thinking_verdict(
+            LoopKind::ReasoningRunaway,
+            0.35,
+            false,
+        )));
+    }
+    ladder.observe_verdict(Some(thinking_verdict(
+        LoopKind::ReasoningRunaway,
+        0.35,
+        false,
+    )));
+
+    let action = ladder.confirm(ArbiterDecision::Confirmed {
+        confidence: Some(0.60),
+    });
+
+    assert!(
+        matches!(
+            action,
+            LoopLadderAction::HardStop {
+                kind: LoopKind::ReasoningRunaway,
+                ..
+            }
+        ),
+        "a confirmation at the configured confidence stays authoritative, got {action:?}"
+    );
+}
+
+#[test]
+fn an_unstated_confidence_is_not_authoritative_but_still_allows_a_steer() {
+    // A capped signal past its steers: the judge answered `loop` without stating a
+    // confidence, so it may not upgrade the kind to a hard stop.
+    let mut ladder = LoopInterventionLadder::new(settings(LoopDetectionMode::Enforce));
+    for _ in 0..MAX_LOOP_RECOVERY_ATTEMPTS {
+        ladder.observe_verdict(Some(thinking_verdict(
+            LoopKind::ReasoningRunaway,
+            0.35,
+            false,
+        )));
+    }
+    ladder.observe_verdict(Some(thinking_verdict(
+        LoopKind::ReasoningRunaway,
+        0.35,
+        false,
+    )));
+
+    assert_eq!(
+        ladder.confirm(ArbiterDecision::Confirmed { confidence: None }),
+        LoopLadderAction::None
+    );
+
+    // The steer path is not collateral damage: an ambiguous verdict on a
+    // steer-eligible kind still nudges the turn.
+    let mut ladder = LoopInterventionLadder::new(settings(LoopDetectionMode::Enforce));
+    let step = ladder.observe_verdict(Some(thinking_verdict(
+        LoopKind::ThinkingStagnation,
+        0.75,
+        true,
+    )));
+    assert!(step.pending_arbitration);
+
+    assert_eq!(
+        steered_kind(&ladder.confirm(ArbiterDecision::Confirmed { confidence: None })),
+        Some(InternalReminderKind::ThinkingLoopRecovery)
+    );
+}
+
+#[test]
+fn the_port_confidence_gate_only_removes_authority() {
+    let minimum = DEFAULT_JUDGE_VERDICT_CONFIDENCE_MIN;
+
+    assert_eq!(
+        ArbiterDecision::Confirmed {
+            confidence: Some(minimum),
+        }
+        .gated_by_confidence(minimum),
+        ArbiterDecision::Confirmed {
+            confidence: Some(minimum),
+        },
+        "a confirmation exactly at the threshold passes"
+    );
+    for below in [Some(minimum - 0.01), None] {
+        assert_eq!(
+            ArbiterDecision::Confirmed { confidence: below }.gated_by_confidence(minimum),
+            ArbiterDecision::Indeterminate,
+            "confidence {below:?} must not confirm"
+        );
+    }
+    assert_eq!(
+        ArbiterDecision::Rejected.gated_by_confidence(minimum),
+        ArbiterDecision::Rejected
+    );
+    assert_eq!(
+        ArbiterDecision::Indeterminate.gated_by_confidence(minimum),
+        ArbiterDecision::Indeterminate
+    );
+}
+
+#[test]
+fn the_judge_confidence_gate_resolves_overrides_over_the_baseline() {
+    let mut overrides = LoopDetectionThresholdOverridesConfig::default();
+
+    assert_eq!(DEFAULT_JUDGE_VERDICT_CONFIDENCE_MIN, 0.9);
+    assert_eq!(
+        judge_confidence_min(&overrides),
+        DEFAULT_JUDGE_VERDICT_CONFIDENCE_MIN
+    );
+
+    overrides.judge_verdict_confidence_min = Some(0.75);
+    assert_eq!(judge_confidence_min(&overrides), 0.75);
+
+    // Non-positive and non-finite values count as unset, like every other knob in
+    // the override table.
+    for unset in [0.0, -1.0, f32::NAN] {
+        overrides.judge_verdict_confidence_min = Some(unset);
+        assert_eq!(
+            judge_confidence_min(&overrides),
+            DEFAULT_JUDGE_VERDICT_CONFIDENCE_MIN,
+            "override {unset} counts as unset"
+        );
+    }
+
+    // A ratio above 1.0 can never be reached, so it clamps to the most demanding
+    // reachable gate instead of disabling the judge silently.
+    overrides.judge_verdict_confidence_min = Some(1.5);
+    assert_eq!(judge_confidence_min(&overrides), 1.0);
 }
 
 #[test]
@@ -663,10 +852,7 @@ fn arbitration_is_not_requested_in_telemetry_mode() {
 fn confirming_without_a_pending_verdict_is_a_no_op() {
     let mut ladder = LoopInterventionLadder::new(settings(LoopDetectionMode::Enforce));
 
-    assert_eq!(
-        ladder.confirm(ArbiterDecision::Confirmed),
-        LoopLadderAction::None
-    );
+    assert_eq!(ladder.confirm(confident_judge()), LoopLadderAction::None);
     assert_eq!(ladder.steer_attempts(), 0);
 }
 

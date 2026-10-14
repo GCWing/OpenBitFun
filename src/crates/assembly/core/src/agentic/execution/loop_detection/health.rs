@@ -70,7 +70,10 @@ pub struct LoopHealthFields {
     pub verdict_count: usize,
     /// Steer reminders injected for the current signal.
     pub steer_attempts: usize,
-    /// Outcome of the last L2 arbitration, when one was requested.
+    /// Outcome of the last L2 arbitration after the configured confidence gate,
+    /// when one was requested: a confirmation below
+    /// `judge_verdict_confidence_min` is reported as `indeterminate`, because that
+    /// is the decision the ladder applied.
     pub arbitration: Option<&'static str>,
     /// Highest action the ladder took or attempted.
     pub escalation: LoopEscalationLevel,

@@ -34,16 +34,21 @@ Detection is observation-first: every verdict is logged in every mode, a steer i
 injected at the round boundary like the existing failed-tool recovery reminder,
 and the hard fallback reuses the three-attempt pattern with
 `finalization_reason=loop_detected`. Only high-confidence kinds may hard stop; a
-judge-confirmed confidence-capped kind is the single exception. Detector state
-belongs to the turn (`LoopInterventionLadder` owns it), and `mode=off` or a
-closed session escape hatch must never feed the detectors.
+judge-confirmed confidence-capped kind is the single exception, and that
+confirmation counts only at or above
+`ai.loop_detection.thresholds.judge_verdict_confidence_min` (baseline 0.9, absent
+confidence is not a pass). Detector state belongs to the turn
+(`LoopInterventionLadder` owns it), and `mode=off` or a closed session escape
+hatch must never feed the detectors.
 
 The arbitration port stays model-free and the judge stays session-free;
 `loop_detection/model_arbiter.rs` is the only place they meet, and it owns the
 whole conversion: the observed round's model becomes the judge's avoided model,
-and `loop`/`not_loop`/`unclear` map to confirmed/rejected/indeterminate, with
-every unusable judge outcome (disabled, no eligible model, budget spent, timeout,
-failure, malformed reply) keeping the heuristic verdict. Session hosts install
+and `loop`/`not_loop`/`unclear` map to confirmed/rejected/indeterminate — the
+confirmation carries the judge's stated confidence, which the ladder gates on
+`ai.loop_detection.thresholds.judge_verdict_confidence_min` — with every unusable
+judge outcome (disabled, no eligible model, budget spent, timeout, failure,
+malformed reply) keeping the heuristic verdict. Session hosts install
 the judge's process-wide arbiter at assembly only when
 `ai.loop_detection.judge.enabled` is set in the same configuration snapshot the
 engine reads; otherwise the engine keeps its no-arbiter default. Do not add a

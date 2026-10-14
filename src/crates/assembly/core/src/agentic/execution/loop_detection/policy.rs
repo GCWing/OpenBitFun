@@ -34,6 +34,27 @@ use openbitfun_agent_runtime::context_profile::{ContextProfilePolicy, LoopDetect
 use openbitfun_agent_stream::LoopDetectorConfig;
 use openbitfun_config_contracts::LoopDetectionThresholdOverridesConfig;
 
+/// Baseline judge confidence a confirmation must reach before the ladder treats
+/// it as authoritative (the plan's threshold table initial value).
+///
+/// This is not a detector threshold: it decides how much the ladder trusts the
+/// judge's own answer, so it is not tier-scaled. A stricter tier tightens what the
+/// detectors report, not how credible a judge's sentence is.
+pub const DEFAULT_JUDGE_VERDICT_CONFIDENCE_MIN: f32 = 0.9;
+
+/// Resolves the judge-confidence gate from the threshold overrides.
+///
+/// Same precedence as every other knob in the table: an explicit value wins, and
+/// a non-positive or non-finite value counts as unset so a stray zero cannot
+/// silently make the judge unable to confirm anything. A value above `1.0` is
+/// clamped, because no answer can ever reach it and the field is a ratio.
+pub fn judge_confidence_min(overrides: &LoopDetectionThresholdOverridesConfig) -> f32 {
+    overrides
+        .judge_verdict_confidence_min
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .map_or(DEFAULT_JUDGE_VERDICT_CONFIDENCE_MIN, |value| value.min(1.0))
+}
+
 /// Builds the detector configuration for one turn.
 pub fn loop_detector_config(
     policy: &ContextProfilePolicy,

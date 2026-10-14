@@ -216,6 +216,12 @@ pub struct LoopLadderSettings {
     pub judge_enabled: bool,
     /// Hard cap on arbitration requests per turn.
     pub max_arbitration_requests_per_turn: u32,
+    /// Confidence a judge confirmation must state before it is treated as
+    /// authoritative, from `ai.loop_detection.thresholds.judge_verdict_confidence_min`
+    /// (baseline
+    /// [`DEFAULT_JUDGE_VERDICT_CONFIDENCE_MIN`](crate::agentic::execution::loop_detection::DEFAULT_JUDGE_VERDICT_CONFIDENCE_MIN)).
+    /// A lower or absent confidence keeps the heuristic verdict and its caps.
+    pub judge_confidence_min: f32,
 }
 
 /// Per-turn loop-detection ladder.
@@ -454,6 +460,12 @@ impl LoopInterventionLadder {
         let Some(observed) = self.pending.take() else {
             return LoopLadderAction::None;
         };
+        // The configuration decides how much the judge's sentence is worth: a
+        // confirmation below `judge_confidence_min`, or one without a usable
+        // confidence, is applied as an indeterminate answer. The gate only ever
+        // removes authority, so a rejected verdict and a plain indeterminate one
+        // are unaffected.
+        let decision = decision.gated_by_confidence(self.settings.judge_confidence_min);
         self.arbitration = Some(decision);
         match decision {
             ArbiterDecision::Rejected => {
@@ -462,9 +474,8 @@ impl LoopInterventionLadder {
                 self.escalation = LoopEscalationLevel::Telemetry;
                 LoopLadderAction::None
             }
-            ArbiterDecision::Confirmed | ArbiterDecision::Indeterminate => {
-                self.escalate(&observed, decision == ArbiterDecision::Confirmed)
-            }
+            ArbiterDecision::Confirmed { .. } => self.escalate(&observed, true),
+            ArbiterDecision::Indeterminate => self.escalate(&observed, false),
         }
     }
 

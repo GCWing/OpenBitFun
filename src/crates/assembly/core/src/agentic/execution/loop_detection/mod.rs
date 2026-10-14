@@ -23,9 +23,10 @@
 //! Layout:
 //!
 //! * [`policy`] — pure `(tier policy, user overrides) -> LoopDetectorConfig`
-//!   translation.
+//!   translation, plus the judge-confidence gate resolved from the same overrides.
 //! * [`ladder`] — the intervention state machine and its root-cause reminder copy.
-//! * [`arbiter`] — the L2 arbitration port plus the no-arbiter default.
+//! * [`arbiter`] — the L2 arbitration port, the confidence a confirmation carries,
+//!   and the no-arbiter default.
 //! * [`model_arbiter`] — the model-backed judge adapted to that port, plus the
 //!   registration gate session hosts use.
 //! * [`runtime`] — engine-owned runtime state: the installed arbiter and the
@@ -53,5 +54,8 @@ pub use ladder::{
 pub use model_arbiter::{
     arbitration_decision_for, configured_model_loop_arbiter, judge_request_for,
 };
-pub use policy::{loop_detector_config, structure_exclusions_enabled};
+pub use policy::{
+    judge_confidence_min, loop_detector_config, structure_exclusions_enabled,
+    DEFAULT_JUDGE_VERDICT_CONFIDENCE_MIN,
+};
 pub use runtime::LoopDetectionRuntime;

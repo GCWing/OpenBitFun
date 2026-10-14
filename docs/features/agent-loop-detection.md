@@ -48,9 +48,10 @@ than as its own verdict.
 
 `predictable_drift` is deliberately separate from a loop and is reported with low
 confidence: a counter series repeats, but the change is expected, so it may only
-nudge and only when the L2 judge confirms it. `reasoning_runaway` is the single
-signal available for providers that encrypt reasoning content, so its confidence
-is capped and it can never stop a turn on its own.
+nudge and only when the L2 judge confirms it at the configured confidence.
+`reasoning_runaway` is the single signal available for providers that encrypt
+reasoning content, so its confidence is capped and it can never stop a turn on its
+own without such a confirmation.
 
 ### Structural exclusions
 
@@ -136,6 +137,12 @@ Kinds are not treated alike, because their false-positive cost is not alike:
 A capped signal past its steer cap goes quiet and stays in telemetry instead of
 nagging a turn that is probably just long.
 
+A judge confirmation only counts at or above
+`ai.loop_detection.thresholds.judge_verdict_confidence_min` (baseline `0.9`): a
+confirmation below that confidence, or one the judge answered without stating a
+usable confidence, keeps the row's heuristic rule in force instead of becoming
+hard-stop authority over a capped kind.
+
 ### Reminder copy
 
 The steer reminder names the signal, the stream it came from, the confidence, and
@@ -178,6 +185,25 @@ budget spent, configuration or client unavailable, cancellation, timeout,
 provider failure, malformed reply — keeps the heuristic verdict and its caps. A
 missing or broken judge can never take L1 detection down with it, and installing
 no arbiter at all is a supported configuration.
+
+**Confidence gate.** A `loop` answer carries the judge's stated confidence to the
+ladder, which treats it as authoritative only when it reaches
+`ai.loop_detection.thresholds.judge_verdict_confidence_min` (baseline `0.9`, the
+plan's initial value). A confirmation below that threshold is applied exactly like
+an indeterminate answer: the heuristic verdict stands with its caps, the steer path
+stays available, and no extra steer attempt is spent. A `loop` answer without a
+usable confidence — the judge's parser reports `0.0` for a missing or non-numeric
+field, and the judge's own contract says a confidence-gated caller ignores such a
+reply — is not authoritative either, so a judge that cannot state how sure it is
+never gains hard-stop authority over a capped kind. `not_loop` and the skip
+outcomes are never affected by the gate: it only removes authority, never grants
+it. The value is not tier-scaled, because how credible a judge's sentence is does
+not depend on the context profile.
+
+Telemetry reports the decision the ladder applied, so a gated confirmation appears
+as `indeterminate` in the `arbitration` field; the arbitration log line keeps the
+judge's raw answer and its stated confidence, which is the evidence a calibration
+run needs to move the threshold.
 
 ## Configuration
 
@@ -222,7 +248,7 @@ Threshold overrides (all optional; a non-positive value counts as unset):
 | `window_compression_ratio_min` | number | 0.60 | Window redundancy that counts as degenerate text. |
 | `reasoning_bypass_min_tokens_per_sec` | number | unset | Reasoning-token growth that indicates a bypass loop. Applied as the per-round sample minimum; see the deviations below. |
 | `reasoning_bypass_min_rounds` | number | 2 | Rounds a reasoning bypass must persist before it is reported. |
-| `judge_verdict_confidence_min` | number | 0.9 | Accepted and round-tripped, but no consumer applies it yet; see the deviations below. |
+| `judge_verdict_confidence_min` | number | 0.9 | Confidence a judge confirmation must state before the ladder treats it as authoritative. A lower or absent confidence keeps the heuristic verdict and its caps; not tier-scaled. |
 
 ```json
 {
@@ -338,18 +364,14 @@ Recorded deliberately, so this page can be updated as each closes.
    effectively mute the signal exactly where calibration needs data from it. The
    distance cap is not tier-scaled at all, because a stricter tier there would mean
    *closer* repeats, which is a different control direction.
-9. **`judge_verdict_confidence_min` has no consumer yet.** The field is accepted,
-   documented, and round-tripped, but neither the intervention ladder nor the
-   arbitration port applies it: the judge's own prompt carries the confidence
-   rules, and the ladder applies no judge-confidence gate.
-10. **The per-session escape hatch has no product surface.** It is an engine API
-    plus the `session_enabled` default; nothing in the settings UI, the CLI, or
-    the remote protocol toggles it yet.
-11. **Compression evidence is an LZ77 proxy, not zlib.** The plan's wording was
+9. **The per-session escape hatch has no product surface.** It is an engine API
+   plus the `session_enabled` default; nothing in the settings UI, the CLI, or
+   the remote protocol toggles it yet.
+10. **Compression evidence is an LZ77 proxy, not zlib.** The plan's wording was
     "zlib ratio"; adding a compression dependency to the dependency-light stream
     crate was not worth it, so the detector uses a deterministic, documented,
     more conservative redundancy estimate.
-12. **`reasoning_bypass_min_tokens_per_sec` is applied per round sample.** The
+11. **`reasoning_bypass_min_tokens_per_sec` is applied per round sample.** The
     detector has no clock (deliberate), so the configured rate acts as the
     minimum reasoning-token growth of one round sample. Re-deriving it from
     measured round durations is a calibration-phase task.
@@ -364,12 +386,16 @@ whether `enforce` should become the default.
 - **Verdict lines** (warning level, one per round observation):
   `Loop detection verdict: session_id=…, turn_id=…, round_index=…, profile=…, source=…, kind=…, confidence=…, verdict_count=…, steer_attempts=…, arbitration=…, escalation=…`.
   `escalation` is `telemetry` while the ladder deliberately did not act, and
-  `arbitration` is `confirmed`, `rejected`, `indeterminate`, or `none`.
+  `arbitration` is `confirmed`, `rejected`, `indeterminate`, or `none`. It reports
+  the decision the ladder applied, so a confirmation the confidence gate rejected
+  appears as `indeterminate`.
 - **Context-health snapshots** (debug level) carry the same signal per round,
   which is what makes it possible to correlate a verdict with context pressure and
   tool-signature health in one line.
-- **Arbitration lines** (debug level) record each delegation and each decision.
-  They only appear in `enforce` mode, because that is when the judge is consulted.
+- **Arbitration lines** (debug level) record each delegation and each decision,
+  including the judge's stated confidence (`judge_confidence`, `none` when the judge
+  did not state a usable one). They only appear in `enforce` mode, because that is
+  when the judge is consulted.
 
 ### What to tune
 
@@ -381,7 +407,9 @@ from an untouched one. The three knobs to treat carefully are the strong-similar
 band (it is the boundary between "steer" and "steer or stop"), the stuck-phrase
 repeat count (chatty but legitimate prose is the main false-positive source), and
 the reasoning-token sample minimum (it only applies to providers that report
-reasoning tokens).
+reasoning tokens). `judge_verdict_confidence_min` is a fourth one, of a different
+kind: it does not change what the detectors report, only how much a judge
+confirmation is worth, and it is not tier-scaled.
 
 ### Before `enforce` becomes the default
 
@@ -398,8 +426,8 @@ are a review decision on that report, not a side effect of this feature shipping
 | --- | --- |
 | Detector core, baselines, verdict shape | `openbitfun-agent-stream` (`loop_detection`) |
 | Tier table and structural-exclusion policy | `openbitfun-agent-runtime` (`context_profile`) |
-| Threshold translation, ladder, reminder copy, arbitration port | `openbitfun-core` (`agentic::execution::loop_detection`) |
-| Model-backed judge | `openbitfun-core` (`agentic::execution::loop_arbiter`) |
+| Threshold translation, judge-confidence gate, ladder, reminder copy, arbitration port | `openbitfun-core` (`agentic::execution::loop_detection`) |
+| Model-backed judge and its port adapter | `openbitfun-core` (`agentic::execution::loop_arbiter`, `loop_detection/model_arbiter`) |
 | Configuration shape | `openbitfun-config-contracts` (`LoopDetectionConfig`) |
 | Event contract and frontend projection | `openbitfun-events` (`AgenticEvent::LoopDetectionNoted`) |
 | Web, CLI, and relay surfaces | `src/web-ui`, `src/apps/cli`, `services-integrations` remote connect |
