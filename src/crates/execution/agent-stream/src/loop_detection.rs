@@ -97,6 +97,9 @@ mod similarity;
 mod structure;
 mod thinking;
 
+#[cfg(test)]
+mod tests;
+
 pub use output::{LoopDetectionState, OutputLoopDetector};
 pub use thinking::{ThinkingLoopDetector, ThinkingLoopState};
 
