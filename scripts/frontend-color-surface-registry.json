@@ -150,11 +150,11 @@
       }
     },
     {
-      "id": "data-migrator",
-      "label": "Offline Data Migrator",
+      "id": "data-tools",
+      "label": "Offline Data Tools",
       "kind": "canonical-web",
       "owner": "@openbitfun/design-tokens and @openbitfun/theme-openbitfun public CSS exports",
-      "root": "src/apps/data-migrator/ui",
+      "root": "src/apps/data-tools/ui",
       "audit": {
         "engine": "theme",
         "policy": "canonical-ui-zero",
@@ -416,9 +416,9 @@
       "command": ["node", "scripts/check-subagent-avatar-assets.mjs"]
     },
     {
-      "id": "data-migrator-design-system",
-      "surfaceIds": ["data-migrator"],
-      "command": ["node", "scripts/generate-data-migrator-theme.mjs", "--check"]
+      "id": "data-tools-design-system",
+      "surfaceIds": ["data-tools"],
+      "command": ["node", "scripts/generate-data-tools-theme.mjs", "--check"]
     },
     {
       "id": "desktop-appearance-projection",
@@ -536,10 +536,10 @@
       "reason": "Preview data is generated from the native mobile token contract and checked for drift."
     },
     {
-      "id": "data-migrator-generated",
-      "path": "src/apps/data-migrator/ui/generated",
+      "id": "data-tools-generated",
+      "path": "src/apps/data-tools/ui/generated",
       "kind": "generated-output",
-      "owner": "scripts/generate-data-migrator-theme.mjs",
+      "owner": "scripts/generate-data-tools-theme.mjs",
       "reason": "Offline CSS is bundled from public design-system exports and checked for drift."
     },
     {

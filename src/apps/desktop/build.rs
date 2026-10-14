@@ -14,7 +14,6 @@ fn main() {
     }
     println!("cargo:rerun-if-env-changed=OPENBITFUN_RELEASE_CHANNEL");
     println!("cargo:rerun-if-env-changed=OPENBITFUN_DESKTOP_BINARY_NAME");
-    println!("cargo:rerun-if-env-changed=OPENBITFUN_DATA_MIGRATOR_BINARY_NAME");
     println!("cargo:rerun-if-env-changed=OPENBITFUN_UPDATER_PRIMARY_ENDPOINT");
     println!("cargo:rerun-if-env-changed=OPENBITFUN_UPDATER_FALLBACK_ENDPOINT");
     // The Windows primary thread keeps the Tauri event loop and native window

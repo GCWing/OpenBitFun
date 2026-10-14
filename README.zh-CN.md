@@ -30,7 +30,7 @@ OpenBitFun 1.0.0 带来全新界面、面向不同任务的四种 Agent Harness�
 多设备协同与远程控制，让任务在桌面、手机与浏览器之间顺畅接续。
 
 **数据迁移提醒：** OpenBitFun 1.0.0 与 0.2.x 旧版数据不互通。需要迁移旧版数据时，请使用
-[OpenBitFun 数据迁移器](src/apps/data-migrator/README.zh-CN.md)，当前支持 0.2.17～0.2.19 正式版。
+[OpenBitFun 数据工具](src/apps/data-tools/README.zh-CN.md)，当前支持 0.2.17～0.2.19 正式版。
 
 ---
 

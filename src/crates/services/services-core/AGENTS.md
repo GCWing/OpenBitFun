@@ -110,6 +110,15 @@ command here only when it becomes a recurring owner workflow.
 
 ## Offline-compatible storage formats
 
+`session-recovery` owns offline migration-damaged session scanning, verified
+full-session backup, resumable repair and rollback. It reuses workspace identity
+and session metadata/index owners and never starts runtime or SSH connections.
+App hosts must stop data writers before calling its mutation entry points.
+
+```bash
+cargo test -p openbitfun-services-core --no-default-features --features session-recovery --lib session_recovery
+```
+
 workspace-persistence owns workspace records and registry validation;
 coordination-store owns the durable coordination SQLite schema;
 session-event-format owns the logged-event envelope and durable-prefix validator.

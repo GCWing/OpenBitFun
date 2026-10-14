@@ -6297,13 +6297,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "openbitfun-data-migrator"
+name = "openbitfun-data-tools"
 version = "0.1.2"
 dependencies = [
  "openbitfun-core-types",
  "openbitfun-legacy-migration",
  "openbitfun-legacy-migration-adapters",
  "openbitfun-product-domains",
+ "openbitfun-services-core",
  "serde",
  "serde_json",
  "tauri",

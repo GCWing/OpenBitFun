@@ -59,9 +59,9 @@ pnpm run desktop:preview:debug
 pnpm run prepare:dsh-profile   # optional: local DeepSeek Harness sessions
 ```
 
-Data Migrator runs independently. Desktop development launchers do not build,
-launch, or supervise the migrator; use its own development and release entry
-points under `src/apps/data-migrator`.
+Data Tools runs independently. Desktop development launchers do not build,
+launch, or supervise the tool; use its own development and release entry
+points under `src/apps/data-tools`.
 
 ## Fast builds
 

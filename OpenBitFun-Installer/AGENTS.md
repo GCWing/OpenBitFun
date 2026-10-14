@@ -61,7 +61,7 @@ cargo test --manifest-path OpenBitFun-Installer/src-tauri/Cargo.toml --lib previ
 For installer payload validation and the independent Data Migrator boundary, run:
 
 ```bash
-node --test OpenBitFun-Installer/scripts/build-installer.test.cjs scripts/data-migrator-tauri-build.test.mjs
+node --test OpenBitFun-Installer/scripts/build-installer.test.cjs scripts/data-tools-tauri-build.test.mjs
 cargo test --manifest-path OpenBitFun-Installer/src-tauri/Cargo.toml --lib installer::commands::tests
 ```
 

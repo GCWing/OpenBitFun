@@ -14,7 +14,7 @@ Instead of relying on the generic NSIS wizard UI from Tauri's built-in bundler, 
 ## Legacy data migration
 
 Data Migrator is distributed separately and is not included in this installer.
-To import legacy data, download and run the [standalone Data Migrator](../src/apps/data-migrator/README.md) after closing both applications.
+To import legacy data, download and run the [standalone Data Migrator](../src/apps/data-tools/README.md) after closing both applications.
 
 ## Common tasks
 

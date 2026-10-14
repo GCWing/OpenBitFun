@@ -3,7 +3,7 @@ members = [
     "src/apps/cli",
     "src/apps/sdk-host",
     "src/apps/desktop",
-    "src/apps/data-migrator",
+    "src/apps/data-tools",
     "src/apps/server",
     "src/apps/relay-server",
     "src/apps/miniapp-market-server",
