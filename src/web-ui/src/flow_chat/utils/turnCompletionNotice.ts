@@ -38,6 +38,10 @@ const TURN_COMPLETION_NOTICE_CONFIG: Record<string, TurnCompletionNoticeConfig> 
     tone: 'warning',
     titleKey: 'turnCompletionNotice.interrupted.title',
   },
+  loop_detected: {
+    tone: 'warning',
+    titleKey: 'turnCompletionNotice.loopDetected.title',
+  },
 };
 
 const DEFAULT_TURN_COMPLETION_NOTICE: TurnCompletionNoticeConfig = {

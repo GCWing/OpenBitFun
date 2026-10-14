@@ -75,4 +75,33 @@ describe('getTurnCompletionNotice', () => {
       titleKey: 'turnCompletionNotice.generic.title',
     });
   });
+
+  it('names the loop-detection stop instead of the generic abnormal reason', () => {
+    expect(getTurnCompletionNotice({
+      status: 'completed',
+      finishReason: 'loop_detected',
+      hasFinalResponse: false,
+    } as any)).toMatchObject({
+      reasonCode: 'loop_detected',
+      tone: 'warning',
+      titleKey: 'turnCompletionNotice.loopDetected.title',
+    });
+    expect(getTurnCompletionNotice({
+      status: 'completed',
+      finishReason: 'loop_detected',
+      hasFinalResponse: false,
+    } as any)?.bodyKey).toBeUndefined();
+  });
+
+  it('keeps the final-response body for loop-stopped turns that replied first', () => {
+    expect(getTurnCompletionNotice({
+      status: 'completed',
+      finishReason: 'loop_detected',
+      hasFinalResponse: true,
+    } as any)).toMatchObject({
+      reasonCode: 'loop_detected',
+      titleKey: 'turnCompletionNotice.loopDetected.title',
+      bodyKey: 'turnCompletionNotice.finalResponseProvided',
+    });
+  });
 });

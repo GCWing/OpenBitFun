@@ -3529,9 +3529,17 @@
     "maxRounds": {
       "title": "Turn hit the round limit"
     },
+    "loopDetected": {
+      "title": "Turn stopped after a detected output loop"
+    },
     "generic": {
       "title": "Turn ended abnormally"
     }
+  },
+  "loopDetection": {
+    "title": "Repeated output detected",
+    "steeredMessage": "The agent started repeating itself, so a correction reminder was injected and the turn continues.",
+    "stoppedMessage": "The agent kept repeating itself after correction attempts, so the turn was stopped."
   },
   "errors": {
     "sendFailed": "Failed to send message"
