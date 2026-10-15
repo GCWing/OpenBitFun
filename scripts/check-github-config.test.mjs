@@ -59,6 +59,9 @@ function runCheck(root) {
 test('partial Desktop publication requires successful trusted producers and leaves update feeds untouched', (t) => {
   const workflow = yaml.parse(readFileSync(path.join(repoRoot, '.github/workflows/publish-ready-desktop.yml'), 'utf8'));
   const steps = workflow.jobs.publish.steps;
+  const setupNode = steps.find((step) => step.uses?.startsWith('actions/setup-node@'));
+  assert.equal(setupNode.with['package-manager-cache'], false,
+    'standalone publication uses Node built-ins and has no pnpm installation');
   const validate = steps.find((step) => step.name === 'Validate source and completed producers').run;
   const publish = steps.find((step) => step.name === 'Publish available installers without changing update feeds').run;
   const root = mkdtempSync(path.join(tmpdir(), 'openbitfun-partial-release-'));
