@@ -226,6 +226,8 @@ jobs:
           for job in Prepare "Package ($MACOS_PLATFORM)"; do
             jq -e --arg job "$job" '.jobs | any(.name == $job and .conclusion == "success")' macos-jobs.json
           done
+          jq -e --arg job "Package ($MACOS_PLATFORM)" '.jobs | any(.name == $job and
+            (.steps | any(.name == "Verify Apple signature and notarization" and .conclusion == "success")))' macos-jobs.json
           artifact="openbitfun-${RELEASE_TAG}-${MACOS_PLATFORM}-bundle"
           jq -e --arg name "$artifact" '
             [.artifacts[] | select(.name == $name)] | length == 1 and .[0].expired == false' macos-artifacts.json

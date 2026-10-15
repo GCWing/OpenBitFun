@@ -163,7 +163,9 @@ test('partial Desktop publication requires successful trusted producers and leav
   const macValidate = mac.steps.find((step) => step.name === 'Validate verified macOS producer').run;
   const macPublish = mac.steps.find((step) => step.name === 'Publish ready macOS assets without changing update feeds').run;
   const macEnv = { SOURCE_RUN: '', MACOS_RUN: '456', MACOS_PLATFORM: 'macos-arm64' };
-  const macJobs = { jobs: ['Prepare', 'Package (macos-arm64)'].map((name) => ({ name, conclusion: 'success' })) };
+  const macJobs = { jobs: ['Prepare', 'Package (macos-arm64)'].map((name) => ({
+    name, conclusion: 'success', steps: [{ name: 'Verify Apple signature and notarization', conclusion: 'success' }],
+  })) };
   const artifact = { name: 'openbitfun-v1.0.6-macos-arm64-bundle', expired: false };
   function macFixtures(nextRun = run, nextJobs = macJobs, artifacts = [artifact]) {
     fixtures(nextRun, nextJobs);
@@ -175,6 +177,7 @@ test('partial Desktop publication requires successful trusted producers and leav
   for (const nextJobs of [
     { jobs: macJobs.jobs.filter((job) => job.name !== 'Prepare') },
     { jobs: macJobs.jobs.map((job) => ({ ...job, conclusion: 'failure' })) },
+    { jobs: macJobs.jobs.map((job) => ({ ...job, steps: [{ name: 'Verify Apple signature and notarization', conclusion: 'skipped' }] })) },
     { jobs: [{ name: 'Prepare', conclusion: 'success' }, { name: 'Package (macos-x64)', conclusion: 'success' }] },
   ]) {
     macFixtures(run, nextJobs);
