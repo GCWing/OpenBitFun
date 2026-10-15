@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -1622,3 +1623,97 @@ test('release publication omits target overrides and uploads before publishing',
   const prepare = workflow.jobs.prepare.steps.find((entry) => entry.id === 'meta').run;
   assert.match(prepare, /UPLOAD.*true.*-z.*TAG_SHA/);
 });
+
+
+test('partial Desktop publication requires successful trusted producers and leaves update feeds untouched', (t) => {
+  const workflow = yaml.parse(readFileSync(path.join(repoRoot, '.github/workflows/publish-ready-desktop.yml'), 'utf8'));
+  const steps = workflow.jobs.publish.steps;
+  const validate = steps.find((step) => step.name === 'Validate source and completed producers').run;
+  const publish = steps.find((step) => step.name === 'Publish available installers without changing update feeds').run;
+  const root = mkdtempSync(path.join(tmpdir(), 'openbitfun-partial-release-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(path.join(root, 'bin'));
+  function executable(name, source) {
+    const file = path.join(root, 'bin', name);
+    writeFileSync(file, `#!/usr/bin/env bash\nset -euo pipefail\n${source}\n`, { mode: 0o755 });
+  }
+  executable('git', 'if [[ "$1" == show ]]; then echo \'{"version":"1.0.6"}\'; fi');
+  executable('gh', `
+    if [[ "$1" == api ]]; then
+      if [[ "$2" == *'/jobs?'* ]]; then cat "$FIXTURE/jobs.json"; else cat "$FIXTURE/run.json"; fi
+      exit 0
+    fi
+    printf '%s\\n' "$*" >> "$FIXTURE/calls"
+    case "$1 $2" in
+      'release view') echo '{"assets":[]}' ;;
+      'release download')
+        shift 2
+        while [[ $# -gt 0 ]]; do
+          case "$1" in --pattern) name="$2"; shift;; --dir) dest="$2"; shift;; esac
+          shift
+        done
+        cp "$FIXTURE/release-upload-assets/$name" "$dest/$name"
+        ;;
+    esac
+  `);
+  executable('curl', 'cp "$FIXTURE/state.json" release-state.json; printf 200');
+  const env = {
+    ...process.env, PATH: `${path.join(root, 'bin')}:${process.env.PATH}`,
+    FIXTURE: root, GITHUB_ENV: path.join(root, 'env'),
+    GITHUB_REPOSITORY: 'GCWing/OpenBitFun', RELEASE_TAG: 'v1.0.6', SOURCE_RUN: '123',
+    OPENBITFUN_SIGNING_KEY: 'fixture-only', OPENBITFUN_SIGNING_PUBKEY: 'fixture-only', GH_TOKEN: 'fixture-only',
+  };
+  const run = {
+    repository: { full_name: env.GITHUB_REPOSITORY },
+    head_repository: { full_name: env.GITHUB_REPOSITORY },
+    path: '.github/workflows/desktop-package.yml', event: 'workflow_dispatch', head_sha: 'a'.repeat(40),
+  };
+  const names = ['Prepare', 'Package (windows-x64)', 'Package (linux-x64)', 'Package (linux-arm64)',
+    'Linux CLI and Relay Server / Linux Binaries (linux-x64)',
+    'Linux CLI and Relay Server / Linux Binaries (linux-arm64)', 'Publish Relay Server Image'];
+  const jobs = { jobs: names.map((name) => ({ name, conclusion: 'success' })) };
+  function execute(script, overrides = {}) {
+    return spawnSync('bash', ['-c', script], { cwd: root, env: { ...env, ...overrides }, encoding: 'utf8', windowsHide: true });
+  }
+  function fixtures(nextRun = run, nextJobs = jobs) {
+    writeFileSync(path.join(root, 'run.json'), JSON.stringify(nextRun));
+    writeFileSync(path.join(root, 'jobs.json'), JSON.stringify(nextJobs));
+  }
+  fixtures();
+  let result = execute(validate);
+  assert.equal(result.status, 0, result.stderr);
+  for (const name of names) {
+    fixtures(run, { jobs: jobs.jobs.map((job) => job.name === name ? { ...job, conclusion: 'failure' } : job) });
+    assert.notEqual(execute(validate).status, 0, name);
+  }
+  for (const nextRun of [
+    { ...run, head_repository: { full_name: 'untrusted/fork' } },
+    { ...run, path: '.github/workflows/ci.yml' },
+    { ...run, event: 'pull_request' },
+  ]) {
+    fixtures(nextRun);
+    assert.notEqual(execute(validate).status, 0);
+  }
+  fixtures();
+  assert.notEqual(execute(validate, { RELEASE_TAG: 'v1.0.6;echo injected' }).status, 0);
+  assert.notEqual(execute(validate, { OPENBITFUN_SIGNING_KEY: '' }).status, 0);
+  mkdirSync(path.join(root, 'release-upload-assets'));
+  writeFileSync(path.join(root, 'release-upload-assets/fixture.exe'), 'signed fixture payload');
+  writeFileSync(path.join(root, 'state.json'), JSON.stringify({ assets: [{ name: 'latest-v1.json' }] }));
+  assert.notEqual(execute(publish).status, 0, 'must refuse to modify an already complete release');
+  assert.equal(existsSync(path.join(root, 'calls')), false);
+  writeFileSync(path.join(root, 'state.json'), JSON.stringify({ assets: [] }));
+  result = execute(publish);
+  assert.equal(result.status, 0, result.stderr);
+  const calls = readFileSync(path.join(root, 'calls'), 'utf8');
+  assert.match(calls, /release upload v1\.0\.6/);
+  assert.match(calls, /release edit v1\.0\.6 .*--draft=false --prerelease=false --latest=false/);
+  assert.doesNotMatch(calls, /latest-v1|latest\.json|channel-v1/);
+  assert.ok(calls.indexOf('release upload') < calls.indexOf('release edit'));
+  assert.ok(calls.lastIndexOf('release download') > calls.indexOf('release edit'));
+  const stage = steps.find((step) => step.name === 'Sign and stage available assets').run;
+  assert.match(stage, /minisign -Vm/);
+  assert.match(stage, /sha256sum --check/);
+  assert.doesNotMatch(stage, /generate-tauri-latest-json/);
+});
+
