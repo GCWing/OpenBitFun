@@ -424,6 +424,7 @@ jobs:
           }
 
       - name: Verify Apple signature and notarization
+        id: apple_verification
         if: runner.os == 'macOS'
         shell: bash
         run: |
@@ -442,6 +443,22 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: bash scripts/ci/verify-appimage-fcitx.sh "${{ matrix.platform.target }}"
+
+      - name: Preserve macOS verification recovery bundles
+        if: failure() && runner.os == 'macOS' && steps.apple_verification.outcome == 'failure'
+        shell: bash
+        run: |
+          tar -czf macos-verification-recovery.tar.gz \
+            -C "target/${{ matrix.platform.target }}/release" bundle
+
+      - name: Upload macOS verification recovery bundles
+        if: failure() && runner.os == 'macOS' && steps.apple_verification.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: openbitfun-${{ needs.prepare.outputs.release_tag }}-${{ matrix.platform.name }}-verification-recovery
+          path: macos-verification-recovery.tar.gz
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload bundles
         uses: actions/upload-artifact@v6

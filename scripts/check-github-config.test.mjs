@@ -1906,6 +1906,39 @@ test('macOS release verification uses the pinned workflow revision without chang
   assert.equal(readFileSync(artifact, 'utf8'), 'signed immutable fixture');
 });
 
+test('failed Mac verification retains a tar archive without publishing it', (t) => {
+  if (process.platform === 'win32') { t.skip('Mac archive mode checks run on Unix'); return; }
+  const workflow = yaml.parse(readFileSync(path.join(repoRoot, '.github/workflows/desktop-package.yml'), 'utf8'));
+  const steps = workflow.jobs.package.steps;
+  const verify = steps.find((step) => step.name === 'Verify Apple signature and notarization');
+  const preserve = steps.find((step) => step.name === 'Preserve macOS verification recovery bundles');
+  const upload = steps.find((step) => step.name === 'Upload macOS verification recovery bundles');
+  assert.equal(verify.id, 'apple_verification');
+  assert.equal(verify['continue-on-error'], undefined);
+  for (const step of [preserve, upload]) {
+    for (const failed of [true, false]) for (const os of ['macOS', 'Linux', 'Windows']) for (const outcome of ['success', 'failure']) {
+      const enabled = Function('failure', 'runner', 'steps', `return (${step.if});`)(() => failed, { os }, { apple_verification: { outcome } });
+      assert.equal(enabled, failed && os === 'macOS' && outcome === 'failure');
+    }
+  }
+  assert.match(upload.with.name, /-verification-recovery$/);
+  assert.doesNotMatch(upload.with.name, /-bundle$/);
+  const cwd = mkdtempSync(path.join(tmpdir(), 'openbitfun-notary-archive-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const app = path.join(cwd, 'target/fixture/release/bundle/macos/Test.app');
+  mkdirSync(app, { recursive: true });
+  writeFileSync(path.join(app, 'tool'), 'signed executable fixture', { mode: 0o755 });
+  assert.equal(spawnSync('ln', ['-s', 'tool', path.join(app, 'tool-link')], { windowsHide: true }).status, 0);
+  const archived = spawnSync('bash', ['-c', preserve.run.replaceAll('${{ matrix.platform.target }}', 'fixture')], { cwd, encoding: 'utf8', windowsHide: true });
+  assert.equal(archived.status, 0, archived.stderr);
+  mkdirSync(path.join(cwd, 'restored'));
+  assert.equal(spawnSync('tar', ['-xzf', 'macos-verification-recovery.tar.gz', '-C', 'restored'], { cwd, windowsHide: true }).status, 0);
+  const restored = path.join(cwd, 'restored/bundle/macos/Test.app');
+  assert.equal(readFileSync(path.join(restored, 'tool-link'), 'utf8'), 'signed executable fixture');
+  assert.equal(spawnSync('bash', ['-c', 'test -x "$1"', 'fixture', path.join(restored, 'tool')], { windowsHide: true }).status, 0);
+  assert.equal(spawnSync('readlink', [path.join(restored, 'tool-link')], { encoding: 'utf8', windowsHide: true }).stdout.trim(), 'tool');
+});
+
 for (const scenario of [
   { name: 'accepts a transient app ticket connection loss', failures: 2, network: true, attempts: 3, status: 0, submissions: 1 },
   { name: 'retries DMG stapling without resubmitting notarization', action: 'staple', kind: 'dmg', failures: 1, network: true, attempts: 2, status: 0, submissions: 1 },
@@ -1916,6 +1949,14 @@ for (const scenario of [
   { name: 'rejects signature errors before contacting Apple', signatureStatus: 1, attempts: 0, status: 1, submissions: 0 },
   { name: 'preserves Gatekeeper rejection', gatekeeperStatus: 3, attempts: 1, status: 3, submissions: 0 },
   { name: 'preserves notarization submission rejection', notaryStatus: 4, attempts: 1, status: 4, submissions: 1 },
+  { name: 'resumes an uploaded DMG after transient offline polling', waitFailures: 2, waitCode: -1009, waitAttempts: 3, attempts: 1, status: 0, submissions: 1 },
+  { name: 'resumes polling after a lost connection', waitFailures: 1, waitCode: -1005, waitAttempts: 2, attempts: 1, status: 0, submissions: 1 },
+  { name: 'retains a receipt after exhausted polling retries', waitFailures: 99, waitCode: -1009, waitAttempts: 3, attempts: 1, status: 1, submissions: 1, resume: true },
+  { name: 'does not retry unrelated polling failures', waitFailures: 99, waitCode: -1001, waitAttempts: 1, attempts: 1, status: 1, submissions: 1 },
+  { name: 'rejects a missing submission ID without retrying upload', submissionId: 'invalid', waitAttempts: 0, attempts: 1, status: 1, submissions: 1 },
+  { name: 'rejects a response for another submission', responseId: '22222222-2222-4222-8222-222222222222', waitAttempts: 1, attempts: 1, status: 1, submissions: 1 },
+  { name: 'rejects an Invalid notarization response', waitStatus: 'Invalid', waitAttempts: 1, attempts: 1, status: 1, submissions: 1 },
+
 ]) {
   test(`macOS verification ${scenario.name}`, (t) => {
     const cwd = mkdtempSync(path.join(tmpdir(), 'openbitfun-apple-ticket-'));
@@ -1939,7 +1980,23 @@ for (const scenario of [
       sleep() { printf 'sleep %s\\n' "$*" >> "$FIXTURE_CALLS"; }
       xcrun() {
         printf 'xcrun %s\\n' "$*" >> "$FIXTURE_CALLS"
-        if [[ "$1" == notarytool ]]; then return "$NOTARY_STATUS"; fi
+        if [[ "$1" == notarytool ]]; then
+          if [[ "$2" == submit ]]; then
+            [[ "$NOTARY_STATUS" == 0 ]] || return "$NOTARY_STATUS"
+            printf '{"id":"%s"}\\n' "$SUBMISSION_ID"
+          else
+            local waits=0
+            [[ ! -f waits ]] || read -r waits < waits
+            waits=$((waits + 1))
+            printf '%s\\n' "$waits" > waits
+            if [[ "$waits" -le "$WAIT_FAILURES" ]]; then
+              printf 'Error Domain=NSURLErrorDomain Code=%s "Network error"\\n' "$WAIT_CODE" >&2
+              return 1
+            fi
+            printf '{"id":"%s","status":"%s"}\\n' "$RESPONSE_ID" "$WAIT_STATUS"
+          fi
+          return 0
+        fi
         local kind=app count=0
         [[ "$3" == *.dmg ]] && kind=dmg
         if [[ "$2" == "$TICKET_ACTION" && "$kind" == "$TICKET_KIND" ]]; then
@@ -1962,6 +2019,8 @@ for (const scenario of [
     `], { cwd, encoding: 'utf8', windowsHide: true, env: { ...process.env,
       OPENBITFUN_APPLE_SIGNING_CONFIGURED: 'true', FIXTURE_CALLS: path.join(cwd, 'calls'),
       SIGNATURE_STATUS: String(scenario.signatureStatus ?? 0), GATEKEEPER_STATUS: String(scenario.gatekeeperStatus ?? 0),
+      SUBMISSION_ID: scenario.submissionId ?? '11111111-1111-4111-8111-111111111111', RESPONSE_ID: scenario.responseId ?? '11111111-1111-4111-8111-111111111111',
+      WAIT_FAILURES: String(scenario.waitFailures ?? 0), WAIT_CODE: String(scenario.waitCode ?? -1009), WAIT_STATUS: scenario.waitStatus ?? 'Accepted',
       NOTARY_STATUS: String(scenario.notaryStatus ?? 0), APPLE_API_ISSUER: 'fixture', APPLE_API_KEY: 'fixture', APPLE_API_KEY_PATH: 'fixture',
       TICKET_ACTION: scenario.action ?? 'validate', TICKET_KIND: scenario.kind ?? 'app',
       TICKET_FAILURES: String(scenario.failures ?? 0), TICKET_NETWORK: String(scenario.network ?? false),
@@ -1973,7 +2032,38 @@ for (const scenario of [
     assert.equal((calls.match(/^microphone$/gm) ?? []).length, scenario.signatureStatus ? 0 : 1, calls);
     const attempts = scenario.attempts === 0 ? 0 : Number(readFileSync(path.join(cwd, 'attempts'), 'utf8'));
     assert.equal(attempts, scenario.attempts, calls);
-    assert.equal((calls.match(/^sleep /gm) ?? []).length, Math.max(0, scenario.attempts - 1), calls);
+    assert.equal((calls.match(/^sleep /gm) ?? []).length, Math.max(0, scenario.attempts - 1) + Math.max(0, (scenario.waitAttempts ?? 1) - 1), calls);
+    assert.equal((calls.match(/^xcrun notarytool wait /gm) ?? []).length,
+      scenario.waitAttempts ?? (scenario.notaryStatus ? 0 : scenario.submissions), calls);
+    if (scenario.resume) {
+      const receipt = path.join(cwd, 'target/fixture/release/bundle/dmg/Test App.dmg.notary-submission.json');
+      assert.equal(JSON.parse(readFileSync(receipt, 'utf8')).id, '11111111-1111-4111-8111-111111111111');
+      const retryScript = `
+        codesign() { printf 'Authority=Developer ID Application: Fixture\\nflags=0x10000(runtime)\\nTimestamp=fixture\\n'; }
+        file() { printf 'Mach-O fixture\\n'; }
+        spctl() { return 0; }
+        xcrun() {
+          printf '%s\\n' "$*" >> resumed
+          if [[ "$1 $2" == 'notarytool submit' ]]; then return 99; fi
+          if [[ "$1 $2" == 'notarytool wait' ]]; then
+            printf '{"id":"11111111-1111-4111-8111-111111111111","status":"Accepted"}\\n'
+          fi
+        }
+        export -f codesign file spctl xcrun
+        bash scripts/ci/verify-macos-signing.sh fixture
+      `;
+      const retryOptions = { cwd, encoding: 'utf8', windowsHide: true, env: { ...process.env,
+        OPENBITFUN_APPLE_SIGNING_CONFIGURED: 'true', FIXTURE_CALLS: path.join(cwd, 'calls'),
+        APPLE_API_ISSUER: 'fixture', APPLE_API_KEY: 'fixture', APPLE_API_KEY_PATH: 'fixture' } };
+      const retry = spawnSync('bash', ['-c', retryScript], retryOptions);
+      assert.equal(retry.status, 0, retry.stderr);
+      assert.doesNotMatch(readFileSync(path.join(cwd, 'resumed'), 'utf8'), /notarytool submit/);
+      writeFileSync(path.join(cwd, 'target/fixture/release/bundle/dmg/Test App.dmg'), 'changed after receipt');
+      const changed = spawnSync('bash', ['-c', retryScript], retryOptions);
+      assert.notEqual(changed.status, 0);
+      assert.match(changed.stderr, /receipt does not match/);
+
+    }
     if (scenario.status === 0) assert.match(result.stdout, /Verified Developer ID signatures/);
     else assert.doesNotMatch(result.stdout, /Verified Developer ID signatures/);
   });

@@ -47,6 +47,19 @@ Missing, duplicate, expired, or unverified producers stop finalization before
 publication. Do not combine `artifact_run_ids` with a single-platform target or
 `relay_image_only`.
 
+macOS verification uploads a DMG once, records its submission ID and SHA256 in
+`<dmg>.notary-submission.json`, then waits for that submission. A transient
+`NSURLErrorDomain` connection loss (`-1005`) or offline response (`-1009`)
+retries the wait, without uploading the DMG again. Apple must explicitly return
+`Accepted`; invalid results, other errors, and changed DMG bytes remain failures.
+Stapling updates the receipt's hash to the exact stapled DMG bytes.
+
+If Apple verification fails, the workflow retains a seven-day
+`*-verification-recovery` artifact containing a tar archive of the bundles and
+receipt. The archive preserves executable modes and symlinks for re-verification.
+It is unverified recovery input, never a release installer: it does not match
+the normal `*-bundle` publication pattern or satisfy the complete producer gate.
+
 ## Mobile Android releases
 
 Mobile Android packages are released independently from Desktop packages. Use a
