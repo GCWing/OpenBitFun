@@ -71,22 +71,29 @@ test('partial Desktop publication requires successful trusted producers and leav
     const file = path.join(root, 'bin', name);
     writeFileSync(file, `#!/usr/bin/env bash\nset -euo pipefail\n${source}\n`, { mode: 0o755 });
   }
-  executable('git', 'if [[ "$1" == show ]]; then echo \'{"version":"1.0.6"}\'; fi');
+  executable('git', 'if [[ "$1" == merge-base && "${REJECT_ANCESTRY:-}" == true ]]; then exit 1; fi; if [[ "$1" == show ]]; then echo \'{"version":"1.0.6"}\'; fi');
   executable('gh', `
     if [[ "$1" == api ]]; then
-      if [[ "$2" == *'/jobs?'* ]]; then cat "$FIXTURE/jobs.json"; else cat "$FIXTURE/run.json"; fi
+      case "$2" in
+        *'/jobs?'*) cat "$FIXTURE/jobs.json" ;;
+        *'/artifacts?'*) cat "$FIXTURE/artifacts.json" ;;
+        *'/releases/tags/'*) cat "$FIXTURE/state.json" ;;
+        *) cat "$FIXTURE/run.json" ;;
+      esac
       exit 0
     fi
     printf '%s\\n' "$*" >> "$FIXTURE/calls"
     case "$1 $2" in
-      'release view') echo '{"assets":[]}' ;;
+      'release view') cat "$FIXTURE/state.json" ;;
       'release download')
         shift 2
+        names=()
         while [[ $# -gt 0 ]]; do
-          case "$1" in --pattern) name="$2"; shift;; --dir) dest="$2"; shift;; esac
+          case "$1" in --pattern) names+=("$2"); shift;; --dir) dest="$2"; shift;; esac
           shift
         done
-        cp "$FIXTURE/release-upload-assets/$name" "$dest/$name"
+        mkdir -p "$dest"
+        for name in "\${names[@]}"; do cp "$FIXTURE/release-upload-assets/$name" "$dest/$name"; done
         ;;
     esac
   `);
@@ -149,6 +156,75 @@ test('partial Desktop publication requires successful trusted producers and leav
   assert.match(stage, /minisign -Vm/);
   assert.match(stage, /sha256sum --check/);
   assert.doesNotMatch(stage, /generate-tauri-latest-json/);
+
+  const mac = workflow.jobs['publish-macos'];
+  assert.equal(workflow.jobs.publish.if, "${{ inputs.macos_run_id == '' }}");
+  assert.equal(mac.if, "${{ inputs.macos_run_id != '' }}");
+  const macValidate = mac.steps.find((step) => step.name === 'Validate verified macOS producer').run;
+  const macPublish = mac.steps.find((step) => step.name === 'Publish ready macOS assets without changing update feeds').run;
+  const macEnv = { SOURCE_RUN: '', MACOS_RUN: '456', MACOS_PLATFORM: 'macos-arm64' };
+  const macJobs = { jobs: ['Prepare', 'Package (macos-arm64)'].map((name) => ({ name, conclusion: 'success' })) };
+  const artifact = { name: 'openbitfun-v1.0.6-macos-arm64-bundle', expired: false };
+  function macFixtures(nextRun = run, nextJobs = macJobs, artifacts = [artifact]) {
+    fixtures(nextRun, nextJobs);
+    writeFileSync(path.join(root, 'artifacts.json'), JSON.stringify({ artifacts }));
+  }
+  macFixtures();
+  result = execute(macValidate, macEnv);
+  assert.equal(result.status, 0, result.stderr);
+  for (const nextJobs of [
+    { jobs: macJobs.jobs.filter((job) => job.name !== 'Prepare') },
+    { jobs: macJobs.jobs.map((job) => ({ ...job, conclusion: 'failure' })) },
+    { jobs: [{ name: 'Prepare', conclusion: 'success' }, { name: 'Package (macos-x64)', conclusion: 'success' }] },
+  ]) {
+    macFixtures(run, nextJobs);
+    assert.notEqual(execute(macValidate, macEnv).status, 0);
+  }
+  for (const artifacts of [[], [{ ...artifact, expired: true }], [artifact, artifact],
+    [{ ...artifact, name: 'openbitfun-v1.0.6-macos-arm64-verification-recovery' }]]) {
+    macFixtures(run, macJobs, artifacts);
+    assert.notEqual(execute(macValidate, macEnv).status, 0);
+  }
+  for (const nextRun of [
+    { ...run, repository: { full_name: 'untrusted/fork' } },
+    { ...run, head_repository: { full_name: 'untrusted/fork' } },
+    { ...run, path: '.github/workflows/ci.yml' },
+    { ...run, event: 'pull_request' }, { ...run, head_sha: 'invalid' },
+  ]) {
+    macFixtures(nextRun);
+    assert.notEqual(execute(macValidate, macEnv).status, 0);
+  }
+  macFixtures();
+  for (const overrides of [
+    { SOURCE_RUN: '123' }, { MACOS_RUN: '456;echo injected' },
+    { MACOS_PLATFORM: 'linux-x64' }, { REJECT_ANCESTRY: 'true' },
+  ]) {
+    const rejected = execute(macValidate, { ...macEnv, ...overrides });
+    assert.notEqual(rejected.status, 0, `${JSON.stringify(overrides)}\n${rejected.stderr}`);
+  }
+  const macStage = mac.steps.find((step) => step.name === 'Sign and verify ready macOS assets').run;
+  assert.match(macStage, /cmp release-assets\/minisign.pub existing-key\/minisign.pub/);
+  assert.match(macStage, /minisign -Vm/);
+  assert.doesNotMatch(macStage, /generate-tauri-latest-json/);
+  writeFileSync(path.join(root, 'state.json'), JSON.stringify({ draft: false, prerelease: false, assets: [{ name: 'latest-v1.json' }] }));
+  assert.notEqual(execute(macPublish, macEnv).status, 0);
+  writeFileSync(path.join(root, 'state.json'), JSON.stringify({ draft: false, prerelease: false, assets: [] }));
+  result = execute(macPublish, macEnv);
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(macPublish, /release edit|--clobber.*upload|generate-tauri-latest-json/);
+  // Retrying publication must reuse the existing signature only for identical bytes.
+  writeFileSync(path.join(root, 'source.dmg'), 'verified dmg bytes');
+  writeFileSync(path.join(root, 'release-upload-assets/source.dmg'), 'verified dmg bytes');
+  writeFileSync(path.join(root, 'release-upload-assets/source.dmg.sig'), 'original signature');
+  writeFileSync(path.join(root, 'state.json'), JSON.stringify({ assets: [{ name: 'source.dmg.sig' }] }));
+  const reuseSignature = 'set -euo pipefail\ndmgs=("$FIXTURE/source.dmg")\n' + macStage.slice(
+    macStage.indexOf('name="$(basename'), macStage.indexOf('bash scripts/sign-release-assets.sh'),
+  );
+  result = execute(reuseSignature, macEnv);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(path.join(root, 'source.dmg.sig'), 'utf8'), 'original signature');
+  writeFileSync(path.join(root, 'source.dmg'), 'different dmg bytes');
+  assert.notEqual(execute(reuseSignature, macEnv).status, 0);
 });
 
 test('rejects setup-node node-version-file below the project baseline', (t) => {

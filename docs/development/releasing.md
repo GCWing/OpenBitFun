@@ -60,6 +60,16 @@ receipt. The archive preserves executable modes and symlinks for re-verification
 It is unverified recovery input, never a release installer: it does not match
 the normal `*-bundle` publication pattern or satisfy the complete producer gate.
 
+To add a verified Mac package to an already public partial stable release,
+dispatch `Publish Ready Desktop Assets` with `tag_name`, `macos_run_id`, and
+`macos_platform`; leave `source_run_id` empty. The selected producer must have
+successful Prepare and Package jobs on protected-main history, plus an unexpired
+normal bundle artifact. The publisher verifies the existing release public key,
+signs the DMG, verifies both installer and updater signatures, and reads uploaded
+files back. This path only adds the four Mac assets; it does not change release
+notes, GitHub Latest, or any update pointer. Use the full finalization above once
+every platform is ready.
+
 ## Mobile Android releases
 
 Mobile Android packages are released independently from Desktop packages. Use a

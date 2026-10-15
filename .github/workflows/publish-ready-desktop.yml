@@ -9,8 +9,20 @@ on:
         type: string
       source_run_id:
         description: Desktop Package run with successful Windows and both Linux jobs
-        required: true
+        required: false
         type: string
+      macos_run_id:
+        description: Publish only one verified macOS producer instead of Windows and Linux
+        required: false
+        type: string
+      macos_platform:
+        description: Platform produced by macos_run_id
+        required: true
+        default: macos-arm64
+        type: choice
+        options:
+          - macos-arm64
+          - macos-x64
 
 permissions:
   actions: read
@@ -22,6 +34,7 @@ concurrency:
 
 jobs:
   publish:
+    if: ${{ inputs.macos_run_id == '' }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -43,8 +56,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]] || exit 1
           test -n "$OPENBITFUN_SIGNING_KEY"
           test -n "$OPENBITFUN_SIGNING_PUBKEY"
           git fetch origin main --tags
@@ -164,3 +177,122 @@ jobs:
             cmp "$asset" "readback/$name"
           done
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url,isDraft,assets
+
+  publish-macos:
+    if: ${{ inputs.macos_run_id != '' }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag_name }}
+      SOURCE_RUN: ${{ inputs.source_run_id }}
+      MACOS_RUN: ${{ inputs.macos_run_id }}
+      MACOS_PLATFORM: ${{ inputs.macos_platform }}
+      OPENBITFUN_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      OPENBITFUN_SIGNING_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      OPENBITFUN_SIGNING_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.12.0'
+          package-manager-cache: false
+
+      - name: Validate verified macOS producer
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          [[ "$MACOS_RUN" =~ ^[0-9]+$ ]] || exit 1
+          [[ "$MACOS_PLATFORM" == macos-arm64 || "$MACOS_PLATFORM" == macos-x64 ]] || exit 1
+          test -z "$SOURCE_RUN"
+          test -n "$OPENBITFUN_SIGNING_KEY"
+          test -n "$OPENBITFUN_SIGNING_PUBKEY"
+          git fetch origin main --tags
+          git merge-base --is-ancestor "${RELEASE_TAG}^{commit}" origin/main
+          test "$(git show "${RELEASE_TAG}:package.json" | jq -r .version)" = "${RELEASE_TAG#v}"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$MACOS_RUN" > macos-run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$MACOS_RUN/jobs?per_page=100" > macos-jobs.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$MACOS_RUN/artifacts?per_page=100" > macos-artifacts.json
+          jq -e --arg repo "$GITHUB_REPOSITORY" '
+            .repository.full_name == $repo and .head_repository.full_name == $repo and
+            .path == ".github/workflows/desktop-package.yml" and
+            (.event == "workflow_dispatch" or .event == "release") and
+            (.head_sha | test("^[a-f0-9]{40}$"))' macos-run.json
+          source_sha="$(jq -r .head_sha macos-run.json)"
+          git merge-base --is-ancestor "$source_sha" origin/main
+          git merge-base --is-ancestor "${RELEASE_TAG}^{commit}" "$source_sha"
+          for job in Prepare "Package ($MACOS_PLATFORM)"; do
+            jq -e --arg job "$job" '.jobs | any(.name == $job and .conclusion == "success")' macos-jobs.json
+          done
+          artifact="openbitfun-${RELEASE_TAG}-${MACOS_PLATFORM}-bundle"
+          jq -e --arg name "$artifact" '
+            [.artifacts[] | select(.name == $name)] | length == 1 and .[0].expired == false' macos-artifacts.json
+          gh run download "$MACOS_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name "$artifact" --dir "release-assets/$MACOS_PLATFORM"
+          echo "RELEASE_VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+
+      - name: Sign and verify ready macOS assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends minisign
+          case "$MACOS_PLATFORM" in
+            macos-arm64) updater_platform=darwin-aarch64; dmg_arch=aarch64 ;;
+            macos-x64) updater_platform=darwin-x86_64; dmg_arch=x64 ;;
+          esac
+          mapfile -t dmgs < <(find release-assets -type f -name '*.dmg')
+          test "${#dmgs[@]}" -eq 1
+          test "$(basename "${dmgs[0]}")" = "OpenBitFun_${RELEASE_VERSION}_${dmg_arch}.dmg"
+          node scripts/write-minisign-public-key.mjs --out release-assets/minisign.pub
+          # Keep the existing release trust root; never replace it in this path.
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern minisign.pub --dir existing-key
+          cmp release-assets/minisign.pub existing-key/minisign.pub
+          # A retry must retain the original signature's trusted timestamp.
+          name="$(basename "${dmgs[0]}")"
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets > existing-assets.json
+          if jq -e --arg name "$name.sig" '.assets | any(.name == $name)' existing-assets.json >/dev/null; then
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern "$name" --pattern "$name.sig" --dir existing-macos
+            cmp "${dmgs[0]}" "existing-macos/$name"
+            cp "existing-macos/$name.sig" "${dmgs[0]}.sig"
+          fi
+          bash scripts/sign-release-assets.sh "${dmgs[0]}"
+          node scripts/collect-tauri-updater-assets.mjs --assets-dir release-assets \
+            --version "$RELEASE_VERSION" --out-dir release-updater-assets \
+            --required-platforms "$updater_platform"
+          node scripts/stage-github-release-assets.mjs --out-dir release-upload-assets \
+            release-updater-assets/* "${dmgs[0]}" "${dmgs[0]}.sig"
+          test "$(find release-upload-assets -type f | wc -l)" -eq 4
+          for asset in release-upload-assets/*.dmg release-upload-assets/*.app.tar.gz; do
+            test -s "$asset.sig"
+            base64 -d < "$asset.sig" > verify.minisig
+            minisign -Vm "$asset" -p existing-key/minisign.pub -x verify.minisig
+          done
+
+      - name: Publish ready macOS assets without changing update feeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > release-state.json
+          jq -e '.draft == false and .prerelease == false and
+            (.assets | all(.name != "latest-v1.json"))' release-state.json
+          mkdir -p readback
+          for asset in release-upload-assets/*; do
+            name="$(basename "$asset")"
+            gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets > existing-assets.json
+            if jq -e --arg name "$name" '.assets | any(.name == $name)' existing-assets.json >/dev/null; then
+              gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir readback --clobber
+              cmp "$asset" "readback/$name"
+            else
+              gh release upload "$RELEASE_TAG" "$asset" --repo "$GITHUB_REPOSITORY"
+            fi
+          done
+          for asset in release-upload-assets/*; do
+            name="$(basename "$asset")"
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir readback --clobber
+            cmp "$asset" "readback/$name"
+          done
