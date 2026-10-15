@@ -36,8 +36,16 @@ Recovery runs have a separate concurrency group per Mac target, so they can
 finish alongside an existing full matrix without cancelling it. Build source
 still resolves to the original tag SHA. Signature verification uses the pinned
 workflow revision, allowing a verification fix to apply without moving that tag.
-After recovery, collect and verify the complete platform set before promoting
-the release or generating the Desktop update manifest.
+After recovery, dispatch the same workflow with `target_platform=all`, the
+original tag/channel, `upload_to_release=true`, and `artifact_run_ids` containing
+the original and recovery run IDs separated by commas. This skips all builders
+and runs the normal full release publisher. It requires exactly one artifact
+for each of the five Desktop platforms, both Linux CLI/Relay architectures, and
+the Relay image descriptor. Every source must be a protected-main Desktop
+Package run with a successful Prepare job and successful artifact producer.
+Missing, duplicate, expired, or unverified producers stop finalization before
+publication. Do not combine `artifact_run_ids` with a single-platform target or
+`relay_image_only`.
 
 ## Mobile Android releases
 

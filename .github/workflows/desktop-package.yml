@@ -27,6 +27,10 @@ on:
         required: false
         default: false
         type: boolean
+      artifact_run_ids:
+        description: "Finalize from complete verified artifacts in previous Desktop Package runs (comma-separated IDs); skips rebuilding."
+        required: false
+        type: string
       target_platform:
         description: "Build one Desktop platform as signed artifacts only; all retains full release publication."
         required: false
@@ -43,6 +47,7 @@ on:
         type: boolean
 
 permissions:
+  actions: read
   contents: write
   packages: write
 
@@ -154,11 +159,16 @@ jobs:
         env:
           TARGET_PLATFORM: ${{ inputs.target_platform || 'all' }}
           RELAY_IMAGE_ONLY: ${{ inputs.relay_image_only }}
+          ARTIFACT_RUN_IDS: ${{ inputs.artifact_run_ids }}
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           const all = JSON.parse(fs.readFileSync('scripts/desktop-package-platforms.json', 'utf8'));
           const target = process.env.TARGET_PLATFORM;
+          if (process.env.ARTIFACT_RUN_IDS &&
+              (!/^\d+(,\d+)*$/.test(process.env.ARTIFACT_RUN_IDS) || target !== 'all' || process.env.RELAY_IMAGE_ONLY === 'true')) {
+            throw new Error('Artifact finalization requires run IDs, target all, and no relay_image_only');
+          }
           if (!['all', 'macos-arm64', 'macos-x64'].includes(target)) {
             throw new Error(`Unsupported Desktop recovery target: ${target}`);
           }
@@ -175,7 +185,7 @@ jobs:
     name: Package (${{ matrix.platform.name }})
     runs-on: ${{ matrix.platform.os }}
     needs: prepare
-    if: needs.prepare.outputs.relay_image_only != 'true'
+    if: needs.prepare.outputs.relay_image_only != 'true' && !inputs.artifact_run_ids
     env:
       NODE_OPTIONS: --max-old-space-size=6144
       OPENBITFUN_ENABLE_UPDATER_ARTIFACTS: ${{ needs.prepare.outputs.upload_to_release }}
@@ -449,7 +459,8 @@ jobs:
     needs: prepare
     if: >-
       needs.prepare.outputs.relay_image_only != 'true' &&
-      needs.prepare.outputs.target_platform == 'all'
+      needs.prepare.outputs.target_platform == 'all' &&
+      !inputs.artifact_run_ids
     uses: ./.github/workflows/linux-binaries.yml
     secrets:
       release_signing_key: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -468,6 +479,7 @@ jobs:
     if: >-
       always() &&
       needs.prepare.outputs.target_platform == 'all' &&
+      !inputs.artifact_run_ids &&
       (needs.prepare.outputs.upload_to_release == 'true' ||
        needs.prepare.outputs.relay_image_only == 'true') &&
       (needs.prepare.outputs.relay_image_only == 'true' ||
@@ -662,11 +674,13 @@ jobs:
     needs: [prepare, package, linux-binaries, publish-relay-image]
     if: >-
       always() &&
+      needs.prepare.result == 'success' &&
       needs.prepare.outputs.upload_to_release == 'true' &&
       needs.prepare.outputs.target_platform == 'all' &&
-      needs.package.result == 'success' &&
-      needs.linux-binaries.result == 'success' &&
-      needs.publish-relay-image.result == 'success'
+      (inputs.artifact_run_ids ||
+       (needs.package.result == 'success' &&
+        needs.linux-binaries.result == 'success' &&
+        needs.publish-relay-image.result == 'success'))
     runs-on: ubuntu-latest
     env:
       # Bundle-type Linux keys are load-bearing: tauri-plugin-updater on a deb
@@ -678,8 +692,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Download bundled artifacts
+        if: ${{ !inputs.artifact_run_ids }}
         uses: actions/download-artifact@v7
         with:
           pattern: openbitfun-${{ needs.prepare.outputs.release_tag }}-*-bundle
@@ -687,6 +704,7 @@ jobs:
           merge-multiple: true
 
       - name: Download Linux binary artifacts
+        if: ${{ !inputs.artifact_run_ids }}
         uses: actions/download-artifact@v7
         with:
           pattern: openbitfun-linux-${{ needs.prepare.outputs.release_tag }}-*
@@ -694,10 +712,22 @@ jobs:
           merge-multiple: true
 
       - name: Download Relay image descriptor
+        if: ${{ !inputs.artifact_run_ids }}
         uses: actions/download-artifact@v7
         with:
           name: openbitfun-relay-image-${{ needs.prepare.outputs.release_tag }}
           path: relay-image-assets
+
+      - name: Download verified artifacts from completed producers
+        if: inputs.artifact_run_ids
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_RUN_IDS: ${{ inputs.artifact_run_ids }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: |
+          node scripts/download-desktop-release-artifacts.mjs \
+            --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --run-ids "$ARTIFACT_RUN_IDS"
 
       - name: List release assets
         run: |

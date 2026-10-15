@@ -1298,7 +1298,7 @@ test('stable and beta publication require every producer, while artifact-only ru
   // expressions and JavaScript. Exercise the actual conditions, not a copy.
   const condition = (job, needs) => {
     const expression = job.if.replace(/needs\.([\w-]+)/g, 'needs["$1"]');
-    return Function('needs', 'always', `return (${expression});`)(needs, () => true);
+    return Function('needs', 'always', 'inputs', `return Boolean(${expression});`)(needs, () => true, { artifact_run_ids: '' });
   };
   const results = ['success', 'failure', 'cancelled', 'skipped'];
   for (const channel of ['stable', 'beta']) {
@@ -1306,7 +1306,7 @@ test('stable and beta publication require every producer, while artifact-only ru
       for (const target of ['all', 'macos-arm64', 'macos-x64']) {
         for (const desktop of results) for (const linux of results) for (const image of results) {
           const needs = {
-            prepare: { outputs: { release_channel: channel, upload_to_release: upload, relay_image_only: 'false', target_platform: target } },
+            prepare: { result: 'success', outputs: { release_channel: channel, upload_to_release: upload, relay_image_only: 'false', target_platform: target } },
             package: { result: desktop },
             'linux-binaries': { result: linux },
             'publish-relay-image': { result: image },
@@ -1320,7 +1320,7 @@ test('stable and beta publication require every producer, while artifact-only ru
       }
     }
     const backfill = {
-      prepare: { outputs: { release_channel: channel, upload_to_release: 'true', relay_image_only: 'true', target_platform: 'all' } },
+      prepare: { result: 'success', outputs: { release_channel: channel, upload_to_release: 'true', relay_image_only: 'true', target_platform: 'all' } },
       package: { result: 'skipped' },
       'linux-binaries': { result: 'skipped' },
       'publish-relay-image': { result: 'success' },
@@ -1340,7 +1340,7 @@ test('stable and beta publication require every producer, while artifact-only ru
     'Generate Linux binaries manifest', 'Stage release assets',
     'Verify published Linux binaries manifest', 'Verify published Relay image descriptor',
   ]) {
-    assert.equal(steps.find((step) => step.name === name)?.if, undefined, name);
+    assert.equal(steps.find((step) => step.name === name)?.if, name.startsWith('Download') ? '${{ !inputs.artifact_run_ids }}' : undefined, name);
     assert.ok(steps.some((step) => step.name === name), name);
   }
   const stage = steps.find((step) => step.name === 'Stage release assets');
@@ -1369,7 +1369,7 @@ test('Desktop recovery selects only one Mac target and cannot publish an incompl
       const output = path.join(root, `${target}-${relay}`);
       const result = spawnSync('bash', ['-c', step.run], {
         cwd: repoRoot, encoding: 'utf8', windowsHide: true,
-        env: { ...process.env, TARGET_PLATFORM: target, RELAY_IMAGE_ONLY: relay, GITHUB_OUTPUT: output },
+        env: { ...process.env, TARGET_PLATFORM: target, RELAY_IMAGE_ONLY: relay, ARTIFACT_RUN_IDS: '', GITHUB_OUTPUT: output },
       });
       if (target === 'unknown' || (target !== 'all' && relay === 'true')) {
         assert.notEqual(result.status, 0);
@@ -1386,6 +1386,16 @@ test('Desktop recovery selects only one Mac target and cannot publish an incompl
       if (target === 'macos-x64') assert.equal(matrix[0].build_command, 'pnpm run desktop:build:x86_64');
     }
   }
+  for (const [target, relay, runs, success] of [
+    ['all', 'false', '123,456', true], ['all', 'false', 'not-a-run', false],
+    ['macos-arm64', 'false', '123', false], ['all', 'true', '123', false],
+  ]) {
+    const result = spawnSync('bash', ['-c', step.run], {
+      cwd: repoRoot, encoding: 'utf8', windowsHide: true,
+      env: { ...process.env, TARGET_PLATFORM: target, RELAY_IMAGE_ONLY: relay, ARTIFACT_RUN_IDS: runs, GITHUB_OUTPUT: path.join(root, 'finalize') },
+    });
+    assert.equal(result.status === 0, success, result.stderr);
+  }
   assert.equal(workflow.jobs.package.strategy.matrix.platform, '${{ fromJSON(needs.prepare.outputs.package_matrix) }}');
   for (const name of ['linux-binaries', 'publish-relay-image', 'upload-release-assets']) {
     const condition = workflow.jobs[name].if;
@@ -1394,6 +1404,95 @@ test('Desktop recovery selects only one Mac target and cannot publish an incompl
   assert.equal(workflow.jobs.package.env.OPENBITFUN_ENABLE_UPDATER_ARTIFACTS, '${{ needs.prepare.outputs.upload_to_release }}');
   assert.match(workflow.concurrency.group, /inputs.target_platform/);
   assert.equal(workflow.concurrency['cancel-in-progress'], false);
+});
+
+
+test('release finalization requires the complete unique successful producer set', async (t) => {
+  const { planReleaseArtifactDownloads } = await import('./download-desktop-release-artifacts.mjs');
+  const repo = 'GCWing/OpenBitFun';
+  const tag = 'v1.0.6';
+  const platforms = ['windows-x64', 'linux-x64', 'linux-arm64', 'macos-arm64', 'macos-x64'];
+  const entries = [
+    ...platforms.map((platform) => [`openbitfun-${tag}-${platform}-bundle`, `Package (${platform})`]),
+    ...['linux-x64', 'linux-arm64'].map((platform) => [`openbitfun-linux-${tag}-${platform}`, `Linux CLI and Relay Server / Linux Binaries (${platform})`]),
+    [`openbitfun-relay-image-${tag}`, 'Publish Relay Server Image'],
+  ];
+  const source = {
+    run: { id: 123, repository: { full_name: repo }, head_repository: { full_name: repo },
+      path: '.github/workflows/desktop-package.yml', event: 'workflow_dispatch', head_sha: 'a'.repeat(40) },
+    jobs: [{ name: 'Prepare', conclusion: 'success' }, ...entries.map(([, name]) => ({ name, conclusion: 'success' }))],
+    artifacts: entries.map(([name]) => ({ name, expired: false })),
+  };
+  assert.equal(planReleaseArtifactDownloads(repo, tag, [source]).length, 8);
+  const root = mkdtempSync(path.join(tmpdir(), 'openbitfun-finalize-history-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(path.join(root, 'bin'));
+  writeFileSync(path.join(root, 'run.json'), JSON.stringify(source.run));
+  writeFileSync(path.join(root, 'jobs.json'), JSON.stringify({ jobs: source.jobs }));
+  writeFileSync(path.join(root, 'artifacts.json'), JSON.stringify({ artifacts: source.artifacts }));
+  writeFileSync(path.join(root, 'bin/gh'), `#!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "$1" == api ]]; then
+      case "$2" in
+        *'/jobs?'*) cat "$FIXTURE/jobs.json" ;;
+        *'/artifacts?'*) cat "$FIXTURE/artifacts.json" ;;
+        *) cat "$FIXTURE/run.json" ;;
+      esac
+    else
+      printf '%s\\n' "$*" >> "$FIXTURE/downloads"
+    fi
+  `, { mode: 0o755 });
+  writeFileSync(path.join(root, 'bin/git'), `#!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "$1" == merge-base && "$3" == aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa && "$FAIL_HISTORY" == true ]]; then exit 1; fi
+  `, { mode: 0o755 });
+  function download(failHistory) {
+    return spawnSync(process.execPath, [path.join(repoRoot, 'scripts/download-desktop-release-artifacts.mjs'),
+      '--repo', repo, '--tag', tag, '--run-ids', '123'], {
+      cwd: root, encoding: 'utf8', windowsHide: true,
+      env: { ...process.env, FIXTURE: root, FAIL_HISTORY: String(failHistory), PATH: `${path.join(root, 'bin')}:${process.env.PATH}` },
+    });
+  }
+  assert.notEqual(download(true).status, 0, 'source outside protected main must fail');
+  assert.throws(() => readFileSync(path.join(root, 'downloads')), { code: 'ENOENT' });
+  const downloaded = download(false);
+  assert.equal(downloaded.status, 0, downloaded.stderr);
+  assert.equal(readFileSync(path.join(root, 'downloads'), 'utf8').trim().split('\n').length, 8);
+  const original = structuredClone(source);
+  original.artifacts = source.artifacts.filter((artifact) => !artifact.name.includes('macos-arm64'));
+  const recovery = structuredClone(source);
+  recovery.run.id = 456;
+  recovery.artifacts = source.artifacts.filter((artifact) => artifact.name.includes('macos-arm64'));
+  recovery.jobs = source.jobs.filter((job) => job.name === 'Prepare' || job.name === 'Package (macos-arm64)');
+  assert.equal(planReleaseArtifactDownloads(repo, tag, [original, recovery]).filter((item) => item.runId === '456').length, 1);
+  assert.throws(() => planReleaseArtifactDownloads(repo, tag, [original]), /Missing verified/);
+  assert.throws(() => planReleaseArtifactDownloads(repo, tag, [source, recovery]), /Duplicate/);
+  for (const [name, job] of entries) {
+    const bad = structuredClone(source);
+    bad.jobs.find((item) => item.name === job).conclusion = 'failure';
+    assert.throws(() => planReleaseArtifactDownloads(repo, tag, [bad]), /successful producer/, name);
+    const expired = structuredClone(source);
+    expired.artifacts.find((item) => item.name === name).expired = true;
+    assert.throws(() => planReleaseArtifactDownloads(repo, tag, [expired]), /successful producer/, name);
+  }
+  for (const mutate of [
+    (item) => { item.run.head_repository.full_name = 'untrusted/fork'; },
+    (item) => { item.run.path = '.github/workflows/ci.yml'; },
+    (item) => { item.run.event = 'pull_request'; },
+    (item) => { item.jobs[0].conclusion = 'failure'; },
+  ]) {
+    const bad = structuredClone(source); mutate(bad);
+    assert.throws(() => planReleaseArtifactDownloads(repo, tag, [bad]), /Untrusted or unprepared/);
+  }
+  const workflow = yaml.parse(readFileSync(path.join(repoRoot, '.github/workflows/desktop-package.yml'), 'utf8'));
+  for (const prepare of ['success', 'failure', 'skipped']) {
+    const needs = { prepare: { result: prepare, outputs: { upload_to_release: 'true', target_platform: 'all', relay_image_only: 'false' } },
+      package: { result: 'skipped' }, 'linux-binaries': { result: 'skipped' }, 'publish-relay-image': { result: 'skipped' } };
+    const inputs = { artifact_run_ids: '123,456' };
+    const evaluate = (job) => Function('needs', 'inputs', 'always', `return Boolean(${job.if.replace(/needs\.([\w-]+)/g, 'needs["$1"]')});`)(needs, inputs, () => true);
+    for (const name of ['package', 'linux-binaries', 'publish-relay-image']) assert.equal(evaluate(workflow.jobs[name]), false);
+    assert.equal(evaluate(workflow.jobs['upload-release-assets']), prepare === 'success');
+  }
 });
 
 test('Relay image rebuild resolves the release tag instead of the newer workflow commit', (t) => {
