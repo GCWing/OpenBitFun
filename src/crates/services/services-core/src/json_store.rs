@@ -276,6 +276,32 @@ impl JsonFileStore {
             .await
     }
 
+    /// Copy an existing file to a strictly atomically published destination
+    /// without loading the file into the process heap.
+    pub async fn copy_file_atomic_strict(
+        &self,
+        source: &Path,
+        path: &Path,
+    ) -> Result<(), JsonFileStoreError> {
+        let parent = path
+            .parent()
+            .ok_or_else(|| JsonFileStoreError::NoParentDirectory {
+                path: path.to_path_buf(),
+            })?;
+        fs::create_dir_all(parent)
+            .await
+            .map_err(|source| JsonFileStoreError::CreateParent { source })?;
+        let lock = Self::get_file_write_lock(path).await;
+        let _lock_guard = lock.lock().await;
+        let tmp_path = Self::build_temp_json_path(path, 0)?;
+        fs::copy(source, &tmp_path)
+            .await
+            .map_err(|source| JsonFileStoreError::WriteTemp { source })?;
+        Self::replace_file_from_temp_strict(path, &tmp_path)
+            .await
+            .map_err(|source| JsonFileStoreError::Replace { source })
+    }
+
     /// Atomically publish a new UTF-8 text file, failing without changing the
     /// target when another process creates it first.
     pub async fn write_text_atomic_create_new(

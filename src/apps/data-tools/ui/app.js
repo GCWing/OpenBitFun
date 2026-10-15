@@ -285,7 +285,8 @@ function renderRepair(view) {
   show('repair-history', repair.savedTasks.length > 0);
   document.getElementById('repair-load').disabled = view.running || !tasks.selectedOptions[0] || tasks.selectedOptions[0].disabled;
   document.getElementById('repair-phase').textContent = (text['repairPhase_' + repair.phase] || repair.phase)
-    + (repair.active && repair.total ? ` · ${repair.processed} / ${repair.total}` : '');
+    + (repair.active && repair.total ? ` · ${repair.processed} / ${repair.total}` : '')
+    + (repair.active && repair.currentPath ? ` · ${repair.currentPath}` : '');
   document.getElementById('repair-backup').textContent = repair.backupPath ? format(text.repairBackup, { path: repair.backupPath }) : '';
   const actions = repair.actions;
   const skipped = repair.diagnostics.filter((d) => d.status === 'skipped');

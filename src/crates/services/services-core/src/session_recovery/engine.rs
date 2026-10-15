@@ -145,7 +145,7 @@ fn validate(plan: &RepairPlan) -> Result<()> {
         } else {
             &operation.target
         };
-        let mut docs = documents(evidence)?;
+        let mut docs = documents(evidence, None)?;
         for (name, update) in &operation.updates {
             ensure!(
                 ["metadata.json", "state.json"].contains(&name.as_str()) && docs.contains_key(name),
@@ -157,7 +157,7 @@ fn validate(plan: &RepairPlan) -> Result<()> {
                 .unwrap_or(&update.before);
             docs.insert(name.clone(), serde_json::from_slice(before)?);
         }
-        let owner = identity::owner(evidence, docs.clone(), &records, &aliases)?;
+        let owner = identity::owner(evidence, docs.clone(), &records, &aliases, None)?;
         ensure!(
             owner.id == operation.workspace_id && owner.root == operation.workspace_path,
             "Plan disagrees with session identity"
@@ -180,10 +180,14 @@ fn validate(plan: &RepairPlan) -> Result<()> {
             operation.source != operation.target || !operation.updates.is_empty(),
             "Plan has no repair action"
         );
+        let (before_fingerprint, repaired_fingerprint) = directory_fingerprint_pair(
+            evidence,
+            &update_side(&operation.updates, true),
+            &update_side(&operation.updates, false),
+        )?;
         ensure!(
-            tree_hash(evidence, &update_side(&operation.updates, true))? == operation.sha256
-                && tree_hash(evidence, &update_side(&operation.updates, false))?
-                    == operation.repaired_sha256,
+            before_fingerprint == operation.sha256
+                && repaired_fingerprint == operation.repaired_sha256,
             "Session changed since planning"
         );
         let assets = identity::snapshot_assets(&operation.source, &operation.target, &owner)?;
@@ -272,7 +276,7 @@ fn copy_tree(source: &Path, target: &Path) -> Result<()> {
                     "Incomplete backup has conflicting content"
                 );
             } else {
-                write(&dest, &read(&child)?)?;
+                copy_file(&child, &dest)?;
             }
         }
     }
@@ -479,7 +483,7 @@ pub fn apply(
             ensure!(!asset.existed, "Existing snapshot disappeared");
             journal.asset_writes.insert(asset.target.clone());
             save(task, &journal)?;
-            write(&asset.target, &read(&asset.source)?)?;
+            copy_file(&asset.source, &asset.target)?;
             ensure!(
                 file_hash(&asset.target)? == asset.sha256,
                 "Snapshot copy verification failed"

@@ -15,6 +15,7 @@ use std::path::{Component, Path, PathBuf};
 
 pub use engine::{apply, rollback, task_phase};
 pub const FORMAT_VERSION: u32 = 1;
+const FINGERPRINT_KIND: &str = "directory-layout-v1";
 const CONTROLS: &[&str] = &[
     "index.json",
     "product-search-v1.sqlite",
@@ -26,6 +27,7 @@ type Catalog = BTreeMap<String, String>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepairPlan {
     pub version: u32,
+    pub fingerprint_kind: String,
     pub home: PathBuf,
     pub user_root: PathBuf,
     pub registry_sha256: String,
@@ -77,7 +79,7 @@ pub fn read_plan(task: &Path) -> Result<RepairPlan> {
     safe(task, task)?;
     let plan: RepairPlan = serde_json::from_slice(&read(&task.join("plan.json"))?)?;
     ensure!(
-        plan.version == FORMAT_VERSION,
+        plan.version == FORMAT_VERSION && plan.fingerprint_kind == FINGERPRINT_KIND,
         "Unsupported session repair plan version"
     );
     Ok(plan)
@@ -85,12 +87,22 @@ pub fn read_plan(task: &Path) -> Result<RepairPlan> {
 
 /// Scan is read-only. Malformed or ambiguous identities become diagnostics.
 pub fn scan(home: &Path, user_root: &Path, cancelled: impl Fn() -> bool) -> Result<RepairPlan> {
+    scan_with_progress(home, user_root, cancelled, |_, _, _, _| {})
+}
+
+pub fn scan_with_progress(
+    home: &Path,
+    user_root: &Path,
+    cancelled: impl Fn() -> bool,
+    progress: impl Fn(usize, usize, &str, &Path),
+) -> Result<RepairPlan> {
     safe(home, home)?;
     safe(user_root, user_root)?;
     let (records, registry_sha256) = identity::registry(user_root)?;
     let aliases = identity::aliases(home, &records)?;
     let mut plan = RepairPlan {
         version: FORMAT_VERSION,
+        fingerprint_kind: FINGERPRINT_KIND.into(),
         home: home.into(),
         user_root: user_root.into(),
         registry_sha256,
@@ -99,21 +111,32 @@ pub fn scan(home: &Path, user_root: &Path, cancelled: impl Fn() -> bool) -> Resu
         catalogs: BTreeMap::new(),
     };
     let mut roots = Vec::new();
+    let mut catalog_cache: BTreeMap<PathBuf, CatalogSnapshot> = BTreeMap::new();
     for runtime in children(&home.join("projects"))? {
         if runtime.is_dir() {
             roots.push(runtime.join("sessions"));
         }
     }
     collect_remote_roots(&home.join("remote_ssh"), &mut roots)?;
+    let total_sessions = roots
+        .iter()
+        .map(|root| {
+            children(root).map(|entries| entries.iter().filter(|path| path.is_dir()).count())
+        })
+        .sum::<Result<usize>>()?;
+    let mut completed_sessions = 0;
     for root in roots {
         ensure!(!cancelled(), "Repair cancelled at a safe boundary");
         if !root.is_dir() {
             continue;
         }
+        let session_dirs = children(&root)?;
         let result = (|| -> Result<()> {
             safe(&root, home)?;
-            plan.catalogs.insert(root.clone(), catalog(&root)?);
-            for source in children(&root)? {
+            let source_catalog = cached_catalog(&root, &mut catalog_cache)?;
+            plan.catalogs
+                .insert(root.clone(), source_catalog.catalog.clone());
+            for source in session_dirs {
                 ensure!(!cancelled(), "Repair cancelled at a safe boundary");
                 if !source.is_dir() {
                     continue;
@@ -122,8 +145,18 @@ pub fn scan(home: &Path, user_root: &Path, cancelled: impl Fn() -> bool) -> Resu
                     safe(&source, home)?;
                     let sid = filename(&source)?;
                     ensure!(safe_id(&sid), "Invalid session directory name");
-                    let documents = documents(&source)?;
-                    let owner = identity::owner(&source, documents.clone(), &records, &aliases)?;
+                    let cached_metadata = source_catalog
+                        .entries
+                        .get(&sid)
+                        .context("Session metadata is absent from catalog")?;
+                    let documents = documents(&source, Some(cached_metadata))?;
+                    let owner = identity::owner(
+                        &source,
+                        documents.clone(),
+                        &records,
+                        &aliases,
+                        Some(cached_metadata),
+                    )?;
                     let target = home
                         .join("projects")
                         .join(identity::runtime_key(&records[&owner.id])?)
@@ -137,7 +170,11 @@ pub fn scan(home: &Path, user_root: &Path, cancelled: impl Fn() -> bool) -> Resu
                             updates.insert(
                                 name.clone(),
                                 FileUpdate {
-                                    before: read(&source.join(name))?,
+                                    before: if name == "metadata.json" {
+                                        cached_metadata.raw.clone()
+                                    } else {
+                                        read(&source.join(name))?
+                                    },
                                     after: encode(repaired)?,
                                 },
                             );
@@ -152,12 +189,17 @@ pub fn scan(home: &Path, user_root: &Path, cancelled: impl Fn() -> bool) -> Resu
                         "Destination session already exists: {}",
                         target.display()
                     );
+                    let target_catalog =
+                        cached_catalog(target.parent().unwrap(), &mut catalog_cache)?;
                     plan.catalogs.insert(
                         target.parent().unwrap().into(),
-                        catalog(target.parent().unwrap())?,
+                        target_catalog.catalog.clone(),
                     );
-                    let sha256 = tree_hash(&source, &BTreeMap::new())?;
-                    let repaired_sha256 = tree_hash(&source, &update_side(&updates, false))?;
+                    let (sha256, repaired_sha256) = directory_fingerprint_pair(
+                        &source,
+                        &BTreeMap::new(),
+                        &update_side(&updates, false),
+                    )?;
                     let assets = identity::snapshot_assets(&source, &target, &owner)?;
                     Ok(Some(RepairOperation {
                         source: source.clone(),
@@ -173,6 +215,7 @@ pub fn scan(home: &Path, user_root: &Path, cancelled: impl Fn() -> bool) -> Resu
                         assets,
                     }))
                 })();
+                let progress_path = source.clone();
                 match operation {
                     Ok(Some(operation)) => plan.operations.push(operation),
                     Ok(None) => plan.diagnostics.push(RepairDiagnostic {
@@ -186,6 +229,13 @@ pub fn scan(home: &Path, user_root: &Path, cancelled: impl Fn() -> bool) -> Resu
                         reason: Some(error.to_string()),
                     }),
                 }
+                completed_sessions += 1;
+                progress(
+                    completed_sessions,
+                    total_sessions,
+                    "scanning_sessions",
+                    &progress_path,
+                );
             }
             Ok(())
         })();
@@ -287,8 +337,25 @@ fn changes(file: &str, field: &str, before: &Value, after: &Value, out: &mut Vec
         });
     }
 }
-fn documents(path: &Path) -> Result<BTreeMap<String, Value>> {
-    let mut values = BTreeMap::from([("metadata.json".into(), json(&path.join("metadata.json"))?)]);
+#[derive(Debug, Clone)]
+struct CatalogEntry {
+    raw: Vec<u8>,
+    value: Value,
+    metadata: crate::session::SessionMetadata,
+}
+
+#[derive(Debug, Clone)]
+struct CatalogSnapshot {
+    catalog: Catalog,
+    entries: BTreeMap<String, CatalogEntry>,
+}
+
+fn documents(path: &Path, metadata: Option<&CatalogEntry>) -> Result<BTreeMap<String, Value>> {
+    let metadata = match metadata {
+        Some(entry) => entry.value.clone(),
+        None => json(&path.join("metadata.json"))?,
+    };
+    let mut values = BTreeMap::from([("metadata.json".into(), metadata)]);
     if path.join("state.json").exists() {
         values.insert("state.json".into(), json(&path.join("state.json"))?);
     }
@@ -309,24 +376,48 @@ fn metadata(path: &Path, raw: Value) -> Result<crate::session::SessionMetadata> 
     Ok(metadata)
 }
 fn catalog(path: &Path) -> Result<Catalog> {
-    let mut result = BTreeMap::new();
+    Ok(catalog_snapshot(path)?.catalog)
+}
+fn catalog_snapshot(path: &Path) -> Result<CatalogSnapshot> {
+    let mut catalog = BTreeMap::new();
+    let mut entries = BTreeMap::new();
     for child in children(path)? {
         if child.is_dir() && child.join("metadata.json").exists() {
             let sid = filename(&child)?;
             ensure!(safe_id(&sid), "Invalid session ID");
-            metadata(&child, json(&child.join("metadata.json"))?)?;
-            result.insert(sid, file_hash(&child.join("metadata.json"))?);
+            let raw = read(&child.join("metadata.json"))?;
+            let value: Value =
+                serde_json::from_slice(raw.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(&raw))?;
+            let parsed = metadata(&child, value.clone())?;
+            let sha256 = hash(&raw);
+            catalog.insert(sid.clone(), sha256.clone());
+            entries.insert(
+                sid,
+                CatalogEntry {
+                    raw,
+                    value,
+                    metadata: parsed,
+                },
+            );
         }
     }
-    Ok(result)
+    Ok(CatalogSnapshot { catalog, entries })
+}
+fn cached_catalog(
+    path: &Path,
+    cache: &mut BTreeMap<PathBuf, CatalogSnapshot>,
+) -> Result<CatalogSnapshot> {
+    if let Some(snapshot) = cache.get(path) {
+        return Ok(snapshot.clone());
+    }
+    let snapshot = catalog_snapshot(path)?;
+    cache.insert(path.into(), snapshot.clone());
+    Ok(snapshot)
 }
 fn index_bytes(path: &Path) -> Result<Vec<u8>> {
     let mut entries = Vec::new();
-    for id in catalog(path)?.keys() {
-        entries.push(metadata(
-            &path.join(id),
-            json(&path.join(id).join("metadata.json"))?,
-        )?);
+    for entry in catalog_snapshot(path)?.entries.values() {
+        entries.push(entry.metadata.clone());
     }
     // Use the product owner for visibility, aliases, counters and schema.
     encode(&crate::session::build_session_index_snapshot(entries, now_ms()).0)
@@ -459,21 +550,37 @@ fn encode(value: &impl Serialize) -> Result<Vec<u8>> {
 fn write(path: &Path, bytes: &[u8]) -> Result<()> {
     safe(path, path)?;
     // Reuse the owner strict atomic replacement, including Windows sharing semantics.
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?
-        .block_on(
-            crate::json_store::JsonFileStore.write_bytes_atomic_strict(path, bytes.to_vec()),
-        )?;
+    static RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+    let runtime = RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("session recovery runtime initialization")
+    });
+    runtime.block_on(
+        crate::json_store::JsonFileStore.write_bytes_atomic_strict(path, bytes.to_vec()),
+    )?;
     Ok(())
 }
-fn tree_hash(root: &Path, overrides: &BTreeMap<String, Vec<u8>>) -> Result<String> {
-    fn visit(
-        root: &Path,
-        path: &Path,
-        overrides: &BTreeMap<String, Vec<u8>>,
-        out: &mut BTreeMap<String, Option<String>>,
-    ) -> Result<()> {
+fn copy_file(source: &Path, target: &Path) -> Result<()> {
+    safe(source, source)?;
+    safe(target, target)?;
+    static RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+    let runtime = RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("session recovery runtime initialization")
+    });
+    runtime.block_on(crate::json_store::JsonFileStore.copy_file_atomic_strict(source, target))?;
+    Ok(())
+}
+fn directory_fingerprint_pair(
+    root: &Path,
+    before_overrides: &BTreeMap<String, Vec<u8>>,
+    after_overrides: &BTreeMap<String, Vec<u8>>,
+) -> Result<(String, String)> {
+    fn visit(root: &Path, path: &Path, out: &mut BTreeMap<String, Option<u64>>) -> Result<()> {
         for child in children(path)? {
             let relative = child
                 .strip_prefix(root)?
@@ -482,15 +589,9 @@ fn tree_hash(root: &Path, overrides: &BTreeMap<String, Vec<u8>>) -> Result<Strin
                 .replace('\\', "/");
             if child.is_dir() {
                 out.insert(relative, None);
-                visit(root, &child, overrides, out)?;
+                visit(root, &child, out)?;
             } else {
-                out.insert(
-                    relative.clone(),
-                    Some(match overrides.get(&relative) {
-                        Some(bytes) => hash(bytes),
-                        None => file_hash(&child)?,
-                    }),
-                );
+                out.insert(relative, Some(fs::metadata(&child)?.len()));
             }
         }
         Ok(())
@@ -498,8 +599,30 @@ fn tree_hash(root: &Path, overrides: &BTreeMap<String, Vec<u8>>) -> Result<Strin
     safe(root, root)?;
     ensure!(root.is_dir(), "Session directory is unavailable");
     let mut entries = BTreeMap::new();
-    visit(root, root, overrides, &mut entries)?;
-    Ok(hash(&encode(&entries)?))
+    visit(root, root, &mut entries)?;
+    let fingerprint = |overrides: &BTreeMap<String, Vec<u8>>| -> Result<String> {
+        let entries = entries
+            .iter()
+            .map(|(path, size)| {
+                (
+                    path.clone(),
+                    size.map(|value| {
+                        overrides
+                            .get(path)
+                            .map_or(value, |bytes| bytes.len() as u64)
+                    }),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        Ok(hash(&encode(&entries)?))
+    };
+    Ok((
+        fingerprint(before_overrides)?,
+        fingerprint(after_overrides)?,
+    ))
+}
+fn tree_hash(root: &Path, overrides: &BTreeMap<String, Vec<u8>>) -> Result<String> {
+    directory_fingerprint_pair(root, overrides, &BTreeMap::new()).map(|pair| pair.0)
 }
 fn update_side(updates: &BTreeMap<String, FileUpdate>, before: bool) -> BTreeMap<String, Vec<u8>> {
     updates

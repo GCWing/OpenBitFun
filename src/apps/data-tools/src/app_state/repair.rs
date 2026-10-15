@@ -39,6 +39,7 @@ pub(crate) struct RepairView {
     pub processed: usize,
     pub total: usize,
     pub active: bool,
+    pub current_path: Option<PathBuf>,
 }
 fn tasks_root(settings: &Path) -> PathBuf {
     settings.parent().unwrap().join("session-repairs")
@@ -95,6 +96,7 @@ pub(super) fn bootstrap(roots: &MigrationRoots, settings: &Path) -> RepairView {
         processed: 0,
         total: 0,
         active: false,
+        current_path: None,
     }
 }
 fn update_view(
@@ -126,6 +128,7 @@ fn update_view(
     view.diagnostics = plan.diagnostics.clone();
     view.total = view.actions.len();
     view.processed = 0;
+    view.current_path = None;
 }
 fn failure(error: impl std::fmt::Display) -> CommandError {
     CommandError::new("session_repair_failed", &error.to_string(), true)
@@ -177,8 +180,20 @@ impl DataToolsCoordinator {
         let coordinator = self.clone();
         self.spawn_worker("session-repair-scan", move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let plan =
-                    recovery::scan(&home, &user_root, || cancel.is_cancelled()).map_err(failure)?;
+                let progress = |processed, total, phase: &str, path: &Path| {
+                    let mut session = coordinator.lock();
+                    session.repair.processed = processed;
+                    session.repair.total = total;
+                    session.repair.phase = phase.into();
+                    session.repair.current_path = Some(path.into());
+                };
+                let plan = recovery::scan_with_progress(
+                    &home,
+                    &user_root,
+                    || cancel.is_cancelled(),
+                    progress,
+                )
+                .map_err(failure)?;
                 recovery::save_plan(&task, &plan).map_err(failure)?;
                 Ok::<_, CommandError>(plan)
             }))

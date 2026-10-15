@@ -9,7 +9,6 @@ import errno
 import hashlib
 import json
 import os
-import posixpath
 from pathlib import Path
 import re
 import shutil
@@ -17,13 +16,89 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 
 VERSION = 1
+FINGERPRINT_KIND = "directory-layout-v1"
 SAFE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 CACHE_NAMES = ("product-search-v1.sqlite", "product-search-v1.sqlite-wal",
                "product-search-v1.sqlite-shm")
+PROGRESS = None
+
+
+class ProgressReporter:
+    """CLI-only progress with periodic updates during blocking filesystem work."""
+    def __init__(self, stream=None, interval=2.0):
+        self.stream = stream if stream is not None else sys.stderr
+        self.interval = interval
+        self.started = time.monotonic()
+        self.last_write = self.started
+        self.message = "Starting"
+        self.lock = threading.Lock()
+        self.stopped = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def _write(self):
+        now = time.monotonic()
+        try:
+            print("[Progress {:0.0f}s] {}".format(now - self.started, self.message),
+                  file=self.stream, flush=True)
+        except (OSError, ValueError):
+            # Progress output must not interrupt a data repair if its stream closes.
+            self.stopped.set()
+        self.last_write = now
+
+    def update(self, message, force=False):
+        with self.lock:
+            self.message = " ".join(str(message).split())
+            if force or time.monotonic() - self.last_write >= self.interval:
+                self._write()
+
+    def _run(self):
+        while not self.stopped.wait(self.interval):
+            with self.lock:
+                if time.monotonic() - self.last_write >= self.interval:
+                    self._write()
+
+    def start(self):
+        self.update(self.message, force=True)
+        self.thread.start()
+
+    def stop(self):
+        self.stopped.set()
+        self.thread.join()
+
+
+def report_progress(message, force=False):
+    if PROGRESS is not None:
+        PROGRESS.update(message, force)
+
+
+def progress_items(items, stage, total=None):
+    """Report completed counts without enumerating filesystem entries twice."""
+    if PROGRESS is None:
+        yield from items
+        return
+    if total is None:
+        try:
+            total = len(items)
+        except TypeError:
+            pass
+    count = 0
+
+    def status(detail=""):
+        counter = "{} / {}".format(count, total) if total is not None else str(count)
+        return "{}: {} completed{}".format(stage, counter, "; " + detail if detail else "")
+
+    report_progress(status(), force=True)
+    for item in items:
+        detail = item.get("source", item.get("path", "")) if isinstance(item, dict) else str(item)
+        report_progress(status(detail))
+        yield item
+        count += 1
+    report_progress(status(), force=True)
 
 
 def encoded(value):
@@ -68,26 +143,48 @@ def optional_hash(path):
     return file_hash(path) if os.path.lexists(path) else None
 
 
-def tree_hash(root, overrides=None):
+def directory_manifest(root, overrides=None):
     root = safe_path(root, root)
     if not root.is_dir():
         raise ValueError("Not a directory: {}".format(root))
-    hasher = hashlib.sha256()
     def fail(error):
         raise error
 
+    manifest = []
     for current, dirs, files in os.walk(root, followlinks=False, onerror=fail):
         dirs.sort()
         for name in sorted(dirs + files):
             path = safe_path(Path(current) / name, root)
             relative = path.relative_to(root).as_posix()
             if path.is_dir():
-                item = ["directory", relative]
+                manifest.append(["directory", relative])
             else:
-                item = ["file", relative, digest(overrides[relative])
-                        if overrides and relative in overrides else file_hash(path)]
-            hasher.update(encoded(item))
-    return hasher.hexdigest()
+                size = (len(overrides[relative]) if overrides and relative in overrides
+                        else path.stat().st_size)
+                manifest.append(["file", relative, size])
+    return manifest
+
+
+def directory_fingerprint(root, overrides=None):
+    """Fingerprint layout and file sizes without reading session content."""
+    return digest(encoded(directory_manifest(root, overrides)))
+
+
+def directory_fingerprint_pair(root, before_overrides=None, after_overrides=None):
+    """Compute before/after fingerprints from one directory enumeration."""
+    manifest = directory_manifest(root)
+
+    def with_overrides(overrides):
+        if not overrides:
+            return manifest
+        return [
+            ["file", item[1], len(overrides[item[1]])]
+            if item[0] == "file" and item[1] in overrides else item
+            for item in manifest
+        ]
+
+    return (digest(encoded(with_overrides(before_overrides))),
+            digest(encoded(with_overrides(after_overrides))))
 
 
 def atomic_write(path, data):
@@ -335,27 +432,33 @@ def owner(directory, records, aliases=None, documents=None):
     return wid, record["rootPath"], meta, state
 
 
-def catalog(root):
+def catalog(root, metadata_cache=None):
     result = {}
     if not root.exists():
         safe_path(root, root)
         return result
     safe_path(root, root)
-    for directory in sorted(root.iterdir()):
+    for directory in progress_items(sorted(root.iterdir()), "Read catalog {}".format(root)):
         safe_path(directory, root)
         if directory.is_dir() and (directory / "metadata.json").exists():
             if not SAFE_ID.fullmatch(directory.name):
                 raise ValueError("Unsupported session directory name: {}".format(directory))
-            metadata(directory)
-            result[directory.name] = file_hash(directory / "metadata.json")
+            path = safe_path(directory / "metadata.json", directory)
+            raw = path.read_bytes()
+            document = json.loads(raw.decode("utf-8-sig"))
+            entry = metadata(directory, document)
+            if metadata_cache is not None:
+                metadata_cache[directory] = (raw, document, entry)
+            result[directory.name] = digest(raw)
     return result
 
 
 def index_bytes(root):
     entries = []
-    files = catalog(root)
+    metadata_cache = {}
+    files = catalog(root, metadata_cache)
     for sid in files:
-        entry = metadata(root / sid).copy()
+        entry = metadata_cache[root / sid][2].copy()
         entry.pop("schema_version", None)
         hidden = entry.get("sessionKind") in ("subagent", "ephemeral_child")
         hidden |= (str(entry.get("createdBy", "")).startswith("session-")
@@ -383,8 +486,8 @@ def references(value):
     return found
 
 
-def snapshot_assets(source, target, workspace, state, snapshot_relative=None, include_revert=True):
-    """Copy shared histories and referenced snapshots; never remove shared originals."""
+def snapshot_assets(source, target, state, snapshot_relative=None, include_revert=True):
+    """Copy session histories and their explicit snapshot dependencies only."""
     source_runtime, target_runtime = source.parent.parent, target.parent.parent
     remote = state.get("repair_remote_identity")
     if remote and snapshot_relative is None:
@@ -397,7 +500,7 @@ def snapshot_assets(source, target, workspace, state, snapshot_relative=None, in
             return []
         scope = digest(json.dumps(remote, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
         relative = Path("snapshots") / "workspace-identities" / scope
-        return snapshot_assets(source, target, workspace, state, relative, True)
+        return snapshot_assets(source, target, state, relative, True)
     snapshot_root = source_runtime / (snapshot_relative or Path("snapshots"))
     assets = {}
 
@@ -428,26 +531,6 @@ def snapshot_assets(source, target, workspace, state, snapshot_relative=None, in
     revert = evidence_dir / "session-revert.json"
     if include_revert and revert.exists():
         ids.update(references(read_json(safe_path(revert, evidence_dir))))
-    baselines = safe_path(snapshot_root / "baselines", source_runtime)
-    if baselines.exists():
-        for path in sorted(baselines.iterdir()):
-            safe_path(path, baselines)
-            if path.suffix != ".json":
-                continue
-            baseline = read_json(path)
-            file = baseline.get("file_path")
-            if not isinstance(file, str) or (not file.startswith("/") if remote else not Path(file).is_absolute()):
-                raise ValueError("Unrecognized baseline file path: {}".format(path))
-            try:
-                if remote:
-                    file = remote_path(file)
-                    if posixpath.commonpath((file, remote_path(workspace))) != remote_path(workspace):
-                        continue
-                else:
-                    Path(os.path.abspath(file)).relative_to(Path(os.path.abspath(workspace)))
-            except ValueError:
-                continue
-            ids.add(path.stem)
     for sid in sorted(ids):
         category = "baselines" if sid.startswith("baseline_") else "metadata"
         data = add(snapshot_root / category / (sid + ".json"))
@@ -465,11 +548,12 @@ def snapshot_assets(source, target, workspace, state, snapshot_relative=None, in
     return sorted(assets.values(), key=lambda item: item["target"])
 
 
-def planned_updates(directory, repaired_documents):
+def planned_updates(directory, repaired_documents, originals=None):
     updates = {}
     for filename, value in repaired_documents.items():
-        before = (directory / filename).read_bytes()
-        if read_json(directory / filename) != value:
+        before, original = (originals[filename] if originals is not None else
+                            ((directory / filename).read_bytes(), read_json(directory / filename)))
+        if original != value:
             after = encoded(value)
             updates[filename] = {"before": base64.b64encode(before).decode("ascii"),
                                  "after": base64.b64encode(after).decode("ascii")}
@@ -481,7 +565,7 @@ def update_bytes(operation, side):
             for name, update in operation.get("file_updates", {}).items()}
 
 
-def identity_changes(directory, repaired_documents):
+def identity_changes(directory, repaired_documents, originals=None):
     changes = []
 
     def compare(filename, path, before, after):
@@ -492,7 +576,8 @@ def identity_changes(directory, repaired_documents):
             changes.append({"file": filename, "field": ".".join(path), "before": before, "after": after})
 
     for filename, after in repaired_documents.items():
-        compare(filename, [], read_json(directory / filename), after)
+        before = originals[filename][1] if originals is not None else read_json(directory / filename)
+        compare(filename, [], before, after)
     return changes
 
 
@@ -514,47 +599,68 @@ def sessions_roots(home):
 
 
 def make_plan(home, user_root):
+    report_progress("Plan: reading workspace registry", force=True)
     home, user_root = safe_path(home, home), safe_path(user_root, user_root)
     records, registry_sha = registry(user_root)
     aliases = assistant_aliases(home, records)
     operations, diagnostics, catalogs = [], [], {}
+    catalog_cache = {}
+    metadata_cache = {}
+
+    def cached_catalog(root):
+        key = str(root)
+        if key not in catalog_cache:
+            catalog_cache[key] = catalog(root, metadata_cache)
+        return catalog_cache[key]
+
     projects = safe_path(home / "projects", home)
     if home.exists():
-        for sessions in sessions_roots(home):
+        for sessions in progress_items(sessions_roots(home), "Plan runtime directories"):
             runtime = sessions.parent
             try:
                 safe_path(runtime, home)
                 if not sessions.is_dir():
                     continue
                 # A malformed neighbor must not disappear from a rebuilt index.
-                catalogs[str(sessions)] = catalog(sessions)
-                for source in sorted(sessions.iterdir()):
-                    if not source.is_dir():
-                        continue
+                catalogs[str(sessions)] = cached_catalog(sessions)
+                session_dirs = [path for path in sorted(sessions.iterdir()) if path.is_dir()]
+                for number, source in enumerate(progress_items(session_dirs, "Plan sessions in {}".format(sessions))):
                     try:
                         safe_path(source, sessions)
                         if not (source / "metadata.json").exists():
                             raise ValueError("Session directory has no metadata.json")
-                        wid, workspace, meta, state = owner(source, records, aliases)
-                        updates = planned_updates(source, state["repair_documents"])
+                        raw, document, _ = metadata_cache[source]
+                        originals = {"metadata.json": (raw, document)}
+                        state_path = safe_path(source / "state.json", source)
+                        if state_path.exists():
+                            raw = state_path.read_bytes()
+                            originals["state.json"] = (raw, json.loads(raw.decode("utf-8-sig")))
+                        documents = {name: item[1] for name, item in originals.items()}
+                        wid, workspace, meta, state = owner(source, records, aliases, documents)
+                        updates = planned_updates(source, state["repair_documents"], originals)
                         target = safe_path(projects / record_runtime_key(records[wid]) / "sessions" / source.name, home)
                         if target == source and not updates:
                             diagnostics.append({"source": str(source), "status": "correct"})
                             continue
                         if target != source and os.path.lexists(target):
                             raise ValueError("Destination session already exists: {}".format(target))
-                        catalogs[str(target.parent)] = catalog(target.parent)
+                        catalogs[str(target.parent)] = cached_catalog(target.parent)
+                        report_progress("Plan sessions: {} / {} completed; fingerprint and snapshot references for {}".format(
+                            number, len(session_dirs), source))
+                        before_fingerprint, repaired_fingerprint = directory_fingerprint_pair(
+                            source, None, update_bytes({"file_updates": updates}, "after"))
                         operations.append({"source": str(source), "target": str(target),
                                            "session_id": source.name, "session_name": meta["sessionName"],
                                            "workspace_id": wid, "workspace_path": workspace,
-                                           "sha256": tree_hash(source), "file_updates": updates,
-                                           "identity_changes": identity_changes(source, state["repair_documents"]),
-                                           "repaired_sha256": tree_hash(source, update_bytes({"file_updates": updates}, "after")),
-                                           "assets": snapshot_assets(source, target, workspace, state)})
+                                           "sha256": before_fingerprint, "file_updates": updates,
+                                           "identity_changes": identity_changes(source, state["repair_documents"], originals),
+                                           "repaired_sha256": repaired_fingerprint,
+                                           "assets": snapshot_assets(source, target, state)})
                     except (OSError, ValueError, TypeError, KeyError) as error:
                         diagnostics.append({"source": str(source), "status": "skipped", "reason": str(error)})
             except (OSError, ValueError, TypeError, KeyError) as error:
                 diagnostics.append({"source": str(runtime), "status": "skipped", "reason": str(error)})
+    report_progress("Plan: checking destination and snapshot conflicts", force=True)
     duplicates = {}
     asset_targets = {}
     for operation in operations:
@@ -573,14 +679,18 @@ def make_plan(home, user_root):
         else:
             accepted.append(operation)
     affected = {str(Path(o[key]).parent) for o in accepted for key in ("source", "target")}
-    return {"version": VERSION, "home": str(home), "user_root": str(user_root),
+    return {"version": VERSION, "fingerprint_kind": FINGERPRINT_KIND,
+            "home": str(home), "user_root": str(user_root),
             "registry_sha256": registry_sha, "operations": accepted, "diagnostics": diagnostics,
             "catalogs": {key: catalogs[key] for key in sorted(affected)}}
 
 
 def validate_plan(plan):
+    report_progress("Validate: reading plan and workspace registry", force=True)
     if plan.get("version") != VERSION:
         raise ValueError("Unsupported repair plan version; generate a new plan with this script")
+    if plan.get("fingerprint_kind") != FINGERPRINT_KIND:
+        raise ValueError("This plan uses legacy full-content fingerprints; generate a new plan")
     home, user_root = Path(plan["home"]), Path(plan["user_root"])
     if not home.is_absolute() or not user_root.is_absolute():
         raise ValueError("Plan roots must be absolute")
@@ -590,7 +700,7 @@ def validate_plan(plan):
     if sha != plan["registry_sha256"]:
         raise ValueError("Workspace registry changed; generate a new plan")
     targets, sources, affected = set(), set(), set()
-    for operation in plan["operations"]:
+    for operation in progress_items(plan["operations"], "Validate sessions and snapshot dependencies"):
         source, target = Path(operation["source"]), Path(operation["target"])
         safe_path(source, home)
         safe_path(target, home / "projects")
@@ -619,6 +729,7 @@ def validate_plan(plan):
         wid, root, _, state = owner(evidence_dir, records, aliases, documents)
         if wid != operation["workspace_id"] or root != operation["workspace_path"]:
             raise ValueError("Plan disagrees with session identity")
+        before = update_bytes(operation, "before")
         after = update_bytes(operation, "after")
         for name, document in documents.items():
             repaired = state["repair_documents"][name]
@@ -629,11 +740,13 @@ def validate_plan(plan):
                 raise ValueError("Missing assistant identity rewrite")
         if source == target and not after:
             raise ValueError("Plan has no repair action")
-        if tree_hash(evidence_dir, update_bytes(operation, "before")) != operation["sha256"]:
+        before_fingerprint, repaired_fingerprint = directory_fingerprint_pair(
+            evidence_dir, before, after)
+        if before_fingerprint != operation["sha256"]:
             raise ValueError("Session changed since planning")
-        if tree_hash(evidence_dir, after) != operation["repaired_sha256"]:
+        if repaired_fingerprint != operation["repaired_sha256"]:
             raise ValueError("Invalid repaired session fingerprint")
-        actual_assets = snapshot_assets(source, target, root, state)
+        actual_assets = snapshot_assets(source, target, state)
         # Existing identical copies are expected during resume.
         comparable = lambda items: [{k: v for k, v in a.items() if k != "existed"} for a in items]
         if comparable(actual_assets) != comparable(operation["assets"]):
@@ -669,7 +782,7 @@ def mutation_directories(plan):
 
 def check_sessions(plan, resume=False):
     expected = {key: dict(value) for key, value in plan["catalogs"].items()}
-    for operation in plan["operations"]:
+    for operation in progress_items(plan["operations"], "Check session locations and identities"):
         source, target = Path(operation["source"]), Path(operation["target"])
         if source == target and source.exists():
             location = source
@@ -686,7 +799,7 @@ def check_sessions(plan, resume=False):
             raw = (location / name).read_bytes()
             if raw != before[name] and (not resume or raw != after[name]):
                 raise ValueError("Session identity file changed: {}".format(location / name))
-        if tree_hash(location, before) != operation["sha256"]:
+        if directory_fingerprint(location, before) != operation["sha256"]:
             raise ValueError("Session changed since planning: {}".format(location))
         if "metadata.json" in before:
             expected[str(location.parent)][location.name] = file_hash(location / "metadata.json")
@@ -736,14 +849,14 @@ def prepare_backup(plan, backup):
     backup.mkdir(parents=True, exist_ok=False)
     atomic_write(backup / "plan.json", encoded(plan))
     # A prepared journal only appears after every full-session backup is verified.
-    for index, operation in enumerate(plan["operations"]):
+    for index, operation in enumerate(progress_items(plan["operations"], "Back up sessions")):
         destination = backup / "sessions" / str(index)
         destination.parent.mkdir(exist_ok=True)
         shutil.copytree(operation["source"], destination)
-        if tree_hash(destination) != operation["sha256"]:
+        if directory_fingerprint(destination) != operation["sha256"]:
             raise ValueError("Backup verification failed")
     controls = []
-    for root in plan["catalogs"]:
+    for root in progress_items(plan["catalogs"], "Back up indexes and search caches"):
         for name in ("index.json",) + CACHE_NAMES:
             path = safe_path(Path(root) / name, Path(plan["home"]))
             old = optional_hash(path)
@@ -763,6 +876,7 @@ def prepare_backup(plan, backup):
 
 
 def load_backup(backup, plan):
+    report_progress("Resume: reading backup journal", force=True)
     journal = read_json(safe_path(backup / "journal.json", backup))
     if journal.get("version") != VERSION or journal["plan_sha256"] != digest(encoded(plan)):
         raise ValueError("Backup belongs to another plan")
@@ -770,8 +884,8 @@ def load_backup(backup, plan):
         raise ValueError("Unsupported backup journal phase")
     if not set(journal["created_directories"]) <= mutation_directories(plan):
         raise ValueError("Invalid created-directory journal")
-    for index, operation in enumerate(plan["operations"]):
-        if tree_hash(safe_path(backup / "sessions" / str(index), backup)) != operation["sha256"]:
+    for index, operation in enumerate(progress_items(plan["operations"], "Verify session backups")):
+        if directory_fingerprint(safe_path(backup / "sessions" / str(index), backup)) != operation["sha256"]:
             raise ValueError("Session backup changed or is incomplete")
     expected_paths = {str(Path(root) / name) for root in plan["catalogs"]
                       for name in ("index.json",) + CACHE_NAMES}
@@ -816,9 +930,10 @@ def apply_plan(plan, backup):
             journal = prepare_backup(plan, backup)
         check_controls(journal, home)
         if journal["phase"] == "completed":
+            report_progress("Repair: verifying previously completed repair", force=True)
             if any(not Path(o["target"]).exists() for o in plan["operations"]):
                 raise ValueError("Completed repair session locations changed")
-            if any(tree_hash(Path(o["target"])) != o["repaired_sha256"] for o in plan["operations"]):
+            if any(directory_fingerprint(Path(o["target"])) != o["repaired_sha256"] for o in plan["operations"]):
                 raise ValueError("Completed session identity changed")
             for entry in journal["controls"]:
                 if optional_hash(entry["path"]) != entry["new"]:
@@ -828,7 +943,7 @@ def apply_plan(plan, backup):
                 if optional_hash(target) != assets[0]["sha256"]:
                     raise ValueError("Completed repair snapshot copies changed")
             return
-        for operation in plan["operations"]:
+        for operation in progress_items(plan["operations"], "Repair sessions and copy referenced snapshots"):
             for asset in operation["assets"]:
                 path = safe_path(asset["target"], home)
                 old = optional_hash(path)
@@ -854,7 +969,7 @@ def apply_plan(plan, backup):
                 if (target / name).read_bytes() != data:
                     atomic_write(target / name, data)
         if journal["phase"] == "prepared":
-            for number, entry in enumerate(journal["controls"]):
+            for number, entry in enumerate(progress_items(journal["controls"], "Prepare repaired indexes")):
                 if Path(entry["path"]).name == "index.json":
                     data = index_bytes(Path(entry["path"]).parent)
                     entry["pending"] = "pending/{}.json".format(number)
@@ -864,12 +979,13 @@ def apply_plan(plan, backup):
                     entry["new"] = None
             journal["phase"] = "indexing"
             save_journal(backup, journal)
-        for entry in journal["controls"]:
+        for entry in progress_items(journal["controls"], "Write indexes and clear search caches"):
             path = safe_path(entry["path"], home)
             if entry["pending"]:
                 atomic_write(path, (backup / entry["pending"]).read_bytes())
             elif path.exists():
                 path.unlink()
+        report_progress("Repair: verifying repaired catalogs", force=True)
         if any(catalog(Path(root)) != value for root, value in expected_catalogs(plan).items()):
             raise ValueError("Session catalog changed during repair")
         check_sessions(plan, True)
@@ -878,6 +994,7 @@ def apply_plan(plan, backup):
 
 
 def rollback(backup):
+    report_progress("Rollback: reading backup plan", force=True)
     backup = safe_path(backup, backup)
     plan = read_json(backup / "plan.json")
     home = validate_plan(plan)
@@ -893,7 +1010,8 @@ def rollback(backup):
                 raise ValueError("Copied snapshot changed; rollback refused: {}".format(target))
         journal["phase"] = "rolling_back"
         save_journal(backup, journal)
-        for operation in reversed(plan["operations"]):
+        for operation in progress_items(reversed(plan["operations"]), "Restore sessions",
+                                        total=len(plan["operations"])):
             source, target = Path(operation["source"]), Path(operation["target"])
             location = target if target.exists() else source
             for name, data in update_bytes(operation, "before").items():
@@ -902,13 +1020,13 @@ def rollback(backup):
             if source != target and target.exists():
                 source.parent.mkdir(parents=True, exist_ok=True)
                 target.rename(source)
-        for entry in journal["controls"]:
+        for entry in progress_items(journal["controls"], "Restore indexes and search caches"):
             path = safe_path(entry["path"], home)
             if entry["old"] is not None:
                 atomic_write(path, (backup / entry["backup"]).read_bytes())
             elif path.exists():
                 path.unlink()
-        for target in journal["asset_writes"]:
+        for target in progress_items(journal["asset_writes"], "Remove snapshot copies created by repair"):
             path = safe_path(target, home)
             if path.exists():
                 path.unlink()
@@ -934,6 +1052,7 @@ def default_user_root():
 
 
 def main():
+    global PROGRESS
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="backslashreplace")
@@ -947,14 +1066,18 @@ def main():
     parser.add_argument("--backup-dir", type=Path, help="New backup directory; same directory to resume")
     parser.add_argument("--confirm-closed", action="store_true", help="Confirm all data-owning hosts are stopped")
     args = parser.parse_args()
+    PROGRESS = ProgressReporter()
+    PROGRESS.start()
     try:
         if args.rollback:
+            report_progress("Rollback: checking that OpenBitFun hosts are stopped", force=True)
             check_closed(args.confirm_closed)
             rollback(args.rollback.absolute())
             print("Rollback completed; backup retained.")
         elif args.apply:
             if not args.plan or not args.backup_dir:
                 parser.error("--apply requires --plan and --backup-dir")
+            report_progress("Repair: checking that OpenBitFun hosts are stopped", force=True)
             check_closed(args.confirm_closed)
             plan = read_json(args.plan)
             apply_plan(plan, args.backup_dir.absolute())
@@ -968,6 +1091,7 @@ def main():
             output = outside_data(args.plan.absolute(), plan)
             if output.exists():
                 raise ValueError("Plan output already exists; choose a new filename")
+            report_progress("Plan: writing {}".format(output), force=True)
             atomic_write(output, encoded(plan))
             print("Read-only plan: {} repairs, {} skipped, {} already correct.".format(
                 len(plan["operations"]), sum(d["status"] == "skipped" for d in plan["diagnostics"]),
@@ -983,6 +1107,9 @@ def main():
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as error:
         print("ERROR: {}".format(error), file=sys.stderr)
         return 1
+    finally:
+        PROGRESS.stop()
+        PROGRESS = None
 
 
 if __name__ == "__main__":

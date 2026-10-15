@@ -140,6 +140,7 @@ pub(super) fn owner(
     mut documents: BTreeMap<String, Value>,
     records: &Records,
     aliases: &Aliases,
+    cached_metadata: Option<&super::CatalogEntry>,
 ) -> Result<Owner> {
     ensure!(
         documents["metadata.json"].is_object(),
@@ -201,7 +202,10 @@ pub(super) fn owner(
             }
         }
     }
-    let metadata = metadata(directory, documents["metadata.json"].clone())?;
+    let metadata = match cached_metadata.filter(|entry| entry.value == documents["metadata.json"]) {
+        Some(entry) => entry.metadata.clone(),
+        None => metadata(directory, documents["metadata.json"].clone())?,
+    };
     let meta = serde_json::to_value(&metadata)?;
     let state = documents.get("state.json").cloned().unwrap_or(Value::Null);
     let config = &state["config"];
@@ -482,33 +486,6 @@ pub(super) fn snapshot_assets(source: &Path, target: &Path, owner: &Owner) -> Re
                 "Snapshot history session ID mismatch"
             );
             references(&raw, &mut ids)?;
-        }
-    }
-    for baseline in children(&snapshots.join("baselines"))? {
-        if baseline.extension().is_none_or(|s| s != "json") {
-            continue;
-        }
-        let value = json(&baseline)?;
-        let file = string(&value, "file_path").context("Unrecognized baseline file path")?;
-        let in_workspace = if owner.remote.is_some() {
-            let file = remote_path(file)?;
-            let root = remote_path(&owner.root)?;
-            root == "/" || file == root || file.starts_with(&format!("{root}/"))
-        } else {
-            ensure!(
-                Path::new(file).is_absolute(),
-                "Unrecognized baseline file path"
-            );
-            Path::new(file).starts_with(&owner.root)
-        };
-        if in_workspace {
-            ids.insert(
-                baseline
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .context("Invalid baseline ID")?
-                    .into(),
-            );
         }
     }
     for sid in ids {

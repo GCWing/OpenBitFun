@@ -3,12 +3,14 @@
 import copy
 import hashlib
 import importlib.util
+import io
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -89,9 +91,41 @@ class RepairTests(unittest.TestCase):
         if not inline:
             repair.atomic_write(runtime / "snapshots" / "by_hash" / (md5 + ".snap"), content)
 
+    def test_plan_and_index_reuse_metadata_reads(self):
+        session, _, _ = self.assistant_fixture(move=True, old_paths=True)
+        read_bytes = Path.read_bytes
+        reads = []
+
+        def tracked_read(path):
+            reads.append(path)
+            return read_bytes(path)
+
+        with patch.object(Path, "read_bytes", tracked_read):
+            plan = self.plan()
+        self.assertEqual(len(plan["operations"]), 1, plan["diagnostics"])
+        self.assertEqual(reads.count(session / "metadata.json"), 1)
+        self.assertEqual(reads.count(session / "state.json"), 1)
+        self.assertEqual(set(plan["operations"][0]["file_updates"]),
+                         {"metadata.json", "state.json"})
+        reads.clear()
+        with patch.object(Path, "read_bytes", tracked_read):
+            repair.index_bytes(session.parent)
+        self.assertEqual(reads.count(session / "metadata.json"), 1)
+
+    def test_before_after_fingerprints_share_directory_enumeration(self):
+        session, _, _ = self.assistant_fixture(move=True, old_paths=True)
+        with patch.object(repair, "directory_manifest", wraps=repair.directory_manifest) as scan:
+            plan = self.plan()
+        self.assertEqual(len(plan["operations"]), 1, plan["diagnostics"])
+        self.assertEqual(scan.call_count, 1)
+        self.assertEqual(scan.call_args.args[0], session)
+        with patch.object(repair, "directory_manifest", wraps=repair.directory_manifest) as scan:
+            repair.validate_plan(plan)
+        self.assertEqual(scan.call_count, 1)
+
     def test_collision_apply_indexes_preservation_backup_resume_and_rollback(self):
         sessions = [self.session("session-" + str(i), name) for i, name in enumerate(self.workspaces)]
-        before = {s.name: repair.tree_hash(s) for s in sessions}
+        before = {s.name: repair.directory_fingerprint(s) for s in sessions}
         self.write(self.source_root / "index.json", {"old": "raw legacy index"})
         repair.atomic_write(self.source_root / repair.CACHE_NAMES[0], b"old sqlite bytes")
         hidden = self.session("hidden", root=self.target_root(), kind="subagent")
@@ -100,16 +134,16 @@ class RepairTests(unittest.TestCase):
         meta.update({"createdBy": "session-parent", "sessionName": "Subagent: Review"})
         self.write(legacy_hidden / "metadata.json", meta)
         original_index = (self.source_root / "index.json").read_bytes()
-        original_home = repair.tree_hash(self.home)
+        original_home = repair.directory_fingerprint(self.home)
         plan = self.plan()
         self.assertEqual(len(plan["operations"]), 3)
-        self.assertEqual(repair.tree_hash(self.home), original_home, "planning must be read-only")
+        self.assertEqual(repair.directory_fingerprint(self.home), original_home, "planning must be read-only")
         repair.apply_plan(plan, self.backup)
         for number, operation in enumerate(plan["operations"]):
             target = Path(operation["target"])
             self.assertFalse(Path(operation["source"]).exists())
-            self.assertEqual(repair.tree_hash(target), before[target.name])
-            self.assertEqual(repair.tree_hash(self.backup / "sessions" / str(number)), before[target.name])
+            self.assertEqual(repair.directory_fingerprint(target), before[target.name])
+            self.assertEqual(repair.directory_fingerprint(self.backup / "sessions" / str(number)), before[target.name])
         index = repair.read_json(self.target_root() / "index.json")
         self.assertEqual(index["metadata_file_count"], 3)
         self.assertEqual(len(index["sessions"]), 1)
@@ -117,16 +151,16 @@ class RepairTests(unittest.TestCase):
         self.assertNotIn("schema_version", index["sessions"][0])
         self.assertEqual(repair.read_json(self.source_root / "index.json")["sessions"], [])
         self.assertFalse((self.source_root / repair.CACHE_NAMES[0]).exists())
-        repaired_home = repair.tree_hash(self.home)
+        repaired_home = repair.directory_fingerprint(self.home)
         repair.apply_plan(plan, self.backup)
-        self.assertEqual(repair.tree_hash(self.home), repaired_home, "completed rerun must be a no-op")
+        self.assertEqual(repair.directory_fingerprint(self.home), repaired_home, "completed rerun must be a no-op")
         repair.rollback(self.backup)
         self.assertEqual((self.source_root / "index.json").read_bytes(), original_index)
         self.assertEqual((self.source_root / repair.CACHE_NAMES[0]).read_bytes(), b"old sqlite bytes")
         for session in sessions:
-            self.assertEqual(repair.tree_hash(session), before[session.name])
+            self.assertEqual(repair.directory_fingerprint(session), before[session.name])
         self.assertTrue(hidden.exists())
-        self.assertEqual(repair.tree_hash(self.home), original_home)
+        self.assertEqual(repair.directory_fingerprint(self.home), original_home)
         repair.rollback(self.backup)
         self.assertEqual(repair.read_json(self.backup / "journal.json")["phase"], "rolled_back")
 
@@ -239,22 +273,28 @@ class RepairTests(unittest.TestCase):
         self.snapshot("before-one", workspace / "one.txt")
         self.snapshot("after-one", workspace / "one.txt", inline=True)
         self.snapshot("baseline_one", workspace / "one.txt")
+        self.snapshot("baseline_revert", workspace / "one.txt", inline=True)
+        self.snapshot("baseline_unreferenced", workspace / "one.txt")
         self.snapshot("baseline_other", self.workspaces["武林手游"][1] / "two.txt")
         self.snapshot("revert-one", workspace / "one.txt", inline=True)
         runtime = self.source_root.parent
         history = runtime / "snapshots" / "operations" / "shared-history.json"
         self.write(history, {"session_id": "shared-history", "turns": {"0": {"operations": [
-            {"before_snapshot_id": "before-one", "after_snapshot_id": "after-one"}]}}})
+            {"before_snapshot_id": "before-one", "after_snapshot_id": "after-one"},
+            {"before_snapshot_id": "baseline_one", "after_snapshot_id": "after-one"}]}}})
         state = repair.read_json(session / "state.json")
         state["snapshot_session_id"] = "shared-history"
         self.write(session / "state.json", state)
         self.write(session / "session-revert.json", {"schemaVersion": 1, "boundaryTurn": 2,
                                                    "workspaceCheckpoint": [{"path": str(workspace / "one.txt"),
-                                                                            "snapshotId": "revert-one"}]})
+                                                                            "snapshotId": "revert-one"},
+                                                                           {"snapshotId": "baseline_revert"}]})
         plan = self.plan()
         self.assertEqual(len(plan["operations"]), 1)
         assets = plan["operations"][0]["assets"]
         self.assertTrue(any("baseline_one" in a["source"] for a in assets))
+        self.assertTrue(any("baseline_revert" in a["source"] for a in assets))
+        self.assertFalse(any("baseline_unreferenced" in a["source"] for a in assets))
         self.assertFalse(any("baseline_other" in a["source"] for a in assets))
         repair.apply_plan(plan, self.backup)
         repair.apply_plan(plan, self.backup)
@@ -264,6 +304,44 @@ class RepairTests(unittest.TestCase):
         for asset in assets:
             self.assertTrue(Path(asset["source"]).exists())
             self.assertFalse(Path(asset["target"]).exists())
+
+    def test_unreferenced_baselines_are_never_scanned_or_read(self):
+        self.session()
+        baselines = self.source_root.parent / "snapshots" / "baselines"
+        unrelated = baselines / "baseline_unreferenced.json"
+        repair.atomic_write(unrelated, b"invalid unrelated baseline JSON")
+        iterdir, read_bytes = Path.iterdir, Path.read_bytes
+
+        def guarded_iterdir(path):
+            if path == baselines:
+                self.fail("Workspace baselines must not be enumerated")
+            return iterdir(path)
+
+        def guarded_read(path):
+            if path == unrelated:
+                self.fail("Unreferenced baseline must not be read")
+            return read_bytes(path)
+
+        with patch.object(Path, "iterdir", guarded_iterdir), patch.object(Path, "read_bytes", guarded_read):
+            plan = self.plan()
+            self.assertEqual(len(plan["operations"]), 1, plan["diagnostics"])
+            self.assertEqual(plan["operations"][0]["assets"], [])
+            repair.apply_plan(plan, self.backup)
+            repair.apply_plan(plan, self.backup)
+            repair.rollback(self.backup)
+        self.assertEqual(unrelated.read_bytes(), b"invalid unrelated baseline JSON")
+
+    def test_missing_explicit_baseline_reference_blocks_repair(self):
+        session = self.session()
+        self.snapshot("baseline_one", self.workspaces["GameOps"][1] / "one.txt")
+        self.write(session / "session-revert.json", {"snapshotId": "baseline_one"})
+        plan = self.plan()
+        self.assertEqual(len(plan["operations"]), 1, plan["diagnostics"])
+        (self.source_root.parent / "snapshots/baselines/baseline_one.json").unlink()
+        with self.assertRaisesRegex(ValueError, "Missing snapshot dependency"):
+            repair.apply_plan(plan, self.backup)
+        self.assertEqual(self.plan()["operations"], [])
+        self.assertTrue(session.exists())
 
     def test_snapshot_conflict_and_missing_blob_skip(self):
         session = self.session()
@@ -381,7 +459,7 @@ class RepairTests(unittest.TestCase):
                         if os.path.lexists(session / "linked") else None)
         self.assertEqual(self.plan()["operations"], [])
         with self.assertRaises(ValueError):
-            repair.tree_hash(session)
+            repair.directory_fingerprint(session)
         if os.name == "nt":
             os.rmdir(session / "linked")
         else:
@@ -392,14 +470,20 @@ class RepairTests(unittest.TestCase):
 
     def test_cli_read_only_and_closed_confirmation(self):
         self.session()
-        before = repair.tree_hash(self.home)
+        self.write(self.source_root / "index.json", {"sessions": []})
+        before = repair.directory_fingerprint(self.home)
         output = self.base / "plan.json"
         result = subprocess.run([sys.executable, str(SCRIPT), "--home", str(self.home),
                                  "--user-root", str(self.user), "--plan", str(output)],
                                 capture_output=True, **({"creationflags": subprocess.CREATE_NO_WINDOW}
                                                         if os.name == "nt" else {}))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(repair.tree_hash(self.home), before)
+        progress = result.stderr.decode(errors="replace")
+        self.assertIn("[Progress", progress)
+        self.assertIn("Plan sessions in", progress)
+        self.assertIn("1 / 1 completed", progress)
+        self.assertNotIn(b"[Progress", result.stdout)
+        self.assertEqual(repair.directory_fingerprint(self.home), before)
         self.assertEqual(len(repair.read_json(output)["operations"]), 1)
         with self.assertRaises(ValueError):
             repair.check_closed(False)
@@ -408,6 +492,40 @@ class RepairTests(unittest.TestCase):
                     [], 0, b'"openbitfun-cli.exe","1234"\n')):
                 with self.assertRaises(ValueError):
                     repair.check_closed(True)
+
+    def test_progress_refreshes_during_blocking_work_and_stops(self):
+        refreshed = threading.Event()
+
+        class RecordingStream(io.StringIO):
+            def flush(stream):
+                if stream.getvalue().count("[Progress") >= 2:
+                    refreshed.set()
+
+        output = RecordingStream()
+        reporter = repair.ProgressReporter(output, interval=0.01)
+        reporter.message = "Back up sessions: 0 / 1 completed; large-session"
+        reporter.start()
+        try:
+            self.assertTrue(refreshed.wait(2), "Blocked work should still report progress")
+        finally:
+            reporter.stop()
+        self.assertFalse(reporter.thread.is_alive())
+        self.assertIn("large-session", output.getvalue())
+        self.assertNotIn("1 / 1 completed", output.getvalue())
+
+    def test_apply_and_rollback_progress_counts(self):
+        self.session()
+        plan = self.plan()
+        output = io.StringIO()
+        reporter = repair.ProgressReporter(output, interval=0)
+        with patch.object(repair, "PROGRESS", reporter):
+            repair.apply_plan(plan, self.backup)
+            repair.rollback(self.backup)
+        messages = output.getvalue()
+        for stage in ("Validate sessions and snapshot dependencies", "Back up sessions",
+                      "Repair sessions and copy referenced snapshots", "Restore sessions"):
+            self.assertIn(stage + ": 0 / 1 completed", messages)
+            self.assertIn(stage + ": 1 / 1 completed", messages)
 
     def test_snapshot_copy_interruption_and_unjournaled_destinations(self):
         session = self.session()
@@ -486,7 +604,7 @@ class RepairTests(unittest.TestCase):
         state = repair.read_json(session / "state.json")
         state["config"]["unknownFutureField"] = {"keep": True}
         self.write(session / "state.json", state)
-        original = repair.tree_hash(self.home)
+        original = repair.directory_fingerprint(self.home)
         original_state = (session / "state.json").read_bytes()
         plan = self.plan()
         op = plan["operations"][0]
@@ -501,13 +619,13 @@ class RepairTests(unittest.TestCase):
         repair.apply_plan(plan, self.backup)
         repair.rollback(self.backup)
         repair.rollback(self.backup)
-        self.assertEqual(repair.tree_hash(self.home), original)
+        self.assertEqual(repair.directory_fingerprint(self.home), original)
         self.assertEqual((session / "state.json").read_bytes(), original_state)
         self.assertEqual(repair.read_json(session / "state.json")["config"]["workspace_id"], alias)
 
     def test_assistant_move_and_path_identity_updates_resume_partial_write(self):
         session, wid, _ = self.assistant_fixture(move=True, old_paths=True)
-        original = repair.tree_hash(self.home)
+        original = repair.directory_fingerprint(self.home)
         plan = self.plan()
         target = Path(plan["operations"][0]["target"])
         atomic = repair.atomic_write
@@ -525,11 +643,11 @@ class RepairTests(unittest.TestCase):
         repair.apply_plan(plan, self.backup)
         self.assertEqual(repair.read_json(target / "state.json")["config"]["workspace_id"], wid)
         repair.rollback(self.backup)
-        self.assertEqual(repair.tree_hash(self.home), original)
+        self.assertEqual(repair.directory_fingerprint(self.home), original)
 
     def test_assistant_partial_write_can_rollback_directly(self):
         session, _, _ = self.assistant_fixture()
-        before = repair.tree_hash(self.home)
+        before = repair.directory_fingerprint(self.home)
         plan = self.plan()
         atomic = repair.atomic_write
 
@@ -542,7 +660,7 @@ class RepairTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 repair.apply_plan(plan, self.backup)
         repair.rollback(self.backup)
-        self.assertEqual(repair.tree_hash(self.home), before)
+        self.assertEqual(repair.directory_fingerprint(self.home), before)
 
     def test_assistant_state_only_and_crafted_rewrite_refused(self):
         session, wid, _ = self.assistant_fixture()
@@ -567,7 +685,7 @@ class RepairTests(unittest.TestCase):
 
     def test_identity_rollback_interruption_between_json_restores(self):
         session, _, _ = self.assistant_fixture()
-        before = repair.tree_hash(self.home)
+        before = repair.directory_fingerprint(self.home)
         plan = self.plan()
         repair.apply_plan(plan, self.backup)
         atomic = repair.atomic_write
@@ -581,7 +699,7 @@ class RepairTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 repair.rollback(self.backup)
         repair.rollback(self.backup)
-        self.assertEqual(repair.tree_hash(self.home), before)
+        self.assertEqual(repair.directory_fingerprint(self.home), before)
 
     def test_assistant_arbitrary_id_and_different_path_not_guessed(self):
         session, _, alias = self.assistant_fixture()
@@ -627,7 +745,7 @@ class RepairTests(unittest.TestCase):
         for legacy in (False, True):
             with self.subTest(legacy=legacy):
                 session, wid, workspace = self.remote_fixture(legacy)
-                before = repair.tree_hash(self.home)
+                before = repair.directory_fingerprint(self.home)
                 plan = self.plan()
                 self.assertEqual(len(plan["operations"]), 1, plan["diagnostics"])
                 op = plan["operations"][0]
@@ -636,10 +754,10 @@ class RepairTests(unittest.TestCase):
                 self.assertEqual(op["file_updates"], {})
                 with patch.object(repair, "runtime_key", side_effect=AssertionError("No local fallback")):
                     repair.apply_plan(plan, self.backup)
-                self.assertEqual(repair.tree_hash(Path(op["target"])), op["sha256"])
+                self.assertEqual(repair.directory_fingerprint(Path(op["target"])), op["sha256"])
                 self.assertEqual(self.plan()["operations"], [])
                 repair.rollback(self.backup)
-                self.assertEqual(repair.tree_hash(self.home), before)
+                self.assertEqual(repair.directory_fingerprint(self.home), before)
                 shutil.rmtree(self.backup)
                 shutil.rmtree(session)
 
@@ -649,28 +767,33 @@ class RepairTests(unittest.TestCase):
         scope = repair.digest(repair.json.dumps(identity, ensure_ascii=False, separators=(",", ":")).encode())
         snapshots = session.parent.parent / "snapshots/workspace-identities" / scope
         self.write(snapshots / "operations/remote-session.json", {
-            "session_id": session.name, "turns": {"0": {"operations": [{"before_snapshot_id": "snap-remote"}]}}})
+            "session_id": session.name, "turns": {"0": {"operations": [
+                {"before_snapshot_id": "baseline_remote", "after_snapshot_id": "snap-remote"}]}}})
         self.write(snapshots / "metadata/snap-remote.json", {
             "snapshot_id": "snap-remote", "file_path": workspace + "/file.txt",
             "compressed_content": [1], "content_hash": "a" * 32})
         self.write(snapshots / "baselines/baseline_remote.json", {
             "snapshot_id": "baseline_remote", "file_path": workspace + "/file.txt",
             "compressed_content": [1], "content_hash": "b" * 32})
+        self.write(snapshots / "baselines/baseline_unreferenced.json", {
+            "snapshot_id": "baseline_unreferenced", "file_path": workspace + "/file.txt",
+            "compressed_content": [1], "content_hash": "c" * 32})
         self.write(session / "session-revert.json", {"workspaceCheckpoint": [{"snapshotId": "snap-remote"}]})
         other = session.parent.parent / "snapshots/workspace-identities/unrelated-profile"
         self.write(other / "metadata/private.json", {"keep": True})
-        before = repair.tree_hash(self.home)
+        before = repair.directory_fingerprint(self.home)
         plan = self.plan()
         self.assertEqual(len(plan["operations"]), 1, plan["diagnostics"])
         assets = plan["operations"][0]["assets"]
         self.assertEqual(len(assets), 3)
+        self.assertFalse(any("baseline_unreferenced" in a["source"] for a in assets))
         self.assertTrue(all(scope in a["target"] for a in assets))
         repair.apply_plan(plan, self.backup)
         for a in assets:
             self.assertEqual(Path(a["source"]).read_bytes(), Path(a["target"]).read_bytes())
         self.assertTrue((other / "metadata/private.json").exists())
         repair.rollback(self.backup)
-        self.assertEqual(repair.tree_hash(self.home), before)
+        self.assertEqual(repair.directory_fingerprint(self.home), before)
 
     def test_remote_same_path_other_host_case_and_connection_conflicts(self):
         session, wid, _ = self.remote_fixture()
