@@ -18,6 +18,27 @@ if [[ "${#apps[@]}" -eq 0 || "${#dmgs[@]}" -eq 0 ]]; then
   exit 1
 fi
 
+# CloudKit can drop a connection even after notarization was accepted. Retry
+# only that transport failure; an invalid/missing ticket must still fail.
+stapler_with_network_retry() {
+  local attempt output exit_code
+  for attempt in 1 2 3; do
+    if output="$(xcrun stapler "$@" 2>&1)"; then
+      printf '%s\n' "${output}"
+      return 0
+    else
+      exit_code=$?
+    fi
+    printf '%s\n' "${output}" >&2
+    if [[ "${exit_code}" -ne 68 || "${attempt}" -eq 3 ]] || \
+       ! grep -Fq 'Error Domain=NSURLErrorDomain Code=-1005' <<<"${output}"; then
+      return "${exit_code}"
+    fi
+    echo "Apple ticket service connection was lost; retrying stapler ${1} (${attempt}/3)." >&2
+    sleep "$((attempt * 10))"
+  done
+}
+
 for app in "${apps[@]}"; do
   codesign --verify --deep --strict --verbose=2 "${app}"
   bash "$(dirname "$0")/verify-macos-microphone.sh" "${app}"
@@ -30,7 +51,7 @@ for app in "${apps[@]}"; do
     grep -Eq 'flags=.*\(runtime\)' <<<"${signature_details}"
     grep -Fq 'Timestamp=' <<<"${signature_details}"
   done < <(find "${app}" -type f -print0)
-  xcrun stapler validate "${app}"
+  stapler_with_network_retry validate "${app}"
   spctl --assess --type execute --verbose=4 "${app}"
 done
 
@@ -40,8 +61,8 @@ for dmg in "${dmgs[@]}"; do
     --key-id "${APPLE_API_KEY}" \
     --key "${APPLE_API_KEY_PATH}" \
     --wait
-  xcrun stapler staple "${dmg}"
-  xcrun stapler validate "${dmg}"
+  stapler_with_network_retry staple "${dmg}"
+  stapler_with_network_retry validate "${dmg}"
   spctl --assess --type open --context context:primary-signature --verbose=4 "${dmg}"
 done
 

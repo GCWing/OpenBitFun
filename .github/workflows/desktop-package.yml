@@ -407,7 +407,17 @@ jobs:
       - name: Verify Apple signature and notarization
         if: runner.os == 'macOS'
         shell: bash
-        run: bash scripts/ci/verify-macos-signing.sh "${{ matrix.platform.target }}"
+        run: |
+          set -euo pipefail
+          # Verification policy follows this workflow revision, including
+          # rebuilds of immutable tags predating a verification fix.
+          verification_dir="$(mktemp -d)"
+          trap 'rm -rf "$verification_dir"' EXIT
+          git fetch --no-tags --depth=1 origin "${{ github.workflow_sha }}"
+          git archive "${{ github.workflow_sha }}" \
+            scripts/ci/verify-macos-signing.sh scripts/ci/verify-macos-microphone.sh \
+            | tar -x -C "$verification_dir"
+          bash "$verification_dir/scripts/ci/verify-macos-signing.sh" "${{ matrix.platform.target }}"
 
       - name: Verify AppImage fcitx5 GTK module
         if: runner.os == 'Linux'

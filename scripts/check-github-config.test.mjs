@@ -1622,3 +1622,124 @@ test('release publication omits target overrides and uploads before publishing',
   const prepare = workflow.jobs.prepare.steps.find((entry) => entry.id === 'meta').run;
   assert.match(prepare, /UPLOAD.*true.*-z.*TAG_SHA/);
 });
+
+test('macOS release verification uses the pinned workflow revision without changing old-tag artifacts', (t) => {
+  const workflow = yaml.parse(readFileSync(path.join(repoRoot, '.github/workflows/desktop-package.yml'), 'utf8'));
+  const step = workflow.jobs.package.steps.find(entry => entry.name === 'Verify Apple signature and notarization');
+  const root = mkdtempSync(path.join(tmpdir(), 'openbitfun-apple-policy-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const source = path.join(root, 'source');
+  const checkout = path.join(root, 'checkout');
+  mkdirSync(path.join(source, 'scripts/ci'), { recursive: true });
+  const git = (cwd, ...args) => {
+    const result = spawnSync('git', args, { cwd, encoding: 'utf8', windowsHide: true });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  const commit = () => git(source, '-c', 'user.name=Release Fixture', '-c', 'user.email=release@example.invalid',
+    '-c', 'commit.gpgsign=false', 'commit', '-qm', 'Fixture');
+  const verifier = path.join(source, 'scripts/ci/verify-macos-signing.sh');
+  const microphone = path.join(source, 'scripts/ci/verify-macos-microphone.sh');
+  git(source, 'init', '-q');
+  git(source, 'config', 'core.autocrlf', 'false');
+  writeFileSync(verifier, 'exit 99\n');
+  writeFileSync(microphone, 'exit 99\n');
+  git(source, 'add', '.');
+  commit();
+  const oldSha = git(source, 'rev-parse', 'HEAD');
+  git(source, 'tag', 'fixture-old');
+  writeFileSync(verifier, 'printf "workflow-revision:%s\\n" "$1" > policy-result\nbash "$(dirname "$0")/verify-macos-microphone.sh"\n');
+  writeFileSync(microphone, 'printf "workflow-helper\\n" > helper-result\n');
+  git(source, 'add', '.');
+  commit();
+  const workflowSha = git(source, 'rev-parse', 'HEAD');
+  writeFileSync(verifier, 'exit 98\n');
+  git(source, 'add', '.');
+  commit();
+  git(root, 'clone', '--no-local', '--depth=1', '--branch', 'fixture-old', source, checkout);
+  const artifact = path.join(checkout, 'signed-asset.bin');
+  writeFileSync(artifact, 'signed immutable fixture');
+  const result = spawnSync('bash', ['-c', step.run
+    .replaceAll('${{ github.workflow_sha }}', workflowSha)
+    .replaceAll('${{ matrix.platform.target }}', 'fixture-target')], {
+    cwd: checkout, encoding: 'utf8', windowsHide: true,
+  });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.equal(readFileSync(path.join(checkout, 'policy-result'), 'utf8'), 'workflow-revision:fixture-target\n');
+  assert.equal(readFileSync(path.join(checkout, 'helper-result'), 'utf8'), 'workflow-helper\n');
+  assert.equal(git(checkout, 'rev-parse', 'HEAD'), oldSha);
+  assert.equal(readFileSync(artifact, 'utf8'), 'signed immutable fixture');
+});
+
+for (const scenario of [
+  { name: 'accepts a transient app ticket connection loss', failures: 2, network: true, attempts: 3, status: 0, submissions: 1 },
+  { name: 'retries DMG stapling without resubmitting notarization', action: 'staple', kind: 'dmg', failures: 1, network: true, attempts: 2, status: 0, submissions: 1 },
+  { name: 'retries DMG validation without resubmitting notarization', kind: 'dmg', failures: 2, network: true, attempts: 3, status: 0, submissions: 1 },
+  { name: 'rejects exhausted ticket connection retries', failures: 99, network: true, attempts: 3, status: 68, submissions: 0 },
+  { name: 'rejects invalid tickets without retrying', failures: 99, network: false, attempts: 1, status: 68, submissions: 0 },
+  { name: 'preserves other stapler exit codes', failures: 99, network: true, ticketStatus: 65, attempts: 1, status: 65, submissions: 0 },
+  { name: 'rejects signature errors before contacting Apple', signatureStatus: 1, attempts: 0, status: 1, submissions: 0 },
+  { name: 'preserves Gatekeeper rejection', gatekeeperStatus: 3, attempts: 1, status: 3, submissions: 0 },
+  { name: 'preserves notarization submission rejection', notaryStatus: 4, attempts: 1, status: 4, submissions: 1 },
+]) {
+  test(`macOS verification ${scenario.name}`, (t) => {
+    const cwd = mkdtempSync(path.join(tmpdir(), 'openbitfun-apple-ticket-'));
+    t.after(() => rmSync(cwd, { recursive: true, force: true }));
+    mkdirSync(path.join(cwd, 'scripts/ci'), { recursive: true });
+    copyFileSync(path.join(repoRoot, 'scripts/ci/verify-macos-signing.sh'), path.join(cwd, 'scripts/ci/verify-macos-signing.sh'));
+    writeFileSync(path.join(cwd, 'scripts/ci/verify-macos-microphone.sh'), 'printf "microphone\\n" >> "$FIXTURE_CALLS"\n');
+    const app = path.join(cwd, 'target/fixture/release/bundle/macos/Test App.app');
+    mkdirSync(app, { recursive: true });
+    writeFileSync(path.join(app, 'fixture'), 'fixture');
+    mkdirSync(path.join(cwd, 'target/fixture/release/bundle/dmg'), { recursive: true });
+    writeFileSync(path.join(cwd, 'target/fixture/release/bundle/dmg/Test App.dmg'), 'fixture');
+    const result = spawnSync('bash', ['-c', `
+      codesign() {
+        printf 'codesign %s\\n' "$*" >> "$FIXTURE_CALLS"
+        if [[ "$*" == *--verify* ]]; then return "$SIGNATURE_STATUS"; fi
+        printf 'Authority=Developer ID Application: Fixture\\nflags=0x10000(runtime)\\nTimestamp=fixture\\n'
+      }
+      file() { printf 'Mach-O fixture\\n'; }
+      spctl() { printf 'spctl %s\\n' "$*" >> "$FIXTURE_CALLS"; return "$GATEKEEPER_STATUS"; }
+      sleep() { printf 'sleep %s\\n' "$*" >> "$FIXTURE_CALLS"; }
+      xcrun() {
+        printf 'xcrun %s\\n' "$*" >> "$FIXTURE_CALLS"
+        if [[ "$1" == notarytool ]]; then return "$NOTARY_STATUS"; fi
+        local kind=app count=0
+        [[ "$3" == *.dmg ]] && kind=dmg
+        if [[ "$2" == "$TICKET_ACTION" && "$kind" == "$TICKET_KIND" ]]; then
+          [[ ! -f attempts ]] || read -r count < attempts
+          count=$((count + 1))
+          printf '%s\\n' "$count" > attempts
+          if [[ "$count" -le "$TICKET_FAILURES" ]]; then
+            if [[ "$TICKET_NETWORK" == true ]]; then
+              printf 'Error Domain=NSURLErrorDomain Code=-1005 "The network connection was lost."\\n' >&2
+            else
+              printf 'The ticket is invalid. The validate action failed! Error 68.\\n' >&2
+            fi
+            return "$TICKET_EXIT_CODE"
+          fi
+        fi
+        return 0
+      }
+      export -f codesign file spctl sleep xcrun
+      bash scripts/ci/verify-macos-signing.sh fixture
+    `], { cwd, encoding: 'utf8', windowsHide: true, env: { ...process.env,
+      OPENBITFUN_APPLE_SIGNING_CONFIGURED: 'true', FIXTURE_CALLS: path.join(cwd, 'calls'),
+      SIGNATURE_STATUS: String(scenario.signatureStatus ?? 0), GATEKEEPER_STATUS: String(scenario.gatekeeperStatus ?? 0),
+      NOTARY_STATUS: String(scenario.notaryStatus ?? 0), APPLE_API_ISSUER: 'fixture', APPLE_API_KEY: 'fixture', APPLE_API_KEY_PATH: 'fixture',
+      TICKET_ACTION: scenario.action ?? 'validate', TICKET_KIND: scenario.kind ?? 'app',
+      TICKET_FAILURES: String(scenario.failures ?? 0), TICKET_NETWORK: String(scenario.network ?? false),
+      TICKET_EXIT_CODE: String(scenario.ticketStatus ?? 68),
+    } });
+    const calls = readFileSync(path.join(cwd, 'calls'), 'utf8');
+    assert.equal(result.status, scenario.status, `${result.stdout}\n${result.stderr}`);
+    assert.equal((calls.match(/^xcrun notarytool submit /gm) ?? []).length, scenario.submissions, calls);
+    assert.equal((calls.match(/^microphone$/gm) ?? []).length, scenario.signatureStatus ? 0 : 1, calls);
+    const attempts = scenario.attempts === 0 ? 0 : Number(readFileSync(path.join(cwd, 'attempts'), 'utf8'));
+    assert.equal(attempts, scenario.attempts, calls);
+    assert.equal((calls.match(/^sleep /gm) ?? []).length, Math.max(0, scenario.attempts - 1), calls);
+    if (scenario.status === 0) assert.match(result.stdout, /Verified Developer ID signatures/);
+    else assert.doesNotMatch(result.stdout, /Verified Developer ID signatures/);
+  });
+}
