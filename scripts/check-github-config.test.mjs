@@ -1134,6 +1134,19 @@ test('Mobile Package publishes Android assets from mobile-v tags', () => {
   );
 });
 
+test('Desktop packaging preserves old-tag source bytes before Windows checkout', () => {
+  const workflow = yaml.parse(
+    readFileSync(path.join(repoRoot, '.github/workflows/desktop-package.yml'), 'utf8'),
+  );
+  const steps = workflow.jobs.package.steps;
+  const preserveIndex = steps.findIndex((step) => step.name === 'Preserve source bytes on Windows');
+  const checkoutIndex = steps.findIndex((step) => step.uses?.startsWith('actions/checkout@'));
+  assert.ok(preserveIndex >= 0 && preserveIndex < checkoutIndex);
+  assert.equal(steps[preserveIndex].if, "runner.os == 'Windows'");
+  assert.equal(steps[preserveIndex].shell, 'bash');
+  assert.equal(steps[preserveIndex].run, 'git config --global core.autocrlf false');
+});
+
 test('Desktop packaging installs Bun before preparing the OpenCode extension Host', () => {
   const workflow = yaml.parse(
     readFileSync(path.join(repoRoot, '.github/workflows/desktop-package.yml'), 'utf8'),

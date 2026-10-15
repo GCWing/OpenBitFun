@@ -187,6 +187,13 @@ jobs:
             build_command: node scripts/desktop-tauri-build.mjs --no-bundle --target x86_64-pc-windows-msvc --verbose
 
     steps:
+      # Also preserve bytes when rebuilding an older immutable tag that does
+      # not yet pin every hashed source file in .gitattributes.
+      - name: Preserve source bytes on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: git config --global core.autocrlf false
+
       - name: Checkout
         uses: actions/checkout@v5
         with:
