@@ -1716,4 +1716,3 @@ test('partial Desktop publication requires successful trusted producers and leav
   assert.match(stage, /sha256sum --check/);
   assert.doesNotMatch(stage, /generate-tauri-latest-json/);
 });
-
