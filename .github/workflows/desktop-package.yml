@@ -448,6 +448,7 @@ jobs:
           git fetch --no-tags --depth=1 origin "${{ github.workflow_sha }}"
           git archive "${{ github.workflow_sha }}" \
             scripts/ci/verify-macos-signing.sh scripts/ci/verify-macos-microphone.sh \
+            scripts/ci/macos-ticket-network.sh \
             | tar -x -C "$verification_dir"
           bash "$verification_dir/scripts/ci/verify-macos-signing.sh" "${{ matrix.platform.target }}"
 

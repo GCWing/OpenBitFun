@@ -18,26 +18,7 @@ if [[ "${#apps[@]}" -eq 0 || "${#dmgs[@]}" -eq 0 ]]; then
   exit 1
 fi
 
-# CloudKit can drop a connection even after notarization was accepted. Retry
-# only that transport failure; an invalid/missing ticket must still fail.
-stapler_with_network_retry() {
-  local attempt output exit_code
-  for attempt in 1 2 3; do
-    if output="$(xcrun stapler "$@" 2>&1)"; then
-      printf '%s\n' "${output}"
-      return 0
-    else
-      exit_code=$?
-    fi
-    printf '%s\n' "${output}" >&2
-    if [[ "${exit_code}" -ne 68 || "${attempt}" -eq 3 ]] || \
-       ! grep -Fq 'Error Domain=NSURLErrorDomain Code=-1005' <<<"${output}"; then
-      return "${exit_code}"
-    fi
-    echo "Apple ticket service connection was lost; retrying stapler ${1} (${attempt}/3)." >&2
-    sleep "$((attempt * 10))"
-  done
-}
+source "$(dirname "$0")/macos-ticket-network.sh"
 
 # Separate upload from polling so a lost connection never re-submits a DMG.
 # Keep the receipt with the bundle for a verification-only recovery run.

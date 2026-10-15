@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(dirname "$0")/macos-ticket-network.sh"
 
 target="${1:?usage: repair-macos-stapling.sh <target-triple>}"
 [[ "$target" == x86_64-apple-darwin || "$target" == aarch64-apple-darwin ]] || exit 1
@@ -18,7 +19,7 @@ codesign -dv --verbose=4 "$app" 2>&1 | grep -Fq 'Authority=Developer ID Applicat
 
 # An accepted app can lack its ticket when the bundler's stapling silently fails.
 # Only repair that precise state. Other verification errors remain failures.
-if ticket_output="$(xcrun stapler validate "$app" 2>&1)"; then
+if ticket_output="$(stapler_with_network_retry validate "$app" 2>&1)"; then
   printf '%s\n' "$ticket_output"
   echo "Application ticket is present; retaining packages and any existing notary receipt."
   exit 0
@@ -43,8 +44,8 @@ if ! command -v minisign >/dev/null 2>&1; then brew install minisign; fi
 node scripts/write-minisign-public-key.mjs --out "$work/minisign.pub"
 base64 -d < "$updater.sig" > "$work/original.minisig"
 minisign -Vm "$updater" -p "$work/minisign.pub" -x "$work/original.minisig"
-xcrun stapler staple "$app"
-xcrun stapler validate "$app"
+stapler_with_network_retry staple "$app"
+stapler_with_network_retry validate "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
 spctl --assess --type execute --verbose=4 "$app"
 
@@ -58,7 +59,7 @@ test ! -L "$work/mount/OpenBitFun.app"
 rm -rf "$work/mount/OpenBitFun.app"
 ditto "$app" "$work/mount/OpenBitFun.app"
 codesign --verify --deep --strict --verbose=2 "$work/mount/OpenBitFun.app"
-xcrun stapler validate "$work/mount/OpenBitFun.app"
+stapler_with_network_retry validate "$work/mount/OpenBitFun.app"
 hdiutil detach "$work/mount"
 mounted=false
 hdiutil convert -format UDZO -o "$work/repaired.dmg" "$work/writable.dmg"

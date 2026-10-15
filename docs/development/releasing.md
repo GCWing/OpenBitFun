@@ -74,6 +74,8 @@ DMG and updater around that app. It verifies the original updater signature and
 Developer ID before repair, signs the replacement DMG and updater, and runs the
 unchanged complete Apple verification. Other ticket failures are not repaired;
 an existing DMG submission is never silently invalidated by repackaging.
+Recovery and normal verification share the same bounded CloudKit connection-loss
+retry, including validation of the app copied into the mounted installer.
 Only a successful verification produces the normal `*-bundle` artifact accepted
 by full release finalization. No Rust or frontend compilation runs in recovery.
 

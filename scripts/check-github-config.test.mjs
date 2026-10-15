@@ -1677,9 +1677,18 @@ test('Mac ticket repair repacks both distributions and fails closed on unrelated
   stub('codesign', 'if [[ "$1" == -dv ]]; then echo "Authority=Developer ID Application: Fixture"; fi');
   stub('spctl', 'if [[ "${REJECT_GATEKEEPER:-}" == true ]]; then exit 1; fi');
   stub('minisign', 'if [[ "${REJECT_SIGNATURE:-}" == true ]]; then exit 1; fi');
+  stub('sleep', 'printf "sleep %s\\n" "$*" >> "$FIXTURE/calls"');
   stub('xcrun', `
     printf '%s\\n' "$*" >> "$FIXTURE/calls"
     app="$3"
+    if [[ "$2" == validate && "$app" == */mount/* ]]; then
+      attempts=0
+      [[ ! -f "$FIXTURE/mounted-attempts" ]] || read -r attempts < "$FIXTURE/mounted-attempts"
+      attempts=$((attempts + 1)); printf '%s\\n' "$attempts" > "$FIXTURE/mounted-attempts"
+      if [[ "$attempts" -le "\${MOUNT_VALIDATION_NETWORK_FAILURES:-0}" ]]; then
+        echo 'Error Domain=NSURLErrorDomain Code=-1005'; exit 68
+      fi
+    fi
     if [[ "$2" == staple ]]; then
       printf stapled > "$app/Contents/stapled-fixture"
     elif [[ "\${TICKET_ERROR:-}" == network ]]; then
@@ -1710,6 +1719,7 @@ test('Mac ticket repair repacks both distributions and fails closed on unrelated
     OPENBITFUN_APPLE_SIGNING_CONFIGURED: 'true', APPLE_SIGNING_IDENTITY: 'Fixture Developer ID',
     OPENBITFUN_SIGNING_KEY: 'fixture', OPENBITFUN_SIGNING_PUBKEY: 'untrusted comment: fixture\nfixture-key' };
   function reset() {
+    rmSync(path.join(root, 'mounted-attempts'), { force: true });
     rmSync(path.join(app, 'Contents/stapled-fixture'), { force: true });
     rmSync(`${dmg}.notary-submission.json`, { force: true });
     writeFileSync(dmg, 'original dmg');
@@ -1736,7 +1746,7 @@ test('Mac ticket repair repacks both distributions and fails closed on unrelated
   assert.equal(readFileSync(`${dmg}.notary-submission.json`, 'utf8'), 'retained receipt');
   reset();
   writeFileSync(`${dmg}.sig`, 'obsolete signature for original bytes');
-  const repaired = execute();
+  const repaired = execute({ MOUNT_VALIDATION_NETWORK_FAILURES: '2' });
   assert.equal(repaired.status, 0, repaired.stderr);
   assert.equal(readFileSync(dmg, 'utf8'), 'stapled');
   assert.equal(existsSync(`${dmg}.sig`), false);
@@ -1745,6 +1755,13 @@ test('Mac ticket repair repacks both distributions and fails closed on unrelated
   assert.equal(contents.status, 0, contents.stderr);
   assert.match(contents.stdout, /OpenBitFun.app\/Contents\/stapled-fixture/);
   assert.equal(readFileSync(path.join(root, 'calls'), 'utf8').match(/stapler staple/g)?.length, 1);
+  assert.equal(readFileSync(path.join(root, 'mounted-attempts'), 'utf8').trim(), '3');
+  assert.match(readFileSync(path.join(root, 'calls'), 'utf8'), /sleep 10[\s\S]*sleep 20/);
+  reset();
+  assert.equal(execute({ MOUNT_VALIDATION_NETWORK_FAILURES: '99' }).status, 68);
+  assert.equal(readFileSync(dmg, 'utf8'), 'original dmg');
+  assert.equal(readFileSync(`${app}.tar.gz`, 'utf8'), 'original updater');
+  assert.equal(readFileSync(path.join(root, 'mounted-attempts'), 'utf8').trim(), '3');
 });
 
 
@@ -2128,8 +2145,9 @@ test('macOS release verification uses the pinned workflow revision without chang
   commit();
   const oldSha = git(source, 'rev-parse', 'HEAD');
   git(source, 'tag', 'fixture-old');
-  writeFileSync(verifier, 'printf "workflow-revision:%s\\n" "$1" > policy-result\nbash "$(dirname "$0")/verify-macos-microphone.sh"\n');
+  writeFileSync(verifier, 'source "$(dirname "$0")/macos-ticket-network.sh"\nprintf "workflow-revision:%s\\n" "$1" > policy-result\nbash "$(dirname "$0")/verify-macos-microphone.sh"\n');
   writeFileSync(microphone, 'printf "workflow-helper\\n" > helper-result\n');
+  writeFileSync(path.join(source, 'scripts/ci/macos-ticket-network.sh'), 'printf "workflow-network\\n" > network-result\n');
   git(source, 'add', '.');
   commit();
   const workflowSha = git(source, 'rev-parse', 'HEAD');
@@ -2147,6 +2165,7 @@ test('macOS release verification uses the pinned workflow revision without chang
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.equal(readFileSync(path.join(checkout, 'policy-result'), 'utf8'), 'workflow-revision:fixture-target\n');
   assert.equal(readFileSync(path.join(checkout, 'helper-result'), 'utf8'), 'workflow-helper\n');
+  assert.equal(readFileSync(path.join(checkout, 'network-result'), 'utf8'), 'workflow-network\n');
   assert.equal(git(checkout, 'rev-parse', 'HEAD'), oldSha);
   assert.equal(readFileSync(artifact, 'utf8'), 'signed immutable fixture');
 });
@@ -2208,6 +2227,7 @@ for (const scenario of [
     t.after(() => rmSync(cwd, { recursive: true, force: true }));
     mkdirSync(path.join(cwd, 'scripts/ci'), { recursive: true });
     copyFileSync(path.join(repoRoot, 'scripts/ci/verify-macos-signing.sh'), path.join(cwd, 'scripts/ci/verify-macos-signing.sh'));
+    copyFileSync(path.join(repoRoot, 'scripts/ci/macos-ticket-network.sh'), path.join(cwd, 'scripts/ci/macos-ticket-network.sh'));
     writeFileSync(path.join(cwd, 'scripts/ci/verify-macos-microphone.sh'), 'printf "microphone\\n" >> "$FIXTURE_CALLS"\n');
     const app = path.join(cwd, 'target/fixture/release/bundle/macos/Test App.app');
     mkdirSync(app, { recursive: true });
