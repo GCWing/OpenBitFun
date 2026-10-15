@@ -32,7 +32,7 @@ export function planReleaseArtifactDownloads(repository, tag, runs) {
     for (const item of expected) {
       const artifact = artifacts.find((entry) => entry.name === item.name);
       if (!artifact) continue;
-      if (artifact.expired || !jobs.some((job) => job.name === item.job && job.conclusion === 'success')) {
+      if (artifact.expired !== false || !jobs.some((job) => job.name === item.job && job.conclusion === 'success')) {
         throw new Error(`Artifact lacks a successful producer: ${item.name}`);
       }
       if (found.has(item.name)) throw new Error(`Duplicate release artifact: ${item.name}`);
@@ -74,6 +74,7 @@ function main() {
   command('git', ['merge-base', '--is-ancestor', `${tag}^{commit}`, 'origin/main']);
   for (const { run } of runs) {
     command('git', ['merge-base', '--is-ancestor', run.head_sha, 'origin/main']);
+    command('git', ['merge-base', '--is-ancestor', `${tag}^{commit}`, run.head_sha]);
   }
   for (const item of plan) {
     fs.mkdirSync(item.directory, { recursive: true });
