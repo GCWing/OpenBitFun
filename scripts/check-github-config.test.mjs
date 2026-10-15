@@ -1303,22 +1303,24 @@ test('stable and beta publication require every producer, while artifact-only ru
   const results = ['success', 'failure', 'cancelled', 'skipped'];
   for (const channel of ['stable', 'beta']) {
     for (const upload of ['true', 'false']) {
-      for (const desktop of results) for (const linux of results) for (const image of results) {
-        const needs = {
-          prepare: { outputs: { release_channel: channel, upload_to_release: upload, relay_image_only: 'false' } },
-          package: { result: desktop },
-          'linux-binaries': { result: linux },
-          'publish-relay-image': { result: image },
-        };
-        assert.equal(condition(jobs['linux-binaries'], needs), true);
-        assert.equal(condition(jobs['publish-relay-image'], needs), upload === 'true' && linux === 'success');
-        assert.equal(condition(jobs['upload-release-assets'], needs),
-          upload === 'true' && [desktop, linux, image].every((result) => result === 'success'),
-          JSON.stringify(needs));
+      for (const target of ['all', 'macos-arm64', 'macos-x64']) {
+        for (const desktop of results) for (const linux of results) for (const image of results) {
+          const needs = {
+            prepare: { outputs: { release_channel: channel, upload_to_release: upload, relay_image_only: 'false', target_platform: target } },
+            package: { result: desktop },
+            'linux-binaries': { result: linux },
+            'publish-relay-image': { result: image },
+          };
+          assert.equal(condition(jobs['linux-binaries'], needs), target === 'all');
+          assert.equal(condition(jobs['publish-relay-image'], needs), target === 'all' && upload === 'true' && linux === 'success');
+          assert.equal(condition(jobs['upload-release-assets'], needs),
+            target === 'all' && upload === 'true' && [desktop, linux, image].every((result) => result === 'success'),
+            JSON.stringify(needs));
+        }
       }
     }
     const backfill = {
-      prepare: { outputs: { release_channel: channel, upload_to_release: 'true', relay_image_only: 'true' } },
+      prepare: { outputs: { release_channel: channel, upload_to_release: 'true', relay_image_only: 'true', target_platform: 'all' } },
       package: { result: 'skipped' },
       'linux-binaries': { result: 'skipped' },
       'publish-relay-image': { result: 'success' },
@@ -1354,6 +1356,44 @@ test('stable and beta publication require every producer, while artifact-only ru
     assert.match(verification.run, /github.repository/);
     assert.ok(steps.indexOf(verification) < steps.findIndex((step) => step.name === 'Publish beta channel manifest'));
   }
+});
+
+
+test('Desktop recovery selects only one Mac target and cannot publish an incomplete release', (t) => {
+  const workflow = yaml.parse(readFileSync(path.join(repoRoot, '.github/workflows/desktop-package.yml'), 'utf8'));
+  const step = workflow.jobs.prepare.steps.find((entry) => entry.name === 'Select Desktop package platforms');
+  const root = mkdtempSync(path.join(tmpdir(), 'openbitfun-platform-recovery-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const target of ['all', 'macos-arm64', 'macos-x64', 'unknown']) {
+    for (const relay of ['true', 'false']) {
+      const output = path.join(root, `${target}-${relay}`);
+      const result = spawnSync('bash', ['-c', step.run], {
+        cwd: repoRoot, encoding: 'utf8', windowsHide: true,
+        env: { ...process.env, TARGET_PLATFORM: target, RELAY_IMAGE_ONLY: relay, GITHUB_OUTPUT: output },
+      });
+      if (target === 'unknown' || (target !== 'all' && relay === 'true')) {
+        assert.notEqual(result.status, 0);
+        continue;
+      }
+      assert.equal(result.status, 0, result.stderr);
+      const matrix = JSON.parse(readFileSync(output, 'utf8').trim().slice('matrix='.length));
+      assert.deepEqual(matrix.map((platform) => platform.name), target === 'all'
+        ? ['linux-x64', 'linux-arm64', 'macos-arm64', 'macos-x64', 'windows-x64'] : [target]);
+      for (const platform of matrix) {
+        assert.ok(platform.os && platform.target && platform.build_command);
+      }
+      if (target === 'macos-arm64') assert.equal(matrix[0].build_command, 'pnpm run desktop:build:arm64');
+      if (target === 'macos-x64') assert.equal(matrix[0].build_command, 'pnpm run desktop:build:x86_64');
+    }
+  }
+  assert.equal(workflow.jobs.package.strategy.matrix.platform, '${{ fromJSON(needs.prepare.outputs.package_matrix) }}');
+  for (const name of ['linux-binaries', 'publish-relay-image', 'upload-release-assets']) {
+    const condition = workflow.jobs[name].if;
+    assert.ok(condition.includes("needs.prepare.outputs.target_platform == 'all'"), name);
+  }
+  assert.equal(workflow.jobs.package.env.OPENBITFUN_ENABLE_UPDATER_ARTIFACTS, '${{ needs.prepare.outputs.upload_to_release }}');
+  assert.match(workflow.concurrency.group, /inputs.target_platform/);
+  assert.equal(workflow.concurrency['cancel-in-progress'], false);
 });
 
 test('Relay image rebuild resolves the release tag instead of the newer workflow commit', (t) => {

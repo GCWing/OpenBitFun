@@ -27,6 +27,15 @@ on:
         required: false
         default: false
         type: boolean
+      target_platform:
+        description: "Build one Desktop platform as signed artifacts only; all retains full release publication."
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - macos-arm64
+          - macos-x64
       relay_image_only:
         description: "Publish only the Relay Server image and signed descriptor (no Desktop packages)."
         required: false
@@ -38,7 +47,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: desktop-package-${{ (github.event.release.prerelease || inputs.release_channel == 'beta') && 'beta' || github.event.release.tag_name || inputs.tag_name || github.sha }}
+  group: desktop-package-${{ (github.event.release.prerelease || inputs.release_channel == 'beta') && 'beta' || github.event.release.tag_name || inputs.tag_name || github.sha }}${{ (inputs.target_platform && inputs.target_platform != 'all') && format('-{0}', inputs.target_platform) || '' }}
   cancel-in-progress: false
 
 jobs:
@@ -54,6 +63,8 @@ jobs:
       checkout_ref: ${{ steps.meta.outputs.checkout_ref }}
       release_channel: ${{ steps.meta.outputs.release_channel }}
       relay_image_only: ${{ steps.meta.outputs.relay_image_only }}
+      target_platform: ${{ inputs.target_platform || 'all' }}
+      package_matrix: ${{ steps.platforms.outputs.matrix }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -138,6 +149,27 @@ jobs:
           echo "release_channel=$CHANNEL"  >> "$GITHUB_OUTPUT"
           echo "relay_image_only=${INPUT_RELAY_IMAGE_ONLY:-false}" >> "$GITHUB_OUTPUT"
 
+      - name: Select Desktop package platforms
+        id: platforms
+        env:
+          TARGET_PLATFORM: ${{ inputs.target_platform || 'all' }}
+          RELAY_IMAGE_ONLY: ${{ inputs.relay_image_only }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const all = JSON.parse(fs.readFileSync('scripts/desktop-package-platforms.json', 'utf8'));
+          const target = process.env.TARGET_PLATFORM;
+          if (!['all', 'macos-arm64', 'macos-x64'].includes(target)) {
+            throw new Error(`Unsupported Desktop recovery target: ${target}`);
+          }
+          if (target !== 'all' && process.env.RELAY_IMAGE_ONLY === 'true') {
+            throw new Error('A Desktop recovery target cannot be combined with relay_image_only');
+          }
+          const selected = target === 'all' ? all : all.filter((platform) => platform.name === target);
+          if (selected.length === 0) throw new Error('No Desktop package platforms selected');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify(selected)}\n`);
+          NODE
+
   # ── Build per platform ─────────────────────────────────────────────
   package:
     name: Package (${{ matrix.platform.name }})
@@ -161,30 +193,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - os: ubuntu-latest
-            name: linux-x64
-            target: x86_64-unknown-linux-gnu
-            build_command: pnpm run desktop:build:linux -- --target x86_64-unknown-linux-gnu --bundles deb,rpm,appimage
-          - os: ubuntu-24.04-arm
-            name: linux-arm64
-            target: aarch64-unknown-linux-gnu
-            # Thin LTO is now the workspace-wide [profile.release] default, so
-            # the previous CARGO_PROFILE_RELEASE_LTO=thin override is gone.
-            build_command: pnpm run desktop:build:linux -- --target aarch64-unknown-linux-gnu --bundles deb,rpm,appimage
-          - os: macos-15
-            name: macos-arm64
-            target: aarch64-apple-darwin
-            build_command: pnpm run desktop:build:arm64
-          - os: macos-15-intel
-            name: macos-x64
-            target: x86_64-apple-darwin
-            build_command: pnpm run desktop:build:x86_64
-          - os: windows-latest
-            name: windows-x64
-            target: x86_64-pc-windows-msvc
-            # Compile before opening the short-lived SimplySign session.
-            build_command: node scripts/desktop-tauri-build.mjs --no-bundle --target x86_64-pc-windows-msvc --verbose
+        platform: ${{ fromJSON(needs.prepare.outputs.package_matrix) }}
 
     steps:
       # Also preserve bytes when rebuilding an older immutable tag that does
@@ -439,7 +448,8 @@ jobs:
     name: Linux CLI and Relay Server
     needs: prepare
     if: >-
-      needs.prepare.outputs.relay_image_only != 'true'
+      needs.prepare.outputs.relay_image_only != 'true' &&
+      needs.prepare.outputs.target_platform == 'all'
     uses: ./.github/workflows/linux-binaries.yml
     secrets:
       release_signing_key: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -457,6 +467,7 @@ jobs:
     needs: [prepare, linux-binaries]
     if: >-
       always() &&
+      needs.prepare.outputs.target_platform == 'all' &&
       (needs.prepare.outputs.upload_to_release == 'true' ||
        needs.prepare.outputs.relay_image_only == 'true') &&
       (needs.prepare.outputs.relay_image_only == 'true' ||
@@ -652,6 +663,7 @@ jobs:
     if: >-
       always() &&
       needs.prepare.outputs.upload_to_release == 'true' &&
+      needs.prepare.outputs.target_platform == 'all' &&
       needs.package.result == 'success' &&
       needs.linux-binaries.result == 'success' &&
       needs.publish-relay-image.result == 'success'
