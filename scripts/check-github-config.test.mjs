@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -1638,6 +1639,25 @@ test('Mac verification recovery requires the exact failed trusted producer and u
   resumed.jobs[1].steps.splice(0, 1, { name: 'Restore prior macOS bundles', conclusion: 'success' },
     { name: 'Repair missing application ticket', conclusion: 'success' });
   assert.equal(planMacVerificationRecovery(repo, tag, platform, resumed).runId, '123');
+});
+
+test('Mac recovery architecture command accepts a real Mach-O executable', { skip: process.platform !== 'darwin' }, (t) => {
+  const workflow = yaml.parse(readFileSync(path.join(repoRoot, '.github/workflows/desktop-package.yml'), 'utf8'));
+  const restore = workflow.jobs['recover-macos'].steps.find((step) => step.name === 'Restore prior macOS bundles').run;
+  const start = restore.indexOf('case "$MACOS_TARGET"');
+  assert.ok(start >= 0);
+  const script = restore.slice(start);
+  assert.match(script, /lipo /);
+  const root = mkdtempSync(path.join(tmpdir(), 'openbitfun-recovery-architecture-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const target = process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin';
+  const executable = path.join(root, 'target', target, 'release/bundle/macos/OpenBitFun.app/Contents/MacOS/openbitfun-desktop');
+  mkdirSync(path.dirname(executable), { recursive: true });
+  symlinkSync(process.execPath, executable);
+  const result = spawnSync('bash', ['-c', `set -euo pipefail\n${script}`], {
+    cwd: root, env: { ...process.env, MACOS_TARGET: target }, encoding: 'utf8', windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stderr);
 });
 
 test('Mac ticket repair repacks both distributions and fails closed on unrelated errors', (t) => {

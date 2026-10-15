@@ -526,7 +526,7 @@ jobs:
             x86_64-apple-darwin) architecture=x86_64 ;;
             aarch64-apple-darwin) architecture=arm64 ;;
           esac
-          lipo -verify_arch "$architecture" "target/$MACOS_TARGET/release/bundle/macos/OpenBitFun.app/Contents/MacOS/openbitfun-desktop"
+          lipo "target/$MACOS_TARGET/release/bundle/macos/OpenBitFun.app/Contents/MacOS/openbitfun-desktop" -verify_arch "$architecture"
       - name: Configure Apple Developer ID signing and notarization
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
