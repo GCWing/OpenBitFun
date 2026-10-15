@@ -1,3 +1,4 @@
+import { resolveAssistantName } from '@/shared/utils/assistantName';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Button, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader,
@@ -26,7 +27,7 @@ export default function AssistantSessionHistoryDialog({ workspace, isActive, onC
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
-  const name = workspace.identity?.name?.trim() || workspace.name;
+  const name = resolveAssistantName(workspace, t('shared:agents.Claw'));
 
   const loadPreference = useCallback(async () => {
     const scope = getActiveSurfaceScope();

@@ -72,38 +72,12 @@ public object SessionWorkspacePaths {
     public fun basename(path: String): String = normalize(path).substringAfterLast('/')
 }
 
-/**
- * Names a session when the user did not type one.
- *
- * These are wire values, not UI copy: [wireSessionName] is what goes out as
- * `session_name`, and the desktop's `SessionCreated` carries no title back, so
- * [fallbackTitle] is what the list shows until the agent renames the session
- * itself. Both spellings are taken verbatim from `RemoteCommandFactory.createSession`
- * and `RemoteSessionManager.createSession` so the two clients produce sessions
- * that are indistinguishable on the desktop.
- */
+/** Blank wire names delegate the default to the owning host; custom names stay literal. */
 public object SessionNaming {
-    public fun wireSessionName(agentType: String, title: String): String {
-        val trimmed = title.trim()
-        if (trimmed.isNotEmpty()) return trimmed
-        return when (bucket(agentType)) {
-            AgentBucket.ASSISTANT -> "Remote Assistant Session"
-            AgentBucket.COWORK -> "Remote Cowork Session"
-            AgentBucket.CODE -> "Remote Code Session"
-        }
-    }
+    @Suppress("UNUSED_PARAMETER")
+    public fun wireSessionName(agentType: String, title: String): String = title.trim()
 
-    public fun fallbackTitle(agentType: String): String = when (bucket(agentType)) {
-        AgentBucket.ASSISTANT -> "Assistant Session"
-        AgentBucket.COWORK -> "Cowork Session"
-        AgentBucket.CODE -> "Code Session"
-    }
-
-    private enum class AgentBucket { ASSISTANT, COWORK, CODE }
-
-    private fun bucket(agentType: String): AgentBucket = when (agentType.lowercase()) {
-        "claw", "assistant", "chat" -> AgentBucket.ASSISTANT
-        "cowork" -> AgentBucket.COWORK
-        else -> AgentBucket.CODE
-    }
+    /** Compatibility placeholder until a host title is received. */
+    @Suppress("UNUSED_PARAMETER")
+    public fun fallbackTitle(agentType: String): String = "New Session"
 }

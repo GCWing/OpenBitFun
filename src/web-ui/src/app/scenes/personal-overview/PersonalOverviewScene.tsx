@@ -1,10 +1,11 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActionCard, Button, Card, Icon, OverflowText, ScrollArea, Spinner } from '@openbitfun/ui';
 import { useSubagentAvatarMotion } from '@openbitfun/ui/brand';
 import { Ellipsis } from 'lucide-react';
 import { useAccountIdentity } from '@/infrastructure/account-identity/useAccountIdentity';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
+import { confirmDialog } from '@/infrastructure/confirm-dialog';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { useNotification } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
@@ -22,10 +23,13 @@ import { UsageActivityGrid } from '@/infrastructure/config/components/UsageActiv
 import { usePersonalOverview } from './usePersonalOverview';
 import { getOverviewIdentity } from './overviewIdentity';
 import { OverviewAccountButton } from './OverviewAccountButton';
+import { OverviewDevicesSection } from './OverviewDevicesSection';
 import joystickArtwork from '@/flow_chat/assets/subagent-avatars/robot-04.svg?raw';
 import './PersonalOverviewScene.scss';
 
 const log = createLogger('PersonalOverviewScene');
+const StandaloneAddSkillDialog = React.lazy(() => import('../skills/components/AddSkillDialog').then(module => ({ default: module.StandaloneAddSkillDialog })));
+const CreateAgentDialog = React.lazy(() => import('../agents/components/CreateAgentDialog'));
 
 // Reuse the authored IP and its existing motion rig; no account data enters SVG markup.
 const overviewArtwork = joystickArtwork
@@ -62,6 +66,14 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
   const { assistantWorkspaces, loading: workspacesLoading, createAssistantWorkspace } = useWorkspaceContext();
   const notification = useNotification();
   const [creatingAssistant, setCreatingAssistant] = useState(false);
+  const [addingSkill, setAddingSkill] = useState(false);
+  const [creatingAgent, setCreatingAgent] = useState(false);
+  useEffect(() => {
+    if (!isActive) {
+      setAddingSkill(false);
+      setCreatingAgent(false);
+    }
+  }, [isActive]);
   const assistantCreationPending = useRef(false);
   const displayedIdentity = getOverviewIdentity(identity);
   const [greetingSeed] = useState(Math.random);
@@ -102,15 +114,22 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
     useSceneStore.getState().openScene('agents');
   };
   const createAgent = () => {
-    useAgentsStore.getState().openCreateAgent();
-    useSceneStore.getState().openScene('agents');
+    setCreatingAgent(true);
   };
   const createAssistant = async () => {
     if (assistantCreationPending.current) return;
     const scope = getActiveSurfaceScope();
     assistantCreationPending.current = true;
-    setCreatingAssistant(true);
     try {
+      const confirmed = await confirmDialog({
+        title: t('agents.createAssistant'),
+        message: t('agents.createAssistantConfirmMessage'),
+        confirmText: t('agents.createAssistant'),
+        type: 'info',
+      });
+      if (!confirmed || !scope.isCurrent()) return;
+
+      setCreatingAssistant(true);
       const workspace = await createAssistantWorkspace();
       scope.assertCurrent('open newly created assistant');
       useNurseryStore.getState().openAssistant(workspace.id);
@@ -130,9 +149,7 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
     useSceneStore.getState().openScene('skills');
   };
   const addSkill = () => {
-    useSkillsSceneStore.getState().openNativeSkills('installed');
-    useSkillsSceneStore.getState().setAddFormOpen(true);
-    useSceneStore.getState().openScene('skills');
+    setAddingSkill(true);
   };
   const agentCards = [
     {
@@ -225,6 +242,8 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
               </div>
             )}
           </section>
+
+          <OverviewDevicesSection identity={identity} />
 
           <section className="personal-overview__section" aria-labelledby="overview-miniapps-title" aria-busy={miniApps.status === 'loading'} data-openbitfun-scene="personal-overview" data-openbitfun-part="miniApps" data-catalog-status={miniApps.status}>
             <div className="personal-overview__section-header">
@@ -358,6 +377,16 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
           </section>
         </div>
       </ScrollArea>
+      {addingSkill && isActive && (
+        <React.Suspense fallback={null}>
+          <StandaloneAddSkillDialog open onOpenChange={setAddingSkill} onAdded={refresh} />
+        </React.Suspense>
+      )}
+      {creatingAgent && isActive && (
+        <React.Suspense fallback={null}>
+          <CreateAgentDialog onClose={() => setCreatingAgent(false)} onCreated={refresh} />
+        </React.Suspense>
+      )}
     </div>
   );
 };

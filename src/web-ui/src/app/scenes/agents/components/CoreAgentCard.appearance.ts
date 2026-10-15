@@ -6,10 +6,8 @@ export const coreAgentCardAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   parts: [
     { id: 'root' },
     { id: 'header' },
-    { id: 'icon' },
     { id: 'headerInfo' },
     { id: 'name' },
-    { id: 'role' },
     { id: 'status' },
     { id: 'body' },
     { id: 'description' },

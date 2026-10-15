@@ -471,34 +471,7 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                   />
                 </div>
               )}
-            >
-              <div className="openbitfun-device-overview__header-device">
-                {previewDevices.length > 1 && (
-                  <span className="openbitfun-device-overview__pagination" data-testid="nav-device-status-pagination">
-                    <span className="openbitfun-device-overview__pagination-index" ref={paginationRef}
-                      style={{ minInlineSize: `${formatNumber(previewDevices.length).length}ch` }}>
-                      {formatNumber(previewIndex + 1)}
-                    </span>
-                    {' / '}
-                    <span data-testid="nav-device-status-total">{formatNumber(previewDevices.length)}</span>
-                  </span>
-                )}
-                <div className="openbitfun-device-overview__device-heading" ref={headingRef} data-overflow-trigger aria-live="polite" aria-atomic="true">
-                  <OverflowText className="openbitfun-device-overview__device-name" title="" data-testid="nav-device-status-name">
-                    {displayedDevice.name}
-                  </OverflowText>
-                  {displayedActive && (
-                    <StatusPill
-                      className="openbitfun-device-overview__usage-badge"
-                      tone="success"
-                      data-testid="nav-device-usage-status"
-                    >
-                      {t('deviceOverview.inUse')}
-                    </StatusPill>
-                  )}
-                </div>
-              </div>
-            </CardHeader>
+            />
             <ScrollArea className="openbitfun-device-overview__scroll">
             <CardBody className="openbitfun-device-overview__body">
               <div className="openbitfun-device-overview__summary" data-testid="nav-device-status-summary">
@@ -531,6 +504,32 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                     aria-label={[displayedDevice.name, deviceActivity(displayedDevice)].join(' · ')}
                     data-control-state={displayedIncompatible ? 'incompatible' : displayedActive ? 'active' : displayedDevice.local ? 'local' : 'available'}>
                     <DeviceArtwork device={displayedDevice} />
+                  </div>
+                </div>
+                <div className="openbitfun-device-overview__device-details">
+                  {previewDevices.length > 1 && (
+                    <span className="openbitfun-device-overview__pagination" data-testid="nav-device-status-pagination">
+                      <span className="openbitfun-device-overview__pagination-index" ref={paginationRef}
+                        style={{ minInlineSize: `${formatNumber(previewDevices.length).length}ch` }}>
+                        {formatNumber(previewIndex + 1)}
+                      </span>
+                      {' / '}
+                      <span data-testid="nav-device-status-total">{formatNumber(previewDevices.length)}</span>
+                    </span>
+                  )}
+                  <div className="openbitfun-device-overview__device-heading" ref={headingRef} data-overflow-trigger aria-live="polite" aria-atomic="true">
+                    <OverflowText className="openbitfun-device-overview__device-name" title="" data-testid="nav-device-status-name">
+                      {displayedDevice.name}
+                    </OverflowText>
+                    {displayedActive && (
+                      <StatusPill
+                        className="openbitfun-device-overview__usage-badge"
+                        tone="success"
+                        data-testid="nav-device-usage-status"
+                      >
+                        {t('deviceOverview.inUse')}
+                      </StatusPill>
+                    )}
                   </div>
                 </div>
                 <div className="openbitfun-device-overview__device-actions" ref={actionsRef}>

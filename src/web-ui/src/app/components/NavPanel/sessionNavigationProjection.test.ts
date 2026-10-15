@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { SceneTabId } from '../SceneBar/types';
+import { sessionSceneWorkspaceKey } from '@/app/services/sessionSceneTarget';
 import {
   WorkspaceKind,
   WorkspaceType,
@@ -6,6 +8,7 @@ import {
 } from '@/shared/types';
 import {
   isWorkspaceBackedSessionGroupActive,
+  isWorkspaceBackedSessionGroupSelected,
   projectWorkspaceBackedSessionGroups,
 } from './sessionNavigationProjection';
 
@@ -24,6 +27,66 @@ const createWorkspace = (
   lastAccessed: '2026-08-16T00:00:00.000Z',
   tags: [],
   ...overrides,
+});
+
+describe('isWorkspaceBackedSessionGroupSelected', () => {
+  const workspace = createWorkspace('project', WorkspaceKind.Normal);
+  const context = { surfaceId: 'local', activeWorkspaceId: workspace.id, contentScope: undefined };
+
+  it.each<SceneTabId>([
+    'personal-overview', 'settings', 'profile', 'agents', 'skills', 'assistant',
+    'todos', 'miniapps', 'miniapp:sample', 'browser', 'pages', 'insights',
+    'ecosystem-compatibility', 'shell', 'terminal',
+  ])('does not select the retained workspace on the global %s page', id => {
+    expect(isWorkspaceBackedSessionGroupSelected(workspace, {
+      ...context, activeTab: { id, lastUsed: 1 },
+    })).toBe(false);
+  });
+
+  it('requires an owning session reference rather than the runtime workspace', () => {
+    expect(isWorkspaceBackedSessionGroupSelected(workspace, {
+      ...context, activeTab: { id: 'session:missing', lastUsed: 1 },
+    })).toBe(false);
+    const session = { surfaceId: 'local', workspaceKey: sessionSceneWorkspaceKey(workspace.id), sessionId: 'chat' };
+    expect(isWorkspaceBackedSessionGroupSelected(workspace, {
+      ...context, activeWorkspaceId: 'another-project',
+      activeTab: { id: 'session:project', session, lastUsed: 1 },
+    })).toBe(true);
+    expect(isWorkspaceBackedSessionGroupSelected(workspace, {
+      ...context,
+      activeTab: { id: 'session:unresolved', session: {
+        ...session, workspaceKey: JSON.stringify(['unresolved-workspace', 'chat']),
+      }, lastUsed: 1 },
+    })).toBe(false);
+  });
+
+  it('uses content workspace identity without guessing from paths or other devices', () => {
+    const first = createWorkspace('remote-first', WorkspaceKind.Remote, {
+      rootPath: '/workspace', connectionId: 'ssh-first',
+    });
+    const second = createWorkspace('remote-second', WorkspaceKind.Remote, {
+      rootPath: '/workspace', connectionId: 'ssh-second',
+    });
+    const selection = {
+      ...context,
+      activeTab: { id: 'content:file' as const, contentId: 'file', lastUsed: 1 },
+      contentScope: { surfaceId: 'local', workspaceId: first.id, workspacePath: '/workspace' },
+    };
+    expect(isWorkspaceBackedSessionGroupSelected(first, selection)).toBe(true);
+    expect(isWorkspaceBackedSessionGroupSelected(second, selection)).toBe(false);
+    expect(isWorkspaceBackedSessionGroupSelected(first, { ...selection, surfaceId: 'peer:host-b' })).toBe(false);
+    expect(isWorkspaceBackedSessionGroupSelected(first, {
+      ...selection, contentScope: { surfaceId: 'local', workspacePath: '/workspace' },
+    })).toBe(false);
+  });
+
+  it('keeps Git selection tied to the workspace it renders', () => {
+    const activeTab = { id: 'git' as const, lastUsed: 1 };
+    expect(isWorkspaceBackedSessionGroupSelected(workspace, { ...context, activeTab })).toBe(true);
+    expect(isWorkspaceBackedSessionGroupSelected(workspace, {
+      ...context, activeTab, activeWorkspaceId: 'another-project',
+    })).toBe(false);
+  });
 });
 
 describe('projectWorkspaceBackedSessionGroups', () => {

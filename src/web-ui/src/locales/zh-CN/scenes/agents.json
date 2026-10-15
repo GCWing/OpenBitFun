@@ -9,18 +9,17 @@
   "loading": "加载中…",
   "page": {
     "title": "智能体",
-    "subtitle": "配置四种智能体执行框架、面向任务的智能体与受委派的子智能体",
+    "subtitle": "执行模式体现默认智能体的工作风格，专用智能体独立或协作完成任务。",
     "searchPlaceholder": "搜索智能体名称或描述…",
     "newAgent": "新建智能体"
   },
   "nav": {
-    "harness": "智能体执行框架",
+    "harness": "执行模式",
     "coreAgents": "已接入智能体",
     "agents": "智能体"
   },
   "harnessZone": {
-    "title": "智能体执行框架",
-    "subtitle": "定义会话如何执行任务，各自管理工具与协作策略",
+    "title": "执行模式",
     "flowCaption": "同一任务 · 四种策略 · 一个结果",
     "task": "任务",
     "result": "结果",
@@ -29,22 +28,22 @@
       "Minimal": {
         "name": "$t(shared:agents.Minimal)",
         "purpose": "更少干预，更多自主",
-        "description": "精简提示词与工具，让新一代旗舰模型充分发挥，适合编程等任务。"
+        "description": "侧重自主推进，减少流程干预，让模型自行判断如何完成编程等任务。"
       },
       "Standard": {
         "name": "$t(shared:agents.Standard)",
         "purpose": "工具齐备，支持编程与日常工作",
-        "description": "以清晰的任务指导和完整工具，支持编程，也胜任信息处理、内容创作等日常工作。"
+        "description": "覆盖编程与日常工作，以清晰的任务指导和完整工具处理开发、资料整理与内容写作。"
       },
       "Ultimate": {
         "name": "$t(shared:agents.Ultimate)",
         "purpose": "分工协作，完成复杂项目",
-        "description": "多个智能体并行推进、独立审查，适合复杂项目与大型改造。"
+        "description": "强调分工协作，通过多个智能体并行执行与独立审查，推进复杂项目和大型改造。"
       },
       "Creative": {
         "name": "$t(shared:agents.Creative)",
         "purpose": "创造应用，定制你的体验",
-        "description": "用自然语言创建小应用、定制界面，让 OpenBitFun 更贴合你的工作方式。"
+        "description": "专注应用与界面，用自然语言创建小应用、定制 OpenBitFun，把想法变成可用的功能。"
       }
     }
   },
@@ -68,7 +67,7 @@
     "computerUseDisabledBadge": "已在设置中禁用"
   },
   "agentsZone": {
-    "title": "智能体",
+    "title": "专用智能体",
     "subtitle": "统一查看内置、用户、项目和外部智能体，点击卡片查看与配置能力",
     "empty": {
       "noAgents": "当前没有可用的智能体",
@@ -174,8 +173,6 @@
     "selectAll": "全选",
     "selectionSaveHint": "保存后生效",
     "capabilityEnabled": "已启用",
-    "subagentsSelectedCount": "已选择 {{count}} 个子智能体",
-    "subagentsEnabledCount": "已启用 {{count}} 个子智能体",
     "noEnabledSubagents": "未启用任何子智能体",
     "reset": "重置",
     "cancel": "取消",
@@ -224,9 +221,6 @@
       "builtin": "内置分组",
       "myGroups": "我的分组",
       "otherSkills": "其他 Skill",
-      "selectedCount": "已选择 {{count}} 个技能",
-      "enabledCount": "已启用 {{count}} 个技能",
-      "runtimeCount": "运行时采用 {{count}} 个",
       "unavailableCount": "{{count}} 个不可用",
       "enableGroupSkills": "选择 {{name}} 中的所有技能",
       "clearGroupSkills": "取消选择 {{name}} 中的技能",
@@ -249,7 +243,6 @@
       "extension": "扩展 · {{provider}}",
       "other": "其他",
       "selectedCount": "已选择 {{count}} 个工具",
-      "enabledCount": "已启用 {{count}} 个工具",
       "manageGroups": "管理分组",
       "manageTitle": "管理我的工具分组",
       "manageSubtitle": "整理可复用的个人工具选择。",

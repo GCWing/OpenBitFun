@@ -1,3 +1,4 @@
+import { resolveAssistantName } from '@/shared/utils/assistantName';
 import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { subscribeOverlayInteraction, createOverlayPortal, ActionItem } from '@openbitfun/ui';
 import {
@@ -92,6 +93,7 @@ function containsWorkspaceNameControlCharacter(value: string): boolean {
 interface WorkspaceItemProps {
   workspace: WorkspaceInfo;
   isActive: boolean;
+  isSelected: boolean;
   isSingle?: boolean;
   draggable?: boolean;
   isDragging?: boolean;
@@ -102,6 +104,7 @@ interface WorkspaceItemProps {
 const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
   workspace,
   isActive,
+  isSelected,
   isSingle = false,
   draggable = false,
   isDragging = false,
@@ -179,7 +182,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
     !isDefaultAssistantWorkspace;
   const workspaceDisplayName =
     workspace.workspaceKind === WorkspaceKind.Assistant
-      ? workspace.identity?.name?.trim() || workspace.name
+      ? resolveAssistantName(workspace, t('shared:agents.Claw'))
       : workspace.name;
   const relatedPathCount = workspace.relatedPaths?.length ?? 0;
   const workspaceIsRemote = isRemoteWorkspace(workspace);
@@ -803,7 +806,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
     return (
       <div className={[
         'openbitfun-nav-panel__assistant-item',
-        isActive && 'is-active',
+        isSelected && 'is-active',
         isDragging && 'is-dragging',
         menuOpen && 'is-menu-open',
         isSingle && 'is-single',
@@ -812,16 +815,16 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
       data-openbitfun-product-part="root"
       data-openbitfun-variant="assistant"
       data-openbitfun-state={[
-        isActive && 'active',
+        isSelected && 'active',
         isDragging && 'dragging',
         workspaceIsRemote && 'remote',
       ].filter(Boolean).join(' ')}
-      aria-current={isActive ? 'location' : undefined}
+      aria-current={isSelected ? 'location' : undefined}
       aria-grabbed={draggable ? isDragging : undefined}
       data-testid="nav-workspace-item"
       data-workspace-id={workspace.id}
       data-workspace-kind={workspace.workspaceKind}
-      data-workspace-active={isActive ? 'true' : 'false'}>
+      data-workspace-active={isSelected ? 'true' : 'false'}>
         <div
           data-openbitfun-product-component="workspace-item"
           data-openbitfun-product-part="card"
@@ -1057,7 +1060,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
   return (
     <div className={[
       'openbitfun-nav-panel__workspace-item',
-      isActive && 'is-active',
+      isSelected && 'is-active',
       isDragging && 'is-dragging',
       menuOpen && 'is-menu-open',
       sessionsCollapsed && 'is-sessions-collapsed',
@@ -1067,17 +1070,17 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
     data-openbitfun-product-part="root"
     data-openbitfun-variant="workspace"
     data-openbitfun-state={[
-      isActive && 'active',
+      isSelected && 'active',
       isDragging && 'dragging',
       sessionsCollapsed && 'collapsed',
       workspaceIsRemote && 'remote',
     ].filter(Boolean).join(' ')}
-    aria-current={isActive ? 'location' : undefined}
+    aria-current={isSelected ? 'location' : undefined}
     aria-grabbed={draggable ? isDragging : undefined}
     data-testid="nav-workspace-item"
     data-workspace-id={workspace.id}
     data-workspace-kind={workspace.workspaceKind}
-    data-workspace-active={isActive ? 'true' : 'false'}>
+    data-workspace-active={isSelected ? 'true' : 'false'}>
       <div
         data-openbitfun-product-component="workspace-item"
         data-openbitfun-product-part="card"

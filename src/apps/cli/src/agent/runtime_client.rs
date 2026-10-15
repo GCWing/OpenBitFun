@@ -1416,10 +1416,20 @@ impl CliAgentRuntimeClient {
     }
 
     fn build_default_session_name() -> String {
-        format!(
-            "CLI Session - {}",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-        )
+        // Older Shared hosts can display this fallback while newer hosts use
+        // the explicit descriptor to resolve their localized default.
+        "New Session".into()
+    }
+
+    fn default_session_title_metadata() -> serde_json::Map<String, serde_json::Value> {
+        serde_json::Map::from_iter([
+            ("titleSource".into(), "i18n".into()),
+            ("titleKey".into(), "flow-chat:session.new".into()),
+            (
+                "titleParams".into(),
+                serde_json::json!({ "defaultTitleText": Self::build_default_session_name() }),
+            ),
+        ])
     }
 
     fn is_session_not_found_error(error: &RuntimeError) -> bool {
@@ -1432,6 +1442,7 @@ impl CliAgentRuntimeClient {
     async fn recreate_session_with_id(&self, session_id: &str, agent_type: &str) -> Result<()> {
         let runtime = self.embedded_runtime("recreating sessions with fixed identifiers")?;
         let mut session_name = Self::build_default_session_name();
+        let mut title_metadata = Self::default_session_title_metadata();
         let mut effective_agent_type = agent_type.to_string();
 
         let workspace = self.workspace_path_buf();
@@ -1447,6 +1458,7 @@ impl CliAgentRuntimeClient {
         {
             if let Some(summary) = sessions.iter().find(|s| s.session_id == session_id) {
                 session_name = summary.session_name.clone();
+                title_metadata.clear();
                 effective_agent_type = summary.agent_type.clone();
             }
         }
@@ -1465,7 +1477,7 @@ impl CliAgentRuntimeClient {
                     remote_connection_id: None,
                     remote_ssh_host: None,
                     model_id: None,
-                    metadata: serde_json::Map::new(),
+                    metadata: title_metadata,
                 },
             )
             .await
@@ -1538,7 +1550,7 @@ impl CliAgentRuntimeClient {
                     remote_connection_id: None,
                     remote_ssh_host: None,
                     model_id: None,
-                    metadata: serde_json::Map::new(),
+                    metadata: Self::default_session_title_metadata(),
                 },
             )
             .await
@@ -1583,7 +1595,7 @@ impl CliAgentRuntimeClient {
             remote_connection_id: None,
             remote_ssh_host: None,
             model_id,
-            metadata: serde_json::Map::new(),
+            metadata: Self::default_session_title_metadata(),
         };
         let session = match &self.backend {
             CliAgentRuntimeBackend::Embedded(runtime) => runtime
@@ -2040,7 +2052,7 @@ impl CliAgentRuntimeClient {
             remote_connection_id: None,
             remote_ssh_host: None,
             model_id: None,
-            metadata: serde_json::Map::new(),
+            metadata: Self::default_session_title_metadata(),
         };
         let session = match &self.backend {
             CliAgentRuntimeBackend::Embedded(runtime) => runtime

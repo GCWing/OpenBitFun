@@ -194,6 +194,11 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
     },
     GeneratedSharedTermEntry {
         locale: LocaleId::ZhCN,
+        key: "sessions.new",
+        value: "新会话",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhCN,
         key: "statuses.cancelled",
         value: "已取消",
     },
@@ -379,6 +384,11 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
     },
     GeneratedSharedTermEntry {
         locale: LocaleId::ZhTW,
+        key: "sessions.new",
+        value: "新會話",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhTW,
         key: "statuses.cancelled",
         value: "已取消",
     },
@@ -561,6 +571,11 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
         locale: LocaleId::EnUS,
         key: "product.remote",
         value: "OpenBitFun Remote",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::EnUS,
+        key: "sessions.new",
+        value: "New Session",
     },
     GeneratedSharedTermEntry {
         locale: LocaleId::EnUS,

@@ -3,6 +3,9 @@
 //! Full workspace management system: open, manage, scan, statistics, etc.
 
 #[cfg(feature = "workspace-runtime")]
+pub mod assistant_naming;
+
+#[cfg(feature = "workspace-runtime")]
 pub mod catalog_publication;
 #[cfg(feature = "workspace-runtime")]
 pub mod factory;

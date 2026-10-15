@@ -726,7 +726,7 @@ class RemoteSessionStoreTest {
         runCurrent()
 
         val create = transport.commands.first { it.cmd == "create_session" }
-        assertEquals("Remote Code Session", create.sessionName)
+        assertEquals("", create.sessionName)
         assertEquals("/repo", create.workspacePath)
         assertEquals("code", create.agentType)
         assertEquals("review the parser", transport.commands.first { it.cmd == "send_message" }.content)

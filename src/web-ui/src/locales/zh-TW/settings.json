@@ -78,7 +78,7 @@
       },
       "sessionMemory": {
         "label": "工作階段與記憶",
-        "description": "設定新工作階段的執行框架、標題產生與記憶策略"
+        "description": "設定新工作階段的執行模式、標題產生與記憶策略"
       },
       "permissions": {
         "label": "權限規則",

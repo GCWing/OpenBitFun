@@ -9,18 +9,17 @@
   "loading": "Loading…",
   "page": {
     "title": "Agents",
-    "subtitle": "Configure four Agent Harnesses, task-focused Agents, and delegated SubAgents",
+    "subtitle": "Execution modes reflect how default agents work, while specialized agents complete tasks independently or together.",
     "searchPlaceholder": "Search agents by name or description…",
     "newAgent": "New Agent"
   },
   "nav": {
-    "harness": "Agent Harness",
+    "harness": "Execution modes",
     "coreAgents": "Connected Agents",
     "agents": "Agents"
   },
   "harnessZone": {
-    "title": "Agent Harness",
-    "subtitle": "Choose how a session executes work; each Harness owns its tool and collaboration policy",
+    "title": "Execution modes",
     "flowCaption": "One task · Four strategies · One result",
     "task": "Task",
     "result": "Result",
@@ -29,22 +28,22 @@
       "Minimal": {
         "name": "$t(shared:agents.Minimal)",
         "purpose": "Less intervention, more autonomy",
-        "description": "Minimal prompting and a focused tool set give next-generation flagship models room to excel at coding and other tasks."
+        "description": "Emphasizes autonomy, with less prescribed process so the model can decide how to complete coding and other tasks."
       },
       "Standard": {
         "name": "$t(shared:agents.Standard)",
         "purpose": "A complete toolkit for coding and everyday work",
-        "description": "Clear guidance and a complete toolkit support coding as well as everyday work such as handling information and creating content."
+        "description": "Covers coding and everyday work, using clear task guidance and a complete toolkit for development, organizing information, and writing."
       },
       "Ultimate": {
         "name": "$t(shared:agents.Ultimate)",
         "purpose": "Work together on complex projects",
-        "description": "Multiple agents work in parallel, with independent review for complex projects and large-scale changes."
+        "description": "Emphasizes teamwork, with agents working in parallel and independent review supporting complex projects and large-scale changes."
       },
       "Creative": {
         "name": "$t(shared:agents.Creative)",
         "purpose": "Create apps, shape your experience",
-        "description": "Create MiniApps and customize the interface in natural language, shaping OpenBitFun around the way you work."
+        "description": "Focuses on apps and interfaces, turning ideas into usable features by creating MiniApps and customizing OpenBitFun in natural language."
       }
     }
   },
@@ -68,7 +67,7 @@
     "computerUseDisabledBadge": "Disabled in Settings"
   },
   "agentsZone": {
-    "title": "Agents",
+    "title": "Specialized agents",
     "subtitle": "Browse built-in, user, project, and external Agents in one place, then open a card to review or configure it.",
     "empty": {
       "noAgents": "No agents are available right now",
@@ -174,8 +173,6 @@
     "selectAll": "Select all",
     "selectionSaveHint": "Takes effect after saving",
     "capabilityEnabled": "Enabled",
-    "subagentsSelectedCount": "{{count}} SubAgents selected",
-    "subagentsEnabledCount": "{{count}} SubAgents enabled",
     "noEnabledSubagents": "No SubAgents enabled",
     "reset": "Reset",
     "cancel": "Cancel",
@@ -224,9 +221,6 @@
       "builtin": "Built-in groups",
       "myGroups": "My groups",
       "otherSkills": "Other skills",
-      "selectedCount": "{{count}} skills selected",
-      "enabledCount": "{{count}} skills enabled",
-      "runtimeCount": "{{count}} used at runtime",
       "unavailableCount": "{{count}} unavailable",
       "enableGroupSkills": "Select all skills in {{name}}",
       "clearGroupSkills": "Deselect skills in {{name}}",
@@ -249,7 +243,6 @@
       "extension": "Extension · {{provider}}",
       "other": "Other",
       "selectedCount": "{{count}} tools selected",
-      "enabledCount": "{{count}} tools enabled",
       "manageGroups": "Manage groups",
       "manageTitle": "Manage my tool groups",
       "manageSubtitle": "Organize reusable personal tool selections.",

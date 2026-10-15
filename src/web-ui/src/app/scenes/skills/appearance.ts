@@ -6,6 +6,7 @@ export const skillsAppearanceDescriptor: AppearanceSurfaceDescriptor = {
     { id: 'root' }, { id: 'header' },
     { id: 'content' }, { id: 'installed' },
     { id: 'pageActions' },
+    { id: 'addForm' },
     { id: 'controls' },
     { id: 'main' }, { id: 'toolbar' },
     { id: 'installedTable' },

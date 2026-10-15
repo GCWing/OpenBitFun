@@ -1,4 +1,5 @@
 export const EN_US_MESSAGES: [string, string][] = [
+  ['session.newTitle', 'New Session'],
   ['workspaceTools.browse', 'Browse runtime folders'],
   ['workspaceTools.selectFolder', 'Use this folder'],
   ['workspaceTools.back', 'Back to files'],

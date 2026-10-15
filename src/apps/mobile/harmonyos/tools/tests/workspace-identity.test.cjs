@@ -143,7 +143,7 @@ test('set_assistant and set_workspace carry only workspace_id when the reference
 test('create_session carries only workspace_id when the reference has one', () => {
   const command = RemoteCommandFactory.createSession(
     { agentType: 'code', title: '', instruction: '', workspaceId: WS, remoteConnectionId: 'saved', remoteSshHost: 'host' }, '/repo');
-  assert.deepEqual(command, { cmd: 'create_session', agent_type: 'code', session_name: 'Remote Code Session', workspace_id: WS });
+  assert.deepEqual(command, { cmd: 'create_session', agent_type: 'code', session_name: '', workspace_id: WS });
   const legacy = RemoteCommandFactory.createSession({ agentType: 'code', title: '', instruction: '', remoteConnectionId: 'saved', remoteSshHost: 'host' }, '/repo');
   assert.equal(legacy.workspace_id, undefined);
   assert.equal(legacy.workspace_path, '/repo');
@@ -167,7 +167,7 @@ test('session_created.workspace_id is consumed and wins over the requested ID', 
   const allocated = [];
   const summary = await m.createSession({ agentType: 'code', title: '', instruction: '', workspaceId: WS, workspacePath: '/repo' },
     async session => { allocated.push(session); });
-  assert.deepEqual(m.sent, [{ cmd: 'create_session', agent_type: 'code', session_name: 'Remote Code Session', workspace_id: WS }]);
+  assert.deepEqual(m.sent, [{ cmd: 'create_session', agent_type: 'code', session_name: '', workspace_id: WS }]);
   assert.equal(summary.workspaceId, 'ws-host');
   assert.equal(summary.workspacePath, '/repo');
   assert.equal(summary.remoteConnectionId, 'saved');

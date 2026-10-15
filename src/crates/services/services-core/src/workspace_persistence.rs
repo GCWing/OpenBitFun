@@ -25,6 +25,9 @@ pub struct WorkspacePersistenceData {
     pub recent_assistant_workspaces: Vec<String>,
     #[serde(default)]
     pub primary_assistant_key: Option<PrimaryAssistantKey>,
+    /// High-water mark: deleting an assistant must not recycle its name number.
+    #[serde(default)]
+    pub assistant_name_sequence: u64,
     pub saved_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -165,6 +168,7 @@ mod tests {
     #[test]
     fn old_remote_record_without_credentials_survives_registry_round_trip() {
         let data = legacy_catalog();
+        assert_eq!(data.assistant_name_sequence, 0);
         validate_workspace_persistence_data(&data, Path::new("/miniapps")).unwrap();
         let round_trip: WorkspacePersistenceData =
             serde_json::from_value(serde_json::to_value(&data).unwrap()).unwrap();
@@ -176,6 +180,7 @@ mod tests {
         );
         assert_eq!(record.id, "saved-id");
         assert_eq!(round_trip.recent_workspaces, vec!["saved-id"]);
+        assert_eq!(round_trip.assistant_name_sequence, 0);
     }
 
     #[test]

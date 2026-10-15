@@ -56,6 +56,7 @@ export interface WorkspaceInfo {
   workspaceType: string;
   workspaceKind: string;
   assistantId?: string | null;
+  defaultNameNumber?: number | null;
   languages: string[];
   openedAt: string;
   lastAccessed: string;

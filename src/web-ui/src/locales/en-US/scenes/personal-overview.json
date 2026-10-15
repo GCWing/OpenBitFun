@@ -38,7 +38,22 @@
     "description": "Built-in and custom Agents for your workflows.",
     "create": "Create Agent",
     "createAssistant": "Create assistant",
+    "createAssistantConfirmMessage": "Create a new assistant? After creation, you can configure its identity, tools, and personality.",
     "createAssistantFailed": "Could not create the assistant. Please try again."
+  },
+  "devices": {
+    "title": "Devices",
+    "manage": "Manage devices",
+    "online": "Online",
+    "offline": "Offline",
+    "current": "Current device",
+    "thisDevice": "This device",
+    "incompatible": "Update required for control",
+    "loading": "Loading devices…",
+    "signInHint": "Sign in to see your devices and continue your work across them.",
+    "failed": "Could not refresh devices. Any devices shown may be out of date. Retry or open device management to check the connection.",
+    "empty": "No linked devices yet. Sign in to the same account on another device to connect it.",
+    "viewAll": "View all {{count}} devices"
   },
   "usage": {
     "loading": "Loading token activity…",

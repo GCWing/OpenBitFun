@@ -1,3 +1,4 @@
+import { resolveAssistantName } from '@/shared/utils/assistantName';
 import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import React, {
   useCallback, useEffect, useMemo, useRef, useState,
@@ -34,14 +35,12 @@ import {
   DialogHeading,
   DialogTitle,
   Icon,
-  IconButton,
   Input,
   OverflowText,
   PageHeader,
   ScrollArea,
   Spinner,
   Textarea,
-  Tooltip,
 } from '@openbitfun/ui';
 
 const log = createLogger('AssistantConfigPage');
@@ -61,7 +60,6 @@ function isFileMissingError(error: unknown): boolean {
   return /does not exist|no such file|not found/i.test(message);
 }
 
-const DEFAULT_AGENT_NAME = 'OpenBitFun Agent';
 
 interface PersonaDocState {
   fileName: PersonaDocFile;
@@ -331,7 +329,7 @@ const AssistantConfigPage: React.FC = () => {
     if (e.key === 'Escape') setEditingName(false);
   }, [commitEdit]);
 
-  const identityName = displayIdentity.name || DEFAULT_AGENT_NAME;
+  const identityName = displayIdentity.name || resolveAssistantName(workspace, t('shared:agents.Claw'));
 
   const renderPersonaDocLinks = () => (
     <div className="acp-identity__meta" data-openbitfun-component="assistant-config-page" data-openbitfun-part="personaList">
@@ -456,28 +454,27 @@ const AssistantConfigPage: React.FC = () => {
       data-openbitfun-component="assistant-config-page"
       data-openbitfun-part="root"
     >
+      <header className="acp-page__toolbar" data-openbitfun-component="assistant-config-page" data-openbitfun-part="toolbar">
+        <span data-openbitfun-component="assistant-config-page" data-openbitfun-part="back">
+          <Button
+            className="acp-page__back"
+            variant="text"
+            size="sm"
+            onClick={openGallery}
+            leadingIcon={<Icon name="arrow-left" size="sm" />}
+          >
+            {t('nursery.backToGallery')}
+          </Button>
+        </span>
+      </header>
       <ScrollArea className="acp-page__scroll">
         <div className="acp-layout" data-openbitfun-component="assistant-config-page" data-openbitfun-part="layout">
-          <header className="acp-page__toolbar" data-openbitfun-component="assistant-config-page" data-openbitfun-part="toolbar">
-            <Tooltip content={t('nursery.backToGallery')}>
-              <IconButton
-                type="button"
-                size="sm"
-                data-openbitfun-component="assistant-config-page"
-                data-openbitfun-part="back"
-                onClick={openGallery}
-                aria-label={t('nursery.backToGallery')}
-                icon={<Icon name="arrow-left" size="sm" />}
-              />
-            </Tooltip>
-          </header>
-
           <div className="acp-identity" data-openbitfun-component="assistant-config-page" data-openbitfun-part="identity">
             <AssistantAvatarPicker
               presetValue={displayIdentity.avatar}
               value={displayIdentity.emoji}
               stableKey={workspace?.assistantId || workspace?.id}
-              assistantName={displayIdentity.name || DEFAULT_AGENT_NAME}
+              assistantName={displayIdentity.name || resolveAssistantName(workspace, t('shared:agents.Claw'))}
               saveStatus={identitySaveStatus}
               saveError={identitySaveError}
               onPresetChange={(avatar) => updateIdentityField('avatar', avatar)}

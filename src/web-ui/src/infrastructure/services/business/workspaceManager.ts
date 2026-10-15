@@ -66,6 +66,7 @@ interface WorkspaceIdentityChangedEvent {
   name: string;
   identity: WorkspaceInfo['identity'];
   changedFields: string[];
+  defaultNameNumber?: number | null;
 }
 
 export type WorkspaceEvent =
@@ -620,6 +621,7 @@ class WorkspaceManager {
       return {
         ...workspace,
         name: update.name,
+        defaultNameNumber: update.defaultNameNumber ?? null,
         identity: update.identity ?? null,
       };
     };

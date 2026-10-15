@@ -1,0 +1,43 @@
+{
+  "flow-chat:session.newCode": [
+    "New Code session",
+    "新建 Code 会话",
+    "新增 Code 會話"
+  ],
+  "flow-chat:session.newCowork": [
+    "New Cowork session",
+    "新建 Cowork 会话",
+    "新增 Cowork 會話"
+  ],
+  "flow-chat:session.newClaw": [
+    "New Claw session",
+    "New assistant session",
+    "新建 Claw 会话",
+    "新建助理会话",
+    "新增 Claw 會話",
+    "新增助理會話"
+  ],
+  "flow-chat:session.newWithIndex": [
+    "New Session {{count}}",
+    "新建会话 {{count}}",
+    "新增會話 {{count}}"
+  ],
+  "flow-chat:session.newCodeWithIndex": [
+    "New Code Session {{count}}",
+    "新建 Code 会话 {{count}}",
+    "新增 Code 會話 {{count}}"
+  ],
+  "flow-chat:session.newCoworkWithIndex": [
+    "New Cowork Session {{count}}",
+    "新建 Cowork 会话 {{count}}",
+    "新增 Cowork 會話 {{count}}"
+  ],
+  "flow-chat:session.newClawWithIndex": [
+    "New Claw Session {{count}}",
+    "New Assistant Session {{count}}",
+    "新建 Claw 会话 {{count}}",
+    "新建助理会话 {{count}}",
+    "新增 Claw 會話 {{count}}",
+    "新增助理會話 {{count}}"
+  ]
+}

@@ -110,7 +110,6 @@ export const SkillGroupPicker: React.FC<SkillGroupPickerProps> = ({
     builtin: (groupKey) => builtinGroupLabel(groupKey, t),
     other: t('agentsOverview.skillGroupPicker.otherSkills'),
   }), [skills, t, userGroups]);
-  const selectedCount = new Set(selectedSkillKeys).size;
   const sections = useMemo(() => {
     const grouped = new Map<string, ResolvedSkillGroup[]>();
     for (const group of groups) {
@@ -129,8 +128,7 @@ export const SkillGroupPicker: React.FC<SkillGroupPickerProps> = ({
         data-openbitfun-product-component="skill-group-picker"
         data-openbitfun-product-part="head"
         leading={<span className="skill-group-picker__selected-count">
-          {t('agentsOverview.skillGroupPicker.selectedCount', { count: selectedCount })}
-          {' · '}{t('agentsOverview.selectionSaveHint')}
+          {t('agentsOverview.selectionSaveHint')}
         </span>}
       />
       <div className="skill-group-picker__sections" data-openbitfun-product-component="skill-group-picker" data-openbitfun-product-part="sections">

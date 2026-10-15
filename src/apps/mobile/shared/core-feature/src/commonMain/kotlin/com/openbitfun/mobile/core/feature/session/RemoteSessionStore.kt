@@ -1381,6 +1381,7 @@ public class RemoteSessionStore internal constructor(
                 val confirmedSession = RemoteSession(
                     id = sessionId,
                     title = created.title?.takeIf(String::isNotBlank)
+                        ?: intent.title.trim().takeIf(String::isNotBlank)
                         ?: SessionNaming.fallbackTitle(intent.agentType),
                     agentType = intent.agentType,
                     status = "active",

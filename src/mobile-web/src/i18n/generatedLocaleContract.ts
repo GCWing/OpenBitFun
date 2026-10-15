@@ -86,6 +86,9 @@ export const SHARED_TERMS_BY_LOCALE = {
       "done": "已完成",
       "failed": "失败",
       "cancelled": "已取消"
+    },
+    "sessions": {
+      "new": "新会话"
     }
   },
   "zh-TW": {
@@ -139,6 +142,9 @@ export const SHARED_TERMS_BY_LOCALE = {
       "done": "已完成",
       "failed": "失敗",
       "cancelled": "已取消"
+    },
+    "sessions": {
+      "new": "新會話"
     }
   },
   "en-US": {
@@ -192,6 +198,9 @@ export const SHARED_TERMS_BY_LOCALE = {
       "done": "Done",
       "failed": "Failed",
       "cancelled": "Cancelled"
+    },
+    "sessions": {
+      "new": "New Session"
     }
   }
 } as const satisfies Record<MobileLanguage, SharedI18nTerms>;

@@ -49,17 +49,17 @@ pub(crate) trait WorkspaceIdentityRuntimeExt: Sized {
 impl WorkspaceIdentityRuntimeExt for WorkspaceIdentity {
     async fn load_from_workspace_root(workspace_root: &Path) -> Result<Option<Self>, String> {
         let identity_path = workspace_root.join(IDENTITY_FILE_NAME);
-        if !identity_path.exists() {
-            return Ok(None);
-        }
-
-        let content = fs::read_to_string(&identity_path).await.map_err(|e| {
-            format!(
-                "Failed to read identity file '{}': {}",
-                identity_path.display(),
-                e
-            )
-        })?;
+        let content = match fs::read_to_string(&identity_path).await {
+            Ok(content) => content,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(format!(
+                    "Failed to read identity file '{}': {}",
+                    identity_path.display(),
+                    error
+                ))
+            }
+        };
 
         let identity = Self::from_markdown(&content)?;
         if identity.is_empty() {
@@ -475,21 +475,25 @@ impl WorkspaceInfoRuntimeExt for WorkspaceInfo {
                     self.root_path.join(IDENTITY_FILE_NAME).display(),
                     error
                 );
-                self.identity = None;
                 return;
             }
         };
 
-        if self.workspace_kind == WorkspaceKind::Assistant {
-            if let Some(name) = identity
-                .as_ref()
-                .and_then(|identity| identity.name.as_ref())
-            {
-                self.name = name.clone();
-            }
+        // A temporarily missing file must not erase the last known identity.
+        // A readable document with an empty name still explicitly clears it.
+        if identity.is_none()
+            && self.identity.is_some()
+            && !fs::try_exists(self.root_path.join(IDENTITY_FILE_NAME))
+                .await
+                .unwrap_or(false)
+        {
+            return;
         }
-
         self.identity = identity;
+        super::assistant_naming::refresh_name(
+            self,
+            crate::service::config::app_language::get_app_language().await,
+        );
     }
 
     async fn load_worktree(&mut self, freshness: WorktreeTopologyFreshness) {
@@ -814,6 +818,8 @@ pub struct WorkspaceManager {
     recent_assistant_workspaces: Vec<String>,
     primary_assistant_key: Option<PrimaryAssistantKey>,
     max_recent_workspaces: usize,
+    pub(crate) assistant_name_sequence: u64,
+    assistant_name_registry: Option<PathBuf>,
 }
 
 /// Workspace manager configuration.
@@ -845,7 +851,45 @@ impl WorkspaceManager {
             recent_assistant_workspaces: Vec::new(),
             primary_assistant_key: None,
             max_recent_workspaces: config.max_recent_workspaces,
+            assistant_name_sequence: 0,
+            assistant_name_registry: None,
         }
+    }
+
+    pub(crate) fn with_assistant_name_registry(mut self, path: PathBuf) -> Self {
+        self.assistant_name_registry = Some(path);
+        self
+    }
+
+    pub(crate) fn restore_assistant_name_sequence(&mut self, saved: u64) {
+        self.assistant_name_sequence = saved.max(
+            self.workspaces
+                .values()
+                .filter_map(super::assistant_naming::number)
+                .max()
+                .unwrap_or(0),
+        );
+    }
+
+    async fn allocate_assistant_name_number(&mut self, id: &str) -> OpenBitFunResult<u64> {
+        let next = if let Some(path) = &self.assistant_name_registry {
+            let known = self
+                .workspaces
+                .values()
+                .filter_map(|workspace| {
+                    super::assistant_naming::number(workspace)
+                        .map(|number| (workspace.id.clone(), number))
+                })
+                .collect();
+            super::assistant_naming::allocate_number(path, id, self.assistant_name_sequence, known)
+                .await?
+        } else {
+            self.assistant_name_sequence.checked_add(1).ok_or_else(|| {
+                OpenBitFunError::service("Assistant name number capacity exhausted")
+            })?
+        };
+        self.assistant_name_sequence = self.assistant_name_sequence.max(next);
+        Ok(next)
     }
 
     /// Opens a workspace.
@@ -963,6 +1007,20 @@ impl WorkspaceManager {
                     )?;
                 }
             }
+            let needs_number = options.workspace_kind == WorkspaceKind::Assistant
+                && self
+                    .workspaces
+                    .get(&workspace_id)
+                    .and_then(super::assistant_naming::number)
+                    .is_none();
+            if needs_number {
+                let number = self.allocate_assistant_name_number(&workspace_id).await?;
+                if let Some(workspace) = self.workspaces.get_mut(&workspace_id) {
+                    workspace
+                        .metadata
+                        .insert(super::assistant_naming::NUMBER.into(), number.into());
+                }
+            }
             if let Some(workspace) = self.workspaces.get_mut(&workspace_id) {
                 workspace.workspace_kind = options.workspace_kind.clone();
                 workspace.assistant_id = if options.workspace_kind == WorkspaceKind::Assistant {
@@ -970,8 +1028,12 @@ impl WorkspaceManager {
                 } else {
                     None
                 };
-                if let Some(display_name) = &options.display_name {
-                    workspace.name = display_name.clone();
+                // Discovery supplies a generated fallback, never an instruction
+                // to overwrite a saved assistant name.
+                if workspace.workspace_kind != WorkspaceKind::Assistant {
+                    if let Some(display_name) = &options.display_name {
+                        workspace.name = display_name.clone();
+                    }
                 }
                 if options.workspace_kind == WorkspaceKind::Remote {
                     if let Some(ssh_host) = options
@@ -995,8 +1057,12 @@ impl WorkspaceManager {
                         );
                     }
                 }
-                if let Some(worktree) = refresh_worktree {
+                if workspace.workspace_kind == WorkspaceKind::Assistant
+                    || refresh_worktree.is_some()
+                {
                     workspace.load_identity().await;
+                }
+                if let Some(worktree) = refresh_worktree {
                     workspace.worktree = worktree;
                 }
             }
@@ -1019,7 +1085,7 @@ impl WorkspaceManager {
             });
         }
 
-        let workspace = match refresh_worktree {
+        let mut workspace = match refresh_worktree {
             Some(worktree) => {
                 let mut workspace =
                     WorkspaceInfo::new_without_worktree(path, options.clone()).await?;
@@ -1028,6 +1094,14 @@ impl WorkspaceManager {
             }
             None => WorkspaceInfo::new(path, options.clone()).await?,
         };
+        if workspace.workspace_kind == WorkspaceKind::Assistant {
+            let number = self.allocate_assistant_name_number(&workspace.id).await?;
+            workspace
+                .metadata
+                .insert(super::assistant_naming::NUMBER.into(), number.into());
+            // Re-read before migration: unreadable identities must preserve their name.
+            workspace.load_identity().await;
+        }
         let workspace_id = workspace.id.clone();
 
         self.workspaces

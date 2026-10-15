@@ -523,14 +523,14 @@
     }
   },
   "session": {
-    "new": "New Session",
+    "new": "$t(shared:sessions.new)",
     "newCode": "New Code session",
     "newCowork": "New Cowork session",
-    "newClaw": "New Claw session",
+    "newClaw": "New assistant session",
     "newWithIndex": "New Session {{count}}",
     "newCodeWithIndex": "New Code Session {{count}}",
     "newCoworkWithIndex": "New Cowork Session {{count}}",
-    "newClawWithIndex": "New Claw Session {{count}}",
+    "newClawWithIndex": "New Assistant Session {{count}}",
     "title": "Session",
     "chatWithAgent": "Chat with {{name}}",
     "rename": "Rename Session",
@@ -745,7 +745,7 @@
     "streaming": "Streaming"
   },
   "toolbar": {
-    "newSession": "New Session",
+    "newSession": "$t(shared:sessions.new)",
     "history": "History",
     "export": "Export Chat",
     "clear": "Clear Chat",
@@ -829,21 +829,21 @@
       "fixedTooltip": "This session uses {{name}} and is now fixed.",
       "compatibilityShort": "Legacy",
       "comingSoon": "In development",
-      "comingSoonNotice": "The {{name}} Harness execution framework is in development.",
-      "legacySessionNotice": "This legacy session keeps its original Agent execution mode. Create a new session to use the Agent Harness execution framework.",
-      "sessionStartedNotice": "Harness and main Agent are set before the first turn starts. Create a new session to use another selection.",
+      "comingSoonNotice": "The {{name}} execution mode is in development.",
+      "legacySessionNotice": "This legacy session keeps its original agent. Create a new session to choose a new execution mode.",
+      "sessionStartedNotice": "The execution mode or main agent is set before the first turn starts. Create a new session to use another selection.",
       "newSessionConfirmation": {
         "title": "Create a new session with {{name}}?",
         "message": "The current session will remain unchanged. The new session will use {{name}}.",
         "confirm": "Create new session"
       },
-      "unsupportedProfile": "Unsupported Harness ({{id}})",
-      "unsupportedProfileNotice": "This session uses {{id}}, which this version cannot run. Select a supported Harness explicitly.",
-      "profileChangeBusy": "Wait for the current turn to finish before changing Harness.",
-      "profileChangeOutcomeUnknown": "OpenBitFun cannot confirm whether the Harness changed. Refresh the session before trying again.",
-      "profileUnavailable": "This Harness is not supported by the current OpenBitFun Host.",
-      "profileChangeFailed": "Failed to change Harness. Try again.",
-      "rememberFailed": "The Harness changed, but this selection could not be remembered. New sessions may continue using the previous default.",
+      "unsupportedProfile": "Unsupported execution mode ({{id}})",
+      "unsupportedProfileNotice": "This session uses {{id}}, which this version cannot run. Select a supported execution mode.",
+      "profileChangeBusy": "Wait for the current turn to finish before changing execution modes.",
+      "profileChangeOutcomeUnknown": "OpenBitFun cannot confirm whether the execution mode changed. Refresh the session before trying again.",
+      "profileUnavailable": "This execution mode is not supported by the current OpenBitFun Host.",
+      "profileChangeFailed": "Failed to change execution mode. Try again.",
+      "rememberFailed": "The execution mode changed, but this selection could not be remembered. New sessions may continue using the previous default.",
       "otherAgentsTitle": "Agents",
       "otherAgentsEmpty": "No main Agents are available",
       "unavailable": "Unavailable",
@@ -865,7 +865,7 @@
           "name": "$t(shared:agents.Creative)"
         }
       },
-      "activateStandard": "Switch to Standard Harness"
+      "activateStandard": "Switch to Standard execution mode"
     },
     "agents": {
       "available": "Available",
@@ -2507,7 +2507,7 @@
       "resultCount": "{{count}} sessions",
       "title": "Session",
       "currentWorkspace": "Current workspace",
-      "defaultSessionName": "New Session",
+      "defaultSessionName": "$t(shared:sessions.new)",
       "unknownSession": "Unknown session",
       "preparingCreate": "Preparing to create session {{session}}",
       "creatingSession": "Creating session {{session}}",

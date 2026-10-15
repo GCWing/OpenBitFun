@@ -78,7 +78,6 @@ const AgentHarnessOverview: React.FC<{
         className="openbitfun-agents-scene__harness-zone"
         data-testid="agents-harness-zone"
         title={t('harnessZone.title')}
-        subtitle={t('harnessZone.subtitle')}
       >
         <ul
           className="openbitfun-agents-scene__harness-presentation"

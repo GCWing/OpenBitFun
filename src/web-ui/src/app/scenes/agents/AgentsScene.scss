@@ -1,3 +1,5 @@
+@use '@/infrastructure/config/components/common/config-page-layout.tokens' as configLayout;
+
 // Keep controls aligned with their surfaces while retaining color and label motion.
 :is(.openbitfun-agents-scene, .agent-detail-dialog) :is(button, [role='button']):active {
   scale: none;
@@ -10,6 +12,8 @@
   min-width: 0;
   min-height: 0;
   container: agents-scene / inline-size;
+  color: var(--openbitfun-color-content-primary);
+  background: var(--openbitfun-color-surface-scene);
 
   &--page {
     display: flex;
@@ -17,30 +21,72 @@
     overflow: hidden;
   }
 
+  .gallery-layout__body {
+    min-height: 0;
+    scrollbar-gutter: stable both-edges;
+  }
+
+  .gallery-layout__body-inner {
+    @include configLayout.content-frame;
+    container: agents-content / inline-size;
+  }
+
   .gallery-page-header {
+    position: static;
+    flex-direction: column;
     align-items: center;
-    padding-top: var(--openbitfun-space-6);
-    padding-bottom: var(--openbitfun-space-4);
+    gap: var(--openbitfun-space-3);
+    width: 100%;
+    margin: 0;
+    padding: var(--openbitfun-space-8) 0 var(--openbitfun-space-10);
+    text-align: center;
+  }
+
+  .gallery-page-header__identity {
+    flex: none;
+    width: 100%;
+  }
+
+  .gallery-page-header__title {
+    margin-bottom: var(--openbitfun-space-2);
+    font-family: var(--openbitfun-type-heading-compact-page-font-family);
+    font-size: var(--openbitfun-type-heading-compact-page-font-size);
+    font-weight: var(--openbitfun-type-heading-compact-page-font-weight);
+    line-height: var(--openbitfun-type-heading-compact-page-line-height);
+    letter-spacing: var(--openbitfun-type-heading-compact-page-letter-spacing);
+  }
+
+  .gallery-page-header__subtitle {
+    max-width: 48ch;
+    margin-inline: auto;
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+    overflow-wrap: anywhere;
   }
 
   &__header-avatar {
     display: block;
-    inline-size: calc(var(--openbitfun-control-height-lg) + var(--openbitfun-space-3));
-    block-size: calc(var(--openbitfun-control-height-lg) + var(--openbitfun-space-3));
+    inline-size: 112px;
+    block-size: 112px;
     object-fit: contain;
   }
 
   .gallery-zones {
-    gap: var(--openbitfun-space-6);
-    padding-top: var(--openbitfun-space-3);
+    width: 100%;
+    margin: 0;
+    gap: var(--openbitfun-space-12);
+    padding: 0 0 var(--openbitfun-space-16);
   }
 
   .gallery-zone {
-    gap: var(--openbitfun-space-3);
+    min-width: 0;
+    gap: var(--openbitfun-space-5);
   }
 
   .gallery-grid {
-    gap: var(--openbitfun-space-3);
+    grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+    align-items: stretch;
+    gap: var(--openbitfun-space-4);
   }
 
   .gallery-zone__subtitle {
@@ -49,27 +95,37 @@
     line-height: var(--openbitfun-type-body-sm-line-height);
   }
 
+  &__catalog-zone {
+    .gallery-zone__header {
+      flex-direction: row;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .gallery-zone__tools {
+      width: auto;
+      margin-inline-start: auto;
+    }
+  }
+
   &__catalog-toolbar {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    flex-wrap: wrap;
     gap: var(--openbitfun-space-3);
     min-width: 0;
   }
 
   &__search {
-    flex: 1 1 220px;
     width: 100%;
     min-width: 0;
-    max-width: 320px;
   }
 
   &__agent-filters {
     display: flex;
     align-items: center;
     gap: var(--openbitfun-space-3);
-    flex-wrap: wrap;
-    margin-inline-start: auto;
+    min-width: 0;
   }
 
   &__agent-filter-group {
@@ -87,7 +143,7 @@
   }
 
   &__agent-filter-select {
-    width: 124px;
+    width: 120px;
   }
 
   &__harness {
@@ -98,27 +154,20 @@
   &__harness-zone.gallery-zone {
     display: flex;
     flex-direction: column;
-    gap: var(--openbitfun-space-3);
+    gap: var(--openbitfun-space-5);
 
     .gallery-zone__header {
       align-items: flex-start;
       min-height: 0;
     }
 
-    .gallery-zone__heading {
-      gap: var(--openbitfun-space-1);
-    }
-
-    .gallery-zone__subtitle {
-      max-width: 60ch;
-    }
   }
 
   &__harness-presentation {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
     grid-auto-rows: 1fr;
-    gap: var(--openbitfun-space-3);
+    gap: var(--openbitfun-space-4);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -249,51 +298,47 @@
 
 }
 
-@container agents-scene (max-width: 720px) {
+@container agents-content (max-width: 600px) {
   .openbitfun-agents-scene {
     .gallery-page-header {
-      padding-top: var(--openbitfun-space-5);
-      padding-bottom: var(--openbitfun-space-3);
+      padding-block: var(--openbitfun-space-6) var(--openbitfun-space-8);
     }
 
     .gallery-zones {
-      gap: var(--openbitfun-space-5);
-      padding-top: var(--openbitfun-space-2);
+      gap: var(--openbitfun-space-8);
+      padding-bottom: var(--openbitfun-space-12);
+    }
+
+    &__header-avatar {
+      inline-size: 96px;
+      block-size: 96px;
+    }
+
+    &__catalog-toolbar {
+      grid-template-columns: minmax(0, 1fr);
     }
 
     &__agent-filters {
-      width: 100%;
-      align-items: flex-start;
-      gap: var(--openbitfun-space-2);
-      margin-inline-start: 0;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     &__agent-filter-group {
-      flex: 1 1 150px;
+      align-items: stretch;
+      flex-direction: column;
     }
 
     &__agent-filter-select {
-      flex: 1;
-      width: auto;
+      width: 100%;
       min-width: 0;
-    }
-
-    &__search {
-      flex-basis: 100%;
-      max-width: none;
     }
   }
 }
 
 @container agent-harness (max-width: 480px) {
   .openbitfun-agents-scene {
-    &__harness-presentation {
-      gap: var(--openbitfun-space-2);
-    }
-
     &__harness-profile {
-      padding: var(--openbitfun-space-3);
-      gap: var(--openbitfun-space-2);
+      min-height: 144px;
     }
   }
 }

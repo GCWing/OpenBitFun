@@ -1180,7 +1180,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
           const assistant: AssistantEntry = {
             workspace_id: info.workspace_id,
             path: info.path,
-            name: info.project_name ?? 'Claw',
+            name: info.project_name ?? t('shared.agents.Claw'),
             assistant_id: info.assistant_id,
           };
           setCurrentAssistant(assistant);

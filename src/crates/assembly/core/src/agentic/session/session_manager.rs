@@ -3832,7 +3832,7 @@ impl SessionManager {
     ) -> OpenBitFunResult<()> {
         let normalized_title = Self::normalize_session_title_input(title)?;
         let _mutation_guard = self.acquire_session_mutation(session_id).await?;
-        self.update_session_title_locked(session_id, normalized_title)
+        self.update_session_title_locked(session_id, normalized_title, true)
             .await
     }
 
@@ -3840,6 +3840,7 @@ impl SessionManager {
         &self,
         session_id: &str,
         normalized_title: String,
+        user_edited: bool,
     ) -> OpenBitFunResult<()> {
         let workspace_path = self.effective_session_storage_path(session_id).await;
         let mut updated_session = self
@@ -3869,6 +3870,7 @@ impl SessionManager {
                     session_id,
                     &updated_session.session_name,
                     last_active_at,
+                    user_edited,
                 )
                 .await?;
         }
@@ -3898,6 +3900,17 @@ impl SessionManager {
     ) -> OpenBitFunResult<bool> {
         let normalized_title = Self::normalize_session_title_input(title)?;
         let _mutation_guard = self.acquire_session_mutation(session_id).await?;
+        if let Some(path) = self.effective_session_storage_path(session_id).await {
+            if self
+                .persistence_manager
+                .load_session_metadata(&path, session_id)
+                .await?
+                .and_then(|m| m.custom_metadata)
+                .is_some_and(|m| m.get("titleUserEdited").and_then(|v| v.as_bool()) == Some(true))
+            {
+                return Ok(false);
+            }
+        }
         let Some(session) = self.sessions.get(session_id) else {
             return Err(OpenBitFunError::NotFound(format!(
                 "Session not found: {}",
@@ -3914,7 +3927,7 @@ impl SessionManager {
         }
         drop(session);
 
-        self.update_session_title_locked(session_id, normalized_title)
+        self.update_session_title_locked(session_id, normalized_title, false)
             .await?;
         Ok(true)
     }
@@ -13630,6 +13643,43 @@ mod tests {
             .expect_err("deleted session title update must fail");
         assert!(error.to_string().contains("not found"));
         assert!(!sessions_dir.join(&session_id).exists());
+    }
+
+    #[tokio::test]
+    async fn manual_title_equal_to_default_blocks_delayed_generation_after_restore() {
+        let workspace = TestWorkspace::new();
+        let persistence_manager =
+            Arc::new(PersistenceManager::new(workspace.path_manager()).unwrap());
+        let manager = test_manager(persistence_manager);
+        let session = manager
+            .create_session(
+                "New Session".into(),
+                "Claw".into(),
+                SessionConfig {
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        manager
+            .update_session_title(&session.session_id, "New Session")
+            .await
+            .unwrap();
+        assert!(!manager
+            .update_session_title_if_current(&session.session_id, "New Session", "Generated topic")
+            .await
+            .unwrap());
+        manager.evict_loaded_session_for_test(&session.session_id);
+        let restored = manager
+            .restore_session(workspace.path(), &session.session_id)
+            .await
+            .unwrap();
+        assert_eq!(restored.session_name, "New Session");
+        assert!(!manager
+            .update_session_title_if_current(&session.session_id, "New Session", "Another topic")
+            .await
+            .unwrap());
     }
 
     #[tokio::test]

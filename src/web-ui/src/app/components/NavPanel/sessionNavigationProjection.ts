@@ -1,4 +1,7 @@
 import type { WorkspaceInfo } from '@/shared/types';
+import type { ContentResourceScope } from '@/shared/types/contentResource';
+import { isSessionSceneId, type SceneTab } from '../SceneBar/types';
+import { sessionSceneWorkspaceKey } from '@/app/services/sessionSceneTarget';
 
 export type SessionNavigationScope = 'all' | 'assistants' | 'projects';
 export type WorkspaceBackedSessionGroupKind = 'assistant' | 'project';
@@ -23,6 +26,33 @@ export function isWorkspaceBackedSessionGroupActive(
   activeWorkspace: WorkspaceInfo | null | undefined,
 ): boolean {
   return Boolean(activeWorkspace && workspace.id === activeWorkspace.id);
+}
+
+/** Sidebar selection follows the visible resource, independently of runtime context. */
+export function isWorkspaceBackedSessionGroupSelected(
+  workspace: WorkspaceInfo,
+  {
+    activeTab,
+    contentScope,
+    surfaceId,
+    activeWorkspaceId,
+  }: {
+    activeTab: SceneTab | undefined;
+    contentScope: ContentResourceScope | undefined;
+    surfaceId: string;
+    activeWorkspaceId: string | null;
+  },
+): boolean {
+  if (!activeTab) return false;
+  if (isSessionSceneId(activeTab.id)) {
+    return activeTab.session?.surfaceId === surfaceId
+      && activeTab.session.workspaceKey === sessionSceneWorkspaceKey(workspace.id);
+  }
+  if (activeTab.contentId) {
+    return contentScope?.surfaceId === surfaceId && contentScope.workspaceId === workspace.id;
+  }
+  // Git renders the current workspace; global pages have no workspace selection.
+  return activeTab.id === 'git' && workspace.id === activeWorkspaceId;
 }
 
 const isWorkspaceInScope = (

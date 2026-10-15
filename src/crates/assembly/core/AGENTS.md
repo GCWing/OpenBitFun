@@ -417,3 +417,10 @@ For plain-prompt goal activation and remote goal storage routing:
 ```bash
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,remote-workspace --lib thread_goal_
 ```
+
+Assistant naming, concurrent host allocation, and user-title protection:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib service::workspace::service::tests::assistant_
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib title_
+```

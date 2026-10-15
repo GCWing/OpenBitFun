@@ -78,7 +78,7 @@
       },
       "sessionMemory": {
         "label": "会话与记忆",
-        "description": "设置新会话的执行框架、标题生成与记忆策略"
+        "description": "设置新会话的执行模式、标题生成与记忆策略"
       },
       "permissions": {
         "label": "权限规则",

@@ -1594,14 +1594,7 @@ where
         } => {
             let agent = resolve_remote_agent_type(agent_type.as_deref());
             let is_claw = agent == "Claw";
-            let session_name = session_name
-                .as_deref()
-                .filter(|name| !name.is_empty())
-                .unwrap_or(match agent {
-                    "Cowork" => "Remote Cowork Session",
-                    "Claw" => "Remote Claw Session",
-                    _ => "Remote Code Session",
-                });
+            let session_name = session_name.as_deref().map(str::trim).unwrap_or("");
 
             let explicit = match resolve_remote_session_workspace(
                 host,
@@ -5046,7 +5039,7 @@ mod tests {
             }
         );
         let created_requests = host.created_requests.lock().unwrap();
-        assert_eq!(created_requests[0].session_name, "Remote Cowork Session");
+        assert_eq!(created_requests[0].session_name, "");
         assert_eq!(created_requests[0].agent_type, "Cowork");
         assert_eq!(
             created_requests[0].workspace_id.as_deref(),

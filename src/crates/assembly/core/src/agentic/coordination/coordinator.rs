@@ -13553,10 +13553,34 @@ async fn create_agent_session_from_runtime_request(
         )
     })?;
     let created_by = resolve_agent_session_create_created_by(&request.metadata);
+    let uses_default_title = request.session_name.trim().is_empty()
+        || (request.metadata.get("titleSource").and_then(|v| v.as_str()) == Some("i18n")
+            && request.metadata.get("titleKey").and_then(|v| v.as_str())
+                == Some("flow-chat:session.new")
+            && request
+                .metadata
+                .get("titleParams")
+                .and_then(|v| v.get("defaultTitleText"))
+                .and_then(|v| v.as_str())
+                == Some(request.session_name.as_str()));
+    let explicit_remote_title = matches!(
+        request.metadata.get("source").and_then(|v| v.as_str()),
+        Some("remote_relay" | "bot")
+    );
+    let session_name = if uses_default_title {
+        crate::service::i18n::generated_locale_contract::generated_shared_term(
+            crate::service::config::app_language::get_app_language().await,
+            "sessions.new",
+        )
+        .unwrap_or("New Session")
+        .to_string()
+    } else {
+        request.session_name
+    };
     let session = coordinator
         .create_session_with_workspace_and_creator_internal(
             session_id,
-            request.session_name,
+            session_name,
             request.agent_type,
             SessionConfig {
                 agent_route_key: request.agent_route_key,
@@ -13576,6 +13600,30 @@ async fn create_agent_session_from_runtime_request(
         .await
         .map_err(map_core_error)?;
 
+    if !transient && (uses_default_title || explicit_remote_title) {
+        let title_metadata = if uses_default_title {
+            serde_json::json!({
+                "titleSource": "i18n", "titleKey": "flow-chat:session.new",
+                "titleParams": { "defaultTitleText": session.session_name }
+            })
+        } else {
+            // Explicit remote titles are user input. Desktop defaults use
+            // their explicit title descriptor through the existing creation API.
+            serde_json::json!({ "titleSource": "text", "titleUserEdited": true })
+        };
+        if let Err(error) = coordinator
+            .session_manager
+            .merge_session_custom_metadata(&session.session_id, title_metadata)
+            .await
+        {
+            // Session creation has committed; a projection failure must not
+            // report a failed create and encourage a duplicate retry.
+            warn!(
+                "Failed to persist created session title provenance: session_id={} error={}",
+                session.session_id, error
+            );
+        }
+    }
     Ok(session.into())
 }
 
@@ -20674,6 +20722,86 @@ mod tests {
             .expect("explicit-model normal session should be created");
         assert_eq!(explicit.config.model_id.as_deref(), Some("explicit-model"));
 
+        let _ = std::fs::remove_dir_all(workspace_path);
+    }
+
+    #[tokio::test]
+    async fn runtime_default_title_is_shared_and_explicit_remote_titles_stay_literal() {
+        let (coordinator, session_manager) = test_persistent_coordinator();
+        let workspace_path = std::env::temp_dir().join(format!(
+            "openbitfun-title-contract-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&workspace_path).unwrap();
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(&workspace_path);
+        let expected = crate::service::i18n::generated_locale_contract::generated_shared_term(
+            crate::service::config::app_language::get_app_language().await,
+            "sessions.new",
+        )
+        .unwrap();
+        for (agent_type, title, descriptor) in [
+            ("Standard", "", false),
+            ("Cowork", "  ", false),
+            ("Claw", "", false),
+            ("Claw", "Remote Claw Session", false),
+            ("Standard", expected, false),
+            ("Standard", "New Session", true),
+        ] {
+            let created = AgentSubmissionPort::create_session(
+                &coordinator,
+                AgentSessionCreateRequest {
+                    session_name: title.into(),
+                    agent_type: agent_type.into(),
+                    agent_route_key: None,
+                    workspace_path: Some(workspace_path.to_string_lossy().into_owned()),
+                    project_workspace_path: None,
+                    execution_target: None,
+                    workspace_id: None,
+                    remote_connection_id: None,
+                    remote_ssh_host: None,
+                    model_id: None,
+                    metadata: serde_json::from_value(
+                        if descriptor {
+                            serde_json::json!({ "titleSource": "i18n", "titleKey": "flow-chat:session.new", "titleParams": { "defaultTitleText": title } })
+                        } else { serde_json::json!({ "source": "remote_relay" }) },
+                    )
+                    .unwrap(),
+                },
+            )
+            .await
+            .unwrap();
+            let path = session_manager
+                .resolve_session_workspace_binding(&created.session_id)
+                .await
+                .unwrap()
+                .session_storage_dir();
+            let metadata = session_manager
+                .persistence_manager()
+                .load_session_metadata(&path, &created.session_id)
+                .await
+                .unwrap()
+                .unwrap();
+            let is_default = descriptor || title.trim().is_empty();
+            assert_eq!(
+                created.session_name,
+                if is_default { expected } else { title }
+            );
+            assert_eq!(
+                openbitfun_services_core::session::naming::is_default_title(&metadata),
+                is_default
+            );
+            assert_eq!(
+                session_manager
+                    .update_session_title_if_current(
+                        &created.session_id,
+                        &created.session_name,
+                        "Generated topic"
+                    )
+                    .await
+                    .unwrap(),
+                is_default
+            );
+        }
         let _ = std::fs::remove_dir_all(workspace_path);
     }
 

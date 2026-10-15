@@ -17,6 +17,7 @@ const diagnosticsMock = vi.hoisted(() => ({
 const getGlobalSkillSettingsMock = vi.hoisted(() => vi.fn());
 const setGlobalSkillDisabledMock = vi.hoisted(() => vi.fn());
 const deleteSkillMock = vi.hoisted(() => vi.fn());
+const addSkillMock = vi.hoisted(() => vi.fn());
 const validateSkillPathMock = vi.hoisted(() => vi.fn());
 const notificationMocks = vi.hoisted(() => ({
   success: vi.fn(),
@@ -35,7 +36,7 @@ vi.mock('@/infrastructure/api', () => ({
     getGlobalSkillSettings: getGlobalSkillSettingsMock,
     setGlobalSkillDisabled: setGlobalSkillDisabledMock,
     validateSkillPath: validateSkillPathMock,
-    addSkill: vi.fn(),
+    addSkill: addSkillMock,
     deleteSkill: deleteSkillMock,
   },
 }));
@@ -83,6 +84,7 @@ describe('useInstalledSkills', () => {
       globallyDisabledUserSkillKeys: [],
     });
     deleteSkillMock.mockReset().mockResolvedValue(undefined);
+    addSkillMock.mockReset().mockResolvedValue(undefined);
     validateSkillPathMock.mockReset().mockResolvedValue({ valid: true, name: 'test' });
     notificationMocks.success.mockReset();
     notificationMocks.warning.mockReset();
@@ -366,6 +368,23 @@ describe('useInstalledSkills', () => {
     expect(notificationMocks.success).not.toHaveBeenCalled();
     expect(notificationMocks.error).not.toHaveBeenCalled();
     expect(getSkillConfigsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not notify or reload when a standalone form closes during installation', async () => {
+    vi.useFakeTimers();
+    let finish!: () => void;
+    addSkillMock.mockReturnValue(new Promise<void>(resolve => { finish = resolve; }));
+    await act(async () => { root.render(<Harness enabled />); });
+    await act(async () => { currentInstalled?.setFormPath('D:/skills/test'); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    let addition: Promise<boolean> | undefined;
+    await act(async () => { addition = currentInstalled?.handleAdd(); });
+    expect(addSkillMock).toHaveBeenCalledOnce();
+    await act(async () => { root.render(null); });
+    await act(async () => { finish(); expect(await addition).toBe(false); });
+    expect(notificationMocks.success).not.toHaveBeenCalled();
+    expect(notificationMocks.error).not.toHaveBeenCalled();
+    expect(getSkillConfigsMock).toHaveBeenCalledOnce();
   });
 
   it('ignores path validation that finishes after switching away', async () => {

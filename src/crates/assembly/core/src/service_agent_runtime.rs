@@ -816,6 +816,11 @@ async fn load_remote_session_metadata_for_workspace(
         })?;
 
     use openbitfun_services_core::session::SessionRelationshipKind;
+    let default_title = crate::service::i18n::generated_locale_contract::generated_shared_term(
+        crate::service::config::app_language::get_app_language().await,
+        "sessions.new",
+    )
+    .unwrap_or("New Session");
 
     Ok(metadata
         .into_iter()
@@ -839,13 +844,18 @@ async fn load_remote_session_metadata_for_workspace(
                 });
             let parent_session_id =
                 relationship.and_then(|relationship| relationship.parent_session_id);
+            let name = if openbitfun_services_core::session::naming::is_default_title(&session) {
+                default_title.to_string()
+            } else {
+                session.session_name.clone()
+            };
             RemoteSessionMetadata {
                 workspace_id: session
                     .workspace_id
                     .clone()
                     .or_else(|| Some(workspace_id.clone())),
                 session_id: session.session_id,
-                name: session.session_name,
+                name,
                 agent_type: session.agent_type,
                 created_at_ms: session.created_at,
                 last_active_at_ms: session.last_active_at,

@@ -523,14 +523,14 @@
     }
   },
   "session": {
-    "new": "新会话",
+    "new": "$t(shared:sessions.new)",
     "newCode": "新建 Code 会话",
     "newCowork": "新建 Cowork 会话",
-    "newClaw": "新建 Claw 会话",
+    "newClaw": "新建助理会话",
     "newWithIndex": "新建会话 {{count}}",
     "newCodeWithIndex": "新建 Code 会话 {{count}}",
     "newCoworkWithIndex": "新建 Cowork 会话 {{count}}",
-    "newClawWithIndex": "新建 Claw 会话 {{count}}",
+    "newClawWithIndex": "新建助理会话 {{count}}",
     "title": "会话",
     "chatWithAgent": "与{{name}}的对话",
     "rename": "重命名会话",
@@ -829,21 +829,21 @@
       "fixedTooltip": "本会话使用 {{name}}，开始后已固定。",
       "compatibilityShort": "兼容模式",
       "comingSoon": "开发中",
-      "comingSoonNotice": "「{{name}}」执行框架正在开发中。",
-      "legacySessionNotice": "该旧会话继续使用原智能体执行模式；请新建会话使用智能体执行框架。",
-      "sessionStartedNotice": "执行框架与主智能体在首轮开始前确定；如需切换，请新建会话。",
+      "comingSoonNotice": "「{{name}}」执行模式正在开发中。",
+      "legacySessionNotice": "旧会话沿用原有智能体；如需选择新的执行模式，请新建会话。",
+      "sessionStartedNotice": "执行模式或主智能体在首轮开始前确定；如需切换，请新建会话。",
       "newSessionConfirmation": {
         "title": "使用「{{name}}」创建新会话？",
         "message": "当前会话不会更改；新会话将使用「{{name}}」。",
         "confirm": "创建新会话"
       },
-      "unsupportedProfile": "不受支持的执行框架（{{id}}）",
-      "unsupportedProfileNotice": "该会话使用当前版本无法运行的 {{id}}。请选择一个受支持的执行框架。",
-      "profileChangeBusy": "请等待当前轮次结束后再切换执行框架。",
-      "profileChangeOutcomeUnknown": "暂时无法确认执行框架是否已切换，请刷新会话后再重试。",
-      "profileUnavailable": "当前 OpenBitFun Host 不支持该执行框架。",
-      "profileChangeFailed": "切换执行框架失败，请重试。",
-      "rememberFailed": "执行框架已切换，但未能记住本次选择。之后的新会话可能继续使用原默认设置。",
+      "unsupportedProfile": "不受支持的执行模式（{{id}}）",
+      "unsupportedProfileNotice": "该会话使用当前版本无法运行的 {{id}}。请选择一个受支持的执行模式。",
+      "profileChangeBusy": "请等待当前轮次结束后再切换执行模式。",
+      "profileChangeOutcomeUnknown": "暂时无法确认执行模式是否已切换，请刷新会话后再重试。",
+      "profileUnavailable": "当前 OpenBitFun Host 不支持该执行模式。",
+      "profileChangeFailed": "切换执行模式失败，请重试。",
+      "rememberFailed": "执行模式已切换，但未能记住本次选择。之后的新会话可能继续使用原默认设置。",
       "otherAgentsTitle": "智能体",
       "otherAgentsEmpty": "当前没有可用的主智能体",
       "unavailable": "不可用",
@@ -865,7 +865,7 @@
           "name": "$t(shared:agents.Creative)"
         }
       },
-      "activateStandard": "切换到标准执行框架"
+      "activateStandard": "切换到标准执行模式"
     },
     "agents": {
       "available": "可用",
@@ -2507,7 +2507,7 @@
       "resultCount": "{{count}} 个会话",
       "title": "会话",
       "currentWorkspace": "当前工作区",
-      "defaultSessionName": "新会话",
+      "defaultSessionName": "$t(shared:sessions.new)",
       "unknownSession": "未知会话",
       "preparingCreate": "准备创建会话 {{session}}",
       "creatingSession": "正在创建会话 {{session}}",

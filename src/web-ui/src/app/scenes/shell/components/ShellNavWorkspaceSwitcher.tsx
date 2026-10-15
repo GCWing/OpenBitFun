@@ -1,3 +1,4 @@
+import { resolveAssistantName } from '@/shared/utils/assistantName';
 import React from 'react';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { createOverlayPortal, OverflowText, Icon, Menu, MenuItem, Tooltip } from '@openbitfun/ui';
@@ -19,7 +20,7 @@ interface ShellNavWorkspaceSwitcherProps {
 
 function getWorkspaceDisplayName(workspace: WorkspaceInfo): string {
   return workspace.workspaceKind === WorkspaceKind.Assistant
-    ? workspace.identity?.name?.trim() || workspace.name
+    ? resolveAssistantName(workspace)
     : workspace.name;
 }
 

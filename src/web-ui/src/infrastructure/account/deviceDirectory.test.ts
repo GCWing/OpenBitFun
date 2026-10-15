@@ -19,6 +19,7 @@ it('resolves active, local and persisted dispatch labels by ID; presence trigger
   stop = startDeviceDirectory(); await refreshDeviceDirectory();
   expect(resolveDeviceName('peer', 'stale saved name')).toBe('Alias');
   expect(useDeviceDirectory.getState().localId).toBe('peer');
+  expect(useDeviceDirectory.getState().status).toBe('ready');
   mocks.list.mockResolvedValue([device('Renamed')]);
   mocks.events.get('account://device-presence')!(); await refreshDeviceDirectory();
   expect(resolveDeviceName('peer', 'technical')).toBe('Renamed');
@@ -34,8 +35,31 @@ it('fences late old-account GET and preserves aliases on failed reads', async ()
   stop = startDeviceDirectory(); await refreshDeviceDirectory();
   finish([device('Old account')]); await Promise.resolve();
   expect(resolveDeviceName('peer')).toBe('New account');
+  expect(useDeviceDirectory.getState().status).toBe('ready');
   mocks.list.mockRejectedValue(new Error('offline')); await refreshDeviceDirectory();
   expect(resolveDeviceName('peer')).toBe('New account');
+  expect(useDeviceDirectory.getState().status).toBe('failed');
+  mocks.list.mockResolvedValue([device('Recovered')]); await refreshDeviceDirectory();
+  expect(useDeviceDirectory.getState().status).toBe('ready');
+  expect(resolveDeviceName('peer')).toBe('Recovered');
+});
+
+it('exposes initial loading and failed reads, and ignores late failures after account replacement', async () => {
+  mocks.local.mockResolvedValue({ device_id: 'peer' });
+  let rejectOld!: (error: Error) => void;
+  mocks.list.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject; }));
+  stop = startDeviceDirectory();
+  expect(useDeviceDirectory.getState().status).toBe('loading');
+  await Promise.resolve(); stop();
+  expect(useDeviceDirectory.getState().status).toBe('idle');
+  mocks.list.mockResolvedValue([]);
+  stop = startDeviceDirectory(); await refreshDeviceDirectory();
+  rejectOld(new Error('Old account offline')); await Promise.resolve(); await Promise.resolve();
+  expect(useDeviceDirectory.getState()).toMatchObject({ devices: [], status: 'ready' });
+  stop();
+  mocks.list.mockRejectedValue(new Error('Unavailable'));
+  stop = startDeviceDirectory(); await refreshDeviceDirectory();
+  expect(useDeviceDirectory.getState()).toMatchObject({ devices: [], localId: null, status: 'failed' });
 });
 
 it('treats only a confirmed incompatible flag as uncontrollable', () => {

@@ -1,3 +1,4 @@
+import legacyDefaultTitles from '../../../../shared/session-naming/legacy-default-titles.json';
 import type { SessionMetadata } from '@/shared/types/session-history';
 import type { Session } from '../types/flow-chat';
 
@@ -70,12 +71,22 @@ export function freezeSessionTitleState(title: string): TitleState {
 export function deriveSessionTitleStateFromMetadata(
   metadata?: Pick<SessionMetadata, 'sessionName' | 'customMetadata' | 'turnCount'> | null,
 ): TitleState & Pick<Session, 'workspaceSessionNumber'> {
-  const custom = metadata?.customMetadata;
+  let custom = metadata?.customMetadata;
+  const key = custom?.titleKey as keyof typeof legacyDefaultTitles;
+  const count = normalizeWorkspaceSessionNumber(custom?.titleParams?.count);
+  const provenLegacy = (metadata?.turnCount ?? 0) === 0 && custom?.titleSource === 'i18n'
+    && custom?.titleUserEdited !== true && Object.prototype.hasOwnProperty.call(legacyDefaultTitles, key)
+    && legacyDefaultTitles[key].some(template => (!template.includes('{{count}}') || count !== undefined)
+      && template.replace('{{count}}', String(count)) === metadata?.sessionName);
+  if (provenLegacy) {
+    metadata = { ...metadata!, sessionName: 'New Session' };
+    custom = { ...custom, titleKey: DEFAULT_SESSION_TITLE_KEY, titleParams: { defaultTitleText: 'New Session' }, workspaceSessionNumber: undefined };
+  }
   const workspaceSessionNumber = normalizeWorkspaceSessionNumber(custom?.workspaceSessionNumber);
-  // Old indexed titles stay ordinary text. Only the new default is localized.
+  // Only proven default descriptors are localized; all custom text stays verbatim.
   const useDynamicTitle = custom?.titleSource === 'i18n'
+    && custom.titleUserEdited !== true
     && custom.titleKey === DEFAULT_SESSION_TITLE_KEY
-    && workspaceSessionNumber !== undefined
     && custom.titleParams?.defaultTitleText === metadata?.sessionName
     && (metadata?.turnCount ?? 0) === 0;
   return {

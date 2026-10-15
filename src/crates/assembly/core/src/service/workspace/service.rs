@@ -124,6 +124,8 @@ pub struct WorkspaceIdentityChangedEvent {
     pub name: String,
     pub identity: Option<WorkspaceIdentity>,
     pub changed_fields: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_name_number: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -277,7 +279,11 @@ impl WorkspaceService {
                 })?,
         );
 
-        let manager = WorkspaceManager::new(config.clone());
+        let manager = WorkspaceManager::new(config.clone()).with_assistant_name_registry(
+            path_manager
+                .assistant_workspace_base_dir(None)
+                .join("name-registry.json"),
+        );
 
         let service = Self {
             manager: Arc::new(RwLock::new(manager)),
@@ -325,7 +331,13 @@ impl WorkspaceService {
         );
         let runtime_service = Arc::new(WorkspaceRuntimeService::new(path_manager.clone()));
         Self {
-            manager: Arc::new(RwLock::new(WorkspaceManager::new(config.clone()))),
+            manager: Arc::new(RwLock::new(
+                WorkspaceManager::new(config.clone()).with_assistant_name_registry(
+                    path_manager
+                        .assistant_workspace_base_dir(None)
+                        .join("name-registry.json"),
+                ),
+            )),
             config,
             persistence,
             path_manager,
@@ -1392,6 +1404,9 @@ impl WorkspaceService {
         new_workspace.description = existing_workspace.description.clone();
         new_workspace.tags = existing_workspace.tags.clone();
         new_workspace.metadata = existing_workspace.metadata.clone();
+        new_workspace.identity = existing_workspace.identity.clone();
+        new_workspace.name = existing_workspace.name.clone();
+        new_workspace.load_identity().await;
 
         {
             let mut manager = self.manager.write().await;
@@ -1438,15 +1453,26 @@ impl WorkspaceService {
                 }
             };
 
+        if updated_identity.is_none()
+            && workspace.identity.is_some()
+            && !fs::try_exists(workspace.root_path.join("IDENTITY.md"))
+                .await
+                .unwrap_or(false)
+        {
+            return Ok(None);
+        }
         let changed_fields = WorkspaceIdentity::collect_changed_fields(
             workspace.identity.as_ref(),
             updated_identity.as_ref(),
         );
-        let fallback_name = Self::assistant_display_name(workspace.assistant_id.as_deref());
-        let updated_name = updated_identity
-            .as_ref()
-            .and_then(|identity| identity.name.clone())
-            .unwrap_or(fallback_name);
+        let mut renamed = workspace.clone();
+        renamed.identity = updated_identity.clone();
+        super::assistant_naming::refresh_name(
+            &mut renamed,
+            crate::service::config::app_language::get_app_language().await,
+        );
+        let default_name_number = super::assistant_naming::default_name_number(&renamed);
+        let updated_name = renamed.name;
 
         if changed_fields.is_empty() && workspace.name == updated_name {
             return Ok(None);
@@ -1463,6 +1489,7 @@ impl WorkspaceService {
 
             workspace.identity = updated_identity.clone();
             workspace.name = updated_name.clone();
+            workspace.metadata = renamed.metadata;
         }
 
         if let Err(e) = self.save_workspace_data().await {
@@ -1478,6 +1505,7 @@ impl WorkspaceService {
             name: updated_name,
             identity: updated_identity,
             changed_fields,
+            default_name_number,
         }))
     }
 
@@ -1529,6 +1557,11 @@ impl WorkspaceService {
 
             if let Some(name) = normalized_name {
                 workspace.name = name;
+                if workspace.workspace_kind == WorkspaceKind::Assistant {
+                    workspace
+                        .metadata
+                        .insert(super::assistant_naming::SOURCE.into(), "custom".into());
+                }
             }
 
             if let Some(description) = description {
@@ -1964,6 +1997,7 @@ impl WorkspaceService {
             recent_workspaces: manager.get_recent_workspaces().clone(),
             recent_assistant_workspaces: manager.get_recent_assistant_workspaces().clone(),
             primary_assistant_key: manager.get_primary_assistant_key().cloned(),
+            assistant_name_sequence: manager.assistant_name_sequence,
             saved_at: chrono::Utc::now(),
         };
 
@@ -2007,6 +2041,7 @@ impl WorkspaceService {
 
             let mut manager = self.manager.write().await;
             *manager.get_workspaces_mut() = data.workspaces;
+            manager.restore_assistant_name_sequence(data.assistant_name_sequence);
             manager.set_opened_workspace_ids(data.opened_workspace_ids);
             manager.set_recent_assistant_workspaces(data.recent_assistant_workspaces);
             manager.set_primary_assistant_key(data.primary_assistant_key);
@@ -2051,10 +2086,7 @@ impl WorkspaceService {
     }
 
     fn assistant_display_name(assistant_id: Option<&str>) -> String {
-        match assistant_id {
-            Some(id) if !id.trim().is_empty() => format!("Claw {}", id.trim()),
-            _ => "Claw".to_string(),
-        }
+        super::assistant_naming::legacy_default_name(assistant_id)
     }
 
     async fn generate_assistant_workspace_id(&self) -> OpenBitFunResult<String> {
@@ -2501,6 +2533,136 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn assistant_default_names_are_stable_and_custom_names_survive_legacy_migration() {
+        use super::super::assistant_naming::{default_name_number, NUMBER, SOURCE};
+        let env = TestEnvironment::new();
+        let service = build_test_workspace_service(env.path_manager.clone()).await;
+        service.ensure_assistant_workspaces().await.unwrap();
+        let first = service.get_primary_assistant_workspace().await.unwrap();
+        assert_eq!(default_name_number(&first), Some(1));
+        let (second, third) = tokio::join!(
+            service.create_assistant_workspace(Some("second".into())),
+            service.create_assistant_workspace(Some("third".into()))
+        );
+        let second = second.unwrap();
+        let third = third.unwrap();
+        let mut numbers = vec![
+            default_name_number(&second).unwrap(),
+            default_name_number(&third).unwrap(),
+        ];
+        numbers.sort();
+        assert_eq!(numbers, vec![2, 3]);
+        // Explicit identity text wins even when it exactly equals the old generator.
+        fs::write(
+            second.root_path.join("IDENTITY.md"),
+            "---\nname: Claw second\n---\n",
+        )
+        .await
+        .unwrap();
+        service
+            .refresh_workspace_identity(&second.id)
+            .await
+            .unwrap();
+        // Simulate an old catalog: no source/number facts, exact generated name.
+        {
+            let mut manager = service.manager.write().await;
+            let record = manager.get_workspaces_mut().get_mut(&third.id).unwrap();
+            record.name = "Claw third".into();
+            record.metadata.remove(NUMBER);
+            record.metadata.remove(SOURCE);
+        }
+        service.save_workspace_data().await.unwrap();
+        let restored = build_test_workspace_service(env.path_manager.clone()).await;
+        restored.load_workspace_history_only().await.unwrap();
+        restored.ensure_assistant_workspaces().await.unwrap();
+        let second_after = restored.get_workspace(&second.id).await.unwrap();
+        assert_eq!(second_after.name, "Claw second");
+        assert_eq!(default_name_number(&second_after), None);
+        let third_after = restored.get_workspace(&third.id).await.unwrap();
+        assert!(!third_after.name.contains("Claw"));
+        let migrated_number = default_name_number(&third_after).unwrap();
+        restored.close_workspace(&third.id).await.unwrap();
+        restored.ensure_assistant_workspaces().await.unwrap();
+        assert_eq!(
+            default_name_number(&restored.get_workspace(&third.id).await.unwrap()),
+            Some(migrated_number)
+        );
+        assert_eq!(
+            restored.get_workspace(&first.id).await.unwrap().name,
+            first.name
+        );
+        // A registry rename is explicit even if it matches a default-looking name.
+        restored
+            .update_workspace_info(
+                &third.id,
+                WorkspaceInfoUpdates {
+                    name: Some("Claw third".into()),
+                    description: None,
+                    tags: None,
+                    related_paths: None,
+                },
+            )
+            .await
+            .unwrap();
+        restored.ensure_assistant_workspaces().await.unwrap();
+        assert_eq!(
+            restored.get_workspace(&third.id).await.unwrap().name,
+            "Claw third"
+        );
+        // Invalid identity content must preserve the last known user name.
+        fs::write(
+            second.root_path.join("IDENTITY.md"),
+            "---\nname: [broken\n---\n",
+        )
+        .await
+        .unwrap();
+        restored.ensure_assistant_workspaces().await.unwrap();
+        assert_eq!(
+            restored.get_workspace(&second.id).await.unwrap().name,
+            "Claw second"
+        );
+        fs::remove_file(second.root_path.join("IDENTITY.md"))
+            .await
+            .unwrap();
+        restored
+            .refresh_workspace_identity(&second.id)
+            .await
+            .unwrap();
+        restored.rescan_workspace(&second.id).await.unwrap();
+        assert_eq!(
+            restored.get_workspace(&second.id).await.unwrap().name,
+            "Claw second"
+        );
+    }
+
+    #[tokio::test]
+    async fn assistant_numbers_survive_concurrent_hosts_and_catalog_rediscovery() {
+        use super::super::assistant_naming::default_name_number;
+        let env = TestEnvironment::new();
+        let first = build_test_workspace_service(env.path_manager.clone()).await;
+        first.ensure_assistant_workspaces().await.unwrap();
+        let second = build_test_workspace_service(env.path_manager.clone()).await;
+        second.load_workspace_history_only().await.unwrap();
+        let (a, b) = tokio::join!(
+            first.create_assistant_workspace(Some("host-a".into())),
+            second.create_assistant_workspace(Some("host-b".into())),
+        );
+        let (a, b) = (a.unwrap(), b.unwrap());
+        assert_ne!(default_name_number(&a), default_name_number(&b));
+        let restored = build_test_workspace_service(env.path_manager.clone()).await;
+        restored.load_workspace_history_only().await.unwrap();
+        restored.ensure_assistant_workspaces().await.unwrap();
+        assert_eq!(
+            default_name_number(&restored.get_workspace(&a.id).await.unwrap()),
+            default_name_number(&a)
+        );
+        assert_eq!(
+            default_name_number(&restored.get_workspace(&b.id).await.unwrap()),
+            default_name_number(&b)
+        );
+    }
+
+    #[tokio::test]
     async fn ensure_workspace_gitignore_best_effort_skips_remote_workspaces() {
         let env = TestEnvironment::new();
         let service = build_test_workspace_service(env.path_manager.clone()).await;
@@ -2845,6 +3007,7 @@ mod tests {
             recent_workspaces: vec![first_workspace.id.clone(), second_workspace.id.clone()],
             recent_assistant_workspaces: Vec::new(),
             primary_assistant_key: None,
+            assistant_name_sequence: 0,
             saved_at: chrono::Utc::now(),
         };
 
@@ -2900,6 +3063,7 @@ mod tests {
             recent_workspaces: vec![noncanonical_id.clone()],
             recent_assistant_workspaces: Vec::new(),
             primary_assistant_key: None,
+            assistant_name_sequence: 0,
             saved_at: chrono::Utc::now(),
         };
         service
@@ -2948,6 +3112,7 @@ mod tests {
             recent_workspaces: vec![workspace.id.clone()],
             recent_assistant_workspaces: Vec::new(),
             primary_assistant_key: None,
+            assistant_name_sequence: 0,
             saved_at: chrono::Utc::now(),
         };
         service

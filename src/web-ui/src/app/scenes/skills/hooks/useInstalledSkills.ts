@@ -68,6 +68,12 @@ export function useInstalledSkills({
     }
   }, [capabilityKey, enabled]);
 
+  useLayoutEffect(() => () => {
+    // Standalone dialogs can close while an installation or picker is pending.
+    capabilityRef.current.enabled = false;
+    capabilityRef.current.epoch += 1;
+  }, []);
+
   const currentCapabilityEpoch = useCallback((): number | null => (
     capabilityRef.current.enabled ? capabilityRef.current.epoch : null
   ), []);

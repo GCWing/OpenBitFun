@@ -2,10 +2,8 @@ import {
   Button,
   ConfirmDialog,
   Empty,
-  Field,
   Icon,
   IconButton,
-  Input,
   LoadingState,
   OverflowText,
   ScrollArea,
@@ -26,7 +24,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { Copy, FolderOpen, ShieldAlert } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 
-import type { SkillInfo, SkillLevel, SkillMarketItem } from '@/infrastructure/config/types';
+import type { SkillInfo, SkillMarketItem } from '@/infrastructure/config/types';
 import { installedSkillMarketIds, isSkillMarketItemInstalled } from '@/infrastructure/config/skillMarketInstallation';
 import {
   buildSkillCoverageSourceMap,
@@ -49,6 +47,7 @@ import { useSkillMarket } from './hooks/useSkillMarket';
 import { SkillMarketSettings } from '@/infrastructure/config/components/SkillMarketSettings';
 import SkillCard from './components/SkillCard';
 import { SkillsGrid } from './components/SkillsGrid';
+import { AddSkillDialog } from './components/AddSkillDialog';
 import SkillGroupsView from './components/SkillGroupsView';
 import { useUserSkillGroups } from '@/features/skill-groups/useUserSkillGroups';
 import { resolveSkillGroups } from '@/features/skill-groups/skillGroups';
@@ -268,14 +267,6 @@ const SkillsScene: React.FC = () => {
       notification.error(t('messages.copyPathFailed', { error: String(error) }));
     }
   }, [notification, t, tCommon]);
-
-  const handleAddSkill = async () => {
-    const added = await installed.handleAdd();
-    if (added) {
-      setAddFormOpen(false);
-      await market.refresh();
-    }
-  };
 
   const installedFiltered = installed.filteredSkills;
   const installedLoadFailed = Boolean(installed.error)
@@ -881,117 +872,12 @@ const SkillsScene: React.FC = () => {
         ) : null}
       </Dialog>
 
-      <Dialog
+      <AddSkillDialog
         open={desktopConfigAvailable && isAddFormOpen}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) {
-            installed.resetForm();
-            setAddFormOpen(false);
-          }
-        }}
-        size="sm"
-      >
-        <DialogHeader>
-          <DialogHeading>
-            <DialogTitle>{t('form.title')}</DialogTitle>
-          </DialogHeading>
-          <DialogClose />
-        </DialogHeader>
-        <DialogBody>
-        <div className="openbitfun-skills-scene__modal-form">
-          <Field label={t('form.level.label')} controlWidth="fill">
-            <Select
-              options={[
-                { label: t('form.level.user'), value: 'user' },
-                {
-                  label: `${t('form.level.project')}${installed.hasWorkspace && !installed.isRemoteWorkspace ? '' : t('form.level.projectDisabled')}`,
-                  value: 'project',
-                  disabled: !installed.hasWorkspace || installed.isRemoteWorkspace,
-                },
-              ]}
-              value={installed.formLevel}
-              onValueChange={(value) => installed.setFormLevel(value as SkillLevel)}
-              size="md"
-            />
-          </Field>
-
-          {installed.formLevel === 'project' && installed.hasWorkspace ? (
-            <div className="openbitfun-skills-scene__form-hint">
-              {t('form.level.selectedProjectPath', { path: installed.workspacePath })}
-            </div>
-          ) : null}
-
-          <div className="openbitfun-skills-scene__path-input">
-            <Field label={t('form.path.label')} controlWidth="fill">
-              <Input
-                placeholder={t('form.path.placeholder')}
-                value={installed.formPath}
-                onChange={(e) => installed.setFormPath(e.target.value)}
-              />
-            </Field>
-            <IconButton
-              size="md"
-              onClick={installed.handleBrowse}
-              aria-label={t('form.path.browseTooltip')}
-              title={t('form.path.browseTooltip')}
-              icon={<Icon glyph={FolderOpen} size="sm" />}
-            />
-          </div>
-          <div className="openbitfun-skills-scene__path-hint">
-            {t('form.path.hint')}
-          </div>
-
-          {installed.isValidating ? (
-            <div className="openbitfun-skills-scene__validating">{t('form.validating')}</div>
-          ) : null}
-
-          {installed.validationResult ? (
-            <div
-              className={[
-                'openbitfun-skills-scene__validation',
-                installed.validationResult.valid ? 'is-valid' : 'is-invalid',
-              ].filter(Boolean).join(' ')}
-            >
-              {installed.validationResult.valid ? (
-                <>
-                  <div className="openbitfun-skills-scene__validation-name">
-                    {installed.validationResult.name}
-                  </div>
-                  <div className="openbitfun-skills-scene__validation-desc">
-                    {installed.validationResult.description}
-                  </div>
-                </>
-              ) : (
-                <div className="openbitfun-skills-scene__validation-error">
-                  {installed.validationResult.error}
-                </div>
-              )}
-            </div>
-          ) : null}
-
-        </div>
-        </DialogBody>
-        <DialogFooter separator className="openbitfun-skills-scene__modal-form-actions">
-            <Button
-              variant="fill"
-              size="sm"
-              onClick={() => {
-                installed.resetForm();
-                setAddFormOpen(false);
-              }}
-            >
-              {t('form.actions.cancel')}
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleAddSkill}
-              disabled={!installed.validationResult?.valid || installed.isAdding}
-            >
-              {installed.isAdding ? t('form.actions.adding') : t('form.actions.add')}
-            </Button>
-        </DialogFooter>
-      </Dialog>
+        onOpenChange={setAddFormOpen}
+        installed={installed}
+        onAdded={market.refresh}
+      />
 
       <ConfirmDialog
         open={desktopConfigAvailable && Boolean(deleteTarget)}

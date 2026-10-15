@@ -45,7 +45,6 @@ import {
   useAgentsStore,
 } from './agentsStore';
 import { useAgentsList } from './hooks/useAgentsList';
-import { DEFAULT_CORE_AGENT_ACCENT } from './agentAppearance';
 import { isAgentProfileConfigurableToolName } from './agentToolVisibility';
 import { getAgentBadge, getAgentDescription } from './utils';
 import './AgentsView.scss';
@@ -384,10 +383,6 @@ const AgentsHomeView: React.FC = () => {
       runtimeStatus: skillRuntimeStatusLabel(skill, selectedAgentCoverageSourceBySkillKey, t),
     })),
     [selectedAgentCoverageSourceBySkillKey, selectedAgentSkillConfigs, t],
-  );
-  const selectedAgentRuntimeSkillKeys = useMemo(
-    () => new Set(selectedAgentSkillConfigs.filter((skill) => skill.selectedForRuntime).map((skill) => skill.key)),
-    [selectedAgentSkillConfigs],
   );
   const selectedAgentProfileMemberNames = useMemo(() => {
     if (!selectedAgentModeProfile) {
@@ -831,17 +826,6 @@ const AgentsHomeView: React.FC = () => {
             draggable={false}
           />
         )}
-        actions={(
-          <Button
-            variant="primary"
-            size="sm"
-            leadingIcon={<Icon name="plus" size="sm" />}
-            onClick={openCreateAgent}
-            data-testid="agents-create-agent-btn"
-          >
-            {t('page.newAgent')}
-          </Button>
-        )}
       />
 
       <div className="gallery-zones" data-openbitfun-scene="agents" data-openbitfun-part="zones" data-testid="agent-list">
@@ -849,9 +833,21 @@ const AgentsHomeView: React.FC = () => {
 
         <GalleryZone
           id="agents-zone"
+          className="openbitfun-agents-scene__catalog-zone"
           data-testid="agents-catalog-zone"
           title={t('agentsZone.title')}
           titleAdornment={!loading ? <StatusPill tone="neutral">{catalogAgents.length}</StatusPill> : null}
+          tools={(
+            <Button
+              variant="primary"
+              size="sm"
+              leadingIcon={<Icon name="plus" size="sm" />}
+              onClick={openCreateAgent}
+              data-testid="agents-create-agent-btn"
+            >
+              {t('page.newAgent')}
+            </Button>
+          )}
         >
           <div className="openbitfun-agents-scene__catalog-toolbar" data-openbitfun-scene="agents" data-openbitfun-part="filters">
             <SearchField
@@ -939,10 +935,6 @@ const AgentsHomeView: React.FC = () => {
                     <CoreAgentCard
                       key={agent.id}
                       {...commonCardProps}
-                      meta={{
-                        role: t('filters.agent'),
-                        ...DEFAULT_CORE_AGENT_ACCENT,
-                      }}
                     />
                   );
                 }
@@ -1035,6 +1027,7 @@ const AgentsHomeView: React.FC = () => {
                   <Tooltip content={t('agentsOverview.detail.backToOverview')}>
                     <IconButton
                       ref={detailBackRef}
+                      className="agent-detail-dialog__back"
                       variant="quiet"
                       size="sm"
                       icon={<Icon name="chevron-left" size="sm" />}
@@ -1158,23 +1151,16 @@ const AgentsHomeView: React.FC = () => {
                     userGroups={userToolGroups}
                     onSelectionChange={setPendingTools}
                     onSaveUserGroups={saveUserToolGroups}
+                    showSelectionCount={false}
                     disabled={savingTools || !toolCatalogWritable}
                     testId="agent-detail-tool-groups"
                   />
                 ) : (
-                  <>
-                    <Toolbar
-                      bordered={false}
-                      leading={<span className="agent-detail-dialog__note">
-                        {t('agentsOverview.toolGroups.enabledCount', { count: selectedAgentTools.length })}
-                      </span>}
-                    />
-                    <ToolGroupSummary
-                      tools={agentProfileAvailableTools}
-                      selectedToolNames={selectedAgentTools}
-                      userGroups={userToolGroups}
-                    />
-                  </>
+                  <ToolGroupSummary
+                    tools={agentProfileAvailableTools}
+                    selectedToolNames={selectedAgentTools}
+                    userGroups={userToolGroups}
+                  />
                 )
               ) : null}
 
@@ -1206,22 +1192,11 @@ const AgentsHomeView: React.FC = () => {
                     testId="agent-detail-skill-groups"
                   />
                 ) : (
-                  <>
-                  <Toolbar
-                    bordered={false}
-                    leading={<span className="agent-detail-dialog__note">
-                      {t('agentsOverview.skillGroupPicker.enabledCount', { count: selectedAgentSkills.length })}
-                    </span>}
-                    trailing={<span className="agent-detail-dialog__note">
-                      {t('agentsOverview.skillGroupPicker.runtimeCount', { count: selectedAgentRuntimeSkillKeys.size })}
-                    </span>}
-                  />
                   <SkillGroupSummary
                     skills={selectedAgentSkillItems}
                     selectedSkillKeys={selectedAgentSkills}
                     userGroups={userSkillGroups}
                   />
-                  </>
                 )
               ) : null}
 
@@ -1237,10 +1212,7 @@ const AgentsHomeView: React.FC = () => {
                     <Toolbar
                       bordered={false}
                       leading={<span className="agent-detail-dialog__note">
-                        {t('agentsOverview.subagentsSelectedCount', {
-                          count: (pendingSubagentIds ?? selectedAgentEnabledSubagentIds).length,
-                        })}
-                        {' · '}{t('agentsOverview.selectionSaveHint')}
+                        {t('agentsOverview.selectionSaveHint')}
                       </span>}
                     />
                     <div className="agent-detail-dialog__token-grid">
@@ -1281,45 +1253,37 @@ const AgentsHomeView: React.FC = () => {
                     </div>
                   </>
                 ) : (
-                  <>
-                    <Toolbar
-                      bordered={false}
-                      leading={<span className="agent-detail-dialog__note">
-                        {t('agentsOverview.subagentsEnabledCount', { count: selectedAgentEnabledSubagents.length })}
-                      </span>}
-                    />
-                    <div className="agent-detail-dialog__chip-grid">
-                      {selectedAgentEnabledSubagents.length === 0 ? (
-                        <span className="agent-detail-dialog__empty">
-                          {t('agentsOverview.noEnabledSubagents')}
-                        </span>
-                      ) : (
-                        selectedAgentEnabledSubagents.map((subagent: SubagentInfo) => {
-                          const tooltipFields = subagentTooltipFields(
-                            subagent,
-                            t,
-                            !isLocallyManageableSubagent(subagent),
-                          );
-                          return (
-                            <AgentCapabilityTooltip
-                              key={subagent.key}
-                              title={subagent.name}
-                              description={subagent.description}
-                              fields={tooltipFields}
+                  <div className="agent-detail-dialog__chip-grid">
+                    {selectedAgentEnabledSubagents.length === 0 ? (
+                      <span className="agent-detail-dialog__empty">
+                        {t('agentsOverview.noEnabledSubagents')}
+                      </span>
+                    ) : (
+                      selectedAgentEnabledSubagents.map((subagent: SubagentInfo) => {
+                        const tooltipFields = subagentTooltipFields(
+                          subagent,
+                          t,
+                          !isLocallyManageableSubagent(subagent),
+                        );
+                        return (
+                          <AgentCapabilityTooltip
+                            key={subagent.key}
+                            title={subagent.name}
+                            description={subagent.description}
+                            fields={tooltipFields}
+                          >
+                            <StatusPill
+                              tone="neutral"
+                              leading={<Icon name="check-line" size="xs" />}
+                              aria-label={`${subagent.name}: ${t('agentsOverview.capabilityEnabled')}`}
                             >
-                              <StatusPill
-                                tone="neutral"
-                                leading={<Icon name="check-line" size="xs" />}
-                                aria-label={`${subagent.name}: ${t('agentsOverview.capabilityEnabled')}`}
-                              >
-                                {subagent.name}
-                              </StatusPill>
-                            </AgentCapabilityTooltip>
-                          );
-                        })
-                      )}
-                    </div>
-                  </>
+                              {subagent.name}
+                            </StatusPill>
+                          </AgentCapabilityTooltip>
+                        );
+                      })
+                    )}
+                  </div>
                 )
               ) : null}
               </div>

@@ -941,6 +941,10 @@ fn plan_workspace_sessions(roots: &MigrationRoots) -> LegacyMigrationResult<Work
     let mut workspace_data = WorkspacePersistenceData {
         format_version: WORKSPACE_PERSISTENCE_FORMAT_VERSION,
         product_id: product_id().to_string(),
+        assistant_name_sequence: target
+            .as_ref()
+            .map(|value| value.assistant_name_sequence)
+            .unwrap_or(0),
         workspaces: output_workspaces,
         opened_workspace_ids,
         current_workspace_id,

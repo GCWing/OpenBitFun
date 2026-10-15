@@ -27,6 +27,10 @@ $nursery-scene-gutter: clamp(var(--openbitfun-space-4), 3cqi, var(--openbitfun-s
     scrollbar-gutter: stable both-edges;
   }
 
+  .gallery-layout__body-inner {
+    justify-content: center;
+  }
+
   .gallery-zones {
     gap: var(--openbitfun-space-6);
     padding-block: 0 var(--openbitfun-space-8);
@@ -850,9 +854,23 @@ $nursery-scene-gutter: clamp(var(--openbitfun-space-4), 3cqi, var(--openbitfun-s
   }
 
   &__toolbar {
-    position: absolute;
-    inset-block-start: var(--openbitfun-space-8);
-    inset-inline-start: 0;
+    display: flex;
+    justify-content: flex-start;
+    flex-shrink: 0;
+    padding: var(--openbitfun-space-4) configLayout.$config-page-content-inline-padding 0;
+  }
+
+  &__back {
+    padding-inline: var(--openbitfun-space-3);
+    border-color: transparent;
+    border-radius: var(--openbitfun-radius-base);
+    color: var(--openbitfun-color-content-secondary);
+
+    &:is(:hover, :active):not(:disabled) {
+      border-color: var(--openbitfun-color-border-default);
+      color: var(--openbitfun-color-content-primary);
+      text-decoration: none;
+    }
   }
 }
 
@@ -1168,21 +1186,21 @@ $nursery-scene-gutter: clamp(var(--openbitfun-space-4), 3cqi, var(--openbitfun-s
   .openbitfun-nav-panel__inline-list {
     max-width: none;
     padding-inline: 0;
-    padding-block: var(--openbitfun-space-1);
+    padding-block: 0;
     margin-inline: calc(-1 * var(--openbitfun-space-2)) 0;
     gap: var(--openbitfun-space-1);
   }
 
   .openbitfun-nav-panel__inline-item {
     height: auto;
-    min-height: 34px;
+    min-height: var(--openbitfun-control-height-sm);
     padding: var(--openbitfun-space-1) var(--openbitfun-space-2);
     border-radius: var(--openbitfun-radius-lg);
     font-size: var(--openbitfun-type-body-md-font-size);
   }
 
   .openbitfun-nav-panel__inline-item.is-child {
-    min-height: 30px;
+    min-height: var(--openbitfun-control-height-sm);
     padding-left: calc(var(--openbitfun-space-2) + 14px);
     font-size: var(--openbitfun-type-label-md-font-size);
   }
@@ -1201,6 +1219,10 @@ $nursery-scene-gutter: clamp(var(--openbitfun-space-4), 3cqi, var(--openbitfun-s
   flex-direction: column;
   min-width: 0;
   gap: var(--openbitfun-space-4);
+
+  &.acp-sessions-area {
+    gap: var(--openbitfun-space-2);
+  }
 
   &--schedule {
     .asv__head {

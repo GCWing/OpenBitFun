@@ -49,5 +49,8 @@
     "done": "已完成",
     "failed": "失败",
     "cancelled": "已取消"
+  },
+  "sessions": {
+    "new": "新会话"
   }
 }

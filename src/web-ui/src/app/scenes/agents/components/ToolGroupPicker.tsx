@@ -45,17 +45,20 @@ import { AgentCapabilityOption } from './AgentCapabilityOption';
 import './ToolGroupPicker.scss';
 
 interface ToolGroupPickerProps {
+  grouped?: boolean;
   tools: GroupableTool[];
   managementTools?: GroupableTool[];
   selectedToolNames: readonly string[];
   userGroups: UserToolGroup[];
   onSelectionChange: (toolNames: string[]) => void;
   onSaveUserGroups: (groups: UserToolGroup[]) => Promise<void>;
+  showSelectionCount?: boolean;
   disabled?: boolean;
   testId?: string;
 }
 
 interface ToolGroupSummaryProps {
+  grouped?: boolean;
   tools: GroupableTool[];
   selectedToolNames: readonly string[];
   userGroups: UserToolGroup[];
@@ -83,6 +86,12 @@ function isGroupEnabled(group: ResolvedToolGroup, selectedToolNames: readonly st
 function selectedGroupToolCount(group: ResolvedToolGroup, selectedToolNames: readonly string[]): number {
   const selected = new Set(selectedToolNames);
   return group.tools.filter((tool) => selected.has(tool.name)).length;
+}
+
+function flattenToolGroups(groups: ResolvedToolGroup[]): ResolvedToolGroup[] {
+  const tools = [...new Map(groups.flatMap(group => group.tools).map(tool => [tool.name, tool])).values()]
+    .sort((left, right) => left.name.localeCompare(right.name));
+  return tools.length > 0 ? [{ id: 'all', kind: 'other', label: '', tools }] : [];
 }
 
 function groupSectionLabel(group: ResolvedToolGroup, t: UseI18nReturn['t']): string {
@@ -431,12 +440,14 @@ const GroupManagerModal: React.FC<GroupManagerModalProps> = ({
 };
 
 export const ToolGroupPicker: React.FC<ToolGroupPickerProps> = ({
+  grouped = true,
   tools,
   managementTools,
   selectedToolNames,
   userGroups,
   onSelectionChange,
   onSaveUserGroups,
+  showSelectionCount = true,
   disabled = false,
   testId,
 }) => {
@@ -444,16 +455,17 @@ export const ToolGroupPicker: React.FC<ToolGroupPickerProps> = ({
   const [isManagerOpen, setIsManagerOpen] = useState(false);
   const groups = useMemo(() => resolveToolGroups(tools, userGroups, t), [t, tools, userGroups]);
   const selectedCount = new Set(selectedToolNames).size;
-  const sections = useMemo(() => {
-    const grouped = new Map<string, ResolvedToolGroup[]>();
+  const sections = useMemo<Array<[string, ResolvedToolGroup[]]>>(() => {
+    if (!grouped) return [['', flattenToolGroups(groups)]];
+    const sectionsByLabel = new Map<string, ResolvedToolGroup[]>();
     for (const group of groups) {
       const label = groupSectionLabel(group, t);
-      const entries = grouped.get(label) ?? [];
+      const entries = sectionsByLabel.get(label) ?? [];
       entries.push(group);
-      grouped.set(label, entries);
+      sectionsByLabel.set(label, entries);
     }
-    return [...grouped.entries()];
-  }, [groups, t]);
+    return [...sectionsByLabel.entries()];
+  }, [grouped, groups, t]);
 
   return (
     <div data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="root" className="tool-group-picker" data-testid={testId}>
@@ -462,11 +474,13 @@ export const ToolGroupPicker: React.FC<ToolGroupPickerProps> = ({
         bordered={false}
         leading={(
           <span className="tool-group-picker__selected-count">
-            {t('agentsOverview.toolGroups.selectedCount', { count: selectedCount })}
-            {' · '}{t('agentsOverview.selectionSaveHint')}
+            {showSelectionCount && (
+              <>{t('agentsOverview.toolGroups.selectedCount', { count: selectedCount })}{' · '}</>
+            )}
+            {t('agentsOverview.selectionSaveHint')}
           </span>
         )}
-        trailing={(
+        trailing={grouped && (
           <Button
             variant="text"
             size="sm"
@@ -483,15 +497,15 @@ export const ToolGroupPicker: React.FC<ToolGroupPickerProps> = ({
           <FormSection
             key={sectionLabel}
             headingAs="h4"
-            title={sectionLabel}
+            title={grouped ? sectionLabel : undefined}
             data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="section"
           >
             {sectionGroups.map((group) => {
               const selectedInGroup = selectedGroupToolCount(group, selectedToolNames);
               const allSelected = isGroupEnabled(group, selectedToolNames);
               return (
-                <FieldGroup key={group.id} data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="group">
-                  <FieldRow data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="groupHeader">
+                <FieldGroup key={group.id} appearance={grouped ? 'subtle' : 'plain'} dividers={grouped} data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="group">
+                  {grouped && <FieldRow data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="groupHeader">
                     <div className="tool-group-picker__group-head">
                       <div className="tool-group-picker__group-title-wrap">
                         <OverflowText className="tool-group-picker__group-name">{group.label}</OverflowText>
@@ -527,8 +541,8 @@ export const ToolGroupPicker: React.FC<ToolGroupPickerProps> = ({
                         />
                       </div>
                     </div>
-                  </FieldRow>
-                  <FieldRow align="start">
+                  </FieldRow>}
+                  <FieldRow align="start" padding={grouped ? 'md' : 'none'}>
                     <div className="tool-group-picker__token-grid" data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="tokenGrid">
                       {group.tools.map((tool) => {
                         const selected = selectedToolNames.includes(tool.name);
@@ -577,14 +591,18 @@ export const ToolGroupPicker: React.FC<ToolGroupPickerProps> = ({
 };
 
 export const ToolGroupSummary: React.FC<ToolGroupSummaryProps> = ({
+  grouped = true,
   tools,
   selectedToolNames,
   userGroups,
 }) => {
   const { t } = useI18n('scenes/agents');
   const groups = useMemo(
-    () => resolveToolGroupSummary(tools, userGroups, selectedToolNames, t),
-    [selectedToolNames, t, tools, userGroups],
+    () => {
+      const summary = resolveToolGroupSummary(tools, userGroups, selectedToolNames, t);
+      return grouped ? summary : flattenToolGroups(summary);
+    },
+    [grouped, selectedToolNames, t, tools, userGroups],
   );
 
   if (groups.length === 0) {
@@ -594,7 +612,7 @@ export const ToolGroupSummary: React.FC<ToolGroupSummaryProps> = ({
   return (
     <div data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="summary" className="tool-group-summary">
       {groups.map((group) => (
-        <FormSection key={group.id} headingAs="h4" title={group.label} data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="summaryGroup">
+        <FormSection key={group.id} headingAs="h4" title={grouped ? group.label : undefined} data-openbitfun-product-component="tool-group-picker" data-openbitfun-product-part="summaryGroup">
           <div className="tool-group-summary__tools">
             {group.tools.map((tool) => {
               const tooltipFields = toolTooltipFields(tool, t);
@@ -609,7 +627,7 @@ export const ToolGroupSummary: React.FC<ToolGroupSummaryProps> = ({
                   <StatusPill
                     tone="neutral"
                     className="tool-group-summary__item"
-                    leading={<Icon name="check-line" size="xs" />}
+                    leading={<Icon name="check-line" size="xs" tone="success" />}
                   >
                     {tool.name.replace(/_/g, ' ')}
                   </StatusPill>

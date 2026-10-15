@@ -1,6 +1,6 @@
 /**
  * Scene-level tabs. Tab anatomy and visual states come from @openbitfun/ui;
- * SceneBar owns only product-shell layout, overflow, and label truncation.
+ * SceneBar owns product-shell layout, overflow, label truncation, and close-action emphasis.
  */
 
 .openbitfun-scene-bar {
@@ -180,6 +180,10 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .openbitfun-scene-bar [data-scene-bar-part='closeTab']:hover:not(:disabled) {
+    color: var(--openbitfun-color-status-danger-emphasis);
+  }
+
   .openbitfun-scene-bar__scroll-button:hover {
     background: var(--openbitfun-color-action-neutral-surface-hover);
   }

@@ -78,7 +78,7 @@
       },
       "sessionMemory": {
         "label": "Sessions & Memory",
-        "description": "Configure default harnesses, session titles, and memory behavior"
+        "description": "Configure default execution modes, session titles, and memory behavior"
       },
       "permissions": {
         "label": "Permission Rules",
@@ -310,7 +310,7 @@
         "btwFill": "Start side-thread session",
         "stopGeneration": "Stop Generation",
         "activateInput": "Activate Input",
-        "newSession": "New Session",
+        "newSession": "$t(shared:sessions.new)",
         "insertNewline": "Insert Newline in Chat Input"
       },
       "filetree": {

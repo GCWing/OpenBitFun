@@ -92,6 +92,19 @@ describe('workspace session titles', () => {
     }
   });
 
+  it('migrates only proven untouched legacy default titles from old hosts', () => {
+    const metadata = { sessionName: 'New Claw Session 7', turnCount: 0, customMetadata: { titleSource: 'i18n', titleKey: 'flow-chat:session.newClawWithIndex', titleParams: { count: 7 } } } as SessionMetadata;
+    expect(resolvePersistedSessionTitle(metadata, translate)).toBe('New Session');
+    expect(resolvePersistedSessionTitle({ ...metadata, turnCount: 1 }, translate)).toBe('New Claw Session 7');
+    expect(resolvePersistedSessionTitle({ ...metadata, customMetadata: { ...metadata.customMetadata, titleUserEdited: true } }, translate)).toBe('New Claw Session 7');
+    expect(resolvePersistedSessionTitle({ ...metadata, customMetadata: { titleSource: 'text' } }, translate)).toBe('New Claw Session 7');
+    const current = { ...metadata, sessionName: 'New Session', customMetadata: {
+      titleSource: 'i18n', titleKey: 'flow-chat:session.new',
+      titleParams: { defaultTitleText: 'New Session' }, titleUserEdited: true,
+    } } as SessionMetadata;
+    expect(deriveSessionTitleStateFromMetadata(current).titleSource).toBe('text');
+  });
+
   it('preserves generated text and rejects invalid numeric metadata', () => {
     const metadata = { sessionName: 'Fix login', turnCount: 1, customMetadata: { titleSource: 'i18n', titleKey: 'flow-chat:session.new', workspaceSessionNumber: 4 } } as SessionMetadata;
     expect(resolvePersistedSessionTitle(metadata, translate)).toBe('Fix login');

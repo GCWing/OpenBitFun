@@ -309,10 +309,7 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
       (requestedPath ? options.remoteConnectionId : undefined);
     const remoteSshHost = response.workspace_path !== undefined ? response.remote_ssh_host :
       (requestedPath ? options.remoteSshHost : undefined);
-    const normalizedAgentType = options.agentType.toLowerCase();
-    const fallbackTitle = normalizedAgentType === 'claw' || normalizedAgentType === 'assistant' || normalizedAgentType === 'chat' ?
-      'Assistant Session' : normalizedAgentType === 'cowork' ? 'Cowork Session' : 'Code Session';
-    const title = response.title || fallbackTitle;
+    const title = response.title || options.title.trim() || RemoteI18n.t('session.newTitle');
     if (onAllocated) {
       await onAllocated({
         sessionId,

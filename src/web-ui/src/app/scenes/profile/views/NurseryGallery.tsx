@@ -1,6 +1,7 @@
+import { resolveAssistantName } from '@/shared/utils/assistantName';
 import { Button, Icon, NumberBadge, PageHeader } from '@openbitfun/ui';
-import React, { useCallback, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { CircleAlert, LoaderCircle } from 'lucide-react';
 import {
   GalleryEmpty,
@@ -9,8 +10,9 @@ import {
   GalleryGrid,
   GallerySkeleton,
 } from '@/app/components/GalleryLayout';
-import { confirmDanger } from '@/infrastructure/confirm-dialog';
+import { confirmDanger, confirmDialog } from '@/infrastructure/confirm-dialog';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import type { WorkspaceInfo } from '@/shared/types';
 import { useNotification } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
@@ -21,7 +23,7 @@ import './NurseryView.scss';
 const log = createLogger('NurseryGallery');
 
 const NurseryGallery: React.FC = () => {
-  const { t } = useTranslation('scenes/profile');
+  const { t } = useI18n('scenes/profile');
   const {
     allAssistantWorkspacesList: assistantWorkspacesList,
     openedWorkspaces,
@@ -38,24 +40,39 @@ const NurseryGallery: React.FC = () => {
   const { openAssistant } = useNurseryStore();
   const notification = useNotification();
   const [creating, setCreating] = useState(false);
+  const assistantCreationPending = useRef(false);
   const [deletingWorkspaceId, setDeletingWorkspaceId] = useState<string | null>(null);
   const [settingPrimaryWorkspaceId, setSettingPrimaryWorkspaceId] = useState<string | null>(null);
   const [openingWorkspaceId, setOpeningWorkspaceId] = useState<string | null>(null);
   const [closingWorkspaceId, setClosingWorkspaceId] = useState<string | null>(null);
 
   const handleCreateAssistant = useCallback(async () => {
-    if (creating) return;
-    setCreating(true);
+    if (assistantCreationPending.current) return;
+    const scope = getActiveSurfaceScope();
+    assistantCreationPending.current = true;
     try {
+      const confirmed = await confirmDialog({
+        title: t('nursery.gallery.newAssistant'),
+        message: t('nursery.gallery.createConfirmMessage'),
+        confirmText: t('nursery.gallery.newAssistant'),
+        type: 'info',
+      });
+      if (!confirmed || !scope.isCurrent()) return;
+
+      setCreating(true);
       const newWorkspace = await createAssistantWorkspace();
+      scope.assertCurrent('open newly created assistant');
       openAssistant(newWorkspace.id);
     } catch (e) {
-      log.error('Failed to create assistant workspace', e);
-      notification.error(t('nursery.gallery.createFailed'));
+      if (scope.isCurrent()) {
+        log.error('Failed to create assistant workspace', e);
+        notification.error(t('nursery.gallery.createFailed'));
+      }
     } finally {
+      assistantCreationPending.current = false;
       setCreating(false);
     }
-  }, [creating, createAssistantWorkspace, notification, openAssistant, t]);
+  }, [createAssistantWorkspace, notification, openAssistant, t]);
 
   const sortedAssistantWorkspacesList = useMemo(
     () => {
@@ -88,8 +105,7 @@ const NurseryGallery: React.FC = () => {
 
   const handleDeleteRequest = useCallback(async (workspace: WorkspaceInfo) => {
     if (deletingWorkspaceId) return;
-    const identity = workspace.identity;
-    const name = identity?.name?.trim() || workspace.name || t('nursery.card.unnamed');
+    const name = resolveAssistantName(workspace, t('shared:agents.Claw'));
     const confirmed = await confirmDanger(
       t('nursery.card.deleteConfirmTitle'),
       t('nursery.card.deleteConfirmMessage', { name }),
@@ -146,6 +162,7 @@ const NurseryGallery: React.FC = () => {
       <PageHeader
         className="nursery-gallery__header"
         level={2}
+        size="display"
         align="center"
         title={t('nursery.gallery.title')}
         description={t('nursery.gallery.subtitle')}
@@ -257,7 +274,7 @@ const NurseryGallery: React.FC = () => {
                 >
                   <Button
                     className="nursery-gallery__create-button"
-                    variant="secondary"
+                    variant="fill"
                     labelBehavior="static"
                     leadingIcon={<Icon name="plus" size="lg" aria-hidden="true" />}
                     onClick={handleCreateAssistant}

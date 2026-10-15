@@ -42,6 +42,7 @@ export interface SessionCustomMetadata extends Record<string, unknown> {
   } | null;
   lastFinishedAt?: number | null;
   titleSource?: SessionTitleSource | null;
+  titleUserEdited?: boolean;
   titleKey?: string | null;
   titleParams?: Record<string, unknown> | null;
   workspaceSessionNumber?: number;

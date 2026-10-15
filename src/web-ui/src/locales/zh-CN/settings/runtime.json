@@ -1,16 +1,16 @@
 {
   "defaultHarness": {
-    "title": "默认智能体执行框架",
+    "title": "默认智能体执行模式",
     "description": "用于普通新会话；助理、ACP 和已指定模式的会话不受影响",
     "strategy": "默认方式",
     "followLast": "跟随上一次选择",
     "fixed": "固定默认模式",
-    "followLastDescription": "新会话沿用你最近在输入框中选择的执行框架：{{name}}",
-    "followLastEmptyDescription": "尚未记录选择；在输入框中选择执行框架前，新会话使用 {{name}}",
-    "fixedDescription": "新会话始终使用指定执行框架；当前会话不会改变。",
-    "fixedMode": "默认执行框架",
+    "followLastDescription": "新会话沿用你最近在输入框中选择的执行模式：{{name}}",
+    "followLastEmptyDescription": "尚未记录选择；在输入框中选择执行模式前，新会话使用 {{name}}",
+    "fixedDescription": "新会话始终使用指定执行模式；当前会话不会改变。",
+    "fixedMode": "默认执行模式",
     "compatibilityMode": "{{id}}（兼容配置）",
-    "loadFailed": "无法读取默认执行框架设置。为避免覆盖现有配置，此设置已锁定。"
+    "loadFailed": "无法读取默认执行模式设置。为避免覆盖现有配置，此设置已锁定。"
   },
   "features": {
     "pet": {

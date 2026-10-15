@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   changeDocument: undefined as ((content: string) => void) | undefined,
 }));
 
+vi.mock('@/infrastructure/i18n', () => ({ i18nService: { formatNumber: (n: number) => String(n) } }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));

@@ -64,6 +64,11 @@
     min-inline-size: 0;
   }
 
+  &__back {
+    // The chevron tip is at 3/8 of its viewport; align it while the button surface extends left.
+    margin-inline-start: calc(var(--openbitfun-control-icon-size-sm) / 8 - var(--openbitfun-control-height-sm) / 2);
+  }
+
   &__section-title {
     display: flex;
     align-items: center;

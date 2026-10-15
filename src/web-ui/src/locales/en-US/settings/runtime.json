@@ -1,16 +1,16 @@
 {
   "defaultHarness": {
-    "title": "Default Agent Harness",
+    "title": "Default agent execution mode",
     "description": "Applies to new standard sessions; assistants, ACP, and sessions with an explicit mode are unaffected",
     "strategy": "Default behavior",
     "followLast": "Follow last selection",
     "fixed": "Use a fixed default",
-    "followLastDescription": "New sessions use the runtime last selected in the message input: {{name}}",
-    "followLastEmptyDescription": "No selection recorded yet; new sessions use {{name}} until you choose a runtime in the message input",
-    "fixedDescription": "New sessions always use the selected Harness; existing sessions are unchanged.",
-    "fixedMode": "Default Harness",
+    "followLastDescription": "New sessions use the execution mode last selected in the message input: {{name}}",
+    "followLastEmptyDescription": "No selection recorded yet; new sessions use {{name}} until you choose an execution mode in the message input",
+    "fixedDescription": "New sessions always use the selected execution mode; existing sessions are unchanged.",
+    "fixedMode": "Default execution mode",
     "compatibilityMode": "{{id}} (compatibility setting)",
-    "loadFailed": "Default Harness settings could not be read. This setting is locked to avoid overwriting the existing configuration."
+    "loadFailed": "Default execution mode settings could not be read. This setting is locked to avoid overwriting the existing configuration."
   },
   "features": {
     "pet": {

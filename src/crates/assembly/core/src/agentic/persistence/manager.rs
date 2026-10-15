@@ -1580,6 +1580,7 @@ impl PersistenceManager {
         session_id: &str,
         session_name: &str,
         last_active_at: u64,
+        user_edited: bool,
     ) -> OpenBitFunResult<()> {
         Self::validate_session_id(session_id)?;
         let _session_write = self.lock_session_write_operation(workspace_path, session_id)?;
@@ -1596,6 +1597,7 @@ impl PersistenceManager {
             })?;
         let mut updated = original.clone();
         updated.session_name = session_name.to_string();
+        openbitfun_services_core::session::naming::clear_default_title(&mut updated, user_edited);
         updated.last_active_at = last_active_at;
 
         let Err(write_error) = self

@@ -483,7 +483,7 @@ impl SessionMetadataStore {
         let _guard = lock.lock().await;
         let _file_guard = self.lock_index_file().await?;
         let metadata_file_created = !metadata_path.exists();
-        let mut metadata = metadata.clone();
+        let mut metadata = compatible_metadata(metadata.clone());
         self.assign_workspace_session_number_locked(&mut metadata)
             .await?;
         let file = StoredSessionMetadataFile::new(metadata.clone());
@@ -603,12 +603,14 @@ impl SessionMetadataStore {
 
 fn compatible_metadata(mut metadata: SessionMetadata) -> SessionMetadata {
     metadata.normalize_legacy_model_selector();
+    super::naming::migrate_legacy_default_title(&mut metadata);
     metadata
 }
 
 fn compatible_metadata_list(mut metadata: Vec<SessionMetadata>) -> Vec<SessionMetadata> {
     for entry in &mut metadata {
         entry.normalize_legacy_model_selector();
+        super::naming::migrate_legacy_default_title(entry);
     }
     metadata
 }
@@ -883,7 +885,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn legacy_text_metadata_is_not_numbered_or_rewritten_as_a_default() {
+    async fn legacy_tagged_empty_default_is_migrated_and_assigned_a_slot() {
         let dir = tempfile::tempdir().unwrap();
         let store = SessionMetadataStore::new(dir.path());
         let mut legacy = metadata("legacy-number", 1);
@@ -899,15 +901,37 @@ mod tests {
             )
             .await
             .unwrap();
+        let old_bytes = fs::read(store.metadata_path(&legacy.session_id))
+            .await
+            .unwrap();
+        let projected = store
+            .load_metadata(&legacy.session_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(projected.session_name, "New Session");
+        assert_eq!(
+            store.list_metadata().await.unwrap()[0].session_name,
+            "New Session"
+        );
+        assert_eq!(
+            fs::read(store.metadata_path(&legacy.session_id))
+                .await
+                .unwrap(),
+            old_bytes
+        );
         store.save_metadata(&legacy).await.unwrap();
         let restored = store
             .load_metadata(&legacy.session_id)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(restored.session_name, legacy.session_name);
-        assert_eq!(restored.custom_metadata, legacy.custom_metadata);
-        assert_eq!(ordinal::number(&restored), None);
+        assert_eq!(restored.session_name, "New Session");
+        assert_eq!(
+            restored.custom_metadata.as_ref().unwrap()["titleKey"],
+            "flow-chat:session.new"
+        );
+        assert_eq!(ordinal::number(&restored), Some(1));
     }
 
     #[tokio::test]

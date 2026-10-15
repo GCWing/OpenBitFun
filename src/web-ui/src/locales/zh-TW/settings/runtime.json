@@ -1,16 +1,16 @@
 {
   "defaultHarness": {
-    "title": "預設智能體執行框架",
+    "title": "預設智能體執行模式",
     "description": "用於一般新會話；助理、ACP 與已指定模式的會話不受影響",
     "strategy": "預設方式",
     "followLast": "跟隨上一次選擇",
     "fixed": "固定預設模式",
-    "followLastDescription": "新會話沿用你最近在輸入框中選擇的執行框架：{{name}}",
-    "followLastEmptyDescription": "尚未記錄選擇；在輸入框中選擇執行框架前，新會話使用 {{name}}",
-    "fixedDescription": "新工作階段一律使用指定執行框架；目前工作階段不會變更。",
-    "fixedMode": "預設執行框架",
+    "followLastDescription": "新會話沿用你最近在輸入框中選擇的執行模式：{{name}}",
+    "followLastEmptyDescription": "尚未記錄選擇；在輸入框中選擇執行模式前，新會話使用 {{name}}",
+    "fixedDescription": "新工作階段一律使用指定執行模式；目前工作階段不會變更。",
+    "fixedMode": "預設執行模式",
     "compatibilityMode": "{{id}}（相容設定）",
-    "loadFailed": "無法讀取預設執行框架設定。為避免覆蓋現有設定，此設定已鎖定。"
+    "loadFailed": "無法讀取預設執行模式設定。為避免覆蓋現有設定，此設定已鎖定。"
   },
   "features": {
     "pet": {

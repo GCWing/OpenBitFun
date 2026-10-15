@@ -141,11 +141,12 @@
     "sessionTitleDesc": "新会话自动生成标题"
   },
   "nursery": {
-    "backToGallery": "$t(shared:agents.Claw)",
+    "backToGallery": "$t(shared:agents.Claw)首页",
     "gallery": {
       "title": "$t(shared:agents.Claw)",
       "subtitle": "你的个人 AI 伙伴，结合你的偏好与上下文，长期协助工作与日常事务。",
       "newAssistant": "创建助理",
+      "createConfirmMessage": "确定创建一个新助理吗？创建后可设置它的身份、工具和个性。",
       "creating": "正在创建...",
       "createFailed": "无法创建助理，请稍后重试",
       "loadFailed": "无法加载助理",

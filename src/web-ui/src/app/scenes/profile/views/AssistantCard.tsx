@@ -1,3 +1,4 @@
+import { resolveAssistantName } from '@/shared/utils/assistantName';
 import React from 'react';
 import { EyeOff } from 'lucide-react';
 import {
@@ -50,7 +51,7 @@ const AssistantCard: React.FC<AssistantCardProps> = ({
   const { t } = useTranslation('scenes/profile');
   const identity = workspace.identity;
 
-  const name = identity?.name?.trim() || workspace.name || t('nursery.card.unnamed');
+  const name = resolveAssistantName(workspace, t('shared:agents.Claw'));
   const avatar = identity?.avatar?.trim() ?? '';
   const emoji = identity?.emoji?.trim() ?? '';
   const creature = identity?.creature?.trim() || '';

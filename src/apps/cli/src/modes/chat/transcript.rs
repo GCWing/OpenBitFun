@@ -299,7 +299,7 @@ mod tests {
     fn detailed_projection_pairs_tool_results_and_uses_safe_code_fences() {
         let mut state = ChatState::new(
             "session".to_string(),
-            "CLI Session".to_string(),
+            "New Session".to_string(),
             "Standard".to_string(),
             None,
         );

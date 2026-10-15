@@ -73,6 +73,8 @@ pub struct WorkspaceInfoDto {
     pub workspace_type: WorkspaceTypeDto,
     pub workspace_kind: WorkspaceKindDto,
     pub assistant_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_name_number: Option<u64>,
     pub languages: Vec<String>,
     pub opened_at: String,
     pub last_accessed: String,
@@ -132,6 +134,8 @@ impl WorkspaceInfoDto {
             workspace_type: WorkspaceTypeDto::from_workspace_type(&info.workspace_type),
             workspace_kind: WorkspaceKindDto::from_workspace_kind(&info.workspace_kind),
             assistant_id: info.assistant_id.clone(),
+            default_name_number:
+                openbitfun_core::service::workspace::assistant_naming::default_name_number(info),
             languages: info.languages.clone(),
             opened_at: info.opened_at.to_rfc3339(),
             last_accessed: info.last_accessed.to_rfc3339(),

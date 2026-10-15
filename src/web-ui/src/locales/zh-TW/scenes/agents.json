@@ -9,18 +9,17 @@
   "loading": "載入中…",
   "page": {
     "title": "智能體",
-    "subtitle": "配置四種智能體執行框架、面向任務的智能體與受委派的子智能體",
+    "subtitle": "執行模式體現預設智能體的工作風格，專用智能體獨立或協作完成任務。",
     "searchPlaceholder": "搜尋智能體名稱或描述…",
     "newAgent": "新增智能體"
   },
   "nav": {
-    "harness": "智能體執行框架",
+    "harness": "執行模式",
     "coreAgents": "已接入智能體",
     "agents": "智能體"
   },
   "harnessZone": {
-    "title": "智能體執行框架",
-    "subtitle": "定義會話如何執行任務，各自管理工具與協作策略",
+    "title": "執行模式",
     "flowCaption": "同一任務 · 四種策略 · 一個結果",
     "task": "任務",
     "result": "結果",
@@ -29,22 +28,22 @@
       "Minimal": {
         "name": "$t(shared:agents.Minimal)",
         "purpose": "更少干預，更多自主",
-        "description": "精簡提示詞與工具，讓新一代旗艦模型充分發揮，適合程式開發等任務。"
+        "description": "側重自主推進，減少流程干預，讓模型自行判斷如何完成程式開發等任務。"
       },
       "Standard": {
         "name": "$t(shared:agents.Standard)",
         "purpose": "工具齊備，支援程式設計與日常工作",
-        "description": "以清晰的任務指引和完整工具，支援程式設計，也能勝任資訊處理、內容創作等日常工作。"
+        "description": "涵蓋程式開發與日常工作，以清晰的任務指引和完整工具處理開發、資料整理與內容寫作。"
       },
       "Ultimate": {
         "name": "$t(shared:agents.Ultimate)",
         "purpose": "分工協作，完成複雜專案",
-        "description": "多個智能體並行推進、獨立審查，適合複雜專案與大型改造。"
+        "description": "強調分工協作，透過多個智能體並行執行與獨立審查，推進複雜專案和大型改造。"
       },
       "Creative": {
         "name": "$t(shared:agents.Creative)",
         "purpose": "創造應用，客製你的體驗",
-        "description": "用自然語言建立小應用、客製介面，讓 OpenBitFun 更貼合你的工作方式。"
+        "description": "專注應用與介面，用自然語言建立小應用、客製 OpenBitFun，把想法變成可用的功能。"
       }
     }
   },
@@ -68,7 +67,7 @@
     "computerUseDisabledBadge": "已在設定中停用"
   },
   "agentsZone": {
-    "title": "智能體",
+    "title": "專用智能體",
     "subtitle": "統一查看內置、用戶、項目和外部智能體，點擊卡片查看與設定能力",
     "empty": {
       "noAgents": "目前沒有可用的智能體",
@@ -174,8 +173,6 @@
     "selectAll": "全選",
     "selectionSaveHint": "儲存後生效",
     "capabilityEnabled": "已啟用",
-    "subagentsSelectedCount": "已選擇 {{count}} 個子智能體",
-    "subagentsEnabledCount": "已啟用 {{count}} 個子智能體",
     "noEnabledSubagents": "未啟用任何子智能體",
     "reset": "重設",
     "cancel": "取消",
@@ -224,9 +221,6 @@
       "builtin": "內置分組",
       "myGroups": "我的分組",
       "otherSkills": "其他 Skill",
-      "selectedCount": "已選擇 {{count}} 個技能",
-      "enabledCount": "已啟用 {{count}} 個技能",
-      "runtimeCount": "執行時採用 {{count}} 個",
       "unavailableCount": "{{count}} 個不可用",
       "enableGroupSkills": "選擇 {{name}} 中的所有技能",
       "clearGroupSkills": "取消選擇 {{name}} 中的技能",
@@ -249,7 +243,6 @@
       "extension": "擴展 · {{provider}}",
       "other": "其他",
       "selectedCount": "已選擇 {{count}} 個工具",
-      "enabledCount": "已啟用 {{count}} 個工具",
       "manageGroups": "管理分組",
       "manageTitle": "管理我的工具分組",
       "manageSubtitle": "整理可重複使用的個人工具選擇。",

@@ -141,11 +141,12 @@
     "sessionTitleDesc": "Auto-generate titles for new sessions"
   },
   "nursery": {
-    "backToGallery": "$t(shared:agents.Claw)",
+    "backToGallery": "$t(shared:agents.Claw) home",
     "gallery": {
       "title": "$t(shared:agents.Claw)",
       "subtitle": "Your personal AI companion, using your preferences and context to support your work and everyday tasks over time.",
       "newAssistant": "Create assistant",
+      "createConfirmMessage": "Create a new assistant? After creation, you can configure its identity, tools, and personality.",
       "creating": "Creating...",
       "createFailed": "Assistant could not be created.",
       "loadFailed": "Assistants could not be loaded.",

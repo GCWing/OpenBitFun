@@ -49,5 +49,8 @@
     "done": "Done",
     "failed": "Failed",
     "cancelled": "Cancelled"
+  },
+  "sessions": {
+    "new": "New Session"
   }
 }

@@ -11,7 +11,7 @@ function load(name, deps = {}) {
   return exported;
 }
 const factory = load('services/RemoteCommandFactory');
-const { RemoteSessionManager } = load('services/RemoteSessionManager', { './RemoteCommandFactory': factory });
+const { RemoteSessionManager } = load('services/RemoteSessionManager', { './RemoteCommandFactory': factory, '../i18n/RemoteI18n': { RemoteI18n: { t: () => 'New Session' } } });
 function fixture(response) {
   const manager = Object.create(RemoteSessionManager.prototype);
   manager.workspace = { path: '/previous-ssh', remoteConnectionId: 'previous-profile' };
@@ -25,6 +25,7 @@ test('default Claw leaves workspace selection to host and adopts its primary loc
   const session = await f.manager.createSession({ agentType: 'claw', title: '', instruction: '' }, async value => { allocated = value; });
   assert.equal(f.calls.length, 1);
   assert.equal(f.calls[0].agent_type, 'claw');
+  assert.equal(f.calls[0].session_name, '');
   assert.equal(f.calls[0].workspace_path, undefined);
   assert.equal(f.calls[0].remote_connection_id, undefined);
   assert.equal(session.workspacePath, '/runtime/primary');
@@ -69,4 +70,11 @@ test('workspace creation flow forwards Claw and clicked saved profile without se
   assert.equal(calls[0][0], '/clicked');
   assert.equal(calls[0][2], 'claw');
   assert.equal(calls[0][6], 'saved-clicked');
+});
+
+test('custom titles including legacy-looking text survive creation', async () => {
+  const f = fixture({ session_id: 'custom' });
+  const session = await f.manager.createSession({ agentType: 'claw', title: 'Remote Claw Session', instruction: '' });
+  assert.equal(f.calls[0].session_name, 'Remote Claw Session');
+  assert.equal(session.title, 'Remote Claw Session');
 });

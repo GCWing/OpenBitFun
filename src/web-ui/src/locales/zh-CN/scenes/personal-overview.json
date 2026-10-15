@@ -38,7 +38,22 @@
     "description": "内置与自定义智能体，处理各类任务。",
     "create": "创建智能体",
     "createAssistant": "创建助理",
+    "createAssistantConfirmMessage": "确定创建一个新助理吗？创建后可设置它的身份、工具和个性。",
     "createAssistantFailed": "无法创建助理，请稍后重试。"
+  },
+  "devices": {
+    "title": "设备",
+    "manage": "管理设备",
+    "online": "在线",
+    "offline": "离线",
+    "current": "当前设备",
+    "thisDevice": "此设备",
+    "incompatible": "需更新后互控",
+    "loading": "正在加载设备…",
+    "signInHint": "登录账号，查看你的设备并在设备之间继续工作。",
+    "failed": "无法刷新设备，已显示的信息可能不是最新状态。请重试或在设备管理中检查连接。",
+    "empty": "暂无已关联的设备。在其他设备上登录同一账号即可关联。",
+    "viewAll": "查看全部 {{count}} 台设备"
   },
   "usage": {
     "loading": "正在加载 Token 活动…",

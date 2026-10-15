@@ -4,6 +4,7 @@ mod lineage;
 mod memory_workspace;
 mod metadata;
 mod metadata_store;
+pub mod naming;
 mod offline_import;
 mod ordinal;
 pub mod page;

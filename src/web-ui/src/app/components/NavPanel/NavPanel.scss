@@ -1819,12 +1819,13 @@ $_section-header-height: 22px;
   > [data-openbitfun-part='actions'] { flex: 0 0 auto; }
 }
 
-.openbitfun-device-overview__header-device {
+.openbitfun-device-overview__device-details {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--openbitfun-space-2);
   min-width: 0;
-  width: 100%;
+  padding-inline: var(--openbitfun-space-5);
 }
 
 .openbitfun-device-overview__header-actions {
@@ -1851,18 +1852,22 @@ $_section-header-height: 22px;
 
 .openbitfun-device-overview__summary {
   position: relative;
-  display: block;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  gap: var(--openbitfun-space-2);
   flex-shrink: 0;
   min-width: 0;
   height: 100%;
+  padding-block-end: var(--openbitfun-space-4);
+  box-sizing: border-box;
   // Fill the remaining height without shrinking when extra devices are listed.
   margin-block: auto;
   text-align: start;
 }
 
 .openbitfun-device-overview__carousel-viewport {
-  position: absolute;
-  inset: 0;
+  grid-area: 1 / 1;
+  position: relative;
   min-width: 0;
   overflow: hidden;
   width: 100%;
@@ -1876,9 +1881,10 @@ $_section-header-height: 22px;
 }
 
 .openbitfun-device-overview__carousel-controls {
+  grid-area: 1 / 1;
   position: absolute;
   inset-block-start: var(--openbitfun-space-2);
-  inset-block-end: calc(var(--openbitfun-control-height-sm) + var(--openbitfun-space-4) + var(--openbitfun-space-2));
+  inset-block-end: 0;
   inset-inline: clamp(var(--openbitfun-space-5), 12%, var(--openbitfun-space-10));
   z-index: 2;
   display: flex;
@@ -1934,9 +1940,9 @@ $_section-header-height: 22px;
   );
   display: grid;
   position: absolute;
-  // Center the image between the header and the reserved bottom action row.
+  // The artwork row ends above the device details and action rows.
   inset-block-start: var(--openbitfun-space-2);
-  inset-block-end: calc(var(--openbitfun-control-height-sm) + var(--openbitfun-space-4) + var(--openbitfun-space-2));
+  inset-block-end: 0;
   inset-inline-start: 0;
   width: 100%;
   overflow: hidden;
@@ -2009,7 +2015,7 @@ $_section-header-height: 22px;
 
 .openbitfun-device-overview__device-heading {
   display: flex;
-  flex: 1 1 0;
+  flex: 0 1 auto;
   align-items: center;
   min-height: var(--openbitfun-control-height-sm);
   min-width: 0;
@@ -2017,10 +2023,7 @@ $_section-header-height: 22px;
 }
 
 .openbitfun-device-overview__device-actions {
-  position: absolute;
-  inset-block-end: var(--openbitfun-space-4);
-  inset-inline: var(--openbitfun-space-5);
-  z-index: 2;
+  padding-inline: var(--openbitfun-space-5);
   display: flex;
   align-items: center;
   justify-content: center;

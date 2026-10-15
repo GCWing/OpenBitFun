@@ -38,7 +38,22 @@
     "description": "內建與自訂智能體，處理各類任務。",
     "create": "建立智能體",
     "createAssistant": "建立助理",
+    "createAssistantConfirmMessage": "確定建立一個新助理嗎？建立後可設定它的身分、工具和個性。",
     "createAssistantFailed": "無法建立助理，請稍後重試。"
+  },
+  "devices": {
+    "title": "裝置",
+    "manage": "管理裝置",
+    "online": "在線",
+    "offline": "離線",
+    "current": "目前裝置",
+    "thisDevice": "此裝置",
+    "incompatible": "需更新後互控",
+    "loading": "正在載入裝置…",
+    "signInHint": "登入帳號，查看你的裝置並在裝置之間繼續工作。",
+    "failed": "無法重新整理裝置，已顯示的資訊可能不是最新狀態。請重試或在裝置管理中檢查連線。",
+    "empty": "暫無已關聯的裝置。在其他裝置上登入同一帳號即可關聯。",
+    "viewAll": "查看全部 {{count}} 台裝置"
   },
   "usage": {
     "loading": "正在載入 Token 活動…",

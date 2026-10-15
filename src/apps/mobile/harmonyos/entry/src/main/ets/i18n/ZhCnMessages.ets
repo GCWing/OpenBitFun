@@ -1,4 +1,5 @@
 export const ZH_CN_MESSAGES: [string, string][] = [
+  ['session.newTitle', '新会话'],
   ['workspaceTools.browse', '浏览受控设备文件夹'],
   ['workspaceTools.selectFolder', '选择此文件夹'],
   ['workspaceTools.back', '返回文件列表'],

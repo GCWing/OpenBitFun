@@ -215,7 +215,10 @@ describe('device status card', () => {
     expect(card.querySelector('[data-artwork="device"]')).not.toBeNull();
     const deviceName = element('nav-device-status-name');
     expect(deviceName.textContent).toBe('Workstation');
-    expect(header?.contains(deviceName)).toBe(true);
+    expect(header?.contains(deviceName)).toBe(false);
+    const details = deviceName.closest('.openbitfun-device-overview__device-details');
+    expect(details?.previousElementSibling?.classList.contains('openbitfun-device-overview__carousel-viewport')).toBe(true);
+    expect(details?.nextElementSibling?.classList.contains('openbitfun-device-overview__device-actions')).toBe(true);
     expect(deviceName.closest('.openbitfun-device-overview__device-heading')?.previousElementSibling)
       .toBeNull();
     expect(header?.contains(element('nav-device-status-manage'))).toBe(true);
@@ -484,6 +487,8 @@ describe('device status card', () => {
     expect(element('nav-device-status-pagination').textContent).toBe('2 / 3');
     expect(element('nav-device-status-name').closest('.openbitfun-device-overview__device-heading')?.previousElementSibling)
       .toBe(element('nav-device-status-pagination'));
+    expect(element('nav-device-status-pagination').parentElement)
+      .toBe(element('nav-device-status-name').closest('.openbitfun-device-overview__device-details'));
     expect(document.querySelector('[data-testid="nav-device-status-local"]')).toBeNull();
     expect(element('nav-device-status-manage').dataset.openbitfunComponent).toBe('icon-button');
 
@@ -538,7 +543,7 @@ describe('device status card', () => {
     });
     render();
     expect(summary.querySelector('[data-control-state="active"]')?.getAttribute('aria-label')).toContain('deviceOverview.currentUse · deviceOverview.controlling');
-    expect(header?.textContent).toContain('deviceOverview.inUse');
+    expect(summary.textContent).toContain('deviceOverview.inUse');
     const usageControl = element('nav-device-usage-status');
     expect(usageControl.tagName).toBe('SPAN');
     expect(usageControl.dataset.openbitfunComponent).toBe('status-pill');
@@ -546,7 +551,7 @@ describe('device status card', () => {
     expect(usageControl.dataset.shape).toBe('pill');
     expect(usageControl.closest('.openbitfun-device-overview__device-heading')).not.toBeNull();
     expect(element('nav-device-status-name').nextElementSibling).toBe(usageControl);
-    expect(summary.querySelector('[data-testid="nav-device-usage-status"]')).toBeNull();
+    expect(summary.querySelector('[data-testid="nav-device-usage-status"]')).toBe(usageControl);
     expect(usageControl.textContent).toBe('deviceOverview.inUse');
     expect(usageControl.getAttribute('role')).not.toBe('button');
     expect(usageControl.getAttribute('tabindex')).toBeNull();
@@ -562,7 +567,7 @@ describe('device status card', () => {
     act(() => element('nav-device-status-manage').focus());
     expect(usageControl.textContent).toBe('deviceOverview.inUse');
     expect(usageControl.closest('[aria-hidden="true"]')).toBeNull();
-    expect(summary.querySelector('.openbitfun-device-overview__device-heading .openbitfun-device-overview__usage-badge')).toBeNull();
+    expect(summary.querySelector('.openbitfun-device-overview__device-heading .openbitfun-device-overview__usage-badge')).toBe(usageControl);
     expect(header?.contains(element('nav-device-status-disconnect'))).toBe(false);
     expect(summary.contains(element('nav-device-status-disconnect'))).toBe(true);
     expect(element('nav-device-status-disconnect').closest('.openbitfun-device-overview__device-actions')).not.toBeNull();
@@ -571,7 +576,7 @@ describe('device status card', () => {
     expect(element('nav-device-status-disconnect').dataset.openbitfunComponent).toBe('button');
     expect(element('nav-device-status-disconnect').dataset.openbitfunVariant).toBe('primary');
     expect(summary.querySelector('.openbitfun-device-overview__connection-control')).toBeNull();
-    expect(summary.querySelector('[data-openbitfun-component="status-pill"]')).toBeNull();
+    expect(summary.querySelector('[data-openbitfun-component="status-pill"]')).toBe(usageControl);
     expect(document.querySelector('[data-testid="nav-device-status-connected-devices"]')).toBeNull();
     expect(element('nav-device-status-disconnect').closest('[data-control-state="active"]')).not.toBeNull();
     expect(element('nav-device-status-popover').querySelector('[data-openbitfun-part="footer"]')).toBeNull();
