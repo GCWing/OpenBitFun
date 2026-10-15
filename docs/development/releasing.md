@@ -60,6 +60,23 @@ receipt. The archive preserves executable modes and symlinks for re-verification
 It is unverified recovery input, never a release installer: it does not match
 the normal `*-bundle` publication pattern or satisfy the complete producer gate.
 
+To resume that checkpoint without compiling again, dispatch `Desktop Package`
+with `verification_recovery_run_id`, the original tag/channel, one Mac
+`target_platform`, and `upload_to_release=true`. Do not combine it with
+`artifact_run_ids` or `relay_image_only`. Recovery accepts only a trusted tag
+producer with successful build, failed Apple verification, and a successfully
+retained, unexpired recovery archive. A recovery that fails Apple verification
+again can be resumed from its own checkpoint, retaining a matching DMG receipt.
+
+When the bundler reports Accepted but leaves the application without a stapled
+ticket, recovery explicitly staples and validates it, then rebuilds both the
+DMG and updater around that app. It verifies the original updater signature and
+Developer ID before repair, signs the replacement DMG and updater, and runs the
+unchanged complete Apple verification. Other ticket failures are not repaired;
+an existing DMG submission is never silently invalidated by repackaging.
+Only a successful verification produces the normal `*-bundle` artifact accepted
+by full release finalization. No Rust or frontend compilation runs in recovery.
+
 To add a verified Mac package to an already public partial stable release,
 dispatch `Publish Ready Desktop Assets` with `tag_name`, `macos_run_id`, and
 `macos_platform`; leave `source_run_id` empty. The selected producer must have

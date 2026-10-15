@@ -31,6 +31,10 @@ on:
         description: "Finalize from complete verified artifacts in previous Desktop Package runs (comma-separated IDs); skips rebuilding."
         required: false
         type: string
+      verification_recovery_run_id:
+        description: "Restore a failed Mac verification archive and verify without compiling; select one Mac target."
+        required: false
+        type: string
       target_platform:
         description: "Build one Desktop platform as signed artifacts only; all retains full release publication."
         required: false
@@ -160,6 +164,8 @@ jobs:
           TARGET_PLATFORM: ${{ inputs.target_platform || 'all' }}
           RELAY_IMAGE_ONLY: ${{ inputs.relay_image_only }}
           ARTIFACT_RUN_IDS: ${{ inputs.artifact_run_ids }}
+          VERIFICATION_RECOVERY_RUN_ID: ${{ inputs.verification_recovery_run_id }}
+          UPLOAD_TO_RELEASE: ${{ steps.meta.outputs.upload_to_release }}
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
@@ -175,6 +181,12 @@ jobs:
           if (target !== 'all' && process.env.RELAY_IMAGE_ONLY === 'true') {
             throw new Error('A Desktop recovery target cannot be combined with relay_image_only');
           }
+          if (process.env.VERIFICATION_RECOVERY_RUN_ID &&
+              (!/^\d+$/.test(process.env.VERIFICATION_RECOVERY_RUN_ID) || target === 'all' ||
+               process.env.ARTIFACT_RUN_IDS || process.env.RELAY_IMAGE_ONLY === 'true' ||
+               process.env.UPLOAD_TO_RELEASE !== 'true')) {
+            throw new Error('Verification recovery requires one Mac target, signing, and no other recovery mode');
+          }
           const selected = target === 'all' ? all : all.filter((platform) => platform.name === target);
           if (selected.length === 0) throw new Error('No Desktop package platforms selected');
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify(selected)}\n`);
@@ -185,7 +197,7 @@ jobs:
     name: Package (${{ matrix.platform.name }})
     runs-on: ${{ matrix.platform.os }}
     needs: prepare
-    if: needs.prepare.outputs.relay_image_only != 'true' && !inputs.artifact_run_ids
+    if: needs.prepare.outputs.relay_image_only != 'true' && !inputs.artifact_run_ids && !inputs.verification_recovery_run_id
     env:
       NODE_OPTIONS: --max-old-space-size=6144
       OPENBITFUN_ENABLE_UPDATER_ARTIFACTS: ${{ needs.prepare.outputs.upload_to_release }}
@@ -470,6 +482,84 @@ jobs:
             target/release/bundle
             src/apps/desktop/target/release/bundle
             OpenBitFun-Installer/src-tauri/target/release/openbitfun-installer.exe
+
+  recover-macos:
+    name: Package (${{ matrix.platform.name }})
+    needs: prepare
+    if: inputs.verification_recovery_run_id != ''
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJSON(needs.prepare.outputs.package_matrix) }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RECOVERY_RUN: ${{ inputs.verification_recovery_run_id }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      MACOS_PLATFORM: ${{ matrix.platform.name }}
+      MACOS_TARGET: ${{ matrix.platform.target }}
+      OPENBITFUN_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      OPENBITFUN_SIGNING_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      OPENBITFUN_SIGNING_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+    steps:
+      # Packaging policy comes from this pinned workflow; payload bytes come only
+      # from the validated original tag producer. No product build runs here.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.12.0'
+          package-manager-cache: false
+      - name: Select Xcode notarization tools
+        run: |
+          test -d /Applications/Xcode_26.2.app/Contents/Developer
+          echo "DEVELOPER_DIR=/Applications/Xcode_26.2.app/Contents/Developer" >> "$GITHUB_ENV"
+      - name: Restore prior macOS bundles
+        run: |
+          node scripts/restore-macos-verification-bundle.mjs --repo "$GITHUB_REPOSITORY" \
+            --tag "$RELEASE_TAG" --platform "$MACOS_PLATFORM" --run-id "$RECOVERY_RUN"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            "target/$MACOS_TARGET/release/bundle/macos/OpenBitFun.app/Contents/Info.plist")" = "$RELEASE_VERSION"
+          case "$MACOS_TARGET" in
+            x86_64-apple-darwin) architecture=x86_64 ;;
+            aarch64-apple-darwin) architecture=arm64 ;;
+          esac
+          lipo -verify_arch "$architecture" "target/$MACOS_TARGET/release/bundle/macos/OpenBitFun.app/Contents/MacOS/openbitfun-desktop"
+      - name: Configure Apple Developer ID signing and notarization
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          OPENBITFUN_REQUIRE_APPLE_SIGNING: 'true'
+        run: bash scripts/ci/setup-macos-signing.sh
+      - name: Repair missing application ticket
+        run: bash scripts/ci/repair-macos-stapling.sh "$MACOS_TARGET"
+      - name: Verify Apple signature and notarization
+        id: apple_verification
+        run: bash scripts/ci/verify-macos-signing.sh "$MACOS_TARGET"
+      - name: Preserve macOS verification recovery bundles
+        if: failure() && steps.apple_verification.outcome == 'failure'
+        run: tar -czf macos-verification-recovery.tar.gz -C "target/$MACOS_TARGET/release" bundle
+      - name: Upload macOS verification recovery bundles
+        if: failure() && steps.apple_verification.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: openbitfun-${{ needs.prepare.outputs.release_tag }}-${{ matrix.platform.name }}-verification-recovery
+          path: macos-verification-recovery.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload bundles
+        uses: actions/upload-artifact@v6
+        with:
+          name: openbitfun-${{ needs.prepare.outputs.release_tag }}-${{ matrix.platform.name }}-bundle
+          path: target/${{ matrix.platform.target }}/release/bundle/
+          if-no-files-found: error
 
   linux-binaries:
     name: Linux CLI and Relay Server

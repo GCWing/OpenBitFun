@@ -1579,6 +1579,152 @@ test('Desktop recovery selects only one Mac target and cannot publish an incompl
   assert.equal(workflow.jobs.package.env.OPENBITFUN_ENABLE_UPDATER_ARTIFACTS, '${{ needs.prepare.outputs.upload_to_release }}');
   assert.match(workflow.concurrency.group, /inputs.target_platform/);
   assert.equal(workflow.concurrency['cancel-in-progress'], false);
+  for (const [target, upload, run, artifacts, success] of [
+    ['macos-x64', 'true', '123', '', true], ['macos-arm64', 'true', '123', '', true],
+    ['all', 'true', '123', '', false], ['macos-x64', 'false', '123', '', false],
+    ['macos-x64', 'true', 'invalid', '', false], ['macos-x64', 'true', '123', '456', false],
+  ]) {
+    const result = spawnSync('bash', ['-c', step.run], {
+      cwd: repoRoot, encoding: 'utf8', windowsHide: true,
+      env: { ...process.env, TARGET_PLATFORM: target, RELAY_IMAGE_ONLY: 'false', ARTIFACT_RUN_IDS: artifacts,
+        VERIFICATION_RECOVERY_RUN_ID: run, UPLOAD_TO_RELEASE: upload, GITHUB_OUTPUT: path.join(root, 'verify-recovery') },
+    });
+    assert.equal(result.status === 0, success, result.stderr);
+  }
+  assert.match(workflow.jobs.package.if, /!inputs.verification_recovery_run_id/);
+  const recover = workflow.jobs['recover-macos'];
+  assert.equal(recover.name, workflow.jobs.package.name);
+  assert.equal(recover.if, "inputs.verification_recovery_run_id != ''");
+  assert.ok(recover.steps.find((entry) => entry.name === 'Verify Apple signature and notarization'));
+  const checkpoint = recover.steps.find((entry) => entry.name === 'Upload macOS verification recovery bundles');
+  assert.equal(checkpoint.if, "failure() && steps.apple_verification.outcome == 'failure'");
+  assert.doesNotMatch(JSON.stringify(recover.steps), /desktop:build|cargo build|pnpm install/);
+});
+
+test('Mac verification recovery requires the exact failed trusted producer and unexpired checkpoint', async () => {
+  const { planMacVerificationRecovery } = await import('./restore-macos-verification-bundle.mjs');
+  const repo = 'GCWing/OpenBitFun', tag = 'v1.0.6', platform = 'macos-x64';
+  const source = {
+    run: { id: 123, repository: { full_name: repo }, head_repository: { full_name: repo },
+      path: '.github/workflows/desktop-package.yml', event: 'workflow_dispatch', head_sha: 'a'.repeat(40) },
+    jobs: [{ name: 'Prepare', conclusion: 'success' }, { name: 'Package (macos-x64)', conclusion: 'failure', steps: [
+      { name: 'Build desktop app', conclusion: 'success' },
+      { name: 'Verify Apple signature and notarization', conclusion: 'failure' },
+      { name: 'Upload macOS verification recovery bundles', conclusion: 'success' },
+    ] }],
+    artifacts: [{ name: 'openbitfun-v1.0.6-macos-x64-verification-recovery', expired: false }],
+  };
+  assert.equal(planMacVerificationRecovery(repo, tag, platform, source).runId, '123');
+  const mutations = [
+    (s) => { s.run.head_repository.full_name = 'untrusted/fork'; },
+    (s) => { s.run.repository.full_name = 'untrusted/fork'; },
+    (s) => { s.run.path = '.github/workflows/ci.yml'; },
+    (s) => { s.run.event = 'pull_request'; }, (s) => { s.run.head_sha = 'invalid'; },
+    (s) => { s.jobs[0].conclusion = 'failure'; },
+    (s) => { s.jobs[1].conclusion = 'success'; },
+    (s) => { s.jobs[1].steps[0].conclusion = 'failure'; },
+    (s) => { s.jobs[1].steps[1].conclusion = 'skipped'; },
+    (s) => { s.jobs[1].steps[2].conclusion = 'failure'; },
+    (s) => { s.jobs[1].steps.push({ name: 'Other stage', conclusion: 'failure' }); },
+    (s) => { s.artifacts[0].expired = true; }, (s) => { s.artifacts = []; },
+    (s) => { s.artifacts.push({ ...s.artifacts[0] }); },
+  ];
+  for (const mutate of mutations) {
+    const next = structuredClone(source); mutate(next);
+    assert.throws(() => planMacVerificationRecovery(repo, tag, platform, next));
+  }
+  assert.throws(() => planMacVerificationRecovery(repo, tag, 'macos-arm64', source));
+  const resumed = structuredClone(source);
+  resumed.jobs[1].steps.splice(0, 1, { name: 'Restore prior macOS bundles', conclusion: 'success' },
+    { name: 'Repair missing application ticket', conclusion: 'success' });
+  assert.equal(planMacVerificationRecovery(repo, tag, platform, resumed).runId, '123');
+});
+
+test('Mac ticket repair repacks both distributions and fails closed on unrelated errors', (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'openbitfun-staple-repair-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bundle = path.join(root, 'target/x86_64-apple-darwin/release/bundle');
+  const app = path.join(bundle, 'macos/OpenBitFun.app');
+  const dmg = path.join(bundle, 'dmg/OpenBitFun_1.0.6_x64.dmg');
+  mkdirSync(path.join(root, 'bin'));
+  mkdirSync(path.join(root, 'scripts'));
+  mkdirSync(path.join(app, 'Contents'), { recursive: true });
+  mkdirSync(path.dirname(dmg), { recursive: true });
+  copyFileSync(path.join(repoRoot, 'scripts/write-minisign-public-key.mjs'), path.join(root, 'scripts/write-minisign-public-key.mjs'));
+  function stub(name, source) {
+    writeFileSync(path.join(root, 'bin', name), `#!/usr/bin/env bash\nset -euo pipefail\n${source}\n`, { mode: 0o755 });
+  }
+  stub('codesign', 'if [[ "$1" == -dv ]]; then echo "Authority=Developer ID Application: Fixture"; fi');
+  stub('spctl', 'if [[ "${REJECT_GATEKEEPER:-}" == true ]]; then exit 1; fi');
+  stub('minisign', 'if [[ "${REJECT_SIGNATURE:-}" == true ]]; then exit 1; fi');
+  stub('xcrun', `
+    printf '%s\\n' "$*" >> "$FIXTURE/calls"
+    app="$3"
+    if [[ "$2" == staple ]]; then
+      printf stapled > "$app/Contents/stapled-fixture"
+    elif [[ "\${TICKET_ERROR:-}" == network ]]; then
+      echo 'Error Domain=NSURLErrorDomain Code=-1005'; exit 68
+    elif [[ "\${TICKET_ERROR:-}" == invalid ]]; then
+      echo 'Invalid ticket'; exit 65
+    elif [[ "\${VALID_TICKET:-}" != true && ! -f "$app/Contents/stapled-fixture" ]]; then
+      echo 'OpenBitFun.app does not have a ticket stapled to it.'; exit 65
+    fi
+  `);
+  stub('hdiutil', `
+    case "$1" in
+      convert)
+        format="$3"; output="$5"; input="$6"
+        if [[ "$format" == UDRW ]]; then cp "$input" "$output";
+        else mount="$(cat "$FIXTURE/mount-path")"; cat "$mount/OpenBitFun.app/Contents/stapled-fixture" > "$output"; fi
+        ;;
+      attach)
+        mount="$5"; printf '%s' "$mount" > "$FIXTURE/mount-path"
+        mkdir -p "$mount/OpenBitFun.app"
+        ;;
+      detach) ;;
+    esac
+  `);
+  stub('ditto', 'cp -R "$1" "$2"');
+  writeFileSync(path.join(root, 'scripts/sign-release-assets.sh'), '#!/usr/bin/env bash\nset -euo pipefail\nprintf signed | base64 > "$1.sig"\n');
+  const env = { ...process.env, PATH: `${path.join(root, 'bin')}:${process.env.PATH}`, FIXTURE: root,
+    OPENBITFUN_APPLE_SIGNING_CONFIGURED: 'true', APPLE_SIGNING_IDENTITY: 'Fixture Developer ID',
+    OPENBITFUN_SIGNING_KEY: 'fixture', OPENBITFUN_SIGNING_PUBKEY: 'untrusted comment: fixture\nfixture-key' };
+  function reset() {
+    rmSync(path.join(app, 'Contents/stapled-fixture'), { force: true });
+    rmSync(`${dmg}.notary-submission.json`, { force: true });
+    writeFileSync(dmg, 'original dmg');
+    writeFileSync(`${app}.tar.gz`, 'original updater');
+    writeFileSync(`${app}.tar.gz.sig`, Buffer.from('original signature').toString('base64'));
+    writeFileSync(path.join(root, 'calls'), '');
+  }
+  function execute(overrides = {}) {
+    return spawnSync('bash', [path.join(repoRoot, 'scripts/ci/repair-macos-stapling.sh'), 'x86_64-apple-darwin'], {
+      cwd: root, env: { ...env, ...overrides }, encoding: 'utf8', windowsHide: true,
+    });
+  }
+  for (const overrides of [{ TICKET_ERROR: 'network' }, { TICKET_ERROR: 'invalid' }, { REJECT_SIGNATURE: 'true' }]) {
+    reset(); const result = execute(overrides);
+    assert.notEqual(result.status, 0);
+    assert.equal(readFileSync(dmg, 'utf8'), 'original dmg');
+    assert.equal(existsSync(path.join(app, 'Contents/stapled-fixture')), false);
+  }
+  reset();
+  writeFileSync(`${dmg}.notary-submission.json`, 'retained receipt');
+  assert.notEqual(execute().status, 0);
+  assert.equal(readFileSync(dmg, 'utf8'), 'original dmg');
+  assert.equal(execute({ VALID_TICKET: 'true' }).status, 0, 'existing valid ticket retains the submission and bytes');
+  assert.equal(readFileSync(`${dmg}.notary-submission.json`, 'utf8'), 'retained receipt');
+  reset();
+  writeFileSync(`${dmg}.sig`, 'obsolete signature for original bytes');
+  const repaired = execute();
+  assert.equal(repaired.status, 0, repaired.stderr);
+  assert.equal(readFileSync(dmg, 'utf8'), 'stapled');
+  assert.equal(existsSync(`${dmg}.sig`), false);
+  assert.equal(Buffer.from(readFileSync(`${app}.tar.gz.sig`, 'utf8'), 'base64').toString(), 'signed');
+  const contents = spawnSync('tar', ['-tzf', `${app}.tar.gz`], { encoding: 'utf8', windowsHide: true });
+  assert.equal(contents.status, 0, contents.stderr);
+  assert.match(contents.stdout, /OpenBitFun.app\/Contents\/stapled-fixture/);
+  assert.equal(readFileSync(path.join(root, 'calls'), 'utf8').match(/stapler staple/g)?.length, 1);
 });
 
 
