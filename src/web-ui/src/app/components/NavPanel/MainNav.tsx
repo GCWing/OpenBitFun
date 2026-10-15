@@ -8,15 +8,18 @@
  */
 
 import React, { useCallback, useState, useEffect, useRef, useSyncExternalStore } from 'react';
-import { subscribeOverlayInteraction, createOverlayPortal, OverflowText,
+import {
+  Button,
+  Dialog,
+  DialogBody,
+  DialogClose,
+  DialogHeader,
+  DialogHeading,
+  DialogTitle,
+  OverflowText,
   Icon,
   IconButton,
   KeyHint,
-  Menu,
-  MenuItem,
-  MenuList,
-  MenuSection,
-  MenuSeparator,
   NavigationPanel,
   NavigationPanelBody,
   NavigationPanelContent,
@@ -25,8 +28,6 @@ import { subscribeOverlayInteraction, createOverlayPortal, OverflowText,
   ScrollArea,
   Tooltip,
 } from '@openbitfun/ui';
-import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
-import { isImeOwnedKeyboardEvent } from '@/shared/utils/ime';
 import { FolderOpen, FolderPlus, House, Server } from 'lucide-react';
 // import { PanelsTopLeft } from 'lucide-react'; // temporarily hidden: Pages nav entry
 import { useSceneManager } from '../../hooks/useSceneManager';
@@ -43,7 +44,6 @@ import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext'
 import { createLogger } from '@/shared/utils/logger';
 import { isRemoteWorkspace } from '@/shared/types';
 import { getRecentWorkspaceLineParts } from '@/shared/utils/recentWorkspaceDisplay';
-import { computeFixedPopoverPosition } from '@/shared/utils/fixedPopoverViewport';
 import { useSSHRemoteContext, SSHConnectionDialog, RemoteFileBrowser } from '@/features/ssh-remote';
 import { openGlobalSearch } from '@/app/global-search/globalSearchStore';
 import { activateProductAction } from '@/app/global-search/productActionActivator';
@@ -94,59 +94,22 @@ const MainNav: React.FC = () => {
     initialLoad: 'idle',
   });
 
-  const workspaceMenuButtonRef = useRef<HTMLButtonElement | null>(null);
-  const workspaceMenuRef = useRef<HTMLDivElement | null>(null);
   const sectionsScrollRef = useRef<HTMLDivElement | null>(null);
   const sessionContentRef = useRef<HTMLDivElement | null>(null);
-  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
-  const [workspaceMenuClosing, setWorkspaceMenuClosing] = useState(false);
-  const [workspaceMenuPos, setWorkspaceMenuPos] = useState({ top: 0, left: 0 });
+  const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
 
-  const closeWorkspaceMenu = useCallback(() => {
-    setWorkspaceMenuClosing(true);
-    window.setTimeout(() => {
-      setWorkspaceMenuOpen(false);
-      setWorkspaceMenuClosing(false);
-    }, 150);
+  const closeWorkspaceDialog = useCallback(() => {
+    setWorkspaceDialogOpen(false);
   }, []);
 
-  const updateWorkspaceMenuPos = useCallback(() => {
-    const btn = workspaceMenuButtonRef.current;
-    if (!btn || !workspaceMenuOpen) return;
-    const rect = btn.getBoundingClientRect();
-    const viewportPadding = 8;
-    const gap = 6;
-    const fallbackWidth = 300;
-    const fallbackHeight = 420;
-
-    const apply = () => {
-      const menuEl = workspaceMenuRef.current;
-      const w = menuEl?.offsetWidth ?? fallbackWidth;
-      const h = menuEl?.offsetHeight ?? fallbackHeight;
-      setWorkspaceMenuPos(computeFixedPopoverPosition(rect, w, h, gap, viewportPadding));
-    };
-
-    apply();
-    requestAnimationFrame(apply);
-  }, [workspaceMenuOpen]);
-
-  const openWorkspaceMenu = useCallback(async () => {
+  const openWorkspaceDialog = useCallback(async () => {
+    setWorkspaceDialogOpen(true);
     try {
       await workspaceManager.cleanupInvalidWorkspaces();
     } catch (error) {
-      log.warn('Failed to cleanup invalid workspaces before opening workspace menu', { error });
+      log.warn('Failed to cleanup invalid workspaces while opening workspace dialog', { error });
     }
-    const rect = workspaceMenuButtonRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setWorkspaceMenuPos(computeFixedPopoverPosition(rect, 300, 420, 6, 8));
-    setWorkspaceMenuOpen(true);
-    setWorkspaceMenuClosing(false);
   }, []);
-
-  const toggleWorkspaceMenu = useCallback(() => {
-    if (workspaceMenuOpen) { closeWorkspaceMenu(); return; }
-    void openWorkspaceMenu();
-  }, [closeWorkspaceMenu, openWorkspaceMenu, workspaceMenuOpen]);
 
   const handleOpenProject = useCallback(async () => {
     try {
@@ -161,21 +124,21 @@ const MainNav: React.FC = () => {
   }, []);
 
   const handleOpenAssistantManager = useCallback(() => {
-    closeWorkspaceMenu();
+    closeWorkspaceDialog();
     openScene('assistant');
-  }, [closeWorkspaceMenu, openScene]);
+  }, [closeWorkspaceDialog, openScene]);
 
   const handleSwitchWorkspace = useCallback(async (workspaceId: string) => {
     const targetWorkspace = recentWorkspaces.find(item => item.id === workspaceId);
     if (!targetWorkspace) return;
-    closeWorkspaceMenu();
+    closeWorkspaceDialog();
     await switchWorkspace(targetWorkspace);
-  }, [closeWorkspaceMenu, recentWorkspaces, switchWorkspace]);
+  }, [closeWorkspaceDialog, recentWorkspaces, switchWorkspace]);
 
   const handleOpenRemoteSSH = useCallback(() => {
-    closeWorkspaceMenu();
+    closeWorkspaceDialog();
     setIsSSHConnectionDialogOpen(true);
-  }, [closeWorkspaceMenu]);
+  }, [closeWorkspaceDialog]);
 
   const handleSelectRemoteWorkspace = useCallback(async (path: string) => {
     try {
@@ -189,123 +152,9 @@ const MainNav: React.FC = () => {
     }
   }, [sshRemote]);
 
-  useEffect(() => {
-    if (!workspaceMenuOpen) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (workspaceMenuButtonRef.current?.contains(target)) return;
-      if (workspaceMenuRef.current?.contains(target)) return;
-      closeWorkspaceMenu();
-    };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isImeOwnedKeyboardEvent(event)) closeWorkspaceMenu();
-    };
-    const removeOverlayMousedown0 = subscribeOverlayInteraction(workspaceMenuRef, 'mousedown', handleClickOutside);
-    const removeOverlayKeydown1 = subscribeOverlayInteraction(workspaceMenuRef, 'keydown', handleEscape);
-    return () => {
-      removeOverlayMousedown0?.();
-      removeOverlayKeydown1?.();
-    };
-  }, [closeWorkspaceMenu, workspaceMenuOpen]);
-
-  useEffect(() => {
-    if (!workspaceMenuOpen) return;
-
-    updateWorkspaceMenuPos();
-
-    const handleViewportChange = () => updateWorkspaceMenuPos();
-    window.addEventListener('resize', handleViewportChange);
-    window.addEventListener('scroll', handleViewportChange, true);
-
-    return () => {
-      window.removeEventListener('resize', handleViewportChange);
-      window.removeEventListener('scroll', handleViewportChange, true);
-    };
-  }, [workspaceMenuOpen, updateWorkspaceMenuPos]);
-
   const handleOpenTodos = useCallback(() => {
     void activateProductAction('surface.todos.open');
   }, []);
-
-  const workspaceMenuPortal = workspaceMenuOpen ? createOverlayPortal(
-    <Menu
-      ref={workspaceMenuRef}
-      className={`openbitfun-nav-panel__workspace-menu${workspaceMenuClosing ? ' is-closing' : ''}`}
-      style={{ top: workspaceMenuPos.top, left: workspaceMenuPos.left }}
-    >
-      <MenuItem
-        leading={<Icon glyph={FolderOpen} size="sm" />}
-        onClick={() => { closeWorkspaceMenu(); void handleOpenProject(); }}
-      >
-        {t('header.openProject')}
-      </MenuItem>
-      <MenuItem
-        leading={<Icon glyph={FolderPlus} size="sm" />}
-        onClick={() => { closeWorkspaceMenu(); handleNewProject(); }}
-      >
-        {t('header.newProject')}
-      </MenuItem>
-      <MenuItem
-        leading={<Icon name="user" size="sm" />}
-        onClick={handleOpenAssistantManager}
-        data-testid="nav-session-group-add-assistant"
-      >
-        {t('nav.workspaces.actions.newAssistant')}
-      </MenuItem>
-      <MenuItem
-        leading={<Icon glyph={Server} size="sm" />}
-        onClick={handleOpenRemoteSSH}
-      >
-        {t('ssh.remote.connect')}
-      </MenuItem>
-      <MenuSeparator />
-      <MenuSection
-        title={t('header.recentWorkspaces')}
-      >
-        <ScrollArea className="openbitfun-nav-panel__workspace-menu-workspaces">
-          <MenuList>
-            {recentWorkspaces.length === 0 ? (
-              <div className="openbitfun-nav-panel__workspace-menu-empty">
-                <span>{t('header.noRecentWorkspaces')}</span>
-              </div>
-            ) : (
-              recentWorkspaces.map((workspace) => {
-                const { hostPrefix, folderLabel, tooltip } = getRecentWorkspaceLineParts(workspace);
-                const isCurrent = workspace.id === currentWorkspace?.id;
-                return (
-                  <MenuItem data-overflow-trigger
-                    key={workspace.id}
-                    leading={<Icon glyph={FolderOpen} size="sm" />}
-                    role="menuitemradio"
-                    checked={isCurrent}
-                    metadata={isCurrent ? <Icon name="check-line" size="xs" /> : undefined}
-                    title={tooltip}
-                    onClick={() => { void handleSwitchWorkspace(workspace.id); }}
-                    data-testid="nav-workspace-menu-recent-workspace"
-                    data-workspace-id={workspace.id}
-                  >
-                    <span className="openbitfun-nav-panel__workspace-menu-item-main">
-                      {hostPrefix ? (
-                        <>
-                          <OverflowText className="openbitfun-nav-panel__workspace-menu-item-host">{hostPrefix}</OverflowText>
-                          <span className="openbitfun-nav-panel__workspace-menu-item-host-sep" aria-hidden>
-                            ·
-                          </span>
-                        </>
-                      ) : null}
-                      <OverflowText className="openbitfun-nav-panel__workspace-menu-item-name">{folderLabel}</OverflowText>
-                    </span>
-                  </MenuItem>
-                );
-              })
-            )}
-          </MenuList>
-          </ScrollArea>
-      </MenuSection>
-    </Menu>,
-    getAppearanceOverlayHost()
-  ) : null;
 
   const addSessionGroupTooltip = t('nav.tooltips.addSessionGroup');
   const taskBoardLabel = t('nav.items.todos');
@@ -408,14 +257,13 @@ const MainNav: React.FC = () => {
                   <WorkspaceSessionGroupingToggle />
                   <WorkspaceSessionFilterMenu />
                   <div className="openbitfun-nav-panel__workspace-action-wrap">
-                    <Tooltip content={addSessionGroupTooltip} placement="right" followCursor disabled={workspaceMenuOpen}>
+                    <Tooltip content={addSessionGroupTooltip} placement="right" followCursor disabled={workspaceDialogOpen}>
                       <IconButton
-                        ref={workspaceMenuButtonRef}
-                        className={`openbitfun-nav-panel__section-action${workspaceMenuOpen ? ' is-active' : ''}`}
+                        className={`openbitfun-nav-panel__section-action${workspaceDialogOpen ? ' is-active' : ''}`}
                         aria-label={addSessionGroupTooltip}
-                        aria-haspopup="menu"
-                        aria-expanded={workspaceMenuOpen}
-                        onClick={toggleWorkspaceMenu}
+                        aria-haspopup="dialog"
+                        aria-expanded={workspaceDialogOpen}
+                        onClick={() => { void openWorkspaceDialog(); }}
                         data-testid="nav-workspace-add-btn"
                         icon={<Icon glyph={FolderPlus} size="sm" />}
                         size="xs"
@@ -436,7 +284,98 @@ const MainNav: React.FC = () => {
       </NavigationPanelBody>
     </NavigationPanel>
 
-      {workspaceMenuPortal}
+      <Dialog
+        open={workspaceDialogOpen}
+        onOpenChange={closeWorkspaceDialog}
+        size="md"
+        data-testid="nav-workspace-dialog"
+      >
+        <DialogHeader>
+          <DialogHeading>
+            <DialogTitle>{addSessionGroupTooltip}</DialogTitle>
+          </DialogHeading>
+          <DialogClose aria-label={t('actions.close')} />
+        </DialogHeader>
+        <DialogBody className="openbitfun-nav-panel__workspace-dialog-body">
+          <div className="openbitfun-nav-panel__workspace-dialog-actions">
+            <Button
+              leadingIcon={<Icon glyph={FolderOpen} size="sm" />}
+              variant="fill"
+              onClick={() => { closeWorkspaceDialog(); void handleOpenProject(); }}
+            >
+              {t('header.openProject')}
+            </Button>
+            <Button
+              leadingIcon={<Icon glyph={FolderPlus} size="sm" />}
+              variant="fill"
+              onClick={() => { closeWorkspaceDialog(); handleNewProject(); }}
+            >
+              {t('header.newProject')}
+            </Button>
+            <Button
+              leadingIcon={<Icon name="user" size="sm" />}
+              variant="fill"
+              onClick={handleOpenAssistantManager}
+              data-testid="nav-session-group-add-assistant"
+            >
+              {t('nav.workspaces.actions.newAssistant')}
+            </Button>
+            <Button
+              leadingIcon={<Icon glyph={Server} size="sm" />}
+              variant="fill"
+              onClick={handleOpenRemoteSSH}
+            >
+              {t('ssh.remote.connect')}
+            </Button>
+          </div>
+          <section className="openbitfun-nav-panel__workspace-dialog-recent" aria-label={t('header.recentWorkspaces')}>
+            <h3 className="openbitfun-nav-panel__workspace-dialog-heading">
+              {t('header.recentWorkspaces')}
+            </h3>
+            <ScrollArea className="openbitfun-nav-panel__workspace-dialog-workspaces">
+              <div className="openbitfun-nav-panel__workspace-dialog-list">
+                {recentWorkspaces.length === 0 ? (
+                  <div className="openbitfun-nav-panel__workspace-dialog-empty">
+                    {t('header.noRecentWorkspaces')}
+                  </div>
+                ) : (
+                  recentWorkspaces.map((workspace) => {
+                    const { hostPrefix, folderLabel, tooltip } = getRecentWorkspaceLineParts(workspace);
+                    const isCurrent = workspace.id === currentWorkspace?.id;
+                    return (
+                      <Button
+                        key={workspace.id}
+                        className="openbitfun-nav-panel__workspace-dialog-item"
+                        variant={isCurrent ? 'fill' : 'text'}
+                        labelBehavior="static"
+                        leadingIcon={<Icon glyph={FolderOpen} size="sm" />}
+                        trailingIcon={isCurrent ? <Icon name="check-line" size="xs" /> : undefined}
+                        aria-current={isCurrent ? 'true' : undefined}
+                        onClick={() => { void handleSwitchWorkspace(workspace.id); }}
+                        title={tooltip}
+                        data-testid="nav-workspace-menu-recent-workspace"
+                        data-workspace-id={workspace.id}
+                      >
+                        <span className="openbitfun-nav-panel__workspace-dialog-item-main">
+                          {hostPrefix ? (
+                            <>
+                              <OverflowText className="openbitfun-nav-panel__workspace-dialog-item-host">{hostPrefix}</OverflowText>
+                              <span className="openbitfun-nav-panel__workspace-dialog-item-host-sep" aria-hidden>
+                                ·
+                              </span>
+                            </>
+                          ) : null}
+                          <OverflowText className="openbitfun-nav-panel__workspace-dialog-item-name">{folderLabel}</OverflowText>
+                        </span>
+                      </Button>
+                    );
+                  })
+                )}
+              </div>
+            </ScrollArea>
+          </section>
+        </DialogBody>
+      </Dialog>
 
       {/* SSH Remote Dialogs */}
       <SSHConnectionDialog

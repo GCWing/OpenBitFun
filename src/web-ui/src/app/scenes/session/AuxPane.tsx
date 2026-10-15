@@ -6,12 +6,12 @@
  */
 
 import { forwardRef, useEffect, useRef, useImperativeHandle, useCallback, useSyncExternalStore } from 'react';
-import { Maximize2, Minimize2, SquareDashed } from 'lucide-react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import { Icon, IconButton, Tooltip } from '@openbitfun/ui';
 import { ContentCanvas, useCanvasStore } from '../../components/panels/content-canvas';
 import { usePanelTabCoordinator } from '../../components/panels/content-canvas/hooks/usePanelTabCoordinator';
 import { TAB_EVENTS } from '../../components/panels/content-canvas/types';
-import { collapseSessionAuxPane, expandSessionAuxPane, hideSessionAuxPane } from './sessionPanelLayout';
+import { collapseSessionAuxPane, expandSessionAuxPane } from './sessionPanelLayout';
 import { switchAgentCanvasScope } from '../../components/panels/content-canvas/stores';
 import { useI18n } from '@/infrastructure/i18n';
 import type { PanelContent as OldPanelContent } from '../../components/panels/base/types';
@@ -158,36 +158,20 @@ const AuxPane = forwardRef<AuxPaneRef, AuxPaneProps>(
           mode="agent"
           isSceneActive={isSceneActive}
           onReveal={expandPanel}
-          onCollapsePanel={hideSessionAuxPane}
-          toolbarActions={(
-            <>
-              {onToggleFullscreen && (
-                <Tooltip content={t(isFullscreen ? 'canvas.restorePanel' : 'canvas.maximizePanel')} placement="bottom">
-                  <IconButton
-                    size="sm"
-                    aria-label={t(isFullscreen ? 'canvas.restorePanel' : 'canvas.maximizePanel')}
-                    aria-pressed={isFullscreen}
-                    icon={<Icon glyph={isFullscreen ? Minimize2 : Maximize2} size="sm" />}
-                    onClick={event => {
-                      event.stopPropagation();
-                      onToggleFullscreen();
-                    }}
-                  />
-                </Tooltip>
-              )}
-              <Tooltip content={t('canvas.hidePanel')} placement="bottom">
-                <IconButton
-                  size="sm"
-                  aria-label={t('canvas.hidePanel')}
-                  icon={<Icon glyph={SquareDashed} size="sm" />}
-                  onClick={event => {
-                    event.stopPropagation();
-                    hideSessionAuxPane();
-                  }}
-                />
-              </Tooltip>
-            </>
-          )}
+          toolbarActions={onToggleFullscreen ? (
+            <Tooltip content={t(isFullscreen ? 'canvas.restorePanel' : 'canvas.maximizePanel')} placement="bottom">
+              <IconButton
+                size="sm"
+                aria-label={t(isFullscreen ? 'canvas.restorePanel' : 'canvas.maximizePanel')}
+                aria-pressed={isFullscreen}
+                icon={<Icon glyph={isFullscreen ? Minimize2 : Maximize2} size="sm" />}
+                onClick={event => {
+                  event.stopPropagation();
+                  onToggleFullscreen();
+                }}
+              />
+            </Tooltip>
+          ) : null}
           onInteraction={handleInteraction}
           onBeforeClose={handleBeforeClose}
           terminalResizeSuspended={terminalResizeSuspended}

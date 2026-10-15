@@ -222,6 +222,7 @@ describe('FlowChatHeader', () => {
     expect(actionTestIds()).toEqual([
       'flowchat-header-search',
       'flowchat-header-session-overview',
+      'flowchat-header-right-panel-separator',
       'flowchat-header-right-panel',
     ]);
     expect(getRightActions()?.lastElementChild).toBe(trigger);
@@ -255,6 +256,7 @@ describe('FlowChatHeader', () => {
     expect(actionTestIds()).toEqual([
       'flowchat-header-search',
       'flowchat-header-session-overview',
+      'flowchat-header-right-panel-separator',
       'flowchat-header-right-panel',
     ]);
 

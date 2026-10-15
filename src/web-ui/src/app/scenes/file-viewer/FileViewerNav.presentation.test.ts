@@ -68,17 +68,16 @@ describe('FileViewerNav surface ownership', () => {
     }
   });
 
-  it('insets the divider above both resource sections evenly', () => {
+  it('keeps only the terminal section divider below the project title', () => {
     const sectionDivider = declarations(
       navRules,
-      '.openbitfun-file-viewer-nav__section::before',
+      '.openbitfun-file-viewer-nav__section--terminals::before',
     );
 
+    expect(navRules.some(rule => rule.selectorText === '.openbitfun-file-viewer-nav__section::before')).toBe(false);
     expect(sectionDivider.getPropertyValue('inset-inline')).toBe('var(--openbitfun-space-2)');
-    expect(sectionDivider.height).toBe('1px');
+    expect(sectionDivider.height).toBe('0.5px');
     expect(sectionDivider.background).toBe('var(--openbitfun-color-border-default)');
-    expect(declarations(navRules, '.openbitfun-file-viewer-nav__workspace').borderBottomWidth)
-      .toBe('');
     expect(navSource).toContain(
       'className="openbitfun-file-viewer-nav__section openbitfun-file-viewer-nav__section--terminals"',
     );
@@ -103,14 +102,14 @@ describe('FileViewerNav surface ownership', () => {
 
   it('uses the same divider treatment for search controls, results, and terminals', () => {
     const dividers = [
-      declarations(filesPanelRules, '.openbitfun-files-panel__main-content--search::before'),
-      declarations(searchResultsRules, '.openbitfun-search-results__header::after'),
-      declarations(navRules, '.openbitfun-file-viewer-nav__section::before'),
-    ];
+      [declarations(filesPanelRules, '.openbitfun-files-panel__main-content--search::before'), '1px'],
+      [declarations(searchResultsRules, '.openbitfun-search-results__header::after'), '1px'],
+      [declarations(navRules, '.openbitfun-file-viewer-nav__section--terminals::before'), '0.5px'],
+    ] as const;
 
-    for (const divider of dividers) {
+    for (const [divider, height] of dividers) {
       expect(divider.getPropertyValue('inset-inline')).toBe('var(--openbitfun-space-2)');
-      expect(divider.height).toBe('1px');
+      expect(divider.height).toBe(height);
       expect(divider.background).toBe('var(--openbitfun-color-border-default)');
       expect(divider.zIndex).toBe('var(--openbitfun-layer-decoration)');
       expect(divider.pointerEvents).toBe('none');

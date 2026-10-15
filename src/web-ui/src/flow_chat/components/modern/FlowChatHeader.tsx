@@ -6,7 +6,7 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Keyboard, Square } from 'lucide-react';
-import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Icon, IconButton, Menu, MenuItem, SearchField, Switch, Tooltip } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Icon, IconButton, Menu, MenuItem, SearchField, Switch, ToolbarSeparator, Tooltip } from '@openbitfun/ui';
 import { SceneChromeContribution } from '@/app/components/SceneTopBar/SceneChrome';
 import { useSceneChromeContext } from '@/app/components/SceneTopBar/sceneChromeContext';
 import { useTranslation } from 'react-i18next';
@@ -1000,23 +1000,26 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
           </div>
         ) : null}
         {!isSearchMode && onToggleRightPanel ? (
-          <Tooltip content={rightPanelLabel}>
-            <IconButton
-              className={[
-                'flowchat-header__right-panel-trigger',
-                isRightPanelOpen && 'flowchat-header__right-panel-trigger--active',
-              ].filter(Boolean).join(' ')}
-              data-openbitfun-component="flow-chat-header"
-              data-openbitfun-part="rightPanelTrigger"
-              data-openbitfun-state={isRightPanelOpen ? 'open' : 'collapsed'}
-              size="xs"
-              onClick={onToggleRightPanel}
-              aria-label={rightPanelLabel}
-              aria-pressed={isRightPanelOpen}
-              data-testid="flowchat-header-right-panel"
-              icon={<Icon name="sidebar-right" size="sm" />}
-            />
-          </Tooltip>
+          <>
+            <ToolbarSeparator data-testid="flowchat-header-right-panel-separator" />
+            <Tooltip content={rightPanelLabel}>
+              <IconButton
+                className={[
+                  'flowchat-header__right-panel-trigger',
+                  isRightPanelOpen && 'flowchat-header__right-panel-trigger--active',
+                ].filter(Boolean).join(' ')}
+                data-openbitfun-component="flow-chat-header"
+                data-openbitfun-part="rightPanelTrigger"
+                data-openbitfun-state={isRightPanelOpen ? 'open' : 'collapsed'}
+                size="xs"
+                onClick={onToggleRightPanel}
+                aria-label={rightPanelLabel}
+                aria-pressed={isRightPanelOpen}
+                data-testid="flowchat-header-right-panel"
+                icon={<Icon name="sidebar-right" size="sm" />}
+              />
+            </Tooltip>
+          </>
         ) : null}
       </div>
   );

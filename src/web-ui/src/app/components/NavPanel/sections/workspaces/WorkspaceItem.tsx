@@ -18,7 +18,7 @@ import {
   OverflowText,
 } from '@openbitfun/ui';
 import React, { Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { EyeOff, FolderOpen, FolderSearch, History, RotateCcw, ListChecks, ShieldCheck, Network, Server } from 'lucide-react';
+import { EyeOff, FolderOpen, FolderSearch, History, MessageCirclePlus, RotateCcw, ListChecks, ShieldCheck, Network, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { RetainedMountBoundary } from '@/shared/presence';
 import { InputDialog } from '@/app/components/InputDialog';
@@ -870,20 +870,19 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
           </Tooltip>
 
           <div className="openbitfun-nav-panel__assistant-item-menu" data-openbitfun-product-component="workspace-item" data-openbitfun-product-part="menu" ref={menuRef} onClick={e => e.stopPropagation()}>
-            <Tooltip content={t('nav.workspaces.actions.newSession')} placement="right" followCursor>
+            <div ref={menuAnchorRef}>
               <button
                 data-openbitfun-product-component="workspace-item"
                 data-openbitfun-product-part="action"
                 type="button"
-                className="openbitfun-nav-panel__assistant-item-menu-trigger"
-                onClick={() => { void handleCreateSession(); }}
-                aria-label={t('nav.workspaces.actions.newSession')}
-                data-testid="nav-workspace-new-session-btn"
+                className={`openbitfun-nav-panel__assistant-item-menu-trigger${menuOpen ? ' is-open' : ''}`}
+                onClick={handleMenuTriggerClick}
+                data-testid="nav-workspace-menu-btn"
                 data-workspace-id={workspace.id}
               >
-                <Icon name="plus" size="xs" />
+                <Icon name="more" size="xs" />
               </button>
-            </Tooltip>
+            </div>
             <Tooltip content={t('nav.sessions.history')} placement="right" followCursor>
               <button
                 data-openbitfun-product-component="workspace-item"
@@ -899,19 +898,20 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                 <Icon glyph={History} size="xs" />
               </button>
             </Tooltip>
-            <div ref={menuAnchorRef}>
+            <Tooltip content={t('nav.workspaces.actions.newSession')} placement="right" followCursor>
               <button
                 data-openbitfun-product-component="workspace-item"
                 data-openbitfun-product-part="action"
                 type="button"
-                className={`openbitfun-nav-panel__assistant-item-menu-trigger${menuOpen ? ' is-open' : ''}`}
-                onClick={handleMenuTriggerClick}
-                data-testid="nav-workspace-menu-btn"
+                className="openbitfun-nav-panel__assistant-item-menu-trigger"
+                onClick={() => { void handleCreateSession(); }}
+                aria-label={t('nav.workspaces.actions.newSession')}
+                data-testid="nav-workspace-new-session-btn"
                 data-workspace-id={workspace.id}
               >
-                <Icon name="more" size="xs" />
+                <Icon glyph={MessageCirclePlus} size="xs" />
               </button>
-            </div>
+            </Tooltip>
 
             {menuOpen && createOverlayPortal(
               <Menu
@@ -927,7 +927,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                 data-workspace-id={workspace.id}
               >
                 <MenuItem
-                  leading={<Icon name="plus" size="sm" />}
+                  leading={<Icon glyph={MessageCirclePlus} size="sm" />}
                   onClick={() => { void handleCreateSession(); }}
                   data-testid="nav-workspace-menu-create-session"
                 >
@@ -1316,34 +1316,6 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
 
         <div className="openbitfun-nav-panel__workspace-item-actions" onClick={e => e.stopPropagation()}>
           <div className="openbitfun-nav-panel__workspace-item-menu" data-openbitfun-product-component="workspace-item" data-openbitfun-product-part="menu" ref={menuRef}>
-            <Tooltip content={t('nav.sessions.newSession')} placement="right" followCursor>
-              <button
-                data-openbitfun-product-component="workspace-item"
-                data-openbitfun-product-part="action"
-                type="button"
-                className="openbitfun-nav-panel__workspace-item-menu-trigger"
-                onClick={handleCreateProjectSession}
-                aria-label={t('nav.sessions.newSession')}
-                data-testid="nav-workspace-new-session-btn"
-                data-workspace-id={workspace.id}
-              >
-                <Icon name="plus" size="xs" />
-              </button>
-            </Tooltip>
-            <Tooltip content={t('nav.resources.title')} placement="right" followCursor>
-              <button
-                data-openbitfun-product-component="workspace-item"
-                data-openbitfun-product-part="menuTrigger"
-                data-openbitfun-state={menuOpen ? 'open' : undefined}
-                type="button"
-                className="openbitfun-nav-panel__workspace-item-menu-trigger"
-                onClick={() => { void handleOpenFiles(); }}
-                data-testid="nav-workspace-files-btn"
-                data-workspace-id={workspace.id}
-              >
-                <Icon name="folder" size="xs" />
-              </button>
-            </Tooltip>
             <div ref={menuAnchorRef}>
               <button
                 data-openbitfun-product-component="workspace-item"
@@ -1358,6 +1330,34 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                 <Icon name="more" size="xs" />
               </button>
             </div>
+            <Tooltip content={t('nav.resources.title')} placement="right" followCursor>
+              <button
+                data-openbitfun-product-component="workspace-item"
+                data-openbitfun-product-part="menuTrigger"
+                data-openbitfun-state={menuOpen ? 'open' : undefined}
+                type="button"
+                className="openbitfun-nav-panel__workspace-item-menu-trigger"
+                onClick={() => { void handleOpenFiles(); }}
+                data-testid="nav-workspace-files-btn"
+                data-workspace-id={workspace.id}
+              >
+                <Icon name="folder" size="xs" />
+              </button>
+            </Tooltip>
+            <Tooltip content={t('nav.sessions.newSession')} placement="right" followCursor>
+              <button
+                data-openbitfun-product-component="workspace-item"
+                data-openbitfun-product-part="action"
+                type="button"
+                className="openbitfun-nav-panel__workspace-item-menu-trigger"
+                onClick={handleCreateProjectSession}
+                aria-label={t('nav.sessions.newSession')}
+                data-testid="nav-workspace-new-session-btn"
+                data-workspace-id={workspace.id}
+              >
+                <Icon glyph={MessageCirclePlus} size="xs" />
+              </button>
+            </Tooltip>
 
             {menuOpen && createOverlayPortal(
               <Menu
@@ -1373,7 +1373,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                 data-workspace-id={workspace.id}
               >
                 <MenuItem
-                  leading={<Icon name="plus" size="sm" />}
+                  leading={<Icon glyph={MessageCirclePlus} size="sm" />}
                   onClick={handleCreateProjectSession}
                   data-testid="nav-workspace-menu-create-session"
                 >

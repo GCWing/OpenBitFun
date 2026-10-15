@@ -30,8 +30,8 @@ describe('unified project session creation', () => {
     const projectActionsStart = workspaceItem.indexOf('className="openbitfun-nav-panel__workspace-item-actions"');
     const projectActionsEnd = workspaceItem.indexOf('{menuOpen && createOverlayPortal(', projectActionsStart);
     const actionStrips = [
-      workspaceItem.slice(assistantActionsStart, assistantActionsEnd),
-      workspaceItem.slice(projectActionsStart, projectActionsEnd),
+      { source: workspaceItem.slice(assistantActionsStart, assistantActionsEnd), middleAction: 'nav-assistant-history-btn' },
+      { source: workspaceItem.slice(projectActionsStart, projectActionsEnd), middleAction: 'nav-workspace-files-btn' },
     ];
 
     expect(utilityRowIndex).toBeGreaterThan(-1);
@@ -40,13 +40,13 @@ describe('unified project session creation', () => {
     expect(mainNav).not.toContain('data-testid="nav-new-session-btn"');
     expect(mainNav).not.toContain("activateProductAction('session.new')");
     expect(workspaceItem.match(/data-testid="nav-workspace-new-session-btn"/g)).toHaveLength(2);
-    for (const actionStrip of actionStrips) {
+    for (const { source: actionStrip, middleAction } of actionStrips) {
       const newSessionIndex = actionStrip.indexOf('data-testid="nav-workspace-new-session-btn"');
-      const resourcesIndex = actionStrip.indexOf('data-testid="nav-workspace-files-btn"');
+      const middleActionIndex = actionStrip.indexOf(`data-testid="${middleAction}"`);
       const moreIndex = actionStrip.indexOf('data-testid="nav-workspace-menu-btn"');
-      expect(newSessionIndex).toBeGreaterThan(-1);
-      expect(resourcesIndex).toBeGreaterThan(newSessionIndex);
-      expect(moreIndex).toBeGreaterThan(resourcesIndex);
+      expect(moreIndex).toBeGreaterThan(-1);
+      expect(middleActionIndex).toBeGreaterThan(moreIndex);
+      expect(newSessionIndex).toBeGreaterThan(middleActionIndex);
     }
     expect(mainNav).not.toContain('<RealtimeVoiceCallButton />');
     expect(workspaceBody).not.toContain('<RealtimeVoiceCallButton />');

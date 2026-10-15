@@ -12,11 +12,15 @@ popped out from its menu or dragged onto the top tab bar. There is no File View
 content scene or intermediate container in the main tab bar.
 
 Resource navigation owns an explicit `(device surface, workspace id)` browse target
-in `navSceneStore`. The folder action and the panel's workspace switcher update only
-that target; they never activate the global workspace, initialize/select a chat, or
-create an empty session. Back/forward navigation retains the target. A closed target
+in `navSceneStore`. The folder action updates only that target; it never activates
+the global workspace, initializes/selects a chat, or creates an empty session.
+Back/forward navigation retains the target. A closed target
 or another device cannot fall back to the active workspace. Legacy untargeted entry
 points still use the current workspace.
+
+The top navigation title shows the browse target's project name. Files and terminals
+sit directly below it, without a duplicate project row or location badge. Use the
+main navigation's folder actions to browse another project.
 
 `WorkspaceResourcePanel` passes the resolved workspace to `FilesPanel` and the shared
 Shell hooks. File reads, downloads, mutations, menus and terminal opens carry that
@@ -48,6 +52,8 @@ from assistive technology; resource navigation does not add an opaque cover.
 - File and terminal sections scroll independently and support collapse. The splitter
   supports pointer capture, arrow keys, Shift for larger increments, and Home/End.
   Empty terminals consume only a compact section.
+- Each section's actions appear while the pointer is over that section or one of its
+  actions has keyboard focus. Touch surfaces keep them visible, and hiding preserves layout.
 - File and terminal content opens keep workspace navigation visible. Explicit
   navigation back to the main sidebar is respected; settings keep their own navigation.
 - File-tree context menus can create a terminal in the selected directory. A terminal
