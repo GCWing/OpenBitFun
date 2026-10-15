@@ -15,6 +15,8 @@ export type TabState = 'preview' | 'active' | 'pinned';
 export interface CanvasTab {
   /** Unique identifier */
   id: string;
+  /** Stable document identity across main/side-pane moves; absent in legacy tabs. */
+  documentId?: string;
   /** Display title */
   title: string;
   /** Tab content */
@@ -32,6 +34,9 @@ export interface CanvasTab {
   /** Last accessed timestamp */
   lastAccessedAt: number;
 }
+
+export const canvasTabDocumentId = (tab: Pick<CanvasTab, 'id' | 'documentId'>): string =>
+  tab.documentId ?? `canvas:${tab.id}`;
 
 /**
  * Editor group state (tab collection within a column).

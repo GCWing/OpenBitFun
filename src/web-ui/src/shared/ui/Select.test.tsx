@@ -164,4 +164,34 @@ describe('public Select product integration', () => {
     expect(header.getAttribute('aria-required')).toBe('true');
     expect(header.getAttribute('aria-describedby')).not.toBeNull();
   });
+
+  it('positions a wider content popup within the viewport and restores the compact trigger after selection', () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.openbitfunComponent === 'select-popup') return new DOMRect(0, 0, 360, 180);
+      return new DOMRect(window.innerWidth - 100, 20, 80, 32);
+    });
+    render({
+      width: 'content',
+      popupWidth: 'content',
+      defaultValue: 'local',
+      options: [
+        { value: 'local', label: 'This computer' },
+        { value: 'remote', label: 'Remote SSH device' },
+      ],
+    });
+    const anchor = trigger();
+    act(() => anchor.click());
+    const popup = document.querySelector<HTMLElement>('[data-openbitfun-component="select-popup"]')!;
+    expect(popup.style.width).toBe('');
+    expect(popup.style.left).toBe(`${window.innerWidth - 360 - 8}px`);
+    expect(popup.style.maxWidth).toBe(`${window.innerWidth - 16}px`);
+    expect(anchor.style.width).toBe('');
+
+    act(() => popup.querySelector<HTMLButtonElement>('[role="option"][data-value="remote"]')!.click());
+    expect(change).toHaveBeenCalledWith('remote');
+    expect(document.querySelector('[data-openbitfun-component="select-popup"]')).toBeNull();
+    expect(trigger()).toBe(anchor);
+    expect(trigger().textContent).toContain('Remote SSH device');
+    expect(document.activeElement).toBe(anchor);
+  });
 });

@@ -6,6 +6,7 @@ import { ResourceFileContext } from '@/infrastructure/api/ResourceFileContext';
 
 import React, { useCallback, useMemo, useRef, useEffect, useLayoutEffect, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
+import { CanvasToolbarContribution } from '../CanvasToolbar';
 import { TabBar } from '../tab-bar';
 import { DropZone } from './DropZone';
 import FlexiblePanel from '../../base/FlexiblePanel';
@@ -14,7 +15,7 @@ import { popOutCanvasTab } from '@/app/workbench/canvasTabTransfer';
 import { EditorDocumentContext, getEditorDocument, releaseEditorDocument } from '@/tools/editor/services/EditorDocument';
 import { useContentResourceStore } from '@/app/workbench/contentResourceStore';
 import { CanvasStoreModeContext } from '../stores';
-import { hasRetainedCanvasTab } from '../stores/canvasStore';
+import { hasRetainedCanvasDocument } from '../stores/canvasStore';
 import {
   getInteractionMotion,
   isReducedMotionPreferred,
@@ -28,7 +29,7 @@ import type {
   PanelContent,
   SplitMode,
 } from '../types';
-import { isCanvasTabVisibleForSession } from '../types';
+import { canvasTabDocumentId, isCanvasTabVisibleForSession } from '../types';
 import './EditorGroup.scss';
 
 function CanvasContentView({ documentId, ...props }: React.ComponentProps<typeof FlexiblePanel> & { documentId: string }) {
@@ -48,7 +49,7 @@ function CanvasContentView({ documentId, ...props }: React.ComponentProps<typeof
     filePath,
   ), [documentId, filePath, remoteConnectionId, resourceScope, resourceWorkspaceId, resourceWorkspacePath]);
   useEffect(() => () => {
-    if (!hasRetainedCanvasTab(documentId.slice('canvas:'.length))
+    if (!hasRetainedCanvasDocument(documentId)
       && !Object.values(useContentResourceStore.getState().resources).some(resource => resource.documentId === documentId)) {
       releaseEditorDocument(documentId);
     }
@@ -86,6 +87,7 @@ export interface EditorGroupProps {
   onInteraction?: (itemId: string, userInput: string) => Promise<void>;
   disablePopOut?: boolean;
   toolbarActions?: React.ReactNode;
+  externalToolbar?: boolean;
   terminalResizeSuspended?: boolean;
 }
 
@@ -116,6 +118,7 @@ export const EditorGroup: React.FC<EditorGroupProps> = ({
   onInteraction,
   disablePopOut = false,
   toolbarActions,
+  externalToolbar = false,
   terminalResizeSuspended = false,
 }) => {
   const { t } = useTranslation('components');
@@ -242,30 +245,35 @@ export const EditorGroup: React.FC<EditorGroupProps> = ({
 
   const isDragging = draggingTabId !== null;
 
+  const tabBar = (
+    <TabBar
+      tabs={visibleTabs}
+      groupId={groupId}
+      activeTabId={effectiveActiveTabId}
+      isSelected={!externalToolbar || isSceneActive}
+      isActiveGroup={isActive}
+      onTabClick={handleVisibleTabClick}
+      onTabDoubleClick={onTabDoubleClick}
+      onTabClose={onTabClose}
+      onTabPin={onTabPin}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      draggingTabId={draggingTabId}
+      onReorderTab={onReorderTab}
+      onOpenMissionControl={onOpenMissionControl}
+      onCloseAllTabs={onCloseAllTabs}
+      toolbarActions={toolbarActions}
+      onTabPopOut={disablePopOut ? undefined : handleTabPopOut}
+    />
+  );
+
   return (
     <div data-openbitfun-component="canvas-editor-group" data-openbitfun-part="root" data-openbitfun-group={groupId} data-openbitfun-state={isActive ? 'active' : ''}
       className={`canvas-editor-group ${isActive ? 'is-active' : ''}`}
       onClick={onGroupFocus}
     >
       {/* Tab bar */}
-      <TabBar
-        tabs={visibleTabs}
-        groupId={groupId}
-        activeTabId={effectiveActiveTabId}
-        isActiveGroup={isActive}
-        onTabClick={handleVisibleTabClick}
-        onTabDoubleClick={onTabDoubleClick}
-        onTabClose={onTabClose}
-        onTabPin={onTabPin}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
-        draggingTabId={draggingTabId}
-        onReorderTab={onReorderTab}
-        onOpenMissionControl={onOpenMissionControl}
-        onCloseAllTabs={onCloseAllTabs}
-        toolbarActions={toolbarActions}
-        onTabPopOut={disablePopOut ? undefined : handleTabPopOut}
-      />
+      {externalToolbar ? <CanvasToolbarContribution groupId={groupId}>{tabBar}</CanvasToolbarContribution> : tabBar}
 
       <DropZone
         groupId={groupId}
@@ -287,7 +295,7 @@ export const EditorGroup: React.FC<EditorGroupProps> = ({
                 style={{ display: effectiveActiveTabId === tab.id ? 'flex' : 'none' }}
               >
                 <CanvasContentView
-                  documentId={`canvas:${tab.id}`}
+                  documentId={canvasTabDocumentId(tab)}
                   content={tab.content as any}
                   isActive={isSceneActive && effectiveActiveTabId === tab.id}
                   onContentChange={effectiveActiveTabId === tab.id ? handleContentChange : undefined}

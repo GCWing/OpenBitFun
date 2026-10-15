@@ -142,7 +142,8 @@ $_resize-target-width: 6px;
   gap: 0;
   min-width: 0;
   min-height: 0;
-  padding: 0 var(--openbitfun-space-4);
+  // The shell is edge-to-edge; individual content views own their gutters.
+  padding: 0;
   overflow: hidden;
   border-radius: var(--_scene-surface-radius) 0 0 var(--_scene-surface-radius);
   background: var(--openbitfun-color-surface-scene);
@@ -187,8 +188,8 @@ $_resize-target-width: 6px;
 
 // The compact toolbar remains reachable when the navigation panel is hidden.
 .openbitfun-workspace-body__nav-area.is-collapsed + .openbitfun-workspace-body__scene-area {
-  .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar {
-    padding-left: calc(#{$_nav-collapsed-width} + var(--openbitfun-space-1));
+  .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar > [data-openbitfun-part='leading'] {
+    padding-inline-start: calc(#{$_nav-collapsed-width} + var(--openbitfun-space-1));
   }
 }
 
@@ -214,15 +215,15 @@ $_resize-target-width: 6px;
 }
 
 .openbitfun-app-layout--macos .openbitfun-workspace-body__nav-area.is-collapsed + .openbitfun-workspace-body__scene-area {
-  .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar {
-    transition: padding-left var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard);
+  .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar > [data-openbitfun-part='leading'] {
+    transition: padding-inline-start var(--openbitfun-motion-duration-content-swap) var(--openbitfun-motion-easing-standard);
   }
 }
 
 // Reserve traffic-light space only while the native window is not fullscreen.
 .openbitfun-app-layout--macos:not(.openbitfun-app-layout--fullscreen-chrome) .openbitfun-workspace-body__nav-area.is-collapsed + .openbitfun-workspace-body__scene-area {
-  .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar {
-    padding-left: calc(#{$_nav-collapsed-width} + var(--openbitfun-space-1) + 72px);
+  .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar > [data-openbitfun-part='leading'] {
+    padding-inline-start: calc(#{$_nav-collapsed-width} + var(--openbitfun-space-1) + 72px);
   }
 }
 
@@ -243,7 +244,7 @@ $_resize-target-width: 6px;
 
 @media (prefers-reduced-motion: reduce) {
   .openbitfun-app-layout--macos .openbitfun-workspace-body__collapsed-nav > .openbitfun-nav-bar,
-  .openbitfun-app-layout--macos .openbitfun-workspace-body__nav-area.is-collapsed + .openbitfun-workspace-body__scene-area .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar {
+  .openbitfun-app-layout--macos .openbitfun-workspace-body__nav-area.is-collapsed + .openbitfun-workspace-body__scene-area .openbitfun-workspace-body__scene-surface .openbitfun-scene-top-bar > [data-openbitfun-part='leading'] {
     transition: none;
   }
 

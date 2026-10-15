@@ -305,5 +305,5 @@ export {
 } from "./primitives/ThemeRoot";
 
 export { LayersPlusIcon } from "./components/Icon";
-export { SplitView, SplitViewPrimaryDock } from './components/SplitView';
-export type { SplitViewProps, SplitViewMode } from './components/SplitView';
+export { SplitView, SplitViewPrimaryDock, SplitViewSurface } from './components/SplitView';
+export type { SplitViewProps, SplitViewMode, SplitViewHeaderGeometry } from './components/SplitView';

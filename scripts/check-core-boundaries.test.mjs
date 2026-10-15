@@ -4865,6 +4865,25 @@ test('vendored Tao is external only at its reviewed version and stays in feature
   assert.ok(collect({ ...vendor, name: 'product-owner' }).packages.some(pkg => pkg.name === 'product-owner'));
 });
 
+test('vendored Wry is external only at its reviewed version and stays in feature audits', () => {
+  const owner = packageAt('owner', 'src/apps/example/Cargo.toml');
+  const vendor = { ...packageAt('wry', 'third_party/wry/Cargo.toml'), version: '0.56.0' };
+  const collect = (pkg = vendor, members = [owner.id]) => collectCargoMetadataGraph({
+    root: TEST_ROOT,
+    manifestPaths: [join(TEST_ROOT, 'Cargo.toml')],
+    loadMetadata: () => ({
+      packages: [owner, pkg], workspace_members: members,
+      resolve: { nodes: [{ id: pkg.id, features: ['os-webview'], deps: [] }] },
+    }),
+  });
+  const graph = collect();
+  assert.deepEqual(graph.packages.map(pkg => pkg.name), ['owner']);
+  assert.ok(graph.resolvedPackageFeatures.some(record => record.name === 'wry'));
+  assert.ok(collect(vendor, [owner.id, vendor.id]).packages.some(pkg => pkg.name === 'wry'));
+  assert.ok(collect({ ...vendor, version: '0.57.0' }).packages.some(pkg => pkg.name === 'wry'));
+  assert.ok(collect({ ...vendor, name: 'product-owner' }).packages.some(pkg => pkg.name === 'product-owner'));
+});
+
 
 test('workspace transfer admits IO without process or networking capabilities', () => {
   const pkg = {

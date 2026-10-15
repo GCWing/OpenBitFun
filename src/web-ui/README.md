@@ -9,6 +9,26 @@ This directory contains OpenBitFun’s **Web UI** (React + TypeScript). The same
 - **Desktop**: loaded via **Tauri**
 - **Server/Web**: built into static assets and served by the backend
 
+## Creating a project
+
+The sidebar's add button opens two clickable cards without footer actions.
+The assistant card creates an assistant immediately, then opens its identity,
+tool, and personality setup. The project card opens the folder form; Back returns to the
+choice while preserving the project draft. Closing the dialog resets the flow.
+Add one folder and leave
+its name empty to use the folder name, or add several folders and give the group
+one name. The first folder is the primary workspace; the others become associated
+folders. Reusing an existing workspace preserves its previous associations.
+Removing a folder from the draft never deletes it from disk.
+
+With no source folders, enter a name to create the empty project automatically in
+`~/OpenBitFun/Projects/<project-name>`. The home directory belongs to the target
+host: the current device, controlled peer, or selected SSH host. SSH creation may
+ask for a connection, but never a save location. Hosts that do not provide their
+home directory report an error without falling back to the controller. The source selector supports the current device (including a
+controlled peer) and SSH. All folders in one project must belong to the same host.
+The form does not show recent projects.
+
 ## MCP configuration
 
 In Desktop, open **Settings → Tools → MCP** to add or edit a user-level server

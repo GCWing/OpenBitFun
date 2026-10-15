@@ -20,6 +20,7 @@ import type {
 } from '../types';
 import {
   createTab,
+  canvasTabDocumentId,
   createEditorGroupState,
   createLayoutState,
   clampSplitRatio,
@@ -1380,4 +1381,10 @@ export const useDragging = () => {
 export function hasRetainedCanvasTab(tabId: string): boolean {
   const states = [useAgentCanvasStore.getState(), useGitCanvasStore.getState(), useBottomTerminalCanvasStore.getState(), ...agentScopeSnapshots.values()];
   return states.some(state => [state.primaryGroup, state.secondaryGroup, state.tertiaryGroup].some(group => group.tabs.some(tab => tab.id === tabId)));
+}
+
+export function hasRetainedCanvasDocument(documentId: string): boolean {
+  const states = [useAgentCanvasStore.getState(), useGitCanvasStore.getState(), useBottomTerminalCanvasStore.getState(), ...agentScopeSnapshots.values()];
+  return states.some(state => [state.primaryGroup, state.secondaryGroup, state.tertiaryGroup]
+    .some(group => group.tabs.some(tab => canvasTabDocumentId(tab) === documentId)));
 }

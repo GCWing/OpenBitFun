@@ -19,6 +19,7 @@ export interface EditorAreaProps {
   onTabCloseAllWithDirtyCheck?: (groupId: EditorGroupId) => Promise<boolean>;
   disablePopOut?: boolean;
   toolbarActions?: React.ReactNode;
+  externalToolbar?: boolean;
   terminalResizeSuspended?: boolean;
 }
 
@@ -32,6 +33,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   onTabCloseAllWithDirtyCheck,
   disablePopOut = false,
   toolbarActions,
+  externalToolbar = false,
   terminalResizeSuspended = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -158,6 +160,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
       onOpenMissionControl={groupId === 'primary' ? onOpenMissionControl : undefined}
       onCloseAllTabs={handleCloseAllTabs(groupId)}
       onInteraction={onInteraction}
+      externalToolbar={externalToolbar}
       disablePopOut={disablePopOut}
       toolbarActions={toolbarActions === undefined || groupId === toolbarGroupId ? toolbarActions : null}
       terminalResizeSuspended={terminalResizeSuspended}

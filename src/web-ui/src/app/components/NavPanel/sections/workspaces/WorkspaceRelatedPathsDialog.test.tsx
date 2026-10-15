@@ -7,7 +7,9 @@ import type { WorkspaceInfo } from '@/shared/types';
 import WorkspaceRelatedPathsDialog from './WorkspaceRelatedPathsDialog';
 
 const mocks = vi.hoisted(() => ({ references: vi.fn(), update: vi.fn() }));
-vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
+vi.mock('@/infrastructure/i18n', () => ({
+  useI18n: () => ({ t: (key: string, values?: Record<string, unknown>) => [key, ...Object.values(values ?? {})].join(' ') }),
+}));
 vi.mock('@/infrastructure/contexts/WorkspaceContext', () => ({
   useWorkspaceContext: () => ({ updateWorkspaceRelatedPaths: mocks.update }),
 }));
@@ -19,12 +21,10 @@ vi.mock('@/features/ssh-remote/RemoteFileBrowser', () => ({ default: () => null 
 vi.mock('@openbitfun/ui', async (importOriginal) => {
   const Wrapper = ({ children }: React.PropsWithChildren) => <div>{children}</div>;
   return {
-    Disclosure: (await importOriginal<typeof import('@openbitfun/ui')>()).Disclosure,
-    Textarea: (await importOriginal<typeof import('@openbitfun/ui')>()).Textarea,
+    ...await importOriginal<typeof import('@openbitfun/ui')>(),
     Dialog: ({ open, children }: React.PropsWithChildren<{ open: boolean }>) => open ? <div role="dialog">{children}</div> : null,
-    DialogBody: Wrapper, DialogFooter: Wrapper, DialogHeader: Wrapper, DialogHeading: Wrapper, DialogTitle: Wrapper,
-    DialogClose: () => null, Icon: () => null, Input: () => null,
-    Button: ({ children, disabled, onClick }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button disabled={disabled} onClick={onClick}>{children}</button>,
+    DialogBody: Wrapper, DialogFooter: Wrapper, DialogHeader: Wrapper, DialogHeading: Wrapper, DialogTitle: Wrapper, DialogDescription: Wrapper,
+    DialogClose: () => null,
   };
 });
 
@@ -66,10 +66,24 @@ describe('related directory dialog', () => {
     expect(mocks.update).not.toHaveBeenCalled();
   });
 
-  it('omits diagnostics when the current workspace has none', async () => {
+  it('omits the external section when there are no references or diagnostics', async () => {
     mocks.references.mockResolvedValue({ references: [], diagnostics: [] });
     await act(async () => root.render(<WorkspaceRelatedPathsDialog workspace={workspace} isOpen onClose={() => undefined} />));
     expect(container.querySelector('details')).toBeNull();
+    expect(container.textContent).not.toContain('nav.workspaces.relatedPaths.dialog.externalHeading');
+    const primary = container.querySelector('li')!;
+    expect(primary.textContent).toContain('Project');
+    expect(primary.textContent).toContain('/project');
+    expect(primary.textContent).toContain('nav.workspaces.relatedPaths.dialog.primaryDirectory');
+    expect(primary.querySelector('button')).toBeNull();
+  });
+
+  it('keeps failed discovery visible instead of presenting it as an empty result', async () => {
+    mocks.references.mockRejectedValue(new Error('Source unavailable'));
+    await act(async () => root.render(<WorkspaceRelatedPathsDialog workspace={workspace} isOpen onClose={() => undefined} />));
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('nav.workspaces.relatedPaths.messages.externalLoadFailed');
+    expect(container.textContent).toContain('nav.workspaces.relatedPaths.dialog.externalHeading');
+    expect(mocks.update).not.toHaveBeenCalled();
   });
 
   it('edits and saves a description through the actual shared Textarea', async () => {
@@ -83,7 +97,10 @@ describe('related directory dialog', () => {
         onClose={onClose}
       />,
     ));
+    expect(container.querySelector('textarea')).toBeNull();
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="actions.edit"]')!.click());
     const field = container.querySelector('[data-openbitfun-component="textarea"]')!;
+    expect(container.querySelector('li')?.textContent).toContain('Project');
     const input = field.querySelector('textarea')!;
     expect(field.getAttribute('data-layout')).toBe('fill');
     expect(field.getAttribute('data-resize')).toBe('none');

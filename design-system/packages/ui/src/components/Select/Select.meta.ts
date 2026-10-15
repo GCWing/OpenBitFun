@@ -13,6 +13,8 @@ export const selectMeta = {
     { name: "leading", type: "ReactNode" },
     { defaultValue: "md", name: "size", type: "sm | md | lg" },
     { defaultValue: "bottom", name: "placement", type: "top | bottom" },
+    { defaultValue: "full", name: "width", type: "full | content" },
+    { defaultValue: "trigger", name: "popupWidth", type: "trigger | content" },
     { name: "open / defaultOpen", type: "boolean" },
     { name: "onOpenChange", type: "(open: boolean) => void" },
     { defaultValue: "false", name: "invalid", type: "boolean" },

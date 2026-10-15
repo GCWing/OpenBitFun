@@ -34,6 +34,18 @@ dismissal. Floating menus and dialogs within either pane continue to use the
 document overlay coordinator. Owners control visibility with `mode` and persist
 split and overlay sizes independently when those preferences differ.
 
+For movable tab hosts, pass a flat keyed deck through `surfaces` and render each
+view inside `SplitViewSurface pane="primary" | "secondary"`. Changing `pane` keeps
+the same React/DOM host. Inactive surfaces stay mounted but are inert and hidden
+from accessibility; F6 navigates visible surfaces. Do not reparent portals between
+pane containers to simulate a move.
+
+Use the `header` render function for chrome aligned with the divider. Its
+`columnClassName` supplies layout-owned columns tied to live resizing and clamping,
+not a second stored width. Apply it to a three-column header (primary, separator,
+secondary); keep padding inside those columns. Header layout works without CSS
+subgrid. The primitive remains independent of product tabs and stores.
+
 Place `SplitViewPrimaryDock` inside the primary content's positioned container
 for an absolute input or toolbar that must avoid the secondary overlay. Its
 width and placement follow the displayed pane size, including pointer drags and
@@ -401,7 +413,7 @@ focus ring. Use it for toolbar, dialog, and row utilities. `fill` and `primary`
 keep an opaque backing surface for persistent emphasis. Disabled quiet actions
 remain transparent and do not show hover or pressed feedback.
 
-`IconButton variant="glass"` is a translucent, blurred action over existing
+`Button variant="glass"` and `IconButton variant="glass"` share a translucent, blurred action over existing
 content. It uses a low-opacity tint of the shared raised surface, a softened
 subtle border and subtle blur, without an outer shadow. Hover and pressed states
 retain translucency. Unsupported blur, increased contrast and reduced transparency
@@ -488,7 +500,10 @@ and ref interface, using the same Lucide MessageCircle glyph.
 ## Advanced selection and menus
 
 Use `Select` for simple options; its hidden native control preserves form
-participation. `Combobox` adds searchable single
+participation. `width="content"` fits the collapsed control to the selected label;
+`popupWidth="content"` independently fits the expanded surface to its options,
+within the viewport. The defaults remain a full-width control and a popup that
+matches the trigger. `Combobox` adds searchable single
 selection, grouped options, explicit custom-value creation and async loading
 states. `MultiSelect` owns multiple selection, removable tags and select-all.
 Controlled values are authoritative; option discovery remains host-owned.

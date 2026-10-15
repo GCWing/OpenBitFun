@@ -1,11 +1,9 @@
-/** Session-owned composition over the shared, controlled SplitView. */
-import { ArrowLeftRight, GripHorizontal } from 'lucide-react';
+/** Session content; the workbench shell owns the shared side pane. */
+import { GripHorizontal } from 'lucide-react';
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
-import { Icon, IconButton, SplitView, Tooltip } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n';
 import { useApp } from '../../hooks/useApp';
 import ChatPane from './ChatPane';
-import AuxPane from './AuxPane';
 import BottomTerminalPane from './BottomTerminalPane';
 import { collapseSessionBottomTerminalPane, expandSessionBottomTerminalPane } from './sessionPanelLayout';
 import { useSessionPaneLayout } from './sessionPaneLayoutStore';
@@ -14,7 +12,7 @@ import {
 } from '@/tools/terminal/services/terminalPanelPreferenceService';
 import type { TerminalPanelPosition } from '@/infrastructure/config/types';
 import {
-  BOTTOM_TERMINAL_PANEL_CONFIG, RIGHT_PANEL_CONFIG, PANEL_COMMON_CONFIG, STORAGE_KEYS,
+  BOTTOM_TERMINAL_PANEL_CONFIG, PANEL_COMMON_CONFIG, STORAGE_KEYS,
   getPanelDisplayMode, getModeWidth, getSnappedWidth, getNextMode, savePanelWidth, loadPanelWidth,
 } from '../../layout/panelConfig';
 import './SessionScene.scss';
@@ -29,11 +27,8 @@ interface SessionSceneProps {
 
 const SessionScene: React.FC<SessionSceneProps> = ({ workspacePath, isEntering = false, isActive = true }) => {
   const { t } = useI18n('flow-chat');
-  const { t: tPane } = useI18n('components');
   const { state, updateBottomTerminalPanelHeight } = useApp();
   const pane = useSessionPaneLayout();
-  const [isDraggingContent, setIsDraggingContent] = useState(false);
-  const [isContentSettling, setIsContentSettling] = useState(false);
   const [isDraggingBottom, setIsDraggingBottom] = useState(false);
   const [isHoveringBottom, setIsHoveringBottom] = useState(false);
   const [isBottomTerminalPanelTransitioning, setIsBottomTerminalPanelTransitioning] = useState(false);
@@ -46,9 +41,8 @@ const SessionScene: React.FC<SessionSceneProps> = ({ workspacePath, isEntering =
   const bottomDragCleanupRef = useRef<(() => void) | null>(null);
   const currentBottomHeight = state.layout.bottomTerminalPanelHeight || BOTTOM_TERMINAL_PANEL_CONFIG.COMFORTABLE_DEFAULT;
   const isTerminalDockedBottom = terminalPanelPosition === 'bottom';
-  const isContentOnly = pane.mode === 'content-only';
-  const isBottomHidden = isContentOnly || state.layout.bottomTerminalPanelCollapsed;
-  const isDragging = isDraggingContent || isDraggingBottom;
+  const isBottomHidden = state.layout.bottomTerminalPanelCollapsed;
+  const isDragging = isDraggingBottom;
   const bottomTerminalPanelMode = isBottomHidden ? 'collapsed'
     : getPanelDisplayMode(currentBottomHeight, BOTTOM_TERMINAL_PANEL_CONFIG);
 
@@ -57,15 +51,6 @@ const SessionScene: React.FC<SessionSceneProps> = ({ workspacePath, isEntering =
     void refreshTerminalPanelPosition();
     return stop;
   }, []);
-
-  // Heavy content measures only the settled layout, not intermediate drag sizes.
-  useLayoutEffect(() => {
-    setIsContentSettling(true);
-    let frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => setIsContentSettling(false));
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [pane.mode, pane.contentSide, pane.displayMode, pane.preferredRightPaneWidth, pane.preferredOverlayWidth]);
 
   useLayoutEffect(() => {
     const element = bottomTerminalPaneElementRef.current;
@@ -198,50 +183,18 @@ const SessionScene: React.FC<SessionSceneProps> = ({ workspacePath, isEntering =
       className={[
         'openbitfun-session-scene', isDragging && 'openbitfun-session-scene--dragging',
         isDraggingBottom && 'openbitfun-session-scene--dragging-bottom',
-        pane.displayMode === 'overlay' && 'openbitfun-session-scene--overlay',
         isTerminalDockedBottom && 'openbitfun-session-scene--terminal-bottom', isEntering && 'layout-entering',
       ].filter(Boolean).join(' ')}
       data-testid="session-scene" data-openbitfun-scene="session" data-openbitfun-part="root"
       data-openbitfun-state={[isDragging && 'dragging', isTerminalDockedBottom && 'terminal-bottom'].filter(Boolean).join(' ') || undefined}
     >
       <div className="openbitfun-session-scene__main-row" data-openbitfun-scene="session" data-openbitfun-part="main">
-        <SplitView
-          mode={pane.mode === 'chat-only' ? 'primary' : pane.mode === 'content-only' ? 'secondary' : 'split'}
-          layout={pane.displayMode}
-          secondarySide={pane.contentSide}
-          rightSize={pane.displayMode === 'overlay' ? pane.preferredOverlayWidth : pane.preferredRightPaneWidth}
-          minLeftSize={PANEL_COMMON_CONFIG.MIN_CENTER_WIDTH}
-          minRightSize={RIGHT_PANEL_CONFIG.COMPACT_WIDTH}
-          maxRightSize={RIGHT_PANEL_CONFIG.MAX_WIDTH}
-          defaultRightSize={RIGHT_PANEL_CONFIG.COMFORTABLE_DEFAULT}
-          onRightSizeChange={pane.displayMode === 'overlay' ? pane.resizeOverlay : pane.resizeRightPane}
-          onResizeStateChange={setIsDraggingContent}
-          dividerLabel={tPane('canvas.resizePanes')}
-          primaryPaneProps={{ 'aria-label': tPane('canvas.chatPane') }}
-          secondaryPaneProps={{ 'aria-label': tPane('canvas.contentPane') }}
-          dividerActions={
-            <Tooltip content={tPane('canvas.swapPanes')} placement="top">
-              <IconButton size="sm" aria-label={tPane('canvas.swapPanes')}
-                icon={<Icon glyph={ArrowLeftRight} size="sm" />} onClick={pane.swapPanes} />
-            </Tooltip>
-          }
-          primary={
-            <div className="openbitfun-session-scene__chat-pane" data-testid="session-chat-pane"
-              data-openbitfun-scene="session" data-openbitfun-part="chat">
-              <ChatPane width={0} isFullscreen={false} isSceneActive={isActive && !isContentOnly}
-                isDragging={isDragging} workspacePath={workspacePath} showChatInput
-                isRightPanelOpen={pane.mode !== 'chat-only'} onToggleRightPanel={pane.toggleContent} />
-            </div>
-          }
-          secondary={
-            <div className="openbitfun-session-scene__aux-pane" data-testid="session-aux-pane"
-              data-openbitfun-scene="session" data-openbitfun-part="auxiliary">
-              <AuxPane workspacePath={workspacePath} isSceneActive={isActive && pane.mode !== 'chat-only'}
-                isFullscreen={isContentOnly} onToggleFullscreen={pane.toggleMaximized}
-                terminalResizeSuspended={isContentSettling || isDraggingContent} />
-            </div>
-          }
-        />
+        <div className="openbitfun-session-scene__chat-pane" data-testid="session-chat-pane"
+          data-openbitfun-scene="session" data-openbitfun-part="chat">
+          <ChatPane width={0} isFullscreen={false} isSceneActive={isActive}
+            isDragging={isDragging} workspacePath={workspacePath} showChatInput
+            isRightPanelOpen={pane.mode !== 'chat-only'} onToggleRightPanel={pane.toggleContent} />
+        </div>
       </div>
       {isTerminalDockedBottom && <>
         <div

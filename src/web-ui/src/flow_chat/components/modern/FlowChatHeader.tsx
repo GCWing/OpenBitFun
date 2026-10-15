@@ -999,7 +999,7 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
           )}
           </div>
         ) : null}
-        {!isSearchMode && onToggleRightPanel ? (
+        {!sceneChrome && !isSearchMode && onToggleRightPanel ? (
           <>
             <ToolbarSeparator data-testid="flowchat-header-right-panel-separator" />
             <Tooltip content={rightPanelLabel}>

@@ -1,5 +1,15 @@
 import {
+  Alert,
   Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Field,
+  FormSection,
+  IconButton,
+  LoadingState,
+  OverflowText,
+  StatusPill,
   Icon,
   Input,
   Textarea,
@@ -7,6 +17,7 @@ import {
   Disclosure,
   DialogBody,
   DialogClose,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogHeading,
@@ -24,7 +35,8 @@ import { sshApi } from '@/features/ssh-remote/sshApi';
 import RemoteFileBrowser from '@/features/ssh-remote/RemoteFileBrowser';
 import { createLogger } from '@/shared/utils/logger';
 import { isRemoteWorkspace, type RelatedPath, type WorkspaceInfo } from '@/shared/types';
-import { FolderOpen } from 'lucide-react';
+import { FolderOpen, FolderPlus, Server } from 'lucide-react';
+import { ProjectFolderItem, ProjectFolderList } from '@/app/components/ProjectFolderList/ProjectFolderList';
 import './WorkspaceRelatedPathsDialog.scss';
 
 const log = createLogger('WorkspaceRelatedPathsDialog');
@@ -68,6 +80,7 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
   const { t } = useI18n('common');
   const { updateWorkspaceRelatedPaths } = useWorkspaceContext();
   const [drafts, setDrafts] = useState<DraftRelatedPath[]>([]);
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [browsingIndex, setBrowsingIndex] = useState<number | null>(null);
@@ -83,12 +96,9 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
     () => externalReferences.filter(reference => reference.origin === 'external' && !reference.hidden),
     [externalReferences],
   );
-  const relatedPathCount = drafts.length + visibleExternalReferences.length;
-  const scopeDescription = remoteWorkspace
-    ? t('nav.workspaces.relatedPaths.dialog.remoteScope', {
-        connectionName: workspace.connectionName || workspace.name,
-      })
-    : t('nav.workspaces.relatedPaths.dialog.localScope');
+  const showExternalReferences = !remoteWorkspace && (
+    visibleExternalReferences.length > 0 || externalReferencesFailed || externalReferenceDiagnostics.length > 0
+  );
 
   useEffect(() => {
     if (!isOpen) {
@@ -97,6 +107,7 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
 
     setDrafts((workspace.relatedPaths ?? []).map(path => createDraft(path)));
     setSaving(false);
+    setEditingDraftId(null);
     setError(null);
   }, [isOpen, workspace.relatedPaths]);
 
@@ -184,12 +195,15 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
   };
 
   const handleAddDraft = () => {
-    setDrafts(current => [...current, createDraft()]);
+    const draft = createDraft();
+    setDrafts(current => [...current, draft]);
+    setEditingDraftId(draft.id);
     setError(null);
   };
 
   const handleRemoveDraft = (draftId: string) => {
     setDrafts(current => current.filter(draft => draft.id !== draftId));
+    setEditingDraftId(current => current === draftId ? null : current);
     setError(null);
   };
 
@@ -235,6 +249,25 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
     }
   };
 
+  const directoryName = (path: string) => {
+    const normalized = remoteWorkspace ? path : path.replace(/\\/g, '/');
+    return normalized.replace(/\/+$/, '').split('/').pop() || path;
+  };
+  const directoryIcon = remoteWorkspace ? <Icon glyph={Server} size="sm" /> : undefined;
+
+  const addDirectoryButton = (
+    <Button
+      type="button"
+      variant="fill"
+      size="sm"
+      leadingIcon={<Icon glyph={FolderPlus} size="sm" />}
+      onClick={handleAddDraft}
+      disabled={saving}
+    >
+      {t('nav.workspaces.relatedPaths.dialog.add')}
+    </Button>
+  );
+
   return (
     <>
       <Dialog
@@ -242,233 +275,187 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
         onOpenChange={(nextOpen) => {
           if (!nextOpen && !saving) onClose();
         }}
-        size="lg"
+        size="md"
       >
         <DialogHeader>
           <DialogHeading>
             <DialogTitle>{t('nav.workspaces.relatedPaths.dialog.title')}</DialogTitle>
+            {remoteWorkspace && (
+              <DialogDescription>
+                {t('nav.workspaces.relatedPaths.dialog.remoteScope', {
+                  connectionName: workspace.connectionName || workspace.name,
+                })}
+              </DialogDescription>
+            )}
           </DialogHeading>
-          <DialogClose />
+          <DialogClose aria-label={t('actions.close')} disabled={saving} />
         </DialogHeader>
         <DialogBody>
-          <div className="workspace-related-paths-dialog__modal">
-        <div
-          className="workspace-related-paths-dialog"
-          data-openbitfun-component="workspace-related-paths-dialog"
-          data-openbitfun-part="root"
-        >
-          <div data-openbitfun-component="workspace-related-paths-dialog" data-openbitfun-part="intro" className="workspace-related-paths-dialog__intro">
-            <div className="workspace-related-paths-dialog__intro-icon">
-              <Icon name="link" size="lg" />
-            </div>
-            <div data-openbitfun-component="workspace-related-paths-dialog" data-openbitfun-part="introCopy" className="workspace-related-paths-dialog__intro-copy">
-              <div className="workspace-related-paths-dialog__intro-title">
-                {t('nav.workspaces.relatedPaths.dialog.heading')}
-              </div>
-              <div className="workspace-related-paths-dialog__intro-text">
-                {t('nav.workspaces.relatedPaths.dialog.description')}
-              </div>
-              <div data-openbitfun-component="workspace-related-paths-dialog" data-openbitfun-part="scope" className="workspace-related-paths-dialog__scope">
-                {scopeDescription}
-              </div>
-            </div>
-            <div className="workspace-related-paths-dialog__intro-badge">
-              <span className="workspace-related-paths-dialog__intro-badge-label">
-                {t('nav.workspaces.relatedPaths.badge', { count: relatedPathCount })}
-              </span>
-            </div>
-          </div>
-
-          <div className="workspace-related-paths-dialog__section-heading">
-            {t('nav.workspaces.relatedPaths.dialog.nativeHeading')}
-          </div>
-
-          {drafts.length === 0 ? (
-            <div data-openbitfun-component="workspace-related-paths-dialog" data-openbitfun-part="empty" className="workspace-related-paths-dialog__empty">
-              {t('nav.workspaces.relatedPaths.dialog.empty')}
-            </div>
-          ) : (
-            <div data-openbitfun-component="workspace-related-paths-dialog" data-openbitfun-part="list" className="workspace-related-paths-dialog__list">
-              {drafts.map((draft, index) => (
-                <div data-openbitfun-component="workspace-related-paths-dialog" data-openbitfun-part="card" key={draft.id} className="workspace-related-paths-dialog__card">
-                  <div data-openbitfun-component="workspace-related-paths-dialog" data-openbitfun-part="cardHeader" className="workspace-related-paths-dialog__card-header">
-                    <span className="workspace-related-paths-dialog__card-index">
-                      {t('nav.workspaces.relatedPaths.dialog.itemLabel', { index: index + 1 })}
-                    </span>
-                    <button
-                      type="button"
-                      className="workspace-related-paths-dialog__remove"
-                      onClick={() => handleRemoveDraft(draft.id)}
-                      aria-label={t('actions.remove')}
-                    >
-                      <Icon name="delete" size="sm" />
-                    </button>
-                  </div>
-
-                  <div data-openbitfun-component="workspace-related-paths-dialog" data-openbitfun-part="pathRow" className="workspace-related-paths-dialog__path-row">
-                    <Input
-                      className="workspace-related-paths-dialog__path-input"
-                      value={draft.path}
-                      onChange={event => setDraftValue(draft.id, 'path', event.target.value)}
-                      placeholder={t('nav.workspaces.relatedPaths.dialog.pathPlaceholder')}
-                      disabled={saving}
-                      size="sm"
-                    />
-                    <Button
-                      type="button"
-                      className="workspace-related-paths-dialog__select"
-                      variant="outline"
-                      size="sm"
-                      leadingIcon={<Icon glyph={FolderOpen} size="sm" />}
-                      onClick={() =>
-                        remoteWorkspace
-                          ? setBrowsingIndex(index)
-                          : void handleSelectLocalDirectory(index)
-                      }
-                      disabled={saving || (remoteWorkspace && !connectionId)}
-                    >
-                      {t('actions.select')}
-                    </Button>
-                  </div>
-
-                  <div
-                    data-openbitfun-component="workspace-related-paths-dialog"
-                    data-openbitfun-part="description"
-                    className="workspace-related-paths-dialog__description"
-                  >
-                    <Textarea
-                      value={draft.description}
-                      onChange={event => setDraftValue(draft.id, 'description', event.target.value)}
-                      placeholder={t('nav.workspaces.relatedPaths.dialog.descriptionPlaceholder')}
-                      disabled={saving}
-                      layout="fill"
-                      resize="none"
-                      rows={2}
-                      variant="outlined"
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {!remoteWorkspace ? (
-            <section className="workspace-related-paths-dialog__external-section">
-              <div className="workspace-related-paths-dialog__section-heading">
-                <span>{t('nav.workspaces.relatedPaths.dialog.externalHeading')}</span>
-                <span className="workspace-related-paths-dialog__read-only">
-                  {t('nav.workspaces.relatedPaths.dialog.readOnly')}
-                </span>
-              </div>
-              <div className="workspace-related-paths-dialog__section-description">
-                {t('nav.workspaces.relatedPaths.dialog.externalDescription')}
-              </div>
-              {externalReferenceDiagnostics.length > 0 ? (
-                <Disclosure
-                  presentation="native"
-                  className="workspace-related-paths-dialog__diagnostics"
-                  summary={t('nav.workspaces.relatedPaths.dialog.externalDiagnostics', {
-                    count: externalReferenceDiagnostics.length,
-                  })}
-                >
-                  <ul>
-                    {externalReferenceDiagnostics.map((diagnostic, index) => (
-                      <li key={`${diagnostic.code}-${index}`}>
-                        <code>{diagnostic.code}</code>
-                      </li>
-                    ))}
-                  </ul>
-                </Disclosure>
-              ) : null}
-              {externalReferencesLoading ? (
-                <div className="workspace-related-paths-dialog__empty">
-                  {t('nav.workspaces.relatedPaths.dialog.externalLoading')}
-                </div>
-              ) : externalReferencesFailed ? (
-                <div className="workspace-related-paths-dialog__error" role="status">
-                  {t('nav.workspaces.relatedPaths.messages.externalLoadFailed')}
-                </div>
-              ) : visibleExternalReferences.length === 0 ? (
-                <div className="workspace-related-paths-dialog__empty">
-                  {t('nav.workspaces.relatedPaths.dialog.externalEmpty')}
-                </div>
-              ) : (
-                <div className="workspace-related-paths-dialog__list">
-                  {visibleExternalReferences.map(reference => (
-                    <div
-                      key={reference.stableKey}
-                      className="workspace-related-paths-dialog__card workspace-related-paths-dialog__card--external"
-                    >
-                      <div className="workspace-related-paths-dialog__card-header">
-                        <span className="workspace-related-paths-dialog__external-alias">
-                          @{reference.alias}
-                        </span>
-                        <span className="workspace-related-paths-dialog__external-source">
-                          {reference.sourceDisplayName}
-                        </span>
-                      </div>
-                      <div className="workspace-related-paths-dialog__external-path">
-                        {reference.path}
-                      </div>
-                      {reference.description ? (
-                        <div className="workspace-related-paths-dialog__section-description">
-                          {reference.description}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          ) : null}
-
-          {error ? (
-            <div data-openbitfun-component="workspace-related-paths-dialog" data-openbitfun-part="error" className="workspace-related-paths-dialog__error" role="alert">
-              {error}
-            </div>
-          ) : null}
-
-        </div>
-                </div>
-                </DialogBody>
-          <DialogFooter
-            separator
+          <div
+            className="workspace-related-paths-dialog"
             data-openbitfun-component="workspace-related-paths-dialog"
-            data-openbitfun-part="footer"
-            className="workspace-related-paths-dialog__footer"
+            data-openbitfun-part="root"
+            aria-busy={saving}
           >
+            <Card appearance="neutral" radius="lg">
+              <CardBody padding="md" className="workspace-related-paths-dialog__folders">
+                <div className="workspace-related-paths-dialog__add">{addDirectoryButton}</div>
+                <ProjectFolderList label={t('nav.workspaces.relatedPaths.dialog.title')}>
+                  <ProjectFolderItem
+                    name={workspace.name}
+                    path={workspace.rootPath}
+                    leading={directoryIcon}
+                    actions={<StatusPill tone="neutral">{t('nav.workspaces.relatedPaths.dialog.primaryDirectory')}</StatusPill>}
+                  />
+                  {drafts.map((draft, index) => (
+                    <ProjectFolderItem
+                      key={draft.id}
+                      name={directoryName(draft.path) || t('nav.workspaces.relatedPaths.dialog.itemLabel', { index: index + 2 })}
+                      path={draft.path}
+                      leading={directoryIcon}
+                      editorId={`related-directory-${draft.id}`}
+                      actions={(
+                        <>
+                          <IconButton
+                            aria-label={t('actions.edit')}
+                            aria-expanded={editingDraftId === draft.id}
+                            aria-controls={`related-directory-${draft.id}`}
+                            icon={<Icon name="edit" size="sm" />}
+                            size="xs"
+                            onClick={() => setEditingDraftId(current => current === draft.id ? null : draft.id)}
+                            disabled={saving}
+                          />
+                          <IconButton
+                            aria-label={t('newProject.removeFolder', { name: directoryName(draft.path) })}
+                            icon={<Icon name="xmark" size="sm" />}
+                            size="xs"
+                            onClick={() => handleRemoveDraft(draft.id)}
+                            disabled={saving}
+                          />
+                        </>
+                      )}
+                    >
+                      {editingDraftId === draft.id && (
+                        <>
+                          <Field
+                            label={t('nav.workspaces.relatedPaths.dialog.pathPlaceholder')}
+                            controlWidth="fill"
+                            controlTrailing={(
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                leadingIcon={<Icon glyph={FolderOpen} size="sm" />}
+                                onClick={() => remoteWorkspace
+                                  ? setBrowsingIndex(index)
+                                  : void handleSelectLocalDirectory(index)}
+                                disabled={saving || (remoteWorkspace && !connectionId)}
+                              >
+                                {t('actions.select')}
+                              </Button>
+                            )}
+                          >
+                            <Input
+                              value={draft.path}
+                              onChange={event => setDraftValue(draft.id, 'path', event.target.value)}
+                              disabled={saving}
+                              size="sm"
+                              autoFocus
+                            />
+                          </Field>
+                          <Field label={t('nav.workspaces.relatedPaths.dialog.descriptionLabel')} controlWidth="fill">
+                            <Textarea
+                              value={draft.description}
+                              onChange={event => setDraftValue(draft.id, 'description', event.target.value)}
+                              disabled={saving}
+                              layout="fill"
+                              resize="none"
+                              rows={2}
+                              variant="outlined"
+                            />
+                          </Field>
+                        </>
+                      )}
+                    </ProjectFolderItem>
+                  ))}
+                </ProjectFolderList>
+              </CardBody>
+            </Card>
+
+            {externalReferencesLoading && (
+              <LoadingState size="sm" role="status">
+                {t('nav.workspaces.relatedPaths.dialog.externalLoading')}
+              </LoadingState>
+            )}
+            {showExternalReferences && (
+              <FormSection
+                title={t('nav.workspaces.relatedPaths.dialog.externalHeading')}
+                actions={<StatusPill tone="neutral">{t('nav.workspaces.relatedPaths.dialog.readOnly')}</StatusPill>}
+              >
+                {externalReferencesFailed && (
+                  <Alert tone="warning" role="status" message={t('nav.workspaces.relatedPaths.messages.externalLoadFailed')} />
+                )}
+                {visibleExternalReferences.map(reference => (
+                  <Card key={reference.stableKey} padding="sm" gap="sm">
+                    <CardHeader
+                      title={<OverflowText>@{reference.alias}</OverflowText>}
+                      actions={<StatusPill tone="neutral">{reference.sourceDisplayName}</StatusPill>}
+                    />
+                    <CardBody>
+                      <div className="workspace-related-paths-dialog__external-path">{reference.path}</div>
+                      {reference.description && (
+                        <div className="workspace-related-paths-dialog__external-description">{reference.description}</div>
+                      )}
+                    </CardBody>
+                  </Card>
+                ))}
+                {externalReferenceDiagnostics.length > 0 && (
+                  <Disclosure
+                    presentation="native"
+                    summary={t('nav.workspaces.relatedPaths.dialog.externalDiagnostics', {
+                      count: externalReferenceDiagnostics.length,
+                    })}
+                  >
+                    <ul className="workspace-related-paths-dialog__diagnostics">
+                      {externalReferenceDiagnostics.map((diagnostic, index) => (
+                        <li key={`${diagnostic.code}-${index}`}>
+                          <code>{diagnostic.code}</code>
+                        </li>
+                      ))}
+                    </ul>
+                  </Disclosure>
+                )}
+              </FormSection>
+            )}
+
+            {error && <Alert tone="error" message={error} />}
+          </div>
+        </DialogBody>
+        <DialogFooter
+          data-openbitfun-component="workspace-related-paths-dialog"
+          data-openbitfun-part="footer"
+          className="workspace-related-paths-dialog__footer"
+        >
+          <div
+            data-openbitfun-component="workspace-related-paths-dialog"
+            data-openbitfun-part="footerActions"
+            className="workspace-related-paths-dialog__footer-actions"
+          >
+            <Button type="button" variant="fill" size="sm" onClick={onClose} disabled={saving}>
+              {t('actions.cancel')}
+            </Button>
             <Button
               type="button"
-              variant="outline"
+              variant="primary"
               size="sm"
-              leadingIcon={<Icon name="plus" size="lg" />}
-              onClick={handleAddDraft}
-              disabled={saving}
+              onClick={() => void handleSave()}
+              loading={saving}
+              disabled={saving || hasInvalidDraft || isUnchanged}
             >
-              {t('nav.workspaces.relatedPaths.dialog.add')}
+              {saving ? t('status.saving') : t('actions.save')}
             </Button>
-
-            <div data-openbitfun-component="workspace-related-paths-dialog" data-openbitfun-part="footerActions" className="workspace-related-paths-dialog__footer-actions">
-              <Button
-                type="button"
-                variant="fill"
-                size="sm"
-                onClick={onClose}
-                disabled={saving}
-              >
-                {t('actions.cancel')}
-              </Button>
-              <Button
-                type="button"
-                variant="primary"
-                size="sm"
-                onClick={() => void handleSave()}
-                disabled={saving || hasInvalidDraft || isUnchanged}
-              >
-                {saving ? t('status.saving') : t('actions.save')}
-              </Button>
-            </div>
-          </DialogFooter>
+          </div>
+        </DialogFooter>
       </Dialog>
 
       {remoteWorkspace && connectionId && browsingIndex !== null ? (

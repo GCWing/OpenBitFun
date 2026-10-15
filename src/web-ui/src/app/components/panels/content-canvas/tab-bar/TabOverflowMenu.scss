@@ -8,6 +8,28 @@
   align-items: center;
 }
 
+.canvas-tab-panorama-trigger {
+  transition:
+    background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+    border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+    color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+  &:not(:disabled) { color: var(--openbitfun-color-content-secondary); }
+  &:is(:focus-visible, :active):not(:disabled) { color: var(--openbitfun-color-content-primary); }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .canvas-tab-panorama-trigger:hover:not(:disabled) {
+    color: var(--openbitfun-color-content-primary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-tab-panorama-trigger {
+    transition: none;
+  }
+}
+
 // Overflow menu
 .canvas-tab-overflow-menu {
   --openbitfun-overlay-menu-inline-size: min(280px, calc(100vw - 16px));

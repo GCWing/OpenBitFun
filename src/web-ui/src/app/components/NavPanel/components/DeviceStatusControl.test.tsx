@@ -494,6 +494,9 @@ describe('device status card', () => {
 
     const next = document.querySelector<HTMLButtonElement>('[aria-label="deviceOverview.nextDevice"]');
     expect(next).not.toBeNull();
+    const details = element('nav-device-status-name').closest('.openbitfun-device-overview__device-details');
+    expect(details?.querySelector('.openbitfun-device-overview__carousel-controls')).toBe(next?.parentElement);
+    expect(details?.querySelector('[aria-label="deviceOverview.previousDevice"]')).not.toBeNull();
     await act(async () => { next!.click(); });
 
     // The system it reported is real, but a CLI host has no laptop to draw.

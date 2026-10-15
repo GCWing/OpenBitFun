@@ -974,90 +974,6 @@ $_section-header-height: 22px;
     block-size: 20px;
   }
 
-  &__workspace-dialog-body {
-    display: flex;
-    flex-direction: column;
-    gap: var(--openbitfun-space-5);
-  }
-
-  &__workspace-dialog-actions {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
-    gap: var(--openbitfun-space-3);
-  }
-
-  &__workspace-dialog-recent {
-    min-width: 0;
-  }
-
-  &__workspace-dialog-heading {
-    margin: 0 0 var(--openbitfun-space-2);
-    color: var(--openbitfun-color-content-muted);
-    font: inherit;
-  }
-
-  &__workspace-dialog-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--openbitfun-space-1);
-  }
-
-  &__workspace-dialog-item {
-    width: 100%;
-    text-align: start;
-
-    > [data-openbitfun-part="content"] {
-      width: 100%;
-    }
-
-    [data-openbitfun-part="label"] {
-      flex: 1;
-    }
-  }
-
-  &__workspace-dialog-item-main {
-    display: flex;
-    width: 100%;
-    align-items: baseline;
-    gap: 0.3em;
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-
-  &__workspace-dialog-item-host {
-    /* flex-shrink 0: host is not squeezed; max-width ~26ch fits 255.255.255.255 + margin in typical UI fonts */
-    flex: 0 0 auto;
-    max-width: min(26ch, 52%);
-    overflow: hidden;
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-label-md-font-size);
-  }
-
-  &__workspace-dialog-item-host-sep {
-    flex: 0 0 auto;
-    color: var(--openbitfun-color-content-muted);
-    opacity: 0.55;
-    font-size: var(--openbitfun-type-label-md-font-size);
-  }
-
-  &__workspace-dialog-item-name {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  &__workspace-dialog-empty {
-    padding: var(--openbitfun-space-2) var(--openbitfun-space-3);
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-label-sm-font-size);
-  }
-
-  &__workspace-dialog-workspaces {
-    max-height: 240px;
-    overscroll-behavior: contain;
-  }
-
   // ──────────────────────────────────────────────
   // Items list
   // ──────────────────────────────────────────────
@@ -1845,12 +1761,16 @@ $_section-header-height: 22px;
 }
 
 .openbitfun-device-overview__device-details {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--openbitfun-space-2);
   min-width: 0;
-  padding-inline: var(--openbitfun-space-5);
+  width: 100%;
+  box-sizing: border-box;
+  // Reserve equal, fixed-width navigation slots so names never move on hover.
+  padding-inline: calc(var(--openbitfun-space-5) + var(--openbitfun-control-height-sm) + var(--openbitfun-space-2));
 }
 
 .openbitfun-device-overview__header-actions {
@@ -1906,12 +1826,9 @@ $_section-header-height: 22px;
 }
 
 .openbitfun-device-overview__carousel-controls {
-  grid-area: 1 / 1;
   position: absolute;
-  inset-block-start: var(--openbitfun-space-2);
-  inset-block-end: 0;
-  inset-inline: clamp(var(--openbitfun-space-5), 12%, var(--openbitfun-space-10));
-  z-index: 2;
+  inset-block: 0;
+  inset-inline: var(--openbitfun-space-5);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1919,6 +1836,7 @@ $_section-header-height: 22px;
 }
 
 .openbitfun-device-overview__carousel-button {
+  flex: 0 0 var(--openbitfun-control-height-sm);
   pointer-events: auto;
   color: var(--openbitfun-color-content-secondary);
 
@@ -1933,6 +1851,27 @@ $_section-header-height: 22px;
 
   &:disabled {
     color: var(--openbitfun-color-action-neutral-content-disabled);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .openbitfun-device-overview__carousel-controls {
+    opacity: 0;
+  }
+
+  .openbitfun-device-overview__carousel-button {
+    pointer-events: none;
+  }
+
+  .openbitfun-device-overview:hover,
+  .openbitfun-device-overview:has(.openbitfun-device-overview__carousel-button:focus-visible) {
+    .openbitfun-device-overview__carousel-controls {
+      opacity: 1;
+    }
+
+    .openbitfun-device-overview__carousel-button {
+      pointer-events: auto;
+    }
   }
 }
 

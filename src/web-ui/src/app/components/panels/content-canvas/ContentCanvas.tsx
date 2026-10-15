@@ -4,6 +4,8 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { Toolbar } from '@openbitfun/ui';
+import { CanvasToolbarContribution, useExternalCanvasToolbar } from './CanvasToolbar';
 import { EditorArea } from './editor-area';
 import { AnchorZone } from './anchor-zone';
 import { MissionControl } from './mission-control';
@@ -39,6 +41,8 @@ export interface ContentCanvasProps {
   onCollapsePanel?: () => void;
   /** Host-owned layout actions, replacing the group-level close-all button. */
   toolbarActions?: React.ReactNode;
+  /** Render group toolbars in the containing workbench header. */
+  externalToolbar?: boolean;
   /** Suspend terminal fit/PTY resize while the hosting panel is animating. */
   terminalResizeSuspended?: boolean;
   /** Whether this host exposes Mission Control. */
@@ -57,10 +61,12 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
   onReveal,
   onCollapsePanel,
   toolbarActions,
+  externalToolbar = false,
   terminalResizeSuspended = false,
   missionControlEnabled = true,
   emptyState,
 }) => {
+  const hasExternalToolbar = useExternalCanvasToolbar(externalToolbar);
   // Store state — fine-grained selectors so unrelated store changes
   // (drag state, closed-tab history, ...) do not re-render the whole canvas.
   const primaryGroup = useCanvasStore(state => state.primaryGroup);
@@ -191,9 +197,15 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
     // Show empty state when there are no visible tabs and no terminal keep-alive tabs.
     if (!hasRenderableTabs) {
       return (
-        <EmptyState onClose={disablePopOut ? undefined : onCollapsePanel} toolbarActions={toolbarActions}>
-          {emptyState}
-        </EmptyState>
+        <>
+          {hasExternalToolbar && toolbarActions && <CanvasToolbarContribution groupId="primary">
+            <Toolbar bordered={false} trailing={toolbarActions} />
+          </CanvasToolbarContribution>}
+          <EmptyState onClose={disablePopOut ? undefined : onCollapsePanel}
+            toolbarActions={hasExternalToolbar ? undefined : toolbarActions}>
+            {emptyState}
+          </EmptyState>
+        </>
       );
     }
 
@@ -210,6 +222,7 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
             onTabCloseWithDirtyCheck={handleCloseWithDirtyCheck}
             onTabCloseAllWithDirtyCheck={handleCloseAllWithDirtyCheck}
             disablePopOut={disablePopOut}
+            externalToolbar={hasExternalToolbar}
             toolbarActions={toolbarActions}
             terminalResizeSuspended={terminalResizeSuspended}
           />

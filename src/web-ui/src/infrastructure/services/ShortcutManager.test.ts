@@ -42,6 +42,39 @@ describe('ShortcutManager platform primary modifier', () => {
     document.body.innerHTML = '';
   });
 
+  it('keeps the same tab command independently registered in the main and side regions', () => {
+    setPlatform('Win32');
+    const main = vi.fn();
+    const side = vi.fn();
+    const removeMain = shortcutManager.register('tab.close', { key: 'w', ctrl: true, scope: 'workbench-content' }, main);
+    shortcutManager.register('tab.close', { key: 'w', ctrl: true, scope: 'canvas' }, side);
+    shortcutManager.loadUserOverrides({ 'tab.close': { key: 'q', ctrl: true } });
+    dispatchScopedKey('workbench-content', { key: 'q', ctrlKey: true });
+    dispatchScopedKey('canvas', { key: 'q', ctrlKey: true });
+    expect(main).toHaveBeenCalledOnce();
+    expect(side).toHaveBeenCalledOnce();
+    removeMain();
+    dispatchScopedKey('canvas', { key: 'q', ctrlKey: true });
+    expect(side).toHaveBeenCalledTimes(2);
+  });
+
+  it('inherits the main document command from an editor without targeting the side canvas', () => {
+    setPlatform('Win32');
+    const main = vi.fn();
+    const side = vi.fn();
+    shortcutManager.register('tab.close', { key: 'w', ctrl: true, scope: 'workbench-content', allowInInput: true }, main);
+    shortcutManager.register('tab.close', { key: 'w', ctrl: true, scope: 'canvas', allowInInput: true }, side);
+    const host = document.createElement('div');
+    host.dataset.shortcutScope = 'workbench-content';
+    const input = document.createElement('textarea');
+    input.dataset.shortcutScope = 'editor';
+    host.append(input);
+    document.body.append(host);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(main).toHaveBeenCalledOnce();
+    expect(side).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     shortcutManager.clear();
     vi.restoreAllMocks();

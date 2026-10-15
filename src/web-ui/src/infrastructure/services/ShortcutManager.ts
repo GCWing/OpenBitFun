@@ -195,7 +195,8 @@ export class ShortcutManager {
     // Apply user override if present
     const effectiveConfig = this.applyOverride(id, config);
 
-    const existing = this.registrations.get(id);
+    const registrationKey = `${config.scope ?? 'app'}:${id}`;
+    const existing = this.registrations.get(registrationKey);
     if (existing) {
       this.removeFromLookupMap(existing);
     }
@@ -209,20 +210,28 @@ export class ShortcutManager {
       priority: options?.priority ?? 0,
     };
 
-    this.registrations.set(id, registration);
+    this.registrations.set(registrationKey, registration);
     this.addToLookupMap(registration);
     this.notifyRegistrationListeners();
 
-    return () => this.unregister(id);
+    return () => {
+      if (this.registrations.get(registrationKey) !== registration) return;
+      this.removeFromLookupMap(registration);
+      this.registrations.delete(registrationKey);
+      this.notifyRegistrationListeners();
+    };
   }
 
   public unregister(id: string): boolean {
-    const registration = this.registrations.get(id);
-    if (!registration) return false;
-    this.removeFromLookupMap(registration);
-    this.registrations.delete(id);
-    this.notifyRegistrationListeners();
-    return true;
+    let removed = false;
+    for (const [key, registration] of this.registrations) {
+      if (registration.id !== id) continue;
+      this.removeFromLookupMap(registration);
+      this.registrations.delete(key);
+      removed = true;
+    }
+    if (removed) this.notifyRegistrationListeners();
+    return removed;
   }
 
   // ─── Lookup map maintenance ────────────────────────────────────────────────
@@ -295,8 +304,11 @@ export class ShortcutManager {
     if (activeScope !== 'app') {
       // When the innermost scope is the Monaco editor surface, inherit canvas-registered
       // shortcuts (tab switch, close tab, etc.) in addition to editor-scoped ones.
+      const editorOwner = event.target instanceof Element
+        && event.target.closest('[data-shortcut-scope="workbench-content"]')
+        ? 'workbench-content' : 'canvas';
       const panelScopes: ShortcutScope[] =
-        activeScope === 'editor' ? (['editor', 'canvas'] as const) : [activeScope];
+        activeScope === 'editor' ? ['editor', editorOwner] : [activeScope];
       const panelRegs: ShortcutRegistration[] = [];
       for (const scope of panelScopes) {
         for (const reg of this.lookupMap.get(makeEventKey(scope, event)) ?? []) {
@@ -339,7 +351,7 @@ export class ShortcutManager {
     const scope = el?.getAttribute('data-shortcut-scope') as ShortcutScope | null;
     // Only accept known panel scopes; canvas is included so canvas-scoped shortcuts
     // fire only when focus is inside the editor canvas area.
-    if (scope === 'canvas' || scope === 'editor' || scope === 'chat' || scope === 'terminal' || scope === 'filetree' || scope === 'git') {
+    if (scope === 'canvas' || scope === 'workbench-content' || scope === 'editor' || scope === 'chat' || scope === 'terminal' || scope === 'filetree' || scope === 'git') {
       return scope;
     }
     return 'app';
@@ -398,8 +410,8 @@ export class ShortcutManager {
     this.userOverrides = overrides ?? {};
 
     // Re-apply overrides to all existing registrations
-    for (const [id, registration] of this.registrations.entries()) {
-      const newConfig = this.applyOverride(id, registration.defaultConfig);
+    for (const registration of this.registrations.values()) {
+      const newConfig = this.applyOverride(registration.id, registration.defaultConfig);
       this.removeFromLookupMap(registration);
       registration.config = newConfig;
       this.addToLookupMap(registration);
@@ -475,7 +487,7 @@ export class ShortcutManager {
   public checkConflicts(config: ShortcutConfig, excludeId?: string, excludeIds?: string[]): ShortcutRegistration[] {
     const scope = config.scope ?? 'app';
     const scopesToCheck: ShortcutScope[] = scope === 'app'
-      ? ['app', 'chat', 'editor', 'terminal', 'canvas', 'filetree', 'git']
+      ? ['app', 'chat', 'editor', 'terminal', 'canvas', 'workbench-content', 'filetree', 'git']
       : [scope, 'app'];
     const seen = new Set<string>();
     const list: ShortcutRegistration[] = [];

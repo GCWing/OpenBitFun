@@ -176,6 +176,7 @@ import { branchQuickSwitchAppearanceDescriptor } from '@/tools/git/components/Br
 import { workspaceListSectionAppearanceDescriptor } from '@/app/components/NavPanel/sections/workspaces/WorkspaceListSection.appearance';
 import { workspaceItemAppearanceDescriptor } from '@/app/components/NavPanel/sections/workspaces/WorkspaceItem.appearance';
 import { newProjectDialogAppearanceDescriptor } from '@/app/components/NewProjectDialog/NewProjectDialog.appearance';
+import { projectFolderListAppearanceDescriptor } from '@/app/components/ProjectFolderList/ProjectFolderList.appearance';
 import { canvasEditorAreaAppearanceDescriptor } from '@/app/components/panels/content-canvas/editor-area/EditorArea.appearance';
 import { canvasEditorGroupAppearanceDescriptor } from '@/app/components/panels/content-canvas/editor-area/EditorGroup.appearance';
 import { canvasThumbnailAppearanceDescriptor } from '@/app/components/panels/content-canvas/mission-control/ThumbnailCard.appearance';
@@ -437,6 +438,7 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(workspaceListSectionAppearanceDescriptor)
     .registerComponent(workspaceItemAppearanceDescriptor)
     .registerComponent(newProjectDialogAppearanceDescriptor)
+    .registerComponent(projectFolderListAppearanceDescriptor)
     .registerComponent(canvasEditorAreaAppearanceDescriptor)
     .registerComponent(canvasEditorGroupAppearanceDescriptor)
     .registerComponent(canvasThumbnailAppearanceDescriptor)

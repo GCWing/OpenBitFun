@@ -7,8 +7,8 @@ function preferences(values: Record<string, string> = {}) {
   return { getItem: (key: string) => data.get(key) ?? null, setItem: vi.fn((key: string, value: string) => { data.set(key, value); }) };
 }
 
-describe('session pane layout', () => {
-  it('applies the local display preference immediately, retaining session modes and separate widths', () => {
+describe('workbench pane layout compatibility', () => {
+  it('applies the local display preference immediately, retaining device modes and separate widths', () => {
     const storage = preferences({ [STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH]: '640' });
     const store = createSessionPaneLayoutStore(storage);
     const pane = store.getState();
@@ -63,7 +63,7 @@ describe('session pane layout', () => {
     expect(storage.setItem.mock.calls.some(([key]) => key === STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH)).toBe(false);
   });
 
-  it('remembers mode per session and device while sharing only placement and width preferences', () => {
+  it('keeps mode across sessions on one device and restores each device independently', () => {
     const storage = preferences();
     const store = createSessionPaneLayoutStore(storage);
     const pane = store.getState();
@@ -76,7 +76,7 @@ describe('session pane layout', () => {
     expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
     pane.showContent();
     pane.activate('local', 'b');
-    expect(selectSessionPaneMode(store.getState())).toBe('chat-only');
+    expect(selectSessionPaneMode(store.getState())).toBe('content-only');
     pane.activate('local', 'a');
     expect(selectSessionPaneMode(store.getState())).toBe('content-only');
     pane.activate('peer', 'a');

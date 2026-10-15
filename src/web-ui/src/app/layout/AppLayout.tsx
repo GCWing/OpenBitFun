@@ -24,7 +24,7 @@ import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurfac
 import WorkspaceBody from './WorkspaceBody';
 import { useToolbarModeContext } from '../../flow_chat/components/toolbar-mode/ToolbarModeContext';
 import { MCPInteractionDialog } from '../components/MCPInteractionDialog/MCPInteractionDialog';
-import { workspaceAPI } from '@/infrastructure/api';
+import { createProject } from '../services/createProject';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import type { CloseBehavior } from '@/infrastructure/api/service-api/SystemAPI';
 import { RetainedMountBoundary } from '@/shared/presence';
@@ -239,18 +239,6 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
   }, [openWorkspace, t]);
   const handleNewProject = useCallback(() => setShowNewProjectDialog(true), []);
   const handleShowAbout = useCallback(() => setShowAboutDialog(true), []);
-
-  const handleConfirmNewProject = useCallback(async (parentPath: string, projectName: string) => {
-    const normalized = parentPath.replace(/\\/g, '/');
-    const newProjectPath = `${normalized}/${projectName}`;
-    try {
-      await workspaceAPI.createDirectory(newProjectPath);
-      await openWorkspace(newProjectPath);
-    } catch (error) {
-      log.error('Failed to create project', error);
-      throw error;
-    }
-  }, [openWorkspace]);
 
   // Listen for nav-panel events dispatched by the workspace area
   useEffect(() => {
@@ -770,8 +758,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
           <NewProjectDialog
             isOpen={showNewProjectDialog}
             onClose={() => setShowNewProjectDialog(false)}
-            onConfirm={handleConfirmNewProject}
-            defaultParentPath={hasWorkspace ? currentWorkspace?.rootPath : undefined}
+            onConfirm={createProject}
+            defaultParentPath={hasWorkspace && currentWorkspace?.workspaceKind !== WorkspaceKind.Remote ? currentWorkspace?.rootPath : undefined}
           />
         </Suspense>
       </RetainedMountBoundary>

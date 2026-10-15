@@ -172,9 +172,8 @@ describe('FlowChatHeader', () => {
     expect(host?.querySelector('[data-testid="session-files-badge"]')).not.toBeNull();
     expect(host?.querySelector('[data-testid="flowchat-header-search"]')).toBeNull();
     expect(host?.querySelector('[data-testid="flowchat-header-session-overview"]')).not.toBeNull();
-    expect(host?.querySelector('[data-testid="flowchat-header-right-panel"]')).not.toBeNull();
+    expect(host?.querySelector('[data-testid="flowchat-header-right-panel"]')).toBeNull();
     expect(host?.querySelector('[data-testid="flowchat-header-session-overview"] [data-openbitfun-name="settings"]')).not.toBeNull();
-    expect(host?.querySelector('[data-testid="flowchat-header-right-panel"] [data-openbitfun-name="sidebar-right"]')).not.toBeNull();
 
     act(() => renderInScene('settings'));
     expect(host?.childElementCount).toBe(0);
@@ -184,7 +183,6 @@ describe('FlowChatHeader', () => {
     expect(host?.querySelector('[data-testid="flowchat-header-search"] [data-openbitfun-name="search"]')).not.toBeNull();
     expect(host?.querySelector('[data-testid="flowchat-header-search"]')?.getAttribute('data-size')).toBe('xs');
     expect(host?.querySelector('[data-testid="flowchat-header-session-overview"]')?.getAttribute('data-size')).toBe('xs');
-    expect(host?.querySelector('[data-testid="flowchat-header-right-panel"]')?.getAttribute('data-size')).toBe('xs');
   });
 
   it('omits the list, previous-turn, and next-turn navigation controls', () => {

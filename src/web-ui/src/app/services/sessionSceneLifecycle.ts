@@ -7,6 +7,7 @@ import { registerSessionSceneNavigation, useSceneStore } from '../stores/sceneSt
 import { isSessionSceneId, type SessionSceneTarget } from '../components/SceneBar/types';
 import { startSessionPaneLayoutSync } from '../scenes/session/sessionPaneLayoutSync';
 import { resolveSessionSceneTarget, resolveSessionSceneWorkspace } from './sessionSceneTarget';
+import { selectedSessionTab, tabPane } from '../workbench/scenePaneModel';
 
 const log = createLogger('SessionSceneLifecycle');
 
@@ -81,8 +82,9 @@ export function startSessionSceneLifecycle(): () => void {
       // The pending navigation owns the upcoming selection. Bootstrap/hydrate
       // notifications cannot replace its destination or steal its focus.
       if (selectionChanged && selected && !scenes.pendingTabId) {
-        if (isSessionSceneId(scenes.activeTabId)) {
-          scenes.openSessionScene(selected);
+        const presentation = selectedSessionTab(scenes);
+        if (presentation || isSessionSceneId(scenes.activeTabId)) {
+          scenes.openSessionScene(selected, { focus: !presentation || scenes.focusedPane === tabPane(presentation) });
         } else {
           scenes.updateSessionScene(selected);
         }

@@ -14,7 +14,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useCurrentWorkspace } from '../../infrastructure/contexts/WorkspaceContext';
 import { NavBar } from '../components/NavBar';
 import NavPanel from '../components/NavPanel/NavPanel';
-import { SceneChromeProvider, SceneTopBar } from '../components/SceneTopBar';
+import { SceneChromeProvider } from '../components/SceneTopBar';
+import WorkbenchLayout from '../workbench/WorkbenchLayout';
 import { SceneViewport } from '../scenes';
 import TerminalActionBridge from '../scenes/terminal/TerminalActionBridge';
 import { useApp } from '../hooks/useApp';
@@ -193,16 +194,18 @@ const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({
         >
           <SceneChromeProvider activeSceneId={activeSceneId}>
             <div data-openbitfun-creation-slot="scene-header" />
-            <SceneTopBar
+            <WorkbenchLayout
+              workspacePath={currentWorkspace?.rootPath}
               onMinimize={onMinimize}
               onMaximize={onMaximize}
               onClose={onClose}
               isMaximized={isMaximized}
-            />
-            <SceneViewport
-              workspacePath={currentWorkspace?.rootPath}
-              isEntering={isEntering}
-            />
+            >
+              <SceneViewport paned
+                workspacePath={currentWorkspace?.rootPath}
+                isEntering={isEntering}
+              />
+            </WorkbenchLayout>
             <div data-openbitfun-creation-slot="scene-footer" />
           </SceneChromeProvider>
         </div>

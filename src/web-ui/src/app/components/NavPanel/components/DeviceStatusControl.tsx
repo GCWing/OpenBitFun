@@ -475,28 +475,6 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
             <ScrollArea className="openbitfun-device-overview__scroll">
             <CardBody className="openbitfun-device-overview__body">
               <div className="openbitfun-device-overview__summary" data-testid="nav-device-status-summary">
-                {carouselDeviceIds.length > 1 && (
-                  <div className="openbitfun-device-overview__carousel-controls">
-                    <IconButton
-                      className="openbitfun-device-overview__carousel-button"
-                      variant="quiet" size="sm" shape="circle"
-                      aria-label={t('deviceOverview.previousDevice')}
-                      title={t('deviceOverview.previousDevice')}
-                      icon={<Icon glyph={ChevronLeft} size="sm" />}
-                      disabled={!peerContext || switchingDevice}
-                      onClick={() => { browseDevice(-1); }}
-                    />
-                    <IconButton
-                      className="openbitfun-device-overview__carousel-button"
-                      variant="quiet" size="sm" shape="circle"
-                      aria-label={t('deviceOverview.nextDevice')}
-                      title={t('deviceOverview.nextDevice')}
-                      icon={<Icon glyph={ChevronRight} size="sm" />}
-                      disabled={!peerContext || switchingDevice}
-                      onClick={() => { browseDevice(1); }}
-                    />
-                  </div>
-                )}
                 <div className="openbitfun-device-overview__carousel-viewport">
                   <div className="openbitfun-device-overview__device-scene"
                     ref={artworkRef}
@@ -507,6 +485,28 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
                   </div>
                 </div>
                 <div className="openbitfun-device-overview__device-details">
+                  {carouselDeviceIds.length > 1 && (
+                    <div className="openbitfun-device-overview__carousel-controls">
+                      <IconButton
+                        className="openbitfun-device-overview__carousel-button"
+                        variant="quiet" size="sm" shape="circle"
+                        aria-label={t('deviceOverview.previousDevice')}
+                        title={t('deviceOverview.previousDevice')}
+                        icon={<Icon glyph={ChevronLeft} size="sm" />}
+                        disabled={!peerContext || switchingDevice}
+                        onClick={() => { browseDevice(-1); }}
+                      />
+                      <IconButton
+                        className="openbitfun-device-overview__carousel-button"
+                        variant="quiet" size="sm" shape="circle"
+                        aria-label={t('deviceOverview.nextDevice')}
+                        title={t('deviceOverview.nextDevice')}
+                        icon={<Icon glyph={ChevronRight} size="sm" />}
+                        disabled={!peerContext || switchingDevice}
+                        onClick={() => { browseDevice(1); }}
+                      />
+                    </div>
+                  )}
                   {previewDevices.length > 1 && (
                     <span className="openbitfun-device-overview__pagination" data-testid="nav-device-status-pagination">
                       <span className="openbitfun-device-overview__pagination-index" ref={paginationRef}

@@ -2,75 +2,102 @@
   position: relative;
   z-index: 10;
   align-items: center;
-  // Tabs receive the remaining width; the toolbar gap is also draggable chrome.
-  column-gap: var(--openbitfun-space-2);
   flex: 0 0 var(--openbitfun-layout-toolbar-md-height);
-  // Reclaim the scene surface's left gutter so tabs share the vertical inset.
-  width: calc(100% + var(--openbitfun-space-4));
-  margin-inline-start: calc(0px - var(--openbitfun-space-4));
+  width: 100%;
   min-width: 0;
   height: var(--openbitfun-layout-toolbar-md-height);
   min-block-size: var(--openbitfun-layout-toolbar-md-height);
-  padding-block: 0;
-  // Subtract the tab strip's own one-border-width inline padding.
-  padding-inline-start: calc(
-    (
-      var(--openbitfun-layout-toolbar-md-height)
-      - var(--openbitfun-control-tab-group-item-height-sm)
-      - var(--openbitfun-border-width-default)
-    ) / 2 - var(--openbitfun-border-width-default)
-  );
+  padding: 0;
+  column-gap: 0;
   overflow: visible;
   background: var(--openbitfun-color-surface-scene);
   container-name: scene-top-bar;
   container-type: inline-size;
   user-select: none;
 
-  &:has(.window-controls--windows) {
-    // Extend through the scene surface's right gutter so Close reaches the edge.
-    width: calc(100% + 2 * var(--openbitfun-space-4));
-    padding-inline-end: 0;
+  // Header and body inherit the same resolved/live-drag width from SplitView.
+  &[data-panel-open='true'] {
+    > [data-openbitfun-part='trailing'] { position: relative; grid-column: 3; justify-self: stretch; }
+  }
 
+  &[data-panel-maximized='true'] {
+    grid-template-columns: minmax(0, 1fr);
     > [data-openbitfun-part='trailing'] {
-      align-self: stretch;
+      grid-column: 1;
+      border-start-start-radius: var(--openbitfun-layout-split-view-content-panel-radius);
     }
   }
 
-  &[data-bordered='true'] {
-    &::after {
-      content: '';
-      position: absolute;
-      inset-block-end: calc(0px - var(--openbitfun-border-width-default));
-      width: var(--openbitfun-space-4);
-      height: var(--openbitfun-border-width-default);
-      background: var(--openbitfun-color-border-subtle);
-      pointer-events: none;
+  > [data-openbitfun-part='leading'],
+  > [data-openbitfun-part='trailing'] {
+    box-sizing: border-box;
+    padding-inline: var(--openbitfun-space-2);
+    min-width: 0;
+    height: 100%;
+    gap: var(--openbitfun-space-2);
+
+  }
+
+  // Tint the existing slots themselves, keeping their exact hit bounds and the
+  // shared body divider. Only the two outer top corners are rounded.
+  &[data-tab-drag-active='true'] {
+    .openbitfun-scene-top-bar__panel-divider { visibility: hidden; }
+
+    > [data-openbitfun-part='leading'],
+    > [data-openbitfun-part='trailing'] {
+      background: var(--openbitfun-color-action-neutral-surface);
     }
 
-    &::after {
-      inset-inline-start: 100%;
+    > [data-openbitfun-part='leading'] {
+      border-start-start-radius: var(--openbitfun-layout-split-view-content-panel-radius);
     }
+    > [data-openbitfun-part='trailing'] {
+      border-start-end-radius: var(--openbitfun-layout-split-view-content-panel-radius);
+    }
+
+    &[data-tab-drop-target='leading'] > [data-openbitfun-part='leading'],
+    &[data-tab-drop-target='trailing'] > [data-openbitfun-part='trailing'] {
+      background: var(--openbitfun-color-action-neutral-surface-hover);
+    }
+  }
+
+  &__panel-region,
+  &__panel-tabs {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    gap: var(--openbitfun-space-2);
+  }
+
+  &__panel-divider {
+    position: absolute;
+    inset-inline-start: calc(0px - var(--openbitfun-border-width-default));
+    margin: 0;
+  }
+
+  &:not([data-panel-open='true']) &__panel-divider { display: none; }
+  &:not([data-panel-open='true']):has(.openbitfun-scene-top-bar__actions button, .openbitfun-scene-top-bar__actions [role='button']) &__panel-divider {
+    display: block;
+    position: static;
+  }
+
+  &:has(.window-controls--windows) > [data-openbitfun-part='trailing'] {
+    align-self: stretch;
+    padding-inline-end: 0;
   }
 
   &__actions {
     display: flex;
     align-items: center;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     min-width: 0;
     height: 100%;
-
-    &:empty {
-      display: none;
-    }
+    &:empty { display: none; }
   }
 
-  &__actions-divider {
-    margin-inline-start: var(--openbitfun-space-2);
-  }
-
-  &__actions:empty + &__actions-divider {
-    display: none;
-  }
+  &__actions-divider { margin-inline-start: var(--openbitfun-space-2); }
 
   &__window-controls {
     display: flex;
@@ -78,11 +105,5 @@
     flex: 0 0 auto;
     height: 100%;
     margin-inline-start: var(--openbitfun-space-2);
-  }
-}
-
-@media (forced-colors: active) {
-  .openbitfun-scene-top-bar[data-bordered='true']::after {
-    background: ButtonText;
   }
 }

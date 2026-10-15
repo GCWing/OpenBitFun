@@ -60,8 +60,12 @@ export interface SelectProps
   options: readonly SelectOption[];
   placement?: SelectPlacement;
   placeholder?: string;
+  /** Size the expanded surface to its trigger or the full option labels. */
+  popupWidth?: "trigger" | "content";
   size?: SelectSize;
   value?: SelectValue;
+  /** Fill the available field width or fit the currently selected label. */
+  width?: "full" | "content";
 }
 
 function assignRef<T>(ref: ForwardedRef<T>, value: T | null) {
@@ -140,12 +144,14 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   options,
   placement = "bottom",
   placeholder,
+  popupWidth = "trigger",
   required = false,
   size = "md",
   style,
   tabIndex,
   title,
   value,
+  width = "full",
   ...nativeProps
 }, forwardedRef) {
   const designSystem = useDesignSystem();
@@ -299,7 +305,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   const layout = useAnchoredLayer({
     anchorRef: triggerRef,
     layerRef: popoverRef,
-    matchWidth: true,
+    matchWidth: popupWidth === "trigger",
     open: resolvedOpen,
     overlapAnchor: true,
     placement,
@@ -368,6 +374,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       data-invalid={resolvedInvalid ? "true" : "false"}
       data-placement={layout?.placement ?? placement}
       data-size={size}
+      data-width={popupWidth}
       ref={popoverRef}
       style={layout?.style ?? { position: "fixed", visibility: "hidden" }}
     >
@@ -431,6 +438,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       data-open={resolvedOpen ? "true" : "false"}
       data-placement={layout?.placement ?? placement}
       data-size={size}
+      data-width={width}
       ref={rootRef}
     >
       <select

@@ -156,14 +156,17 @@ describe('SceneBar overflow navigation', () => {
     expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
   });
 
-  it('clears its offer when another drop target stops event bubbling', () => {
+  it('clears its offer after another drop target stops event bubbling', async () => {
     renderSceneBar();
     let transfer!: DataTransfer;
     act(() => { transfer = startSessionTabDrag(); });
     const elsewhere = document.createElement('div');
     document.body.appendChild(elsewhere);
     elsewhere.addEventListener('drop', event => event.stopPropagation());
-    act(() => elsewhere.dispatchEvent(dragEvent('drop', transfer)));
+    await act(async () => {
+      elsewhere.dispatchEvent(dragEvent('drop', transfer));
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
     expect(container.querySelector('[data-openbitfun-part="dropHint"]')).toBeNull();
     expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
     expect(useContentResourceStore.getState().resources).toEqual({});

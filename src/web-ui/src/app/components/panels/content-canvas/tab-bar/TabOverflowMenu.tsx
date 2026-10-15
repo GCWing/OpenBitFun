@@ -169,10 +169,11 @@ export const TabOverflowMenu: React.FC<TabOverflowMenuProps> = ({
       <Tooltip content={tooltipContent} placement="bottom">
         {hasOverflow ? (
           <Button
+            className="canvas-tab-panorama-trigger"
             data-openbitfun-product-component="canvas-tab-overflow"
             data-openbitfun-product-part="trigger"
             size="sm"
-            variant="outline"
+            variant="glass"
             labelBehavior="static"
             aria-label={tooltipContent}
             aria-haspopup="menu"
@@ -187,10 +188,11 @@ export const TabOverflowMenu: React.FC<TabOverflowMenuProps> = ({
           </Button>
         ) : (
           <IconButton
+            className="canvas-tab-panorama-trigger"
             data-openbitfun-product-component="canvas-tab-overflow"
             data-openbitfun-product-part="trigger"
             size="sm"
-            variant="outline"
+            variant="glass"
             aria-label={tooltipContent}
             onClick={handleButtonClick}
             icon={<Icon glyph={LayoutGrid} size="sm" />}

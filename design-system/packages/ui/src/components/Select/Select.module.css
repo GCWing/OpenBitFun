@@ -33,6 +33,11 @@
     --_select-height: var(--openbitfun-control-height-sm);
   }
 
+  .root[data-width="content"] {
+    inline-size: max-content;
+    max-inline-size: 100%;
+  }
+
   .root[data-size="lg"],
   .popover[data-size="lg"] {
     --_select-height: var(--openbitfun-control-height-lg);
@@ -181,6 +186,10 @@
 
   .popover[data-invalid="true"] {
     border-color: var(--openbitfun-color-status-danger-border);
+  }
+
+  .popover[data-width="content"] {
+    inline-size: max-content;
   }
 
   .popover[data-placement="top"] {

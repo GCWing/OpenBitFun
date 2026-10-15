@@ -2,9 +2,12 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import SessionScene from './SessionScene';
-import { sessionPaneLayoutStore } from './sessionPaneLayoutStore';
-import SessionPanelSettingsSection from '../settings/pages/application/SessionPanelSettingsSection';
+import SessionScene from '../scenes/session/SessionScene';
+import WorkbenchLayout from './WorkbenchLayout';
+import { sessionPaneLayoutStore } from '../scenes/session/sessionPaneLayoutStore';
+import SessionPanelSettingsSection from '../scenes/settings/pages/application/SessionPanelSettingsSection';
+import { useSceneStore } from '../stores/sceneStore';
+import { getSessionSceneTabId } from '../components/SceneBar/types';
 
 const mocks = vi.hoisted(() => ({ selectLayout: null as null | ((value: string) => void) }));
 
@@ -16,27 +19,30 @@ vi.mock('@openbitfun/ui', async importOriginal => ({
   },
 }));
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
-vi.mock('../../hooks/useApp', () => ({
+vi.mock('../hooks/useApp', () => ({
   useApp: () => ({ state: { layout: { bottomTerminalPanelCollapsed: true } }, updateBottomTerminalPanelHeight: vi.fn() }),
 }));
-vi.mock('./ChatPane', () => ({ default: () => <textarea data-testid="chat-draft" defaultValue="draft" /> }));
-vi.mock('./AuxPane', () => ({ default: () => <iframe title="Editor" /> }));
-vi.mock('./BottomTerminalPane', () => ({ default: () => null }));
-vi.mock('./sessionPanelLayout', () => ({ collapseSessionBottomTerminalPane: vi.fn(), expandSessionBottomTerminalPane: vi.fn() }));
+vi.mock('../scenes/session/ChatPane', () => ({ default: () => <textarea data-testid="chat-draft" defaultValue="draft" /> }));
+vi.mock('../scenes/session/AuxPane', () => ({ default: () => <iframe title="Editor" /> }));
+vi.mock('../scenes/session/BottomTerminalPane', () => ({ default: () => null }));
+vi.mock('../scenes/session/sessionPanelLayout', () => ({ collapseSessionBottomTerminalPane: vi.fn(), expandSessionBottomTerminalPane: vi.fn() }));
 vi.mock('@/tools/terminal/services/terminalPanelPreferenceService', () => ({
   getCachedTerminalPanelPosition: () => 'right',
   onTerminalPanelPositionChange: () => () => {},
   refreshTerminalPanelPosition: vi.fn(),
 }));
 
+vi.mock('../components/SceneTopBar', () => ({ SceneTopBar: () => <div data-testid="workbench-top-bar" /> }));
+
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-describe('session overlay layout integration', () => {
+describe('workbench pane layout integration', () => {
   let container: HTMLDivElement;
   let root: Root;
   const split = () => container.querySelector<HTMLElement>('[data-openbitfun-component="split-view"][data-openbitfun-part="root"]')!;
 
   beforeEach(() => {
+    useSceneStore.getState().resetForPeerSwitch();
     sessionPaneLayoutStore.setState(sessionPaneLayoutStore.getInitialState());
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
@@ -61,7 +67,7 @@ describe('session overlay layout integration', () => {
     pane.showContent();
     pane.resizeRightPane(600);
     pane.resizeOverlay(700);
-    act(() => root.render(<><SessionScene /><SessionPanelSettingsSection /></>));
+    act(() => root.render(<><WorkbenchLayout><SessionScene /></WorkbenchLayout><SessionPanelSettingsSection /></>));
     const draft = container.querySelector<HTMLTextAreaElement>('[data-testid="chat-draft"]')!;
     const editor = container.querySelector('iframe');
     draft.value = 'unsent edit';
@@ -69,7 +75,6 @@ describe('session overlay layout integration', () => {
     expect(split().style.getPropertyValue('--_split-view-right-size')).toBe('600px');
 
     act(() => mocks.selectLayout!('overlay'));
-    expect(container.querySelector('.openbitfun-session-scene--overlay')).not.toBeNull();
     expect(split().getAttribute('data-layout')).toBe('overlay');
     expect(split().style.getPropertyValue('--_split-view-right-size')).toBe('700px');
     const handle = container.querySelector<HTMLElement>('[role="separator"]')!;
@@ -88,5 +93,42 @@ describe('session overlay layout integration', () => {
     expect(container.querySelector('[data-testid="chat-draft"]')).toBe(draft);
     expect(draft.value).toBe('unsent edit');
     expect(container.querySelector('iframe')).toBe(editor);
+  });
+
+  it('retains the auxiliary view when the main scene changes or the pane is hidden', () => {
+    const pane = sessionPaneLayoutStore.getState();
+    pane.showContent();
+    act(() => root.render(<WorkbenchLayout><main>Conversation</main></WorkbenchLayout>));
+    const editor = container.querySelector('iframe');
+    act(() => root.render(<WorkbenchLayout><main>Document</main></WorkbenchLayout>));
+    expect(container.querySelector('iframe')).toBe(editor);
+    expect(container.querySelector('main')?.textContent).toBe('Document');
+    act(() => pane.hideContent());
+    expect(split().getAttribute('data-mode')).toBe('primary');
+    expect(container.querySelector('iframe')).toBe(editor);
+    act(() => pane.showContent());
+    expect(split().getAttribute('data-mode')).toBe('split');
+    expect(container.querySelector('iframe')).toBe(editor);
+  });
+
+  it.each(['split', 'overlay'] as const)('moves the existing canvas opposite a conversation in %s mode without remounting it', async layout => {
+    const panes = sessionPaneLayoutStore.getState();
+    panes.setDisplayMode(layout);
+    const scenes = useSceneStore.getState();
+    const target = { surfaceId: 'local', workspaceKey: 'project', sessionId: 'session' };
+    const id = getSessionSceneTabId(target);
+    scenes.openSessionScene(target);
+    scenes.revealCanvas();
+    act(() => root.render(<WorkbenchLayout><main /></WorkbenchLayout>));
+    const canvas = container.querySelector('iframe')!;
+    const host = () => canvas.closest('[data-split-surface]')!;
+    expect(host().getAttribute('data-split-surface')).toBe('secondary');
+    await act(async () => { await scenes.moveScene(id, 'secondary'); scenes.revealCanvas(); });
+    expect(container.querySelector('iframe')).toBe(canvas);
+    expect(host().getAttribute('data-split-surface')).toBe('primary');
+    expect(host().getAttribute('data-split-active')).toBe('true');
+    await act(async () => { await scenes.moveScene(id, 'primary'); scenes.revealCanvas(); });
+    expect(container.querySelector('iframe')).toBe(canvas);
+    expect(host().getAttribute('data-split-surface')).toBe('secondary');
   });
 });

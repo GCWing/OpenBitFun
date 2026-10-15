@@ -2,7 +2,7 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SplitView, SplitViewPrimaryDock, type SplitViewProps } from '@openbitfun/ui';
+import { SplitView, SplitViewPrimaryDock, SplitViewSurface, type SplitViewProps } from '@openbitfun/ui';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -61,6 +61,45 @@ describe('shared SplitView interaction contract', () => {
       expect(primary.hidden).toBe(mode === 'secondary'); expect(secondary.hidden).toBe(mode === 'primary');
     }
     expect(changed).not.toHaveBeenCalled();
+  });
+
+  it('shares live resize and clamped geometry with the header', () => {
+    const header: SplitViewProps['header'] = geometry => <div data-testid="aligned-header" className={geometry.columnClassName}>Tabs</div>;
+    render({ header });
+    const headerNode = container.querySelector<HTMLElement>('[data-testid="aligned-header"]')!;
+    expect(headerNode.className).toMatch(/headerColumns/);
+    pointer('pointerdown', 600);
+    pointer('pointermove', 550);
+    act(() => vi.advanceTimersByTime(16));
+    expect(part('root').style.getPropertyValue('--_split-view-right-size')).toBe('450px');
+    expect(container.querySelector('[data-testid="aligned-header"]')).toBe(headerNode);
+    pointer('pointercancel', 550);
+    width = 400;
+    act(() => resized());
+    expect(part('root').style.getPropertyValue('--_split-view-right-size')).toBe('199.5px');
+    render({ header, layout: 'overlay', secondarySide: 'left' });
+    expect(part('root').getAttribute('data-secondary-side')).toBe('left');
+    expect(headerNode.className).toMatch(/headerColumns/);
+  });
+
+  it('moves a stable surface between panes, preserves its DOM and routes F6 to visible surfaces', () => {
+    const surfaces = (pane: 'primary' | 'secondary') => <>
+      <SplitViewSurface key="document" pane={pane}><textarea aria-label="Moving draft" defaultValue="draft" /></SplitViewSurface>
+      <SplitViewSurface key="other" pane={pane === 'primary' ? 'secondary' : 'primary'}><button>Other</button></SplitViewSurface>
+    </>;
+    render({ primary: null, secondary: null, header: <header>Tabs</header>, surfaces: surfaces('primary') });
+    const draft = container.querySelector('textarea')!;
+    draft.value = 'unsaved';
+    render({ primary: null, secondary: null, header: <header>Tabs</header>, surfaces: surfaces('secondary') });
+    expect(container.querySelector('textarea')).toBe(draft);
+    expect(draft.value).toBe('unsaved');
+    expect(draft.closest('[data-split-surface]')?.getAttribute('data-split-surface')).toBe('secondary');
+    draft.focus();
+    key(draft, 'F6');
+    expect(document.activeElement?.getAttribute('data-split-surface')).toBe('primary');
+    render({ mode: 'primary', primary: null, secondary: null, surfaces: surfaces('secondary') });
+    expect(draft.closest<HTMLElement>('[data-split-surface]')!.hidden).toBe(true);
+    expect(draft.closest('[data-split-surface]')?.hasAttribute('inert')).toBe(true);
   });
 
   it('uses the same physical resize directions on either side and associates the actual right pane', () => {

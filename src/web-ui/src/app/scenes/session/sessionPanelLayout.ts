@@ -1,12 +1,16 @@
+import { useSceneStore } from '../../stores/sceneStore';
 import { appManager } from '../../services/AppManager';
-import { selectSessionPaneMode, sessionPaneLayoutStore } from './sessionPaneLayoutStore';
+import { sessionPaneLayoutStore } from './sessionPaneLayoutStore';
+import { selectedSessionTab, tabPane } from '../../workbench/scenePaneModel';
 
-/** Explicit, synchronous layout writes remain safe when open requests repeat. */
+/** Canvas reveal shares the workbench's draft guard and navigation transaction. */
 export function expandSessionAuxPane(): void {
-  sessionPaneLayoutStore.getState().showContent();
+  useSceneStore.getState().revealCanvas();
 }
 
 export function collapseSessionAuxPane(): void {
+  const scenes = useSceneStore.getState();
+  if (scenes.canvasPane !== 'secondary' || scenes.openTabs.some(tab => tab.pane === 'secondary')) return;
   sessionPaneLayoutStore.getState().collapseEmptyContent();
 }
 
@@ -17,7 +21,8 @@ export function hideSessionAuxPane(): void {
 
 export function expandSessionBottomTerminalPane(height: number): void {
   const panes = sessionPaneLayoutStore.getState();
-  if (selectSessionPaneMode(panes) === 'content-only') panes.restoreSplit();
+  const session = selectedSessionTab(useSceneStore.getState());
+  panes.revealPanes([session ? tabPane(session) : 'primary']);
   appManager.updateLayout({
     bottomTerminalPanelHeight: height,
     bottomTerminalPanelCollapsed: false,

@@ -34,6 +34,7 @@ export interface AuxPaneRef {
 
 interface AuxPaneProps {
   workspacePath?: string;
+  externalToolbar?: boolean;
   isSceneActive?: boolean;
   terminalResizeSuspended?: boolean;
   isFullscreen?: boolean;
@@ -41,7 +42,7 @@ interface AuxPaneProps {
 }
 
 const AuxPane = forwardRef<AuxPaneRef, AuxPaneProps>(
-  ({ workspacePath, isSceneActive = true, terminalResizeSuspended = false, isFullscreen = false, onToggleFullscreen }, ref) => {
+  ({ workspacePath, externalToolbar = false, isSceneActive = true, terminalResizeSuspended = false, isFullscreen = false, onToggleFullscreen }, ref) => {
     const { t } = useI18n('components');
     const activeSessionId = useSyncExternalStore(
       flowChatStore.subscribe.bind(flowChatStore),
@@ -154,6 +155,7 @@ const AuxPane = forwardRef<AuxPaneRef, AuxPaneProps>(
     return (
       <div data-openbitfun-component="aux-pane" data-openbitfun-part="root" className="openbitfun-aux-pane">
         <ContentCanvas
+          externalToolbar={externalToolbar}
           workspacePath={workspacePath}
           mode="agent"
           isSceneActive={isSceneActive}

@@ -74,6 +74,8 @@ export interface SceneTabDef {
 /** Runtime instance of an open scene. */
 export interface SceneTab {
   id: SceneTabId;
+  /** Legacy tabs without a location open in the primary pane. */
+  pane?: 'primary' | 'secondary';
   session?: SessionSceneTarget;
   /** Reference to content state; the tab never owns an editor buffer. */
   contentId?: string;

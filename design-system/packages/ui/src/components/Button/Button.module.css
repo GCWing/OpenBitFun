@@ -90,6 +90,17 @@
     --_button-border-active: transparent;
   }
 
+  /* GlassAction owns the material, including contrast/transparency fallbacks. */
+  .button[data-openbitfun-variant="glass"] {
+    --_button-border: transparent;
+    --_button-border-hover: transparent;
+    --_button-border-active: transparent;
+  }
+
+  .button[data-openbitfun-variant="glass"]::before {
+    content: none;
+  }
+
   .button[data-openbitfun-variant="primary"] {
     --_button-background: var(--openbitfun-component-button-primary-background);
     --_button-background-hover: var(--openbitfun-component-button-primary-background-hover);

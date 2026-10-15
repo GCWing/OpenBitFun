@@ -7,6 +7,7 @@
 
 import { SCENE_TAB_REGISTRY, getMiniAppSceneDef, getSceneDef } from '../scenes/registry';
 import type { SceneTabDef, SceneTabId } from '../components/SceneBar/types';
+import { selectedScene, tabPane, type WorkbenchPane } from '../workbench/scenePaneModel';
 import { useSceneStore } from '../stores/sceneStore';
 import { useMiniAppStore } from '../scenes/miniapps/miniAppStore';
 import { pickLocalizedString } from '../scenes/miniapps/utils/pickLocalizedString';
@@ -17,6 +18,7 @@ export interface UseSceneManagerReturn {
   openTabs: ReturnType<typeof useSceneStore.getState>['openTabs'];
   activeTabId: ReturnType<typeof useSceneStore.getState>['activeTabId'];
   pendingTabId: ReturnType<typeof useSceneStore.getState>['pendingTabId'];
+  paneSelections: ReturnType<typeof useSceneStore.getState>['paneSelections'];
   navigationMotion: ReturnType<typeof useSceneStore.getState>['navigationMotion'];
   navigationSequence: ReturnType<typeof useSceneStore.getState>['navigationSequence'];
   tabDefs: SceneTabDef[];
@@ -25,11 +27,12 @@ export interface UseSceneManagerReturn {
   closeScene: (id: SceneTabId) => void | Promise<void>;
 }
 
-export function useSceneManager(): UseSceneManagerReturn {
+export function useSceneManager(pane?: WorkbenchPane): UseSceneManagerReturn {
   const {
     openTabs,
     activeTabId,
     pendingTabId,
+    paneSelections,
     navigationMotion,
     navigationSequence,
     activateScene,
@@ -59,9 +62,10 @@ export function useSceneManager(): UseSceneManagerReturn {
     .map(tab => ({ ...getSceneDef('session')!, id: tab.id }));
 
   return {
-    openTabs,
-    activeTabId,
-    pendingTabId,
+    openTabs: pane ? openTabs.filter(tab => tabPane(tab) === pane) : openTabs,
+    activeTabId: pane ? selectedScene(paneSelections[pane]) : activeTabId,
+    pendingTabId: !pane || openTabs.some(tab => tab.id === pendingTabId && tabPane(tab) === pane) ? pendingTabId : null,
+    paneSelections,
     navigationMotion,
     navigationSequence,
     tabDefs: [...SCENE_TAB_REGISTRY, ...sessionDefs, ...miniAppDefs, ...contentDefs],

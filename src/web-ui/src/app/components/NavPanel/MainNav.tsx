@@ -7,15 +7,8 @@
  *   3. Unified Sessions (all or grouped by project / assistant)
  */
 
-import React, { useCallback, useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import React, { Suspense, useCallback, useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import {
-  Button,
-  Dialog,
-  DialogBody,
-  DialogClose,
-  DialogHeader,
-  DialogHeading,
-  DialogTitle,
   OverflowText,
   Icon,
   IconButton,
@@ -25,10 +18,9 @@ import {
   NavigationPanelContent,
   NavigationPanelHeader,
   NavigationPanelItem,
-  ScrollArea,
   Tooltip,
 } from '@openbitfun/ui';
-import { FolderOpen, FolderPlus, House, Server } from 'lucide-react';
+import { FolderPlus, House } from 'lucide-react';
 // import { PanelsTopLeft } from 'lucide-react'; // temporarily hidden: Pages nav entry
 import { useSceneManager } from '../../hooks/useSceneManager';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
@@ -43,10 +35,14 @@ import { workspaceManager } from '@/infrastructure/services/business/workspaceMa
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { createLogger } from '@/shared/utils/logger';
 import { isRemoteWorkspace } from '@/shared/types';
-import { getRecentWorkspaceLineParts } from '@/shared/utils/recentWorkspaceDisplay';
 import { useSSHRemoteContext, SSHConnectionDialog, RemoteFileBrowser } from '@/features/ssh-remote';
 import { openGlobalSearch } from '@/app/global-search/globalSearchStore';
 import { activateProductAction } from '@/app/global-search/productActionActivator';
+import { createProject, type ProjectDraft, type ProjectFolder } from '@/app/services/createProject';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { useNurseryStore } from '@/app/scenes/profile/nurseryStore';
+import { RetainedMountBoundary } from '@/shared/presence';
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import {
   getGlobalSearchShortcutLabel,
   splitGlobalSearchShortcutLabel,
@@ -56,16 +52,31 @@ import {
 import './NavPanel.scss';
 
 const log = createLogger('MainNav');
+const NewProjectDialog = lazyWithRecovery(() =>
+  import('../NewProjectDialog').then(module => ({ default: module.NewProjectDialog }))
+);
 
 const MainNav: React.FC = () => {
   const sshRemote = useSSHRemoteContext();
+  const sshRemoteRef = useRef(sshRemote);
+  sshRemoteRef.current = sshRemote;
   const [isSSHConnectionDialogOpen, setIsSSHConnectionDialogOpen] = useState(false);
+  const remoteHostResolver = useRef<((host: NonNullable<ProjectFolder['remote']> | null) => void) | null>(null);
 
   useEffect(() => {
     if (sshRemote.showFileBrowser) {
       setIsSSHConnectionDialogOpen(false);
+      if (remoteHostResolver.current && sshRemote.connectionId) {
+        remoteHostResolver.current({
+          connectionId: sshRemote.connectionId,
+          connectionName: sshRemote.connectionConfig?.name || sshRemote.connectionId,
+          sshHost: sshRemote.connectionConfig?.host,
+        });
+        remoteHostResolver.current = null;
+        sshRemote.setShowFileBrowser(false);
+      }
     }
-  }, [sshRemote.showFileBrowser]);
+  }, [sshRemote]);
 
   const { openScene } = useSceneManager();
   const activeTabId = useSceneStore(s => s.activeTabId);
@@ -84,9 +95,7 @@ const MainNav: React.FC = () => {
   const {
     currentWorkspace,
     loading: workspaceLoading,
-    recentWorkspaces,
     openedWorkspacesList,
-    switchWorkspace,
   } = useWorkspaceContext();
 
   useMiniAppCatalogSync({
@@ -97,51 +106,91 @@ const MainNav: React.FC = () => {
   const sectionsScrollRef = useRef<HTMLDivElement | null>(null);
   const sessionContentRef = useRef<HTMLDivElement | null>(null);
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
+  const [remoteFolderTarget, setRemoteFolderTarget] = useState<ProjectFolder | null>(null);
+  const remoteFolderResolver = useRef<((folder: ProjectFolder | null) => void) | null>(null);
+
+  const finishRemoteFolderPick = useCallback((folder: ProjectFolder | null) => {
+    remoteFolderResolver.current?.(folder);
+    remoteFolderResolver.current = null;
+    setRemoteFolderTarget(null);
+  }, []);
+
+  useEffect(() => {
+    if (!isSSHConnectionDialogOpen && !sshRemote.showFileBrowser && !remoteFolderTarget) {
+      finishRemoteFolderPick(null);
+      remoteHostResolver.current?.(null);
+      remoteHostResolver.current = null;
+    }
+  }, [isSSHConnectionDialogOpen, sshRemote.showFileBrowser, remoteFolderTarget, finishRemoteFolderPick]);
+
+  useEffect(() => () => {
+    remoteFolderResolver.current?.(null);
+    remoteHostResolver.current?.(null);
+  }, []);
+
+  const handleSelectRemoteHost = useCallback(() => new Promise<NonNullable<ProjectFolder['remote']> | null>(resolve => {
+    const remote = sshRemoteRef.current;
+    if (remote.isConnected && remote.connectionId) {
+      resolve({
+        connectionId: remote.connectionId,
+        connectionName: remote.connectionConfig?.name || remote.connectionId,
+        sshHost: remote.connectionConfig?.host,
+      });
+      return;
+    }
+    remoteHostResolver.current = resolve;
+    setIsSSHConnectionDialogOpen(true);
+  }), []);
+
+  const handlePickRemoteFolder = useCallback((existing?: ProjectFolder) => new Promise<ProjectFolder | null>(resolve => {
+    remoteFolderResolver.current = resolve;
+    if (existing?.remote) setRemoteFolderTarget(existing);
+    else setIsSSHConnectionDialogOpen(true);
+  }), []);
+
+  const handleConfirmProject = useCallback((draft: ProjectDraft) => createProject(draft, async folder => {
+    const remote = sshRemoteRef.current;
+    if (folder.remote?.connectionId !== remote.connectionId) {
+      throw new Error(t('newProject.remoteConnectionChanged'));
+    }
+    if (!(await remote.openWorkspace(folder.path))) {
+      // A cancelled rebind returns to this draft, not the provider's standalone picker.
+      remote.setShowFileBrowser(false);
+      return null;
+    }
+    const workspace = workspaceManager.getState().currentWorkspace;
+    if (!workspace) throw new Error(t('newProject.errorCreateFailed'));
+    return workspace;
+  }), [t]);
 
   const closeWorkspaceDialog = useCallback(() => {
     setWorkspaceDialogOpen(false);
   }, []);
 
-  const openWorkspaceDialog = useCallback(async () => {
-    setWorkspaceDialogOpen(true);
-    try {
-      await workspaceManager.cleanupInvalidWorkspaces();
-    } catch (error) {
-      log.warn('Failed to cleanup invalid workspaces while opening workspace dialog', { error });
-    }
-  }, []);
+  const openWorkspaceDialog = useCallback(() => setWorkspaceDialogOpen(true), []);
 
-  const handleOpenProject = useCallback(async () => {
-    try {
-      await activateProductAction('project.open', { t });
-    } catch (err) {
-      log.error('Failed to open project', err);
-    }
-  }, [t]);
-
-  const handleNewProject = useCallback(() => {
-    void activateProductAction('project.new');
-  }, []);
-
-  const handleOpenAssistantManager = useCallback(() => {
-    closeWorkspaceDialog();
+  const handleCreateAssistant = useCallback(async () => {
+    const scope = getActiveSurfaceScope();
+    const workspace = await workspaceManager.createAssistantWorkspace();
+    scope.assertCurrent('open newly created assistant');
+    useNurseryStore.getState().openAssistant(workspace.id);
     openScene('assistant');
-  }, [closeWorkspaceDialog, openScene]);
-
-  const handleSwitchWorkspace = useCallback(async (workspaceId: string) => {
-    const targetWorkspace = recentWorkspaces.find(item => item.id === workspaceId);
-    if (!targetWorkspace) return;
-    closeWorkspaceDialog();
-    await switchWorkspace(targetWorkspace);
-  }, [closeWorkspaceDialog, recentWorkspaces, switchWorkspace]);
-
-  const handleOpenRemoteSSH = useCallback(() => {
-    closeWorkspaceDialog();
-    setIsSSHConnectionDialogOpen(true);
-  }, [closeWorkspaceDialog]);
+  }, [openScene]);
 
   const handleSelectRemoteWorkspace = useCallback(async (path: string) => {
     try {
+      if (remoteFolderResolver.current) {
+        const remote = remoteFolderTarget?.remote ?? (sshRemote.connectionId ? {
+          connectionId: sshRemote.connectionId,
+          connectionName: sshRemote.connectionConfig?.name || sshRemote.connectionId,
+          sshHost: sshRemote.connectionConfig?.host,
+        } : undefined);
+        if (!remote) return;
+        finishRemoteFolderPick({ path, remote });
+        sshRemote.setShowFileBrowser(false);
+        setIsSSHConnectionDialogOpen(false);
+        return;
+      }
       if (!(await sshRemote.openWorkspace(path))) {
         return;
       }
@@ -150,7 +199,7 @@ const MainNav: React.FC = () => {
     } catch (err) {
       log.error('Failed to open remote workspace', err);
     }
-  }, [sshRemote]);
+  }, [sshRemote, remoteFolderTarget, finishRemoteFolderPick]);
 
   const handleOpenTodos = useCallback(() => {
     void activateProductAction('surface.todos.open');
@@ -284,112 +333,36 @@ const MainNav: React.FC = () => {
       </NavigationPanelBody>
     </NavigationPanel>
 
-      <Dialog
-        open={workspaceDialogOpen}
-        onOpenChange={closeWorkspaceDialog}
-        size="md"
-        data-testid="nav-workspace-dialog"
-      >
-        <DialogHeader>
-          <DialogHeading>
-            <DialogTitle>{addSessionGroupTooltip}</DialogTitle>
-          </DialogHeading>
-          <DialogClose aria-label={t('actions.close')} />
-        </DialogHeader>
-        <DialogBody className="openbitfun-nav-panel__workspace-dialog-body">
-          <div className="openbitfun-nav-panel__workspace-dialog-actions">
-            <Button
-              leadingIcon={<Icon glyph={FolderOpen} size="sm" />}
-              variant="fill"
-              onClick={() => { closeWorkspaceDialog(); void handleOpenProject(); }}
-            >
-              {t('header.openProject')}
-            </Button>
-            <Button
-              leadingIcon={<Icon glyph={FolderPlus} size="sm" />}
-              variant="fill"
-              onClick={() => { closeWorkspaceDialog(); handleNewProject(); }}
-            >
-              {t('header.newProject')}
-            </Button>
-            <Button
-              leadingIcon={<Icon name="user" size="sm" />}
-              variant="fill"
-              onClick={handleOpenAssistantManager}
-              data-testid="nav-session-group-add-assistant"
-            >
-              {t('nav.workspaces.actions.newAssistant')}
-            </Button>
-            <Button
-              leadingIcon={<Icon glyph={Server} size="sm" />}
-              variant="fill"
-              onClick={handleOpenRemoteSSH}
-            >
-              {t('ssh.remote.connect')}
-            </Button>
-          </div>
-          <section className="openbitfun-nav-panel__workspace-dialog-recent" aria-label={t('header.recentWorkspaces')}>
-            <h3 className="openbitfun-nav-panel__workspace-dialog-heading">
-              {t('header.recentWorkspaces')}
-            </h3>
-            <ScrollArea className="openbitfun-nav-panel__workspace-dialog-workspaces">
-              <div className="openbitfun-nav-panel__workspace-dialog-list">
-                {recentWorkspaces.length === 0 ? (
-                  <div className="openbitfun-nav-panel__workspace-dialog-empty">
-                    {t('header.noRecentWorkspaces')}
-                  </div>
-                ) : (
-                  recentWorkspaces.map((workspace) => {
-                    const { hostPrefix, folderLabel, tooltip } = getRecentWorkspaceLineParts(workspace);
-                    const isCurrent = workspace.id === currentWorkspace?.id;
-                    return (
-                      <Button
-                        key={workspace.id}
-                        className="openbitfun-nav-panel__workspace-dialog-item"
-                        variant={isCurrent ? 'fill' : 'text'}
-                        labelBehavior="static"
-                        leadingIcon={<Icon glyph={FolderOpen} size="sm" />}
-                        trailingIcon={isCurrent ? <Icon name="check-line" size="xs" /> : undefined}
-                        aria-current={isCurrent ? 'true' : undefined}
-                        onClick={() => { void handleSwitchWorkspace(workspace.id); }}
-                        title={tooltip}
-                        data-testid="nav-workspace-menu-recent-workspace"
-                        data-workspace-id={workspace.id}
-                      >
-                        <span className="openbitfun-nav-panel__workspace-dialog-item-main">
-                          {hostPrefix ? (
-                            <>
-                              <OverflowText className="openbitfun-nav-panel__workspace-dialog-item-host">{hostPrefix}</OverflowText>
-                              <span className="openbitfun-nav-panel__workspace-dialog-item-host-sep" aria-hidden>
-                                ·
-                              </span>
-                            </>
-                          ) : null}
-                          <OverflowText className="openbitfun-nav-panel__workspace-dialog-item-name">{folderLabel}</OverflowText>
-                        </span>
-                      </Button>
-                    );
-                  })
-                )}
-              </div>
-            </ScrollArea>
-          </section>
-        </DialogBody>
-      </Dialog>
+      <RetainedMountBoundary present={workspaceDialogOpen}>
+        <Suspense fallback={null}>
+          <NewProjectDialog
+            isOpen={workspaceDialogOpen}
+            onClose={closeWorkspaceDialog}
+            onConfirm={handleConfirmProject}
+            onPickRemoteFolder={handlePickRemoteFolder}
+            onSelectRemoteHost={handleSelectRemoteHost}
+            onCreateAssistant={handleCreateAssistant}
+            defaultParentPath={currentWorkspace && !isRemoteWorkspace(currentWorkspace) ? currentWorkspace.rootPath : undefined}
+            data-testid="nav-workspace-dialog"
+          />
+        </Suspense>
+      </RetainedMountBoundary>
 
       {/* SSH Remote Dialogs */}
       <SSHConnectionDialog
         open={isSSHConnectionDialogOpen}
         onClose={() => setIsSSHConnectionDialogOpen(false)}
       />
-      {sshRemote.showFileBrowser && sshRemote.connectionId && (
+      {!remoteHostResolver.current && (remoteFolderTarget?.remote || (sshRemote.showFileBrowser && sshRemote.connectionId)) && (
         <RemoteFileBrowser
-          connectionId={sshRemote.connectionId}
-          initialPath={sshRemote.remoteFileBrowserInitialPath}
+          connectionId={remoteFolderTarget?.remote?.connectionId || sshRemote.connectionId!}
+          initialPath={remoteFolderTarget?.path || sshRemote.remoteFileBrowserInitialPath}
           homePath={sshRemote.remoteFileBrowserInitialPath}
           selectDirectoriesOnly
           onSelect={handleSelectRemoteWorkspace}
           onCancel={() => {
+            const wasSelectingFolder = Boolean(remoteFolderResolver.current);
+            finishRemoteFolderPick(null);
             const hasActiveRemoteWorkspace =
               Boolean(sshRemote.remoteWorkspace) ||
               openedWorkspacesList.some(workspace =>
@@ -397,7 +370,7 @@ const MainNav: React.FC = () => {
                 workspace.connectionId === sshRemote.connectionId
               );
             sshRemote.setShowFileBrowser(false);
-            if (!hasActiveRemoteWorkspace) {
+            if (!wasSelectingFolder && !hasActiveRemoteWorkspace) {
               void sshRemote.disconnect();
             }
           }}
