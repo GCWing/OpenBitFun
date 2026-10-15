@@ -108,6 +108,14 @@ pnpm run check:core-boundaries
 Other capability-specific target names remain in `Cargo.toml`; document a new
 command here only when it becomes a recurring owner workflow.
 
+For workspace instruction family selection, non-empty fallback, and local/port
+resolution parity:
+
+```bash
+cargo test --locked -p openbitfun-services-core --no-default-features --features workspace-instructions --test declarative_workspace_instruction_contracts
+cargo test --locked -p openbitfun-services-core --no-default-features --features workspace-instructions,workspace-runtime --test workspace_instruction_contracts
+```
+
 ## Offline-compatible storage formats
 
 workspace-persistence owns workspace records and registry validation;

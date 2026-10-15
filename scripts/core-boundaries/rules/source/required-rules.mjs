@@ -272,8 +272,12 @@ export const requiredContentRules = [
       'services-core workspace instruction owner must keep local and declarative discovery behavior contracts',
     patterns: [
       {
-        regex: /\bworkspace_instruction_files_reads_agents_then_claude_and_skips_empty_files\b/,
+        regex: /\bworkspace_instruction_families_select_agents_then_claude_then_opencode\b/,
         message: 'missing workspace instruction owner behavior regression',
+      },
+      {
+        regex: /\bworkspace_instruction_override_skips_empty_files_and_suppresses_claude\b/,
+        message: 'missing non-empty workspace instruction override regression',
       },
       {
         regex: /\bopencode_project_instructions_support_local_files_and_globs_only\b/,

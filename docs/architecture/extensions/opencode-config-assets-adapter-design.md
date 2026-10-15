@@ -231,13 +231,22 @@ OpenCode adapter 在来源发现、解析和审批前不 import module、不读�
 来源语义：先选 `$XDG_CONFIG_HOME/opencode/AGENTS.md`（默认 `~/.config/opencode/AGENTS.md`），不存在时回退
 `~/.claude/CLAUDE.md`；再按 `config.json`、`opencode.json`、`opencode.jsonc` 顺序合并，后出现的 `instructions`
 数组覆盖前者。最终数组支持 workspace 相对、`~/`、绝对本地精确文件和有界 glob；HTTP/HTTPS 项直接拒绝，不下载、
-缓存或探测网络。Product Assembly 依次合成 OpenCode、Codex、Claude Code 用户来源，再追加项目来源，并按 canonical path
-保留首项。非递归 glob 只遍历模式所需层级；递归 glob 超出固定扫描预算时只跳过该项，保留此前已读取的用户来源。
+缓存或探测网络。Product Assembly 依次合成 OpenCode、OpenBitFun 原生或 Codex、Claude Code 用户来源，再追加项目来源，并按 canonical path
+保留首项。OpenBitFun 从既有 product home（默认 `~/.openbitfun`，遵循 `OPENBITFUN_HOME`）读取 `AGENTS.md`：非空时跳过
+整个 Codex 用户指令来源，缺失或仅含空白时回退 Codex 原有的 override/base 选择。原生文件读取失败时隔离该来源、记录诊断并禁止缓存，
+不静默替换成 Codex 指令；下次消息重试。来源目录复用同一选择逻辑，原生来源标记为 `openbitfun`。
+非递归 glob 只遍历模式所需层级；递归 glob 超出固定扫描预算时只跳过该项，保留此前已读取的用户来源。
 用户与项目来源最终进入模型前还共享既有 256 文件、2 MiB 渲染上限，避免两个独立来源预算叠加扩大固定提示词。
 
 Workspace Instructions owner 继续读取项目根 `opencode.json`、`opencode.jsonc`、`.opencode/opencode.json` 和
-`.opencode/opencode.jsonc` 中的 `instructions` 数组，只接受工作区内相对精确文件与 glob，确定性排序后追加到既有
-项目 `AGENTS`/Claude 来源之后。Remote 只执行这条端口可见的项目路径，不读取控制端的用户目录。文件变更不启动
+`.opencode/opencode.jsonc` 中的 `instructions` 数组，只接受工作区内相对精确文件与 glob，并确定性排序。
+项目来源按 `AGENTS > Claude > OpenCode` 选择唯一指令族：AGENTS 在 `AGENTS.override.md`、`AGENTS.md` 中选首个非空文件；
+Claude 在 `CLAUDE.md`、`.claude/CLAUDE.md` 中选首个非空文件，再追加 `CLAUDE.local.md` 与 `.claude/rules/**/*.md`。
+不存在或仅含空白的文件不阻断回退；Claude 仅有 local 或 path-scoped rule 时也算有效指令族。选中上层后不再读取下层族，
+包括下层无效配置的诊断；启动上下文、来源目录和条件规则延迟激活共用该选择，避免 `Read` 后重新混入已被 AGENTS 屏蔽的 Claude 规则。
+Product Assembly 同时关闭 OpenCode 用户读取器的自动项目配置发现，避免该兼容入口重新混入被屏蔽的项目 `instructions`；
+全局配置中用户显式指定的工作区相对路径仍按原语义解析。
+Remote 只执行这条端口可见的项目路径，不读取控制端的用户目录。文件变更不启动
 watcher；用户通过统一的 `/reload instructions`（或默认 `/reload`）失效当前 Session 的 `UserContext` 缓存，下一条
 消息重新读取。用户生态失败不会吞掉项目 instructions，但会阻止本次 user context 写入缓存，因而下一条消息自动重试。
 

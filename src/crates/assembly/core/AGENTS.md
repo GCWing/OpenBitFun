@@ -368,6 +368,13 @@ For configured OpenCode discovery and explicit skill loading, include their owne
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,external-sources --lib agentic::tools::implementations::skill
 ```
 
+For native/Codex user-instruction selection, source catalog consistency, and
+local versus remote instruction composition:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features external-sources,git --lib instruction_
+```
+
 Detached Dispatch controller, target query compatibility, and managed-baseline checks:
 
 ```bash

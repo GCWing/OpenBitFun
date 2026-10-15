@@ -21,6 +21,9 @@ pub struct OpenCodeInstructionSourceOptions {
     pub config: OpenCodeLocalConfigOptions,
     pub home_dir: Option<PathBuf>,
     pub workspace_root: Option<PathBuf>,
+    /// Controls project config discovery independently of relative user paths.
+    /// Product Assembly disables it when another project instruction family wins.
+    pub include_project_config: bool,
     pub display_root: String,
 }
 
@@ -42,6 +45,7 @@ impl OpenCodeInstructionSourceOptions {
             config: OpenCodeLocalConfigOptions::from_environment(),
             home_dir,
             workspace_root: None,
+            include_project_config: true,
             display_root,
         }
     }
@@ -77,7 +81,9 @@ pub fn load_opencode_user_instructions(
     }
 
     let mut configured_instructions = None;
-    for item in local_source_plan(&options.config, options.workspace_root.as_deref(), None) {
+    let mut discovery_config = options.config.clone();
+    discovery_config.project_config_enabled &= options.include_project_config;
+    for item in local_source_plan(&discovery_config, options.workspace_root.as_deref(), None) {
         let LocalSourcePlanItem::Config(document) = item else {
             continue;
         };
@@ -396,8 +402,42 @@ mod tests {
             },
             home_dir,
             workspace_root,
+            include_project_config: true,
             display_root: "$XDG_CONFIG_HOME/opencode".to_string(),
         }
+    }
+
+    #[test]
+    fn suppressed_project_config_keeps_user_relative_instruction_resolution() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config = temp.path().join("config");
+        let workspace = temp.path().join("workspace");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::create_dir_all(workspace.join(".opencode")).unwrap();
+        std::fs::write(config.join("AGENTS.md"), "User OpenCode rules").unwrap();
+        std::fs::write(
+            config.join("opencode.json"),
+            r#"{"instructions":["guide.md"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            workspace.join("guide.md"),
+            "User configured workspace guide",
+        )
+        .unwrap();
+        std::fs::write(workspace.join("opencode.json"), "invalid project config").unwrap();
+        std::fs::write(
+            workspace.join(".opencode/opencode.json"),
+            "invalid directory config",
+        )
+        .unwrap();
+        let mut options = source_options(config, None, Some(workspace));
+        options.include_project_config = false;
+
+        let files = load_opencode_user_instructions(&options).expect("user sources only");
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].content, "User OpenCode rules");
+        assert_eq!(files[1].content, "User configured workspace guide");
     }
 
     #[test]

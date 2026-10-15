@@ -122,6 +122,10 @@ Product-source boundary:
 - This crate must not depend on Codex, Claude Code, or another ecosystem adapter.
   New ecosystems are sibling adapters registered by Product Assembly, not modes of
   this adapter.
+- `OpenCodeInstructionSourceOptions::include_project_config` lets Product Assembly
+  suppress automatic project config discovery after selecting another instruction
+  family. Keep user-configured relative paths resolved against the workspace;
+  this switch must not change `OPENCODE_DISABLE_PROJECT_CONFIG` path semantics.
 - Production crates must not depend on `openbitfun_opencode_adapter` internals.
   Unsupported capabilities must return diagnostics or typed unsupported states
   instead of failing at runtime on external plugin content.
@@ -136,6 +140,7 @@ native import; OpenBitFun source suppression and revision fencing still apply.
 
 ## Verification
 
+- `cargo test --locked -p openbitfun-opencode-adapter --lib instruction_source::tests::`
 - `cargo test -p openbitfun-opencode-adapter --test opencode_source_adapter`
 - `cargo test -p openbitfun-opencode-adapter --test opencode_mcp_adapter`
 - `cargo test -p openbitfun-opencode-adapter --test opencode_static_source_contracts opencode_command_adapter::`

@@ -72,6 +72,28 @@ const MODULES = [
 
 const TEST_ROOT = join('C:', 'repo');
 
+test('workspace instruction owner requires family priority and non-empty fallback regressions', async () => {
+  const rule = requiredContentRules.find(
+    rule => rule.path === 'src/crates/services/services-core/tests/declarative_workspace_instruction_contracts.rs',
+  );
+  assert.ok(rule);
+  const source = await readFile(new URL(`../${rule.path}`, import.meta.url), 'utf8');
+  const accepts = text => rule.patterns.every(({ regex }) => regex.test(text));
+  assert.ok(accepts(source));
+
+  for (const name of [
+    'workspace_instruction_families_select_agents_then_claude_then_opencode',
+    'workspace_instruction_override_skips_empty_files_and_suppresses_claude',
+    'opencode_project_instructions_support_local_files_and_globs_only',
+  ]) {
+    assert.ok(!accepts(source.replace(name, 'removed_regression')), `must require ${name}`);
+  }
+  assert.ok(!accepts(source.replace(
+    'workspace_instruction_families_select_agents_then_claude_then_opencode',
+    'workspace_instruction_files_reads_agents_then_claude_and_skips_empty_files',
+  )));
+});
+
 test('builtin agent catalog requires the GeneralPurpose fast model default', () => {
   const rule = requiredContentRules.find(
     rule => rule.path === 'src/crates/execution/agent-runtime/src/agents.rs'
