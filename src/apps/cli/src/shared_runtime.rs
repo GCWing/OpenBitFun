@@ -1966,6 +1966,7 @@ mod tests {
             success: Some(true),
             finish_reason: None,
             has_final_response: Some(true),
+            background_delivery: None,
         };
         route_agent_event(&completed, "parent-session", &routes);
         assert_eq!(routes.lock().expect("routes").len(), 2);

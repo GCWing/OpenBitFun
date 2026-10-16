@@ -33,6 +33,14 @@ export interface SessionTitleGeneratedEvent {
   timestamp: number;
 }
 
+/** One-sentence next-input suggestion offered after a completed turn. */
+export interface PromptSuggestionEvent {
+  sessionId: string;
+  /** Not `turnId`: the hint must not be treated as a write to the settled turn. */
+  sourceTurnId: string;
+  suggestion: string;
+}
+
 export interface SessionModelFallbackAppliedEvent {
   sessionId: string;
   previousModelId: string;
@@ -1463,6 +1471,10 @@ export class AgentAPI {
    
   onDialogTurnCompleted(callback: (event: AgenticEvent) => void): () => void {
     return api.listen<AgenticEvent>('agentic://dialog-turn-completed', callback);
+  }
+
+  onPromptSuggestion(callback: (event: PromptSuggestionEvent) => void): () => void {
+    return api.listen<PromptSuggestionEvent>('agentic://prompt-suggestion', callback);
   }
 
   onUserSteeringInjected(

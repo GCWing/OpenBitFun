@@ -684,6 +684,12 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
         ),
         option(
             "setting.workspace.session",
+            "prompt-suggestion",
+            boolean(),
+            merge_config("app.ai_experience", &["enable_prompt_suggestion"]),
+        ),
+        option(
+            "setting.workspace.session",
             "workspace-search",
             boolean(),
             merge_config("app.ai_experience", &["enable_workspace_search"]),

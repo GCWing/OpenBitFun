@@ -377,6 +377,30 @@
     user-select: none;
   }
 
+  &__prompt-suggestion {
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-control-flow-chat-inline-gap);
+  }
+
+  &__prompt-suggestion-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__prompt-suggestion-hint {
+    flex-shrink: 0;
+    padding-inline: var(--openbitfun-space-1);
+    font-family: inherit;
+    font-size: var(--openbitfun-type-flow-support-font-size);
+    font-weight: var(--openbitfun-type-label-sm-font-weight);
+    letter-spacing: var(--openbitfun-type-modifier-tracking-subtle-letter-spacing);
+    color: var(--openbitfun-color-content-muted);
+    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    border-radius: var(--openbitfun-radius-sm);
+  }
+
   // In multi-line card mode: align to top of text area
   &--multi-line &__placeholder {
     padding-top: 1px;

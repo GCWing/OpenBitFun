@@ -283,10 +283,35 @@ impl<'a> BrowserActions<'a> {
             .client
             .send("Page.navigate", Some(json!({ "url": url })))
             .await?;
+        if let Some(error) = result
+            .get("errorText")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+        {
+            return Err(OpenBitFunError::tool(format!(
+                "[NOT_AVAILABLE] Navigation to {url} failed: {error}\nHints: Inspect the current page and the URL before trying another navigation."
+            )));
+        }
+        if result.get("isDownload").and_then(Value::as_bool) == Some(true) {
+            return Ok(
+                json!({ "success": true, "url": url, "loaded": false, "is_download": true,
+                "warning": "The URL started a download; it did not load a document." }),
+            );
+        }
         let frame_id = result
             .get("frameId")
             .and_then(|v| v.as_str())
             .map(str::to_string);
+
+        // CDP omits loaderId for same-document navigation (for example a
+        // fragment). That transition emits no new load event.
+        if self.client.capabilities().raw_cdp && result.get("loaderId").is_none() {
+            let ready = self.evaluate("document.readyState === 'complete'").await?;
+            if ready.pointer("/result/value").and_then(Value::as_bool) == Some(true) {
+                return Ok(json!({ "success": true, "url": url, "frameId": frame_id,
+                    "loaded": true, "same_document": true }));
+            }
+        }
 
         // Wait for the matching "load" lifecycle event (or "DOMContentLoaded"
         // as an early signal). Capped at ~15s so a hung page eventually
@@ -924,6 +949,7 @@ impl<'a> BrowserActions<'a> {
                     // a real `Page.lifecycleEvent` subscription. Lifecycle
                     // event names per CDP: `load`, `DOMContentLoaded`,
                     // `networkIdle`, `firstMeaningfulPaint`, etc.
+                    let mut events = self.client.subscribe_events();
                     let _ = self.client.send("Page.enable", None).await;
                     let _ = self
                         .client
@@ -932,7 +958,32 @@ impl<'a> BrowserActions<'a> {
                             Some(json!({ "enabled": true })),
                         )
                         .await;
-                    let mut events = self.client.subscribe_events();
+                    // The page may already have reached the condition before
+                    // this call (especially after host.open). Observe current
+                    // state after subscribing, so neither case loses a load.
+                    // Native WebViews expose load completion, not network idle.
+                    let native_load = self.client.target_kind() == "builtin";
+                    if cond != "networkidle" || native_load {
+                        let state = if cond == "domcontentloaded" {
+                            "document.readyState !== 'loading'"
+                        } else {
+                            "document.readyState === 'complete'"
+                        };
+                        let expression = if native_load {
+                            format!("({state}) && location.href !== 'about:blank'")
+                        } else {
+                            state.to_string()
+                        };
+                        let current = self.evaluate(&expression).await?;
+                        if current.pointer("/result/value").and_then(Value::as_bool) == Some(true) {
+                            return Ok(
+                                json!({ "success": true, "action": "wait", "condition": cond,
+                                    "already_satisfied": true, "timeout_ms": timeout_ms,
+                                    "approximation": if native_load && cond == "networkidle" { Some("native_load_finished") } else { None },
+                                }),
+                            );
+                        }
+                    }
                     let wanted: &[&str] = match cond {
                         "networkidle" => &["networkIdle"],
                         "domcontentloaded" => &["DOMContentLoaded", "load"],
@@ -951,6 +1002,7 @@ impl<'a> BrowserActions<'a> {
                         "lifecycle_event": lifecycle_event,
                         "timed_out": timed_out,
                         "timeout_ms": timeout_ms,
+                        "approximation": if native_load && cond == "networkidle" { Some("native_load_finished") } else { None },
                     }));
                 }
                 selector => {
@@ -1037,44 +1089,35 @@ impl<'a> BrowserActions<'a> {
         };
 
         let full_page_supported = self.client.capabilities().full_page_screenshot;
-        if full_page && full_page_supported {
-            if let Ok(metrics) = self.client.send("Page.getLayoutMetrics", None).await {
-                let size = metrics
-                    .get("cssContentSize")
-                    .or_else(|| metrics.get("contentSize"));
-                if let Some(size) = size {
-                    let width = size
-                        .get("width")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0)
-                        .ceil() as u64;
-                    let height = size
-                        .get("height")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0)
-                        .ceil() as u64;
-                    if width > 0 && height > 0 {
-                        let _ = self
-                            .client
-                            .send(
-                                "Emulation.setDeviceMetricsOverride",
-                                Some(json!({
-                                    "mobile": false,
-                                    "width": width,
-                                    "height": height,
-                                    "deviceScaleFactor": 1,
-                                })),
-                            )
-                            .await;
-                    }
-                }
-            }
+        if full_page && !full_page_supported {
+            return Err(coded_tool_error(ErrorCode::NotAvailable,
+                "Full-page capture requires an external browser. Use viewport capture on the built-in page."));
         }
-
         let mut params = json!({
             "format": normalized,
             "fromSurface": from_surface,
         });
+        if full_page {
+            let metrics = self.client.send("Page.getLayoutMetrics", None).await?;
+            let size = metrics
+                .get("cssContentSize")
+                .or_else(|| metrics.get("contentSize"));
+            let width = size.and_then(|v| v["width"].as_f64()).unwrap_or(0.0).ceil();
+            let height = size
+                .and_then(|v| v["height"].as_f64())
+                .unwrap_or(0.0)
+                .ceil();
+            if width <= 0.0 || height <= 0.0 {
+                return Err(coded_tool_error(
+                    ErrorCode::NotAvailable,
+                    "Browser returned no full-page dimensions",
+                ));
+            }
+            // Capture the document region without changing viewport/emulation
+            // state or triggering responsive layout and resize side effects.
+            params["captureBeyondViewport"] = json!(true);
+            params["clip"] = json!({"x":0,"y":0,"width":width,"height":height,"scale":1});
+        }
         if normalized == "jpeg" {
             params["quality"] = json!(quality.unwrap_or(80).min(100));
         }
@@ -1082,27 +1125,19 @@ impl<'a> BrowserActions<'a> {
             .client
             .send("Page.captureScreenshot", Some(params))
             .await?;
-        if full_page && full_page_supported {
-            let _ = self
-                .client
-                .send("Emulation.clearDeviceMetricsOverride", None)
-                .await;
-        }
         let data = result.get("data").and_then(|v| v.as_str()).unwrap_or("");
+        if data.is_empty() {
+            return Err(coded_tool_error(
+                ErrorCode::NotAvailable,
+                "Browser screenshot returned no image data.",
+            ));
+        }
         Ok(json!({
             "success": true,
             "action": "screenshot",
             "format": normalized,
             "full_page": full_page && full_page_supported,
             "full_page_requested": full_page,
-            "warning": if full_page && !full_page_supported {
-                Value::String(format!(
-                    "full-page capture is not available for the {} browser target; captured the visible viewport",
-                    self.client.target_kind()
-                ))
-            } else {
-                Value::Null
-            },
             "data_length": data.len(),
             "base64_data": data,
             "data_url": format!("data:image/{};base64,{}", normalized, data),
@@ -1311,8 +1346,15 @@ impl<'a> BrowserActions<'a> {
             .get("result")
             .and_then(|r| r.get("value"))
             .and_then(|v| v.as_str())
-            .unwrap_or("{}");
-        let parsed: Value = serde_json::from_str(raw).unwrap_or(json!({}));
+            .ok_or_else(|| {
+                coded_tool_error(ErrorCode::Internal, "Browser fetch returned no response")
+            })?;
+        let parsed: Value = serde_json::from_str(raw).map_err(|error| {
+            coded_tool_error(
+                ErrorCode::Internal,
+                format!("Invalid browser fetch response: {error}"),
+            )
+        })?;
         Ok(json!({ "success": parsed.get("error").is_none(), "action": "fetch", "result": parsed }))
     }
 
@@ -1528,6 +1570,127 @@ mod shared_target_tests {
                 "Input.dispatchMouseEvent",
             ]
         );
+    }
+
+    struct NavigationClient {
+        events: broadcast::Sender<BrowserAutomationEvent>,
+        calls: Mutex<Vec<String>>,
+        navigation: Value,
+        screenshot_fails: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl BrowserAutomationClient for NavigationClient {
+        async fn send(&self, method: &str, _: Option<Value>) -> OpenBitFunResult<Value> {
+            self.calls.lock().unwrap().push(method.to_string());
+            match method {
+                "Page.navigate" => Ok(self.navigation.clone()),
+                "Runtime.evaluate" => Ok(json!({"result":{"value":true}})),
+                "Page.getLayoutMetrics" => {
+                    Ok(json!({"cssContentSize":{"width":800,"height":2000}}))
+                }
+                "Page.captureScreenshot" if self.screenshot_fails => {
+                    Err(OpenBitFunError::tool("capture failed"))
+                }
+                "Page.captureScreenshot" => Ok(json!({"data":""})),
+                _ => Ok(json!({})),
+            }
+        }
+        fn subscribe_events(&self) -> broadcast::Receiver<BrowserAutomationEvent> {
+            self.events.subscribe()
+        }
+        fn is_connected(&self) -> bool {
+            true
+        }
+        fn capabilities(&self) -> BrowserAutomationCapabilities {
+            BrowserAutomationCapabilities::cdp()
+        }
+        fn target_kind(&self) -> &'static str {
+            "external"
+        }
+    }
+
+    fn navigation_client(navigation: Value) -> NavigationClient {
+        NavigationClient {
+            events: broadcast::channel(8).0,
+            calls: Mutex::new(Vec::new()),
+            navigation,
+            screenshot_fails: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn navigation_failure_does_not_wait_or_claim_success() {
+        let client = navigation_client(json!({"errorText":"net::ERR_NAME_NOT_RESOLVED"}));
+        let result = tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            BrowserActions::new(&client).navigate("https://invalid.example"),
+        )
+        .await
+        .unwrap();
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("ERR_NAME_NOT_RESOLVED"));
+        assert_eq!(
+            client
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|m| *m == "Page.navigate")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn download_and_same_document_navigation_do_not_wait_for_a_missing_load_event() {
+        let download = navigation_client(json!({"isDownload":true}));
+        let result = BrowserActions::new(&download)
+            .navigate("https://example.com/download")
+            .await
+            .unwrap();
+        assert_eq!(result["loaded"], false);
+        assert_eq!(result["is_download"], true);
+        let fragment = navigation_client(json!({"frameId":"main"}));
+        let result = tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            BrowserActions::new(&fragment).navigate("https://example.com/#section"),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(result["same_document"], true);
+    }
+
+    #[tokio::test]
+    async fn load_wait_observes_already_loaded_page_instead_of_timing_out() {
+        let client = navigation_client(json!({}));
+        let result = BrowserActions::new(&client)
+            .wait(None, Some("load"), Some(10))
+            .await
+            .unwrap();
+        assert_eq!(result["success"], true);
+        assert_eq!(result["already_satisfied"], true);
+    }
+
+    #[tokio::test]
+    async fn failed_full_page_capture_does_not_mutate_viewport_and_empty_image_is_an_error() {
+        let mut client = navigation_client(json!({}));
+        client.screenshot_fails = true;
+        assert!(BrowserActions::new(&client)
+            .screenshot_with_options_ext("png", None, true, true)
+            .await
+            .is_err());
+        assert!(!client
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|method| method.starts_with("Emulation.")));
+        let empty = navigation_client(json!({}));
+        assert!(BrowserActions::new(&empty).screenshot().await.is_err());
     }
 }
 

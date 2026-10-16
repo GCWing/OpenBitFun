@@ -634,6 +634,9 @@ pub struct AIExperienceConfig {
     /// Whether built-in commit workflows add OpenBitFun as a Git co-author.
     #[serde(default = "default_true")]
     pub enable_git_commit_coauthor: bool,
+    /// Whether a completed interactive turn offers a one-sentence next-input suggestion.
+    #[serde(default = "default_true")]
+    pub enable_prompt_suggestion: bool,
 }
 
 fn default_quick_actions() -> Vec<AiExperienceQuickAction> {
@@ -916,16 +919,10 @@ impl Default for SubagentModelDefaultsConfig {
     fn default() -> Self {
         Self {
             default_selection: default_subagent_model_selection(),
-            builtin: HashMap::from([
-                (
-                    "GeneralPurpose".to_string(),
-                    SubagentModelSelection::fixed("primary"),
-                ),
-                (
-                    "ResearchSpecialist".to_string(),
-                    SubagentModelSelection::Inherit,
-                ),
-            ]),
+            builtin: HashMap::from([(
+                "ResearchSpecialist".to_string(),
+                SubagentModelSelection::Inherit,
+            )]),
             fork: SubagentModelSelection::Inherit,
         }
     }
@@ -1970,6 +1967,7 @@ impl Default for AIExperienceConfig {
             voice_input: VoiceInputConfig::default(),
             quick_actions: default_quick_actions(),
             enable_git_commit_coauthor: true,
+            enable_prompt_suggestion: true,
         }
     }
 }
@@ -2272,6 +2270,28 @@ mod tests {
         let opted_out: super::AIExperienceConfig =
             serde_json::from_value(persisted.clone()).unwrap();
         assert!(!opted_out.enable_git_commit_coauthor);
+        assert_eq!(serde_json::to_value(opted_out).unwrap(), persisted);
+    }
+
+    #[test]
+    fn prompt_suggestion_defaults_on_for_legacy_settings_and_preserves_opt_out() {
+        let legacy = serde_json::json!({
+            "enable_session_title_generation": false,
+            "enable_git_commit_coauthor": false
+        });
+        let settings: super::AIExperienceConfig = serde_json::from_value(legacy).unwrap();
+        assert!(settings.enable_prompt_suggestion);
+        assert!(!settings.enable_session_title_generation);
+
+        let mut persisted = serde_json::to_value(settings).unwrap();
+        assert_eq!(
+            persisted["enable_prompt_suggestion"],
+            serde_json::json!(true)
+        );
+        persisted["enable_prompt_suggestion"] = serde_json::json!(false);
+        let opted_out: super::AIExperienceConfig =
+            serde_json::from_value(persisted.clone()).unwrap();
+        assert!(!opted_out.enable_prompt_suggestion);
         assert_eq!(serde_json::to_value(opted_out).unwrap(), persisted);
     }
 
@@ -3268,7 +3288,7 @@ mod tests {
                 .subagents
                 .builtin
                 .get("GeneralPurpose"),
-            Some(&SubagentModelSelection::fixed("primary"))
+            None
         );
         assert_eq!(
             config
@@ -3389,22 +3409,65 @@ mod tests {
     }
 
     #[test]
-    fn general_purpose_uses_primary_unless_explicitly_overridden() {
+    fn general_purpose_uses_shared_default_unless_explicitly_overridden() {
         let mut defaults = AgentModelDefaultsConfig::default();
 
         assert_eq!(
             defaults.builtin_subagent_selection("GeneralPurpose"),
-            SubagentModelSelection::fixed("primary")
+            SubagentModelSelection::fixed("fast")
+        );
+
+        defaults.subagents.default_selection = SubagentModelSelection::Inherit;
+        assert_eq!(
+            defaults.builtin_subagent_selection("GeneralPurpose"),
+            SubagentModelSelection::Inherit
         );
 
         defaults.subagents.builtin.insert(
             "GeneralPurpose".to_string(),
-            SubagentModelSelection::fixed("fast"),
+            SubagentModelSelection::fixed("primary"),
         );
         assert_eq!(
             defaults.builtin_subagent_selection("GeneralPurpose"),
-            SubagentModelSelection::fixed("fast")
+            SubagentModelSelection::fixed("primary")
         );
+    }
+
+    #[test]
+    fn general_purpose_legacy_model_defaults_preserve_explicit_selections() {
+        for payload in [
+            serde_json::json!({}),
+            serde_json::json!({"subagents": {}}),
+            serde_json::json!({"subagents": {"builtin": {}}}),
+        ] {
+            let defaults: AgentModelDefaultsConfig = serde_json::from_value(payload).unwrap();
+            assert!(!defaults.subagents.builtin.contains_key("GeneralPurpose"));
+            assert_eq!(
+                defaults.builtin_subagent_selection("GeneralPurpose"),
+                SubagentModelSelection::fixed("fast")
+            );
+        }
+
+        for selection in [
+            SubagentModelSelection::fixed("primary"),
+            SubagentModelSelection::fixed("custom-model"),
+            SubagentModelSelection::Inherit,
+        ] {
+            let payload = serde_json::json!({
+                "subagents": {"builtin": {"GeneralPurpose": selection}}
+            });
+            let defaults: AgentModelDefaultsConfig = serde_json::from_value(payload).unwrap();
+            assert_eq!(
+                defaults.builtin_subagent_selection("GeneralPurpose"),
+                selection
+            );
+            let reloaded: AgentModelDefaultsConfig =
+                serde_json::from_value(serde_json::to_value(defaults).unwrap()).unwrap();
+            assert_eq!(
+                reloaded.builtin_subagent_selection("GeneralPurpose"),
+                selection
+            );
+        }
     }
 
     #[test]

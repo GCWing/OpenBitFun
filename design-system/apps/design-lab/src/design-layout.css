@@ -1,3 +1,32 @@
+/* IBM Plex Mono, latin subset, as served by openbitfun.com. The product site sets both body and
+   display to it, so the homepage follows; CJK still falls back to the platform sans below. */
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/ibm-plex-mono-latin-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./assets/fonts/ibm-plex-mono-latin-500.woff2") format("woff2");
+}
+
+/* The reference site ships 400 and 500 only. The Lab needs one real bolder cut for the
+   homepage headline, so 600 (SemiBold, the same OFL 1.1 family) is self-hosted here
+   rather than letting the browser synthesise a fake bold from 400. */
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/ibm-plex-mono-latin-600.woff2") format("woff2");
+}
+
 /* The site shell uses the same theme, density and control contracts as its specimens. */
 :root[data-openbitfun-design-system-root] {
   color-scheme: light;
@@ -12,8 +41,40 @@
 
 .lab-shell {
   --_lab-topbar-height: var(--openbitfun-space-16);
-  --_lab-section-height: calc(var(--openbitfun-control-tab-group-item-height) + var(--openbitfun-space-4));
-  --_lab-content-width: 1360px;
+  /* Shell width cap. Measured off the reference product sites: 1440 viewport, page content
+     1248 wide, 96 clear on each side. The box is the cap plus the page's own 24px inner
+     padding, so a wide viewport grows the margins instead of stretching the page. */
+  --_lab-content-width: 1296px;
+  /* One margin system for the whole shell. Every page sits in the same centred column with the same
+     two side margins; the topbar's wordmark, the rail and the pages all measure from that column,
+     so no page can drift away from the homepage. A page that carries a rail takes the rail's width
+     out of its own column instead of widening the shell. */
+  --_lab-column-inset: max(0px, calc((100% - var(--_lab-content-width)) / 2));
+  /* The section navigation is a left rail rather than a horizontal tab row. It is pinned at the
+     column's edge plus the page's own inner padding, so its first item lines up with the wordmark
+     above it and the page copy beside it. */
+  --_lab-rail-width: 216px;
+  --_lab-rail-inset: calc(var(--_lab-column-inset) + var(--openbitfun-space-6));
+  /* The component directory is a long column of names and it lives in the rail, so the section that
+     owns it gets the width the page's own index column used to hold. */
+  --_lab-rail-width-directory: 256px;
+  /* Shell language follows the reference product sites: soft rounded containers on a plain canvas,
+     hairlines for structure, and the design system's own sans label voice instead of a mono one. */
+  --_lab-rule: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  /* The product site is monospace-first: body, display and labels all resolve to IBM Plex Mono,
+     with the platform CJK sans taking over the characters the latin subset does not cover.
+     Lab chrome adopts it; component instances keep the design system's published type roles. */
+  --_lab-font: "IBM Plex Mono", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", "Hiragino Sans GB", sans-serif;
+  --_lab-label-font: var(--_lab-font);
+  /* The product site's wordmark lockup (25px / 500 / -0.05em / leading 1). The site's own value, not
+     a design-system role; defined once so the topbar and the homepage footer cannot drift apart. */
+  --_lab-wordmark-size: 25px;
+  --_lab-wordmark-weight: var(--openbitfun-font-weight-medium);
+  --_lab-wordmark-tracking: -0.05em;
+  --_lab-wordmark-leading: 1;
+  --_lab-radius-surface: var(--openbitfun-radius-lg);
+  --_lab-radius-inset: var(--openbitfun-radius-md);
+  --_lab-radius-control: var(--openbitfun-radius-md);
   display: block;
   min-height: 100dvh;
   color: var(--openbitfun-color-content-primary);
@@ -24,7 +85,49 @@
   line-height: var(--openbitfun-type-body-md-line-height);
 }
 .lab-shell [hidden] { display: none !important; }
+/* Product-site typography belongs to the shell; previews retain their published type roles. */
+.lab-shell .lab-page.design-home,
+.lab-topbar,
+.design-home-slogan {
+  font-family: var(--_lab-font);
+}
+/* Both brand lockups share the shell's typography, with spacing and color owned locally. */
+.design-wordmark-link,
+.design-home-footer-wordmark {
+  font-size: var(--_lab-wordmark-size);
+  font-weight: var(--_lab-wordmark-weight);
+  letter-spacing: var(--_lab-wordmark-tracking);
+  line-height: var(--_lab-wordmark-leading);
+}
+/* Keep the full-bleed footer aligned with the shell column at every viewport width. */
+.design-home-footer {
+  inline-size: 100vw;
+  margin-inline: calc(50% - 50vw);
+  padding-inline: max(var(--openbitfun-space-6), calc((100vw - var(--_lab-content-width)) / 2 + var(--openbitfun-space-6)));
+}
+/* The homepage's closing band is the one block that leaves the centred column and runs edge to edge
+   (see .design-home-footer). Where the platform reserves space for a scrollbar, 100vw is wider than
+   what is visible, so the band is clipped instead of widening the document. clip is not a scroll
+   container: the sticky topbar still pins to the viewport. */
+.lab-shell[data-page="overview"] { overflow-x: clip; }
 .lab-workspace, .lab-content { min-width: 0; }
+/* Two columns on every page that has a section level: the rail, then the page. The topbar spans
+   both, so the bar keeps its own width and padding; pages without a section level (the
+   homepage) keep the single centred column they were designed on. */
+.lab-workspace { display: grid; grid-template-columns: minmax(0, 1fr); }
+.lab-workspace > .lab-topbar { grid-column: 1 / -1; }
+.lab-shell[data-section-navigation] .lab-workspace {
+  /* Rail gutter, rail, page, then the same gutter again on the right, so a rail page ends where the
+     homepage ends instead of running to the window edge. */
+  grid-template-columns: calc(var(--_lab-rail-inset) + var(--_lab-rail-width)) minmax(0, 1fr) var(--_lab-column-inset);
+}
+.lab-shell[data-section-navigation] .lab-workspace > .design-secondary-navigation { grid-column: 1; grid-row: 2; }
+.lab-shell[data-section-navigation] .lab-workspace > .lab-content { grid-column: 2; grid-row: 2; }
+/* The component library is the one section whose tree is a long list of names, so its rail takes the
+   directory width instead of the default one. */
+.lab-shell:is([data-page="components"], [data-page="component"], [data-page="mobile"], [data-page="flow-chat"]) {
+  --_lab-rail-width: var(--_lab-rail-width-directory);
+}
 .lab-topbar {
   position: sticky;
   top: 0;
@@ -33,68 +136,143 @@
   align-items: center;
   gap: var(--openbitfun-space-6);
   min-height: var(--_lab-topbar-height);
-  padding: var(--openbitfun-space-2) max(var(--openbitfun-space-6), calc((100% - var(--_lab-content-width)) / 2 + var(--openbitfun-space-6)));
+  padding: var(--openbitfun-space-2) calc(var(--_lab-column-inset) + var(--openbitfun-space-6));
   background: var(--openbitfun-color-surface-canvas);
 }
+/* The brand lockup is copied from the product site's header, to the pixel: the 28px app mark,
+   a 12px gap, then the name in the site's own 25px/500 mono with -0.05em tracking. The Lab bar
+   is shorter than that header, so the wordmark carries more presence here than the 13px
+   navigation beside it — that contrast is the site's own hierarchy, not an accident. */
 .design-wordmark-link {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: var(--openbitfun-space-2);
+  gap: var(--openbitfun-space-3);
   color: var(--openbitfun-color-content-primary);
   text-decoration: none;
-  white-space: nowrap;
-  font-family: var(--openbitfun-type-label-lg-font-family);
-  font-size: var(--openbitfun-type-label-lg-font-size);
-  font-weight: var(--openbitfun-type-label-selected-font-weight);
 }
-.design-wordmark-suffix { color: var(--openbitfun-color-content-secondary); font-weight: var(--openbitfun-type-body-md-font-weight); }
+/* The app mark is silver artwork on a transparent canvas. The site flattens it to solid ink in
+   its light header; the Lab does the same, and lifts it back for the dark theme. */
+.design-app-mark { filter: brightness(0); }
+:root[data-openbitfun-design-system-root][data-color-scheme="dark"] .design-app-mark { filter: brightness(0) invert(1); }
 .design-primary-navigation, .design-secondary-navigation { display: flex; align-items: center; gap: var(--openbitfun-control-tab-group-gap); }
 .design-primary-navigation { flex: 1; }
+/* The section level of the site used to be a horizontal tab row under the topbar. It reads as
+   the top of the left column instead: one rail, always in the same place, mirroring the page's
+   own index beneath it. It stays a nav of real links, so nothing about routing changes. */
 .design-secondary-navigation {
-  max-width: var(--_lab-content-width);
-  min-height: var(--_lab-section-height);
-  margin-inline: auto;
-  padding: var(--openbitfun-space-2) var(--openbitfun-space-6);
-  overflow-x: auto;
+  position: sticky;
+  top: var(--_lab-topbar-height);
+  align-self: start;
+  z-index: calc(var(--openbitfun-layer-sticky) - 1);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  /* The rail holds the viewport it is pinned in, so a route branch that carries a long list scrolls
+     inside the rail instead of pushing the sibling routes off the screen. */
+  max-height: calc(100dvh - var(--_lab-topbar-height));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  /* Pinned to the column's edge plus the page's own padding, measured by the grid column it sits in
+     rather than by its own box, so the rail's first item lines up with the wordmark above it. */
+  justify-self: end;
+  width: var(--_lab-rail-width);
+  padding: var(--openbitfun-space-6) var(--openbitfun-space-4) var(--openbitfun-space-10) 0;
 }
-/* Routes remain real links; their geometry and states follow TabGroup. */
+/* Routes remain real links; the shell squares them off and marks the active route with a rule. */
 .design-primary-navigation a, .design-secondary-navigation a {
+  position: relative;
   display: inline-flex;
   flex: none;
   align-items: center;
   min-height: var(--openbitfun-control-tab-group-item-height);
   padding: var(--openbitfun-space-component-block) var(--openbitfun-control-tab-group-item-padding-inline);
   border: var(--openbitfun-border-width-default) solid transparent;
-  border-radius: var(--openbitfun-control-tab-group-item-radius);
+  border-radius: var(--_lab-radius-control);
   color: var(--openbitfun-color-content-secondary);
   background: transparent;
-  font-family: var(--openbitfun-type-label-md-font-family);
+  font-family: var(--_lab-label-font);
   font-size: var(--openbitfun-type-label-md-font-size);
-  font-weight: var(--openbitfun-type-label-md-font-weight);
-  line-height: var(--openbitfun-type-label-md-line-height);
+  font-weight: var(--openbitfun-font-weight-regular);
+  line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
+  letter-spacing: var(--openbitfun-type-modifier-tracking-subtle-letter-spacing);
   text-decoration: none;
   white-space: nowrap;
-  transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard), color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 }
+/* A stacked link takes the page index's own rhythm: control height, tighter inline padding, and
+   the active route marked by the same inset bar the index uses. */
+.design-secondary-navigation a {
+  min-height: var(--openbitfun-control-height-md);
+  padding: var(--openbitfun-space-2);
+}
+/* The component library is the shell's front door, so it is the one route that wears the mark: the
+   row keeps its own fill and rhythm and the logo only takes the right edge. */
+.design-secondary-navigation .design-navigation-library {
+  justify-content: space-between;
+  gap: var(--openbitfun-space-3);
+}
+/* The rail is a tree, not a row of siblings: a route's own chapters hang directly under it, one
+   step indented and one step quieter. Both levels are the same list, so the page never draws a
+   second index of itself beside the one the shell already has. */
+.design-navigation-chapters {
+  display: grid;
+  gap: 0;
+  margin: 0 0 var(--openbitfun-space-2);
+  padding: 0;
+  list-style: none;
+}
+.design-secondary-navigation .design-navigation-chapters a {
+  min-height: var(--openbitfun-control-height-sm);
+  padding-inline-start: var(--openbitfun-space-6);
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--openbitfun-type-label-sm-font-size);
+}
+/* The active route is a filled surface, never a stroke: same treatment and same token the
+   component library's own TabGroup uses for its selected tab, so a nav highlight and a tab
+   highlight read as the same material. */
 .design-primary-navigation a[aria-current], .design-secondary-navigation a[aria-current] {
   color: var(--openbitfun-color-content-primary);
   background: var(--openbitfun-color-selection-surface);
-  font-weight: var(--openbitfun-type-label-selected-font-weight);
+  font-weight: var(--openbitfun-font-weight-semibold);
 }
-.design-primary-navigation a:hover, .design-secondary-navigation a:hover { color: var(--openbitfun-color-content-primary); background: var(--openbitfun-color-action-neutral-surface-hover); }
+/* The group parent is the open branch, so it does not take a second filled row: the fill marks the
+   chapter being read, and two stacked fills would read as one heavy block. Declared after the
+   route fill so an open branch wins it. */
+.design-secondary-navigation a[data-group] {
+  background: transparent;
+  color: var(--openbitfun-color-content-primary);
+}
+.design-primary-navigation a:hover, .design-secondary-navigation a:hover { color: var(--openbitfun-color-content-primary); }
 .lab-topbar-actions { display: flex; align-items: center; gap: var(--openbitfun-space-2); margin-inline-start: auto; }
+/* The top-level nav is centred on the topbar itself rather than on whatever slack is left
+   between the wordmark and the actions, so it holds the bar's centre as those clusters change
+   width. Only the topbar copy — the same nav is stacked inside the mobile sheet, where it has
+   to stay in flow. */
+.lab-topbar > .lab-navigation {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  flex: none;
+  translate: -50% -50%;
+}
 .lab-navigation-trigger { display: none; }
 .lab-search-trigger { flex: none; }
-.lab-search-shortcut { margin-inline-start: var(--openbitfun-space-4); }
 .lab-search-dialog, .lab-settings-form { display: flex; flex-direction: column; gap: var(--openbitfun-space-4); }
 .lab-search-options { max-height: min(55dvh, 32rem); }
 .lab-settings-field { display: grid; gap: var(--openbitfun-space-2); }
 .lab-settings-field > span:first-child { color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-label-md-font-size); }
 .lab-mobile-navigation { display: flex; flex-direction: column; gap: var(--openbitfun-space-6); }
-.lab-mobile-navigation :is(.design-primary-navigation, .design-secondary-navigation) { display: flex; flex-direction: column; align-items: stretch; margin: 0; padding: 0; }
+/* Inside the sheet the same navs are the sheet's own stacked list, not a sticky rail, and nothing
+   is bounded or clipped: the sheet body does the scrolling. */
+.lab-mobile-navigation :is(.design-primary-navigation, .design-secondary-navigation) { display: flex; flex-direction: column; align-items: stretch; width: auto; margin: 0; padding: 0; position: static; z-index: auto; max-height: none; overflow: visible; }
+/* In the sheet the list is unbounded, so the directory moves behind the routes: a drawer keeps its
+   destinations within reach instead of burying them under 129 rows. */
+.lab-mobile-navigation .design-navigation-index { flex: none; order: 1; }
+.lab-mobile-navigation .design-library-list { overflow: visible; }
 .lab-page { width: 100%; max-width: var(--_lab-content-width); padding: var(--openbitfun-space-8) var(--openbitfun-space-6) var(--openbitfun-space-12); margin-inline: auto; }
-.page-heading { display: grid; gap: var(--openbitfun-space-3); max-width: 52rem; margin-bottom: var(--openbitfun-space-6); }
+.page-heading { display: grid; gap: var(--openbitfun-space-3); max-width: 52rem; padding-bottom: var(--openbitfun-space-4); margin-bottom: var(--openbitfun-space-6); }
 .page-heading--split > div:first-child { display: grid; min-width: 0; gap: var(--openbitfun-space-3); }
 .lab-shell :is(.page-heading, .component-detail-heading, .colors-heading-copy, .guide-hero, .brand-gallery-heading) h1 {
   margin: 0;
@@ -106,67 +284,68 @@
   overflow-wrap: anywhere;
 }
 .page-kicker {
-  color: var(--openbitfun-color-content-muted);
-  font-family: var(--openbitfun-type-label-sm-font-family);
-  font-size: var(--openbitfun-type-label-sm-font-size);
-  font-weight: var(--openbitfun-type-label-sm-font-weight);
-  line-height: var(--openbitfun-type-label-sm-line-height);
-  letter-spacing: var(--openbitfun-type-label-sm-letter-spacing);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--openbitfun-space-3);
+  color: var(--openbitfun-color-content-caption);
+  font-family: var(--_lab-label-font);
+  font-size: var(--openbitfun-type-label-xs-font-size);
+  font-weight: var(--openbitfun-font-weight-regular);
+  line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
+  letter-spacing: var(--openbitfun-type-modifier-tracking-wide-letter-spacing);
   text-transform: none;
 }
+.page-kicker-index { color: var(--openbitfun-color-content-primary); font-weight: var(--openbitfun-font-weight-semibold); font-variant-numeric: tabular-nums; }
 .lab-shell :is(.page-heading, .component-detail-heading, .colors-heading-copy, .guide-hero) p { margin: 0; max-width: 46rem; color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-md-font-size); line-height: var(--openbitfun-type-body-md-line-height); }
 .design-brand-page p, .design-foundation-section p, .design-component-usage p, .design-component-tokens p { color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-md-font-size); line-height: var(--openbitfun-type-body-md-line-height); }
-.design-component-card h2 a { display: flex; gap: var(--openbitfun-space-3); align-items: center; justify-content: space-between; color: inherit; text-decoration: none; }
-.design-component-card h2 a::after { content: ""; position: absolute; inset: 0; border-radius: var(--openbitfun-radius-lg); }
+.design-component-card :is(h2, h3) a { display: flex; gap: var(--openbitfun-space-3); align-items: center; justify-content: space-between; color: inherit; text-decoration: none; }
+.design-component-card :is(h2, h3) a::after { content: ""; position: absolute; inset: 0; border-radius: var(--_lab-radius-surface); }
 .design-catalog-search { display: flex; gap: var(--openbitfun-space-5); align-items: center; margin-bottom: var(--openbitfun-space-4); }
 .design-catalog-search > :first-child { flex: 1; max-width: 34rem; }
 .design-catalog-search > span:last-child { color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); white-space: nowrap; }
-.design-catalog-filters { display: flex; gap: var(--openbitfun-space-5); flex-wrap: wrap; padding-block: var(--openbitfun-space-3); margin-bottom: var(--openbitfun-space-8); border-bottom: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle); }
-.design-catalog-filter { position: relative; padding: var(--openbitfun-space-2) 0 var(--openbitfun-space-3); border: 0; background: transparent; color: var(--openbitfun-color-content-muted); font: inherit; font-size: var(--openbitfun-type-body-sm-font-size); cursor: pointer; }
-.design-catalog-filter[aria-pressed="true"] { color: var(--openbitfun-color-content-primary); }
-.design-catalog-filter[aria-pressed="true"]::after { content: ""; position: absolute; bottom: calc(-1 * var(--openbitfun-space-3)); inset-inline: 0; height: var(--openbitfun-border-width-strong); background: currentColor; }
-.lab-shell[data-component-library] .design-secondary-navigation { position: sticky; top: var(--_lab-topbar-height); z-index: calc(var(--openbitfun-layer-sticky) - 1); height: var(--_lab-section-height); background: var(--openbitfun-color-surface-canvas); }
-.lab-page.design-component-library { display: grid; grid-template-columns: 256px minmax(0, 1fr); align-items: start; column-gap: var(--openbitfun-space-10); padding-block: 0; min-height: calc(100dvh - var(--_lab-topbar-height) - var(--_lab-section-height)); }
-.design-library-sidebar { position: sticky; top: calc(var(--_lab-topbar-height) + var(--_lab-section-height)); height: calc(100dvh - var(--_lab-topbar-height) - var(--_lab-section-height)); min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--openbitfun-space-4); padding-block: var(--openbitfun-space-6); padding-inline-end: var(--openbitfun-space-5); }
-.design-library-heading { display: flex; align-items: center; gap: var(--openbitfun-space-2); flex: none; }
-.design-library-heading h2 { margin: 0; font-size: var(--openbitfun-type-heading-card-font-size); font-weight: var(--openbitfun-type-heading-card-font-weight); }
-.design-library-count { margin-inline-start: auto; color: var(--openbitfun-color-content-muted); font-size: var(--openbitfun-type-body-xs-font-size); white-space: nowrap; }
-.design-library-toggle {
-  display: none; }
-.design-library-index { display: flex; flex-direction: column; gap: var(--openbitfun-space-4); min-height: 0; flex: 1; }
-.design-library-index > :first-child { flex-shrink: 0; }
-.design-library-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: var(--openbitfun-space-1); margin-inline: calc(-1 * var(--openbitfun-space-1)); }
+.design-catalog-filters { display: flex; gap: var(--openbitfun-space-2); flex-wrap: wrap; padding-block: var(--openbitfun-space-3); margin-bottom: var(--openbitfun-space-8); }
+.design-catalog-filter { position: relative; padding: var(--openbitfun-space-2) var(--openbitfun-space-3); border: 0; border-radius: var(--_lab-radius-control); background: transparent; color: var(--openbitfun-color-content-muted); font: inherit; font-size: var(--openbitfun-type-body-sm-font-size); cursor: pointer; }
+.design-catalog-filter:hover { background: var(--openbitfun-component-button-fill-background); color: var(--openbitfun-color-content-secondary); }
+.design-catalog-filter[aria-pressed="true"] { background: var(--openbitfun-color-selection-surface); color: var(--openbitfun-color-content-primary); font-weight: var(--openbitfun-font-weight-semibold); }
+.lab-page.design-component-library { display: block; padding-block: 0; min-height: calc(100dvh - var(--_lab-topbar-height)); }
+/* The directory keeps its own scroll region inside the rail: a route branch, then the long list,
+   then the sibling routes, so neither the preview nor the rest of the section moves with it. */
+.design-navigation-index { display: flex; flex: 1 1 auto; flex-direction: column; gap: var(--openbitfun-space-2); min-height: 0; padding-block-end: var(--openbitfun-space-3); }
+/* Off-screen live region: the rail announces its filtered total without printing it. */
+.design-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.design-library-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: var(--openbitfun-space-1); margin-inline: calc(-1 * var(--openbitfun-space-1)); counter-reset: lab-component; }
+/* Categories are separated by space, not by a rule: the same reason the page index dropped its
+   hairlines, and the caption weight already carries the grouping. */
 .design-library-group + .design-library-group { margin-top: var(--openbitfun-space-5); }
-.design-library-group h3 { margin: 0; padding: var(--openbitfun-space-2) var(--openbitfun-space-3); color: var(--openbitfun-color-content-muted); font-size: var(--openbitfun-type-label-sm-font-size); font-weight: var(--openbitfun-type-label-sm-font-weight); }
-.design-library-group ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--openbitfun-space-1); }
-.design-library-link { position: relative; display: flex; align-items: center; min-height: var(--openbitfun-control-height-md); padding: var(--openbitfun-space-2) var(--openbitfun-space-3); border-radius: var(--openbitfun-radius-md); color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-label-md-font-size); line-height: var(--openbitfun-type-label-md-line-height); text-decoration: none; }
-.design-library-link:hover { color: var(--openbitfun-color-content-primary); background: var(--openbitfun-color-action-neutral-surface-hover); }
-.design-library-link[aria-current="page"] { color: var(--openbitfun-color-content-primary); background: var(--openbitfun-color-action-neutral-surface); font-weight: var(--openbitfun-type-label-selected-font-weight); }
-.design-library-sidebar :is(a, button):focus-visible { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: var(--openbitfun-focus-offset); }
+.design-library-group h3 { margin: 0; padding: var(--openbitfun-space-2) var(--openbitfun-space-2); color: var(--openbitfun-color-content-caption); font-family: var(--_lab-label-font); font-size: var(--openbitfun-type-label-xs-font-size); font-weight: var(--openbitfun-font-weight-regular); letter-spacing: var(--openbitfun-type-modifier-tracking-wide-letter-spacing); }
+.design-library-group ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0; }
+.design-library-link { position: relative; display: flex; align-items: center; gap: var(--openbitfun-space-3); min-height: var(--openbitfun-control-height-md); padding: var(--openbitfun-space-2); border-radius: var(--_lab-radius-control); color: var(--openbitfun-color-content-secondary); font-family: var(--_lab-label-font); font-size: var(--openbitfun-type-label-sm-font-size); line-height: var(--openbitfun-type-modifier-leading-ui-line-height); letter-spacing: var(--openbitfun-type-modifier-tracking-subtle-letter-spacing); text-decoration: none; }
+.design-library-link > * { min-width: 0; }
+.design-library-link::before { counter-increment: lab-component; content: counter(lab-component, decimal-leading-zero); flex: none; color: var(--openbitfun-color-content-caption); font-variant-numeric: tabular-nums; }
+.design-library-link:hover { color: var(--openbitfun-color-content-primary); background: transparent; }
+.design-library-link[aria-current="page"] { color: var(--openbitfun-color-content-primary); background: var(--openbitfun-color-selection-surface); font-weight: var(--openbitfun-font-weight-semibold); }
+.design-library-link[aria-current="page"]::before { color: var(--openbitfun-color-content-primary); }
 .design-library-empty { padding: var(--openbitfun-space-3); color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); }
-.design-library-footer { flex: none; display: grid; gap: var(--openbitfun-space-3); padding: var(--openbitfun-space-4) var(--openbitfun-space-3) 0; }
-.design-library-footer a { display: flex; align-items: center; justify-content: space-between; gap: var(--openbitfun-space-2); color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); text-decoration: none; }
-.design-library-footer a:hover { color: var(--openbitfun-color-content-primary); }
 .design-library-content { min-width: 0; padding-block: var(--openbitfun-space-6) var(--openbitfun-space-12); }
 .design-library-detail { min-width: 0; }
-.design-library-detail .component-detail-heading { min-height: 0; padding: 0; }
+.design-library-detail .component-detail-heading { min-height: 0; padding: 0 0 var(--openbitfun-space-4); margin-bottom: var(--openbitfun-space-4); }
 .design-library-detail .component-detail-heading > div { min-width: 0; gap: var(--openbitfun-space-3); }
 .design-library-detail .component-detail-heading h1 { margin: 0; overflow-wrap: anywhere; }
 .design-library-detail .component-preview-main { gap: var(--openbitfun-space-6); }
 .design-library-detail .design-state-comparison { margin-block: 0; }
-.design-library-detail .component-inspector { top: calc(var(--_lab-topbar-height) + var(--_lab-section-height) + var(--openbitfun-space-6)); max-height: calc(100dvh - var(--_lab-topbar-height) - var(--_lab-section-height) - var(--openbitfun-space-12)); }
+.design-library-detail .component-inspector { top: calc(var(--_lab-topbar-height) + var(--openbitfun-space-6)); max-height: calc(100dvh - var(--_lab-topbar-height) - var(--openbitfun-space-12)); }
 .design-catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: var(--openbitfun-space-8) var(--openbitfun-space-5); }
-.design-component-card { position: relative; min-width: 0; border-radius: var(--openbitfun-radius-lg); }
-.design-component-card-preview { height: 240px; overflow: hidden; display: flex; align-items: center; justify-content: center; gap: var(--openbitfun-space-3); padding: var(--openbitfun-space-6); border: 0; border-radius: var(--openbitfun-radius-lg); background: var(--openbitfun-color-surface-subtle); pointer-events: none; }
+.design-component-card { position: relative; min-width: 0; border-radius: var(--_lab-radius-surface); }
+.design-component-card-preview { height: 240px; overflow: hidden; display: flex; align-items: center; justify-content: center; gap: var(--openbitfun-space-3); padding: var(--openbitfun-space-6); border-radius: var(--_lab-radius-surface); background: var(--openbitfun-color-surface-subtle); pointer-events: none; }
 .design-component-card-preview > * { max-width: 100%; }
 .design-component-card-preview .flow-chat-preview-frame { min-width: 0; width: 100%; }
 .design-component-card-preview .lab-brand-solid-stage { display: contents; }
 .design-component-card-copy { padding: var(--openbitfun-space-4) var(--openbitfun-space-1) 0; }
-.design-component-card h2 { margin: var(--openbitfun-space-2) 0 var(--openbitfun-space-2); font-size: var(--openbitfun-type-heading-panel-font-size); overflow-wrap: anywhere; }
+.design-component-card :is(h2, h3) { margin: var(--openbitfun-space-2) 0 var(--openbitfun-space-2); font-size: var(--openbitfun-type-heading-panel-font-size); overflow-wrap: anywhere; }
 .design-component-card p { color: var(--openbitfun-color-content-secondary); margin: 0; font-size: var(--openbitfun-type-body-sm-font-size); line-height: var(--openbitfun-type-body-sm-line-height); }
-.design-component-card:hover .design-component-card-preview { border-color: var(--openbitfun-color-border-strong); }
+.design-component-card:hover .design-component-card-preview { background: var(--openbitfun-color-surface-tertiary); }
 .design-component-card:focus-within { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: var(--openbitfun-focus-offset); }
-.design-context-link { display: flex; align-items: center; justify-content: space-between; gap: var(--openbitfun-space-5); padding: var(--openbitfun-space-5); margin-bottom: var(--openbitfun-space-8); background: var(--openbitfun-color-surface-subtle); border-radius: var(--openbitfun-radius-lg); }
+.design-context-link { display: flex; align-items: center; justify-content: space-between; gap: var(--openbitfun-space-5); padding: var(--openbitfun-space-5); margin-bottom: var(--openbitfun-space-8); border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle); background: transparent; border-radius: var(--_lab-radius-surface); }
 .design-context-link h2 { margin: 0 0 var(--openbitfun-space-2); font-size: var(--openbitfun-type-heading-card-font-size); }
 .design-context-link p { margin: 0; color: var(--openbitfun-color-content-secondary); }
 .design-directory-footer, .design-preview-caption { display: flex; align-items: center; justify-content: space-between; gap: var(--openbitfun-space-4); padding-top: var(--openbitfun-space-6); }
@@ -175,14 +354,20 @@
 .design-state-comparison > summary, .design-tool-reference > summary { padding: var(--openbitfun-space-4) 0; cursor: pointer; font-size: var(--openbitfun-type-label-lg-font-size); }
 .design-detail-layout { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: var(--openbitfun-space-6); }
 .design-detail-layout[data-inspector-open] { grid-template-columns: minmax(0, 1fr) 280px; }
-.design-detail-layout .component-inspector { position: sticky; top: calc(var(--_lab-topbar-height) + var(--_lab-section-height) + var(--openbitfun-space-4)); max-height: calc(100dvh - var(--_lab-topbar-height) - var(--_lab-section-height) - var(--openbitfun-space-8)); overflow-y: auto; }
+.design-detail-layout .component-inspector { position: sticky; top: calc(var(--_lab-topbar-height) + var(--openbitfun-space-4)); max-height: calc(100dvh - var(--_lab-topbar-height) - var(--openbitfun-space-8)); overflow-y: auto; }
 .design-detail-layout .component-inspector-content { display: block; }
-.design-detail-layout .component-preview-panel { border: 0; border-radius: var(--openbitfun-radius-lg); overflow: visible; }
-.design-preview-toolbar { flex-wrap: wrap; gap: var(--openbitfun-space-3); padding: var(--openbitfun-space-4); border-bottom: 0; }
-.design-preview-options { display: flex; align-items: center; flex-wrap: wrap; gap: var(--openbitfun-space-3); padding: 0 var(--openbitfun-space-4) var(--openbitfun-space-3); }
+/* The preview is one framed specimen, not a box inside a box: the panel keeps no shell of its own,
+   and the heading and the option row share a single closing rule instead of stacking two bands. */
+.design-detail-layout .component-preview-panel { border: var(--_lab-rule); border-radius: var(--_lab-radius-surface); background: var(--openbitfun-color-surface-panel); overflow: hidden; }
+.design-preview-toolbar { flex-wrap: wrap; gap: var(--openbitfun-space-3); padding: var(--openbitfun-space-3) var(--openbitfun-space-4); border-bottom: var(--_lab-rule); }
+.component-preview-panel:has(.design-preview-options) .design-preview-toolbar { border-bottom: 0; }
+.design-preview-options { display: flex; align-items: center; flex-wrap: wrap; gap: var(--openbitfun-space-3); padding: var(--openbitfun-space-3) var(--openbitfun-space-4); border-bottom: var(--_lab-rule); }
 .design-preview-options .component-inspector-select { display: flex; align-items: center; gap: var(--openbitfun-space-2); }
+/* Flex drops the 82px column floor the inspector grid gives this caption, so a two-character label
+   shrinks past its own width and stacks vertically. The caption is a fixed label: never shrink it. */
+.design-preview-options .component-inspector-select > span:first-child { flex: none; white-space: nowrap; }
 .design-preview-options select { width: auto; max-width: 15rem; }
-.design-selected-stage { display: flex; flex-direction: column; justify-content: center; min-height: 300px; min-width: 0; padding: var(--openbitfun-space-10); background: var(--openbitfun-color-surface-panel); border-radius: 0 0 var(--openbitfun-radius-lg) var(--openbitfun-radius-lg); }
+.design-selected-stage { display: flex; flex-direction: column; justify-content: center; min-height: 300px; min-width: 0; padding: var(--openbitfun-space-8); background: var(--openbitfun-color-surface-panel); border-radius: inherit; }
 .design-selected-component { min-width: 0; display: flex; align-items: center; justify-content: center; gap: var(--openbitfun-space-4); width: 100%; margin-inline: auto; }
 .design-selected-component > * { max-width: 100%; }
 .design-selected-component > label { display: flex; gap: var(--openbitfun-space-2); align-items: center; }
@@ -204,8 +389,8 @@
 .design-component-tokens .component-inspector-token-list { flex-direction: row; flex-wrap: wrap; }
 .design-state-comparison .component-preview-canvas { max-height: 75vh; overflow: auto; padding: var(--openbitfun-space-5); }
 .design-state-comparison .component-preview-matrix { width: max-content; min-width: 100%; }
-.design-button-overview { display: grid; min-width: 0; gap: var(--openbitfun-space-6); padding: var(--openbitfun-space-5); overflow-x: auto; border-radius: 0 0 var(--openbitfun-radius-lg) var(--openbitfun-radius-lg); }
-.design-button-overview .button-state-surface { min-width: 640px; border-radius: var(--openbitfun-radius-md); padding-bottom: var(--openbitfun-space-4); }
+.design-button-overview { display: grid; min-width: 0; gap: var(--openbitfun-space-6); padding: var(--openbitfun-space-5); overflow-x: auto; border-radius: inherit; }
+.design-button-overview .button-state-surface { min-width: 640px; border-radius: var(--_lab-radius-inset); padding-bottom: var(--openbitfun-space-4); }
 .design-button-overview .component-preview-matrix { width: 100%; min-width: 640px; grid-template-columns: 96px repeat(var(--_preview-state-count), minmax(100px, 1fr)); grid-template-rows: var(--openbitfun-space-10); grid-auto-rows: minmax(var(--openbitfun-space-16), auto); }
 .design-section-index { display: flex; gap: var(--openbitfun-space-5); flex-wrap: wrap; padding-bottom: var(--openbitfun-space-6); }
 .design-section-index a { color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); }
@@ -215,37 +400,91 @@
 .design-token-owner-preview > div { display: grid; align-items: center; justify-items: center; min-height: 240px; padding: var(--openbitfun-space-5); background: var(--openbitfun-color-surface-subtle); border-radius: var(--openbitfun-radius-lg); }
 .design-token-owner-preview > div > * { max-width: 100%; }
 @media (max-width: 1100px) {
-  .lab-page.design-component-library { grid-template-columns: 224px minmax(0, 1fr); column-gap: var(--openbitfun-space-6); }
+  /* Two left columns would eat the reading measure, so the rail gets narrower here instead. Its
+     margin is the shell's, not a local number: the rail stays on the page's edge at every width. */
+  .lab-shell { --_lab-rail-width: 176px; }
   .design-library-detail .component-inspector { position: static; max-height: none; }
   .design-detail-layout[data-inspector-open] { grid-template-columns: minmax(0, 1fr); }
-  .design-detail-layout .component-inspector { grid-row: 1; position: static; max-height: calc(100dvh - var(--_lab-topbar-height) - var(--_lab-section-height) - var(--openbitfun-space-8)); top: calc(var(--_lab-topbar-height) + var(--_lab-section-height) + var(--openbitfun-space-4)); }
+  .design-detail-layout .component-inspector { grid-row: 1; position: static; max-height: calc(100dvh - var(--_lab-topbar-height) - var(--openbitfun-space-8)); top: calc(var(--_lab-topbar-height) + var(--openbitfun-space-4)); }
 }
 @media (max-width: 860px) {
-  .lab-page.design-component-library { grid-template-columns: minmax(0, 1fr); }
-  .design-library-sidebar { position: static; height: auto; padding-inline-end: 0; padding-block: var(--openbitfun-space-3); gap: 0; }
-  .design-library-toggle {
-    display: inline-flex; }
-  .design-library-sidebar:not([data-open]) .design-library-index { display: none; }
-  .design-library-index { padding-block-start: var(--openbitfun-space-4); }
-  .design-library-list { flex: none; max-height: 40dvh; }
-  .design-library-footer { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-block-end: var(--openbitfun-space-2); }
+  /* Below the navigation breakpoint the rail gives its column back and the same nav is reached
+     through the topbar's navigation sheet. */
+  .lab-shell[data-section-navigation] .lab-workspace { grid-template-columns: minmax(0, 1fr); }
+  .lab-shell[data-section-navigation] .lab-workspace > .lab-content { grid-column: 1; }
+  .lab-workspace > .design-secondary-navigation { display: none; }
   .design-library-content { padding-block-start: var(--openbitfun-space-6); padding-block: var(--openbitfun-space-6) var(--openbitfun-space-12); }
   .design-preview-caption, .design-context-link { align-items: flex-start; flex-direction: column; }
   .design-selected-stage { padding: var(--openbitfun-space-5); background: var(--openbitfun-color-surface-panel); }
 }
 @media (max-width: 600px) {
   .lab-page { padding: var(--openbitfun-space-8) var(--openbitfun-space-4) var(--openbitfun-space-12); }
-  .design-secondary-navigation { padding-inline: var(--openbitfun-space-4); }
   .design-catalog-search { align-items: stretch; flex-direction: column; }
 }
 /* Shared document layout; controls retain their public component styles. */
 .lab-shell :is(a, summary, [role="tabpanel"]):focus-visible { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: var(--openbitfun-focus-offset); }
-.design-secondary-navigation { position: sticky; top: var(--_lab-topbar-height); z-index: calc(var(--openbitfun-layer-sticky) - 1); background: var(--openbitfun-color-surface-canvas); }
-.lab-mobile-navigation .design-secondary-navigation { position: static; }
 .lab-text-link { display: inline-flex; align-items: center; gap: var(--openbitfun-space-2); min-height: var(--openbitfun-control-height-sm); color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-label-md-font-size); text-decoration: none; }
 .lab-text-link:hover { color: var(--openbitfun-color-content-primary); text-decoration: underline; }
-.design-reference-disclosure { padding-block: var(--openbitfun-space-2); }
+/* Level-2 reference blocks keep a real heading: `renderHeader` moves the trigger inside it, so the
+   block owns its heading while the component keeps its state. Geometry reuses the component's own
+   layout tokens, so this header stays in sync with the package instead of drifting from it.
+   Blocks are separated by space, not by a rule: the content column keeps its rules for things that
+   are actually tabular. */
+.design-reference-disclosure { padding-block: var(--openbitfun-space-2) var(--openbitfun-space-4); }
+.design-reference-heading { margin: 0; font: inherit; }
+.design-reference-trigger {
+  display: flex;
+  align-items: center;
+  inline-size: 100%;
+  min-block-size: var(--openbitfun-layout-disclosure-trigger-min-block-size);
+  gap: var(--openbitfun-layout-disclosure-trigger-gap);
+  padding-block: var(--openbitfun-layout-disclosure-trigger-padding-block);
+  padding-inline: var(--openbitfun-layout-disclosure-trigger-padding-inline);
+  border: 0;
+  border-radius: var(--_lab-radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.design-reference-trigger:hover { color: var(--openbitfun-color-content-primary); }
+.design-reference-trigger:focus-visible { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: var(--openbitfun-focus-offset); }
+.design-reference-indicator {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--openbitfun-layout-disclosure-indicator-size);
+  block-size: var(--openbitfun-layout-disclosure-indicator-size);
+  color: var(--openbitfun-color-content-muted);
+  transition: transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.design-reference-disclosure[data-open="true"] .design-reference-indicator { transform: rotate(90deg); }
+.design-reference-label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  font-family: var(--openbitfun-type-heading-section-font-family);
+  font-size: var(--openbitfun-type-heading-section-font-size);
+  font-weight: var(--openbitfun-type-heading-section-font-weight);
+  letter-spacing: var(--openbitfun-type-heading-section-letter-spacing);
+}
 .design-reference-note { margin: 0; color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); line-height: var(--openbitfun-type-body-sm-line-height); padding-block: var(--openbitfun-space-2); }
+/* Pattern sections (Icon contexts, Menu nesting, native disclosure) are Lab structure, not component
+   previews, so they take the same level-2 block treatment. The text starts where the reference labels
+   start, which is one indicator column into the block. */
+.design-detail-layout .design-icon-documentation {
+  padding-block: 0 var(--openbitfun-space-6);
+}
+.design-detail-layout .design-icon-documentation > h2 {
+  margin: 0;
+  padding-block: var(--openbitfun-layout-disclosure-trigger-padding-block);
+  padding-inline: calc(var(--openbitfun-layout-disclosure-trigger-padding-inline) + var(--openbitfun-layout-disclosure-indicator-size) + var(--openbitfun-layout-disclosure-trigger-gap));
+  font-family: var(--openbitfun-type-heading-section-font-family);
+  font-size: var(--openbitfun-type-heading-section-font-size);
+  font-weight: var(--openbitfun-type-heading-section-font-weight);
+  letter-spacing: var(--openbitfun-type-heading-section-letter-spacing);
+}
 .design-reference-disclosure .component-code-panel { border: 0; background: var(--openbitfun-color-surface-subtle); }
 .design-reference-disclosure .component-code-heading { justify-content: flex-end; border-bottom: 0; }
 .design-component-tokens { display: grid; gap: var(--openbitfun-space-4); justify-items: start; }
@@ -253,20 +492,19 @@
 .colors-theme-value { display: flex; align-items: center; min-height: var(--openbitfun-control-height-md); color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); }
 .colors-semantic-tools > [data-openbitfun-component="search-field"] { flex: 1; min-width: 12rem; }
 .colors-semantic-tools > [data-openbitfun-component="select"] { min-width: 10rem; }
-.colors-expand-action { display: flex; justify-content: center; padding: var(--openbitfun-space-2); border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle); }
+.colors-expand-action { display: flex; justify-content: center; padding: var(--openbitfun-space-4) var(--openbitfun-space-2); }
 .token-tools > * { min-width: 0; }
 .token-action-row { flex-wrap: wrap; }
 .token-value-control > [data-openbitfun-component="input"] { flex: 1; min-width: 0; }
 .guide-setup-layout { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); align-items: start; gap: var(--openbitfun-space-8); }
 .guide-step-list { display: grid; gap: var(--openbitfun-space-6); list-style: none; padding: 0; margin: 0; }
 .guide-step-list li { display: flex; align-items: flex-start; gap: var(--openbitfun-space-3); }
-.guide-step-list h2 { margin: 0 0 var(--openbitfun-space-2); font-family: var(--openbitfun-type-heading-section-font-family); font-size: var(--openbitfun-type-heading-section-font-size); font-weight: var(--openbitfun-type-heading-section-font-weight); line-height: var(--openbitfun-type-heading-section-line-height); }
+.guide-step-list :is(h2, h3) { margin: 0 0 var(--openbitfun-space-2); font-family: var(--openbitfun-type-heading-section-font-family); font-size: var(--openbitfun-type-heading-section-font-size); font-weight: var(--openbitfun-type-heading-section-font-weight); line-height: var(--openbitfun-type-heading-section-line-height); }
 .guide-step-list p { margin: 0; color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); line-height: var(--openbitfun-type-body-sm-line-height); }
 .guide-step-icon { flex: none; }
 .guide-next-action { margin-top: var(--openbitfun-space-6); display: flex; flex-wrap: wrap; gap: var(--openbitfun-space-3); }
 @media (max-width: 1100px) {
  .lab-topbar { gap: var(--openbitfun-space-3); }
- .design-wordmark-suffix, .lab-search-shortcut { display: none; }
  .colors-page-heading { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 860px) {
@@ -276,7 +514,6 @@
  .guide-setup-layout { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 600px) {
- .lab-search-trigger-label { display: none; }
  .lab-topbar-actions { gap: var(--openbitfun-space-1); }
  .lab-page { padding-block: var(--openbitfun-space-6) var(--openbitfun-space-8); }
  .colors-context-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
@@ -294,14 +531,9 @@
  .design-primary-navigation a, .design-secondary-navigation a { transition: none; }
 }
 /* Keep document offsets beside the shell that owns their geometry. */
-.lab-page.design-foundations { --_foundation-sticky-top: calc(var(--_lab-topbar-height) + var(--_lab-section-height) + var(--openbitfun-space-4)); }
-.foundation-sidebar { top: var(--_foundation-sticky-top); max-height: calc(100dvh - var(--_foundation-sticky-top)); }
+.lab-page.design-foundations { --_foundation-sticky-top: calc(var(--_lab-topbar-height) + var(--openbitfun-space-4)); }
 .foundation-chapter { scroll-margin-top: var(--_foundation-sticky-top); }
-.subagent-ip-detail { top: calc(var(--_lab-topbar-height) + var(--_lab-section-height) + var(--openbitfun-space-4)); scroll-margin-top: calc(var(--_lab-topbar-height) + var(--_lab-section-height) + var(--openbitfun-space-4)); }
-.brand-gallery :is(section, details) { scroll-margin-top: calc(var(--_lab-topbar-height) + var(--_lab-section-height) + var(--openbitfun-space-4)); }
-@media (max-width: 860px) {
-  .lab-page.design-foundations { --_foundation-sticky-top: calc(var(--_lab-topbar-height) + var(--_lab-section-height) + var(--openbitfun-control-height-lg) + var(--openbitfun-space-6)); }
-  .foundation-sidebar { top: calc(var(--_lab-topbar-height) + var(--_lab-section-height)); max-height: none; }
-}
+.subagent-ip-detail { top: calc(var(--_lab-topbar-height) + var(--openbitfun-space-4)); scroll-margin-top: calc(var(--_lab-topbar-height) + var(--openbitfun-space-4)); }
+.brand-gallery :is(section, details) { scroll-margin-top: calc(var(--_lab-topbar-height) + var(--openbitfun-space-4)); }
 
 .page-heading--split { max-width: none; }

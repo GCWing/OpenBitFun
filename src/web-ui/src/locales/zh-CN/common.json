@@ -502,7 +502,8 @@
         "anchorMs": "锚点时间（可选）",
         "cronExpr": "Cron 表达式",
         "timezone": "时区（可选）",
-        "prompt": "任务内容"
+        "prompt": "任务内容",
+        "reportPolicy": "结果投递"
       },
       "placeholders": {
         "workspacePath": "请输入工作区路径",
@@ -515,7 +516,14 @@
         "prompt": "请输入定时触发时发送给智能体的内容"
       },
       "hints": {
-        "cronExpr": "Cron 格式：分 时 日 月 周，例如 0 8 * * * 表示每天 08:00。"
+        "cronExpr": "Cron 格式：分 时 日 月 周，例如 0 8 * * * 表示每天 08:00。",
+        "reportPolicy": "在任务内容中说明报告条件；失败或判定不明确时仍会报告。",
+        "reportPolicyUnsupported": "此主机暂不支持设置结果投递，继续按原任务说明执行。"
+      },
+      "reportPolicies": {
+        "inherit": "按任务说明",
+        "always": "每次报告",
+        "conditional": "符合条件才报告"
       },
       "scheduleKinds": {
         "at": "单次执行",

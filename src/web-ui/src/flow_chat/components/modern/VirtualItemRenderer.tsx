@@ -21,6 +21,7 @@ import { getKnownVirtualItemHeightPx } from './virtualItemHeightEstimators';
 import { Icon } from '@openbitfun/ui';
 import { TimelineContentBlock } from '../../timeline/TimelineContentBlock';
 import { useTurnFooterInteraction } from './useTurnFooterInteraction';
+import { BackgroundRunItem } from './BackgroundRunItem';
 
 interface VirtualItemRendererProps {
   item: VirtualItem;
@@ -58,6 +59,8 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
 
     const content = (() => {
       switch (item.type) {
+        case 'background-run':
+          return <BackgroundRunItem turn={item.turn} absoluteTurnIndex={item.absoluteTurnIndex} forceOpen={isSearchMatch} expandedThinkingItemIds={matches?.flatMap(match => [...match.expandableIds ?? []]) ?? []} />;
         case 'user-message':
           return (
             <UserMessageItem

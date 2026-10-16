@@ -1,5 +1,6 @@
 import type { SessionActivitySummary, SessionLastTurn } from '@/shared/types/session-history';
 import { getActiveSurfaceId, type DeviceSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
+import { readBackgroundDelivery, shouldDeliverBackgroundCompletion } from '../utils/backgroundDelivery';
 
 export interface ActivityRead {
   surfaceId: DeviceSurfaceId;
@@ -62,16 +63,17 @@ export class SessionActivityStore {
       const previousTurn = previous?.summary?.lastTurn;
       if (summary.lastTurn && summary.lastTurn.recoveryPending === undefined && previousTurn
         && previousTurn.turnId === summary.lastTurn.turnId && previousTurn.status === summary.lastTurn.status
-        && previousTurn.executionGeneration === summary.lastTurn.executionGeneration) {
+        && (previousTurn.executionGeneration ?? 0) === (summary.lastTurn.executionGeneration ?? 0)) {
         summary = { ...summary, lastTurn: { ...summary.lastTurn, recoveryPending: previousTurn.recoveryPending } };
       }
       const acknowledged = previous?.acknowledged;
-      const alreadyRead = acknowledged && summary.lastTurn?.turnId === acknowledged.turnId
-        && summary.lastTurn.executionGeneration === acknowledged.executionGeneration
-        && (acknowledged.status === undefined || summary.lastTurn.status === acknowledged.status)
-        && (acknowledged.recoveryPending === undefined || summary.lastTurn.recoveryPending === undefined
-          || summary.lastTurn.recoveryPending === acknowledged.recoveryPending)
-        && summary.lastTurn.status !== 'inprogress' && summary.execution !== 'running';
+      const receipt = summary.unreadTurn ?? summary.lastTurn;
+      const alreadyRead = acknowledged && receipt?.turnId === acknowledged.turnId
+        && (receipt.executionGeneration ?? 0) === (acknowledged.executionGeneration ?? 0)
+        && (acknowledged.status === undefined || receipt.status === acknowledged.status)
+        && (acknowledged.recoveryPending === undefined || receipt.recoveryPending === undefined
+          || receipt.recoveryPending === acknowledged.recoveryPending)
+        && receipt.status !== 'inprogress' && (summary.unreadTurn !== undefined || summary.execution !== 'running');
       entries.set(summary.sessionId, {
         ...previous, summary: alreadyRead ? { ...summary, unreadCompletion: undefined } : summary,
         acknowledged: alreadyRead ? acknowledged : undefined, eventVersion: previous?.eventVersion ?? 0,
@@ -94,15 +96,16 @@ export class SessionActivityStore {
   acknowledge(sessionId: string, turnId: string, executionGeneration?: number, recoveryPending?: boolean): void {
     const previous = this.get(sessionId);
     const summary = previous?.summary;
-    if (summary?.lastTurn && (summary.lastTurn.turnId !== turnId
-      || summary.lastTurn.executionGeneration !== executionGeneration
-      || (summary.lastTurn.recoveryPending !== undefined && recoveryPending !== undefined
-        && summary.lastTurn.recoveryPending !== recoveryPending))) return;
+    const receipt = summary?.unreadTurn ?? summary?.lastTurn;
+    if (receipt && (receipt.turnId !== turnId
+      || (receipt.executionGeneration ?? 0) !== (executionGeneration ?? 0)
+      || (receipt.recoveryPending !== undefined && recoveryPending !== undefined
+        && receipt.recoveryPending !== recoveryPending))) return;
     this.entries(getActiveSurfaceId()).set(sessionId, {
       ...previous, eventVersion: ++this.eventVersion, readSequence: previous?.readSequence ?? 0,
       checkedAt: previous?.checkedAt ?? 0, stale: previous?.stale ?? false,
-      acknowledged: { turnId, status: summary?.lastTurn?.status, executionGeneration,
-        recoveryPending: recoveryPending ?? summary?.lastTurn?.recoveryPending },
+      acknowledged: { turnId, status: receipt?.status, executionGeneration,
+        recoveryPending: recoveryPending ?? receipt?.recoveryPending },
       summary: summary ? { ...summary, unreadCompletion: undefined } : undefined,
     });
     this.notify(getActiveSurfaceId(), sessionId);
@@ -140,7 +143,8 @@ export class SessionActivityStore {
     }
     let summary = previous?.summary ?? blank(sessionId);
     const turnId = typeof event.turnId === 'string' ? event.turnId : undefined;
-    const generation = typeof event.executionGeneration === 'number' ? event.executionGeneration : undefined;
+    const delivery = readBackgroundDelivery(event.backgroundDelivery ?? event.background_delivery, turnId ?? '');
+    const generation = typeof event.executionGeneration === 'number' ? event.executionGeneration : delivery ? delivery.executionGeneration ?? 0 : undefined;
     if (generation !== undefined && summary.lastTurn?.turnId === turnId
       && (summary.lastTurn?.executionGeneration ?? -1) > generation) return;
     const starting = eventName === 'agentic://dialog-turn-started' || eventName === 'agentic://dialog-turn-recovered';
@@ -150,6 +154,7 @@ export class SessionActivityStore {
     if (starting) {
       summary = {
         ...summary, execution: 'running', activeTurnId: turnId, pendingApprovals: 0, pendingQuestions: 0,
+        unreadTurn: summary.unreadCompletion ? summary.unreadTurn ?? summary.lastTurn : undefined,
         lastTurn: turnId ? {
           turnId, turnIndex: typeof event.turnIndex === 'number' ? event.turnIndex : summary.lastTurn?.turnIndex ?? 0,
           status: 'inprogress', recoveryPending: false, executionGeneration: generation ?? (summary.lastTurn?.turnId === turnId
@@ -167,10 +172,16 @@ export class SessionActivityStore {
       if (sameOutcome && summary.lastTurn?.recoveryPending === recoveryPending) return;
       // Learning an optional recovery fact from a replay is not a new result.
       // A known paused -> cancelled transition is, even within one generation.
-      newResult = !sameOutcome || summary.lastTurn?.recoveryPending !== undefined;
+      newResult = (!sameOutcome || summary.lastTurn?.recoveryPending !== undefined)
+        && (outcome !== 'completed' || shouldDeliverBackgroundCompletion(event));
       summary = {
         ...summary, execution: outcome === 'error' ? 'error' : 'idle', activeTurnId: undefined,
         pendingApprovals: 0, pendingQuestions: 0, unreadCompletion: newResult ? outcome : summary.unreadCompletion,
+        unreadTurn: newResult ? {
+          turnId: turnId ?? '', turnIndex: typeof event.turnIndex === 'number' ? event.turnIndex : summary.lastTurn?.turnIndex ?? 0,
+          status: outcome === 'interrupted' ? 'cancelled' : outcome, recoveryPending,
+          executionGeneration: generation,
+        } : summary.unreadTurn,
         lastTurn: turnId ? {
           turnId, turnIndex: typeof event.turnIndex === 'number' ? event.turnIndex : summary.lastTurn?.turnIndex ?? 0,
           status: outcome === 'interrupted' ? 'cancelled' : outcome,

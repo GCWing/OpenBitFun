@@ -123,6 +123,11 @@ export function useGitState(options: UseGitStateOptions): UseGitStateReturn {
   const isFirstMountRef = useRef(true);
 
   useEffect(() => {
+    if (!normalizedPath.workspaceId || !isActive) return;
+    return gitStateManager.registerPolling(normalizedPath);
+  }, [isActive, normalizedPath]);
+
+  useEffect(() => {
     if (!normalizedPath.workspaceId || !isActive || !participateInWindowFocusRefresh) {
       return;
     }

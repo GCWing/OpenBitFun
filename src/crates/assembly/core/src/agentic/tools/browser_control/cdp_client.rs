@@ -69,6 +69,7 @@ pub struct CdpBrowserConnection {
 }
 
 static BROWSER_CONNECTIONS: OnceLock<RwLock<HashMap<u16, CdpBrowserConnection>>> = OnceLock::new();
+static AUTHORIZED_LEGACY_BROWSERS: OnceLock<RwLock<HashMap<u16, BrowserKind>>> = OnceLock::new();
 static SUPPRESSED_BROWSER_CONNECTIONS: OnceLock<RwLock<HashSet<u16>>> = OnceLock::new();
 
 fn browser_connections() -> &'static RwLock<HashMap<u16, CdpBrowserConnection>> {
@@ -145,6 +146,12 @@ impl CdpClient {
         // Validate that this is a browser-level CDP endpoint before retaining
         // it. This also fails quickly if the DevToolsActivePort file was stale.
         client.browser_version().await?;
+        if Self::browser_connection_suppressed(logical_port).await {
+            client.disconnect().await;
+            return Err(OpenBitFunError::tool(
+                "Browser Control was disconnected while approval was pending",
+            ));
+        }
 
         let connection = CdpBrowserConnection {
             actual_port,
@@ -155,6 +162,12 @@ impl CdpClient {
             .write()
             .await
             .insert(logical_port, connection.clone());
+        if Self::browser_connection_suppressed(logical_port).await {
+            Self::disconnect_browser_connection(logical_port).await;
+            return Err(OpenBitFunError::tool(
+                "Browser Control was disconnected while approval was pending",
+            ));
+        }
         Ok(connection)
     }
 
@@ -214,10 +227,42 @@ impl CdpClient {
     /// explicitly disconnected Browser Control in Settings. An explicit user
     /// connect action clears this process-local guard.
     pub async fn suppress_browser_connection(logical_port: u16) {
+        AUTHORIZED_LEGACY_BROWSERS
+            .get_or_init(|| RwLock::new(HashMap::new()))
+            .write()
+            .await
+            .remove(&logical_port);
         suppressed_browser_connections()
             .write()
             .await
             .insert(logical_port);
+    }
+
+    /// Settings calls this only after its selected legacy browser is connected.
+    /// Merely discovering an open debugging port is not a user grant.
+    pub async fn authorize_legacy_browser(logical_port: u16, kind: &BrowserKind) {
+        if !Self::browser_connection_suppressed(logical_port).await {
+            AUTHORIZED_LEGACY_BROWSERS
+                .get_or_init(|| RwLock::new(HashMap::new()))
+                .write()
+                .await
+                .insert(logical_port, kind.clone());
+        }
+    }
+
+    pub async fn authorized_browser_kind(logical_port: u16) -> Option<BrowserKind> {
+        if Self::browser_connection_suppressed(logical_port).await {
+            return None;
+        }
+        if let Some(connection) = Self::browser_connection(logical_port).await {
+            return Some(connection.browser_kind);
+        }
+        AUTHORIZED_LEGACY_BROWSERS
+            .get_or_init(|| RwLock::new(HashMap::new()))
+            .read()
+            .await
+            .get(&logical_port)
+            .cloned()
     }
 
     pub async fn allow_browser_connection(logical_port: u16) {
@@ -356,6 +401,10 @@ impl CdpClient {
         self.require_browser_connection()?;
         let result = self.send("Browser.getVersion", None).await?;
         Ok(CdpVersionInfo {
+            user_agent: result
+                .get("userAgent")
+                .and_then(Value::as_str)
+                .map(str::to_string),
             browser: result
                 .get("product")
                 .and_then(Value::as_str)

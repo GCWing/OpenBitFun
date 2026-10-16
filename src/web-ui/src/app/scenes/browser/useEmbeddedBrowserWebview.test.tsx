@@ -146,6 +146,35 @@ it('does not invoke native APIs in the web surface', async () => {
   expect(mocks.view.hide).not.toHaveBeenCalled();
 });
 
+it('does no layout scans for unrelated DOM animation or inactive browser tabs', async () => {
+  const animated = document.createElement('div');
+  document.body.append(animated);
+  await render();
+  const query = vi.spyOn(document, 'querySelectorAll');
+  const bounds = vi.mocked(HTMLElement.prototype.getBoundingClientRect);
+  bounds.mockClear();
+  for (let frame = 0; frame < 120; frame++) {
+    await mutate(() => { animated.style.transform = `translateX(${frame}px)`; });
+  }
+  expect(query).not.toHaveBeenCalled();
+  expect(bounds).not.toHaveBeenCalled();
+  await render(false);
+  query.mockClear();
+  bounds.mockClear();
+  await mutate(() => document.body.append(overlay()));
+  expect(query).not.toHaveBeenCalled();
+  expect(bounds).not.toHaveBeenCalled();
+});
+
+it('still clears toolbar suspension when an inactive tab misses the finishing transition', async () => {
+  await render();
+  await mutate(() => window.dispatchEvent(new Event('toolbar-mode-activating')));
+  await render(false);
+  await mutate(() => window.dispatchEvent(new Event('toolbar-mode-activation-finished')));
+  await render(true);
+  expect(mocks.view.show).toHaveBeenCalledTimes(2);
+});
+
 it('aligns native and preview edges at fractional DPI and applies a one-physical-pixel move', async () => {
   vi.stubGlobal('devicePixelRatio', 1.5);
   viewportBounds = new DOMRect(912.333374, 128.333343, 747, 938.333374);

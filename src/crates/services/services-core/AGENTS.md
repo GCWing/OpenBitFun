@@ -108,7 +108,24 @@ pnpm run check:core-boundaries
 Other capability-specific target names remain in `Cargo.toml`; document a new
 command here only when it becomes a recurring owner workflow.
 
+For workspace instruction family selection, non-empty fallback, and local/port
+resolution parity:
+
+```bash
+cargo test --locked -p openbitfun-services-core --no-default-features --features workspace-instructions --test declarative_workspace_instruction_contracts
+cargo test --locked -p openbitfun-services-core --no-default-features --features workspace-instructions,workspace-runtime --test workspace_instruction_contracts
+```
+
 ## Offline-compatible storage formats
+
+`session-recovery` owns offline migration-damaged session scanning, verified
+full-session backup, resumable repair and rollback. It reuses workspace identity
+and session metadata/index owners and never starts runtime or SSH connections.
+App hosts must stop data writers before calling its mutation entry points.
+
+```bash
+cargo test -p openbitfun-services-core --no-default-features --features session-recovery --lib session_recovery
+```
 
 workspace-persistence owns workspace records and registry validation;
 coordination-store owns the durable coordination SQLite schema;

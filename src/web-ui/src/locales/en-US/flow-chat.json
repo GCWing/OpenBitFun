@@ -172,9 +172,10 @@
     "failedTitle": "Session history did not load",
     "failedDescription": "Retry loading the saved conversation. If it was imported from another device, check your account and connection first.",
     "preparingOlderHistory": "Preparing older history...",
-    "olderHistoryNotReady": "Older history is not ready yet.",
-    "newerHistoryNotReady": "Newer history is not ready yet.",
+    "olderHistoryNotReady": "Earlier records could not be read. The current content is still available.",
+    "newerHistoryNotReady": "Later records could not be read. The current content is still available.",
     "remoteSessionMissing": "The backend session data was not found. If you just reconnected an SSH remote workspace, close and reopen the remote project, or create a new session and try again.",
+    "synchronize": "Resync records",
     "retry": "Retry"
   },
   "usage": {
@@ -631,6 +632,7 @@
   "input": {
     "placeholder": "How can I help you...",
     "placeholderWithContext": "Type a message, or drag and drop files to add context...",
+    "promptSuggestionAccept": "{{key}}",
     "send": "Send",
     "sendShortcut": "Send (⏎)",
     "stop": "Stop",
@@ -3577,5 +3579,12 @@
     "edit": "Restore draft",
     "noDraft": "The complete draft is only available on the device that submitted it.",
     "legacy": "Saved drafts from the previous queue. Send or restore each explicitly."
+  },
+  "backgroundDelivery": {
+    "recoveryCompleted": "This execution recovered and completed.",
+    "adjudicationUsage": "Delivery adjudication used {{tokens}} additional tokens",
+    "quiet": "Background task completed · No report needed",
+    "running": "Background task running",
+    "executionDetails": "Execution details"
   }
 }

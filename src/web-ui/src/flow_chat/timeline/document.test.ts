@@ -19,6 +19,18 @@ const agent = (id: string, toolName = 'AgentSpawn', status: FlowToolItem['status
 });
 
 describe('desktop conversation document', () => {
+  it('retains source and member navigation identities inside a quiet execution receipt', () => {
+    const projection = new ConversationDocumentProjection();
+    const input = { type: 'background-run', turnId: 'quiet', turn: {
+      userMessage: { content: 'Task instructions' }, modelRounds: [{ items: [{ id: 'raw-text', type: 'text', content: 'Original result' }] }],
+    } } as unknown as VirtualItem;
+    const before = JSON.stringify(input);
+    const rows = projection.project([input], options());
+    expect(rows[0].timeline?.memberIds).toEqual(['raw-text']);
+    expect(findTimelineBlockIndex(rows, 0, 'raw-text')).toBe(0);
+    expect(JSON.stringify(input)).toBe(before);
+  });
+
   it('packs adjacent launch cards independently of execution status or timing', () => {
     const projection = new ConversationDocumentProjection();
     const launches = [agent('a', 'Task', 'running'), agent('b', 'AgentSpawn', 'cancelled'), agent('c', 'LaunchReviewAgent', 'error')];

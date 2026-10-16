@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
+import { stripKeyboardControlCharacters } from '../../../../shared/text-input/textInputGuard';
 
 const NON_TEXT_INPUT_TYPES = new Set([
   'button',
@@ -65,7 +66,7 @@ function isTextEntryKey(event: KeyboardEvent): boolean {
     return false;
   }
 
-  return event.key.length === 1
+  return (event.key.length === 1 && stripKeyboardControlCharacters(event.key) !== '')
     || event.key === 'Dead'
     || event.key === 'Process'
     || event.keyCode === 229;

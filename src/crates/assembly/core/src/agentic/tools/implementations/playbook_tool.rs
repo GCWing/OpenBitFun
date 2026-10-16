@@ -487,3 +487,41 @@ Use this tool when you recognize a common task pattern — it saves planning tim
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn screenshot_playbook_waits_only_when_the_caller_requests_a_delay() {
+        let tool = PlaybookTool::new();
+        let context = ToolUseContext::for_tool_listing(None, None);
+        for wait_ms in [None, Some(0), Some(250)] {
+            let mut params = json!({"url":"https://example.com"});
+            if let Some(delay) = wait_ms {
+                params["wait_ms"] = json!(delay);
+            }
+            let result = tool
+                .call_impl(
+                    &json!({"action":"run","name":"browser_screenshot","params":params}),
+                    &context,
+                )
+                .await
+                .unwrap();
+            let data = result[0].content();
+            let steps = data["steps"].as_array().unwrap();
+            assert_eq!(steps[0]["action"], "navigate");
+            assert_eq!(steps.last().unwrap()["action"], "screenshot");
+            let waits: Vec<_> = steps
+                .iter()
+                .filter(|step| step["action"] == "wait")
+                .collect();
+            if wait_ms == Some(250) {
+                assert_eq!(waits.len(), 1);
+                assert_eq!(waits[0]["params"]["duration_ms"], 250);
+            } else {
+                assert!(waits.is_empty(), "{data}");
+            }
+        }
+    }
+}

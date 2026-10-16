@@ -44,6 +44,8 @@ pub mod prompt_cache;
 #[cfg(feature = "agent-runtime")]
 pub mod prompt_markup;
 #[cfg(feature = "agent-runtime")]
+pub mod prompt_suggestion;
+#[cfg(feature = "agent-runtime")]
 pub mod remote_file_delivery;
 #[cfg(feature = "agent-runtime")]
 pub mod review_read_receipt;

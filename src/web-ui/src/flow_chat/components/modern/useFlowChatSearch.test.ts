@@ -35,6 +35,14 @@ function SearchHarness({
 }
 
 describe('buildFlowChatSearchMatches', () => {
+  it('searches retained quiet execution content through its folded receipt', () => {
+    const items = [{ type: 'background-run', turnId: 'run', turn: { userMessage: { content: 'Generic task needle' }, modelRounds: [{ items: [{ id: 'text', type: 'text', content: 'Original needle output' }, { id: 'thinking', type: 'thinking', content: 'needle reasoning' }] }] } }] as unknown as VirtualItem[];
+    expect(buildFlowChatSearchMatches(items, 'needle')).toMatchObject([
+      { virtualItemIndex: 0, type: 'background-run', turnId: 'run' },
+      { virtualItemIndex: 0, flowItemId: 'text' },
+      { virtualItemIndex: 0, flowItemId: 'thinking', expandableIds: ['thinking'] },
+    ]);
+  });
   it('keeps the concrete model text source used for exact navigation', () => {
     const virtualItems = [{
       type: 'model-round',

@@ -543,6 +543,7 @@ mod tests {
             success: Some(true),
             finish_reason: None,
             has_final_response: Some(true),
+            background_delivery: None,
         };
 
         assert!(prompt_event_matches_turn(&current, "turn-current"));

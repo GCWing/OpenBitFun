@@ -16,6 +16,7 @@ import { elapsedMs, logElapsed, measureAsyncAndLog, nowMs } from './shared/utils
 import { startupTrace } from './shared/utils/startupTrace';
 import { scheduleAfterStartupSignal } from './shared/utils/startupTaskScheduling';
 import { installInteractionModalityTracking } from './shared/utils/motionPreference';
+import { installTextInputGuard } from '../../shared/text-input/textInputGuard';
 import {
   buildReactCrashLogPayload,
   isMinifiedReactErrorMessage,
@@ -187,6 +188,8 @@ function registerGlobalErrorHandlers() {
 
 registerGlobalErrorHandlers();
 installInteractionModalityTracking();
+const removeTextInputGuard = installTextInputGuard(document);
+if (import.meta.hot) import.meta.hot.dispose(removeTextInputGuard);
 
 // Disable Tab-key focus traversal globally (IDE-style chrome).
 // Allow Tab where it has semantic meaning: Monaco, xterm, and modal/dialog forms

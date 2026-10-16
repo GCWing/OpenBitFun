@@ -31,6 +31,8 @@ pub mod logging;
 pub mod macos_menubar;
 #[cfg(target_os = "macos")]
 mod macos_window_chrome;
+#[cfg(target_os = "macos")]
+mod macos_window_close;
 mod openbitfun_control_host;
 pub mod runtime;
 pub mod sleep_prevention;
@@ -182,8 +184,11 @@ pub(crate) fn mark_main_window_hidden_on_macos(hidden: bool) {
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn cancel_main_window_close_request_on_macos() {
+pub(crate) fn cancel_main_window_close_request_on_macos(app: &tauri::AppHandle) {
     MAIN_WINDOW_CLOSE_PENDING_ON_MACOS.store(false, Ordering::SeqCst);
+    if let Err(error) = app.run_on_main_thread(macos_window_chrome::cancel_pending_hide) {
+        log::warn!("Failed to cancel deferred macOS main-window hide: {error}");
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -201,33 +206,29 @@ fn take_main_window_close_request_on_macos() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn hide_main_window_on_macos(app: &tauri::AppHandle, reason: &str) -> Result<(), String> {
-    let Some(main_window) = app.get_webview_window("main") else {
-        mark_main_window_hidden_on_macos(false);
-        return Err("Main window not found".to_string());
-    };
-
-    main_window.hide().map_err(|error| {
-        mark_main_window_hidden_on_macos(false);
-        log::warn!(
-            "Failed to hide main window on macOS close request: reason={}, error={}",
-            reason,
-            error
-        );
-        format!("Failed to hide main window: {}", error)
-    })?;
-
-    mark_main_window_hidden_on_macos(true);
-    log::info!(
-        "Main window close requested on macOS; hid window instead of exiting: reason={}",
-        reason
-    );
-    Ok(())
+async fn hide_main_window_on_macos(
+    app: &tauri::AppHandle,
+    reason: &'static str,
+) -> Result<(), String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        // Claim on the AppKit thread so a reopen can cancel an enqueued hide.
+        let result = if take_main_window_close_request_on_macos() {
+            macos_window_chrome::request_hide(reason)
+        } else {
+            Ok(())
+        };
+        let _ = sender.send(result);
+    })
+    .map_err(|error| format!("Failed to schedule main-window hide: {error}"))?;
+    receiver
+        .await
+        .map_err(|error| format!("Main-window hide was canceled: {error}"))?
 }
 
 #[cfg(target_os = "macos")]
 fn show_main_window_on_macos(app: &tauri::AppHandle, reason: &str) {
-    cancel_main_window_close_request_on_macos();
+    cancel_main_window_close_request_on_macos(app);
 
     let Some(main_window) = app.get_webview_window("main") else {
         log::warn!(
@@ -262,9 +263,7 @@ fn show_main_window_on_macos(app: &tauri::AppHandle, reason: &str) {
 async fn hide_main_window_after_close_request(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        if take_main_window_close_request_on_macos() {
-            hide_main_window_on_macos(&app, "frontend_ack")?;
-        }
+        hide_main_window_on_macos(&app, "frontend_ack").await?;
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -285,7 +284,7 @@ fn show_main_window_for_secondary_launch(
 
     #[cfg(target_os = "macos")]
     {
-        cancel_main_window_close_request_on_macos();
+        cancel_main_window_close_request_on_macos(app);
         mark_main_window_hidden_on_macos(false);
     }
 
@@ -1229,15 +1228,13 @@ pub async fn run() {
                                 ))
                                 .await;
 
-                                if take_main_window_close_request_on_macos() {
-                                    if let Err(error) =
-                                        hide_main_window_on_macos(&app_handle, "frontend_timeout")
-                                    {
-                                        log::warn!(
-                                            "macOS close fallback hide failed after frontend timeout: {}",
-                                            error
-                                        );
-                                    }
+                                if let Err(error) =
+                                    hide_main_window_on_macos(&app_handle, "frontend_timeout").await
+                                {
+                                    log::warn!(
+                                        "macOS close fallback hide failed after frontend timeout: {}",
+                                        error
+                                    );
                                 }
                             });
                         }
@@ -2339,56 +2336,56 @@ async fn deliver_event_to_webview(
         attach_session_event_cursor(&mut projected.payload, cursor);
     }
 
-    if let (Some(hub), Some(session_id)) = (
-        api::remote_connect_api::host_stream_hub().await,
-        projected
+    for hub in api::remote_connect_api::host_stream_hubs().await {
+        if let Some(session_id) = projected
             .payload
             .get("sessionId")
             .or_else(|| projected.payload.get("session_id"))
-            .and_then(serde_json::Value::as_str),
-    ) {
-        let name = projected.event_name.as_str();
-        let policy =
+            .and_then(serde_json::Value::as_str)
+        {
+            let name = projected.event_name.as_str();
+            let policy =
             openbitfun_core::service::remote_connect::session_records::session_event_publication(
                 name,
                 &projected.payload,
             );
-        if policy.synchronize_records {
-            if let Err(error) = async {
-                if let Some(turn) = projected
-                    .payload
-                    .get("turnId")
-                    .or_else(|| projected.payload.get("settledTurnId"))
-                    .and_then(serde_json::Value::as_str)
+            if policy.synchronize_records {
+                if let Err(error) = async {
+                    if let Some(turn) = projected
+                        .payload
+                        .get("turnId")
+                        .or_else(|| projected.payload.get("settledTurnId"))
+                        .and_then(serde_json::Value::as_str)
+                    {
+                        openbitfun_core::service::remote_connect::synchronize_session_record_turn(
+                            &hub, session_id, turn,
+                        )
+                        .await
+                    } else if name == "agentic://session-history-changed" {
+                        openbitfun_core::service::remote_connect::synchronize_session_records(
+                            &hub, session_id,
+                        )
+                        .await
+                    } else {
+                        Ok(())
+                    }
+                }
+                .await
                 {
-                    openbitfun_core::service::remote_connect::synchronize_session_record_turn(
-                        &hub, session_id, turn,
-                    )
-                    .await
-                } else if name == "agentic://session-history-changed" {
-                    openbitfun_core::service::remote_connect::synchronize_session_records(
-                        &hub, session_id,
-                    )
-                    .await
-                } else {
-                    Ok(())
+                    log::error!("Unable to synchronize host session records: {error}");
                 }
             }
-            .await
-            {
-                log::error!("Unable to synchronize host session records: {error}");
-            }
-        }
-        if policy.persist_control {
-            if let Err(error) = hub
-                .append(
-                    session_id.to_owned(),
-                    projected.event_name.clone(),
-                    projected.payload.clone(),
-                )
-                .await
-            {
-                log::error!("Unable to publish session control event: {error}");
+            if policy.persist_control {
+                if let Err(error) = hub
+                    .append(
+                        session_id.to_owned(),
+                        projected.event_name.clone(),
+                        projected.payload.clone(),
+                    )
+                    .await
+                {
+                    log::error!("Unable to publish session control event: {error}");
+                }
             }
         }
     }

@@ -534,6 +534,7 @@ const WorktreeSettingsSection: React.FC = () => {
             align="center"
           >
             <NumberInput
+              size="sm"
               value={settings.autoDeleteLimit}
               onValueChange={value => updateSettings({ autoDeleteLimit: value })}
               min={AUTO_DELETE_LIMIT_MIN}

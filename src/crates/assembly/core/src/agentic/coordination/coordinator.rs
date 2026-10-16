@@ -93,6 +93,9 @@ use openbitfun_agent_runtime::deep_review::FocusedReviewAssignment;
 use openbitfun_agent_runtime::permission::{
     AUTO_APPROVE_ASK_CONTEXT_KEY, PERMISSION_MODE_CONTEXT_KEY,
 };
+use openbitfun_agent_runtime::prompt_suggestion::{
+    prompt_suggestion_source_eligible, PROMPT_SUGGESTION_ELIGIBLE_CONTEXT_KEY,
+};
 use openbitfun_agent_runtime::remote_file_delivery::{
     needs_computer_links_for_source, remote_file_delivery_reminder,
     TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY,
@@ -1540,11 +1543,37 @@ impl ConversationCoordinator {
             })
     }
 
-    async fn resolve_session_primary_agent(
+    async fn resolve_session_agent_for_turn(
         session: &Session,
         agent_type: &str,
         workspace: &Option<WorkspaceBinding>,
     ) -> OpenBitFunResult<crate::agentic::agents::ExternalPrimaryAgentTurnBinding> {
+        ensure_session_accepts_conversation(session)?;
+        if session.kind == SessionKind::Subagent
+            && Self::normalize_agent_type(agent_type)
+                .eq_ignore_ascii_case(&Self::normalize_agent_type(&session.agent_type))
+            && session.config.agent_route_owner == SessionAgentRouteOwner::Local
+        {
+            // An existing reusable child keeps its delegated identity. Resolving
+            // it as a new main-session mode rejects GeneralPurpose/Explore and
+            // may instead follow a newly installed same-name external route.
+            let registry = get_agent_registry();
+            registry
+                .load_custom_agents(session.config.workspace_id.as_deref())
+                .await;
+            return registry
+                .resolve_local_agent_for_subagent_turn(
+                    &session.agent_type,
+                    session.config.workspace_id.as_deref(),
+                    session.config.agent_route_key.as_deref(),
+                )
+                .ok_or_else(|| {
+                    OpenBitFunError::Validation(format!(
+                        "candidate_unavailable: saved local subagent {} is unavailable or its source changed",
+                        session.agent_type
+                    ))
+                });
+        }
         let external_sources_supported = workspace
             .as_ref()
             .is_some_and(|workspace| !workspace.is_remote());
@@ -1579,6 +1608,25 @@ impl ConversationCoordinator {
         context: &mut HashMap<String, String>,
         metadata: Option<&serde_json::Value>,
     ) {
+        if let Some(run_id) = metadata
+            .and_then(|metadata| {
+                metadata.get(
+                    openbitfun_core_types::background_delivery::BACKGROUND_DELIVERY_METADATA_KEY,
+                )
+            })
+            .and_then(|delivery| delivery.get("runId"))
+            .and_then(serde_json::Value::as_str)
+        {
+            if let Some(delivery) =
+                openbitfun_core_types::background_delivery::BackgroundDelivery::from_metadata(
+                    metadata, run_id,
+                )
+            {
+                if let Ok(serialized) = serde_json::to_string(&delivery) {
+                    context.insert(crate::agentic::execution::background_delivery::BACKGROUND_DELIVERY_CONTEXT_KEY.to_owned(), serialized);
+                }
+            }
+        }
         if let Some(schema) = metadata
             .and_then(serde_json::Value::as_object)
             .and_then(|metadata| metadata.get(OUTPUT_SCHEMA_CONTEXT_KEY))
@@ -3073,9 +3121,17 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         }
 
         if persistence_succeeded {
+            let quiet_completion = execution_result.effective_finish_reason == "background_quiet"
+                && session_manager
+                    .background_delivery_for_turn(session_id, turn_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some();
             let status = if execution_result.success
                 && (execution_result.has_final_response
-                    || execution_result.effective_finish_reason == "user_steering")
+                    || execution_result.effective_finish_reason == "user_steering"
+                    || quiet_completion)
             {
                 AgentTurnSettlementStatus::Completed
             } else {
@@ -3107,6 +3163,11 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                         success: Some(execution_result.success),
                         finish_reason: Some(execution_result.effective_finish_reason.clone()),
                         has_final_response: Some(execution_result.has_final_response),
+                        background_delivery: session_manager
+                            .background_delivery_for_turn(session_id, turn_id)
+                            .await
+                            .ok()
+                            .flatten(),
                     },
                     None,
                 )
@@ -4205,7 +4266,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
 
             let effective_agent_type = Self::normalize_agent_type(agent_type.trim());
             let session_workspace = Self::build_workspace_binding(&session.config).await;
-            let primary_agent_binding = Self::resolve_session_primary_agent(
+            let primary_agent_binding = Self::resolve_session_agent_for_turn(
                 &session,
                 &effective_agent_type,
                 &session_workspace,
@@ -4692,6 +4753,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                             success: Some(true),
                             finish_reason: Some("complete".to_string()),
                             has_final_response: Some(false),
+                            background_delivery: None,
                         })
                         .await;
                 }
@@ -5760,7 +5822,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         }
 
         let manual_workspace = Self::build_workspace_binding(&initial_session.config).await;
-        let primary_agent_binding = Self::resolve_session_primary_agent(
+        let primary_agent_binding = Self::resolve_session_agent_for_turn(
             &initial_session,
             &initial_session.agent_type,
             &manual_workspace,
@@ -5936,6 +5998,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     success: Some(true),
                     finish_reason: Some("complete".to_string()),
                     has_final_response: Some(true),
+                    background_delivery: None,
                 },
                 Some(EventPriority::Normal),
             )
@@ -6232,7 +6295,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             "Standard".to_string()
         };
         let effective_agent_type = Self::normalize_agent_type(&provisional_agent_type);
-        let primary_agent_binding = Self::resolve_session_primary_agent(
+        let primary_agent_binding = Self::resolve_session_agent_for_turn(
             &session,
             &effective_agent_type,
             &session_workspace,
@@ -6642,6 +6705,15 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             default_permission_mode_from_global_config().await,
         );
         let mut metadata = Self::ensure_user_message_metadata_object(user_message_metadata.take());
+        if submission_policy.trigger_source
+            != openbitfun_runtime_ports::DialogTriggerSource::ScheduledJob
+        {
+            if let Some(object) = metadata.as_object_mut() {
+                object.remove(
+                    openbitfun_core_types::background_delivery::BACKGROUND_DELIVERY_METADATA_KEY,
+                );
+            }
+        }
         if let Some(object) = metadata.as_object_mut() {
             object.insert(
                 INTERRUPTED_TURN_PERMISSION_MODE_METADATA_KEY.to_string(),
@@ -6945,8 +7017,20 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 run_manifest.to_string(),
             );
         }
-        if metadata_bool(user_message_metadata.as_ref(), "acp_transport") == Some(true) {
+        let acp_transport =
+            metadata_bool(user_message_metadata.as_ref(), "acp_transport") == Some(true);
+        if acp_transport {
             context_vars.insert("acp_transport".to_string(), "true".to_string());
+        }
+        if prompt_suggestion_source_eligible(
+            submission_policy.trigger_source,
+            session.kind,
+            acp_transport,
+        ) {
+            context_vars.insert(
+                PROMPT_SUGGESTION_ELIGIBLE_CONTEXT_KEY.to_string(),
+                "true".to_string(),
+            );
         }
         if let Some(user_input_available) = metadata_bool(
             user_message_metadata.as_ref(),
@@ -6966,6 +7050,20 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             );
         }
         Self::copy_output_schema_context(&mut context_vars, user_message_metadata.as_ref());
+        if let Some(delivery) =
+            openbitfun_core_types::background_delivery::BackgroundDelivery::from_metadata(
+                user_message_metadata.as_ref(),
+                &turn_id,
+            )
+        {
+            if let Ok(serialized) = serde_json::to_string(&delivery) {
+                context_vars.insert(
+                    crate::agentic::execution::background_delivery::BACKGROUND_DELIVERY_CONTEXT_KEY
+                        .to_owned(),
+                    serialized,
+                );
+            }
+        }
         if needs_computer_links_for_source(submission_policy.trigger_source) {
             context_vars.insert(
                 TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY.to_string(),
@@ -7339,7 +7437,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             ));
         }
         let primary_agent_binding =
-            Self::resolve_session_primary_agent(&session, &session.agent_type, &session_workspace)
+            Self::resolve_session_agent_for_turn(&session, &session.agent_type, &session_workspace)
                 .await?;
         if primary_agent_binding.route_owner != SessionAgentRouteOwner::Local {
             return Err(OpenBitFunError::Validation(
@@ -14920,6 +15018,7 @@ impl ConversationCoordinator {
                             "tool_error".to_string()
                         }),
                         has_final_response: Some(false),
+                        background_delivery: None,
                     },
                     Some(EventPriority::Normal),
                 )
@@ -15896,7 +15995,7 @@ mod tests {
             .expect("external command delegation boundary")
             .0;
 
-        assert!(delegation.contains("Self::resolve_session_primary_agent("));
+        assert!(delegation.contains("Self::resolve_session_agent_for_turn("));
         assert!(delegation.contains("Some(&primary_runtime_agent_key)"));
         assert!(delegation.contains(".update_session_agent_binding("));
         assert!(!delegation.contains(".update_session_agent_type("));
@@ -16362,7 +16461,7 @@ mod tests {
             .expect("session remains loaded");
         let workspace = ConversationCoordinator::build_workspace_binding(&session.config).await;
 
-        let binding = ConversationCoordinator::resolve_session_primary_agent(
+        let binding = ConversationCoordinator::resolve_session_agent_for_turn(
             &session, "Standard", &workspace,
         )
         .await
@@ -16383,7 +16482,7 @@ mod tests {
         let case_variant_session = session_manager
             .get_session(&session_id)
             .expect("case-variant session remains loaded");
-        let error = match ConversationCoordinator::resolve_session_primary_agent(
+        let error = match ConversationCoordinator::resolve_session_agent_for_turn(
             &case_variant_session,
             "Standard",
             &workspace,
@@ -16394,6 +16493,235 @@ mod tests {
             Err(error) => error,
         };
         assert!(error.to_string().contains("candidate_unavailable"));
+    }
+
+    #[tokio::test]
+    async fn subagent_conversation_resolves_legacy_children_on_local_and_remote_workspaces() {
+        for agent_type in ["GeneralPurpose", "Explore", "Standard"] {
+            let mut child = crate::agentic::core::Session::new(
+                "Legacy child".to_string(),
+                agent_type.to_string(),
+                SessionConfig::default(),
+            );
+            child.kind = SessionKind::Subagent;
+            let mut legacy = serde_json::to_value(&child).expect("serialize legacy child");
+            let config = legacy["config"].as_object_mut().expect("config object");
+            for key in [
+                "continuation_policy",
+                "agent_route_owner",
+                "agent_route_key",
+            ] {
+                config.remove(key);
+            }
+            let child: crate::agentic::core::Session =
+                serde_json::from_value(legacy).expect("read old child without route fields");
+            assert_eq!(
+                child.config.continuation_policy,
+                SessionContinuationPolicy::Reusable
+            );
+            assert_eq!(
+                child.config.agent_route_owner,
+                SessionAgentRouteOwner::Local
+            );
+
+            let remote = crate::agentic::workspace::WorkspaceBinding::new_remote(
+                None,
+                std::path::PathBuf::from("/remote/workspace"),
+                "remote-child-host".to_string(),
+                "Remote host".to_string(),
+                openbitfun_services_core::workspace_identity::WorkspaceSessionIdentity {
+                    workspace_kind: openbitfun_core_types::WorkspaceKind::Remote,
+                    hostname: "remote-host".to_string(),
+                    logical_workspace_path: "/remote/workspace".to_string(),
+                    remote_connection_id: Some("remote-child-host".to_string()),
+                },
+            );
+            for workspace in [None, Some(remote)] {
+                let binding = ConversationCoordinator::resolve_session_agent_for_turn(
+                    &child, agent_type, &workspace,
+                )
+                .await
+                .expect("legacy reusable child must resolve its existing local agent");
+                assert_eq!(binding.runtime_agent_key, agent_type);
+                assert_eq!(binding.route_owner, SessionAgentRouteOwner::Local);
+            }
+            let round_trip: crate::agentic::core::Session =
+                serde_json::from_value(serde_json::to_value(&child).expect("write upgraded child"))
+                    .expect("read upgraded child");
+            assert_eq!(round_trip.kind, child.kind);
+            assert_eq!(round_trip.agent_type, agent_type);
+            assert_eq!(
+                round_trip.config.continuation_policy,
+                child.config.continuation_policy
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn subagent_conversation_direct_turn_preserves_context_and_rejects_fresh_only() {
+        let (coordinator, session_manager) = test_coordinator();
+        let workspace = tempfile::tempdir().expect("child workspace");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let workspace_path = workspace.path().to_string_lossy().into_owned();
+        let ai_config = AIConfig {
+            models: vec![AIModelConfig {
+                id: "child-model".to_string(),
+                name: "Child model".to_string(),
+                provider: "openai".to_string(),
+                model_name: "test-model".to_string(),
+                enabled: true,
+                ..AIModelConfig::default()
+            }],
+            ..AIConfig::default()
+        };
+        for agent_type in ["GeneralPurpose", "Explore"] {
+            for policy in [
+                SessionContinuationPolicy::Reusable,
+                SessionContinuationPolicy::FreshOnly,
+            ] {
+                let child = coordinator
+                    .create_hidden_subagent_session(
+                        None,
+                        "Delegated child".to_string(),
+                        agent_type.to_string(),
+                        SessionConfig {
+                            workspace_path: Some(workspace_path.clone()),
+                            model_id: Some("child-model".to_string()),
+                            continuation_policy: policy,
+                            ..Default::default()
+                        },
+                        Some("parent-session".to_string()),
+                    )
+                    .await
+                    .expect("create delegated child");
+                session_manager
+                    .add_message(
+                        &child.session_id,
+                        Message::user("Initial delegated task".to_string()),
+                    )
+                    .await
+                    .expect("seed delegated context");
+                let turn_id = format!("child-follow-up-{}", uuid::Uuid::new_v4());
+                let result = TEST_MODEL_RESOLUTION_AI_CONFIG
+                    .scope(
+                        ai_config.clone(),
+                        coordinator.start_dialog_turn(
+                            child.session_id.clone(),
+                            "Continue the task".to_string(),
+                            None,
+                            Some(turn_id.clone()),
+                            agent_type.to_string(),
+                            Some(workspace_path.clone()),
+                            None,
+                            None,
+                            DialogSubmissionPolicy::for_source(DialogTriggerSource::DesktopUi),
+                            None,
+                        ),
+                    )
+                    .await;
+                let updated = session_manager
+                    .get_session(&child.session_id)
+                    .expect("child remains loaded");
+                assert_eq!(updated.agent_type, agent_type);
+                assert_eq!(updated.kind, SessionKind::Subagent);
+                assert_eq!(updated.created_by, child.created_by);
+                assert_eq!(updated.config.model_id.as_deref(), Some("child-model"));
+                if policy == SessionContinuationPolicy::FreshOnly {
+                    assert!(result
+                        .expect_err("fresh-only follow-up must fail")
+                        .to_string()
+                        .contains("subagent_follow_up_unsupported"));
+                    assert!(updated.dialog_turn_ids.is_empty());
+                    assert_eq!(updated.config.agent_route_key, child.config.agent_route_key);
+                    assert!(matches!(updated.state, SessionState::Idle));
+                } else {
+                    result.expect("a reusable child must admit a direct user turn");
+                    assert_eq!(updated.dialog_turn_ids, vec![turn_id.clone()]);
+                    assert_eq!(
+                        updated.config.agent_route_owner,
+                        SessionAgentRouteOwner::Local
+                    );
+                    assert!(updated.config.agent_route_key.is_some());
+                    let messages = session_manager
+                        .get_context_messages(&child.session_id)
+                        .await
+                        .expect("child context");
+                    for expected in ["Initial delegated task", "Continue the task"] {
+                        assert!(messages.iter().any(|message| {
+                            matches!(&message.content, MessageContent::Text(text) if text == expected)
+                        }), "child context must contain {expected}");
+                    }
+                    let _ = coordinator
+                        .cancel_dialog_turn(&child.session_id, &turn_id)
+                        .await;
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn subagent_conversation_keeps_primary_fresh_only_and_route_guards() {
+        let mut child = crate::agentic::core::Session::new(
+            "Child".to_string(),
+            "GeneralPurpose".to_string(),
+            SessionConfig::default(),
+        );
+        child.kind = SessionKind::Subagent;
+        assert!(
+            ConversationCoordinator::resolve_session_agent_for_turn(&child, "Explore", &None)
+                .await
+                .is_err(),
+            "a different subagent must not be selected as a mode"
+        );
+
+        child.config.agent_route_key = Some("wrong-source".to_string());
+        let error = ConversationCoordinator::resolve_session_agent_for_turn(
+            &child,
+            "GeneralPurpose",
+            &None,
+        )
+        .await
+        .err()
+        .expect("a changed source must be rejected");
+        assert!(error.to_string().contains("candidate_unavailable"));
+        child.config.agent_route_key = None;
+        child.config.agent_route_owner = SessionAgentRouteOwner::External;
+        assert!(
+            ConversationCoordinator::resolve_session_agent_for_turn(
+                &child,
+                "GeneralPurpose",
+                &None,
+            )
+            .await
+            .is_err(),
+            "an external owner must not fall back to a local child"
+        );
+
+        child.config.agent_route_owner = SessionAgentRouteOwner::Local;
+        child.config.continuation_policy = SessionContinuationPolicy::FreshOnly;
+        let error = ConversationCoordinator::resolve_session_agent_for_turn(
+            &child,
+            "GeneralPurpose",
+            &None,
+        )
+        .await
+        .err()
+        .expect("fresh-only children must remain read-only");
+        assert!(error.to_string().contains("subagent_follow_up_unsupported"));
+
+        child.config.continuation_policy = SessionContinuationPolicy::Reusable;
+        child.kind = SessionKind::Standard;
+        let error = ConversationCoordinator::resolve_session_agent_for_turn(
+            &child,
+            "GeneralPurpose",
+            &None,
+        )
+        .await
+        .err()
+        .expect("subagents must not become main-session modes");
+        assert!(error
+            .to_string()
+            .contains("Unknown session mode: GeneralPurpose"));
     }
 
     #[test]

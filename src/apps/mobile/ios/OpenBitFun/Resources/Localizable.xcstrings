@@ -1,6 +1,12 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "填入输入框": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Use suggestion" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "填入输入框" } }
+      }
+    },
     "旧版设备：显示最近访问的工作区": {
       "localizations": {
         "en": {

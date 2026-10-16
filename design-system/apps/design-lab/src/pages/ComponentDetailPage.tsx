@@ -1,5 +1,5 @@
 import { CapsulePreview } from "../preview/CapsulePreview";
-import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { ComponentOverview } from "../preview/ComponentOverview";
 import { getComponentPresentation, getInitialPreviewState, hasComponentOverview } from "../preview/componentPresentation";
 import { previewEn } from "../i18n/previewMessages";
@@ -65,6 +65,7 @@ import {
   NavigationPanelSection,
   NavigationPanelSeparator,
   NumberInput,
+  OverflowText,
   PageHeader,
   Radio,
   ScrollArea,
@@ -103,13 +104,15 @@ import {
 } from "@openbitfun/ui";
 import {
   MobileActionSheet,
+  MobileAvatar,
   MobileBadge,
   MobileBanner,
   MobileButton,
   MobileCard,
+  MobileCheckbox,
   MobileChoiceSheet,
-  MobileConfirmSheet,
   MobileComposer,
+  MobileConfirmSheet,
   MobileDisclosure,
   MobileFileButton,
   MobileFloatingActions,
@@ -118,15 +121,23 @@ import {
   MobileListRow,
   MobileMessage,
   MobilePageHeader,
+  MobileRadioGroup,
   MobileScrim,
   MobileSection,
   MobileSegmentedControl,
+  MobileSelect,
   MobileSheet,
   MobileStatus,
+  MobileStepper,
+  MobileSwitch,
+  MobileTabBar,
+  MobileTag,
   MobileTextField,
   MobileTextarea,
-} from "@openbitfun/ui/mobile";
-import type { ComponentMeta } from "@openbitfun/ui/registry";
+  MobileToolbar,
+}
+from "@openbitfun/ui/mobile";
+import { componentRegistry, type ComponentMeta } from "@openbitfun/ui/registry";
 import previewImage from "../assets/design-system-hero.webp";
 import { IconCompositionPreview } from "../preview/IconCompositionPreview";
 import { RollingTextPreview } from "../preview/RollingTextPreview";
@@ -162,6 +173,41 @@ type PreviewSize = "sm" | "md" | "lg";
 type FieldOrientation = "horizontal" | "vertical";
 type PageHeaderAlign = "center" | "start";
 type PageHeaderSize = "display" | "lg" | "md" | "sm";
+
+/** Registry order, so a detail heading can carry the same category index as the library index. */
+const categoryOrder = Array.from(new Set(componentRegistry.map(item => item.category)));
+
+/**
+ * A level-2 reference block that keeps a real heading.
+ *
+ * `Disclosure` renders its `summary` inside the trigger `<button>`, and a button cannot contain a
+ * heading. `renderHeader` hands over the trigger attributes instead, letting the heading own the
+ * trigger the other way round: `<h2><button>…</button></h2>` is valid phrasing content, while
+ * `<button><h2>…</h2></button>` is not. The block keeps its document structure, and the component
+ * still owns open state, ids, and ARIA wiring.
+ *
+ * `summary` stays because the component requires it; `renderHeader` replaces the visible header.
+ */
+function ReferenceDisclosure({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Disclosure
+      className="design-reference-disclosure"
+      summary={label}
+      renderHeader={triggerProps => (
+        <h2 className="design-reference-heading" data-openbitfun-part="header">
+          <button {...triggerProps} className="design-reference-trigger" data-overflow-trigger>
+            <span aria-hidden="true" className="design-reference-indicator" data-openbitfun-part="indicator">
+              <Icon name="chevron-right" size="sm" />
+            </span>
+            <OverflowText className="design-reference-label" data-openbitfun-part="heading">{label}</OverflowText>
+          </button>
+        </h2>
+      )}
+    >
+      {children}
+    </Disclosure>
+  );
+}
 
 const buttonVariants = ["outline", "fill", "secondary", "primary", "text"] as const;
 const iconButtonVariants = ["annotation", "quiet", "glass", "outline", "fill", "primary"] as const;
@@ -470,6 +516,15 @@ export function ComponentDetailPage({
     if (component.name === "MobileLink") return `import { MobileLink } from "@openbitfun/ui/mobile";\n\n<MobileLink href="https://example.com">\n  ${t("nav.docs")}\n</MobileLink>`;
     if (component.name === "MobileTextField") return `import { MobileTextField } from "@openbitfun/ui/mobile";\n\n<MobileTextField\n  aria-label="${t("components.preview.searchLabel")}"\n  placeholder="${t("components.preview.searchPlaceholder")}"\n/>`;
     if (component.name === "MobileListRow") return `import { MobileListRow } from "@openbitfun/ui/mobile";\n\n<MobileListRow\n  appearance="surface"\n  label="${t("components.preview.session")}"\n  supportingText="/workspace"\n/>`;
+    if (component.name === "MobileAvatar") return `import { MobileAvatar } from "@openbitfun/ui/mobile";\n\n<MobileAvatar name="${t("components.preview.session")}" size="md" status="online" />`;
+    if (component.name === "MobileCheckbox") return `import { MobileCheckbox } from "@openbitfun/ui/mobile";\n\n<MobileCheckbox\n  label="${t("components.preview.notifications")}"\n  description="${t("components.preview.fieldDescription")}"\n  checked={enabled}\n  onCheckedChange={setEnabled}\n/>`;
+    if (component.name === "MobileRadioGroup") return `import { MobileRadioGroup } from "@openbitfun/ui/mobile";\n\n<MobileRadioGroup\n  name="density"\n  options={densityOptions}\n  value={density}\n  onValueChange={setDensity}\n/>`;
+    if (component.name === "MobileSelect") return `import { MobileSelect } from "@openbitfun/ui/mobile";\n\n<MobileSelect\n  label="${t("components.preview.mobileSelectLabel")}"\n  options={models}\n  sheetTitle="${t("components.preview.mobileSelectLabel")}"\n  value={model}\n  onValueChange={setModel}\n/>`;
+    if (component.name === "MobileStepper") return `import { MobileStepper } from "@openbitfun/ui/mobile";\n\n<MobileStepper\n  label="${t("components.preview.mobileStepperLabel")}"\n  decrementLabel="${t("components.preview.mobileDecrease")}"\n  incrementLabel="${t("components.preview.mobileIncrease")}"\n  min={0}\n  max={5}\n  value={value}\n  onValueChange={setValue}\n/>`;
+    if (component.name === "MobileSwitch") return `import { MobileSwitch } from "@openbitfun/ui/mobile";\n\n<MobileSwitch\n  label="${t("components.preview.notifications")}"\n  description="${t("components.preview.fieldDescription")}"\n  checked={enabled}\n  onCheckedChange={setEnabled}\n/>`;
+    if (component.name === "MobileTabBar") return `import { MobileTabBar } from "@openbitfun/ui/mobile";\n\n<MobileTabBar\n  label="${t("components.preview.segmentedLabel")}"\n  items={destinations}\n  value={section}\n  onValueChange={setSection}\n/>`;
+    if (component.name === "MobileTag") return `import { MobileTag } from "@openbitfun/ui/mobile";\n\n<MobileTag\n  selected={active}\n  onClick={toggle}\n>\n  Design\n</MobileTag>`;
+    if (component.name === "MobileToolbar") return `import { MobileToolbar } from "@openbitfun/ui/mobile";\n\n<MobileToolbar\n  label="${t("components.preview.mobileToolbarSelection")}"\n  leading={<BackButton />}\n  trailing={<MoreButton />}\n>\n  ${t("components.preview.mobileToolbarSelection")}\n</MobileToolbar>`;
     if (component.name === "MobileSheet") return `import { MobileSheet } from "@openbitfun/ui/mobile";\n\n<MobileSheet\n  footer={<CancelButton />}\n  onOpenChange={() => setOpen(false)}\n  open={open}\n  title="${t("components.preview.modalTitle")}"\n>\n  <ActionList />\n</MobileSheet>`;
     if (component.name === "Textarea") return `import { Textarea } from "@openbitfun/ui";\n\n<Textarea\n  label="${t("components.preview.inputLabel")}"\n  defaultValue="${t("components.preview.fieldValue")}"\n  hint="${t("components.preview.fieldDescription")}"\n  maxLength={200}\n  rows={3}\n  showCount\n/>`;
     if (component.name === "Alert") return `import { Alert } from "@openbitfun/ui";\n\n<Alert tone="info" title="${t("components.preview.notifications")}" message="${t("components.preview.fieldDescription")}" />`;
@@ -999,6 +1054,153 @@ export function ComponentDetailPage({
           supportingText={t("components.preview.fieldDescription")}
           trailing={<Icon name="chevron-right" aria-hidden="true" />}
         />
+      );
+    }
+
+    if (component.name === "MobileAvatar") {
+      const avatarStatus = state === "online" || state === "away" || state === "busy" || state === "offline" ? state : undefined;
+      return (
+        <MobileAvatar
+          key={state}
+          name={t("components.preview.session")}
+          shape={state === "artwork" ? "rounded" : "circle"}
+          size={state === "initials" ? "lg" : "md"}
+          src={state === "image" ? previewImage : undefined}
+          status={avatarStatus}
+        >
+          {state === "image" || state === "initials" ? undefined : <Icon aria-hidden="true" name="session" />}
+        </MobileAvatar>
+      );
+    }
+
+    if (component.name === "MobileCheckbox") {
+      return (
+        <MobileCheckbox
+          data-openbitfun-preview-state={state === "hover" || state === "active" || state === "focus-visible" ? state : undefined}
+          defaultChecked={state === "checked"}
+          description={t("components.preview.fieldDescription")}
+          disabled={state === "disabled"}
+          indeterminate={state === "indeterminate"}
+          invalid={state === "invalid"}
+          key={state}
+          label={t("components.preview.notifications")}
+        />
+      );
+    }
+
+    if (component.name === "MobileRadioGroup") {
+      return (
+        <MobileRadioGroup
+          data-openbitfun-preview-state={state === "hover" || state === "active" || state === "focus-visible" ? state : undefined}
+          key={state}
+          name="detail-mobile-radio"
+          options={[
+            { description: t("components.preview.fieldDescription"), disabled: state === "disabled", label: t("components.preview.segmentedChat"), value: "chat" },
+            { disabled: state === "disabled", label: t("components.preview.segmentedAgent"), value: "agent" },
+          ]}
+          value="chat"
+        />
+      );
+    }
+
+    if (component.name === "MobileSelect") {
+      return (
+        <MobileSelect
+          data-openbitfun-preview-state={state === "hover" || state === "active" || state === "focus-visible" ? state : undefined}
+          defaultOpen={state === "open"}
+          description={state === "invalid" ? t("components.preview.inputError") : undefined}
+          disabled={state === "disabled"}
+          invalid={state === "invalid"}
+          key={state}
+          label={t("components.preview.mobileSelectLabel")}
+          options={[
+            { label: "deepseek-v4-pro", value: "pro" },
+            { label: "deepseek-v4-flash", value: "flash" },
+          ]}
+          sheetTitle={t("components.preview.mobileSelectLabel")}
+          value="pro"
+        />
+      );
+    }
+
+    if (component.name === "MobileStepper") {
+      return (
+        <MobileStepper
+          data-openbitfun-preview-state={state === "hover" || state === "active" || state === "focus-within" ? state : undefined}
+          decrementLabel={t("components.preview.mobileDecrease")}
+          description={state === "invalid" ? t("components.preview.inputError") : undefined}
+          disabled={state === "disabled"}
+          incrementLabel={t("components.preview.mobileIncrease")}
+          invalid={state === "invalid"}
+          key={state}
+          label={t("components.preview.mobileStepperLabel")}
+          max={5}
+          min={0}
+          value={3}
+        />
+      );
+    }
+
+    if (component.name === "MobileSwitch") {
+      return (
+        <MobileSwitch
+          data-openbitfun-preview-state={state === "hover" || state === "active" || state === "focus-visible" ? state : undefined}
+          defaultChecked={state === "on"}
+          description={t("components.preview.fieldDescription")}
+          disabled={state === "disabled"}
+          key={state}
+          label={t("components.preview.notifications")}
+        />
+      );
+    }
+
+    if (component.name === "MobileTabBar") {
+      return (
+        <MobileTabBar
+          data-openbitfun-preview-state={state === "hover" || state === "active" || state === "focus-visible" ? state : undefined}
+          items={[
+            { icon: <Icon aria-hidden="true" name="session" />, label: t("components.preview.segmentedChat"), value: "chat" },
+            { icon: <Icon aria-hidden="true" name="folder" />, label: t("components.preview.segmentedAgent"), value: "agent" },
+            { disabled: state === "disabled", icon: <Icon aria-hidden="true" name="gear" />, label: t("components.preview.settings"), value: "settings" },
+          ]}
+          key={state}
+          label={t("components.preview.segmentedLabel")}
+          value={state === "selected" ? "agent" : "chat"}
+        />
+      );
+    }
+
+    if (component.name === "MobileTag") {
+      const forcedTagState = state === "hover" || state === "active" || state === "focus-visible" ? state : undefined;
+      return (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {["Design", "Frontend", "Tokens"].map((label, index) => (
+            <MobileTag
+              data-openbitfun-preview-state={index === 0 ? forcedTagState : undefined}
+              disabled={state === "disabled"}
+              key={label}
+              selected={state === "selected" && index === 0}
+              size={index === 2 ? "sm" : "md"}
+            >
+              {label}
+            </MobileTag>
+          ))}
+        </div>
+      );
+    }
+
+    if (component.name === "MobileToolbar") {
+      return (
+        <MobileToolbar
+          appearance={state === "plain" ? "plain" : "surface"}
+          key={state}
+          label={t("components.preview.mobileToolbarSelection")}
+          leading={<MobileIconButton appearance="plain" aria-label={t("components.preview.close")} icon={<Icon aria-hidden="true" name="chevron-left" />} size="sm" />}
+          sticky={state === "sticky"}
+          trailing={<MobileIconButton appearance="plain" aria-label={t("components.preview.more")} icon={<Icon aria-hidden="true" name="more" />} size="sm" />}
+        >
+          <span>{t("components.preview.mobileToolbarSelection")}</span>
+        </MobileToolbar>
       );
     }
 
@@ -2121,7 +2323,12 @@ export function ComponentDetailPage({
         <div className="component-preview-main">
           <header className="component-detail-heading">
             <div>
-              {embedded && <span className="page-kicker">{getComponentCategoryLabel(component.category, t)}</span>}
+              {embedded && (
+                <span className="page-kicker">
+                  <span className="page-kicker-index">{String(categoryOrder.indexOf(component.category) + 1).padStart(2, "0")}</span>
+                  {getComponentCategoryLabel(component.category, t)}
+                </span>
+              )}
               <h1 id="component-detail-title">{component.name}</h1>
               <p>{getComponentDescription(component.name, component.description, t)}</p>
             </div>
@@ -2172,15 +2379,15 @@ export function ComponentDetailPage({
             <summary>{t("design.compare")}</summary>
             {comparisonOpen && renderStateComparison()}
           </details>}
-          <Disclosure className="design-reference-disclosure" summary={t("design.usage")}>
+          <ReferenceDisclosure label={t("design.usage")}>
             <p className="design-reference-note">{t(`preview.note.${presentation}`)}</p>
             {isFlowChatComponent && <div className="design-preview-caption"><p>{t("design.chatContextNote")}</p><a href="#flow-chat-mock">{t("design.conversation")}<Icon name="arrow-right" /></a></div>}
-          </Disclosure>
+          </ReferenceDisclosure>
 
           {component.name === "Icon" && <section className="design-icon-documentation"><h2>{t("design.contexts")}</h2><IconCompositionPreview /></section>}
           {component.name === "Menu" && <section className="design-icon-documentation"><h2>{t("design.contexts")}</h2><NestedMenuPattern /></section>}
           {component.name === "Disclosure" && <section className="design-icon-documentation"><h2>{t("preview.nativeDisclosure")}</h2><Disclosure presentation="native" summary={t("components.preview.appearance")}>{t("components.preview.appearanceDescription")}</Disclosure></section>}
-          <Disclosure className="design-reference-disclosure" summary={t("detail.code")}>
+          <ReferenceDisclosure label={t("detail.code")}>
           <section className="component-code-panel component-code-panel--standalone">
             <header className="component-panel-heading component-code-heading">
               <div>
@@ -2192,8 +2399,8 @@ export function ComponentDetailPage({
             </header>
             <pre><code>{codeSample}</code></pre>
           </section>
-          </Disclosure>
-              <Disclosure className="design-reference-disclosure" summary={t("detail.inspector.publicApi")}>
+          </ReferenceDisclosure>
+              <ReferenceDisclosure label={t("detail.inspector.publicApi")}>
               <div className="design-component-api">
                 <div className="component-inspector-props">
                   {component.props.map((prop) => (
@@ -2205,12 +2412,12 @@ export function ComponentDetailPage({
                   ))}
                 </div>
               </div>
-              </Disclosure>
-          <Disclosure className="design-reference-disclosure" summary={t("detail.ownedTokens")}>
+              </ReferenceDisclosure>
+          <ReferenceDisclosure label={t("detail.ownedTokens")}>
           <div className="design-component-tokens"><div className="component-inspector-token-list">{component.tokens.map(token => <code key={token}>{token}</code>)}</div>
             <Button variant="text" onClick={() => onInspectTokens(component.name)} trailingIcon={<Icon name="arrow-right" />}>{t("detail.openWorkbench")}</Button>
           </div>
-          </Disclosure>
+          </ReferenceDisclosure>
         </div>
 
         <aside className="component-inspector" id="component-preview-configuration" hidden={!inspectorOpen}>

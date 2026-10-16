@@ -1,6 +1,6 @@
 import { RemoteChatCommandClient, RemoteChatCommandController } from '../../services/RemoteChatCommandController';
 import { RemoteChatCache, RemoteChatCacheStore, RemoteChatCacheSlice } from '../../services/RemoteChatCache';
-import { SteerTurnResult } from '../../model/RemoteModels';
+import { SessionRolledBackResult, SteerTurnResult } from '../../model/RemoteModels';
 import { ComposerBar, ComposerPresentation } from '../components/ComposerBar';
 import { INK, PAGE_BG } from '../components/Theme';
 
@@ -12,6 +12,12 @@ class PendingSubmissionClient implements RemoteChatCommandClient {
   async buildPlan(): Promise<string> { throw new Error('Unused preview operation'); }
   async cancelTask(): Promise<void> {}
   async renameSession(): Promise<void> {}
+  // The preview exercises submission timing only, and a rollback it never raises
+  // must not be answerable by a fake success: it throws like the other unused
+  // operations, so a future preview that reaches it fails loudly.
+  async rollbackSessionToTurn(): Promise<SessionRolledBackResult> {
+    throw new Error('Unused preview operation');
+  }
 }
 
 class InMemoryPreviewCache implements RemoteChatCacheStore {

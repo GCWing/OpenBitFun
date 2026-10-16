@@ -3,6 +3,7 @@ import { SettingsPage } from '../shared/SettingsPage';
 import { useSettingsSectionAnchor } from '../shared/useSettingsSectionAnchor';
 import DefaultHarnessSection from './DefaultHarnessSection';
 import MemorySettingsSection from './MemorySettingsSection';
+import PromptSuggestionSection from './PromptSuggestionSection';
 import SessionTitleSection from './SessionTitleSection';
 
 export default function SessionMemorySettingsPage() {
@@ -12,6 +13,7 @@ export default function SessionMemorySettingsPage() {
       <ConfigPageSectionStack id={sessionAnchor}>
         <DefaultHarnessSection />
         <SessionTitleSection />
+        <PromptSuggestionSection />
       </ConfigPageSectionStack>
       <MemorySettingsSection />
     </SettingsPage>

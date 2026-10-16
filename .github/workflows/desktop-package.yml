@@ -27,6 +27,23 @@ on:
         required: false
         default: false
         type: boolean
+      artifact_run_ids:
+        description: "Finalize from complete verified artifacts in previous Desktop Package runs (comma-separated IDs); skips rebuilding."
+        required: false
+        type: string
+      verification_recovery_run_id:
+        description: "Restore a failed Mac verification archive and verify without compiling; select one Mac target."
+        required: false
+        type: string
+      target_platform:
+        description: "Build one Desktop platform as signed artifacts only; all retains full release publication."
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - macos-arm64
+          - macos-x64
       relay_image_only:
         description: "Publish only the Relay Server image and signed descriptor (no Desktop packages)."
         required: false
@@ -34,17 +51,18 @@ on:
         type: boolean
 
 permissions:
+  actions: read
   contents: write
   packages: write
 
 concurrency:
-  group: desktop-package-${{ (github.event.release.prerelease || inputs.release_channel == 'beta') && 'beta' || github.event.release.tag_name || inputs.tag_name || github.sha }}
+  group: desktop-package-${{ (github.event.release.prerelease || inputs.release_channel == 'beta') && 'beta' || github.event.release.tag_name || inputs.tag_name || github.sha }}${{ (inputs.target_platform && inputs.target_platform != 'all') && format('-{0}', inputs.target_platform) || '' }}
   cancel-in-progress: false
 
 jobs:
   # ── Resolve version info ───────────────────────────────────────────
   prepare:
-    if: github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'data-migrator-v')
+    if: github.event_name != 'release' || (!startsWith(github.event.release.tag_name, 'data-tools-v') && !startsWith(github.event.release.tag_name, 'data-migrator-v'))
     name: Prepare
     runs-on: ubuntu-latest
     outputs:
@@ -54,6 +72,8 @@ jobs:
       checkout_ref: ${{ steps.meta.outputs.checkout_ref }}
       release_channel: ${{ steps.meta.outputs.release_channel }}
       relay_image_only: ${{ steps.meta.outputs.relay_image_only }}
+      target_platform: ${{ inputs.target_platform || 'all' }}
+      package_matrix: ${{ steps.platforms.outputs.matrix }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -138,12 +158,46 @@ jobs:
           echo "release_channel=$CHANNEL"  >> "$GITHUB_OUTPUT"
           echo "relay_image_only=${INPUT_RELAY_IMAGE_ONLY:-false}" >> "$GITHUB_OUTPUT"
 
+      - name: Select Desktop package platforms
+        id: platforms
+        env:
+          TARGET_PLATFORM: ${{ inputs.target_platform || 'all' }}
+          RELAY_IMAGE_ONLY: ${{ inputs.relay_image_only }}
+          ARTIFACT_RUN_IDS: ${{ inputs.artifact_run_ids }}
+          VERIFICATION_RECOVERY_RUN_ID: ${{ inputs.verification_recovery_run_id }}
+          UPLOAD_TO_RELEASE: ${{ steps.meta.outputs.upload_to_release }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const all = JSON.parse(fs.readFileSync('scripts/desktop-package-platforms.json', 'utf8'));
+          const target = process.env.TARGET_PLATFORM;
+          if (process.env.ARTIFACT_RUN_IDS &&
+              (!/^\d+(,\d+)*$/.test(process.env.ARTIFACT_RUN_IDS) || target !== 'all' || process.env.RELAY_IMAGE_ONLY === 'true')) {
+            throw new Error('Artifact finalization requires run IDs, target all, and no relay_image_only');
+          }
+          if (!['all', 'macos-arm64', 'macos-x64'].includes(target)) {
+            throw new Error(`Unsupported Desktop recovery target: ${target}`);
+          }
+          if (target !== 'all' && process.env.RELAY_IMAGE_ONLY === 'true') {
+            throw new Error('A Desktop recovery target cannot be combined with relay_image_only');
+          }
+          if (process.env.VERIFICATION_RECOVERY_RUN_ID &&
+              (!/^\d+$/.test(process.env.VERIFICATION_RECOVERY_RUN_ID) || target === 'all' ||
+               process.env.ARTIFACT_RUN_IDS || process.env.RELAY_IMAGE_ONLY === 'true' ||
+               process.env.UPLOAD_TO_RELEASE !== 'true')) {
+            throw new Error('Verification recovery requires one Mac target, signing, and no other recovery mode');
+          }
+          const selected = target === 'all' ? all : all.filter((platform) => platform.name === target);
+          if (selected.length === 0) throw new Error('No Desktop package platforms selected');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify(selected)}\n`);
+          NODE
+
   # ── Build per platform ─────────────────────────────────────────────
   package:
     name: Package (${{ matrix.platform.name }})
     runs-on: ${{ matrix.platform.os }}
     needs: prepare
-    if: needs.prepare.outputs.relay_image_only != 'true'
+    if: needs.prepare.outputs.relay_image_only != 'true' && !inputs.artifact_run_ids && !inputs.verification_recovery_run_id
     env:
       NODE_OPTIONS: --max-old-space-size=6144
       OPENBITFUN_ENABLE_UPDATER_ARTIFACTS: ${{ needs.prepare.outputs.upload_to_release }}
@@ -161,32 +215,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - os: ubuntu-latest
-            name: linux-x64
-            target: x86_64-unknown-linux-gnu
-            build_command: pnpm run desktop:build:linux -- --target x86_64-unknown-linux-gnu --bundles deb,rpm,appimage
-          - os: ubuntu-24.04-arm
-            name: linux-arm64
-            target: aarch64-unknown-linux-gnu
-            # Thin LTO is now the workspace-wide [profile.release] default, so
-            # the previous CARGO_PROFILE_RELEASE_LTO=thin override is gone.
-            build_command: pnpm run desktop:build:linux -- --target aarch64-unknown-linux-gnu --bundles deb,rpm,appimage
-          - os: macos-15
-            name: macos-arm64
-            target: aarch64-apple-darwin
-            build_command: pnpm run desktop:build:arm64
-          - os: macos-15-intel
-            name: macos-x64
-            target: x86_64-apple-darwin
-            build_command: pnpm run desktop:build:x86_64
-          - os: windows-latest
-            name: windows-x64
-            target: x86_64-pc-windows-msvc
-            # Compile before opening the short-lived SimplySign session.
-            build_command: node scripts/desktop-tauri-build.mjs --no-bundle --target x86_64-pc-windows-msvc --verbose
+        platform: ${{ fromJSON(needs.prepare.outputs.package_matrix) }}
 
     steps:
+      # Also preserve bytes when rebuilding an older immutable tag that does
+      # not yet pin every hashed source file in .gitattributes.
+      - name: Preserve source bytes on Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: git config --global core.autocrlf false
+
       - name: Checkout
         uses: actions/checkout@v5
         with:
@@ -398,14 +436,42 @@ jobs:
           }
 
       - name: Verify Apple signature and notarization
+        id: apple_verification
         if: runner.os == 'macOS'
         shell: bash
-        run: bash scripts/ci/verify-macos-signing.sh "${{ matrix.platform.target }}"
+        run: |
+          set -euo pipefail
+          # Verification policy follows this workflow revision, including
+          # rebuilds of immutable tags predating a verification fix.
+          verification_dir="$(mktemp -d)"
+          trap 'rm -rf "$verification_dir"' EXIT
+          git fetch --no-tags --depth=1 origin "${{ github.workflow_sha }}"
+          git archive "${{ github.workflow_sha }}" \
+            scripts/ci/verify-macos-signing.sh scripts/ci/verify-macos-microphone.sh \
+            scripts/ci/macos-ticket-network.sh \
+            | tar -x -C "$verification_dir"
+          bash "$verification_dir/scripts/ci/verify-macos-signing.sh" "${{ matrix.platform.target }}"
 
       - name: Verify AppImage fcitx5 GTK module
         if: runner.os == 'Linux'
         shell: bash
         run: bash scripts/ci/verify-appimage-fcitx.sh "${{ matrix.platform.target }}"
+
+      - name: Preserve macOS verification recovery bundles
+        if: failure() && runner.os == 'macOS' && steps.apple_verification.outcome == 'failure'
+        shell: bash
+        run: |
+          tar -czf macos-verification-recovery.tar.gz \
+            -C "target/${{ matrix.platform.target }}/release" bundle
+
+      - name: Upload macOS verification recovery bundles
+        if: failure() && runner.os == 'macOS' && steps.apple_verification.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: openbitfun-${{ needs.prepare.outputs.release_tag }}-${{ matrix.platform.name }}-verification-recovery
+          path: macos-verification-recovery.tar.gz
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload bundles
         uses: actions/upload-artifact@v6
@@ -418,11 +484,91 @@ jobs:
             src/apps/desktop/target/release/bundle
             OpenBitFun-Installer/src-tauri/target/release/openbitfun-installer.exe
 
+  recover-macos:
+    name: Package (${{ matrix.platform.name }})
+    needs: prepare
+    if: inputs.verification_recovery_run_id != ''
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJSON(needs.prepare.outputs.package_matrix) }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RECOVERY_RUN: ${{ inputs.verification_recovery_run_id }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      MACOS_PLATFORM: ${{ matrix.platform.name }}
+      MACOS_TARGET: ${{ matrix.platform.target }}
+      OPENBITFUN_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      OPENBITFUN_SIGNING_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      OPENBITFUN_SIGNING_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+    steps:
+      # Packaging policy comes from this pinned workflow; payload bytes come only
+      # from the validated original tag producer. No product build runs here.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.12.0'
+          package-manager-cache: false
+      - name: Select Xcode notarization tools
+        run: |
+          test -d /Applications/Xcode_26.2.app/Contents/Developer
+          echo "DEVELOPER_DIR=/Applications/Xcode_26.2.app/Contents/Developer" >> "$GITHUB_ENV"
+      - name: Restore prior macOS bundles
+        run: |
+          node scripts/restore-macos-verification-bundle.mjs --repo "$GITHUB_REPOSITORY" \
+            --tag "$RELEASE_TAG" --platform "$MACOS_PLATFORM" --run-id "$RECOVERY_RUN"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            "target/$MACOS_TARGET/release/bundle/macos/OpenBitFun.app/Contents/Info.plist")" = "$RELEASE_VERSION"
+          case "$MACOS_TARGET" in
+            x86_64-apple-darwin) architecture=x86_64 ;;
+            aarch64-apple-darwin) architecture=arm64 ;;
+          esac
+          lipo "target/$MACOS_TARGET/release/bundle/macos/OpenBitFun.app/Contents/MacOS/openbitfun-desktop" -verify_arch "$architecture"
+      - name: Configure Apple Developer ID signing and notarization
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          OPENBITFUN_REQUIRE_APPLE_SIGNING: 'true'
+        run: bash scripts/ci/setup-macos-signing.sh
+      - name: Repair missing application ticket
+        run: bash scripts/ci/repair-macos-stapling.sh "$MACOS_TARGET"
+      - name: Verify Apple signature and notarization
+        id: apple_verification
+        run: bash scripts/ci/verify-macos-signing.sh "$MACOS_TARGET"
+      - name: Preserve macOS verification recovery bundles
+        if: failure() && steps.apple_verification.outcome == 'failure'
+        run: tar -czf macos-verification-recovery.tar.gz -C "target/$MACOS_TARGET/release" bundle
+      - name: Upload macOS verification recovery bundles
+        if: failure() && steps.apple_verification.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: openbitfun-${{ needs.prepare.outputs.release_tag }}-${{ matrix.platform.name }}-verification-recovery
+          path: macos-verification-recovery.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload bundles
+        uses: actions/upload-artifact@v6
+        with:
+          name: openbitfun-${{ needs.prepare.outputs.release_tag }}-${{ matrix.platform.name }}-bundle
+          path: target/${{ matrix.platform.target }}/release/bundle/
+          if-no-files-found: error
+
   linux-binaries:
     name: Linux CLI and Relay Server
     needs: prepare
     if: >-
-      needs.prepare.outputs.relay_image_only != 'true'
+      needs.prepare.outputs.relay_image_only != 'true' &&
+      needs.prepare.outputs.target_platform == 'all' &&
+      !inputs.artifact_run_ids
     uses: ./.github/workflows/linux-binaries.yml
     secrets:
       release_signing_key: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -440,6 +586,8 @@ jobs:
     needs: [prepare, linux-binaries]
     if: >-
       always() &&
+      needs.prepare.outputs.target_platform == 'all' &&
+      !inputs.artifact_run_ids &&
       (needs.prepare.outputs.upload_to_release == 'true' ||
        needs.prepare.outputs.relay_image_only == 'true') &&
       (needs.prepare.outputs.relay_image_only == 'true' ||
@@ -634,10 +782,13 @@ jobs:
     needs: [prepare, package, linux-binaries, publish-relay-image]
     if: >-
       always() &&
+      needs.prepare.result == 'success' &&
       needs.prepare.outputs.upload_to_release == 'true' &&
-      needs.package.result == 'success' &&
-      needs.linux-binaries.result == 'success' &&
-      needs.publish-relay-image.result == 'success'
+      needs.prepare.outputs.target_platform == 'all' &&
+      (inputs.artifact_run_ids ||
+       (needs.package.result == 'success' &&
+        needs.linux-binaries.result == 'success' &&
+        needs.publish-relay-image.result == 'success'))
     runs-on: ubuntu-latest
     env:
       # Bundle-type Linux keys are load-bearing: tauri-plugin-updater on a deb
@@ -649,8 +800,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Download bundled artifacts
+        if: ${{ !inputs.artifact_run_ids }}
         uses: actions/download-artifact@v7
         with:
           pattern: openbitfun-${{ needs.prepare.outputs.release_tag }}-*-bundle
@@ -658,6 +812,7 @@ jobs:
           merge-multiple: true
 
       - name: Download Linux binary artifacts
+        if: ${{ !inputs.artifact_run_ids }}
         uses: actions/download-artifact@v7
         with:
           pattern: openbitfun-linux-${{ needs.prepare.outputs.release_tag }}-*
@@ -665,10 +820,22 @@ jobs:
           merge-multiple: true
 
       - name: Download Relay image descriptor
+        if: ${{ !inputs.artifact_run_ids }}
         uses: actions/download-artifact@v7
         with:
           name: openbitfun-relay-image-${{ needs.prepare.outputs.release_tag }}
           path: relay-image-assets
+
+      - name: Download verified artifacts from completed producers
+        if: inputs.artifact_run_ids
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_RUN_IDS: ${{ inputs.artifact_run_ids }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: |
+          node scripts/download-desktop-release-artifacts.mjs \
+            --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --run-ids "$ARTIFACT_RUN_IDS"
 
       - name: List release assets
         run: |

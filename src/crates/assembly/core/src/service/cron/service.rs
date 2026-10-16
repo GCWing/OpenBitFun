@@ -286,6 +286,7 @@ impl CronService {
             name: request.name.trim().to_string(),
             schedule,
             payload: request.payload,
+            report_policy: request.report_policy,
             enabled: request.enabled,
             target,
             created_at_ms: current_ms,
@@ -334,6 +335,9 @@ impl CronService {
         }
         if let Some(payload) = request.payload {
             job.payload = payload;
+        }
+        if let Some(policy) = request.report_policy {
+            job.report_policy = policy;
         }
         if let Some(target) = canonicalized_target {
             job.target = target;
@@ -626,6 +630,7 @@ impl CronService {
                     target: job.target.clone(),
                     user_input,
                     prepended_messages,
+                    report_policy: job.report_policy.clone(),
                 });
                 should_attempt_enqueue = true;
             }
@@ -745,6 +750,15 @@ impl CronService {
 
     async fn submit_enqueue_input(&self, enqueue_input: &EnqueueInput) -> Result<(), String> {
         let resolved = self.resolve_enqueue_submission(enqueue_input).await?;
+        let delivery = openbitfun_core_types::background_delivery::BackgroundDelivery::pending(
+            enqueue_input.job_id.clone(),
+            enqueue_input.turn_id.clone(),
+            enqueue_input.report_policy.clone(),
+        );
+        let metadata = serde_json::Map::from_iter([(
+            openbitfun_core_types::background_delivery::BACKGROUND_DELIVERY_METADATA_KEY.to_owned(),
+            serde_json::to_value(delivery).map_err(|error| error.to_string())?,
+        )]);
         self.runtime
             .submit_dialog_turn(AgentDialogTurnRequest {
                 session_id: resolved.session_id,
@@ -762,7 +776,7 @@ impl CronService {
                 reply_route: None,
                 prepended_reminders: enqueue_input.prepended_messages.clone(),
                 attachments: Vec::new(),
-                metadata: serde_json::Map::new(),
+                metadata,
             })
             .await
             .map_err(CoreServiceAgentRuntime::runtime_error_message)
@@ -1276,7 +1290,7 @@ fn format_scheduled_job_user_input(
         vec![AgentDialogPrependedReminder {
             kind: "scheduled_job".to_string(),
             text: format!(
-                "This message was triggered by a scheduled job.\nCurrent time: {}",
+                "This message was triggered by a scheduled job.\nCurrent time: {}\nAfter completing the work, use Cron action=report with report={{disposition: quiet|report|attention, reason: a brief explanation}} to declare whether this run should be delivered. Quiet is allowed only when the task's instructions permit withholding a report and no reporting condition was met. This records a delivery proposal; it does not run or end a task. Extra final text is still saved in the execution record. If Cron is deferred, load its specification first.",
                 current_time
             ),
         }],
@@ -1308,6 +1322,7 @@ struct EnqueueInput {
     target: CronJobTarget,
     user_input: String,
     prepended_messages: Vec<AgentDialogPrependedReminder>,
+    report_policy: openbitfun_core_types::background_delivery::BackgroundReportPolicy,
 }
 
 struct ResolvedEnqueueSubmission {
@@ -1369,6 +1384,7 @@ mod tests {
             config_updated_at_ms: 0,
             updated_at_ms: 0,
             state: CronJobState::default(),
+            report_policy: Default::default(),
         }
     }
 

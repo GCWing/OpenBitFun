@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="prompt_suggestion_accept">Use suggestion</string>
     <string name="app_name">OpenBitFun</string>
     <string name="navigation_general_chat">Chat</string>
     <string name="navigation_remote">Remote</string>

@@ -7,6 +7,7 @@
 
 import { OverflowText, Icon, Button, Combobox, Switch, IconButton, Input, Select, Textarea, Tooltip } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { confirmDanger } from '@/infrastructure/confirm-dialog';
 import {
   cronAPI,
@@ -193,6 +194,8 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
   assistantWorkspaceMode = false,
 }) => {
   const { t, formatDate } = useI18n('common');
+  const peer = usePeerDeviceModeOptional();
+  const supportsReportPolicy = !peer?.peerMode.active || peer.currentPeerCapabilities?.backgroundResultDeliveryV1 === true;
   const instanceIdRef = useRef(`scheduled-jobs-${Math.random().toString(36).slice(2)}`);
   const [flowChatState, setFlowChatState] = useState<FlowChatState>(() => flowChatStore.getState());
   const [jobs, setJobs] = useState<CronJob[]>([]);
@@ -466,6 +469,7 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
           name: draft.name.trim(),
           payload: { text: draft.text.trim() },
           enabled: draft.enabled,
+          ...(supportsReportPolicy ? { reportPolicy: draft.reportPolicy } : {}),
           schedule,
           target,
         };
@@ -478,6 +482,7 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
           name: draft.name.trim(),
           payload: { text: draft.text.trim() },
           enabled: draft.enabled,
+          ...(supportsReportPolicy ? { reportPolicy: draft.reportPolicy } : {}),
           schedule,
           target,
         };
@@ -506,6 +511,7 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
   }, [
     defaultAgentType,
     defaultSessionIdForWorkspace,
+    supportsReportPolicy,
     draft,
     draftTargetKind,
     loadJobs,
@@ -972,6 +978,16 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
               maxLength={4000}
               placeholder={t('nav.scheduledJobs.placeholders.prompt')}
             />
+          </div>
+        </div>
+
+        <div className="asv__form-row asv__form-row--inline" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="field">
+          <div className="asv__field-meta"><span className="asv__field-label">{t('nav.scheduledJobs.fields.reportPolicy')}</span></div>
+          <div className="asv__field-control">
+            <Select size="sm" value={draft.reportPolicy} disabled={!supportsReportPolicy}
+              options={(['inherit', 'always', 'conditional'] as const).map(value => ({ value, label: t(`nav.scheduledJobs.reportPolicies.${value}`) }))}
+              onValueChange={value => setDraft(current => ({ ...current, reportPolicy: value as JobDraft['reportPolicy'] }))} />
+            <span>{t(supportsReportPolicy ? 'nav.scheduledJobs.hints.reportPolicy' : 'nav.scheduledJobs.hints.reportPolicyUnsupported')}</span>
           </div>
         </div>
 

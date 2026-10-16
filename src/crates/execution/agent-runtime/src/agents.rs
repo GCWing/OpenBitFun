@@ -68,6 +68,7 @@ pub struct BuiltinAgentDefinitionSpec {
     pub id: &'static str,
     pub category: BuiltinAgentCategory,
     pub visibility_policy: SubagentVisibilityPolicy,
+    /// Informational default; execution resolves configuration and inheritance separately.
     pub default_model_id: &'static str,
 }
 
@@ -115,20 +116,23 @@ pub fn builtin_agent_definition_specs() -> Vec<BuiltinAgentDefinitionSpec> {
         builtin_agent_spec(
             "SwarmPlanner",
             SubAgent,
-            "primary",
-            SubagentVisibilityPolicy::hidden(["Ultimate", "SwarmPlanner"]),
+            "fast",
+            SubagentVisibilityPolicy::hidden(["Ultimate", "SwarmPlanner"])
+                .with_global_registry_visibility(true),
         ),
         builtin_agent_spec(
             "SwarmWorker",
             SubAgent,
-            "primary",
-            SubagentVisibilityPolicy::hidden(["Ultimate", "SwarmPlanner"]),
+            "fast",
+            SubagentVisibilityPolicy::hidden(["Ultimate", "SwarmPlanner"])
+                .with_global_registry_visibility(true),
         ),
         builtin_agent_spec(
             "SwarmReviewer",
             SubAgent,
             "fast",
-            SubagentVisibilityPolicy::hidden(["Ultimate", "SwarmPlanner"]),
+            SubagentVisibilityPolicy::hidden(["Ultimate", "SwarmPlanner"])
+                .with_global_registry_visibility(true),
         ),
         builtin_agent_spec(
             "ComputerUse",
@@ -139,13 +143,13 @@ pub fn builtin_agent_definition_specs() -> Vec<BuiltinAgentDefinitionSpec> {
         builtin_agent_spec(
             "Explore",
             SubAgent,
-            "primary",
+            "fast",
             SubagentVisibilityPolicy::public(),
         ),
         builtin_agent_spec(
             "GeneralPurpose",
             SubAgent,
-            "primary",
+            "fast",
             SubagentVisibilityPolicy::public(),
         ),
         builtin_agent_spec(
@@ -175,7 +179,7 @@ pub fn builtin_agent_definition_specs() -> Vec<BuiltinAgentDefinitionSpec> {
         builtin_agent_spec(
             "CodeReview",
             SubAgent,
-            "primary",
+            "fast",
             SubagentVisibilityPolicy::hidden(["Standard", "Cowork"]),
         ),
         builtin_agent_spec(
@@ -199,12 +203,12 @@ pub fn builtin_agent_definition_specs() -> Vec<BuiltinAgentDefinitionSpec> {
     ]
 }
 
+/// Fallback for sessions without a model; normal delegation resolves configured defaults.
 pub fn default_model_id_for_builtin_agent(agent_type: &str) -> &'static str {
     match agent_type {
         "OpenBitFun" | "Minimal" | "Standard" | "Cowork" | "Creative" | "ComputerUse" | "Claw"
         | "DeepResearch" | "Ultimate" => "primary",
-        "Explore" | "CodeReview" | "GeneralPurpose" | "MemoryPhase2" | "SwarmPlanner"
-        | "SwarmWorker" => "primary",
+        "MemoryPhase2" => "primary",
         "ResearchSpecialist"
         | "DeepReview"
         | "ReviewWorker"
@@ -329,6 +333,12 @@ impl SubagentVisibilityPolicy {
             .into_iter()
             .map(Into::into)
             .collect();
+        self
+    }
+
+    /// Change management visibility without changing parent invocation access.
+    pub fn with_global_registry_visibility(mut self, visible: bool) -> Self {
+        self.show_in_global_registry = visible;
         self
     }
 

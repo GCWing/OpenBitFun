@@ -55,6 +55,7 @@ libc = { workspace = true, optional = true }
 asar = []
 installed-apps = ["dep:windows", "windows/Win32_Foundation", "windows/Win32_System_Registry"]
 default = []
+session-recovery = ["local-storage", "workspace-persistence", "dep:anyhow"]
 pet-packages = ["dep:image", "image/png", "image/webp", "image/jpeg", "image/gif", "dep:zip", "dep:uuid", "dep:sha2", "dep:base64", "dep:dunce", "dep:fs2"]
 workspace-persistence = ["workspace-identity", "dep:openbitfun-core-types", "dep:openbitfun-runtime-ports", "dep:chrono"]
 coordination-store = ["dep:rusqlite"]

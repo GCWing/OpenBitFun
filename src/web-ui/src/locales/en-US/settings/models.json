@@ -33,6 +33,20 @@
       "updateFailed": "Update failed"
     }
   },
+  "promptSuggestion": {
+    "title": "Next Input Suggestion",
+    "subtitle": "After the Agent finishes a reply, suggest a one-sentence next message in the input box",
+    "label": "Enable",
+    "description": "Press Tab or → in an empty input box to accept. The suggestion reuses the finished turn's prompt cache.",
+    "unsupported": "The connected host does not support next input suggestions.",
+    "loading": "Loading settings...",
+    "loadFailedLocked": "Next input suggestion settings could not be read. The switch is locked.",
+    "retry": "Reload",
+    "messages": {
+      "saveSuccess": "Settings saved",
+      "saveFailed": "Save failed"
+    }
+  },
   "subscriptionAuth": {
     "sectionTitle": "Subscription accounts",
     "sectionDescription": "Connect Codex, Antigravity, OpenCode Console (Zen), xAI, or Hermes accounts",

@@ -21,6 +21,8 @@ import { gitRepositoryUntrustedPath } from '@/infrastructure/api/errors/TauriCom
 import { gitEventService } from '../services/GitEventService';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFlag';
+import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
+import { isRemoteWorkspace } from '@/shared/types/global-state';
 import {
   GitState,
   GitStateLayer,
@@ -52,22 +54,25 @@ interface SubscriberEntry {
  * the app — in an integrated terminal, an external Git client, a script, or
  * triggered by the agent itself. None of those emit our in-process
  * `branch:changed` / `operation:completed` events, so the UI can stay stale
- * indefinitely. We therefore run a low-frequency poll against any repository
- * that currently has at least one active subscriber, so the branch chip,
- * welcome panel and Git scene all pick up external changes promptly.
- *
- * The poll hits the lightweight `basic` endpoint (`git branch --show-current`
- * plus repo name), so it is cheap even at 2 s cadence. Heavy `status` and
- * `detailed` layers keep their longer TTLs and are only refreshed on demand
- * or by user-driven events.
+ * indefinitely. Only active consumers request polling; passive subscriptions
+ * still receive changes without causing IO. Remote reads open SSH exec channels,
+ * so they use a slower cadence and never overlap on the same connection.
  */
 const POLL_INTERVAL_MS = 2000;
+const REMOTE_POLL_INTERVAL_MS = 30_000;
+const MAX_POLL_BACKOFF_MS = 300_000;
+
+interface PollSchedule {
+  failures: number;
+  nextAttemptAt: number;
+}
 
 interface PendingRefresh {
   layers: Set<GitStateLayer>;
   force: boolean;
   reason: RefreshReason;
   source?: string;
+  pollOnly: boolean;
   resolve: () => void;
   reject: (error: Error) => void;
 }
@@ -81,6 +86,9 @@ export class GitStateManager {
 
   private states = new Map<string, GitState>();
   private subscribers = new Map<string, Set<SubscriberEntry>>();
+  private pollingCounts = new Map<string, number>();
+  private pollSchedules = new Map<string, PollSchedule>();
+  private pollingConnections = new Set<string>();
   private windowFocusRefreshCounts = new Map<string, number>();
   private refreshDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private refreshLocks = new Map<string, Promise<void>>();
@@ -128,8 +136,6 @@ export class GitStateManager {
       this.subscribers.set(normalizedPath, new Set());
     }
 
-    const firstSubscriberForRepo = this.subscribers.get(normalizedPath)!.size === 0;
-
     const entry: SubscriberEntry = { callback, options };
     this.subscribers.get(normalizedPath)!.add(entry);
 
@@ -140,21 +146,74 @@ export class GitStateManager {
       }
     }
 
-    if (firstSubscriberForRepo) {
-      this.ensurePollingStarted();
-    }
-
     return () => {
       const set = this.subscribers.get(normalizedPath);
       if (!set) return;
       set.delete(entry);
       if (set.size === 0) {
         this.subscribers.delete(normalizedPath);
-        if (this.subscribers.size === 0) {
-          this.stopPolling();
-        }
       }
     };
+  }
+
+  /** Active consumers opt into IO separately from observing cached state. */
+  registerPolling(scope: GitWorkspaceScope): () => void {
+    const key = this.normalizePath(scope);
+    this.pollingCounts.set(key, (this.pollingCounts.get(key) ?? 0) + 1);
+    if (!this.pollSchedules.has(key)) {
+      this.pollSchedules.set(key, {
+        failures: 0,
+        nextAttemptAt: Date.now() + this.pollPolicy(scope).intervalMs,
+      });
+    }
+    // An activation refresh must not be swallowed by the basic layer's Infinity
+    // TTL. Keep a recent read reusable when several consumers mount together.
+    const lastRead = this.states.get(key)?.lastRefreshTime.basic ?? 0;
+    if (Date.now() - lastRead >= this.pollPolicy(scope).intervalMs) {
+      this.invalidateCache(scope, ['basic']);
+    }
+    this.ensurePollingStarted();
+    return () => {
+      const count = this.pollingCounts.get(key) ?? 0;
+      if (count > 1) {
+        this.pollingCounts.set(key, count - 1);
+      } else {
+        this.pollingCounts.delete(key);
+        // Use the captured surface key; cleanup may run after a device switch.
+        // A manual/operation refresh merged into this batch must still execute.
+        const pending = this.pendingRefreshes.get(key);
+        if (pending?.pollOnly) {
+          clearTimeout(this.refreshDebounceTimers.get(key));
+          this.refreshDebounceTimers.delete(key);
+          this.pendingRefreshes.delete(key);
+          pending.resolve();
+        }
+        if (this.pollingCounts.size === 0) this.stopPolling();
+      }
+    };
+  }
+
+  private pollPolicy(scope: GitWorkspaceScope): { intervalMs: number; connectionId?: string } {
+    const workspace = workspaceManager.getState().openedWorkspaces.get(scope.workspaceId);
+    if (!workspace || isRemoteWorkspace(workspace)) {
+      // Missing catalog metadata must never select the aggressive local cadence.
+      return {
+        intervalMs: REMOTE_POLL_INTERVAL_MS,
+        connectionId: workspace?.connectionId ?? scope.workspaceId,
+      };
+    }
+    return { intervalMs: POLL_INTERVAL_MS };
+  }
+
+  private scheduleNextPoll(key: string, failed: boolean): void {
+    const failures = failed ? Math.min((this.pollSchedules.get(key)?.failures ?? 0) + 1, 8) : 0;
+    this.pollSchedules.set(key, {
+      failures,
+      nextAttemptAt: Date.now() + Math.min(
+        this.pollPolicy(this.scopeForKey(key)).intervalMs * 2 ** failures,
+        MAX_POLL_BACKOFF_MS,
+      ),
+    });
   }
 
   /**
@@ -294,6 +353,9 @@ export class GitStateManager {
     this.stopPolling();
 
     this.subscribers.clear();
+    this.pollingCounts.clear();
+    this.pollSchedules.clear();
+    this.pollingConnections.clear();
 
 
     this.states.clear();
@@ -338,6 +400,7 @@ export class GitStateManager {
 
     let pending = this.pendingRefreshes.get(repositoryPath);
     if (pending) {
+      pending.pollOnly = pending.pollOnly && reason === 'interval';
 
       for (const layer of layers) {
         pending.layers.add(layer);
@@ -355,6 +418,7 @@ export class GitStateManager {
         force,
         reason,
         source,
+        pollOnly: reason === 'interval',
         resolve: () => {},
         reject: () => {},
       };
@@ -397,6 +461,14 @@ export class GitStateManager {
 
     this.pendingRefreshes.delete(repositoryPath);
     this.refreshDebounceTimers.delete(repositoryPath);
+
+    if (pending.pollOnly && (
+      !this.pollingCounts.has(repositoryPath) || document.hidden || isPeerDeviceModeActive() ||
+      gitWorkspaceKey(this.scopeForKey(repositoryPath)) !== repositoryPath
+    )) {
+      pending.resolve();
+      return;
+    }
 
     const { layers, force, reason, source, resolve, reject } = pending;
 
@@ -507,22 +579,24 @@ export class GitStateManager {
           lastRefreshTime: newLastRefreshTime,
           isRefreshing: false,
           refreshingLayers: new Set(),
-          ...(probedTrust ? { repositoryTrustRequired: false } : {}),
+          ...(probedTrust ? { repositoryTrustRequired: false, error: null } : {}),
         });
+        if (probedTrust) this.scheduleNextPoll(repositoryPath, false);
 
 
         const finalState = this.getState(this.scopeForKey(repositoryPath))!;
         const comparison = compareStates(prevState, finalState);
         if (comparison.hasChanges) {
           this.notifySubscribers(repositoryPath, finalState, prevState, comparison.changedLayers);
+          this.emitStateChanged(repositoryPath, finalState, comparison.changedLayers, reason);
+        } else if (prevState.error !== finalState.error) {
+          this.notifySubscribers(repositoryPath, finalState, prevState, layersToRefresh);
         }
-
-
-        this.emitStateChanged(repositoryPath, finalState, layersToRefresh, reason);
 
       } catch (error) {
         probeOutcome = 'error';
         probeError = error instanceof Error ? error.message : String(error);
+        this.scheduleNextPoll(repositoryPath, true);
         // The ownership wall reaches here as a stable code, not as prose. Say
         // what happened instead of showing the raw code to the user.
         //
@@ -558,7 +632,7 @@ export class GitStateManager {
         // that would drop a blocked repository back to "not a repository" — the
         // status read throws before `isRepository` is ever set — and send the
         // user to initialize one over a repository that is already there.
-        this.updateState(repositoryPath, {
+        const failedState = this.updateState(repositoryPath, {
           isRefreshing: false,
           refreshingLayers: new Set(),
           error: errorMessage,
@@ -568,6 +642,10 @@ export class GitStateManager {
               ? { repositoryTrustRequired: false }
               : {}),
         });
+        if (prevState.error !== failedState.error ||
+            prevState.repositoryTrustRequired !== failedState.repositoryTrustRequired) {
+          this.notifySubscribers(repositoryPath, failedState, prevState, layersToRefresh);
+        }
 
         throw error;
       } finally {
@@ -646,65 +724,60 @@ export class GitStateManager {
     repositoryPath: string,
     layersToRefresh: GitStateLayer[]
   ): Promise<void> {
-    try {
-      const isRepo = await gitAPI.isGitRepository(this.scopeForKey(repositoryPath));
+    const isRepo = await gitAPI.isGitRepository(this.scopeForKey(repositoryPath));
 
-      // The probe answers `true` for a repository Git refuses on ownership
-      // grounds — local and remote alike — so `false` here really is "no
-      // repository", and clearing the trust flag states a fact rather than
-      // hiding one. The ownership case falls through to the status read below,
-      // whose stable error sets the flag in the caller's catch.
-      if (!isRepo) {
-        this.updateState(repositoryPath, {
-          isRepository: false,
-          repositoryTrustRequired: false,
-          currentBranch: null,
-          ahead: 0,
-          behind: 0,
-          hasChanges: false,
-          staged: [],
-          unstaged: [],
-          untracked: [],
-          conflicts: [],
-        });
-        return;
-      }
+    // The probe answers `true` for a repository Git refuses on ownership
+    // grounds — local and remote alike — so `false` here really is "no
+    // repository", and clearing the trust flag states a fact rather than
+    // hiding one. The ownership case falls through to the status read below,
+    // whose stable error sets the flag in the caller's catch.
+    if (!isRepo) {
+      this.updateState(repositoryPath, {
+        isRepository: false,
+        repositoryTrustRequired: false,
+        currentBranch: null,
+        ahead: 0,
+        behind: 0,
+        hasChanges: false,
+        staged: [],
+        unstaged: [],
+        untracked: [],
+        conflicts: [],
+      });
+      return;
+    }
 
-      const shouldRefreshStatus = layersToRefresh.includes('status');
-      if (!shouldRefreshStatus) {
-        const repository = await gitAPI.getRepositoryBasic(this.scopeForKey(repositoryPath));
-        const currentState = this.getOrCreateState(this.scopeForKey(repositoryPath));
-        this.updateState(repositoryPath, {
-          isRepository: true,
-          currentBranch: repository.current_branch || repository.branch || null,
-          hasChanges: currentState.hasChanges,
-        });
-        return;
-      }
-
-      const status = await gitAPI.getStatus(this.scopeForKey(repositoryPath), 'git_state_manager');
-
-      const hasChanges =
-        (status.staged?.length || 0) > 0 ||
-        (status.unstaged?.length || 0) > 0 ||
-        (status.untracked?.length || 0) > 0;
-
+    const shouldRefreshStatus = layersToRefresh.includes('status');
+    if (!shouldRefreshStatus) {
+      const repository = await gitAPI.getRepositoryBasic(this.scopeForKey(repositoryPath));
+      const currentState = this.getOrCreateState(this.scopeForKey(repositoryPath));
       this.updateState(repositoryPath, {
         isRepository: true,
-        currentBranch: status.current_branch || null,
-        ahead: status.ahead || 0,
-        behind: status.behind || 0,
-        hasChanges,
-        staged: status.staged || [],
-        unstaged: status.unstaged || [],
-        untracked: status.untracked || [],
-        conflicts: status.conflicts || [],
+        currentBranch: repository.current_branch || repository.branch || null,
+        hasChanges: currentState.hasChanges,
       });
-
-    } catch (error) {
-      log.error('Failed to refresh basic and status', { repositoryPath, error });
-      throw error;
+      return;
     }
+
+    const status = await gitAPI.getStatus(this.scopeForKey(repositoryPath), 'git_state_manager');
+
+    const hasChanges =
+      (status.staged?.length || 0) > 0 ||
+      (status.unstaged?.length || 0) > 0 ||
+      (status.untracked?.length || 0) > 0;
+
+    this.updateState(repositoryPath, {
+      isRepository: true,
+      currentBranch: status.current_branch || null,
+      ahead: status.ahead || 0,
+      behind: status.behind || 0,
+      hasChanges,
+      staged: status.staged || [],
+      unstaged: status.unstaged || [],
+      untracked: status.untracked || [],
+      conflicts: status.conflicts || [],
+    });
+
   }
 
   /**
@@ -1001,7 +1074,7 @@ export class GitStateManager {
    * Start the interval-based poll if not already running. The poll is global
    * (one timer for all repositories) and pauses while the document is hidden
    * to avoid unnecessary work in background tabs. It only refreshes repos
-   * that currently have subscribers and always uses a silent basic-layer
+   * that currently have polling consumers and always uses a silent basic-layer
    * refresh so status/detailed caches are not thrashed.
    */
   private ensurePollingStarted(): void {
@@ -1011,7 +1084,7 @@ export class GitStateManager {
       const handleVisibility = (): void => {
         if (document.hidden) {
           this.stopPollingTimerOnly();
-        } else if (this.subscribers.size > 0) {
+        } else if (this.pollingCounts.size > 0) {
           // Kick off an immediate refresh so we don't lag by up to one
           // interval after becoming visible, then resume the timer.
           this.pollTick();
@@ -1033,7 +1106,7 @@ export class GitStateManager {
   }
 
   private startPollingTimer(): void {
-    if (this.pollTimer !== null || this.subscribers.size === 0) return;
+    if (this.pollTimer !== null || this.pollingCounts.size === 0) return;
     this.pollTimer = setInterval(() => {
       this.pollTick();
     }, POLL_INTERVAL_MS);
@@ -1060,8 +1133,14 @@ export class GitStateManager {
       // on the transport's state sync instead of issuing local git calls.
       return;
     }
-    for (const repoKey of this.subscribers.keys()) {
+    for (const repoKey of this.pollingCounts.keys()) {
       const scope = this.scopeForKey(repoKey);
+      if (gitWorkspaceKey(scope) !== repoKey) continue;
+      if ((this.pollSchedules.get(repoKey)?.nextAttemptAt ?? 0) > Date.now() ||
+          this.refreshLocks.has(repoKey) || this.pendingRefreshes.has(repoKey)) continue;
+      const { connectionId } = this.pollPolicy(scope);
+      if (connectionId && this.pollingConnections.has(connectionId)) continue;
+      if (connectionId) this.pollingConnections.add(connectionId);
       // Invalidate the basic-layer timestamp so the non-forced refresh below
       // bypasses the Infinity TTL and actually hits Git. We only invalidate
       // `basic` — status/detailed keep their longer TTLs and are refreshed
@@ -1071,8 +1150,10 @@ export class GitStateManager {
         layers: ['basic'],
         reason: 'interval',
         silent: true,
-      }).catch((error) => {
-        log.debug('Poll-tick refresh failed', { repositoryPath: repoKey, error });
+      }).catch(() => {
+        // doRefresh reports the failure and schedules exponential retry backoff.
+      }).finally(() => {
+        if (connectionId) this.pollingConnections.delete(connectionId);
       });
     }
   }

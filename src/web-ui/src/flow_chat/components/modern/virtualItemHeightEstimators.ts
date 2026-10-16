@@ -299,6 +299,8 @@ export function estimateVirtualItemHeight(
     return { heightPx: Math.max(1, heightPx), confidence: 'medium', kind: `timeline-${kind}` };
   }
   switch (item.type) {
+    case 'background-run':
+      return { heightPx: 48, confidence: 'medium', kind: 'background-run' };
     case 'user-message':
     case 'user-steering-message':
       return {

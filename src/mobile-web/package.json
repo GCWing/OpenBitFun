@@ -1,6 +1,6 @@
 {
   "name": "openbitfun-mobile-web",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "type": "module",
   "scripts": {
@@ -20,7 +20,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:host-queue": "node --test tests/host-dialog-queue.test.mjs tests/host-dialog-queue-browser.test.mjs",
-    "test:host-stream": "node --test tests/host-stream.test.mjs tests/host-catalog-subscription.test.mjs",
+    "test:host-stream": "node --test tests/host-stream.test.mjs tests/host-catalog-subscription.test.mjs tests/prompt-suggestion.test.mjs",
+    "test:prompt-suggestion-browser": "node --test tests/prompt-suggestion-browser.test.mjs",
     "test:session-stream-browser": "node --test tests/session-stream-browser.test.mjs",
     "test:runtime-files": "node --test tests/runtime-file-upload.test.mjs tests/runtime-file-download.test.mjs",
     "test:interaction-mailbox": "node --test tests/interaction-mailbox-browser.test.mjs",

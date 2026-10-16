@@ -5,6 +5,8 @@ import { api } from './ApiClient';
 import { createTauriCommandError } from '../errors/TauriCommandError';
 import { isTauriRuntime } from '@/infrastructure/runtime';
 
+export type BackgroundReportPolicy = 'inherit' | 'always' | 'conditional';
+
 export type CronJobRunStatus = 'queued' | 'running' | 'ok' | 'error' | 'cancelled';
 export type CronJobTargetKind = 'session' | 'workspace';
 
@@ -69,6 +71,7 @@ export interface CronJobState {
 }
 
 export interface CronJob {
+  reportPolicy?: BackgroundReportPolicy;
   id: string;
   name: string;
   schedule: CronSchedule;
@@ -92,6 +95,7 @@ export type CronJobTargetRequest =
   | { kind: 'workspace'; workspace: { workspaceId: string }; launch: CronLaunchSpec };
 
 export interface CreateCronJobRequest {
+  reportPolicy?: BackgroundReportPolicy;
   name: string;
   schedule: CronSchedule;
   payload: CronJobPayload;
@@ -100,11 +104,21 @@ export interface CreateCronJobRequest {
 }
 
 export interface UpdateCronJobRequest {
+  reportPolicy?: BackgroundReportPolicy;
   name?: string;
   schedule?: CronSchedule;
   payload?: CronJobPayload;
   enabled?: boolean;
   target?: CronJobTargetRequest;
+}
+
+async function requireReportPolicyCapability(scope: SurfaceScope, policy?: BackgroundReportPolicy): Promise<void> {
+  if (policy === undefined || scope.surfaceId === 'local') return;
+  const host = await api.invoke<{ capabilities?: Record<string, unknown> }>('peer_mode_ping', {});
+  scope.assertCurrent('scheduled job report policy');
+  if (host.capabilities?.background_result_delivery_v1 !== true) {
+    throw new Error('This host does not support background report policies');
+  }
 }
 
 export class CronAPI {
@@ -155,15 +169,16 @@ export class CronAPI {
 
   async createJob(request: CreateCronJobRequest): Promise<CronJob> {
     try {
-      return await invokePrepared<CronJob>('create_cron_job', async () => ({
-        request: {
+      return await invokePrepared<CronJob>('create_cron_job', async (scope) => {
+        await requireReportPolicyCapability(scope, request.reportPolicy);
+        return { request: {
           ...request,
           target: {
             ...request.target,
             workspace: await workspaceIdRequest(request.target.workspace.workspaceId, 'workspacePath'),
           },
-        },
-      }));
+        } };
+      });
     } catch (error) {
       throw createTauriCommandError('create_cron_job', error, request);
     }
@@ -171,7 +186,8 @@ export class CronAPI {
 
   async updateJob(jobId: string, changes: UpdateCronJobRequest): Promise<CronJob> {
     try {
-      return await invokePrepared<CronJob>('update_cron_job', async () => {
+      return await invokePrepared<CronJob>('update_cron_job', async (scope) => {
+        await requireReportPolicyCapability(scope, changes.reportPolicy);
         const target = changes.target ? { ...changes.target,
           workspace: await workspaceIdRequest(changes.target.workspace.workspaceId, 'workspacePath'),
         } : undefined;

@@ -453,6 +453,7 @@ fn every_exec_terminal_event_is_deferred_until_exec_settlement() {
         success: Some(true),
         finish_reason: Some("complete".to_string()),
         has_final_response: Some(true),
+        background_delivery: None,
     };
     let failed = AgenticEvent::DialogTurnFailed {
         session_id: "session-1".to_string(),
@@ -629,6 +630,7 @@ async fn interrupted_turn_buffers_tail_projection_before_a_completed_race() {
                 success: Some(true),
                 finish_reason: Some("complete".to_string()),
                 has_final_response: Some(true),
+                background_delivery: None,
             },
             AgenticEventPriority::Critical,
         ))

@@ -3,7 +3,7 @@ members = [
     "src/apps/cli",
     "src/apps/sdk-host",
     "src/apps/desktop",
-    "src/apps/data-migrator",
+    "src/apps/data-tools",
     "src/apps/server",
     "src/apps/relay-server",
     "src/apps/miniapp-market-server",
@@ -63,7 +63,7 @@ resolver = "2"
 
 # Shared package metadata — single source of truth for version
 [workspace.package]
-version = "1.0.5" # x-release-please-version
+version = "1.0.6" # x-release-please-version
 authors = ["OpenBitFun Team"]
 edition = "2021"
 

@@ -33,6 +33,20 @@
       "updateFailed": "設定失敗"
     }
   },
+  "promptSuggestion": {
+    "title": "候選輸入建議",
+    "subtitle": "Agent 回覆完成後，在輸入框中提供一句話的下一步輸入建議",
+    "label": "啟用",
+    "description": "輸入框為空時按 Tab 或 → 採納。建議沿用本輪對話的提示快取產生。",
+    "unsupported": "目前連線的主機不支援候選輸入建議。",
+    "loading": "正在載入設定...",
+    "loadFailedLocked": "無法讀取候選輸入建議設定，開關已鎖定。",
+    "retry": "重新載入",
+    "messages": {
+      "saveSuccess": "設定已儲存",
+      "saveFailed": "儲存失敗"
+    }
+  },
   "subscriptionAuth": {
     "sectionTitle": "訂閱賬號",
     "sectionDescription": "連接 Codex、Antigravity、OpenCode Console（Zen）、xAI 或 Hermes 帳號",

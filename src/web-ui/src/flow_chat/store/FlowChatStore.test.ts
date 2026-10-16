@@ -7394,6 +7394,9 @@ describe('FlowChatStore reconcile snapshot content safety', () => {
   beforeEach(() => {
     peerModeFlagMock.active = false;
     apiMocks.restoreSessionView.mockReset();
+    // Node's optional storage object is not a browser Storage implementation.
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {}, removeItem: () => {} });
+    dispatchJobStore.persist.setOptions({ storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} } });
     vi.stubGlobal('CustomEvent', class {
       type: string;
       detail: unknown;
@@ -7431,6 +7434,35 @@ describe('FlowChatStore reconcile snapshot content safety', () => {
     });
     await flowChatStore.loadSessionHistory('history-1');
   }
+
+  it('synchronizes history through the owning host and rejects a superseded publication', async () => {
+    await hydrateSessionWithContent();
+    const before = flowChatStore.getState().sessions.get('history-1');
+    apiMocks.restoreSessionView.mockResolvedValueOnce({
+      session: hostSession(), turns: [{ ...createPersistedTurn(0), modelRounds: [HYDRATED_ROUND], endTime: 3 }], contextRestoreState: 'ready',
+    });
+    await flowChatStore.synchronizeSessionHistory('history-1', () => false);
+    expect(flowChatStore.getState().sessions.get('history-1')).toBe(before);
+    expect(apiMocks.restoreSessionView).toHaveBeenCalledTimes(2);
+    const changed = { ...HYDRATED_ROUND, id: 'round-1', turnId: 'turn-1', textItems: [{ ...HYDRATED_ROUND.textItems[0], content: 'Authoritative completed output' }] };
+    apiMocks.restoreSessionView.mockResolvedValueOnce({
+      session: { ...hostSession(), turnCount: 2 }, turns: [{ ...createPersistedTurn(1), modelRounds: [changed], endTime: 4 }], contextRestoreState: 'ready',
+    });
+    await flowChatStore.synchronizeSessionHistory('history-1', () => true);
+    expect(apiMocks.restoreSessionView).toHaveBeenCalledTimes(3);
+    expect(flowChatStore.getState().sessions.get('history-1')?.dialogTurns[1].modelRounds[0].items[0]).toMatchObject({ content: 'Authoritative completed output' });
+  });
+
+  it('does not read controller storage when detached history needs target synchronization', async () => {
+    await hydrateSessionWithContent();
+    flowChatStore.setState(previous => {
+      const session = previous.sessions.get('history-1')!;
+      return { sessions: new Map(previous.sessions).set('history-1', { ...session, config: { ...session.config, dispatchJobId: 'job' } }) };
+    });
+    apiMocks.restoreSessionView.mockClear();
+    await expect(flowChatStore.synchronizeSessionHistory('history-1')).rejects.toThrow('target event replay');
+    expect(apiMocks.restoreSessionView).not.toHaveBeenCalled();
+  });
 
   it('keeps a hydrated turn when a wholesale replace snapshot carries none of its work', async () => {
     // The reported failure: after switching device away and back, the rebuilt

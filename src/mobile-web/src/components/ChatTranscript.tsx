@@ -13,6 +13,7 @@ import {
   X as LucideX,
 } from 'lucide-react';
 import ChatToolDetails from './ChatToolDetails';
+import { backgroundDeliveryFromMetadata, readBackgroundDelivery, suppressesBackgroundPresentation } from '../../../shared/background-delivery';
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { MobileButton, MobileCard, MobileDisclosure, MobileMessage } from '@openbitfun/ui/mobile';
 import { useI18n } from '../i18n';
@@ -987,6 +988,15 @@ interface OptimisticMessage {
   images: Array<{ name: string; data_url: string }>;
 }
 
+function BackgroundExecutionReceipt({ completed, children }: { completed: boolean; children: React.ReactNode }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  return <MobileDisclosure className="chat-background-run" open={open} onToggle={() => setOpen(value => !value)}
+    title={t(completed ? 'backgroundDelivery.quiet' : 'backgroundDelivery.running')}>
+    {open ? children : null}
+  </MobileDisclosure>;
+}
+
 interface ChatTranscriptProps {
   activeTurn: ActiveTurnSnapshot | null;
   expandedMessageIds: ReadonlySet<string>;
@@ -1045,7 +1055,11 @@ const ChatTranscript: React.FC<ChatTranscriptProps> = ({
     <>
       {messages.map((message, index) => {
         if (message.role === 'system' || message.role === 'tool') return null;
-
+        const delivery = backgroundDeliveryFromMetadata(message.metadata, message.turn_id ?? '');
+        const suppressed = suppressesBackgroundPresentation(delivery, message.status);
+        if (suppressed && message.role === 'user' && (activeTurn?.turn_id === message.turn_id
+          || messages.some(candidate => candidate.role === 'assistant' && candidate.turn_id === message.turn_id))) return null;
+        const content = (() => {
         if (message.role === 'user') {
           return (
             <MobileMessage
@@ -1140,9 +1154,21 @@ const ChatTranscript: React.FC<ChatTranscriptProps> = ({
             )}
           </MobileMessage>
         );
+        })();
+        return suppressed ? <BackgroundExecutionReceipt key={message.id} completed={['done','completed'].includes(message.status ?? '')}>
+          {message.role === 'assistant' ? <MobileMessage roleType="user"><MarkdownContent content={messages.find(candidate => candidate.role === 'user' && candidate.turn_id === message.turn_id)?.content ?? ''} onFileDownload={onFileDownload} onGetFileInfo={onGetFileInfo} /></MobileMessage> : null}
+          {content}
+        </BackgroundExecutionReceipt> : content;
       })}
 
       {activeTurn && (() => {
+        const user = messages.find(message => message.role === 'user' && message.turn_id === activeTurn.turn_id);
+        const delivery = readBackgroundDelivery(activeTurn.backgroundDelivery, activeTurn.turn_id)
+          ?? backgroundDeliveryFromMetadata(user?.metadata, activeTurn.turn_id);
+        const interaction = activeTurn.tools.some(tool => tool.status === 'pending_confirmation'
+          || (tool.name === 'AskUserQuestion' && !['completed','error','cancelled','rejected'].includes(tool.status)));
+        const suppressed = !interaction && suppressesBackgroundPresentation(delivery, activeTurn.status);
+        const content = (() => {
         const turnIsActive = activeTurn.status === 'active';
         if (activeTurn.items?.length) {
           const reconciledItems = reconcileOrderedItemsWithTools(activeTurn.items, activeTurn.tools);
@@ -1218,6 +1244,11 @@ const ChatTranscript: React.FC<ChatTranscriptProps> = ({
             ) : null}
           </MobileMessage>
         );
+        })();
+        return suppressed ? <BackgroundExecutionReceipt completed={false}>
+          {user?.content ? <MarkdownContent content={user.content} onFileDownload={onFileDownload} onGetFileInfo={onGetFileInfo} /> : null}
+          {content}
+        </BackgroundExecutionReceipt> : content;
       })()}
 
       {optimisticMessage && (

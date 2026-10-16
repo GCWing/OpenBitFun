@@ -34,15 +34,28 @@ export function isDeviceInvitation(invitation: ConnectionResult | null | undefin
   return invitationRelayUrl(invitation) !== null;
 }
 
-export function selectRemoteNetworkConnection(status: RemoteConnectStatus | null | undefined, invitation?: ConnectionResult | null) {
-  const relayUrl = normalizeRelayUrl(status?.relay_url);
-  const connected = status?.relay_connected === true && relayUrl !== null;
-  const method = remoteNetworkMethod(status?.active_method)
-    ?? (relayUrl ? relayUrl === OFFICIAL_RELAY_URL ? 'openbitfun_server' : 'lan' : null);
+export function selectRemoteNetworkConnection(
+  status: RemoteConnectStatus | null | undefined,
+  invitation?: ConnectionResult | null,
+  requestedMethod?: RemoteNetworkMethod,
+) {
+  const legacyUrl = normalizeRelayUrl(status?.relay_url);
+  const legacyMethod = remoteNetworkMethod(status?.active_method)
+    ?? (legacyUrl ? legacyUrl === OFFICIAL_RELAY_URL ? 'openbitfun_server' : 'lan' : null);
+  const method = requestedMethod ?? remoteNetworkMethod(invitation?.method)
+    ?? status?.connections?.find(route => route.relay_connected)?.method ?? legacyMethod;
+  const route = status?.connections?.find(route => route.method === method);
+  // The additive route list is also the scoped-stop capability. An empty list
+  // means no connections, while omission keeps older hosts on their old path.
+  const selected = status?.connections !== undefined ? route : method === legacyMethod ? status : null;
+  const relayUrl = normalizeRelayUrl(selected?.relay_url);
+  const connected = selected?.relay_connected === true && relayUrl !== null;
+  const clients = connected ? selected?.clients ?? [] : [];
   return {
     connected,
     method,
     relayUrl,
-    invitationConnected: connected && (status?.clients.length ?? 0) > 0 && invitationRelayUrl(invitation) === relayUrl,
+    clients,
+    invitationConnected: connected && clients.length > 0 && invitationRelayUrl(invitation) === relayUrl,
   };
 }

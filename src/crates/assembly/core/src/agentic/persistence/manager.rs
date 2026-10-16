@@ -3658,6 +3658,67 @@ impl PersistenceManager {
         self.invalidate_session_search(workspace_path, &turn.session_id)
             .await;
 
+        // An observer checkpoint may carry the initial pending descriptor even
+        // after the host resolved delivery. Preserve that host-owned decision
+        // while keeping every raw message and other projected field unchanged.
+        let mut committed_turn = turn.clone();
+        if let Some(delivery) = previous_turn
+            .as_ref()
+            .and_then(|previous| {
+                openbitfun_core_types::background_delivery::BackgroundDelivery::from_metadata(
+                    previous.user_message.metadata.as_ref(),
+                    &previous.turn_id,
+                )
+            })
+            .filter(|delivery| {
+                delivery.resolved_at_ms.is_some()
+                    && delivery.execution_generation == turn.recovery_epoch.unwrap_or(0)
+            })
+        {
+            let incoming =
+                openbitfun_core_types::background_delivery::BackgroundDelivery::from_metadata(
+                    turn.user_message.metadata.as_ref(),
+                    &turn.turn_id,
+                );
+            if incoming.as_ref().is_none_or(|incoming| {
+                incoming.resolved_at_ms.is_none()
+                    || incoming.execution_generation < delivery.execution_generation
+            }) {
+                let metadata = committed_turn
+                    .user_message
+                    .metadata
+                    .get_or_insert_with(|| serde_json::json!({}));
+                if let Some(object) = metadata.as_object_mut() {
+                    object.insert(openbitfun_core_types::background_delivery::BACKGROUND_DELIVERY_METADATA_KEY.to_owned(), serde_json::to_value(delivery).map_err(OpenBitFunError::Serialization)?);
+                }
+            }
+        }
+        if let Some(history) = previous_turn
+            .as_ref()
+            .and_then(|previous| previous.user_message.metadata.as_ref())
+            .and_then(|metadata| metadata.get("backgroundDeliveryHistory"))
+        {
+            let incoming = committed_turn
+                .user_message
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("backgroundDeliveryHistory"));
+            if incoming
+                .and_then(serde_json::Value::as_array)
+                .map_or(0, Vec::len)
+                < history.as_array().map_or(0, Vec::len)
+            {
+                if let Some(object) = committed_turn
+                    .user_message
+                    .metadata
+                    .get_or_insert_with(|| serde_json::json!({}))
+                    .as_object_mut()
+                {
+                    object.insert("backgroundDeliveryHistory".to_owned(), history.clone());
+                }
+            }
+        }
+        let turn = &committed_turn;
         let file = StoredDialogTurnFile::new(turn.clone());
         let write_started_at = Instant::now();
         self.write_json_atomic(

@@ -19,12 +19,12 @@ describe('navigation icon integration', () => {
     expect(entryMarkup).toContain('size="sm"');
   });
 
-  it('keeps the moved MiniApp and Skill icons in the overview sections', () => {
+  it('uses each MiniApp icon and the standard Skill icon in the overview', () => {
     const source = readFileSync(
       fileURLToPath(new URL('../../scenes/personal-overview/PersonalOverviewScene.tsx', import.meta.url)),
       'utf8',
     );
-    expect(source).toContain('<Icon name="mini-app" size="lg" />');
+    expect(source).toContain("leading={renderMiniAppIcon(app.icon || 'box', 'lg')}");
     expect(source).toContain('<Icon name="book-open" size="lg" />');
     expect(source).not.toContain('strokeWidth');
   });
@@ -99,19 +99,21 @@ describe('navigation icon integration', () => {
     }
   });
 
-  it('uses stable standard icons for every session-group type', () => {
+  it('uses assistant avatars and standard local/remote project icons', () => {
     const source = readFileSync(
       fileURLToPath(new URL('./sections/workspaces/WorkspaceItem.tsx', import.meta.url)),
       'utf8',
     );
-    const assistantStart = source.indexOf('openbitfun-nav-panel__assistant-item-group-icon');
+    const assistantStart = source.indexOf('openbitfun-nav-panel__assistant-item-avatar');
     const assistantEnd = source.indexOf('</span>', assistantStart);
     const assistantMarkup = source.slice(assistantStart, assistantEnd);
     const workspaceStart = source.indexOf('openbitfun-nav-panel__workspace-item-icon-default');
     const workspaceEnd = source.indexOf('</span>', workspaceStart);
     const workspaceMarkup = source.slice(workspaceStart, workspaceEnd);
 
-    expect(assistantMarkup).toContain('<Icon name="user" size="sm" />');
+    expect(assistantStart).toBeGreaterThanOrEqual(0);
+    expect(assistantEnd).toBeGreaterThan(assistantStart);
+    expect(assistantMarkup).toContain('<AssistantAvatar size={22} name={workspaceDisplayName} />');
     expect(assistantMarkup).not.toContain('SessionGroupAssistant');
 
     expect(workspaceMarkup).toContain('workspaceIsRemote');

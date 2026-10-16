@@ -31,7 +31,7 @@ kinds of work, and major upgrades to cross-device collaboration and remote contr
 tasks move smoothly across desktop, mobile, and browser.
 
 **Migration note:** OpenBitFun 1.0.0 is not data-compatible with legacy 0.2.x releases. To migrate legacy data,
-use the [OpenBitFun Data Migrator](src/apps/data-migrator/README.md), currently available
+use the [OpenBitFun Data Tools](src/apps/data-tools/README.md), currently available
 for stable releases 0.2.17–0.2.19.
 
 ---

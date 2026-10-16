@@ -5,7 +5,8 @@ import { validateUrl } from './browserUrlCheck';
 import { BrowserPreviewCache, prepareBrowserPreview, type BrowserPreviewResponse } from './browserPreviewCache';
 import { alignBrowserViewport, type BrowserViewportBounds } from './browserViewportGeometry';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
-import { createNativeWebviewVisibility, hasNativeWebviewOccluder, NATIVE_WEBVIEW_OCCLUSION_SELECTOR } from './nativeWebviewVisibility';
+import { createNativeWebviewVisibility, hasNativeWebviewOccluder } from './nativeWebviewVisibility';
+import { observeNativeWebviewOcclusion } from './nativeWebviewOcclusionObserver';
 export { NATIVE_WEBVIEW_OCCLUSION_SELECTOR, rectanglesIntersect } from './nativeWebviewVisibility';
 
 const WEBVIEW_RESIZE_DEBOUNCE_MS = 160;
@@ -205,8 +206,7 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     const bounds = rect.width > 1 && rect.height > 1 ? rect : nativeBounds;
     // Bounds updates are debounced; the native view may still occupy its old
     // rectangle after the DOM container has moved.
-    return !!bounds && !hasNativeWebviewOccluder(viewport, bounds)
-      && (!nativeBounds || !hasNativeWebviewOccluder(viewport, nativeBounds));
+    return !!bounds && !hasNativeWebviewOccluder(viewport, bounds, nativeBounds ?? undefined);
   }, (target, visible) => {
     if (target !== webviewRef.current) return;
     nativeVisibleRef.current = visible;
@@ -522,40 +522,24 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
   }, [closeWebview, preview, visibility]);
 
   useEffect(() => {
-    if (!isTauri) return;
+    if (!isTauri || !isVisible) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
-    const doc = viewport.ownerDocument;
     const update = () => {
       void syncVisibility().catch(syncError => {
         log.warn('Update browser webview occlusion failed', syncError);
       });
     };
-    const observed = new Set<Element>();
-    const resizeObserver = new ResizeObserver(update);
-    resizeObserver.observe(viewport);
-    const checkOverlays = () => {
-      const overlays = new Set(doc.querySelectorAll(NATIVE_WEBVIEW_OCCLUSION_SELECTOR));
-      for (const element of observed) {
-        if (!overlays.has(element)) {
-          resizeObserver.unobserve(element);
-          observed.delete(element);
-        }
-      }
-      for (const element of overlays) {
-        if (!observed.has(element)) {
-          resizeObserver.observe(element);
-          observed.add(element);
-        }
-      }
-      update();
+    return observeNativeWebviewOcclusion(viewport, update);
+  }, [isTauri, isVisible, log, syncVisibility]);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    const update = () => {
+      void syncVisibility().catch(syncError => {
+        log.warn('Update browser webview occlusion failed', syncError);
+      });
     };
-    const observer = new MutationObserver(checkOverlays);
-    observer.observe(doc.body, {
-      childList: true, subtree: true, attributes: true,
-      attributeFilter: ['style', 'class', 'hidden', 'data-state', 'data-openbitfun-state', 'data-openbitfun-native-webview-occlusion'],
-    });
-    checkOverlays();
     const handleToolbarActivating = () => {
       toolbarSuspendedRef.current = true;
       update();
@@ -566,19 +550,9 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     };
     window.addEventListener('toolbar-mode-activating', handleToolbarActivating);
     window.addEventListener('toolbar-mode-activation-finished', handleToolbarSettled);
-    doc.addEventListener('scroll', update, true);
-    window.addEventListener('resize', update);
-    doc.addEventListener('transitionend', update, true);
-    doc.addEventListener('animationend', update, true);
     return () => {
-      observer.disconnect();
-      resizeObserver.disconnect();
       window.removeEventListener('toolbar-mode-activating', handleToolbarActivating);
       window.removeEventListener('toolbar-mode-activation-finished', handleToolbarSettled);
-      doc.removeEventListener('scroll', update, true);
-      window.removeEventListener('resize', update);
-      doc.removeEventListener('transitionend', update, true);
-      doc.removeEventListener('animationend', update, true);
     };
   }, [isTauri, log, syncVisibility]);
 

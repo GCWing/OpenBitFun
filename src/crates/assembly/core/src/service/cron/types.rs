@@ -34,6 +34,8 @@ pub struct CronJob {
     pub name: String,
     pub schedule: CronSchedule,
     pub payload: CronJobPayload,
+    #[serde(default)]
+    pub report_policy: openbitfun_core_types::background_delivery::BackgroundReportPolicy,
     pub enabled: bool,
     pub target: CronJobTarget,
     pub created_at_ms: i64,
@@ -183,6 +185,8 @@ pub struct CreateCronJobRequest {
     pub name: String,
     pub schedule: CronSchedule,
     pub payload: CronJobPayload,
+    #[serde(default)]
+    pub report_policy: openbitfun_core_types::background_delivery::BackgroundReportPolicy,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
     pub target: CronJobTarget,
@@ -194,6 +198,8 @@ pub struct UpdateCronJobRequest {
     pub name: Option<String>,
     pub schedule: Option<CronSchedule>,
     pub payload: Option<CronJobPayload>,
+    #[serde(default)]
+    pub report_policy: Option<openbitfun_core_types::background_delivery::BackgroundReportPolicy>,
     pub enabled: Option<bool>,
     pub target: Option<CronJobTarget>,
 }
@@ -204,4 +210,47 @@ const fn default_enabled() -> bool {
 
 fn default_agent_type() -> String {
     "Standard".to_string()
+}
+
+#[cfg(test)]
+mod background_delivery_upgrade_tests {
+    use super::*;
+    use openbitfun_core_types::background_delivery::BackgroundReportPolicy;
+    use serde_json::json;
+
+    #[test]
+    fn legacy_jobs_and_requests_inherit_instructions_without_repair() {
+        let request = json!({
+            "name":"Generic monitor", "schedule":{"kind":"every","everyMs":60000},
+            "payload":{"text":"Report changes only."},
+            "target":{"kind":"session","sessionId":"session","workspace":{"workspacePath":"/workspace"}}
+        });
+        let create: CreateCronJobRequest = serde_json::from_value(request.clone()).unwrap();
+        assert_eq!(create.report_policy, BackgroundReportPolicy::Inherit);
+        let mut saved = request;
+        saved["id"] = json!("job");
+        saved["createdAtMs"] = json!(1);
+        saved["updatedAtMs"] = json!(1);
+        saved["configUpdatedAtMs"] = json!(1);
+        saved["enabled"] = json!(true);
+        let job: CronJob = serde_json::from_value(saved).unwrap();
+        let round_trip: CronJob =
+            serde_json::from_value(serde_json::to_value(&job).unwrap()).unwrap();
+        assert_eq!(job, round_trip);
+        let patch: UpdateCronJobRequest =
+            serde_json::from_value(json!({"name":"Renamed"})).unwrap();
+        assert!(patch.report_policy.is_none());
+        let mut future = serde_json::to_value(&job).unwrap();
+        future["reportPolicy"] = json!("future_policy");
+        let future: CronJob = serde_json::from_value(future).unwrap();
+        assert_eq!(
+            future.report_policy,
+            BackgroundReportPolicy::Unknown("future_policy".into())
+        );
+        assert_eq!(
+            serde_json::to_value(&future).unwrap()["reportPolicy"],
+            "future_policy"
+        );
+        assert_eq!(future.payload, job.payload);
+    }
 }

@@ -449,6 +449,7 @@ enum CronAction {
     Update,
     Remove,
     Run,
+    Report,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -457,6 +458,8 @@ struct CronToolJobInput {
     schedule: CronToolScheduleInput,
     payload: String,
     enabled: Option<bool>,
+    #[serde(default)]
+    report_policy: openbitfun_core_types::background_delivery::BackgroundReportPolicy,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -465,6 +468,7 @@ struct CronToolJobPatchInput {
     schedule: Option<CronToolScheduleInput>,
     payload: Option<String>,
     enabled: Option<bool>,
+    report_policy: Option<openbitfun_core_types::background_delivery::BackgroundReportPolicy>,
 }
 
 impl CronToolJobPatchInput {
@@ -473,6 +477,7 @@ impl CronToolJobPatchInput {
             && self.schedule.is_none()
             && self.payload.is_none()
             && self.enabled.is_none()
+            && self.report_policy.is_none()
     }
 }
 
@@ -484,6 +489,7 @@ struct CronToolInput {
     job: Option<CronToolJobInput>,
     patch: Option<CronToolJobPatchInput>,
     job_id: Option<String>,
+    report: Option<openbitfun_core_types::background_delivery::BackgroundReport>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -636,6 +642,7 @@ struct CronToolJobOutput {
     schedule: CronToolScheduleOutput,
     payload: String,
     enabled: bool,
+    report_policy: openbitfun_core_types::background_delivery::BackgroundReportPolicy,
     session_id: String,
     workspace_path: String,
     created_at_ms: i64,
@@ -654,6 +661,7 @@ impl TryFrom<&CronJob> for CronToolJobOutput {
             schedule: CronToolScheduleOutput::try_from(&job.schedule)?,
             payload: job.payload.text.clone(),
             enabled: job.enabled,
+            report_policy: job.report_policy.clone(),
             session_id: job.session_id().unwrap_or_default().to_string(),
             workspace_path: job.workspace().workspace_path.clone(),
             created_at_ms: job.created_at_ms,
@@ -689,6 +697,7 @@ Actions:
 - "update": Update a job. Requires "job_id" and "patch".
 - "remove": Delete a job. Requires "job_id".
 - "run": Trigger a job immediately. Requires "job_id".
+- "report": Propose delivery of the currently executing scheduled run. Requires "report": {"disposition":"quiet"|"report"|"attention", "reason":"explanation"}. Available only inside an admitted background run. This preserves raw output and never ends or reruns the task.
 
 Job schema for "add":
 {
@@ -732,7 +741,7 @@ Patch schema for "update":
                 },
                 "action": {
                     "type": "string",
-                    "enum": ["get_time", "list", "add", "update", "remove", "run"],
+                    "enum": ["get_time", "list", "add", "update", "remove", "run", "report"],
                     "description": "Cron action to perform."
                 },
                 "job": {
@@ -743,6 +752,7 @@ Patch schema for "update":
                             "type": "string",
                             "description": "Optional job name. Defaults to 'Cron job'."
                         },
+                        "report_policy": {"type":"string", "enum":["inherit", "always", "conditional"], "description":"Notification policy. Defaults to inheriting the task instructions."},
                         "schedule": {
                             "type": "object",
                             "description": "Required schedule definition. Use { \"kind\": \"at\", \"at\": \"<ISO-8601>\" }, { \"kind\": \"every\", \"every\": <seconds>, \"anchor\": \"<optional ISO-8601>\" }, or { \"kind\": \"cron\", \"expr\": \"<cron-expression>\", \"tz\": \"<optional timezone>\" }. anchor defaults to the current time. tz defaults to the local timezone."
@@ -773,6 +783,7 @@ Patch schema for "update":
                             "type": "string",
                             "description": "Optional updated payload text. It will be sent to the target session as a user message."
                         },
+                        "report_policy": {"type":"string","enum":["inherit","always","conditional"]},
                         "enabled": {
                             "type": "boolean"
                         }
@@ -782,6 +793,15 @@ Patch schema for "update":
                 "job_id": {
                     "type": "string",
                     "description": "Required for update, remove, and run."
+                },
+                "report": {
+                    "type":"object",
+                    "properties": {
+                        "disposition":{"type":"string","enum":["quiet","report","attention"]},
+                        "reason":{"type":"string","description":"Why this run should or should not be delivered under the task's instructions."}
+                    },
+                    "required":["disposition","reason"],
+                    "additionalProperties":false
                 }
             },
             "required": ["action"],
@@ -832,6 +852,17 @@ Patch schema for "update":
         }
 
         match parsed.action {
+            CronAction::Report => {
+                let valid = parsed.report.as_ref().is_some_and(|report| !report.reason.trim().is_empty()
+                    && matches!(report.disposition, openbitfun_core_types::background_delivery::BackgroundReportDisposition::Quiet | openbitfun_core_types::background_delivery::BackgroundReportDisposition::Report | openbitfun_core_types::background_delivery::BackgroundReportDisposition::Attention));
+                ValidationResult {
+                    result: valid,
+                    message: (!valid)
+                        .then(|| "A final report disposition and reason are required".to_owned()),
+                    error_code: (!valid).then_some(400),
+                    meta: None,
+                }
+            }
             CronAction::GetTime => ValidationResult::default(),
             CronAction::List => {
                 let has_effective_session = parsed.session_id.is_some()
@@ -1045,6 +1076,7 @@ Patch schema for "update":
 
         match action {
             "get_time" => "Get current ISO-8601 time".to_string(),
+            "report" => "Record background report proposal".to_string(),
             "list" => "List scheduled jobs".to_string(),
             "add" => "Create scheduled job".to_string(),
             "update" => format!("Update scheduled job {}", job_id),
@@ -1063,6 +1095,29 @@ Patch schema for "update":
             .map_err(|err| OpenBitFunError::tool(format!("Invalid input: {}", err)))?;
 
         match params.action {
+            CronAction::Report => {
+                let report = params
+                    .report
+                    .ok_or_else(|| OpenBitFunError::tool("report is required".to_owned()))?;
+                let session_id = context.session_id.as_deref().ok_or_else(|| {
+                    OpenBitFunError::tool("A current session is required".to_owned())
+                })?;
+                let turn_id = context.dialog_turn_id.as_deref().ok_or_else(|| {
+                    OpenBitFunError::tool("A current background run is required".to_owned())
+                })?;
+                let coordinator = get_global_coordinator().ok_or_else(|| {
+                    OpenBitFunError::tool("The execution host is unavailable".to_owned())
+                })?;
+                coordinator
+                    .get_session_manager()
+                    .propose_background_report(session_id, turn_id, report.clone())
+                    .await?;
+                Ok(vec![ToolResult::Result {
+                    data: json!({"success":true,"action":"report","report":report}),
+                    result_for_assistant: Some("Background report proposal recorded. Execution history is preserved. Finish the current work normally; do not rerun it.".to_owned()),
+                    image_attachments: None,
+                }])
+            }
             CronAction::GetTime => {
                 let now = Local::now();
                 let iso = now.to_rfc3339_opts(SecondsFormat::Secs, false);
@@ -1169,6 +1224,7 @@ Patch schema for "update":
                         name: Self::normalize_add_name(job.name),
                         schedule: job.schedule.to_service_schedule("job.schedule")?,
                         payload: Self::into_service_payload(job.payload),
+                        report_policy: job.report_policy.clone(),
                         enabled: job.enabled.unwrap_or(true),
                         target: CronJobTarget::Session {
                             session_id: session_id.clone(),
@@ -1223,6 +1279,7 @@ Patch schema for "update":
                                 .map(|value| value.to_service_schedule("patch.schedule"))
                                 .transpose()?,
                             payload: patch.payload.map(Self::into_service_payload),
+                            report_policy: patch.report_policy.clone(),
                             enabled: patch.enabled,
                             target: None,
                         },
@@ -1490,6 +1547,7 @@ mod tests {
             config_updated_at_ms: 0,
             updated_at_ms: 0,
             state: Default::default(),
+            report_policy: Default::default(),
         }
     }
 
@@ -1591,6 +1649,7 @@ mod tests {
             config_updated_at_ms: 0,
             updated_at_ms: 0,
             state: Default::default(),
+            report_policy: Default::default(),
         }
     }
 

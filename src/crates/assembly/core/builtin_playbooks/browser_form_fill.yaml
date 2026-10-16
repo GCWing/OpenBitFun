@@ -9,29 +9,8 @@ parameters:
     required: true
 steps:
   - domain: browser
-    action: connect
-    description: "Connect to user's default browser via CDP"
-
-  - domain: browser
     action: navigate
     params:
       url: "{{url}}"
-    description: "Navigate to the form page"
-
-  - domain: browser
-    action: wait
-    params:
-      duration_ms: 2000
-    description: "Wait for page to load"
-
-  - domain: browser
-    action: snapshot
-    description: "Snapshot interactive elements to discover form fields and their @refs"
-    output_var: page_snapshot
-
-  - domain: browser
-    action: evaluate
-    params:
-      expression: "JSON.stringify(Array.from(document.querySelectorAll('input, textarea, select')).map(el => ({tag: el.tagName, type: el.type, name: el.name, id: el.id, placeholder: el.placeholder, label: el.labels?.[0]?.textContent?.trim(), ref: el.getAttribute('data-cdp-ref')})))"
-    description: "List all form fields with identifiers — use this to map form_data keys to @refs or selectors, then call ControlHub browser.fill for each field"
-    output_var: form_fields
+      observe: snapshot
+    description: "Open the form and inspect the returned snapshot. Map form_data to observed fields and call browser.fill for each; inspect the resulting form before an authorized submission."

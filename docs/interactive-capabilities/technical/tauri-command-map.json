@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "71da99ced9aeda777cc830d0c7ef377f6053bbb062fdc5957e79b605d6e4e100",
+  "catalogDigest": "a0070347f9527a6eddeb84b5cd0a93d345c378aa008ce857976f02a9f4bd3d2f",
   "commandCount": 674,
   "coverage": {
     "commandCount": 674,
@@ -7292,7 +7292,7 @@
       "visibility": "documented",
       "rustPath": "api::remote_connect_api::remote_connect_stop",
       "sourceFile": "src/apps/desktop/src/api/remote_connect_api.rs",
-      "signature": "fn remote_connect_stop() -> Result<(), String>",
+      "signature": "fn remote_connect_stop(request: Option<StopRemoteConnectRequest>) -> Result<(), String>",
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {

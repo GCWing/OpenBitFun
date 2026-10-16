@@ -56,6 +56,31 @@ struct ComposerBar: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            if let suggestion = model.visiblePromptSuggestion, !speech.isListening {
+                Button {
+                    if model.acceptPromptSuggestion(suggestion) {
+                        inputExpansionRequested = true
+                        focused = true
+                    }
+                } label: {
+                    Text(suggestion)
+                        .font(MobileDesignTypography.bodyMedium.font)
+                        .foregroundStyle(OpenBitFunTheme.muted)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, minHeight: MobileDesignGeometry.controlTouchSize, alignment: .leading)
+                        .padding(.horizontal, 12)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(model.localized("填入输入框"))
+                .accessibilityIdentifier("composer-prompt-suggestion")
+                .padding(.horizontal, MobileDesignGeometry.conversationOverlaySideInset)
+            }
+            composerBody
+        }
+    }
+
+    private var composerBody: some View {
         VStack(spacing: 2) {
             if !model.composerImages.isEmpty {
                 attachmentStrip

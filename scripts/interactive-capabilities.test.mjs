@@ -281,7 +281,9 @@ test('built-in and external browsers share one agent action contract', async () 
   assert.ok(browser.searchTerms.some((term) => /智能体.*内置网页/u.test(term)));
   assert.ok(browser.searchTerms.some((term) => /one BrowserActions/iu.test(term)));
   assert.equal(browser.agentControl.tool, 'ControlHub');
-  assert.ok(browser.agentControl.workflowZh.some((step) => step.includes('browser.open_builtin')));
+  assert.ok(browser.agentControl.workflowZh.some((step) => step.includes('browser.navigate') && step.includes('observe')));
+  assert.ok(browser.agentControl.workflowEn.some((step) => step.includes('browser.navigate') && step.includes('observe')));
+  assert.ok(browser.agentControl.workflowEn.some((step) => /user authorized in Settings/iu.test(step)));
   assert.ok(browser.agentControl.workflowZh.some((step) => step.includes('OpenBitFunControl') && step.includes('about:blank')));
   assert.ok(browser.agentControl.workflowEn.some((step) => /share.*contract/iu.test(step)));
   assert.ok(browser.agentControl.workflowEn.some((step) => /OpenBitFunControl/iu.test(step) && /about:blank/iu.test(step)));

@@ -172,6 +172,8 @@ export interface AIExperienceConfig {
   quick_actions?: Array<{ id: string; label: string; prompt: string; enabled: boolean }>;
   /** Absent on older hosts that do not support commit co-author preferences. */
   enable_git_commit_coauthor?: boolean;
+  /** Absent on older hosts that do not offer next-input suggestions. */
+  enable_prompt_suggestion?: boolean;
 }
 
 export interface VoiceInputSettings {

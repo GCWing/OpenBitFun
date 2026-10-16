@@ -117,6 +117,21 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 describe('sessionToVirtualItems unified work grouping', () => {
+  it('projects quiet runs as stable execution receipts without losing raw output or catalog positions', () => {
+    const session = makeSession();
+    const turn = session.dialogTurns[0];
+    turn.userMessage.metadata = { backgroundDelivery: { schemaVersion: 1, source: 'scheduled_job', taskId: 'generic-monitor', runId: turn.id, policy: 'conditional', disposition: 'quiet', resolvedAtMs: 1 } };
+    turn.modelRounds = [makeRound({ items: [makeTextItem('raw', 'Nothing changed; remaining silent.')] })];
+    const original = JSON.stringify(session.dialogTurns);
+    const first = sessionToVirtualItems(session);
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatchObject({ type: 'background-run', turnId: turn.id, absoluteTurnIndex: 1 });
+    expect(JSON.stringify(session.dialogTurns)).toBe(original);
+    const refreshed = sessionToVirtualItems({ ...session });
+    expect(refreshed[0]).toBe(first[0]);
+    const withAttention = sessionToVirtualItems({ ...session, needsUserAttention: 'ask_user' });
+    expect(withAttention.some(item => item.type === 'model-round')).toBe(true);
+  });
   it.each([undefined, 'Minimal', 'Standard', 'agentic', 'Ultimate', 'Ultra', 'Creative', 'Claw', 'acp:codex'])(
     'collects Shell with surrounding exploration for a %s turn', agentType => {
       const session = makeSession({ mode: 'Standard', config: { agentType: 'Standard' } });

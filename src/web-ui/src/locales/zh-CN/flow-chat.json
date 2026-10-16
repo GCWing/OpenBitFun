@@ -172,9 +172,10 @@
     "failedTitle": "历史会话加载失败",
     "failedDescription": "可以重新加载已保存的会话内容；若会话来自其他设备，请先检查账号登录与网络连接。",
     "preparingOlderHistory": "正在准备更早的历史记录...",
-    "olderHistoryNotReady": "更早的历史记录暂未准备好。",
-    "newerHistoryNotReady": "更新的历史记录暂未准备好。",
+    "olderHistoryNotReady": "更早的记录读取失败；当前内容仍可查看。",
+    "newerHistoryNotReady": "后续记录读取失败；当前内容仍可查看。",
     "remoteSessionMissing": "在后端找不到该会话数据。若刚重新连接过 SSH 远程工作区，请关闭并重新打开该远程项目，或新建会话后再试。",
+    "synchronize": "重新同步记录",
     "retry": "重试"
   },
   "usage": {
@@ -631,6 +632,7 @@
   "input": {
     "placeholder": "有什么可以帮您...",
     "placeholderWithContext": "输入消息，或拖放文件添加上下文...",
+    "promptSuggestionAccept": "{{key}}",
     "send": "发送",
     "sendShortcut": "发送 (⏎)",
     "stop": "停止",
@@ -3577,5 +3579,12 @@
     "edit": "恢复草稿",
     "noDraft": "完整草稿仅在提交消息的设备上可用。",
     "legacy": "旧队列中的草稿，请逐条发送或恢复。"
+  },
+  "backgroundDelivery": {
+    "recoveryCompleted": "该次执行已恢复并完成。",
+    "adjudicationUsage": "投递判定额外使用 {{tokens}} tokens",
+    "quiet": "后台任务已完成 · 无需汇报",
+    "running": "后台任务执行中",
+    "executionDetails": "执行记录"
   }
 }

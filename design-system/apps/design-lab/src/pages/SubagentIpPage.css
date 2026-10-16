@@ -34,10 +34,10 @@
   background: var(--openbitfun-color-action-quiet-hover);
 }
 
+/* Selected: the fill says it, not a heavier border. */
 .subagent-ip-card[aria-pressed="true"] {
-  border-color: var(--openbitfun-color-border-strong);
   color: var(--openbitfun-color-content-primary);
-  background: var(--openbitfun-color-action-quiet-pressed);
+  background: var(--openbitfun-color-selection-surface);
 }
 
 .subagent-ip-card:focus-visible {

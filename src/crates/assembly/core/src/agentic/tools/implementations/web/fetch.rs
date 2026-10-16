@@ -40,7 +40,7 @@ Use this tool to:
 - Download readable content from web pages
 - Access online resources
 
-Best for static pages that need no login. For pages requiring the user's login session or JavaScript rendering, use ControlHub domain="browser" instead: connect -> navigate -> snapshot / read_article. Chrome 144+ and Edge can connect to the user's current profile after explicit approval, preserving tabs and login state; other supported Chromium browsers reuse a real-profile endpoint when available and otherwise use OpenBitFun's persistent managed profile. (browser.fetch only works when a session is already connected and the current page is same-origin with the target URL — it runs inside that page and is subject to its CORS policy.)
+Best for public HTTP content that needs no login session. For JavaScript-rendered pages, use ControlHub domain="browser": navigate { url, observe: "article" } (or observe: "snapshot" for interaction); the built-in page opens automatically. For account/login-dependent work, prefer target="external" only when ControlHub reports the user's selected, authorized browser connection; connect to an existing page without navigating it. If unavailable, the user must connect their chosen browser in Settings > Browser Control; do not enable permissions or change profiles yourself. browser.fetch is a follow-up request inside a selected page, with its credentials and CORS policy (same-origin requests work; cross-origin access needs server permission). Rendering limitations may call for a browser; explicit permission or content-access denial must not be bypassed.
 
 Supports different output formats:
 - raw: Raw response content (original HTML or text)

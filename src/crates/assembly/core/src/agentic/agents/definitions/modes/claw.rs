@@ -130,7 +130,8 @@ mod tests {
             .await
             .expect("Claw prompt");
 
-        assert!(prompt.contains("only when it appears in your current tool list"));
+        assert!(prompt.contains("Use only tools in the current tool list"));
+        assert!(prompt.contains("only when ControlHub reports an authorized connection"));
         assert!(prompt.contains("only when both tools appear in your current tool list"));
     }
 }

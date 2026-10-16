@@ -576,6 +576,39 @@ fn remote_chat_history_assembly_preserves_message_shape_and_item_order() {
 }
 
 #[test]
+fn background_delivery_crosses_remote_history_without_rewriting_the_execution() {
+    use openbitfun_core_types::background_delivery::{
+        BackgroundDelivery, BackgroundReportDisposition, BackgroundReportPolicy,
+    };
+    let mut turn = remote_history_contract_turn(false);
+    let mut delivery = BackgroundDelivery::pending(
+        "monitor".into(),
+        turn.turn_id.clone(),
+        BackgroundReportPolicy::Conditional,
+    );
+    delivery.disposition = BackgroundReportDisposition::Quiet;
+    delivery.resolved_at_ms = Some(2);
+    turn.background_delivery = Some(delivery.clone());
+    let messages = build_remote_chat_messages(vec![turn.clone()]);
+    assert_eq!(messages[1].content, "visible text");
+    for message in &messages {
+        assert_eq!(
+            message.metadata.as_ref().unwrap()["backgroundDelivery"]["disposition"],
+            "quiet"
+        );
+        assert_eq!(message.turn_id.as_deref(), Some("turn-1"));
+    }
+    turn.rounds.clear();
+    let empty = build_remote_chat_messages(vec![turn]);
+    assert_eq!(empty.len(), 1);
+    assert_eq!(empty[0].status.as_deref(), Some("done"));
+    assert_eq!(
+        empty[0].metadata.as_ref().unwrap()["backgroundDelivery"]["runId"],
+        "turn-1"
+    );
+}
+
+#[test]
 fn remote_chat_history_assembly_preserves_in_progress_assistant_history() {
     let turn = remote_history_contract_turn(true);
 
@@ -667,6 +700,7 @@ fn remote_connect_cancel_and_restore_policy_preserve_runtime_decisions() {
 
 fn remote_history_contract_turn(is_in_progress: bool) -> RemoteChatHistoryTurn {
     RemoteChatHistoryTurn {
+        background_delivery: None,
         turn_id: "turn-1".to_string(),
         turn_index: 4,
         user_message_id: "user-1".to_string(),
@@ -2227,6 +2261,7 @@ fn remote_connect_workspace_response_helpers_own_wire_shape() {
             REMOTE_CAPABILITY_PLAN_BUILD_V1,
             REMOTE_CAPABILITY_SESSION_ROLLBACK_V1,
             "user_question_interaction_v1",
+            "background_result_delivery_v1",
             REMOTE_CAPABILITY_HOST_STREAM_V1
         ])
     );
@@ -2474,6 +2509,7 @@ fn remote_connect_session_response_helpers_own_pagination_and_timestamps() {
             REMOTE_CAPABILITY_PLAN_BUILD_V1,
             REMOTE_CAPABILITY_SESSION_ROLLBACK_V1,
             "user_question_interaction_v1",
+            "background_result_delivery_v1",
             REMOTE_CAPABILITY_HOST_STREAM_V1
         ])
     );
@@ -3379,6 +3415,7 @@ fn remote_connect_tracker_keeps_finished_turn_snapshot_until_persistence_finaliz
         success: Some(true),
         finish_reason: Some("stop".to_string()),
         has_final_response: Some(true),
+        background_delivery: None,
     });
 
     assert_eq!(tracker.session_state(), "idle");
@@ -3535,6 +3572,7 @@ fn remote_connect_poll_helpers_preserve_delta_and_completion_policy() {
         success: Some(true),
         finish_reason: Some("stop".to_string()),
         has_final_response: Some(true),
+        background_delivery: None,
     });
 
     let waiting_for_persistence = serde_json::to_value(remote_persisted_poll_response(

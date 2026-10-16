@@ -53,7 +53,7 @@ import { AsyncLifecycleGate } from '../../services/AsyncLifecycleGate';
 import { RemoteUiState } from '../../services/RemoteUiState';
 import { VoiceInputLifecycleController } from '../../services/VoiceInputLifecycleController';
 import { VoiceInputService } from '../../services/VoiceInputService';
-import { ConversationIntent, MessageCopyScope } from '../actions/ConversationIntent';
+import { ConversationIntent, MessageCopyScope, SessionRollbackRequest } from '../actions/ConversationIntent';
 import { AppRootHostPort } from '../host/AppRootHostAdapter';
 import { AppRootPresentationActions } from '../actions/AppRootPresentationActions';
 import {
@@ -791,6 +791,17 @@ export abstract class AppRootRuntimeComposition {
       downloadFile: (path: string): void => this.conversationController.downloadVisibleFile(path),
       buildPlan: async (path: string, name: string): Promise<void> => {
         await this.conversationController.buildRemotePlan(path, name);
+      },
+      rollback: async (request: SessionRollbackRequest): Promise<void> => {
+        await this.conversationController.rollbackRemoteSession(request);
+      },
+      rollbackResync: async (): Promise<void> => {
+        await this.conversationController.resyncRemoteTranscriptAfterRollback();
+      },
+      rollbackNotice: (key: string): void => {
+        // The policy owns which key a refusal resolves to; the host's own text is
+        // already in the log, where a support report can read it.
+        this.conversationController.showHomeToast(RemoteI18n.t(key));
       },
       send: async (): Promise<void> => { await this.conversationController.sendVisibleMessage(); },
       voiceInput: async (): Promise<void> => { await this.toggleVoiceInput(); },

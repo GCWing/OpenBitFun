@@ -54,8 +54,10 @@ pnpm --dir src/mobile-web run test:interaction-mailbox # independent question/pe
 pnpm --dir src/mobile-web run test:terminal-browser # real xterm keyboard, ANSI and native bridge
 pnpm --dir src/mobile-web run test:ui-components
 pnpm --dir src/mobile-web run test:session-stream-browser # host-driven latest/backward pages, hints, restart gaps, no relay history routes
+node --test src/mobile-web/tests/background-delivery-browser.test.mjs # quiet execution details, failures, questions, generation fences at three viewport widths
 pnpm --dir src/mobile-web run test:host-queue # idempotent outbox and real browser close/reopen
-pnpm --dir src/mobile-web run test:host-stream # HostStream reader: hints, reconnects, host restart, unsupported hosts; catalog subscription
+pnpm --dir src/mobile-web run test:host-stream # HostStream reader: hints, reconnects, host restart, unsupported hosts; catalog subscription; next-input suggestions
+pnpm --dir src/mobile-web run test:prompt-suggestion-browser # Real composer and stream projection: compact/wide, original text, offline/sending gates, no automatic submission
 pnpm --dir src/mobile-web run test:account-login # account login without an online desktop
 pnpm --dir src/mobile-web run test:account-browser # real Chrome tabs, persistence, migration, races; simulated Relay
 pnpm --dir src/mobile-web run test:images # image preparation and upload limits

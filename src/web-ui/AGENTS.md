@@ -122,6 +122,16 @@ also run the focused state contracts:
 pnpm --dir src/web-ui run test:run src/app/services/sessionSceneLifecycle.test.ts src/flow_chat/services/sessionActivation.test.ts src/flow_chat/services/storeSync.test.ts src/app/stores/sceneStore.test.ts
 ```
 
+For cross-device undo/redo/rollback history invalidation and settled-Turn fences,
+run `pnpm --dir src/web-ui run test:run src/flow_chat/services/flow-chat-manager/EventHandlerModule.test.ts`.
+Missing fence identities (including legacy payloads) must reload authoritative
+history; an explicit settled-Turn identity must preserve newer live Turns.
+
+For text-entry guards, composer sanitization, or keyboard focus routing, run
+`pnpm --dir src/web-ui run test:run src/shared/utils/textInputGuard.test.tsx src/flow_chat/components/RichTextInput.test.tsx src/flow_chat/hooks/useComposerDefaultFocus.test.tsx src/flow_chat/utils/chatInputKeyOwnership.test.ts`.
+These cover DOM event ownership, controlled fields, IME and selection preservation;
+they do not establish native OS keyboard or remote transport behavior.
+
 For ecosystem discovery, import, or compatibility status presentation changes:
 
 ```bash
@@ -135,6 +145,11 @@ establish visual fidelity):
 ```bash
 pnpm --dir src/web-ui run test:run src/infrastructure/update src/infrastructure/api/service-api/SystemAPI.test.ts src/shared/notification-system/components/NotificationContainer.test.tsx
 ```
+
+For Markdown parse prewarming or dependency resolution, run
+`pnpm --dir src/web-ui run test:run src/infrastructure/markdown/markdownParse.worker.test.ts src/infrastructure/markdown/markdownParseCache.test.ts`.
+This builds the real Worker entry with the product aliases, checks parsing without
+a DOM, and covers failure fallback. Build configuration changes also need `pnpm run build:web`.
 
 For shared overlay ordering, dismissal, focus or presence changes, run the
 focused DOM and ownership contracts in addition to `check:web` (these do not

@@ -174,10 +174,17 @@ test('limits retired identity data to the one-time production migration boundary
   assert.deepEqual(
     violationsFor(
       `const sourceLabel = "${retiredName}";`,
-      'src/apps/data-migrator/ui/app.js',
+      'src/apps/data-tools/ui/app.js',
     ),
     [],
   );
+  for (const filename of [
+    'scripts/recovery/repair-session-storage.py',
+    'src/crates/services/services-core/src/session_recovery/identity.rs',
+  ]) {
+    assert.deepEqual(violationsFor(`const oldDataRoot = ".${retiredLowerName}";`, filename), []);
+  }
+  assert.equal(violationsFor(`const label = "${retiredName}";`, 'scripts/recovery/other.py').length, 1);
   assert.deepEqual(
     violationsFor(
       `{"url": "https://github.com/example/${retiredLowerName}/releases/download/v0.2.19/${retiredLowerName}_0.2.19_windows-x86_64-setup.exe"}`,

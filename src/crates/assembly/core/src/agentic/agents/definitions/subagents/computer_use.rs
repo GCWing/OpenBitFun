@@ -95,6 +95,9 @@ mod tests {
             .expect("ComputerUse prompt");
 
         assert!(prompt.contains("When `ControlHub` appears in your current tool list"));
-        assert!(prompt.contains("If `ControlHub` is unavailable"));
+        assert!(prompt.contains("If `ControlHub` lacks the required technical capability"));
+        assert!(prompt.contains(
+            "Permission denial or user Disconnect is not a technical limitation to work around"
+        ));
     }
 }

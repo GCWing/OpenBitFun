@@ -12,12 +12,6 @@
 
 import { useCallback, useMemo, useRef, type RefObject } from 'react';
 import {
-  isViewportDiagnosticsEnabled,
-  roundViewportPx,
-  traceViewportRepeating,
-} from '@/infrastructure/diagnostics/flowChatViewportDiagnostics';
-import {
-  activeViewportClaim,
   canShiftViewport,
   claimViewport,
   releaseViewport,
@@ -53,7 +47,7 @@ export interface FlowChatViewportOwnerApi {
   release: (owner: FlowChatViewportOwner) => void;
   /** Whether a displacement repair may act — see `canShiftViewport`. */
   canShift: () => boolean;
-  /** The owner holding the viewport, for diagnostics. Null when it is free. */
+  /** The owner holding the viewport. Null when it is free. */
   currentOwner: () => FlowChatViewportOwner | null;
   /**
    * Move the viewport, if the register allows it. False means the write did
@@ -81,51 +75,26 @@ export function useFlowChatViewportOwner(
   const claimRef = useRef<ViewportClaim | null>(null);
   const writtenTravelRef = useRef(0);
 
-  /**
-   * Take the viewport and report who was holding it, which the register drops
-   * once the outcome is known. Both public entry points go through this so a
-   * write is one line in the log rather than a claim and a write.
-   */
+  /** Resolve ownership before either a claim or a write. */
   const takeViewport = useCallback((
     owner: FlowChatViewportOwner,
     holdForMs: number | undefined,
-  ): { granted: boolean; heldBy: FlowChatViewportOwner | null } => {
+  ): boolean => {
     const nowMs = performance.now();
-    // Read before the claim resolves: on a refusal this is who refused, and on
-    // a grant it is who was preempted, which is the same question either way.
-    const heldBy = activeViewportClaim(claimRef.current, nowMs)?.owner ?? null;
     const outcome = claimViewport(claimRef.current, { owner, nowMs, holdForMs });
     claimRef.current = outcome.claim;
-    return { granted: outcome.granted, heldBy };
+    return outcome.granted;
   }, []);
 
   const claim = useCallback((
     owner: FlowChatViewportOwner,
     options?: { holdForMs?: number },
   ): boolean => {
-    const { granted, heldBy } = takeViewport(owner, options?.holdForMs);
-    if (isViewportDiagnosticsEnabled()) {
-      traceViewportRepeating(`claim|${owner}|${granted}|${heldBy}`, {
-        location: 'viewportOwner.claim',
-        message: granted ? 'took the viewport' : 'refused the viewport',
-        data: () => ({ owner, granted, heldBy, holdForMs: options?.holdForMs ?? null }),
-      });
-    }
-    return granted;
+    return takeViewport(owner, options?.holdForMs);
   }, [takeViewport]);
 
   const release = useCallback((owner: FlowChatViewportOwner) => {
-    const heldBy = claimRef.current?.owner ?? null;
     claimRef.current = releaseViewport(claimRef.current, owner);
-    if (isViewportDiagnosticsEnabled() && heldBy !== null) {
-      traceViewportRepeating(`release|${owner}|${heldBy}`, {
-        location: 'viewportOwner.release',
-        message: heldBy === owner
-          ? 'gave the viewport back'
-          : 'released nothing, having already been preempted',
-        data: () => ({ owner, heldBy }),
-      });
-    }
   }, []);
 
   const canShift = useCallback(() => (
@@ -141,32 +110,10 @@ export function useFlowChatViewportOwner(
   const write = useCallback((request: ViewportWriteRequest): boolean => {
     const scroller = scrollerRef.current;
     if (!scroller) return false;
-    const { granted, heldBy } = takeViewport(request.owner, request.holdForMs);
-    /*
-     * The one place that sees every deliberate movement, and the only place a
-     * refusal is visible at all — a writer that was outranked leaves no trace
-     * anywhere else, and "nothing moved" is the more common complaint.
-     */
+    const granted = takeViewport(request.owner, request.holdForMs);
     const behavior = getMotionAwareScrollBehavior(
       request.behavior === 'smooth' ? 'smooth' : 'auto',
     );
-    if (isViewportDiagnosticsEnabled()) {
-      const fromPx = scroller.scrollTop;
-      traceViewportRepeating(`write|${request.owner}|${granted}|${heldBy}`, {
-        location: 'viewportOwner.write',
-        message: granted ? 'moved the viewport' : 'was refused the viewport',
-        travelPx: request.topPx - fromPx,
-        data: () => ({
-          owner: request.owner,
-          granted,
-          heldBy,
-          fromPx: roundViewportPx(fromPx),
-          toPx: roundViewportPx(request.topPx),
-          behavior,
-          holdForMs: request.holdForMs ?? null,
-        }),
-      });
-    }
     if (!granted) return false;
     if (behavior === 'smooth') {
       scroller.scrollTo({ top: request.topPx, behavior });
@@ -185,28 +132,12 @@ export function useFlowChatViewportOwner(
     const scroller = scrollerRef.current;
     if (!scroller) return false;
     const allowed = canShift();
-    if (isViewportDiagnosticsEnabled()) {
-      const fromPx = scroller.scrollTop;
-      traceViewportRepeating(`shift|${allowed}|${currentOwner()}`, {
-        location: 'viewportOwner.shift',
-        message: allowed
-          ? 'moved the viewport by what moved under it'
-          : 'left the displacement to whoever holds a target',
-        travelPx: byPx,
-        data: () => ({
-          allowed,
-          heldBy: currentOwner(),
-          fromPx: roundViewportPx(fromPx),
-          byPx: roundViewportPx(byPx),
-        }),
-      });
-    }
     if (!allowed) return false;
     const before = scroller.scrollTop;
     scroller.scrollTop += byPx;
     writtenTravelRef.current += scroller.scrollTop - before;
     return true;
-  }, [canShift, currentOwner, scrollerRef]);
+  }, [canShift, scrollerRef]);
 
   const readReaderScrollPosition = useCallback(() => (
     (scrollerRef.current?.scrollTop ?? 0) - writtenTravelRef.current

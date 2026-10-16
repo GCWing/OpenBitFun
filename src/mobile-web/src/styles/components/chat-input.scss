@@ -79,6 +79,19 @@
   text-overflow: ellipsis;
 }
 
+.chat-page__prompt-suggestion {
+  align-self: flex-start;
+  max-width: 100%;
+  min-width: 0;
+
+  [data-openbitfun-part="label"] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 // ── Model and reasoning controls ─────────────────────────────────────────
 
 .chat-model-selector {

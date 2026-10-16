@@ -1,0 +1,38 @@
+import type { ComponentMeta } from "../../registry.types";
+
+export const mobileTagMeta = {
+  category: "mobile",
+  description: "A touch-sized labelled pill for filters and tags, with leading and trailing slots and a filled selected state.",
+  maturity: "stable",
+  name: "MobileTag",
+  props: [
+    { name: "children", type: "ReactNode" },
+    { name: "leading", type: "ReactNode" },
+    { name: "trailing", type: "ReactNode" },
+    { defaultValue: "false", name: "selected", type: "boolean" },
+    { defaultValue: "soft", name: "appearance", type: '"soft" | "accent"' },
+    { defaultValue: "md", name: "size", type: '"sm" | "md"' },
+  ],
+  states: ["default", "selected", "hover", "active", "focus-visible", "disabled"],
+  tokens: [
+    "color.accent.default",
+    "color.accent.surface",
+    "color.action.neutral.surface",
+    "color.action.neutral.surface.hover",
+    "color.action.neutral.surface.pressed",
+    "color.action.primary.content",
+    "color.content.disabled",
+    "color.content.primary",
+    "color.content.secondary",
+    "color.focus.ring",
+    "color.selection.surface",
+    "font.weight.semibold",
+    "radius.pill",
+    "space.2",
+    "space.3",
+    "space.4",
+    "type.label.md.fontSize",
+    "type.label.md.fontWeight",
+    "type.label.sm.fontSize",
+  ],
+} as const satisfies ComponentMeta;

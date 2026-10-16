@@ -267,9 +267,16 @@ const DeviceControlSettingsPage: React.FC = () => {
   const handleBrowserControlBrowserChange = async (value: string | number) => {
     const nextValue = String(value || DEFAULT_BROWSER_CONTROL_BROWSER);
     const previousValue = preferredBrowser;
+    if (nextValue === previousValue) return;
     setPreferredBrowser(nextValue);
     setBrowserControlBusy(true);
     try {
+      // A browser choice must revoke the previous profile before it changes
+      // what Settings displays, including when the new browser cannot connect.
+      await api.invoke<BrowserControlDisconnectResponse>(
+        'browser_control_disconnect',
+        { request: { port: 9222 } },
+      );
       await configManager.setConfig(
         'ai.browser_control_preferred_browser',
         nextValue === DEFAULT_BROWSER_CONTROL_BROWSER ? '' : nextValue,

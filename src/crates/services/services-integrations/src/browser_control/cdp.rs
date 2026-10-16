@@ -22,6 +22,14 @@ pub struct CdpPageInfo {
 /// Version info returned by `/json/version`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CdpVersionInfo {
+    /// Modern headless Chrome reports a regular product name; its UA retains
+    /// the HeadlessChrome token. Older endpoints may omit this field.
+    #[serde(
+        rename = "User-Agent",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub user_agent: Option<String>,
     #[serde(rename = "Browser")]
     pub browser: Option<String>,
     #[serde(rename = "Protocol-Version")]
@@ -137,6 +145,11 @@ mod tests {
         }))
         .expect("version info should deserialize");
 
+        assert!(version.user_agent.is_none());
+        let roundtrip = serde_json::to_value(&version).unwrap();
+        assert!(roundtrip.get("User-Agent").is_none());
+        let old_again: CdpVersionInfo = serde_json::from_value(roundtrip).unwrap();
+        assert_eq!(old_again.browser, version.browser);
         assert_eq!(version.browser.as_deref(), Some("Chrome/130"));
         assert_eq!(version.protocol_version.as_deref(), Some("1.3"));
         assert_eq!(

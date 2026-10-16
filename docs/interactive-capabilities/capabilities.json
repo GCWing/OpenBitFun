@@ -4,8 +4,8 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "71da99ced9aeda777cc830d0c7ef377f6053bbb062fdc5957e79b605d6e4e100",
-  "ownerDigest": "c989ace53614c2a526fefe64816fdd6895ec71edcc28f44b6f80d1edb75bb33e",
+  "digest": "a0070347f9527a6eddeb84b5cd0a93d345c378aa008ce857976f02a9f4bd3d2f",
+  "ownerDigest": "b96bf9292a92548facbd835b8b89c4865bfdd984b356c9001995f552c6a34f51",
   "searchAcceptance": [
     {
       "id": "companion-pet-mixed",
@@ -138,9 +138,9 @@
     "features": 22,
     "settings": 21,
     "userFacing": 43,
-    "documentedItems": 323,
+    "documentedItems": 324,
     "controlCoverage": {
-      "direct": 49,
+      "direct": 50,
       "delegated": 62,
       "interactive": 212,
       "unsupported": 0
@@ -14819,6 +14819,7 @@
         "default-agent-harness",
         "automatic-titles",
         "title-model",
+        "next-input-suggestion",
         "accelerated-search",
         "search-index",
         "remote-behavior"
@@ -14867,6 +14868,50 @@
       "capabilityId": "setting.workspace.session",
       "itemIds": [
         "automatic-titles"
+      ],
+      "kind": "option",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "type": "boolean"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "static"
+      },
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "workspace.session"
+      }
+    },
+    {
+      "id": "setting.workspace.session:option:prompt-suggestion",
+      "capabilityId": "setting.workspace.session",
+      "itemIds": [
+        "next-input-suggestion"
       ],
       "kind": "option",
       "risk": "write",
@@ -21380,14 +21425,14 @@
               "ControlHub"
             ],
             "workflowZh": [
-              "用户给出网址时，用 browser.open_builtin 打开并取得内置页面的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
-              "对同一个 session_id 指定 target 为 builtin，也可用 target_url 或 target_title 定位；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
-              "页面变化后重新快照并使用最新元素引用；只有网络追踪、原始 CDP 和文件输入等协议扩展才切换到 external"
+              "用户给出网址时，用 browser.navigate（target=builtin）直接打开，缺少页面时自动创建；需要读取或交互时附带 observe=article 或 snapshot，并复用返回的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
+              "对同一个 session_id 指定 target 为 builtin；选择已打开页面时，用 browser.connect 和唯一匹配的 target_url 或 target_title；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
+              "复用 navigate 返回的观察结果，只在下一步需要新页面状态时重新快照；涉及用户账号登录态时，优先使用用户在设置中已授权连接的 external 浏览器，未授权时请用户连接，不得自行开启权限；CDP 协议扩展同样需要可用的外接连接"
             ],
             "workflowEn": [
-              "When the user supplies a URL, open it with browser.open_builtin and keep the returned built-in session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
-              "Address that session_id with target set to builtin, or locate it by target_url or target_title; snapshots, clicks, fills, scrolling, screenshots, and other portable actions share the external CDP contract",
-              "Take a new snapshot after page changes and use fresh element refs; switch to external only for protocol extensions such as network tracing, raw CDP, or file-input injection"
+              "When the user supplies a URL, use browser.navigate with target=builtin (creates a page when needed), add observe=article or snapshot for reading/interaction, and keep the returned session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
+              "Address that session_id with target set to builtin; to select an existing page, use browser.connect with a unique target_url or target_title match. Portable actions share the external CDP contract",
+              "Reuse the observation returned by navigate; refresh only when the next decision needs new page state. For account/login-dependent work, prefer the external browser the user authorized in Settings; if unavailable, ask the user to connect it and never enable permissions yourself. CDP extensions also require an available external connection"
             ]
           }
         },
@@ -21421,14 +21466,14 @@
               "ControlHub"
             ],
             "workflowZh": [
-              "用户给出网址时，用 browser.open_builtin 打开并取得内置页面的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
-              "对同一个 session_id 指定 target 为 builtin，也可用 target_url 或 target_title 定位；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
-              "页面变化后重新快照并使用最新元素引用；只有网络追踪、原始 CDP 和文件输入等协议扩展才切换到 external"
+              "用户给出网址时，用 browser.navigate（target=builtin）直接打开，缺少页面时自动创建；需要读取或交互时附带 observe=article 或 snapshot，并复用返回的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
+              "对同一个 session_id 指定 target 为 builtin；选择已打开页面时，用 browser.connect 和唯一匹配的 target_url 或 target_title；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
+              "复用 navigate 返回的观察结果，只在下一步需要新页面状态时重新快照；涉及用户账号登录态时，优先使用用户在设置中已授权连接的 external 浏览器，未授权时请用户连接，不得自行开启权限；CDP 协议扩展同样需要可用的外接连接"
             ],
             "workflowEn": [
-              "When the user supplies a URL, open it with browser.open_builtin and keep the returned built-in session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
-              "Address that session_id with target set to builtin, or locate it by target_url or target_title; snapshots, clicks, fills, scrolling, screenshots, and other portable actions share the external CDP contract",
-              "Take a new snapshot after page changes and use fresh element refs; switch to external only for protocol extensions such as network tracing, raw CDP, or file-input injection"
+              "When the user supplies a URL, use browser.navigate with target=builtin (creates a page when needed), add observe=article or snapshot for reading/interaction, and keep the returned session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
+              "Address that session_id with target set to builtin; to select an existing page, use browser.connect with a unique target_url or target_title match. Portable actions share the external CDP contract",
+              "Reuse the observation returned by navigate; refresh only when the next decision needs new page state. For account/login-dependent work, prefer the external browser the user authorized in Settings; if unavailable, ask the user to connect it and never enable permissions yourself. CDP extensions also require an available external connection"
             ]
           }
         },
@@ -21442,14 +21487,14 @@
               "ControlHub"
             ],
             "workflowZh": [
-              "用户给出网址时，用 browser.open_builtin 打开并取得内置页面的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
-              "对同一个 session_id 指定 target 为 builtin，也可用 target_url 或 target_title 定位；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
-              "页面变化后重新快照并使用最新元素引用；只有网络追踪、原始 CDP 和文件输入等协议扩展才切换到 external"
+              "用户给出网址时，用 browser.navigate（target=builtin）直接打开，缺少页面时自动创建；需要读取或交互时附带 observe=article 或 snapshot，并复用返回的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
+              "对同一个 session_id 指定 target 为 builtin；选择已打开页面时，用 browser.connect 和唯一匹配的 target_url 或 target_title；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
+              "复用 navigate 返回的观察结果，只在下一步需要新页面状态时重新快照；涉及用户账号登录态时，优先使用用户在设置中已授权连接的 external 浏览器，未授权时请用户连接，不得自行开启权限；CDP 协议扩展同样需要可用的外接连接"
             ],
             "workflowEn": [
-              "When the user supplies a URL, open it with browser.open_builtin and keep the returned built-in session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
-              "Address that session_id with target set to builtin, or locate it by target_url or target_title; snapshots, clicks, fills, scrolling, screenshots, and other portable actions share the external CDP contract",
-              "Take a new snapshot after page changes and use fresh element refs; switch to external only for protocol extensions such as network tracing, raw CDP, or file-input injection"
+              "When the user supplies a URL, use browser.navigate with target=builtin (creates a page when needed), add observe=article or snapshot for reading/interaction, and keep the returned session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
+              "Address that session_id with target set to builtin; to select an existing page, use browser.connect with a unique target_url or target_title match. Portable actions share the external CDP contract",
+              "Reuse the observation returned by navigate; refresh only when the next decision needs new page state. For account/login-dependent work, prefer the external browser the user authorized in Settings; if unavailable, ask the user to connect it and never enable permissions yourself. CDP extensions also require an available external connection"
             ]
           }
         },
@@ -21463,14 +21508,14 @@
               "ControlHub"
             ],
             "workflowZh": [
-              "用户给出网址时，用 browser.open_builtin 打开并取得内置页面的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
-              "对同一个 session_id 指定 target 为 builtin，也可用 target_url 或 target_title 定位；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
-              "页面变化后重新快照并使用最新元素引用；只有网络追踪、原始 CDP 和文件输入等协议扩展才切换到 external"
+              "用户给出网址时，用 browser.navigate（target=builtin）直接打开，缺少页面时自动创建；需要读取或交互时附带 observe=article 或 snapshot，并复用返回的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
+              "对同一个 session_id 指定 target 为 builtin；选择已打开页面时，用 browser.connect 和唯一匹配的 target_url 或 target_title；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
+              "复用 navigate 返回的观察结果，只在下一步需要新页面状态时重新快照；涉及用户账号登录态时，优先使用用户在设置中已授权连接的 external 浏览器，未授权时请用户连接，不得自行开启权限；CDP 协议扩展同样需要可用的外接连接"
             ],
             "workflowEn": [
-              "When the user supplies a URL, open it with browser.open_builtin and keep the returned built-in session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
-              "Address that session_id with target set to builtin, or locate it by target_url or target_title; snapshots, clicks, fills, scrolling, screenshots, and other portable actions share the external CDP contract",
-              "Take a new snapshot after page changes and use fresh element refs; switch to external only for protocol extensions such as network tracing, raw CDP, or file-input injection"
+              "When the user supplies a URL, use browser.navigate with target=builtin (creates a page when needed), add observe=article or snapshot for reading/interaction, and keep the returned session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
+              "Address that session_id with target set to builtin; to select an existing page, use browser.connect with a unique target_url or target_title match. Portable actions share the external CDP contract",
+              "Reuse the observation returned by navigate; refresh only when the next decision needs new page state. For account/login-dependent work, prefer the external browser the user authorized in Settings; if unavailable, ask the user to connect it and never enable permissions yourself. CDP extensions also require an available external connection"
             ]
           }
         },
@@ -21484,14 +21529,14 @@
               "ControlHub"
             ],
             "workflowZh": [
-              "用户给出网址时，用 browser.open_builtin 打开并取得内置页面的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
-              "对同一个 session_id 指定 target 为 builtin，也可用 target_url 或 target_title 定位；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
-              "页面变化后重新快照并使用最新元素引用；只有网络追踪、原始 CDP 和文件输入等协议扩展才切换到 external"
+              "用户给出网址时，用 browser.navigate（target=builtin）直接打开，缺少页面时自动创建；需要读取或交互时附带 observe=article 或 snapshot，并复用返回的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
+              "对同一个 session_id 指定 target 为 builtin；选择已打开页面时，用 browser.connect 和唯一匹配的 target_url 或 target_title；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
+              "复用 navigate 返回的观察结果，只在下一步需要新页面状态时重新快照；涉及用户账号登录态时，优先使用用户在设置中已授权连接的 external 浏览器，未授权时请用户连接，不得自行开启权限；CDP 协议扩展同样需要可用的外接连接"
             ],
             "workflowEn": [
-              "When the user supplies a URL, open it with browser.open_builtin and keep the returned built-in session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
-              "Address that session_id with target set to builtin, or locate it by target_url or target_title; snapshots, clicks, fills, scrolling, screenshots, and other portable actions share the external CDP contract",
-              "Take a new snapshot after page changes and use fresh element refs; switch to external only for protocol extensions such as network tracing, raw CDP, or file-input injection"
+              "When the user supplies a URL, use browser.navigate with target=builtin (creates a page when needed), add observe=article or snapshot for reading/interaction, and keep the returned session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
+              "Address that session_id with target set to builtin; to select an existing page, use browser.connect with a unique target_url or target_title match. Portable actions share the external CDP contract",
+              "Reuse the observation returned by navigate; refresh only when the next decision needs new page state. For account/login-dependent work, prefer the external browser the user authorized in Settings; if unavailable, ask the user to connect it and never enable permissions yourself. CDP extensions also require an available external connection"
             ]
           }
         },
@@ -21505,14 +21550,14 @@
               "ControlHub"
             ],
             "workflowZh": [
-              "用户给出网址时，用 browser.open_builtin 打开并取得内置页面的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
-              "对同一个 session_id 指定 target 为 builtin，也可用 target_url 或 target_title 定位；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
-              "页面变化后重新快照并使用最新元素引用；只有网络追踪、原始 CDP 和文件输入等协议扩展才切换到 external"
+              "用户给出网址时，用 browser.navigate（target=builtin）直接打开，缺少页面时自动创建；需要读取或交互时附带 observe=article 或 snapshot，并复用返回的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
+              "对同一个 session_id 指定 target 为 builtin；选择已打开页面时，用 browser.connect 和唯一匹配的 target_url 或 target_title；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
+              "复用 navigate 返回的观察结果，只在下一步需要新页面状态时重新快照；涉及用户账号登录态时，优先使用用户在设置中已授权连接的 external 浏览器，未授权时请用户连接，不得自行开启权限；CDP 协议扩展同样需要可用的外接连接"
             ],
             "workflowEn": [
-              "When the user supplies a URL, open it with browser.open_builtin and keep the returned built-in session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
-              "Address that session_id with target set to builtin, or locate it by target_url or target_title; snapshots, clicks, fills, scrolling, screenshots, and other portable actions share the external CDP contract",
-              "Take a new snapshot after page changes and use fresh element refs; switch to external only for protocol extensions such as network tracing, raw CDP, or file-input injection"
+              "When the user supplies a URL, use browser.navigate with target=builtin (creates a page when needed), add observe=article or snapshot for reading/interaction, and keep the returned session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
+              "Address that session_id with target set to builtin; to select an existing page, use browser.connect with a unique target_url or target_title match. Portable actions share the external CDP contract",
+              "Reuse the observation returned by navigate; refresh only when the next decision needs new page state. For account/login-dependent work, prefer the external browser the user authorized in Settings; if unavailable, ask the user to connect it and never enable permissions yourself. CDP extensions also require an available external connection"
             ]
           }
         },
@@ -21526,14 +21571,14 @@
               "ControlHub"
             ],
             "workflowZh": [
-              "用户给出网址时，用 browser.open_builtin 打开并取得内置页面的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
-              "对同一个 session_id 指定 target 为 builtin，也可用 target_url 或 target_title 定位；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
-              "页面变化后重新快照并使用最新元素引用；只有网络追踪、原始 CDP 和文件输入等协议扩展才切换到 external"
+              "用户给出网址时，用 browser.navigate（target=builtin）直接打开，缺少页面时自动创建；需要读取或交互时附带 observe=article 或 snapshot，并复用返回的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
+              "对同一个 session_id 指定 target 为 builtin；选择已打开页面时，用 browser.connect 和唯一匹配的 target_url 或 target_title；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
+              "复用 navigate 返回的观察结果，只在下一步需要新页面状态时重新快照；涉及用户账号登录态时，优先使用用户在设置中已授权连接的 external 浏览器，未授权时请用户连接，不得自行开启权限；CDP 协议扩展同样需要可用的外接连接"
             ],
             "workflowEn": [
-              "When the user supplies a URL, open it with browser.open_builtin and keep the returned built-in session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
-              "Address that session_id with target set to builtin, or locate it by target_url or target_title; snapshots, clicks, fills, scrolling, screenshots, and other portable actions share the external CDP contract",
-              "Take a new snapshot after page changes and use fresh element refs; switch to external only for protocol extensions such as network tracing, raw CDP, or file-input injection"
+              "When the user supplies a URL, use browser.navigate with target=builtin (creates a page when needed), add observe=article or snapshot for reading/interaction, and keep the returned session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
+              "Address that session_id with target set to builtin; to select an existing page, use browser.connect with a unique target_url or target_title match. Portable actions share the external CDP contract",
+              "Reuse the observation returned by navigate; refresh only when the next decision needs new page state. For account/login-dependent work, prefer the external browser the user authorized in Settings; if unavailable, ask the user to connect it and never enable permissions yourself. CDP extensions also require an available external connection"
             ]
           }
         },
@@ -21567,14 +21612,14 @@
               "ControlHub"
             ],
             "workflowZh": [
-              "用户给出网址时，用 browser.open_builtin 打开并取得内置页面的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
-              "对同一个 session_id 指定 target 为 builtin，也可用 target_url 或 target_title 定位；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
-              "页面变化后重新快照并使用最新元素引用；只有网络追踪、原始 CDP 和文件输入等协议扩展才切换到 external"
+              "用户给出网址时，用 browser.navigate（target=builtin）直接打开，缺少页面时自动创建；需要读取或交互时附带 observe=article 或 snapshot，并复用返回的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
+              "对同一个 session_id 指定 target 为 builtin；选择已打开页面时，用 browser.connect 和唯一匹配的 target_url 或 target_title；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
+              "复用 navigate 返回的观察结果，只在下一步需要新页面状态时重新快照；涉及用户账号登录态时，优先使用用户在设置中已授权连接的 external 浏览器，未授权时请用户连接，不得自行开启权限；CDP 协议扩展同样需要可用的外接连接"
             ],
             "workflowEn": [
-              "When the user supplies a URL, open it with browser.open_builtin and keep the returned built-in session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
-              "Address that session_id with target set to builtin, or locate it by target_url or target_title; snapshots, clicks, fills, scrolling, screenshots, and other portable actions share the external CDP contract",
-              "Take a new snapshot after page changes and use fresh element refs; switch to external only for protocol extensions such as network tracing, raw CDP, or file-input injection"
+              "When the user supplies a URL, use browser.navigate with target=builtin (creates a page when needed), add observe=article or snapshot for reading/interaction, and keep the returned session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
+              "Address that session_id with target set to builtin; to select an existing page, use browser.connect with a unique target_url or target_title match. Portable actions share the external CDP contract",
+              "Reuse the observation returned by navigate; refresh only when the next decision needs new page state. For account/login-dependent work, prefer the external browser the user authorized in Settings; if unavailable, ask the user to connect it and never enable permissions yourself. CDP extensions also require an available external connection"
             ]
           }
         },
@@ -21588,14 +21633,14 @@
               "ControlHub"
             ],
             "workflowZh": [
-              "用户给出网址时，用 browser.open_builtin 打开并取得内置页面的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
-              "对同一个 session_id 指定 target 为 builtin，也可用 target_url 或 target_title 定位；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
-              "页面变化后重新快照并使用最新元素引用；只有网络追踪、原始 CDP 和文件输入等协议扩展才切换到 external"
+              "用户给出网址时，用 browser.navigate（target=builtin）直接打开，缺少页面时自动创建；需要读取或交互时附带 observe=article 或 snapshot，并复用返回的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
+              "对同一个 session_id 指定 target 为 builtin；选择已打开页面时，用 browser.connect 和唯一匹配的 target_url 或 target_title；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
+              "复用 navigate 返回的观察结果，只在下一步需要新页面状态时重新快照；涉及用户账号登录态时，优先使用用户在设置中已授权连接的 external 浏览器，未授权时请用户连接，不得自行开启权限；CDP 协议扩展同样需要可用的外接连接"
             ],
             "workflowEn": [
-              "When the user supplies a URL, open it with browser.open_builtin and keep the returned built-in session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
-              "Address that session_id with target set to builtin, or locate it by target_url or target_title; snapshots, clicks, fills, scrolling, screenshots, and other portable actions share the external CDP contract",
-              "Take a new snapshot after page changes and use fresh element refs; switch to external only for protocol extensions such as network tracing, raw CDP, or file-input injection"
+              "When the user supplies a URL, use browser.navigate with target=builtin (creates a page when needed), add observe=article or snapshot for reading/interaction, and keep the returned session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
+              "Address that session_id with target set to builtin; to select an existing page, use browser.connect with a unique target_url or target_title match. Portable actions share the external CDP contract",
+              "Reuse the observation returned by navigate; refresh only when the next decision needs new page state. For account/login-dependent work, prefer the external browser the user authorized in Settings; if unavailable, ask the user to connect it and never enable permissions yourself. CDP extensions also require an available external connection"
             ]
           }
         },
@@ -21609,14 +21654,14 @@
               "ControlHub"
             ],
             "workflowZh": [
-              "用户给出网址时，用 browser.open_builtin 打开并取得内置页面的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
-              "对同一个 session_id 指定 target 为 builtin，也可用 target_url 或 target_title 定位；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
-              "页面变化后重新快照并使用最新元素引用；只有网络追踪、原始 CDP 和文件输入等协议扩展才切换到 external"
+              "用户给出网址时，用 browser.navigate（target=builtin）直接打开，缺少页面时自动创建；需要读取或交互时附带 observe=article 或 snapshot，并复用返回的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
+              "对同一个 session_id 指定 target 为 builtin；选择已打开页面时，用 browser.connect 和唯一匹配的 target_url 或 target_title；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
+              "复用 navigate 返回的观察结果，只在下一步需要新页面状态时重新快照；涉及用户账号登录态时，优先使用用户在设置中已授权连接的 external 浏览器，未授权时请用户连接，不得自行开启权限；CDP 协议扩展同样需要可用的外接连接"
             ],
             "workflowEn": [
-              "When the user supplies a URL, open it with browser.open_builtin and keep the returned built-in session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
-              "Address that session_id with target set to builtin, or locate it by target_url or target_title; snapshots, clicks, fills, scrolling, screenshots, and other portable actions share the external CDP contract",
-              "Take a new snapshot after page changes and use fresh element refs; switch to external only for protocol extensions such as network tracing, raw CDP, or file-input injection"
+              "When the user supplies a URL, use browser.navigate with target=builtin (creates a page when needed), add observe=article or snapshot for reading/interaction, and keep the returned session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
+              "Address that session_id with target set to builtin; to select an existing page, use browser.connect with a unique target_url or target_title match. Portable actions share the external CDP contract",
+              "Reuse the observation returned by navigate; refresh only when the next decision needs new page state. For account/login-dependent work, prefer the external browser the user authorized in Settings; if unavailable, ask the user to connect it and never enable permissions yourself. CDP extensions also require an available external connection"
             ]
           }
         }
@@ -21634,14 +21679,14 @@
       "agentControl": {
         "tool": "ControlHub",
         "workflowZh": [
-          "用户给出网址时，用 browser.open_builtin 打开并取得内置页面的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
-          "对同一个 session_id 指定 target 为 builtin，也可用 target_url 或 target_title 定位；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
-          "页面变化后重新快照并使用最新元素引用；只有网络追踪、原始 CDP 和文件输入等协议扩展才切换到 external"
+          "用户给出网址时，用 browser.navigate（target=builtin）直接打开，缺少页面时自动创建；需要读取或交互时附带 observe=article 或 snapshot，并复用返回的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
+          "对同一个 session_id 指定 target 为 builtin；选择已打开页面时，用 browser.connect 和唯一匹配的 target_url 或 target_title；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
+          "复用 navigate 返回的观察结果，只在下一步需要新页面状态时重新快照；涉及用户账号登录态时，优先使用用户在设置中已授权连接的 external 浏览器，未授权时请用户连接，不得自行开启权限；CDP 协议扩展同样需要可用的外接连接"
         ],
         "workflowEn": [
-          "When the user supplies a URL, open it with browser.open_builtin and keep the returned built-in session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
-          "Address that session_id with target set to builtin, or locate it by target_url or target_title; snapshots, clicks, fills, scrolling, screenshots, and other portable actions share the external CDP contract",
-          "Take a new snapshot after page changes and use fresh element refs; switch to external only for protocol extensions such as network tracing, raw CDP, or file-input injection"
+          "When the user supplies a URL, use browser.navigate with target=builtin (creates a page when needed), add observe=article or snapshot for reading/interaction, and keep the returned session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
+          "Address that session_id with target set to builtin; to select an existing page, use browser.connect with a unique target_url or target_title match. Portable actions share the external CDP contract",
+          "Reuse the observation returned by navigate; refresh only when the next decision needs new page state. For account/login-dependent work, prefer the external browser the user authorized in Settings; if unavailable, ask the user to connect it and never enable permissions yourself. CDP extensions also require an available external connection"
         ]
       },
       "agentExamplesZh": [
@@ -21723,12 +21768,12 @@
         "Open this URL in the built-in browser and find the sign-in button",
         "Inspect the current built-in page and fill this form",
         "Use the built-in browser to open the search result and summarize the page",
-        "用户给出网址时，用 browser.open_builtin 打开并取得内置页面的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
-        "对同一个 session_id 指定 target 为 builtin，也可用 target_url 或 target_title 定位；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
-        "页面变化后重新快照并使用最新元素引用；只有网络追踪、原始 CDP 和文件输入等协议扩展才切换到 external",
-        "When the user supplies a URL, open it with browser.open_builtin and keep the returned built-in session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
-        "Address that session_id with target set to builtin, or locate it by target_url or target_title; snapshots, clicks, fills, scrolling, screenshots, and other portable actions share the external CDP contract",
-        "Take a new snapshot after page changes and use fresh element refs; switch to external only for protocol extensions such as network tracing, raw CDP, or file-input injection",
+        "用户给出网址时，用 browser.navigate（target=builtin）直接打开，缺少页面时自动创建；需要读取或交互时附带 observe=article 或 snapshot，并复用返回的 session_id；用户只要求显示内置浏览器且没有网址时，改用 OpenBitFunControl 打开 feature.browser 能力根入口，不得臆造 about:blank",
+        "对同一个 session_id 指定 target 为 builtin；选择已打开页面时，用 browser.connect 和唯一匹配的 target_url 或 target_title；快照、点击、填写、滚动和截图等动作与外部 CDP 浏览器共用同一套契约",
+        "复用 navigate 返回的观察结果，只在下一步需要新页面状态时重新快照；涉及用户账号登录态时，优先使用用户在设置中已授权连接的 external 浏览器，未授权时请用户连接，不得自行开启权限；CDP 协议扩展同样需要可用的外接连接",
+        "When the user supplies a URL, use browser.navigate with target=builtin (creates a page when needed), add observe=article or snapshot for reading/interaction, and keep the returned session_id; when they only want the built-in browser surface, open the feature.browser capability root with OpenBitFunControl and never invent about:blank",
+        "Address that session_id with target set to builtin; to select an existing page, use browser.connect with a unique target_url or target_title match. Portable actions share the external CDP contract",
+        "Reuse the observation returned by navigate; refresh only when the next decision needs new page state. For account/login-dependent work, prefer the external browser the user authorized in Settings; if unavailable, ask the user to connect it and never enable permissions yourself. CDP extensions also require an available external connection",
         "ControlHub",
         "WebSearch",
         "WebFetch",
@@ -27261,13 +27306,15 @@
         "跟随上次选择或固定默认执行框架",
         "自动生成会话标题",
         "本地工作区加速搜索",
-        "会话使用的标题模型"
+        "会话使用的标题模型",
+        "答复后的候选输入建议"
       ],
       "highlightsEn": [
         "Follow the last selection or fix a default Harness",
         "Automatic session titles",
         "Accelerated local-workspace search",
-        "Model used for session titles"
+        "Model used for session titles",
+        "Next input suggestion after a reply"
       ],
       "items": [
         {
@@ -27304,6 +27351,20 @@
             "reasonCode": "unstructuredInteraction",
             "reasonZh": "“让标题模型继承主模型、快速模型或使用指定模型”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
             "reasonEn": "“Make title generation inherit the primary or fast model, or use a selected model” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+          }
+        },
+        {
+          "id": "next-input-suggestion",
+          "titleZh": "启用或停用 Agent 答复后在输入框中显示的一句话候选输入",
+          "titleEn": "Enable or disable the one-sentence next input suggested in the input box after an Agent reply",
+          "control": {
+            "kind": "direct",
+            "operations": [],
+            "options": [
+              {
+                "id": "prompt-suggestion"
+              }
+            ]
           }
         },
         {
@@ -27357,12 +27418,14 @@
         "让新会话跟随 ChatInput 上一次选择的执行框架",
         "把新会话固定为 Ultimate 执行框架",
         "关闭自动生成会话标题",
+        "关闭答复后的候选输入建议",
         "启用工作区加速搜索"
       ],
       "agentExamplesEn": [
         "Make new sessions follow the last Harness selected in ChatInput",
         "Fix Ultimate as the Harness for new sessions",
         "Turn off automatic session titles",
+        "Turn off next input suggestions after replies",
         "Enable accelerated workspace search"
       ],
       "destination": {
@@ -27377,6 +27440,16 @@
           "titleEn": "Automatic session titles",
           "descriptionZh": "根据会话内容生成易识别的标题。",
           "descriptionEn": "Generate a recognizable title from session content.",
+          "valueSchema": {
+            "type": "boolean"
+          }
+        },
+        {
+          "id": "prompt-suggestion",
+          "titleZh": "候选输入建议",
+          "titleEn": "Next input suggestion",
+          "descriptionZh": "Agent 答复完成后，在输入框中给出一句话的下一步输入建议。",
+          "descriptionEn": "Suggest a one-sentence next message in the input box after the Agent replies.",
           "valueSchema": {
             "type": "boolean"
           }
@@ -27416,16 +27489,20 @@
         "自动生成会话标题",
         "本地工作区加速搜索",
         "会话使用的标题模型",
+        "答复后的候选输入建议",
         "Follow the last selection or fix a default Harness",
         "Automatic session titles",
         "Accelerated local-workspace search",
         "Model used for session titles",
+        "Next input suggestion after a reply",
         "让普通新会话跟随 ChatInput 上次选择，或固定使用指定执行框架",
         "Make regular new sessions follow the last ChatInput selection or use a fixed Harness",
         "启用或停用根据会话内容自动生成标题",
         "Enable or disable automatic titles generated from session content",
         "让标题模型继承主模型、快速模型或使用指定模型",
         "Make title generation inherit the primary or fast model, or use a selected model",
+        "启用或停用 Agent 答复后在输入框中显示的一句话候选输入",
+        "Enable or disable the one-sentence next input suggested in the input box after an Agent reply",
         "为本地工作区启用 Flashgrep 加速搜索",
         "Enable Flashgrep-backed accelerated search for local workspaces",
         "查看索引状态并在需要时重建工作区索引",
@@ -27435,10 +27512,12 @@
         "让新会话跟随 ChatInput 上一次选择的执行框架",
         "把新会话固定为 Ultimate 执行框架",
         "关闭自动生成会话标题",
+        "关闭答复后的候选输入建议",
         "启用工作区加速搜索",
         "Make new sessions follow the last Harness selected in ChatInput",
         "Fix Ultimate as the Harness for new sessions",
         "Turn off automatic session titles",
+        "Turn off next input suggestions after replies",
         "Enable accelerated workspace search"
       ],
       "docsUrl": "https://playbook.openbitfun.com/capabilities/setting.workspace.session/"

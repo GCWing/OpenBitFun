@@ -22,6 +22,73 @@ its tag automatically. Release creation and editing use GitHub CLI without
 `--target`: sending `target_commitish` for workflow-changing commits can require
 `workflows:write`, even for an existing tag. Asset upload precedes publication.
 
+## Recovering one macOS package
+
+For an existing immutable tag, dispatch `Desktop Package` from the current
+`main` workflow with `target_platform=macos-arm64` or `macos-x64`. Keep
+`release_channel` equal to the original build and enable `upload_to_release`
+to require release signing and produce updater signatures. This target option
+uploads only the selected platform's Actions artifact; it never publishes a
+GitHub Release, rebuilds Linux binaries, pushes the Relay image, or changes an
+update feed. `all`, the default, retains the complete release gate.
+
+Recovery runs have a separate concurrency group per Mac target, so they can
+finish alongside an existing full matrix without cancelling it. Build source
+still resolves to the original tag SHA. Signature verification uses the pinned
+workflow revision, allowing a verification fix to apply without moving that tag.
+After recovery, dispatch the same workflow with `target_platform=all`, the
+original tag/channel, `upload_to_release=true`, and `artifact_run_ids` containing
+the original and recovery run IDs separated by commas. This skips all builders
+and runs the normal full release publisher. It requires exactly one artifact
+for each of the five Desktop platforms, both Linux CLI/Relay architectures, and
+the Relay image descriptor. Every source must be a protected-main Desktop
+Package run with a successful Prepare job and successful artifact producer.
+Missing, duplicate, expired, or unverified producers stop finalization before
+publication. Do not combine `artifact_run_ids` with a single-platform target or
+`relay_image_only`.
+
+macOS verification uploads a DMG once, records its submission ID and SHA256 in
+`<dmg>.notary-submission.json`, then waits for that submission. A transient
+`NSURLErrorDomain` connection loss (`-1005`) or offline response (`-1009`)
+retries the wait, without uploading the DMG again. Apple must explicitly return
+`Accepted`; invalid results, other errors, and changed DMG bytes remain failures.
+Stapling updates the receipt's hash to the exact stapled DMG bytes.
+
+If Apple verification fails, the workflow retains a seven-day
+`*-verification-recovery` artifact containing a tar archive of the bundles and
+receipt. The archive preserves executable modes and symlinks for re-verification.
+It is unverified recovery input, never a release installer: it does not match
+the normal `*-bundle` publication pattern or satisfy the complete producer gate.
+
+To resume that checkpoint without compiling again, dispatch `Desktop Package`
+with `verification_recovery_run_id`, the original tag/channel, one Mac
+`target_platform`, and `upload_to_release=true`. Do not combine it with
+`artifact_run_ids` or `relay_image_only`. Recovery accepts only a trusted tag
+producer with successful build, failed Apple verification, and a successfully
+retained, unexpired recovery archive. A recovery that fails Apple verification
+again can be resumed from its own checkpoint, retaining a matching DMG receipt.
+
+When the bundler reports Accepted but leaves the application without a stapled
+ticket, recovery explicitly staples and validates it, then rebuilds both the
+DMG and updater around that app. It verifies the original updater signature and
+Developer ID before repair, signs the replacement DMG and updater, and runs the
+unchanged complete Apple verification. Other ticket failures are not repaired;
+an existing DMG submission is never silently invalidated by repackaging.
+Recovery and normal verification share the same bounded CloudKit connection-loss
+retry, including validation of the app copied into the mounted installer.
+Only a successful verification produces the normal `*-bundle` artifact accepted
+by full release finalization. No Rust or frontend compilation runs in recovery.
+
+To add a verified Mac package to an already public partial stable release,
+dispatch `Publish Ready Desktop Assets` with `tag_name`, `macos_run_id`, and
+`macos_platform`; leave `source_run_id` empty. The selected producer must have
+successful Prepare and Package jobs on protected-main history, plus an unexpired
+normal bundle artifact. The publisher verifies the existing release public key,
+signs the DMG, verifies both installer and updater signatures, and reads uploaded
+files back. This path only adds the four Mac assets; it does not change release
+notes, GitHub Latest, or any update pointer. Use the full finalization above once
+every platform is ready.
+
 ## Mobile Android releases
 
 Mobile Android packages are released independently from Desktop packages. Use a

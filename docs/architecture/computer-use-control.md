@@ -28,6 +28,61 @@ macOS's Sharing menu on other systems nor suppresses native capture borders.
 Product feedback adds target, mode, action, preview and Stop without claiming to
 replace system consent or system Stop Sharing.
 
+## Browser tool orchestration
+
+`ControlHub.browser.navigate {url, observe?}` is the task entry point for rendered
+pages. On Desktop it opens a built-in WebView when the conversation has no page;
+otherwise it navigates that conversation's selected page. `observe: snapshot`
+returns interactive refs and `observe: article` returns readable content in the
+same call. Opening, connection, fixed sleeps and redundant reads are not required
+preflight steps. The Desktop host correlates the exact requested WebView before
+returning it; load/observation receipts separately describe readiness.
+
+| Intent / action family | Contract |
+|---|---|
+| Discover / public HTTP | `WebSearch` discovers URLs; `WebFetch` reads public HTTP without browser cookies. These remain separate from rendered browser work. |
+| Open / read rendered content | `navigate`, `snapshot`, `read_article`, `get` and its `get_text/get_html/get_url/get_title` aliases. `observe` avoids a second read after navigation. |
+| Account / existing external tab | Prefer the Settings-selected, user-authorized CDP connection. `connect` selects an exact `session_id` or unique URL/title match without navigating it. An unbound navigation creates a new tab, preserving existing tabs. |
+| Interact | `click`, `hover`, `fill`, `type`, `check/uncheck`, `select`, `press_key`, `scroll`, `auto_scroll`; use observed refs or selectors and refresh only when the next decision needs new state. |
+| Readiness / capture | Condition-based `wait` and `screenshot`; built-in network-idle means native load completion, and full-page capture requires CDP. A duration-only wait requires no browser session. |
+| Page lifecycle | `tab_new`, `back/forward/reload`, `close`, `list_pages/tab_query`, `switch_page`, `list_sessions`. Keep exact returned page identity across calls. |
+| Page-context requests | `fetch` uses the selected page's credentials and CORS rules; `cookies/set_cookies` and `evaluate` remain explicit advanced operations. HTTP error responses preserve status/body; CORS/transport failure is a tool error. |
+| CDP-only diagnostics | `network/network_requests`, `console`, `errors`, `trace`, `dialog`, `set_file_input_files` and allow-listed raw `cdp`. Built-in engines return explicit unsupported results. |
+| Show empty product surface | `OpenBitFunControl.open(feature.browser)` shows the browser UI without inventing a URL. It is distinct from website navigation. |
+
+The common actions use the existing `BrowserActions` engine port for WebView and
+CDP. A conversation retains target/page identity; explicit or stale ids never
+fall through to a different tab. Ending a conversation releases its selection,
+not the user's browser pages. `open_builtin` and URL-bearing `read_article`
+remain compatible aliases, including their legacy result keys.
+
+Browser permissions are independent of `ai.computer_use_enabled`. External
+browser identity/availability is exposed only after a Settings connection has
+succeeded (or an opted-in startup connection receives browser-owned consent).
+The Agent never starts another profile or opens permission settings through
+`connect`. Disconnect blocks subsequent actions and clears page transports.
+Explicit `mode: headless` remains an attach-only path for disposable project
+browsers; product name and browser-reported user agent establish headless mode,
+and a normal headed endpoint is rejected before page enumeration.
+
+Navigation receipts distinguish a submitted navigation, load completion and an
+optional failed observation. Observation failure never replays navigation or
+input. Download and same-document transitions do not wait for nonexistent load
+events. Full-page CDP screenshots use a document clip with
+`captureBeyondViewport`, preserving viewport/emulation state; see the
+[CDP capture contract](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot).
+Errors and recovery hints, complete bounded article text and fetch response
+bodies survive assistant rendering. Partial action failures remain `ok: false`
+with any receipts retained.
+
+Remote-workspace sessions reject browser access before host IO; there is no
+remote-workspace browser provider or silent controller-local fallback. A local
+host driven through remote control or Peer Device Mode still owns its browser
+provider/permission. Headless and detached hosts require an explicit available
+CDP endpoint; they cannot create a Desktop WebView or prompt a disconnected
+controller to approve a browser. Local unit/Chromium fixtures do not establish
+mobile/IM, peer, detached, or native WebKit end-to-end behavior.
+
 ## Platform architecture
 
 | Platform | Authorized observation | Input | System integration |
@@ -125,9 +180,11 @@ for the same authorization again. Genuine missing information, OS-owned consent,
 explicit permission denials and user Stop remain authoritative.
 
 Computer Use, Cowork, Claw and shared parent-agent guidance use the same autonomous
-targeting and composition rules. Browser connection hints offer an already-authorized ComputerUse route when CDP
-is unavailable instead of requiring the user to operate Settings. A user-disabled
-browser connection is not re-enabled. `open_app` no longer has a platform-wide
+targeting and composition rules. Browser selection and connection are user-owned
+Settings actions. Account-dependent work prefers the selected browser only after
+connection/consent; a missing grant or user Disconnect cannot be bypassed through
+ComputerUse, a different profile, or an agent-driven debugging setup. Native
+browser chrome still uses independently authorized ComputerUse capabilities. `open_app` no longer has a platform-wide
 foreground-only policy: macOS uses `open -g` and Windows requests
 `SW_SHOWNOACTIVATE` for background launches. These are launch requests, not proof
 that every third-party app honors activation policy; subsequent observations

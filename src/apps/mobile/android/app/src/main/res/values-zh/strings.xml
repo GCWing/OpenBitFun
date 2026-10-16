@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="prompt_suggestion_accept">填入输入框</string>
     <string name="app_name">OpenBitFun</string>
     <string name="navigation_general_chat">聊天</string>
     <string name="navigation_remote">远程</string>

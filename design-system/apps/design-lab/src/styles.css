@@ -58,7 +58,7 @@ body,
   max-width: 680px;
   color: var(--openbitfun-color-content-secondary);
   font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-lg-line-height);
+  line-height: var(--openbitfun-type-body-sm-line-height);
 }
 
 .component-card:focus-visible,
@@ -177,7 +177,7 @@ body,
   margin: 0;
   color: var(--openbitfun-color-content-secondary);
   font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-md-line-height);
+  line-height: var(--openbitfun-type-body-sm-line-height);
 }
 
 .component-card {
@@ -298,7 +298,7 @@ body,
 .component-card__body > span:last-child {
   color: var(--openbitfun-color-content-secondary);
   font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-md-line-height);
+  line-height: var(--openbitfun-type-body-sm-line-height);
 }
 
 .component-card__footer {
@@ -331,7 +331,7 @@ body,
 .primitive-note p {
   color: var(--openbitfun-color-content-secondary);
   font-size: var(--openbitfun-type-body-xs-font-size);
-  line-height: var(--openbitfun-type-modifier-leading-spacious-line-height);
+  line-height: var(--openbitfun-type-body-xs-line-height);
 }
 
 /* Component details */
@@ -520,9 +520,9 @@ body,
   overflow: auto;
   padding: var(--openbitfun-space-4);
   color: var(--openbitfun-color-content-secondary);
-  font-family: var(--openbitfun-type-code-md-font-family);
+  font-family: var(--openbitfun-type-code-sm-font-family);
   font-size: var(--openbitfun-type-code-sm-font-size);
-  line-height: var(--openbitfun-type-body-lg-line-height);
+  line-height: var(--openbitfun-type-code-sm-line-height);
 }
 
 .component-guidance-grid {
@@ -547,9 +547,11 @@ body,
 
 .component-guidance-grid h2,
 .component-reference-panel h2 {
-  font-size: var(--openbitfun-type-body-lg-font-size);
-  line-height: var(--openbitfun-type-flow-support-line-height);
-  letter-spacing: var(--openbitfun-type-flow-title-letter-spacing);
+  /* A heading is a heading: same 15px as the body beside it, but on the heading's own leading
+     rather than a paragraph's. */
+  font-size: var(--openbitfun-type-heading-section-font-size);
+  line-height: var(--openbitfun-type-heading-section-line-height);
+  letter-spacing: var(--openbitfun-type-heading-section-letter-spacing);
 }
 
 .component-guidance-grid ul {
@@ -566,7 +568,7 @@ body,
   gap: var(--openbitfun-space-2);
   color: var(--openbitfun-color-content-secondary);
   font-size: var(--openbitfun-type-micro-font-size);
-  line-height: var(--openbitfun-type-support-line-height);
+  line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
 }
 
 .component-guidance-grid li :is(svg, [data-openbitfun-component="icon"]) {
@@ -703,7 +705,7 @@ body,
 .reference-color-palette__contract {
   color: var(--openbitfun-color-content-secondary);
   font-size: var(--openbitfun-type-micro-font-size);
-  line-height: var(--openbitfun-type-support-line-height);
+  line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
 }
 
 .reference-color-palette__summary {
@@ -919,8 +921,7 @@ body,
 }
 
 .token-table__row[data-active] {
-  background: var(--openbitfun-color-action-quiet-pressed);
-  box-shadow: inset 2px 0 var(--openbitfun-color-content-primary);
+  background: var(--openbitfun-color-selection-surface);
 }
 
 .token-table__row[data-edited]::after {
@@ -1084,7 +1085,7 @@ body,
 .token-inspector p {
   color: var(--openbitfun-color-content-secondary);
   font-size: var(--openbitfun-type-body-xs-font-size);
-  line-height: var(--openbitfun-type-body-lg-line-height);
+  line-height: var(--openbitfun-type-body-xs-line-height);
 }
 
 .token-value-control {
@@ -1145,7 +1146,7 @@ body,
   padding: var(--openbitfun-space-8);
   color: var(--openbitfun-color-content-muted);
   font-size: var(--openbitfun-type-body-xs-font-size);
-  line-height: var(--openbitfun-type-body-lg-line-height);
+  line-height: var(--openbitfun-type-body-xs-line-height);
   text-align: center;
 }
 
@@ -1183,7 +1184,7 @@ body,
 
 .effect-preview-heading h2 {
   font-size: var(--openbitfun-type-flow-section-title-font-size);
-  line-height: var(--openbitfun-type-heading-page-line-height);
+  line-height: var(--openbitfun-type-flow-section-title-line-height);
 }
 
 .lab-eyebrow,
@@ -1306,7 +1307,7 @@ body,
 .type-sample-display {
   font-size: var(--openbitfun-type-heading-display-font-size);
   font-weight: var(--openbitfun-type-label-selected-font-weight);
-  line-height: var(--openbitfun-type-heading-page-line-height);
+  line-height: var(--openbitfun-type-heading-display-line-height);
 }
 
 .type-sample-title {
@@ -1608,7 +1609,7 @@ body,
   margin: 0;
   color: var(--openbitfun-color-content-secondary);
   font-size: var(--openbitfun-type-body-lg-font-size);
-  line-height: var(--openbitfun-type-modifier-leading-spacious-line-height);
+  line-height: var(--openbitfun-type-body-lg-line-height);
 }
 
 .guide-step-icon,
@@ -1641,9 +1642,16 @@ body,
   overflow: auto;
   padding: var(--openbitfun-space-5);
   color: var(--openbitfun-color-content-secondary);
-  font-family: var(--openbitfun-type-code-md-font-family);
-  font-size: var(--openbitfun-type-support-font-size);
-  line-height: var(--openbitfun-type-modifier-leading-loose-line-height);
+  font-family: var(--openbitfun-type-code-sm-font-family);
+  /* One code role for every snippet in the Lab: this card used to sit a step under the code panels
+     at 11px, which made two code sizes on one page. */
+  font-size: var(--openbitfun-type-code-sm-font-size);
+  line-height: var(--openbitfun-type-code-sm-line-height);
+}
+
+/* The UA sheet gives <code> the generic monospace; inherit the card's code role instead. */
+.guide-code-card pre > code {
+  font-family: inherit;
 }
 
 /* Resources */
@@ -1752,7 +1760,7 @@ body,
 .pattern-navigation-copy p {
   color: var(--openbitfun-color-content-secondary);
   font-size: var(--openbitfun-type-support-font-size);
-  line-height: var(--openbitfun-type-body-lg-line-height);
+  line-height: var(--openbitfun-type-support-line-height);
 }
 
 .pattern-settings {
@@ -2067,7 +2075,7 @@ body,
   max-width: 680px;
   color: var(--openbitfun-color-content-secondary);
   font-size: var(--openbitfun-type-body-md-font-size);
-  line-height: var(--openbitfun-type-support-line-height);
+  line-height: var(--openbitfun-type-body-md-line-height);
 }
 
 .component-meta-row {
@@ -2350,6 +2358,7 @@ body,
 .component-code-panel--standalone,
 .component-inspector {
   overflow: hidden;
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
   border-radius: var(--openbitfun-radius-lg);
   background: var(--openbitfun-color-surface-panel);
 }
@@ -2365,17 +2374,19 @@ body,
 
 .component-panel-heading h2 {
   margin: 0;
+  font-family: var(--openbitfun-type-heading-section-font-family);
   font-size: var(--openbitfun-type-heading-section-font-size);
   letter-spacing: var(--openbitfun-type-heading-section-letter-spacing);
-  font-family: var(--openbitfun-type-heading-section-font-family);
   font-weight: var(--openbitfun-type-heading-section-font-weight);
-  line-height: var(--openbitfun-type-heading-section-line-height);
+  line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
 }
 
 .component-panel-heading > span,
 .component-code-heading > div > span {
   color: var(--openbitfun-color-content-muted);
+  font-family: var(--openbitfun-type-meta-font-family);
   font-size: var(--openbitfun-type-micro-font-size);
+  letter-spacing: var(--openbitfun-type-meta-letter-spacing);
   text-transform: capitalize;
 }
 
@@ -2590,7 +2601,7 @@ body,
   margin: 0;
   color: var(--openbitfun-color-content-muted);
   font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-md-line-height);
+  line-height: var(--openbitfun-type-body-sm-line-height);
 }
 
 .component-dialog-example__model-card {
@@ -2608,12 +2619,12 @@ body,
 .component-dialog-example__model-card > strong {
   color: var(--openbitfun-color-content-primary);
   font-size: var(--openbitfun-type-body-md-font-size);
-  line-height: var(--openbitfun-type-heading-page-line-height);
+  line-height: var(--openbitfun-type-body-md-line-height);
 }
 
 .component-dialog-example__model-card > span {
   font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-md-line-height);
+  line-height: var(--openbitfun-type-body-sm-line-height);
 }
 
 .component-scroll-area-example {
@@ -2952,7 +2963,7 @@ body,
 }
 
 .component-preview-matrix__column-label[data-last] {
-  border-radius: 0;
+  border-radius: var(--openbitfun-radius-sm);
 }
 
 .component-preview-matrix__row-label {
@@ -2979,12 +2990,30 @@ body,
   box-shadow: none;
 }
 
+/* The state matrix reads as a table: a rule under the column heads, a rule beside the row heads. */
+.component-preview-matrix__corner,
+.component-preview-matrix__column-label {
+  border-bottom: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+}
+
+.component-preview-matrix__row-label {
+  border-inline-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+}
+
+.component-preview-matrix__column-label,
+.component-preview-matrix__row-label {
+  font-family: var(--openbitfun-type-code-sm-font-family);
+  font-size: var(--openbitfun-type-label-xs-font-size);
+  letter-spacing: var(--openbitfun-type-modifier-tracking-wide-letter-spacing);
+}
+
 .component-preview-matrix[data-component="button"] [data-openbitfun-component="button"] {
   min-width: 112px;
 }
 
 .button-state-surface {
   width: 100%;
+  border-radius: var(--openbitfun-radius-md);
   background: var(--openbitfun-color-surface-panel);
 }
 
@@ -2994,9 +3023,29 @@ body,
 
 .button-state-surface > h3 {
   margin: 0;
-  padding: var(--openbitfun-space-4);
-  color: var(--openbitfun-color-content-primary);
-  font-size: var(--openbitfun-type-body-sm-font-size);
+  padding: var(--openbitfun-space-4) var(--openbitfun-space-6);
+  border-bottom: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  color: var(--openbitfun-color-content-caption);
+  font-family: var(--openbitfun-type-label-xs-font-family);
+  font-size: var(--openbitfun-type-label-xs-font-size);
+  font-weight: var(--openbitfun-font-weight-regular);
+  letter-spacing: var(--openbitfun-type-label-xs-letter-spacing);
+}
+
+/* A specimen that sits below the state matrix reads as its own ruled row, not a trailing note. */
+.component-preview-row {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-4);
+  padding: var(--openbitfun-space-4) var(--openbitfun-space-6);
+  border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+}
+
+.component-preview-row > code {
+  color: var(--openbitfun-color-content-caption);
+  font-family: var(--openbitfun-type-code-sm-font-family);
+  font-size: var(--openbitfun-type-label-xs-font-size);
+  letter-spacing: var(--openbitfun-type-modifier-tracking-wide-letter-spacing);
 }
 
 .component-code-panel--standalone {
@@ -3015,8 +3064,8 @@ body,
   border: 0;
   color: var(--openbitfun-color-content-secondary);
   background: var(--openbitfun-color-surface-panel);
-  font-size: var(--openbitfun-type-body-xs-font-size);
-  line-height: var(--openbitfun-type-modifier-leading-loose-line-height);
+  font-size: var(--openbitfun-type-code-sm-font-size);
+  line-height: var(--openbitfun-type-code-sm-line-height);
 }
 
 .component-inspector {
@@ -3123,7 +3172,7 @@ body,
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--openbitfun-radius-md);
   color: var(--openbitfun-color-content-primary);
   background: transparent;
   min-inline-size: 0;
@@ -3355,7 +3404,7 @@ body,
 .colors-heading-copy p {
   color: var(--openbitfun-color-content-secondary);
   font-size: var(--openbitfun-type-body-md-font-size);
-  line-height: var(--openbitfun-type-support-line-height);
+  line-height: var(--openbitfun-type-body-md-line-height);
 }
 
 .colors-context-controls {
@@ -3478,7 +3527,7 @@ body,
 .semantic-color-table tbody td:last-child {
   color: var(--openbitfun-color-content-secondary);
   font-size: var(--openbitfun-type-support-font-size);
-  line-height: var(--openbitfun-type-body-md-line-height);
+  line-height: var(--openbitfun-type-support-line-height);
 }
 
 .semantic-color-table code,

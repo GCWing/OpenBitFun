@@ -369,6 +369,11 @@ fn macos_tray_icon() -> Result<tauri::image::Image<'static>, image::ImageError> 
 }
 
 pub fn show_main_window(app: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        crate::cancel_main_window_close_request_on_macos(app);
+        crate::mark_main_window_hidden_on_macos(false);
+    }
     if let Some(window) = app.get_webview_window("main") {
         // Restore before showing: Win+D can leave a visible window minimized.
         if let Err(error) = window.unminimize() {

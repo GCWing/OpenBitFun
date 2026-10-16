@@ -77,6 +77,21 @@ final class MobileAppModel: ObservableObject {
     @Published var remoteConnected = false
     @Published var remoteSessionSelected = false
     @Published var remoteOpenedSessionID: String? = nil
+    @Published var remotePromptSuggestion: String? = nil
+
+    var visiblePromptSuggestion: String? {
+        guard surface == .remote, remoteSessionSelected, remoteConnected,
+              connectionPhase == .connected, remoteOpenedSessionID == selectedSessionID,
+              !busy, !isSending, pendingComposerSend == nil, draft.isEmpty else { return nil }
+        return remotePromptSuggestion
+    }
+
+    @discardableResult
+    func acceptPromptSuggestion(_ suggestion: String) -> Bool {
+        guard visiblePromptSuggestion == suggestion else { return false }
+        draft = suggestion
+        return true
+    }
     @Published var localSessionSelected = false
     /// Account device picker. Native apps connect only through the signed-in
     /// account's device list; QR and link pairing belong to mobile web.

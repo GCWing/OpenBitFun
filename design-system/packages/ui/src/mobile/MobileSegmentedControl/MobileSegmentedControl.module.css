@@ -2,7 +2,13 @@
   .root { display: inline-grid; box-sizing: border-box; min-block-size: 44px; grid-auto-columns: minmax(72px, 1fr); grid-auto-flow: column; gap: var(--openbitfun-space-1); padding: var(--openbitfun-space-1); border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle); border-radius: var(--openbitfun-radius-pill); background: var(--openbitfun-color-surface-panel); box-shadow: var(--openbitfun-shadow-xs); }
   .option { min-block-size: 36px; margin: 0; padding: 0 var(--openbitfun-space-4); border: 0; border-radius: var(--openbitfun-radius-pill); color: var(--openbitfun-color-content-secondary); background: transparent; cursor: pointer; touch-action: manipulation; font: inherit; font-size: var(--openbitfun-type-label-md-font-size); }
   .option[data-selected="true"] { color: var(--openbitfun-color-content-primary); background: var(--openbitfun-color-action-neutral-surface); box-shadow: var(--openbitfun-shadow-xs); }
-  .option:active:not(:disabled) { background: var(--openbitfun-color-action-neutral-surface-pressed); }
+  @media (hover: hover) and (pointer: fine) {
+    .option:not([data-selected="true"]):hover:not(:disabled),
+    .root[data-openbitfun-preview-state="hover"] .option:not([data-selected="true"]):not(:disabled) { background: var(--openbitfun-color-action-neutral-surface-hover); }
+  }
+  .option:active:not(:disabled),
+  .root[data-openbitfun-preview-state="active"] .option:not([data-selected="true"]):not(:disabled) { background: var(--openbitfun-color-action-neutral-surface-pressed); }
+  .root[data-openbitfun-preview-state="focus-visible"] .option[data-selected="true"] { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: calc(var(--openbitfun-focus-offset) * -1); }
   .option:focus-visible { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: calc(var(--openbitfun-focus-offset) * -1); }
   .option:disabled { color: var(--openbitfun-color-content-disabled); cursor: not-allowed; }
   @media (prefers-reduced-motion: reduce) { .option { transition: none; } }

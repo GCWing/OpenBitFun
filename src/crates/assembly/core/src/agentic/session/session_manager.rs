@@ -5051,6 +5051,11 @@ impl SessionManager {
         }
 
         crate::native_hooks::clear_session_hook_state(session_id);
+        #[cfg(feature = "tools-browser-web")]
+        crate::agentic::tools::implementations::control_hub_tool::release_browser_selection(
+            session_id,
+        )
+        .await;
         self.active_turn_permission_modes.remove(session_id);
         clear_session_runtime_stores(
             session_id,
@@ -7928,6 +7933,173 @@ impl SessionManager {
         })
     }
 
+    pub(crate) async fn background_delivery_for_turn(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+    ) -> OpenBitFunResult<Option<openbitfun_core_types::background_delivery::BackgroundDelivery>>
+    {
+        let path = self
+            .effective_session_storage_path(session_id)
+            .await
+            .ok_or_else(|| OpenBitFunError::validation("Session storage is unavailable"))?;
+        let index = self
+            .sessions
+            .get(session_id)
+            .and_then(|session| session.dialog_turn_ids.iter().position(|id| id == turn_id))
+            .ok_or_else(|| OpenBitFunError::validation("Background run is not loaded"))?;
+        let turn = self
+            .load_runtime_dialog_turn(&path, session_id, index)
+            .await?;
+        Ok(turn.and_then(|turn| {
+            let mut delivery = openbitfun_core_types::background_delivery::BackgroundDelivery::from_metadata(turn.user_message.metadata.as_ref(), turn_id)?;
+            let generation = turn.recovery.as_ref().map(|recovery| recovery.execution_generation).or(turn.recovery_epoch).unwrap_or(0);
+            if generation > delivery.execution_generation {
+                delivery.execution_generation = generation;
+                delivery.disposition = openbitfun_core_types::background_delivery::BackgroundReportDisposition::Pending;
+                delivery.proposal = None;
+                delivery.resolved_at_ms = None;
+                delivery.decision_usage = None;
+                delivery.decision_source = "pending_recovery".to_owned();
+                delivery.reason.clear();
+            }
+            Some(delivery)
+        }))
+    }
+
+    pub(crate) async fn background_task_instructions(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+    ) -> OpenBitFunResult<String> {
+        let path = self
+            .effective_session_storage_path(session_id)
+            .await
+            .ok_or_else(|| OpenBitFunError::validation("Session storage is unavailable"))?;
+        let index = self
+            .sessions
+            .get(session_id)
+            .and_then(|session| session.dialog_turn_ids.iter().position(|id| id == turn_id))
+            .ok_or_else(|| OpenBitFunError::validation("Background run is not loaded"))?;
+        Ok(self
+            .load_runtime_dialog_turn(&path, session_id, index)
+            .await?
+            .map(|turn| turn.user_message.content)
+            .unwrap_or_default())
+    }
+
+    pub(crate) async fn set_background_delivery_for_turn(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        delivery: &openbitfun_core_types::background_delivery::BackgroundDelivery,
+    ) -> OpenBitFunResult<()> {
+        use openbitfun_core_types::background_delivery::{
+            BackgroundDelivery, BACKGROUND_DELIVERY_METADATA_KEY,
+        };
+        let path = self
+            .effective_session_storage_path(session_id)
+            .await
+            .ok_or_else(|| OpenBitFunError::validation("Session storage is unavailable"))?;
+        let index = self
+            .sessions
+            .get(session_id)
+            .and_then(|session| session.dialog_turn_ids.iter().position(|id| id == turn_id))
+            .ok_or_else(|| OpenBitFunError::validation("Background run is not loaded"))?;
+        let _guard = self.acquire_session_mutation(session_id).await?;
+        let mut turn = self
+            .load_runtime_dialog_turn(&path, session_id, index)
+            .await?
+            .ok_or_else(|| OpenBitFunError::validation("Background run record is unavailable"))?;
+        let current =
+            BackgroundDelivery::from_metadata(turn.user_message.metadata.as_ref(), turn_id)
+                .ok_or_else(|| {
+                    OpenBitFunError::validation("This turn is not an admitted background run")
+                })?;
+        let generation = turn
+            .recovery
+            .as_ref()
+            .map(|recovery| recovery.execution_generation)
+            .or(turn.recovery_epoch)
+            .unwrap_or(0);
+        if current.task_id != delivery.task_id
+            || current.run_id != delivery.run_id
+            || current.policy != delivery.policy
+            || delivery.execution_generation != generation
+        {
+            return Err(OpenBitFunError::validation(
+                "Background report identity or policy changed",
+            ));
+        }
+        if current.resolved_at_ms.is_some()
+            && current.execution_generation >= delivery.execution_generation
+            && current != *delivery
+        {
+            return Err(OpenBitFunError::validation(
+                "Background report is already resolved",
+            ));
+        }
+        let metadata = turn
+            .user_message
+            .metadata
+            .get_or_insert_with(|| serde_json::json!({}));
+        if delivery.execution_generation > current.execution_generation {
+            if let Some(object) = metadata.as_object_mut() {
+                let history = object
+                    .entry("backgroundDeliveryHistory")
+                    .or_insert_with(|| serde_json::json!([]));
+                if let Some(history) = history.as_array_mut() {
+                    history.push(
+                        serde_json::to_value(&current)
+                            .map_err(|error| OpenBitFunError::validation(error.to_string()))?,
+                    );
+                }
+            }
+        }
+        metadata[BACKGROUND_DELIVERY_METADATA_KEY] = serde_json::to_value(delivery)
+            .map_err(|error| OpenBitFunError::validation(error.to_string()))?;
+        self.save_runtime_dialog_turn(&path, &turn).await
+    }
+
+    pub(crate) async fn propose_background_report(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        proposal: openbitfun_core_types::background_delivery::BackgroundReport,
+    ) -> OpenBitFunResult<()> {
+        use openbitfun_core_types::background_delivery::{
+            BackgroundReportDisposition as Disposition, BackgroundReportPolicy as Policy,
+        };
+        if proposal.reason.trim().is_empty()
+            || !matches!(
+                proposal.disposition,
+                Disposition::Quiet | Disposition::Report | Disposition::Attention
+            )
+        {
+            return Err(OpenBitFunError::validation(
+                "A final report disposition and reason are required",
+            ));
+        }
+        let mut delivery = self
+            .background_delivery_for_turn(session_id, turn_id)
+            .await?
+            .ok_or_else(|| {
+                OpenBitFunError::validation(
+                    "Report proposals are only available inside a background run",
+                )
+            })?;
+        if delivery.resolved_at_ms.is_some()
+            || (delivery.policy == Policy::Always && proposal.disposition == Disposition::Quiet)
+        {
+            return Err(OpenBitFunError::validation(
+                "The run policy does not permit this report proposal",
+            ));
+        }
+        delivery.proposal = Some(proposal);
+        self.set_background_delivery_for_turn(session_id, turn_id, &delivery)
+            .await
+    }
+
     /// Complete a dialog turn in its history owner.
     pub async fn complete_dialog_turn(
         &self,
@@ -10363,6 +10535,214 @@ mod tests {
                 prompt_cache_policy: PromptCachePolicy::default(),
             },
         )
+    }
+
+    #[tokio::test]
+    async fn background_delivery_is_bound_to_an_admitted_run_and_survives_completion_and_checkpoints(
+    ) {
+        use openbitfun_core_types::background_delivery::{
+            BackgroundDelivery, BackgroundReport, BackgroundReportDisposition as Disposition,
+            BackgroundReportPolicy as Policy, BACKGROUND_DELIVERY_METADATA_KEY,
+        };
+        let workspace = TestWorkspace::new();
+        let persistence = Arc::new(PersistenceManager::new(workspace.path_manager()).unwrap());
+        let manager = test_manager(persistence.clone());
+        let session = manager
+            .create_session(
+                "Background delivery".into(),
+                "Standard".into(),
+                SessionConfig {
+                    workspace_path: Some(workspace.path().to_string_lossy().to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let pending = BackgroundDelivery::pending(
+            "generic-monitor".into(),
+            "background-run".into(),
+            Policy::Conditional,
+        );
+        let turn = crate::service::session::DialogTurnData::new(
+            "background-run".into(),
+            0,
+            session.session_id.clone(),
+            crate::service::session::UserMessageData {
+                id: "input".into(),
+                content: "Only report changes.".into(),
+                timestamp: 1,
+                metadata: Some(serde_json::json!({BACKGROUND_DELIVERY_METADATA_KEY:pending})),
+            },
+        );
+        persistence
+            .save_dialog_turn(workspace.path(), &turn)
+            .await
+            .unwrap();
+        manager
+            .sessions
+            .get_mut(&session.session_id)
+            .unwrap()
+            .dialog_turn_ids
+            .push(turn.turn_id.clone());
+        let proposal = BackgroundReport {
+            disposition: Disposition::Quiet,
+            reason: "No reportable changes.".into(),
+        };
+        manager
+            .propose_background_report(&session.session_id, &turn.turn_id, proposal.clone())
+            .await
+            .unwrap();
+        let admitted = manager
+            .background_delivery_for_turn(&session.session_id, &turn.turn_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(admitted.proposal, Some(proposal.clone()));
+        let resolved = openbitfun_agent_runtime::scheduler::result_delivery::resolve_report(
+            admitted,
+            true,
+            "complete",
+            Some(proposal.clone()),
+            "structured",
+            2,
+        );
+        manager
+            .set_background_delivery_for_turn(&session.session_id, &turn.turn_id, &resolved)
+            .await
+            .unwrap();
+        manager
+            .complete_dialog_turn(
+                &session.session_id,
+                &turn.turn_id,
+                "Nothing changed; remaining quiet.".into(),
+                &[],
+                TurnStats {
+                    total_rounds: 1,
+                    total_tools: 0,
+                    total_tokens: 0,
+                    duration_ms: 10,
+                },
+                Some("complete".into()),
+                Some(true),
+            )
+            .await
+            .unwrap();
+        let completed = persistence
+            .load_dialog_turn(workspace.path(), &session.session_id, 0)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            completed.status,
+            crate::service::session::TurnStatus::Completed
+        );
+        assert!(!completed.model_rounds.is_empty());
+        let raw_rounds = serde_json::to_value(&completed.model_rounds).unwrap();
+        let mut checkpoint = completed;
+        checkpoint.user_message.metadata =
+            Some(serde_json::json!({BACKGROUND_DELIVERY_METADATA_KEY:pending}));
+        persistence
+            .save_dialog_turn(workspace.path(), &checkpoint)
+            .await
+            .unwrap();
+        let saved = persistence
+            .load_dialog_turn(workspace.path(), &session.session_id, 0)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&saved.model_rounds).unwrap(),
+            raw_rounds
+        );
+        assert_eq!(
+            BackgroundDelivery::from_metadata(saved.user_message.metadata.as_ref(), &saved.turn_id)
+                .unwrap()
+                .disposition,
+            Disposition::Quiet
+        );
+        assert!(manager
+            .propose_background_report(&session.session_id, &turn.turn_id, proposal.clone())
+            .await
+            .is_err());
+        let mut resumed = saved;
+        resumed.recovery_epoch = Some(1);
+        resumed.status = crate::service::session::TurnStatus::InProgress;
+        persistence
+            .save_dialog_turn(workspace.path(), &resumed)
+            .await
+            .unwrap();
+        let recovering = manager
+            .background_delivery_for_turn(&session.session_id, &turn.turn_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(recovering.execution_generation, 1);
+        assert_eq!(recovering.disposition, Disposition::Pending);
+        assert!(recovering.resolved_at_ms.is_none());
+        let recovered = openbitfun_agent_runtime::scheduler::result_delivery::resolve_report(
+            recovering,
+            true,
+            "complete",
+            Some(proposal.clone()),
+            "structured",
+            4,
+        );
+        manager
+            .set_background_delivery_for_turn(&session.session_id, &turn.turn_id, &recovered)
+            .await
+            .unwrap();
+        // A delayed observer snapshot must retain both the new decision and the older audit record.
+        persistence
+            .save_dialog_turn(workspace.path(), &resumed)
+            .await
+            .unwrap();
+        let recovered = persistence
+            .load_dialog_turn(workspace.path(), &session.session_id, 0)
+            .await
+            .unwrap()
+            .unwrap();
+        let metadata = recovered.user_message.metadata.unwrap();
+        assert_eq!(
+            metadata[BACKGROUND_DELIVERY_METADATA_KEY]["executionGeneration"],
+            1
+        );
+        assert_eq!(
+            metadata[BACKGROUND_DELIVERY_METADATA_KEY]["disposition"],
+            "report"
+        );
+        assert_eq!(
+            metadata["backgroundDeliveryHistory"][0]["disposition"],
+            "quiet"
+        );
+        assert_eq!(
+            serde_json::to_value(&recovered.model_rounds).unwrap(),
+            raw_rounds
+        );
+        let ordinary = crate::service::session::DialogTurnData::new(
+            "ordinary".into(),
+            1,
+            session.session_id.clone(),
+            crate::service::session::UserMessageData {
+                id: "manual".into(),
+                content: "Tell me the last result.".into(),
+                timestamp: 3,
+                metadata: None,
+            },
+        );
+        persistence
+            .save_dialog_turn(workspace.path(), &ordinary)
+            .await
+            .unwrap();
+        manager
+            .sessions
+            .get_mut(&session.session_id)
+            .unwrap()
+            .dialog_turn_ids
+            .push(ordinary.turn_id.clone());
+        assert!(manager
+            .propose_background_report(&session.session_id, &ordinary.turn_id, proposal)
+            .await
+            .is_err());
     }
 
     #[tokio::test]

@@ -87,7 +87,7 @@ export class ConversationDocumentProjection {
         const key = getVirtualItemStableKey(source);
         const cached = this.sourceCache.get(source);
         const row = cached?.revision === String(sourceIndex) ? cached.items[0] : {
-          ...source, timeline: { key, kind: 'content' as const, sourceIndex, memberIds: [] },
+          ...source, timeline: { key, kind: 'content' as const, sourceIndex, memberIds: source.type === 'background-run' ? source.turn.modelRounds.flatMap(round => round.items.map(item => item.id)) : [] },
         };
         this.sourceCache.set(source, { revision: String(sourceIndex), items: [row] });
         this.next.set(key, row);

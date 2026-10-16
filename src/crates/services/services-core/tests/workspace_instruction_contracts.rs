@@ -2,13 +2,15 @@
 
 use openbitfun_services_core::workspace::LocalWorkspaceFs;
 use openbitfun_services_core::workspace_instructions::{
-    read_workspace_instruction_files, read_workspace_instruction_files_with_fs,
-    read_workspace_instruction_sources, read_workspace_instruction_sources_with_fs,
+    read_workspace_conditional_instruction_sources,
+    read_workspace_conditional_instruction_sources_with_fs, read_workspace_instruction_files,
+    read_workspace_instruction_files_with_fs, read_workspace_instruction_sources,
+    read_workspace_instruction_sources_with_fs,
 };
 use std::fs;
 
 #[tokio::test]
-async fn port_backed_instructions_honor_agents_override_and_keep_claude_context() {
+async fn port_backed_instructions_select_non_empty_agents_and_suppress_claude() {
     let temp = tempfile::tempdir().expect("tempdir");
     fs::write(temp.path().join("AGENTS.override.md"), "override rules\n").expect("override");
     fs::write(temp.path().join("AGENTS.md"), "base rules\n").expect("agents");
@@ -19,18 +21,17 @@ async fn port_backed_instructions_honor_agents_override_and_keep_claude_context(
         .await
         .expect("instruction files");
 
-    assert_eq!(files.len(), 2);
+    assert_eq!(files.len(), 1);
     assert_eq!(files[0].name, "AGENTS.override.md");
     assert_eq!(files[0].content, "override rules\n");
-    assert_eq!(files[1].name, "CLAUDE.md");
-    assert_eq!(files[1].content, "claude rules\n");
 
     fs::write(temp.path().join("AGENTS.override.md"), "").expect("empty override");
     let files = read_workspace_instruction_files_with_fs(&LocalWorkspaceFs, &root)
         .await
         .expect("empty override selection");
     assert_eq!(files.len(), 1);
-    assert_eq!(files[0].name, "CLAUDE.md");
+    assert_eq!(files[0].name, "AGENTS.md");
+    assert_eq!(files[0].content, "base rules\n");
 }
 
 #[tokio::test]
@@ -49,14 +50,31 @@ async fn port_backed_and_local_instruction_resolution_have_identical_order_and_c
     .expect("opencode config");
     let root = temp.path().to_string_lossy();
 
-    let local = read_workspace_instruction_files(temp.path())
-        .await
-        .expect("local instructions");
-    let port = read_workspace_instruction_files_with_fs(&LocalWorkspaceFs, &root)
-        .await
-        .expect("port instructions");
+    for expected in [
+        vec!["AGENTS.md"],
+        vec!["CLAUDE.md", "docs/imported.md", ".claude/rules/base.md"],
+        vec!["docs/imported.md"],
+    ] {
+        let local = read_workspace_instruction_files(temp.path())
+            .await
+            .expect("local instructions");
+        let port = read_workspace_instruction_files_with_fs(&LocalWorkspaceFs, &root)
+            .await
+            .expect("port instructions");
 
-    assert_eq!(port, local);
+        assert_eq!(port, local);
+        assert_eq!(
+            local
+                .iter()
+                .map(|file| file.name.as_str())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        fs::write(temp.path().join(expected[0]), " \n\t").unwrap();
+        if expected[0] == "CLAUDE.md" {
+            fs::write(temp.path().join(".claude/rules/base.md"), "").unwrap();
+        }
+    }
 }
 
 #[tokio::test]
@@ -81,6 +99,16 @@ async fn port_backed_and_local_path_scoped_sources_have_identical_content() {
     assert_eq!(port.len(), 1);
     assert_eq!(port[0].path_patterns, vec!["src/**/*.rs"]);
     assert_eq!(port[0].content, "Use workspace errors.\n");
+
+    fs::write(temp.path().join("AGENTS.md"), "AGENTS rules\n").expect("agents");
+    let local = read_workspace_conditional_instruction_sources(temp.path())
+        .await
+        .expect("local conditional family selection");
+    let port = read_workspace_conditional_instruction_sources_with_fs(&LocalWorkspaceFs, &root)
+        .await
+        .expect("port conditional family selection");
+    assert!(local.is_empty());
+    assert_eq!(port, local);
 }
 
 #[cfg(unix)]

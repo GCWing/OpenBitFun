@@ -1,0 +1,22 @@
+@layer openbitfun.components {
+  /* Sizes ride the control scale, so an avatar lines up with the rows and buttons beside it. */
+  .root { --_avatar-size: var(--openbitfun-control-height-md); --_avatar-dot: 10px; position: relative; display: inline-flex; box-sizing: border-box; inline-size: var(--_avatar-size); block-size: var(--_avatar-size); flex: 0 0 auto; align-items: center; justify-content: center; overflow: visible; border-radius: var(--openbitfun-radius-pill); color: var(--openbitfun-color-content-secondary); background: var(--openbitfun-color-action-neutral-surface); font-size: var(--openbitfun-type-label-selected-font-size); font-weight: var(--openbitfun-type-label-selected-font-weight); }
+  .root[data-size="xs"] { --_avatar-size: var(--openbitfun-space-6); --_avatar-dot: 8px; }
+  .root[data-size="sm"] { --_avatar-size: var(--openbitfun-control-height-sm); --_avatar-dot: 8px; }
+  .root[data-size="lg"] { --_avatar-size: var(--openbitfun-control-height-lg); --_avatar-dot: 12px; }
+  .root[data-shape="rounded"] { border-radius: var(--openbitfun-radius-base); }
+
+  .image, .content { display: block; inline-size: 100%; block-size: 100%; overflow: hidden; border-radius: inherit; object-fit: cover; }
+  .content { display: grid; place-items: center; }
+  .content > :where(svg, img) { inline-size: 100%; block-size: 100%; }
+  .initials { display: grid; inline-size: 100%; block-size: 100%; place-items: center; letter-spacing: var(--openbitfun-letter-spacing-subtle); }
+
+  /* The dot keeps a ring of the surrounding surface so it separates from the artwork it overlaps. */
+  .status { position: absolute; inset-block-end: 0; inset-inline-end: 0; inline-size: var(--_avatar-dot); block-size: var(--_avatar-dot); border-radius: var(--openbitfun-radius-pill); background: var(--openbitfun-color-content-muted); box-shadow: 0 0 0 2px var(--openbitfun-color-surface-canvas); }
+  .status[data-status="online"] { background: var(--openbitfun-color-status-success-emphasis); }
+  .status[data-status="away"] { background: var(--openbitfun-color-status-warning-emphasis); }
+  .status[data-status="busy"] { background: var(--openbitfun-color-status-danger-emphasis); }
+  .status[data-status="offline"] { background: var(--openbitfun-color-content-disabled); }
+
+  @media (forced-colors: active) { .status { border: var(--openbitfun-border-width-default) solid CanvasText; } }
+}

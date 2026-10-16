@@ -64,6 +64,8 @@ pub use openbitfun_core_types::product_identity;
 pub mod runtime_ownership;
 #[cfg(feature = "local-storage")]
 pub mod session;
+#[cfg(feature = "session-recovery")]
+pub mod session_recovery;
 #[cfg(feature = "session-search")]
 pub mod session_search;
 #[cfg(feature = "local-storage")]

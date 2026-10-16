@@ -31,6 +31,8 @@ export interface AIExperienceSettings {
   quick_actions?: QuickAction[];
   /** Absent on older execution hosts; their commit co-author policy is not configurable. */
   enable_git_commit_coauthor?: boolean;
+  /** Absent on older execution hosts, which never offer next-input suggestions. */
+  enable_prompt_suggestion?: boolean;
 }
 
 export type AIExperienceSettingsPatch = Partial<Omit<AIExperienceSettings, 'voice_input'>> & {
@@ -109,6 +111,9 @@ function normalizeSettings(settings: PersistedAIExperienceSettings | null | unde
     // Older hosts omit the field; keep it absent so the UI can gate unsupported writes.
     enable_git_commit_coauthor: typeof currentSettings.enable_git_commit_coauthor === 'boolean'
       ? currentSettings.enable_git_commit_coauthor
+      : undefined,
+    enable_prompt_suggestion: typeof currentSettings.enable_prompt_suggestion === 'boolean'
+      ? currentSettings.enable_prompt_suggestion
       : undefined,
   };
   // Legacy configs used null to mean the built-in SVG panda. Resolve null to the current preset.

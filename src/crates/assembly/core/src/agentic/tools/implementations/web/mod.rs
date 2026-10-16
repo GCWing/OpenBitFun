@@ -181,13 +181,13 @@ mod tests {
         // browser.fetch runs inside the already-connected page, so it must be
         // described as a same-origin follow-up rather than a standalone
         // alternative to connect -> navigate -> snapshot.
-        assert!(description.contains("connect -> navigate -> snapshot"));
+        assert!(description.contains("navigate { url, observe: \"article\" }"));
         assert!(description.contains("same-origin"));
         assert!(description.contains("CORS"));
-        // Guarded Chrome/Edge connections preserve the current profile while
-        // other browsers may use a persistent managed profile.
-        assert!(description.contains("current profile"));
-        assert!(description.contains("managed profile"));
+        // Routing must preserve user-owned connection and profile selection.
+        assert!(description.contains("selected, authorized browser connection"));
+        assert!(description.contains("Settings > Browser Control"));
+        assert!(description.contains("do not enable permissions or change profiles"));
     }
 
     #[test]

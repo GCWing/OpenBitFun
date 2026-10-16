@@ -33,6 +33,20 @@
       "updateFailed": "设置失败"
     }
   },
+  "promptSuggestion": {
+    "title": "候选输入建议",
+    "subtitle": "Agent 答复完成后，在输入框中给出一句话的下一步输入建议",
+    "label": "启用",
+    "description": "输入框为空时按 Tab 或 → 采纳。建议复用本轮对话的提示缓存生成。",
+    "unsupported": "当前连接的主机不支持候选输入建议。",
+    "loading": "正在加载设置...",
+    "loadFailedLocked": "无法读取候选输入建议设置，开关已锁定。",
+    "retry": "重新加载",
+    "messages": {
+      "saveSuccess": "设置已保存",
+      "saveFailed": "保存失败"
+    }
+  },
   "subscriptionAuth": {
     "sectionTitle": "订阅账号",
     "sectionDescription": "连接 Codex、Antigravity、OpenCode Console（Zen）、xAI 或 Hermes 账号",

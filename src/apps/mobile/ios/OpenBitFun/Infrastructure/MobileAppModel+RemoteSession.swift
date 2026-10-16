@@ -393,6 +393,7 @@ extension MobileAppModel {
     /// normally arrive inside the grace period; a relay fetch gets an explicit
     /// skeleton instead of leaving the previous session visible.
     func beginRemoteConversationOpen(sessionID: String) {
+        remotePromptSuggestion = nil
         remoteOpenedSessionID = nil
         remoteConversationLoadTask?.cancel()
         remoteConversationLoadGeneration &+= 1
@@ -449,10 +450,11 @@ extension MobileAppModel {
                 "Remote session timeline ready elapsed_ms=\(elapsedMS, privacy: .public) generation=\(self.remoteConversationLoadGeneration, privacy: .public)"
             )
         }
-        resetRemoteConversationOpen()
+        resetRemoteConversationOpen(clearSuggestion: false)
     }
 
-    func resetRemoteConversationOpen() {
+    func resetRemoteConversationOpen(clearSuggestion: Bool = true) {
+        if clearSuggestion { remotePromptSuggestion = nil }
         remoteConversationLoadTask?.cancel()
         remoteConversationLoadTask = nil
         remoteConversationLoadGeneration &+= 1
@@ -1145,6 +1147,8 @@ extension MobileAppModel {
         let acceptsTimeline = remoteConversationOpeningSessionID.map {
             ready.timeline?.sessionId == $0
         } ?? true
+        setPublishedIfChanged(\.remotePromptSuggestion,
+            to: acceptsTimeline && ready.selectedSessionId == selectedSessionID ? ready.promptSuggestion : nil)
         activeTurnID = acceptsTimeline ? ready.timeline?.activeTurn?.turnId : nil
         setPublishedIfChanged(\.isSending, to: acceptsTimeline && ready.timeline?.activeTurn != nil)
         let projectedModelOptions = ready.createModelOptions(fallbackLabel: localized("模型")).map { option in

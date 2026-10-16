@@ -1,0 +1,29 @@
+@layer openbitfun.components {
+  /* Touch geometry lives on the row, not on the switch: a 32px track inside a 52px row is the
+     mobile pattern — the label is the target, the track is the state. */
+  .root { display: flex; box-sizing: border-box; inline-size: 100%; min-inline-size: 0; min-block-size: 52px; align-items: center; gap: var(--openbitfun-space-3); margin: 0; padding: var(--openbitfun-space-2) var(--openbitfun-space-3); border: var(--openbitfun-border-width-default) solid transparent; border-radius: var(--openbitfun-radius-md); color: var(--openbitfun-color-content-primary); background: transparent; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard); }
+  .root[data-appearance="surface"] { min-block-size: 64px; border-color: var(--openbitfun-color-border-subtle); background: var(--openbitfun-color-surface-panel); box-shadow: var(--openbitfun-shadow-xs); }
+  .root[data-disabled="true"] { color: var(--openbitfun-color-content-disabled); cursor: not-allowed; }
+
+  @media (hover: hover) and (pointer: fine) {
+    .root:is(:hover, [data-openbitfun-preview-state="hover"]):not([data-disabled="true"]) { background: var(--openbitfun-color-action-neutral-surface-hover); }
+  }
+  .root:is(:active, [data-openbitfun-preview-state="active"]):not([data-disabled="true"]) { background: var(--openbitfun-color-action-neutral-surface-pressed); }
+  .root:is(:has(.input:focus-visible), [data-openbitfun-preview-state="focus-visible"]) { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: var(--openbitfun-focus-offset); }
+
+  .copy { display: flex; box-sizing: border-box; min-inline-size: 0; flex: 1 1 auto; flex-direction: column; gap: var(--openbitfun-space-1); }
+  .label { color: var(--openbitfun-color-content-primary); font-size: var(--openbitfun-type-body-md-font-size); font-weight: var(--openbitfun-type-label-lg-font-weight); }
+  .description { color: var(--openbitfun-color-content-muted); font-size: var(--openbitfun-type-body-xs-font-size); }
+  .root[data-disabled="true"] .label, .root[data-disabled="true"] .description { color: inherit; }
+
+  .control { position: relative; display: inline-flex; inline-size: var(--openbitfun-control-switch-track-width); block-size: var(--openbitfun-control-switch-track-height); flex: 0 0 auto; }
+  .input { position: absolute; z-index: var(--openbitfun-layer-content); inset: 0; inline-size: 100%; block-size: 100%; margin: 0; opacity: 0; cursor: inherit; }
+  .track { position: relative; display: block; inline-size: 100%; block-size: 100%; overflow: hidden; border-radius: var(--openbitfun-radius-pill); background: var(--openbitfun-color-control-switch-track); pointer-events: none; transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard); }
+  .thumb { position: absolute; inset-block-start: var(--openbitfun-control-switch-thumb-inset); inset-inline-start: var(--openbitfun-control-switch-thumb-inset); inline-size: var(--openbitfun-control-switch-thumb-size); block-size: var(--openbitfun-control-switch-thumb-size); border-radius: var(--openbitfun-radius-pill); background: var(--openbitfun-color-control-switch-thumb); transition: transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard); }
+  .root[data-checked="true"] .track { background: var(--openbitfun-color-control-switch-track-checked); }
+  .root[data-checked="true"] .thumb { transform: translateX(var(--openbitfun-control-switch-thumb-travel)); }
+  .root:dir(rtl)[data-checked="true"] .thumb { transform: translateX(var(--openbitfun-control-switch-thumb-travel-reverse)); }
+
+  @media (prefers-reduced-motion: reduce) { .root, .track, .thumb { transition: none; } }
+  @media (forced-colors: active) { .root[data-appearance="surface"] { border-color: ButtonText; } .track { border: var(--openbitfun-border-width-default) solid ButtonText; } .root:has(.input:focus-visible), .root[data-openbitfun-preview-state="focus-visible"] { outline-color: Highlight; } }
+}

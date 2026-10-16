@@ -1,0 +1,21 @@
+@layer openbitfun.components {
+  .root { box-sizing: border-box; display: inline-flex; min-block-size: 44px; align-items: center; justify-content: center; gap: var(--openbitfun-space-2); margin: 0; padding: 0 var(--openbitfun-space-4); border: 0; border-radius: var(--openbitfun-radius-pill); color: var(--openbitfun-color-content-secondary); background: var(--openbitfun-color-action-neutral-surface); cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; font: inherit; font-size: var(--openbitfun-type-label-md-font-size); font-weight: var(--openbitfun-type-label-md-font-weight); transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard); }
+  .root[data-size="sm"] { min-block-size: 36px; padding-inline: var(--openbitfun-space-3); font-size: var(--openbitfun-type-label-sm-font-size); }
+  .root[data-appearance="accent"] { color: var(--openbitfun-color-accent-default); background: var(--openbitfun-color-accent-surface); }
+  /* Selection is a filled block, the same signal the rest of the mobile set uses for state. */
+  .root[data-selected="true"] { color: var(--openbitfun-color-content-primary); background: var(--openbitfun-color-selection-surface); font-weight: var(--openbitfun-font-weight-semibold); }
+  .root[data-selected="true"][data-appearance="accent"] { color: var(--openbitfun-color-action-primary-content); background: var(--openbitfun-color-accent-default); }
+
+  @media (hover: hover) and (pointer: fine) {
+    .root:is(:hover, [data-openbitfun-preview-state="hover"]):not(:disabled) { background: var(--openbitfun-color-action-neutral-surface-hover); }
+  }
+  .root:is(:active, [data-openbitfun-preview-state="active"]):not(:disabled) { background: var(--openbitfun-color-action-neutral-surface-pressed); }
+  .root:is(:focus-visible, [data-openbitfun-preview-state="focus-visible"]) { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: var(--openbitfun-focus-offset); }
+  .root:disabled { color: var(--openbitfun-color-content-disabled); cursor: not-allowed; }
+
+  .label { display: block; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .leading, .trailing { display: grid; inline-size: 16px; block-size: 16px; flex: 0 0 16px; place-items: center; }
+  .leading > :where(svg, img), .trailing > :where(svg, img) { inline-size: 100%; block-size: 100%; }
+
+  @media (prefers-reduced-motion: reduce) { .root { transition: none; } }
+}

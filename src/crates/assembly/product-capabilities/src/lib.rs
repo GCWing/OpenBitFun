@@ -170,7 +170,7 @@ impl ProductCapabilityPack {
 pub enum DeliveryProfile {
     ProductFull,
     Desktop,
-    DataMigrator,
+    DataTools,
     Cli,
     Server,
     Remote,
@@ -185,7 +185,7 @@ impl DeliveryProfile {
         match self {
             Self::ProductFull => "product-full",
             Self::Desktop => "desktop",
-            Self::DataMigrator => "data-migrator",
+            Self::DataTools => "data-tools",
             Self::Cli => "cli",
             Self::Server => "server",
             Self::Remote => "remote",
@@ -200,7 +200,7 @@ impl DeliveryProfile {
         &[
             Self::ProductFull,
             Self::Desktop,
-            Self::DataMigrator,
+            Self::DataTools,
             Self::Cli,
             Self::Server,
             Self::Remote,
@@ -262,7 +262,7 @@ const PRODUCT_DELIVERY_PROFILE_ENTRIES: &[ProductDeliveryProfileEntry] = &[
         ProductCoreDependencyMode::ProductFullCompatibility,
     ),
     ProductDeliveryProfileEntry::new(
-        DeliveryProfile::DataMigrator,
+        DeliveryProfile::DataTools,
         ProductCoreDependencyMode::ExplicitCoreCapabilityClosure,
     ),
     ProductDeliveryProfileEntry::new(
@@ -956,7 +956,7 @@ pub fn product_extension_capabilities_for_profile(
         DeliveryProfile::Server
         | DeliveryProfile::Remote
         | DeliveryProfile::Acp
-        | DeliveryProfile::DataMigrator
+        | DeliveryProfile::DataTools
         | DeliveryProfile::Web
         | DeliveryProfile::MobileWeb
         | DeliveryProfile::Sdk => PluginRuntimeUnavailableReason::UnsupportedProfile,
@@ -1153,7 +1153,7 @@ fn product_capability_registry_for_profile(profile: DeliveryProfile) -> ProductC
         }
         DeliveryProfile::Server
         | DeliveryProfile::Remote
-        | DeliveryProfile::DataMigrator
+        | DeliveryProfile::DataTools
         | DeliveryProfile::Web
         | DeliveryProfile::MobileWeb => {
             ProductCapabilityRegistry::new(EMPTY_PRODUCT_CAPABILITY_PACKS)

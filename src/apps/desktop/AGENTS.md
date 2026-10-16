@@ -59,9 +59,9 @@ pnpm run desktop:preview:debug
 pnpm run prepare:dsh-profile   # optional: local DeepSeek Harness sessions
 ```
 
-Data Migrator runs independently. Desktop development launchers do not build,
-launch, or supervise the migrator; use its own development and release entry
-points under `src/apps/data-migrator`.
+Data Tools runs independently. Desktop development launchers do not build,
+launch, or supervise the tool; use its own development and release entry
+points under `src/apps/data-tools`.
 
 ## Fast builds
 
@@ -147,6 +147,15 @@ For tray unread synchronization, run
 `pnpm --dir src/web-ui run test:run src/flow_chat/services/trayUnreadService.test.ts src/flow_chat/services/sessionNavStatusService.test.ts`
 and `cargo test -p openbitfun-desktop --lib remote_workspace_policy` after command changes.
 
+For independent official/LAN Relay routing and scoped teardown, run
+`cargo test --locked -p openbitfun-desktop --lib api::remote_connect_api`
+and `cargo test --locked -p openbitfun-desktop --lib api::peer_host_invoke::tests`.
+The dual-Relay test runs actual sockets and encrypted RPC in a child process with
+temporary product storage; it does not exercise physical LAN interfaces, SSH
+workspaces, or the production Relay. UI coverage lives in
+`remoteConnectionState.test.ts`, `RemoteConnectDialog.status.test.tsx` and
+`deviceInterconnectionOverview.test.ts` under the Web UI owner.
+
 For shared GitHub sign-in and token redaction, use
 `cargo test -p openbitfun-desktop --lib api::account_identity_api::tests`.
 For the matching cross-entry UI state, run
@@ -208,6 +217,12 @@ For peer system-info response compatibility, run
 `cargo test -p openbitfun-desktop --lib system_info_home_contract`.
 For window geometry recovery, legacy state compatibility, and snapshot persistence,
 run `cargo test -p openbitfun-desktop --lib window_state_support::tests`.
+For macOS close-to-hide fullscreen sequencing, run
+`cargo check --locked -p openbitfun-desktop` and
+`node scripts/test-macos-window-close.mjs` on a graphical macOS session.
+The latter compiles the production close lifecycle in isolation and checks real
+AppKit fullscreen entry/exit, duplicate requests, cancellation and reopen; it
+does not launch the complete Desktop frontend or exercise remote scenarios.
 For Windows main-WebView minimize/restore size filtering, run
 `cargo test -p openbitfun-desktop --no-default-features --lib window_webview_geometry::tests`.
 The desktop host owns main-WebView resizing on Windows so minimized client bounds

@@ -13,9 +13,9 @@ use openbitfun_product_domains::legacy_migration::{
 };
 use openbitfun_services_integrations::remote_persistence as owner;
 use owner::{
-    AccountHintRecord, AccountSessionRecord, BotChatStateRecord, BotConfigRecord,
-    BotPersistenceRecord, LegacyAccountSessionKeyDomains, MachineBinding,
-    RemoteConnectFormStateRecord, SavedBotConnectionRecord,
+    AccountHintRecord, BotChatStateRecord, BotConfigRecord, BotPersistenceRecord,
+    LegacyAccountSessionKeyDomains, MachineBinding, RemoteConnectFormStateRecord,
+    SavedBotConnectionRecord,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -26,7 +26,6 @@ use std::path::{Path, PathBuf};
 const DOMAIN_DIR: &str = "remote-connect";
 const SOURCE_SCHEMA: &str = "bitfun.remote-connect.v0.2.19";
 const TARGET_SCHEMA: &str = "openbitfun.remote-connect.current";
-const MAX_REMOTE_FILES: usize = 4_096;
 const MAX_SECRET_BYTES: u64 = 16 * 1024 * 1024;
 const LEGACY_ACCOUNT_SESSION_KEY_DOMAINS: LegacyAccountSessionKeyDomains<'static> =
     LegacyAccountSessionKeyDomains {
@@ -489,23 +488,17 @@ fn apply_merge(
     } else {
         None
     };
-    let target_session = if target.account_session_present {
-        match owner::read_current_account_session(&backup_domain_dir(context, DOMAIN_DIR), &binding)
-        {
-            Ok(value) => value,
-            Err(_) => {
-                warn_reauthentication(
-                    outcome,
-                    "remote_connect_account",
-                    "target_account_session_unavailable",
-                    "The existing Remote Connect account session needs authentication repair.",
-                );
-                None
-            }
-        }
-    } else {
-        None
-    };
+    if target.account_session_present
+        && owner::read_current_account_session(&backup_domain_dir(context, DOMAIN_DIR), &binding)
+            .is_err()
+    {
+        warn_reauthentication(
+            outcome,
+            "remote_connect_account",
+            "target_account_session_unavailable",
+            "The existing Remote Connect account session needs authentication repair.",
+        );
+    }
     if !target.account_session_present {
         if let Some(session) = &source_session {
             owner::write_current_account_session(target_root, &binding, session)
@@ -538,15 +531,6 @@ fn apply_merge(
         ));
     }
     Ok(())
-}
-
-fn same_account(left: &AccountSessionRecord, right: &AccountSessionRecord) -> bool {
-    left.user_id == right.user_id
-        && normalized_url(&left.relay_url) == normalized_url(&right.relay_url)
-}
-
-fn normalized_url(value: &str) -> &str {
-    value.trim().trim_end_matches('/')
 }
 
 fn merge_bot(
@@ -914,27 +898,6 @@ fn existing_regular(root: &Path, path: &Path, max_bytes: u64) -> LegacyMigration
                     "Remote Connect file exceeds {max_bytes} bytes: {}",
                     relative_display(root, path)
                 )));
-            }
-            Ok(true)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(io_error(path, error)),
-    }
-}
-
-fn existing_directory(root: &Path, path: &Path) -> LegacyMigrationResult<bool> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) => {
-            if metadata.file_type().is_symlink() || !metadata.is_dir() {
-                return Err(LegacyMigrationError::InvalidRequest(format!(
-                    "expected a regular Remote Connect directory at {}",
-                    relative_display(root, path)
-                )));
-            }
-            let canonical_root = fs::canonicalize(root).map_err(|error| io_error(root, error))?;
-            let canonical_path = fs::canonicalize(path).map_err(|error| io_error(path, error))?;
-            if !canonical_path.starts_with(canonical_root) {
-                return Err(LegacyMigrationError::PathEscape(path.to_path_buf()));
             }
             Ok(true)
         }

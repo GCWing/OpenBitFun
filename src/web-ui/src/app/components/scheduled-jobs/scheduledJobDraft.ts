@@ -8,6 +8,7 @@
 
 import type {
   CronJob,
+  BackgroundReportPolicy,
   CronJobTargetRequest,
   CronJobTargetKind,
   CronSchedule,
@@ -53,6 +54,7 @@ export const SCHEDULED_JOBS_CHANGED_EVENT = 'openbitfun:scheduled-jobs-changed';
 export type ScheduleKind = CronSchedule['kind'];
 
 export interface JobDraft {
+  reportPolicy: BackgroundReportPolicy;
   name: string;
   text: string;
   enabled: boolean;
@@ -121,6 +123,7 @@ export function createEmptyDraft(
 ): JobDraft {
   return {
     name: '',
+    reportPolicy: 'inherit',
     text: '',
     enabled: true,
     sessionId: defaultSessionId,
@@ -140,6 +143,7 @@ export function jobToDraft(job: CronJob, defaultAgentType: string): JobDraft {
   const draft: JobDraft = {
     ...base,
     name: job.name,
+    reportPolicy: job.reportPolicy ?? 'inherit',
     text: job.payload.text,
     enabled: job.enabled,
   };

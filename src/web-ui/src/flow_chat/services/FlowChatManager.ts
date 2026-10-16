@@ -11,6 +11,7 @@ import { requireSessionWorkspaceId } from '../utils/sessionWorkspace';
 import { processingStatusManager } from './ProcessingStatusManager';
 import { FlowChatStore } from '../store/FlowChatStore';
 import { useModernFlowChatStore } from '../store/modernFlowChatStore';
+import { usePromptSuggestionStore } from '../store/promptSuggestionStore';
 import { ACPClientAPI } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { stateMachineManager } from '../state-machine';
 import { EventBatcher } from './EventBatcher';
@@ -559,6 +560,7 @@ export class FlowChatManager {
 
   /** Permanently forget a peer that was explicitly detached or became lost. */
   public discardDeviceSurface(surfaceId: DeviceSurfaceId): void {
+    usePromptSuggestionStore.getState().removeSurfaceSuggestions(surfaceId);
     this.context.flowChatStore.discardSurfaceState(surfaceId);
     sessionNavStatusService.clearSurface(surfaceId);
     stateMachineManager.clearSurface(surfaceId);

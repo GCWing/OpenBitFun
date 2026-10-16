@@ -24,7 +24,11 @@ node scripts/test-computer-use-context.mjs
 # Real Chromium collection and ref activation, followed by compiled Rust
 # parsing/presentation of the actual browser payload (Node 22/24 + Chrome):
 node scripts/test-browser-snapshot.mjs
-cargo test -p openbitfun-core --no-default-features --features agent-runtime,tools-browser-web,tools-computer-use,git --lib browser_control::actions::
+# Production dispatcher workflow in disposable Chromium (same Node requirement):
+node scripts/test-browser-workflow.mjs
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,tools-browser-web,tools-computer-use,git --lib browser_control::
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,tools-browser-web,tools-computer-use,git --lib control_hub_tool::
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,tools-browser-web,tools-miniapp,git --lib playbook_tool::tests::
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,tools-browser-web,tools-computer-use,git --lib computer_use_tool::tests::
 ```
 
@@ -35,3 +39,9 @@ checks additionally select `tools-computer-use`; none requires `product-full`.
 The Chromium fixture verifies local external-browser behavior. It is not
 evidence of built-in WebKit, remote workspace, mobile/IM remote control, Peer
 Device Mode, or Detached Dispatch execution.
+
+Navigation creates a page when needed; optional `observe` reuses that page's
+state. Keep conversation selections and stale-id errors through all actions.
+External user-profile identity/access requires a successful Settings connection;
+headless endpoints are explicit and verified. Browser setup/consent is never an
+Agent recovery action. Preserve legacy open/read payloads and result fields.

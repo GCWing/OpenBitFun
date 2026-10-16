@@ -311,9 +311,11 @@ export function projectDeviceInterconnectionOverview(
 
   let connectionService = input.peer ? input.accountService : null;
 
-  const network = selectRemoteNetworkConnection(input.remoteStatus);
-  if (network.connected && input.remoteStatus) {
-    for (const client of input.remoteStatus.clients) {
+  const networks = input.remoteStatus?.connections !== undefined
+    ? input.remoteStatus.connections.map(route => selectRemoteNetworkConnection(input.remoteStatus, null, route.method))
+    : [selectRemoteNetworkConnection(input.remoteStatus)];
+  for (const network of networks.filter(connection => connection.connected)) {
+    for (const client of network.clients) {
       addOrMergeDevice(devices, {
         id: `mobile:${client.id}`,
         name: formatDeviceDisplayName(client.name) || input.fallbackMobileDeviceName || 'Mobile device',

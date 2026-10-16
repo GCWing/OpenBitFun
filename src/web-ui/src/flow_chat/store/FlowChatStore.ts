@@ -6880,7 +6880,8 @@ export class FlowChatStore {
     let didClear = false;
     // Explicit acknowledgement also works before the transcript is hydrated.
     // Bind it to the host summary so a later status refresh cannot restore it.
-    const acknowledgedSummaryTurn = sessionActivityStore.get(sessionId)?.summary?.lastTurn;
+    const summary = sessionActivityStore.get(sessionId)?.summary;
+    const acknowledgedSummaryTurn = summary?.unreadTurn ?? summary?.lastTurn;
     this.setState(prev => {
       const session = prev.sessions.get(sessionId);
       if (!session || !session.hasUnreadCompletion) return prev;
@@ -6927,8 +6928,9 @@ export class FlowChatStore {
     this.setState(prev => {
       const session = prev.sessions.get(summary.sessionId);
       if (!session || session.config.dispatchJobId) return prev;
-      const turnId = summary.unreadCompletion ? summary.lastTurn?.turnId : undefined;
-      const generation = summary.unreadCompletion ? summary.lastTurn?.executionGeneration : undefined;
+      const unreadTurn = summary.unreadTurn ?? summary.lastTurn;
+      const turnId = summary.unreadCompletion ? unreadTurn?.turnId : undefined;
+      const generation = summary.unreadCompletion ? unreadTurn?.executionGeneration : undefined;
       if (session.hasUnreadCompletion === summary.unreadCompletion && session.unreadCompletionTurnId === turnId
         && session.unreadCompletionGeneration === generation) return prev;
       const sessions = new Map(prev.sessions);
@@ -8012,6 +8014,23 @@ export class FlowChatStore {
         sessions: newSessions,
       };
     });
+  }
+
+  /** A reader recovery always reads the owning host; it never starts a dialog turn. */
+  public async synchronizeSessionHistory(sessionId: string, shouldApply?: () => boolean): Promise<PeerSessionSnapshotRefreshResult> {
+    const session = this.state.sessions.get(sessionId);
+    if (session?.config.dispatchJobId) {
+      throw new Error('Detached history synchronization requires the target event replay and cannot use controller storage');
+    }
+    const result = await this.refreshPeerSessionSnapshot(sessionId, {
+      requireActiveSession: true,
+      shouldApply,
+      shouldReplayRuntimeSnapshot: () => false,
+    });
+    if (!result.applied && shouldApply?.() !== false && this.state.sessions.get(sessionId) !== session) {
+      throw new Error('Session history changed during source synchronization');
+    }
+    return result;
   }
 
   /**

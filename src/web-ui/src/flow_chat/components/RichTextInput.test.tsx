@@ -6,6 +6,7 @@ import RichTextInput, { type RichTextInputElement } from './RichTextInput';
 import type { ContextItem } from '../../shared/types/context';
 import { createMcpPromptReference } from '../utils/mcpPromptReference';
 import { composerPresentationToEditorText, parseComposerPresentation } from '../utils/composerPresentation';
+import { installTextInputGuard } from '../../../../shared/text-input/textInputGuard';
 
 type HarnessHandle = {
   setValue: (value: string) => void;
@@ -45,6 +46,7 @@ const ControlledHarness = forwardRef<HarnessHandle>(function ControlledHarness(_
 const describeWithJsdom = JSDOMCtor ? describe : describe.skip;
 
 describeWithJsdom('RichTextInput external sync', () => {
+  let removeTextInputGuard: () => void;
   let dom: { window: Window & typeof globalThis };
   let container: HTMLDivElement;
   let root: Root;
@@ -114,6 +116,7 @@ describeWithJsdom('RichTextInput external sync', () => {
 
     container = document.createElement('div');
     document.body.appendChild(container);
+    removeTextInputGuard = installTextInputGuard(document);
     root = createRoot(container);
   });
 
@@ -122,6 +125,7 @@ describeWithJsdom('RichTextInput external sync', () => {
       root.unmount();
     });
     container.remove();
+    removeTextInputGuard();
     dom.window.close();
     vi.unstubAllGlobals();
   });
@@ -135,6 +139,44 @@ describeWithJsdom('RichTextInput external sync', () => {
     expect(editor).toBeInstanceOf(HTMLDivElement);
     return editor as HTMLDivElement;
   }
+
+  it('rejects native arrow/function key text without changing the composer selection', async () => {
+    const ref = createRef<HarnessHandle>();
+    const editor = await renderHarness(ref);
+    setCaret(editor, 2);
+    for (const data of ['\uF700', '\uF701', '\uF702', '\uF703', '\uF704', '\u001B']) {
+      const event = new window.InputEvent('beforeinput', {
+        bubbles: true, cancelable: true, inputType: 'insertText', data,
+      });
+      await act(async () => { editor.dispatchEvent(event); });
+      expect(event.defaultPrevented).toBe(true);
+      expect(editor.textContent).toBe('hello');
+      expect(window.getSelection()?.anchorOffset).toBe(2);
+    }
+  });
+
+  it('removes leaked key characters from composer output while preserving joined emoji and IME text', async () => {
+    const onChange = vi.fn();
+    await act(async () => root.render(<RichTextInput value="" onChange={onChange} contexts={emptyContexts} onRemoveContext={() => {}} />));
+    const editor = container.querySelector('.rich-text-input') as HTMLDivElement;
+    const expected = '中文 👩‍💻 👨‍👩‍👧‍👦 می\u200Cروم';
+    editor.textContent = `${expected}\uF700\u001B`;
+    await act(async () => editor.dispatchEvent(new window.InputEvent('input', { bubbles: true, inputType: 'insertText' })));
+    expect(editor.textContent).toBe(expected);
+    expect(onChange).toHaveBeenLastCalledWith(expected, []);
+  });
+
+  it('cleans pasted key characters before handing text to the large-paste owner', async () => {
+    const onLargePaste = vi.fn(() => null);
+    await act(async () => root.render(<RichTextInput value="hello" onChange={() => {}} onLargePaste={onLargePaste} contexts={emptyContexts} onRemoveContext={() => {}} />));
+    const editor = container.querySelector('.rich-text-input') as HTMLDivElement;
+    setCaret(editor, 2);
+    await act(async () => paste(editor, { text: '\uF700\u001B' }));
+    expect(editor.textContent).toBe('hello');
+    expect(onLargePaste).not.toHaveBeenCalled();
+    await act(async () => paste(editor, { text: '中文\uF700 👩‍💻' }));
+    expect(onLargePaste).toHaveBeenLastCalledWith('中文 👩‍💻');
+  });
 
   function paste(
     editor: HTMLDivElement,

@@ -9,6 +9,9 @@ interface PreviewOptions {
   onError: (error: unknown) => void;
 }
 
+const PREVIEW_INTERVAL_MS = 5000;
+const IDLE_PREVIEW_INTERVAL_MS = 30_000;
+
 /** A single in-memory frame; capture work never holds up native show/hide. */
 export class BrowserPreviewCache {
   private label = '';
@@ -18,6 +21,9 @@ export class BrowserPreviewCache {
   private unsupported = false;
   private inFlight = false;
   private warned = false;
+  private lastFrame: string | null = null;
+  private lastCaptureAt = 0;
+  private intervalMs = PREVIEW_INTERVAL_MS;
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly options: PreviewOptions) {}
@@ -30,6 +36,8 @@ export class BrowserPreviewCache {
 
   invalidate(): void {
     this.generation++;
+    this.lastFrame = null;
+    this.intervalMs = PREVIEW_INTERVAL_MS;
     this.options.onFrame(null);
     this.clearTimer();
     this.schedule(0);
@@ -39,13 +47,17 @@ export class BrowserPreviewCache {
     if (this.visible === visible) return;
     this.visible = visible;
     this.clearTimer();
-    if (visible) this.schedule(0);
+    // Rapid popup/tab toggles should reuse the existing frame rather than
+    // repeatedly capturing and decoding the native view.
+    if (visible) this.schedule(this.lastFrame === null
+      ? 0 : Math.max(0, PREVIEW_INTERVAL_MS - (Date.now() - this.lastCaptureAt)));
   }
 
   dispose(): void {
     this.disposed = true;
     this.generation++;
     this.clearTimer();
+    this.lastFrame = null;
   }
 
   resume(): void {
@@ -66,7 +78,7 @@ export class BrowserPreviewCache {
   private async capture(): Promise<void> {
     const generation = this.generation;
     this.inFlight = true;
-    let delay = 1000;
+    let delay = this.intervalMs;
     try {
       const response = await this.options.capture(this.label);
       if (this.disposed || generation !== this.generation) return;
@@ -75,8 +87,18 @@ export class BrowserPreviewCache {
         this.options.onError(response.reason);
         return;
       }
+      this.lastCaptureAt = Date.now();
+      if (response.dataUrl === this.lastFrame) {
+        this.intervalMs = Math.min(this.intervalMs * 2, IDLE_PREVIEW_INTERVAL_MS);
+        this.warned = false;
+        delay = this.intervalMs;
+        return;
+      }
       await this.options.prepare(response.dataUrl);
       if (!this.disposed && generation === this.generation) {
+        this.lastFrame = response.dataUrl;
+        this.intervalMs = PREVIEW_INTERVAL_MS;
+        delay = this.intervalMs;
         this.options.onFrame(response.dataUrl);
         this.warned = false;
       }
@@ -86,7 +108,8 @@ export class BrowserPreviewCache {
       this.unsupported = /unknown command|command.*not found|unsupported/i.test(String(error));
       if (!this.warned) this.options.onError(error);
       this.warned = true;
-      delay = 5000;
+      this.intervalMs = Math.min(this.intervalMs * 2, IDLE_PREVIEW_INTERVAL_MS);
+      delay = this.intervalMs;
     } finally {
       this.inFlight = false;
       this.schedule(generation === this.generation ? delay : 0);

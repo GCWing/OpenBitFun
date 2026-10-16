@@ -245,6 +245,7 @@ export interface ActiveTurnSnapshot {
   tools: RemoteToolStatus[];
   round_index: number;
   items?: ChatMessageItem[];
+  backgroundDelivery?: unknown;
 }
 
 export interface RemoteToolStatus {
@@ -271,6 +272,8 @@ export interface PollResponse {
   message_snapshot?: ChatMessage[];
   active_turn?: ActiveTurnSnapshot | null;
   model_catalog?: RemoteModelCatalog;
+  /** Next-input suggestion for the settled latest turn; `null` retires it, absence keeps it. */
+  prompt_suggestion?: string | null;
 }
 
 export interface InitialSyncData {

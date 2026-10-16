@@ -502,7 +502,8 @@
         "anchorMs": "錨點時間（可選）",
         "cronExpr": "Cron 表達式",
         "timezone": "時區（可選）",
-        "prompt": "任務內容"
+        "prompt": "任務內容",
+        "reportPolicy": "結果投遞"
       },
       "placeholders": {
         "workspacePath": "請輸入工作區路徑",
@@ -515,7 +516,14 @@
         "prompt": "請輸入定時觸發時發送給智能體的內容"
       },
       "hints": {
-        "cronExpr": "Cron 格式：分 時 日 月 週，例如 0 8 * * * 表示每天 08:00。"
+        "cronExpr": "Cron 格式：分 時 日 月 週，例如 0 8 * * * 表示每天 08:00。",
+        "reportPolicy": "請在任務內容中說明報告條件；失敗或判定不明確時仍會報告。",
+        "reportPolicyUnsupported": "此主機尚不支援設定結果投遞，繼續依原任務說明執行。"
+      },
+      "reportPolicies": {
+        "inherit": "依任務說明",
+        "always": "每次報告",
+        "conditional": "符合條件才報告"
       },
       "scheduleKinds": {
         "at": "單次執行",

@@ -39,6 +39,7 @@ export const agentRuntimeRootPublicModules = [
   'prompt',
   'prompt_cache',
   'prompt_markup',
+  'prompt_suggestion',
   'remote_file_delivery',
   'runtime',
   'scheduled_job',

@@ -14,6 +14,7 @@ import type {
   AgenticEvent,
   SubagentSessionLinkedEvent,
   SessionTitleGeneratedEvent,
+  PromptSuggestionEvent,
   SessionModelFallbackAppliedEvent,
   SessionReasoningPresetAutoClearedEvent,
   ImageAnalysisEvent,
@@ -79,6 +80,7 @@ export interface AgenticEventCallbacks {
   onThreadGoalUpdated?: (event: { sessionId: string; goal?: Record<string, unknown> | null }) => void;
   onOpenBuiltInBrowser?: (event: OpenBuiltInBrowserEvent) => void;
   onSessionTitleGenerated?: (event: SessionTitleGeneratedEvent) => void;
+  onPromptSuggestion?: (event: PromptSuggestionEvent) => void;
   onSessionModelFallbackApplied?: (event: SessionModelFallbackAppliedEvent) => void;
   onSessionReasoningPresetAutoCleared?: (
     event: SessionReasoningPresetAutoClearedEvent
@@ -317,6 +319,14 @@ export class AgenticEventListener {
         this.unlistenFunctions.push(unlisten);
       }
 
+      if (callbacks.onPromptSuggestion) {
+        const unlisten = agentAPI.onPromptSuggestion((event) => {
+          logger.debug('Prompt suggestion received:', { sessionId: event.sessionId });
+          callbacks.onPromptSuggestion?.(event);
+        });
+        this.unlistenFunctions.push(unlisten);
+      }
+
       if (callbacks.onUserSteeringInjected) {
         const unlisten = agentAPI.onUserSteeringInjected((event) => {
           logger.debug('User steering injected:', event);
@@ -454,6 +464,9 @@ export class AgenticEventListener {
         break;
       case 'session_title_generated':
         callbacks.onSessionTitleGenerated?.(payload as unknown as SessionTitleGeneratedEvent);
+        break;
+      case 'agentic://prompt-suggestion':
+        callbacks.onPromptSuggestion?.(payload as unknown as PromptSuggestionEvent);
         break;
       // Upgrade-only event-name alias for older Peer/Dispatch targets.
       case 'agentic://session-model-auto-migrated':

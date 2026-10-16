@@ -147,6 +147,7 @@ pub struct ObservedTurn {
     pub status: String,
     pub error: Option<String>,
     pub tools: Vec<RemoteToolStatus>,
+    pub background_delivery: Option<openbitfun_core_types::background_delivery::BackgroundDelivery>,
 }
 
 impl ObservedTurn {
@@ -178,6 +179,11 @@ pub fn observe_turn(poll: &Value, turn_id: &str) -> Option<ObservedTurn> {
         message?
     };
     Some(ObservedTurn {
+        background_delivery:
+            openbitfun_core_types::background_delivery::BackgroundDelivery::from_metadata(
+                source.get("metadata"),
+                turn_id,
+            ),
         text: source["items"]
             .as_array()
             .filter(|items| !items.is_empty())

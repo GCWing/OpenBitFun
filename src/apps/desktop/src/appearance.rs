@@ -1129,7 +1129,7 @@ pub async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
 
         #[cfg(target_os = "macos")]
         {
-            crate::cancel_main_window_close_request_on_macos();
+            crate::cancel_main_window_close_request_on_macos(&app);
             crate::mark_main_window_hidden_on_macos(false);
         }
 

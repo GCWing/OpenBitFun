@@ -21,7 +21,7 @@ describe('ModernFlowChatContainer natural navigation contract', () => {
 
   it('keeps provisional mount snapshots and auto-tail placement out of session restoration', () => {
     expect(componentSource).toContain('viewportRestorePendingSessionIdRef');
-    expect(componentSource).toContain('viewport.sessionSnapshotIgnoredDuringRestore');
+    expect(componentSource).toContain('viewportRestorePendingSessionIdRef.current === snapshot.sessionId');
     expect(componentSource).toContain('onViewportRestoreSettled={handleViewportRestoreSettled}');
     expect(componentSource).toContain('viewportRestorePendingSessionId === sessionId');
   });

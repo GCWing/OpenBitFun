@@ -557,6 +557,7 @@ pub const REMOTE_FILE_MAX_CHUNK_BYTES: u64 = 3 * 1024 * 1024;
 pub const REMOTE_CAPABILITY_HARNESS_PROFILES_V1: &str = "harness_profiles_v1";
 pub const REMOTE_CAPABILITY_DIALOG_STEER_V1: &str = "dialog_steer_v1";
 pub const REMOTE_CAPABILITY_USER_QUESTION_INTERACTION_V1: &str = "user_question_interaction_v1";
+pub const REMOTE_CAPABILITY_BACKGROUND_RESULT_DELIVERY_V1: &str = "background_result_delivery_v1";
 pub const REMOTE_CAPABILITY_SESSION_ROLLBACK_V1: &str = "session_rollback_v1";
 pub const REMOTE_CAPABILITY_PLAN_BUILD_V1: &str = "plan_build_v1";
 pub use host_stream::REMOTE_CAPABILITY_HOST_STREAM_V1;
@@ -570,6 +571,7 @@ fn remote_host_capabilities() -> Vec<String> {
         REMOTE_CAPABILITY_PLAN_BUILD_V1.to_string(),
         REMOTE_CAPABILITY_SESSION_ROLLBACK_V1.to_string(),
         REMOTE_CAPABILITY_USER_QUESTION_INTERACTION_V1.to_string(),
+        REMOTE_CAPABILITY_BACKGROUND_RESULT_DELIVERY_V1.to_string(),
         REMOTE_CAPABILITY_HOST_STREAM_V1.to_string(),
     ]
 }
@@ -2294,6 +2296,7 @@ pub struct ChatMessageItem {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RemoteChatHistoryTurn {
+    pub background_delivery: Option<openbitfun_core_types::background_delivery::BackgroundDelivery>,
     pub turn_id: String,
     pub turn_index: usize,
     pub user_message_id: String,
@@ -2354,15 +2357,22 @@ pub fn build_remote_chat_messages(turns: Vec<RemoteChatHistoryTurn>) -> Vec<Chat
     let mut result = Vec::new();
 
     for turn in turns {
+        let delivery_metadata = turn
+            .background_delivery
+            .as_ref()
+            .map(|delivery| serde_json::json!({"backgroundDelivery":delivery}));
         result.push(ChatMessage {
             id: turn.user_message_id,
             role: "user".to_string(),
             content: turn.user_display_content,
             timestamp: (turn.user_timestamp_ms / 1000).to_string(),
-            metadata: None,
+            metadata: delivery_metadata.clone(),
             turn_id: Some(turn.turn_id.clone()),
             turn_index: Some(turn.turn_index),
-            status: None,
+            status: turn
+                .background_delivery
+                .as_ref()
+                .map(|_| turn.status.clone()),
             error: None,
             tools: None,
             thinking: None,
@@ -2527,7 +2537,7 @@ pub fn build_remote_chat_messages(turns: Vec<RemoteChatHistoryTurn>) -> Vec<Chat
             role: "assistant".to_string(),
             content: text_parts.join("\n\n"),
             timestamp: (assistant_ts / 1000).to_string(),
-            metadata: None,
+            metadata: delivery_metadata,
             turn_id: Some(turn.turn_id),
             // Rollback targets user turns only, so the assistant projection
             // deliberately carries no storage index.
@@ -5552,6 +5562,7 @@ mod tests {
             success: Some(true),
             finish_reason: Some("complete".to_string()),
             has_final_response: Some(true),
+            background_delivery: None,
         });
         tracker.handle_agentic_event(&AgenticEvent::SessionHistoryChanged {
             session_id: "session-a".to_string(),
@@ -5619,6 +5630,7 @@ mod tests {
             success: Some(true),
             finish_reason: Some("complete".to_string()),
             has_final_response: Some(true),
+            background_delivery: None,
         });
         tracker.handle_agentic_event(&AgenticEvent::SessionHistoryChanged {
             session_id: "session-a".to_string(),

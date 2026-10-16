@@ -3,6 +3,54 @@
 For development commands, see [AGENTS.md](AGENTS.md) and the repository
 [contribution guide](../../../CONTRIBUTING.md).
 
+## Remote Connect
+
+Sign in once with the shared GitHub account. The official Relay and **Same
+network** (the embedded LAN Relay) can run at the same time. Each tab shows its
+own connection and connected browsers; **Disconnect** affects that tab only.
+Closing a connection code keeps an established connection running.
+
+**My devices**, Peer Device Mode, account synchronization and detached dispatch
+use the official Relay. Starting or stopping the LAN Relay does not switch their
+account or endpoint. LAN invitations advertise the selected network interface;
+select it again and create a new invitation after changing networks.
+
+The official device session is restored on restart. The embedded LAN connection
+is temporary and starts when requested. Builds that previously saved a temporary
+LAN session in the account slot attempt to restore the official Relay from the
+shared identity; failed sign-in leaves the previous credential on disk. Signing
+out closes both connections.
+
+## Global agent instructions
+
+Put personal instructions for local OpenBitFun sessions in
+`~/.openbitfun/AGENTS.md` (`%USERPROFILE%\.openbitfun\AGENTS.md` on Windows).
+If `OPENBITFUN_HOME` is set, the file is read from that directory instead.
+A non-empty file replaces Codex's global instructions, including
+`AGENTS.override.md`. If the OpenBitFun file is missing, empty, or whitespace-only,
+OpenBitFun keeps loading Codex's global instructions as before. OpenCode,
+Claude Code, and project instruction files continue to load independently.
+
+After editing the file, run `/reload instructions` in the session. The next
+message rebuilds its instruction context. Remote SSH/Docker workspaces use
+their workspace instruction files and do not load the controller's global files.
+
+## Project agent instructions
+
+OpenBitFun selects one instruction family at the workspace root, in this order:
+
+1. AGENTS: the first non-empty file among `AGENTS.override.md` and `AGENTS.md`.
+2. Claude: the first non-empty file among `CLAUDE.md` and `.claude/CLAUDE.md`,
+   followed by `CLAUDE.local.md` and `.claude/rules/**/*.md`.
+3. OpenCode: local instruction files referenced by the project OpenCode configs.
+
+Missing, empty, and whitespace-only files do not block a fallback. Once a
+family supplies instructions, lower-priority families are skipped. A Claude
+family containing only local notes or path-scoped rules still counts as selected.
+Path-scoped rules load only after a matching file is read, and only when the
+Claude family is selected. Use `/reload instructions` after changing the files
+to rebuild startup context on the next message.
+
 ## Session storage directories
 
 The workspace and session action menus include **Open session storage directory**.

@@ -149,6 +149,8 @@ export interface SessionActivitySummary {
   pendingQuestions: number;
   lastTurn?: SessionLastTurn;
   unreadCompletion?: 'completed' | 'error' | 'interrupted';
+  /** A quiet run can be newer than the unread user-facing result. */
+  unreadTurn?: SessionLastTurn;
 }
 
 export interface ReviewActionPersistedState {

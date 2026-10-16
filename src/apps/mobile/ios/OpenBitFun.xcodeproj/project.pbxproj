@@ -7,6 +7,7 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    A20000000000000000000011 /* PromptSuggestionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000011; };
     A9F000000000000000000003 = {isa = PBXBuildFile; fileRef = B9F000000000000000000003; };
     A9F000000000000000000002 = {isa = PBXBuildFile; fileRef = B9F000000000000000000002; };
     A9F000000000000000000001 /* SidebarToolsFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9F000000000000000000001; };
@@ -63,6 +64,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+    B20000000000000000000011 /* PromptSuggestionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptSuggestionUITests.swift; sourceTree = "<group>"; };
     B9F000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarDeviceRow.swift; sourceTree = "<group>"; };
     B9F000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenBitFun/Infrastructure/StartupRevealPreference.swift; sourceTree = SOURCE_ROOT; };
     B9F000000000000000000001 /* SidebarToolsFooter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarToolsFooter.swift; sourceTree = "<group>"; };
@@ -137,7 +139,7 @@
     D10000000000000000000018 /* Models */ = {isa = PBXGroup; children = (B10000000000000000000036 /* MobilePresentationModels.swift */); path = Models; sourceTree = "<group>"; };
     D10000000000000000000017 /* Platform */ = {isa = PBXGroup; children = (B10000000000000000000041, B10000000000000000000040); path = Platform; sourceTree = "<group>"; };
     D10000000000000000000009 /* Products */ = {isa = PBXGroup; children = (B10000000000000000000000 /* OpenBitFun.app */, B20000000000000000000000 /* OpenBitFunUITests.xctest */); name = Products; sourceTree = "<group>"; };
-    D20000000000000000000001 /* OpenBitFunUITests */ = {isa = PBXGroup; children = (B20000000000000000000001 /* RemoteCodeSessionSendUITests.swift */); path = OpenBitFunUITests; sourceTree = "<group>"; };
+    D20000000000000000000001 /* OpenBitFunUITests */ = {isa = PBXGroup; children = (B20000000000000000000001 /* RemoteCodeSessionSendUITests.swift */, B20000000000000000000011 /* PromptSuggestionUITests.swift */); path = OpenBitFunUITests; sourceTree = "<group>"; };
     D10000000000000000000010 /* DesignSystem */ = {isa = PBXGroup; children = (B10000000000000000000013 /* GeneratedMobileDesignTokens.swift */, B10000000000000000000014 /* GeneratedMobilePreviewScenarios.swift */, B10000000000000000000015 /* MobileDesignGallery.swift */, B10000000000000000000018 /* AdaptiveModalComponents.swift */); path = DesignSystem; sourceTree = "<group>"; };
     D10000000000000000000008 /* Infrastructure */ = {isa = PBXGroup; children = (B90000000000000000000003 /* StreamingTextState.swift */, B90000000000000000000005 /* ComposerDismissGesture.swift */, B90000000000000000000002, B10000000000000000000002 /* MobileAppModel.swift */, B10000000000000000000010 /* MobileCoreAdapter.swift */, B10000000000000000000017 /* MobileLocalization.swift */, B10000000000000000000024 /* MobileAppModel+FilePreview.swift */, B10000000000000000000025 /* MobileAppModel+Account.swift */, B10000000000000000000026 /* MobileAppModel+RemoteSession.swift */, B10000000000000000000027 /* MobileAppModel+GeneralChat.swift */, B10000000000000000000028 /* RemoteAuthorityGate.swift */, B10000000000000000000029 /* AccountFailureCopy.swift */, D10000000000000000000017 /* Platform */); path = Infrastructure; sourceTree = "<group>"; };
 /* End PBXGroup section */
@@ -156,7 +158,7 @@
 /* End PBXShellScriptBuildPhase section */
 /* Begin PBXSourcesBuildPhase section */
     C10000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A9F000000000000000000003, A9F000000000000000000002, A9F000000000000000000001, A91000000000000000000001, A90000000000000000000003, A90000000000000000000004, A90000000000000000000002, A90000000000000000000001, A10000000000000000000041, A10000000000000000000040, A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000006, A10000000000000000000007, A10000000000000000000008, A10000000000000000000010, A10000000000000000000013, A10000000000000000000014, A10000000000000000000015, A10000000000000000000017, A10000000000000000000018, A10000000000000000000019, A10000000000000000000020, A10000000000000000000021, A10000000000000000000022, A10000000000000000000024, A10000000000000000000025, A10000000000000000000026, A10000000000000000000027, A10000000000000000000028, A10000000000000000000029, A10000000000000000000030, A10000000000000000000031, A10000000000000000000032, A10000000000000000000033, A10000000000000000000035, A10000000000000000000036, A10000000000000000000037, A10000000000000000000038, A90000000000000000000005, A90000000000000000000006); runOnlyForDeploymentPostprocessing = 0; };
-    C20000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A20000000000000000000001 /* RemoteCodeSessionSendUITests.swift in Sources */); runOnlyForDeploymentPostprocessing = 0; };
+    C20000000000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A20000000000000000000001 /* RemoteCodeSessionSendUITests.swift in Sources */, A20000000000000000000011 /* PromptSuggestionUITests.swift in Sources */); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */

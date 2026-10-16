@@ -8,6 +8,7 @@ type MessageTree = { readonly [key: string]: MessageLeaf | MessageTree };
 
 export const messages: Record<MobileLanguage, MessageTree> = {
   'en-US': {
+    backgroundDelivery: { quiet: 'Background task completed · No report needed', running: 'Background task running' },
     queue: {
       "title": "Queued messages",
       "about": "About queued messages",
@@ -256,6 +257,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       inputPlaceholder: 'How can I help you...',
       collapsedInputPlaceholder: 'Ask OpenBitFun',
       collapsedStreamingPlaceholder: 'Replying...',
+      promptSuggestionAccept: 'Use suggestion: {suggestion}',
       messageQueued: 'Message queued; it will run after the current step',
       imageAnalyzingPlaceholder: 'Sending images...',
       imageAttachmentFallback: '(see attached images)',
@@ -373,6 +375,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
     },
   },
   'zh-CN': {
+    backgroundDelivery: { quiet: '后台任务已完成 · 无需汇报', running: '后台任务执行中' },
     queue: {
       "title": "待发送",
       "about": "排队消息说明",
@@ -621,6 +624,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       inputPlaceholder: '有什么可以帮您...',
       collapsedInputPlaceholder: '向 OpenBitFun 提问',
       collapsedStreamingPlaceholder: '正在回复...',
+      promptSuggestionAccept: '采纳建议：{suggestion}',
       messageQueued: '已加入队列，将在当前步骤结束后处理',
       imageAnalyzingPlaceholder: '正在发送图片...',
       imageAttachmentFallback: '（见附带图片）',
@@ -738,6 +742,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
     },
   },
   'zh-TW': {
+    backgroundDelivery: { quiet: '背景任務已完成 · 無需回報', running: '背景任務執行中' },
     queue: {
       "title": "待傳送",
       "about": "排隊訊息說明",
@@ -986,6 +991,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       inputPlaceholder: '有什麼可以幫您...',
       collapsedInputPlaceholder: '向 OpenBitFun 提問',
       collapsedStreamingPlaceholder: '正在回覆...',
+      promptSuggestionAccept: '採納建議：{suggestion}',
       messageQueued: '已加入隊列，將在當前步驟結束後處理',
       imageAnalyzingPlaceholder: '正在傳送圖片...',
       imageAttachmentFallback: '（見附帶圖片）',

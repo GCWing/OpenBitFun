@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import sharp from 'sharp';
 import { COMPOSER_ICON, ROOT, macosSourceDigest, readMacosFallback } from './macos-icon-assets.mjs';
@@ -24,6 +24,47 @@ test('macOS uses a full-bleed Composer source and a current independent legacy e
   assert.equal(mark.hasAlpha, true);
   assert.ok(readMacosFallback().length > 0);
   assert.equal(json(join(ROOT, 'assets/brand/macos/generated.json')).sourceSha256, macosSourceDigest());
+});
+
+test('Windows autocrlf checkout preserves the committed macOS icon source digest', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'openbitfun-icon-checkout-'));
+  const files = [
+    '.gitattributes',
+    'scripts/macos-icon-assets.mjs',
+    'assets/brand/macos/openbitfun.icon/icon.json',
+    'assets/brand/macos/openbitfun.icon/Assets/Mark.png',
+    'assets/brand/macos/legacy-canvas.json',
+    'assets/brand/macos/generated.json',
+    'assets/brand/exports/openbitfun-app-icon.icns',
+  ];
+  const git = (...args) => run('git', args, { cwd: directory });
+  try {
+    git('init', '-q');
+    git('config', 'core.autocrlf', 'false');
+    for (const file of files) {
+      mkdirSync(dirname(join(directory, file)), { recursive: true });
+      copyFileSync(join(ROOT, file), join(directory, file));
+    }
+    git('add', '--', ...files);
+    git('config', 'core.autocrlf', 'true');
+    for (const file of files) rmSync(join(directory, file));
+    git('checkout-index', '--all', '--force');
+    const verify = () => run(process.execPath, ['--input-type=module', '-e',
+      "import { readMacosFallback } from './scripts/macos-icon-assets.mjs'; readMacosFallback();"],
+    { cwd: directory });
+    verify();
+
+    // Rebuilding an immutable tag predating the attributes must also work
+    // when the release runner disables conversion before checkout.
+    git('config', 'core.autocrlf', 'false');
+    writeFileSync(join(directory, '.gitattributes'), '');
+    git('add', '--', '.gitattributes');
+    for (const file of files) rmSync(join(directory, file));
+    git('checkout-index', '--all', '--force');
+    verify();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test('CLI is locked and macOS overlays preserve the same dev/legacy icon', () => {

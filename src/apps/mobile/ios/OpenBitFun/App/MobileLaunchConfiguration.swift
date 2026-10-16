@@ -4,6 +4,13 @@ import OSLog
 
 @MainActor
 enum MobileLaunchConfiguration {
+    static var promptSuggestionPreview: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--prompt-suggestion-preview")
+        #else
+        false
+        #endif
+    }
     static var streamingRegressionPreview: Bool {
         #if DEBUG
         ProcessInfo.processInfo.arguments.contains("--streaming-regression")
@@ -21,7 +28,7 @@ enum MobileLaunchConfiguration {
                 ChatMessage(id: UUID(), role: .user, text: "你好"),
                 ChatMessage(id: UUID(), role: .assistant, text: "这是 OpenBitFun 的移动端会话界面。你可以从手机连接桌面端，查看工作区、会话和智能体的执行状态。")
             ],
-            connectCore: !ProcessInfo.processInfo.arguments.contains("--composer-model-picker") && !ProcessInfo.processInfo.arguments.contains("--composer-draft-preview") && !streamingRegressionPreview && !ProcessInfo.processInfo.arguments.contains("--permission-mailbox-preview") && !ProcessInfo.processInfo.arguments.contains("--harness-preview") && designPreviewScenario() == nil
+            connectCore: !ProcessInfo.processInfo.arguments.contains("--composer-model-picker") && !ProcessInfo.processInfo.arguments.contains("--composer-draft-preview") && !streamingRegressionPreview && !promptSuggestionPreview && !ProcessInfo.processInfo.arguments.contains("--permission-mailbox-preview") && !ProcessInfo.processInfo.arguments.contains("--harness-preview") && designPreviewScenario() == nil
         )
         return configure(model)
     }
@@ -51,6 +58,18 @@ enum MobileLaunchConfiguration {
         #endif
         if arguments.contains("--connected") {
             model.configureConnectedPreview()
+        }
+        if promptSuggestionPreview {
+            model.configureConnectedPreview()
+            model.surface = .remote
+            model.remoteConnected = true
+            model.connectionPhase = .connected
+            model.remoteSessionSelected = true
+            model.remoteOpenedSessionID = model.selectedSessionID
+            model.busy = false
+            model.isSending = false
+            model.remotePromptSuggestion = "  Run the tests and summarize any failures.  "
+            model.draft = ""
         }
         if arguments.contains("--remote-chat-section") {
             if !model.remoteConnected { model.configureConnectedPreview() }

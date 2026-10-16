@@ -22,7 +22,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::oneshot;
 
-use super::remote_connect_api::{account_app_handle, current_device_id_for_peer};
+use super::remote_connect_api::{account_app_handle, current_device_id_for_peer, RelayRoute};
 
 const DEFAULT_INVOKE_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -31,7 +31,7 @@ static PENDING: OnceLock<Mutex<HashMap<String, oneshot::Sender<HostInvokeBridgeR
 
 #[derive(Default)]
 struct PeerControlState {
-    controllers: HashSet<String>,
+    controllers: HashSet<(RelayRoute, String)>,
     permission_request_ids: HashSet<String>,
 }
 
@@ -96,13 +96,26 @@ pub fn is_retired_command(command: &str) -> bool {
 
 /// Register a controller device id to receive peer UI events.
 pub fn attach_controller(device_id: String) {
+    attach_route_controller(RelayRoute::Official, device_id);
+}
+
+pub(crate) fn attach_route_controller(route: RelayRoute, device_id: String) {
     if let Ok(mut state) = peer_control_state().lock() {
-        state.controllers.insert(device_id);
+        state.controllers.insert((route, device_id));
     }
 }
 
+#[cfg(test)]
 fn detach_from_state(state: &mut PeerControlState, device_id: &str) -> Vec<String> {
-    let removed = state.controllers.remove(device_id);
+    detach_route_from_state(state, RelayRoute::Official, device_id)
+}
+
+fn detach_route_from_state(
+    state: &mut PeerControlState,
+    route: RelayRoute,
+    device_id: &str,
+) -> Vec<String> {
+    let removed = state.controllers.remove(&(route, device_id.to_string()));
     if removed && state.controllers.is_empty() {
         return state.permission_request_ids.drain().collect();
     }
@@ -112,10 +125,14 @@ fn detach_from_state(state: &mut PeerControlState, device_id: &str) -> Vec<Strin
 /// Detach one controller and return requests that must fail closed when it was
 /// the final controller.
 pub fn detach_controller(device_id: &str) -> Vec<String> {
+    detach_route_controller(RelayRoute::Official, device_id)
+}
+
+pub(crate) fn detach_route_controller(route: RelayRoute, device_id: &str) -> Vec<String> {
     let Ok(mut state) = peer_control_state().lock() else {
         return Vec::new();
     };
-    detach_from_state(&mut state, device_id)
+    detach_route_from_state(&mut state, route, device_id)
 }
 
 fn retain_online_in_state(
@@ -123,9 +140,9 @@ fn retain_online_in_state(
     online_device_ids: &HashSet<String>,
 ) -> Vec<String> {
     let had_controllers = !state.controllers.is_empty();
-    state
-        .controllers
-        .retain(|device_id| online_device_ids.contains(device_id));
+    state.controllers.retain(|(route, device_id)| {
+        *route != RelayRoute::Official || online_device_ids.contains(device_id)
+    });
     if had_controllers && state.controllers.is_empty() {
         return state.permission_request_ids.drain().collect();
     }
@@ -142,12 +159,16 @@ pub fn retain_online_controllers(online_device_ids: &HashSet<String>) -> Vec<Str
 }
 
 /// Clear all attached controllers after the device-routing stream closes.
-pub fn disconnect_controllers() -> Vec<String> {
+pub(crate) fn disconnect_route_controllers(route: RelayRoute) -> Vec<String> {
     let Ok(mut state) = peer_control_state().lock() else {
         return Vec::new();
     };
-    state.controllers.clear();
-    state.permission_request_ids.drain().collect()
+    state.controllers.retain(|(owner, _)| *owner != route);
+    if state.controllers.is_empty() {
+        state.permission_request_ids.drain().collect()
+    } else {
+        Vec::new()
+    }
 }
 
 pub fn track_permission_event(
@@ -212,7 +233,21 @@ pub async fn fail_closed_permission_requests(
 pub fn attached_controllers() -> Vec<String> {
     peer_control_state()
         .lock()
-        .map(|state| state.controllers.iter().cloned().collect())
+        .map(|state| state.controllers.iter().map(|(_, id)| id.clone()).collect())
+        .unwrap_or_default()
+}
+
+pub(crate) fn attached_route_controllers(route: RelayRoute) -> Vec<String> {
+    peer_control_state()
+        .lock()
+        .map(|state| {
+            state
+                .controllers
+                .iter()
+                .filter(|(owner, _)| *owner == route)
+                .map(|(_, id)| id.clone())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -406,9 +441,27 @@ mod tests {
 
     fn control_state(controllers: &[&str], requests: &[&str]) -> PeerControlState {
         PeerControlState {
-            controllers: controllers.iter().map(|value| value.to_string()).collect(),
+            controllers: controllers
+                .iter()
+                .map(|value| (RelayRoute::Official, value.to_string()))
+                .collect(),
             permission_request_ids: requests.iter().map(|value| value.to_string()).collect(),
         }
+    }
+
+    #[test]
+    fn detaching_one_route_preserves_the_other_controller_and_permissions() {
+        let mut state = control_state(&["same-device"], &["pending-approval"]);
+        state
+            .controllers
+            .insert((RelayRoute::Lan, "same-device".into()));
+        assert!(detach_route_from_state(&mut state, RelayRoute::Lan, "same-device").is_empty());
+        assert_eq!(state.permission_request_ids.len(), 1);
+        assert_eq!(state.controllers.len(), 1);
+        assert_eq!(
+            detach_from_state(&mut state, "same-device"),
+            vec!["pending-approval"]
+        );
     }
 
     #[tokio::test]

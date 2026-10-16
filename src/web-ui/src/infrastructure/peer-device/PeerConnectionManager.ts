@@ -39,6 +39,7 @@ export type PeerConnectionHealth = 'connecting' | 'ready' | 'degraded';
 export type PeerHostKind = 'desktop' | 'cli';
 
 export interface PeerHostCapabilities {
+  readonly backgroundResultDeliveryV1?: boolean;
   readonly idempotentDialogSubmit: boolean;
   /** Only true after explicit negotiation; older hosts need the upload API. */
   readonly inlineImageAttachmentsV1?: boolean;
@@ -167,6 +168,7 @@ interface PeerModePingResult {
 }
 
 const NO_CAPABILITIES: PeerHostCapabilities = {
+  backgroundResultDeliveryV1: false,
   idempotentDialogSubmit: false,
   inlineImageAttachmentsV1: false,
   btwInitialModelSelectionV1: false,
@@ -510,6 +512,7 @@ export class PeerConnectionManager {
 
     return {
       idempotentDialogSubmit: caps?.idempotent_dialog_submit === true,
+      backgroundResultDeliveryV1: caps?.background_result_delivery_v1 === true,
       inlineImageAttachmentsV1: caps?.inline_image_attachments_v1 === true,
       btwInitialModelSelectionV1: caps?.btw_initial_model_selection_v1 === true,
       controlConversationV1: caps?.control_conversation_v1 === true,
@@ -752,6 +755,7 @@ function capabilitiesEqual(
   b: PeerHostCapabilities,
 ): boolean {
   return a.idempotentDialogSubmit === b.idempotentDialogSubmit &&
+    a.backgroundResultDeliveryV1 === b.backgroundResultDeliveryV1 &&
     a.inlineImageAttachmentsV1 === b.inlineImageAttachmentsV1 &&
     a.btwInitialModelSelectionV1 === b.btwInitialModelSelectionV1 &&
     a.controlConversationV1 === b.controlConversationV1 &&

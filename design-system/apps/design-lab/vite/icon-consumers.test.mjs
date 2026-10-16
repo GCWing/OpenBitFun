@@ -9,10 +9,19 @@ test("Lab navigation, theme resources and export actions consume the shared icon
   assert.match(app, /name="settings"/);
   assert.match(app, /icon: "palette"/);
   assert.doesNotMatch(app, /\b(?:Palette|Settings2)\b/);
-  for (const page of ["ResourcesPage", "GettingStartedPage"]) {
+  const resources = await source("pages/ResourcesPage.tsx");
+  assert.match(resources, /icon: "palette"/);
+  assert.match(resources, /<CatalogIcon name=\{Icon\}/);
+  assert.doesNotMatch(resources, /\bPalette\b/);
+  /* The guide's three steps are shared with the homepage (see components/GuideContract), so the
+     catalog icon they consume lives in the block; the pages only render the block. */
+  const guide = await source("components/GuideContract.tsx");
+  assert.match(guide, /icon: "palette"/);
+  assert.match(guide, /<CatalogIcon name=\{Icon\}/);
+  assert.doesNotMatch(guide, /\bPalette\b/);
+  for (const page of ["GettingStartedPage", "OverviewPage"]) {
     const markup = await source(`pages/${page}.tsx`);
-    assert.match(markup, /icon: "palette"/);
-    assert.match(markup, /<CatalogIcon name=\{Icon\}/);
+    assert.match(markup, /<GuideStepList/);
     assert.doesNotMatch(markup, /\bPalette\b/);
   }
   const workbench = await source("token-editor/TokenWorkbench.tsx");
@@ -22,11 +31,12 @@ test("Lab navigation, theme resources and export actions consume the shared icon
 
 test("the website has three primary destinations and a unified public catalog", async () => {
   const source = relative => readFile(new URL(`../src/${relative}`, import.meta.url), "utf8");
-  const [app, navigation, catalog] = await Promise.all([source("App.tsx"), source("components/LabNavigation.tsx"), source("pages/ComponentsPage.tsx")]);
+  const [app, navigation, catalog, index, directory] = await Promise.all([source("App.tsx"), source("components/LabNavigation.tsx"), source("pages/ComponentsPage.tsx"), source("components/LabComponentIndex.tsx"), source("componentNavigation.ts")]);
   assert.match(navigation, /\["components", "foundations", "brand"\]/);
-  assert.match(app, /category=\{route.page === "mobile" \? "mobile" : route.page === "flow-chat" \? "flow-chat" : undefined\}/);
-  assert.match(catalog, /const catalogComponents = componentRegistry\.filter/);
-  assert.match(catalog, /<nav className="design-library-list"/);
+  assert.match(app, /category=\{libraryCategory\(route\.page\)\}/);
+  assert.match(directory, /page === "mobile" \? "mobile" : page === "flow-chat" \? "flow-chat" : undefined/);
+  assert.match(index, /const catalogComponents = componentRegistry\.filter/);
+  assert.match(index, /<nav className="design-library-list"/);
   assert.match(catalog, /<ComponentDetailPage key=\{selectedComponent.name\} embedded/);
   assert.doesNotMatch(app, /expandedComponentGroups|lab-standard-component-links/);
 });

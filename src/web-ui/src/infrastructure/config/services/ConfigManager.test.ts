@@ -460,9 +460,7 @@ describe('ConfigManager', () => {
         mode: 'primary',
         subagents: {
           default: { kind: 'fixed', model_id: 'fast' },
-          builtin: {
-            GeneralPurpose: { kind: 'fixed', model_id: 'primary' },
-          },
+          builtin: {},
           fork: { kind: 'inherit' },
         },
       },
@@ -473,16 +471,14 @@ describe('ConfigManager', () => {
     });
   });
 
-  it('returns the GeneralPurpose primary default when a single config read fails', async () => {
+  it('returns shared subagent defaults without builtin overrides when a single config read fails', async () => {
     configApiMocks.getConfig.mockRejectedValueOnce(new Error('read failed'));
 
     await expect(configManager.getConfig('ai.agent_model_defaults')).resolves.toEqual({
       mode: 'primary',
       subagents: {
         default: { kind: 'fixed', model_id: 'fast' },
-        builtin: {
-          GeneralPurpose: { kind: 'fixed', model_id: 'primary' },
-        },
+        builtin: {},
         fork: { kind: 'inherit' },
       },
     });
@@ -519,6 +515,9 @@ describe('ConfigManager', () => {
     ]);
     expect(configApiMocks.getConfig).not.toHaveBeenCalled();
     expect(configManager.get('ai.default_models')).toEqual({ chat: 'gpt-5' });
+    expect(configManager.get('ai.agent_model_defaults').subagents.builtin).toEqual({
+      GeneralPurpose: { kind: 'fixed', model_id: 'primary' },
+    });
   });
 
   it('resolves legacy provider instances without writing during a read', async () => {

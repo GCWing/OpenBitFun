@@ -10,6 +10,7 @@ import { useGitState } from './useGitState';
 const gitStateManagerMock = vi.hoisted(() => ({
   getState: vi.fn(() => null),
   subscribe: vi.fn(() => vi.fn()),
+  registerPolling: vi.fn(() => vi.fn()),
   registerWindowFocusRefresh: vi.fn(() => vi.fn()),
   refresh: vi.fn(() => Promise.resolve()),
   cancelPendingRefresh: vi.fn(() => false),
@@ -67,6 +68,8 @@ describe('useGitState visibility refresh', () => {
     });
 
     expect(gitStateManagerMock.refresh).not.toHaveBeenCalled();
+    expect(gitStateManagerMock.subscribe).toHaveBeenCalledTimes(1);
+    expect(gitStateManagerMock.registerPolling).not.toHaveBeenCalled();
     expect(gitStateManagerMock.registerWindowFocusRefresh).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -83,6 +86,13 @@ describe('useGitState visibility refresh', () => {
       },
     );
     expect(gitStateManagerMock.registerWindowFocusRefresh).toHaveBeenCalledTimes(1);
+    expect(gitStateManagerMock.registerPolling).toHaveBeenCalledTimes(1);
+    const releasePolling = gitStateManagerMock.registerPolling.mock.results[0].value;
+    await act(async () => {
+      root.render(<GitStateHarness isActive={false} />);
+    });
+    expect(releasePolling).toHaveBeenCalledTimes(1);
+    expect(gitStateManagerMock.subscribe).toHaveBeenCalledTimes(1);
   });
 
   it('cancels and replays active automatic refreshes when mount refresh is temporarily suppressed', async () => {

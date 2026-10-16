@@ -6,6 +6,7 @@
 pub mod agent_identity;
 pub mod agent_identity_wire;
 pub mod ai;
+pub mod background_delivery;
 pub mod errors;
 pub mod installer_config_handoff;
 pub mod model;

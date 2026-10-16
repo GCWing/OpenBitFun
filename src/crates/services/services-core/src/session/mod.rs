@@ -30,8 +30,8 @@ pub use metadata::{
     normalized_session_relationship, refresh_session_metadata_from_turns,
     remove_session_index_entry, set_deep_review_cache, set_deep_review_run_manifest,
     set_review_target_evidence, set_session_relationship,
-    try_refresh_session_metadata_for_saved_turn, upsert_session_index_entry,
-    SessionMetadataBuildFacts,
+    try_refresh_session_metadata_for_saved_turn, unread_completion_target,
+    upsert_session_index_entry, SessionMetadataBuildFacts,
 };
 pub use metadata_store::{SessionMetadataStore, SessionMetadataStoreError};
 pub use offline_import::{

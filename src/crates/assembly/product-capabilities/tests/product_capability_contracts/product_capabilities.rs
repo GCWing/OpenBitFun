@@ -322,7 +322,7 @@ fn product_delivery_profile_matrix_documents_current_core_dependency_shape() {
                 ProductCoreDependencyMode::ProductFullCompatibility,
             ),
             (
-                DeliveryProfile::DataMigrator,
+                DeliveryProfile::DataTools,
                 ProductCoreDependencyMode::ExplicitCoreCapabilityClosure,
             ),
             (
@@ -370,20 +370,20 @@ fn product_assembly_plan_follows_core_dependency_matrix() {
         match entry.core_dependency_mode() {
             ProductCoreDependencyMode::ProductFullCompatibility
             | ProductCoreDependencyMode::ExplicitCoreCapabilityClosure => {
-                if entry.profile() == DeliveryProfile::DataMigrator {
+                if entry.profile() == DeliveryProfile::DataTools {
                     assert!(
                         plan.capability_set().ids().is_empty(),
-                        "data-migrator must not assemble Agent Runtime capabilities"
+                        "data-tools must not assemble Agent Runtime capabilities"
                     );
                     assert!(
                         plan.capability_assembly()
                             .tool_provider_group_plan()
                             .is_empty(),
-                        "data-migrator must not assemble runtime tool groups"
+                        "data-tools must not assemble runtime tool groups"
                     );
                     assert!(
                         plan.feature_groups().is_empty(),
-                        "data-migrator must not expose runtime feature groups"
+                        "data-tools must not expose runtime feature groups"
                     );
                     continue;
                 }
@@ -434,10 +434,10 @@ fn product_assembly_plan_follows_core_dependency_matrix() {
 }
 
 #[test]
-fn data_migrator_profile_is_a_minimal_non_agent_product_plan() {
-    let plan = product_assembly_plan_for_profile(DeliveryProfile::DataMigrator);
+fn data_tools_profile_is_a_minimal_non_agent_product_plan() {
+    let plan = product_assembly_plan_for_profile(DeliveryProfile::DataTools);
 
-    assert_eq!(plan.profile().id(), "data-migrator");
+    assert_eq!(plan.profile().id(), "data-tools");
     assert!(plan.capability_set().ids().is_empty());
     assert!(plan.capability_assembly().agent_ids().is_empty());
     assert!(plan.capability_assembly().service_requirements().is_empty());

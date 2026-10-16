@@ -38,6 +38,80 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RemoteSessionStoreTest {
+    private fun suggestion(turn: String, text: JsonElement = JsonPrimitive("  Run the tests  "), session: String = "s-code") = buildJsonObject {
+        put("session_id", session)
+        put("event", "agentic://prompt-suggestion")
+        put("payload", buildJsonObject {
+            put("sessionId", session); put("sourceTurnId", turn); put("suggestion", text)
+        })
+    }
+
+    @Test
+    fun promptSuggestionReplaysUnchangedAndDoesNotWriteTheDraftOrTranscript() = runTest {
+        val transport = FakeSessionTransport().apply {
+            initialEvents = listOf(richRecord("s-code", "turn-1", 0, 1, "completed", "answer"), suggestion("turn-1"))
+        }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        var ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("  Run the tests  ", ready.promptSuggestion)
+        assertEquals("", ready.draft)
+        assertEquals(listOf("answer"), ready.timeline!!.persistedMessages.filter { it.role == "assistant" }.map { it.text })
+        store.dispatch(RemoteSessionIntent.UpdateDraft("my draft")); runCurrent()
+        transport.streamEvents.emit(suggestion("turn-1", JsonPrimitive("Another idea"))); runCurrent()
+        ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("my draft", ready.draft)
+        assertEquals("Another idea", ready.promptSuggestion)
+        store.stop()
+        assertNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+    }
+
+    @Test
+    fun promptSuggestionRetiresForANewerTurnAndIgnoresLateHints() = runTest {
+        val transport = FakeSessionTransport().apply {
+            initialEvents = listOf(richRecord("s-code", "turn-1", 0, 1, "completed", "answer"))
+        }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        transport.streamEvents.emit(suggestion("turn-1")); runCurrent()
+        assertNotNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        transport.streamEvents.emit(richRecord("s-code", "turn-2", 1, 2, "inprogress", "working")); runCurrent()
+        assertNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        transport.streamEvents.emit(richRecord("s-code", "turn-2", 1, 3, "completed", "done"))
+        transport.streamEvents.emit(suggestion("turn-1")); runCurrent()
+        assertNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        transport.streamEvents.emit(suggestion("turn-2", JsonPrimitive(42))); runCurrent()
+        assertNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        transport.streamEvents.emit(suggestion("turn-2", JsonPrimitive("Current idea"))); runCurrent()
+        transport.streamEvents.emit(suggestion("turn-1", JsonPrimitive("Old replay"))); runCurrent()
+        assertEquals("Current idea", assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        store.stop()
+    }
+
+    @Test
+    fun promptSuggestionIsClearedOnHostRestartAndSessionSwitch() = runTest {
+        val transport = FakeSessionTransport().apply {
+            initialEvents = listOf(richRecord("s-code", "turn-1", 0, 1, "completed", "answer"), suggestion("turn-1"))
+        }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        assertNotNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        transport.streamEvents.emit(buildJsonObject {
+            put("session_id", "s-code"); put("event", "relay://session-gap"); put("payload", buildJsonObject {})
+        }); runCurrent()
+        assertNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        transport.streamEvents.emit(richRecord("s-code", "turn-1", 0, 1, "completed", "answer"))
+        transport.streamEvents.emit(historyReady(false)); runCurrent()
+        assertNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).promptSuggestion)
+        transport.streamEvents.emit(suggestion("turn-1")); runCurrent()
+        transport.initialEvents = emptyList()
+        store.dispatch(RemoteSessionIntent.Open("s-cowork")); runCurrent()
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("s-cowork", ready.selectedSessionId)
+        assertNull(ready.promptSuggestion)
+        store.stop()
+    }
+
     @Test
     fun firstHistoryReadDoesNotPublishAnEmptyOrPartialConversation() = runTest {
         val transport = FakeSessionTransport().apply {

@@ -1,11 +1,7 @@
 import { createLogger } from '@/shared/utils/logger';
 import { elapsedMs, nowMs, roundDurationMs } from '@/shared/utils/timing';
-import { flowChatDiagnostics } from '@/infrastructure/diagnostics/flowChatDiagnostics';
 
 const log = createLogger('HistorySessionDiagnostics');
-
-/** Probe tag for the older-history paging handshake in `flowchat.log`. */
-const HISTORY_PAGING_PROBE = 'history-paging';
 
 const RECENT_EVENT_LIMIT = 30;
 const WARN_EVENT_LIMIT = 15;
@@ -37,6 +33,7 @@ interface HistorySessionDiagnosticState {
   pendingHydrateData?: HistorySessionDiagnosticData;
   stalledWarned: boolean;
   pagingRefusalWarned: boolean;
+  lastPagingFailureKey?: string;
 }
 
 export interface HistorySessionLoadingStallSnapshot extends HistorySessionDiagnosticData {
@@ -261,11 +258,8 @@ export function resetHistorySessionDiagnosticsForTests(): void {
 /**
  * Record one step of the older-history paging handshake.
  *
- * The in-memory trail is always kept — it is what makes the refusal warning
- * self-sufficient without asking the user to reproduce with a flag on. The full
- * uncapped stream goes to `flowchat.log` through the FlowChat diagnostics
- * channel, which is opt-in via `app.logging.flow_chat_diagnostics`, so it stays
- * out of `webview.log`.
+ * Keep a bounded in-memory trail for the refusal warning without logging
+ * every paging step.
  */
 export function recordHistoryPagingEvent(
   sessionId: string,
@@ -274,16 +268,15 @@ export function recordHistoryPagingEvent(
 ): void {
   const state = getOrCreateDiagnostic(sessionId);
   pushEvent(state, `history_paging_${event}`, data, { logEvent: false });
-  flowChatDiagnostics.trace({
-    hypothesis: HISTORY_PAGING_PROBE,
-    location: `historySessionDiagnostics.${event}`,
-    message: `history paging ${event}`,
-    data: () => ({
-      diagnosticId: state.diagnosticId,
-      sessionId,
-      ...(data ?? {}),
-    }),
-  });
+  if (event === 'outcome_not_ready') {
+    const key = JSON.stringify([data?.direction, data?.reason, data?.targetOrdinal]);
+    if (state.lastPagingFailureKey !== key) {
+      state.lastPagingFailureKey = key;
+      log.warn('FlowChat history paging did not become ready', { sessionId, diagnosticId: state.diagnosticId, ...(data ?? {}) });
+    }
+  } else if (event === 'outcome_applied' || event === 'outcome_exhausted') {
+    state.lastPagingFailureKey = undefined;
+  }
 }
 
 /**
@@ -318,17 +311,5 @@ export function warnHistoryPagingRefusedWithPendingTurns(
     diagnosticId: state.diagnosticId,
     sessionId,
     events: summarizeEvents(state),
-  });
-  // Mirror the alarm into flowchat.log so that stream is self-contained when
-  // FlowChat diagnostics are on.
-  flowChatDiagnostics.trace({
-    hypothesis: HISTORY_PAGING_PROBE,
-    location: 'historySessionDiagnostics.refusedWithPendingTurns',
-    message: 'declined to page older Turns while the session reports more',
-    data: () => ({
-      diagnosticId: state.diagnosticId,
-      sessionId,
-      ...snapshot,
-    }),
   });
 }

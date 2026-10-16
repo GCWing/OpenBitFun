@@ -108,6 +108,12 @@ It exercises language switching, numbered file previews, plan capability gating,
 and all three bundled Mini Apps using isolated preview data. No host command is sent.
 The Mini App resource build phase requires Node.js on PATH.
 
+For next-input suggestions, run the simulator suite with
+`-only-testing:OpenBitFunUITests/PromptSuggestionUITests` on a phone and an iPad.
+The Debug-only `--prompt-suggestion-preview` launch flag uses an isolated host
+hint with the production composer; acceptance must preserve its whitespace,
+focus the editor and leave the text unsent. It does not contact a remote host.
+
 The MiniApp build phase generates resources directly into the app bundle, so
 incremental builds include CSS and script edits without relying on a folder
 reference's timestamp. `miniapps.css` owns iOS font-family adaptations; the iframe

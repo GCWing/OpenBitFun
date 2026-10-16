@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:e2b40d572990839b",
+  "digest": "fnv1a64:01a8acb268a90398",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -9,6 +9,7 @@
   ],
   "capabilities": {
     "ids": [
+      "background_result_delivery_v1",
       "dialog_queue_v1",
       "idempotent_dialog_submit",
       "inline_image_attachments_v1",
@@ -32,6 +33,7 @@
       "user_question_interaction_v1"
     ],
     "desktop": [
+      "background_result_delivery_v1",
       "dialog_queue_v1",
       "idempotent_dialog_submit",
       "inline_image_attachments_v1",
@@ -55,6 +57,7 @@
       "user_question_interaction_v1"
     ],
     "cli": [
+      "background_result_delivery_v1",
       "dialog_queue_v1",
       "control_conversation_v1",
       "control_conversation_reset_v1",

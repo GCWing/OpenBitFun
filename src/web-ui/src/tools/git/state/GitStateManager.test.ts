@@ -2,6 +2,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GitStateManager } from './GitStateManager';
 import type { GitStateLayer } from './types';
+import { globalEventBus } from '@/infrastructure/event-bus';
+
+const workspaceCatalog = vi.hoisted(() => new Map<string, { workspaceKind: string; connectionId?: string }>());
+const peerMode = vi.hoisted(() => ({ active: false }));
+vi.mock('@/infrastructure/services/business/workspaceManager', () => ({
+  workspaceManager: { getState: () => ({ openedWorkspaces: workspaceCatalog }) },
+}));
+vi.mock('@/infrastructure/peer-device/peerModeFlag', () => ({
+  isPeerDeviceModeActive: () => peerMode.active,
+}));
 
 const gitApiMocks = vi.hoisted(() => ({
   isGitRepository: vi.fn(),
@@ -59,6 +69,10 @@ describe('GitStateManager refresh performance guards', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    workspaceCatalog.clear();
+    workspaceCatalog.set('workspace-1', { workspaceKind: 'normal' });
+    workspaceCatalog.set('workspace-2', { workspaceKind: 'normal' });
+    peerMode.active = false;
     GitStateManager.resetInstance();
     manager = GitStateManager.getInstance();
     manager.setCacheConfig({ basic: 0, status: 0, detailed: 0 });
@@ -103,10 +117,10 @@ describe('GitStateManager refresh performance guards', () => {
     const addListener = vi.spyOn(document, 'addEventListener');
     const removeListener = vi.spyOn(document, 'removeEventListener');
     try {
-      const unsubscribe = manager.subscribe(repositoryPath, () => {});
+      const unsubscribe = manager.registerPolling(repositoryPath);
       hidden.mockReturnValue(true);
       document.dispatchEvent(new Event('visibilitychange'));
-      const unsubscribeOther = manager.subscribe({ workspaceId: 'workspace-2' }, () => {});
+      const unsubscribeOther = manager.registerPolling({ workspaceId: 'workspace-2' });
       await vi.advanceTimersByTimeAsync(4100);
       expect(gitApiMocks.isGitRepository).not.toHaveBeenCalled();
       const listeners = addListener.mock.calls.filter(([type]) => type === 'visibilitychange');
@@ -131,7 +145,7 @@ describe('GitStateManager refresh performance guards', () => {
   it('does not start polling for an initially hidden document', async () => {
     const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
     try {
-      manager.subscribe(repositoryPath, () => {});
+      manager.registerPolling(repositoryPath);
       await vi.advanceTimersByTimeAsync(4100);
       expect(gitApiMocks.isGitRepository).not.toHaveBeenCalled();
       hidden.mockReturnValue(false);
@@ -162,6 +176,171 @@ describe('GitStateManager refresh performance guards', () => {
       currentBranch: 'main',
       hasChanges: false,
     });
+  });
+
+  it('keeps passive subscriptions free of IO and reference-counts active demand', async () => {
+    manager.subscribe(repositoryPath, () => {});
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(gitApiMocks.isGitRepository).not.toHaveBeenCalled();
+    const releaseA = manager.registerPolling(repositoryPath);
+    const releaseB = manager.registerPolling(repositoryPath);
+    releaseA();
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(gitApiMocks.getRepositoryBasic).toHaveBeenCalledTimes(1);
+    releaseB();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(gitApiMocks.getRepositoryBasic).toHaveBeenCalledTimes(1);
+  });
+
+  it('polls active SSH workspaces slowly and never broadcasts unchanged results', async () => {
+    workspaceCatalog.set('workspace-1', { workspaceKind: 'remote', connectionId: 'ssh-a' });
+    workspaceCatalog.set('workspace-2', { workspaceKind: 'remote', connectionId: 'ssh-b' });
+    for (const workspaceId of ['workspace-1', 'workspace-2', 'workspace-3']) {
+      manager.subscribe({ workspaceId }, () => {});
+    }
+    manager.registerPolling(repositoryPath);
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(gitApiMocks.isGitRepository).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(101);
+    expect(gitApiMocks.getRepositoryBasic).toHaveBeenCalledTimes(1);
+    vi.mocked(globalEventBus.emit).mockClear();
+    gitEventServiceMock.emit.mockClear();
+    await vi.advanceTimersByTimeAsync(36_000);
+    expect(gitApiMocks.getRepositoryBasic).toHaveBeenCalledTimes(2);
+    expect(globalEventBus.emit).not.toHaveBeenCalled();
+    expect(gitEventServiceMock.emit).not.toHaveBeenCalled();
+    expect(gitApiMocks.getStatus).not.toHaveBeenCalled();
+  });
+
+  it('serializes background reads on one SSH connection without starving another repository', async () => {
+    for (const workspaceId of ['workspace-1', 'workspace-2']) {
+      workspaceCatalog.set(workspaceId, { workspaceKind: 'remote', connectionId: 'ssh-a' });
+      manager.registerPolling({ workspaceId });
+    }
+    const read = deferred<any>();
+    gitApiMocks.getRepositoryBasic.mockReturnValueOnce(read.promise);
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(gitApiMocks.isGitRepository).toHaveBeenCalledTimes(1);
+    read.resolve({ current_branch: 'main' });
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(gitApiMocks.isGitRepository).toHaveBeenCalledTimes(2);
+    expect(gitApiMocks.isGitRepository.mock.calls.map(([scope]) => scope.workspaceId))
+      .toEqual(['workspace-1', 'workspace-2']);
+  });
+
+  it('backs off failures, allows immediate manual recovery and clears the visible error', async () => {
+    workspaceCatalog.set('workspace-1', { workspaceKind: 'remote', connectionId: 'ssh-a' });
+    const seen = vi.fn();
+    manager.subscribe(repositoryPath, seen);
+    manager.registerPolling(repositoryPath);
+    gitApiMocks.isGitRepository.mockRejectedValueOnce(new Error('SSH disconnected'));
+    await vi.advanceTimersByTimeAsync(30_100);
+    expect(seen.mock.lastCall?.[0].error).toBe('SSH disconnected');
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(gitApiMocks.isGitRepository).toHaveBeenCalledTimes(1);
+    const retry = manager.refresh(repositoryPath, { layers: ['basic'], force: true });
+    await vi.advanceTimersByTimeAsync(100);
+    await retry;
+    expect(gitApiMocks.isGitRepository).toHaveBeenCalledTimes(2);
+    expect(seen.mock.lastCall?.[0].error).toBeNull();
+    await vi.advanceTimersByTimeAsync(33_000);
+    expect(gitApiMocks.isGitRepository).toHaveBeenCalledTimes(3);
+  });
+
+  it('preserves peer-device polling suppression and uses conservative cadence without metadata', async () => {
+    workspaceCatalog.clear();
+    manager.registerPolling(repositoryPath);
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(gitApiMocks.isGitRepository).not.toHaveBeenCalled();
+    peerMode.active = true;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(gitApiMocks.isGitRepository).not.toHaveBeenCalled();
+    peerMode.active = false;
+  });
+
+  it('increases offline retry delays and caps them at five minutes', async () => {
+    workspaceCatalog.set('workspace-1', { workspaceKind: 'remote', connectionId: 'ssh-a' });
+    gitApiMocks.isGitRepository.mockRejectedValue(new Error('SSH disconnected'));
+    manager.registerPolling(repositoryPath);
+    await vi.advanceTimersByTimeAsync(30_100);
+    expect(gitApiMocks.isGitRepository).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(gitApiMocks.isGitRepository).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(gitApiMocks.isGitRepository).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(gitApiMocks.isGitRepository).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(gitApiMocks.isGitRepository).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(242_000);
+    expect(gitApiMocks.isGitRepository).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(302_000);
+    expect(gitApiMocks.isGitRepository).toHaveBeenCalledTimes(5);
+    await vi.advanceTimersByTimeAsync(302_000);
+    expect(gitApiMocks.isGitRepository).toHaveBeenCalledTimes(6);
+  });
+
+  it('cancels queued polling on deactivation but preserves a merged manual refresh', async () => {
+    const release = manager.registerPolling(repositoryPath);
+    await vi.advanceTimersByTimeAsync(2000);
+    release();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(gitApiMocks.isGitRepository).not.toHaveBeenCalled();
+    const releaseAgain = manager.registerPolling(repositoryPath);
+    await vi.advanceTimersByTimeAsync(2000);
+    const manual = manager.refresh(repositoryPath, { layers: ['basic'], force: true });
+    releaseAgain();
+    await vi.advanceTimersByTimeAsync(100);
+    await manual;
+    expect(gitApiMocks.isGitRepository).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a queued poll if the document becomes hidden during debounce', async () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    try {
+      manager.registerPolling(repositoryPath);
+      await vi.advanceTimersByTimeAsync(2000);
+      hidden.mockReturnValue(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(100);
+      expect(gitApiMocks.isGitRepository).not.toHaveBeenCalled();
+    } finally {
+      hidden.mockRestore();
+    }
+  });
+
+  it('notifies error recovery even when the branch and files stay unchanged', async () => {
+    const first = manager.refresh(repositoryPath, { layers: ['basic'], force: true });
+    await vi.advanceTimersByTimeAsync(100);
+    await first;
+    const seen = vi.fn();
+    manager.subscribe(repositoryPath, seen, { immediate: false, layers: ['basic'] });
+    gitApiMocks.isGitRepository.mockRejectedValueOnce(new Error('Offline'));
+    const failed = manager.refresh(repositoryPath, { layers: ['basic'], force: true }).catch(() => {});
+    await vi.advanceTimersByTimeAsync(100);
+    await failed;
+    expect(seen.mock.lastCall?.[0].error).toBe('Offline');
+    const recovered = manager.refresh(repositoryPath, { layers: ['basic'], force: true, silent: true });
+    await vi.advanceTimersByTimeAsync(100);
+    await recovered;
+    expect(seen).toHaveBeenCalledTimes(2);
+    expect(seen.mock.lastCall?.[0].error).toBeNull();
+  });
+
+  it('refreshes stale basic data on activation even with the default infinite TTL', async () => {
+    manager.setCacheConfig({ basic: Infinity });
+    const first = manager.refresh(repositoryPath, { layers: ['basic'], force: true });
+    await vi.advanceTimersByTimeAsync(100);
+    await first;
+    await vi.advanceTimersByTimeAsync(30_000);
+    manager.registerPolling(repositoryPath);
+    gitApiMocks.getRepositoryBasic.mockResolvedValueOnce({ current_branch: 'external-change' });
+    const activate = manager.refresh(repositoryPath, { layers: ['basic'], reason: 'visibility' });
+    await vi.advanceTimersByTimeAsync(100);
+    await activate;
+    expect(manager.getState(repositoryPath)?.currentBranch).toBe('external-change');
+    expect(globalEventBus.emit).toHaveBeenLastCalledWith('git:state:changed',
+      expect.objectContaining({ changedLayers: ['basic'] }));
   });
 
   it('merges duplicate mount refreshes for the same repository and layer', async () => {

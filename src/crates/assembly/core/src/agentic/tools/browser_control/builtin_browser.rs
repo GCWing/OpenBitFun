@@ -15,6 +15,9 @@ use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 
 const BUILTIN_EVENT_CAPACITY: usize = 128;
 
+#[cfg(test)]
+pub(crate) static TEST_HOST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BuiltInBrowserTarget {
     pub id: String,
@@ -214,13 +217,6 @@ fn select_builtin_browser_target(
     target_title: Option<&str>,
     default_target_id: Option<&str>,
 ) -> OpenBitFunResult<BuiltInBrowserTarget> {
-    if targets.is_empty() {
-        return Err(OpenBitFunError::tool(
-            "No built-in browser target is available. Open a URL with browser.open_builtin first."
-                .to_string(),
-        ));
-    }
-
     if let Some(requested_id) = requested_target_id {
         return targets
             .iter()
@@ -228,7 +224,7 @@ fn select_builtin_browser_target(
             .cloned()
             .ok_or_else(|| {
                 OpenBitFunError::tool(format!(
-                    "Built-in browser page '{requested_id}' was not found. It may have been closed."
+                    "[WRONG_TAB] Built-in browser page '{requested_id}' was not found. It may have been closed."
                 ))
             });
     }
@@ -236,9 +232,9 @@ fn select_builtin_browser_target(
     let normalized_url = target_url.map(str::to_lowercase);
     let normalized_title = target_title.map(str::to_lowercase);
     if normalized_url.is_some() || normalized_title.is_some() {
-        return targets
+        let matches: Vec<_> = targets
             .iter()
-            .find(|target| {
+            .filter(|target| {
                 normalized_url
                     .as_ref()
                     .map(|needle| target.url.to_lowercase().contains(needle))
@@ -248,10 +244,16 @@ fn select_builtin_browser_target(
                         .map(|needle| target.title.to_lowercase().contains(needle))
                         .unwrap_or(true)
             })
-            .cloned()
+            .collect();
+        if matches.len() > 1 {
+            return Err(OpenBitFunError::tool(
+                "[AMBIGUOUS] Several built-in pages match. Use browser.list_pages, then an exact session_id.".to_string(),
+            ));
+        }
+        return matches.first().copied().cloned()
             .ok_or_else(|| {
                 OpenBitFunError::tool(format!(
-                    "No built-in browser page matched target_url={normalized_url:?} target_title={normalized_title:?}"
+                    "[WRONG_TAB] No built-in browser page matched target_url={normalized_url:?} target_title={normalized_title:?}"
                 ))
             });
     }
@@ -263,7 +265,7 @@ fn select_builtin_browser_target(
         .cloned()
         .ok_or_else(|| {
             OpenBitFunError::tool(
-                "No built-in browser target is available. Open a URL with browser.open_builtin first."
+                "[NOT_AVAILABLE] No built-in page is open. Use browser.navigate with a URL to open and control it in one call."
                     .to_string(),
             )
         })

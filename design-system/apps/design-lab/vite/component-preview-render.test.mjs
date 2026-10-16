@@ -11,6 +11,7 @@ let server;
 let render;
 let presentation;
 let renderPage;
+let renderDirectory;
 
 before(async () => {
   // Load actual Lab modules without a browser, generated inspector, or mock components.
@@ -23,6 +24,7 @@ before(async () => {
     appType: "custom",
   });
   const { ComponentsPage } = await server.ssrLoadModule("/src/pages/ComponentsPage.tsx");
+  const { LabComponentIndex } = await server.ssrLoadModule("/src/components/LabComponentIndex.tsx");
   const { I18nContext } = await server.ssrLoadModule("/src/i18n/I18nProvider.tsx");
   const { messages } = await server.ssrLoadModule("/src/i18n/messages.ts");
   const { translateFromCatalog } = await server.ssrLoadModule("/src/i18n/core.mjs");
@@ -35,6 +37,10 @@ before(async () => {
     colorScheme: "light", contrast: "standard", density: "compact", mode: "light",
     tokenOverrides: {}, onModeChange() {}, onDensityChange() {},
   })));
+  // The directory is the rail's tree now, so it is rendered the way the rail renders it.
+  renderDirectory = (selected) => renderToStaticMarkup(createElement(I18nContext.Provider, {
+    value: { locale: "zh-CN", setLocale() {}, t: (key, params) => translateFromCatalog(messages, "zh-CN", key, params) },
+  }, createElement(LabComponentIndex, { selected })));
   render = (name) => {
     const component = componentRegistry.find(item => item.name === name) ?? { name, states: ["default"], props: [], tokens: [], category: "form", description: "", maturity: "stable" };
     const html = renderToStaticMarkup(createElement(I18nContext.Provider, {
@@ -48,7 +54,9 @@ before(async () => {
     assert.ok(preview, `Missing preview panel: ${name}`);
     assert.equal((html.match(/<main\b/g) ?? []).length, 1, "The preview must be embedded in the library page");
     if (componentRegistry.some(item => item.name === name)) {
-      assert.ok(html.includes(`href="#component/${name.toLowerCase()}" aria-current="page"`), `Missing selected navigation entry: ${name}`);
+      const directory = renderDirectory(component.name);
+      assert.ok(directory.includes(`href="#component/${name.toLowerCase()}" aria-current="page"`), `Missing selected navigation entry: ${name}`);
+      assert.ok(!html.includes('class="design-library-sidebar"'), "The directory must not be drawn twice");
     }
     return { html, preview };
   };

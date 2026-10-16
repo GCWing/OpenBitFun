@@ -60,6 +60,7 @@ export struct ComposerBar {
   @Param capabilities: ChatComposerCapabilities = REMOTE_CHAT_COMPOSER_CAPABILITIES;
   @Param inputId: string = 'conversation-composer-input';
   @Param chatInput: string = '';
+  @Param promptSuggestion: string = '';
   @Local inputText: string = '';
   @Local inputFocused: boolean = false;
   @Local primaryActionPressed: boolean = false;
@@ -118,6 +119,29 @@ export struct ComposerBar {
 
   build() {
     Column() {
+      if (this.canAcceptPromptSuggestion()) {
+        Button({ type: ButtonType.Normal }) {
+          Text(this.promptSuggestion)
+            .fontSize(MobileDesignTypography.bodyMedium.size)
+            .fontColor(MUTED)
+            .width('100%')
+            .textAlign(TextAlign.Start)
+        }
+        .id('composer-prompt-suggestion')
+        .width('100%')
+        .constraintSize({ minHeight: MobileDesignGeometry.controlTouchSize })
+        .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+        .backgroundColor(TRANSPARENT)
+        .borderRadius(MobileDesignGeometry.controlTouchSize / 2)
+        .accessibilityText(this.promptSuggestion)
+        .accessibilityDescription(RemoteI18n.t('chat.promptSuggestionAccept'))
+        .onClick(() => {
+          if (!this.canAcceptPromptSuggestion()) return;
+          this.inputText = this.promptSuggestion;
+          this.onChatInputChange(this.promptSuggestion);
+          this.getUIContext().getFocusController().requestFocus(this.inputId);
+        })
+      }
       this.AdaptiveComposer()
     }
     .width('100%')
@@ -132,6 +156,11 @@ export struct ComposerBar {
       bottom: this.presentation === ComposerPresentation.Floating ? 16 : 12
     })
     .backgroundColor(TRANSPARENT)
+  }
+
+  private canAcceptPromptSuggestion(): boolean {
+    return this.promptSuggestion.length > 0 && this.inputText.length === 0 && this.chatInput.length === 0 &&
+      !this.isBusy && !this.canStop && !this.isVoiceListening && this.connectionState === 'connected';
   }
 
   @Builder

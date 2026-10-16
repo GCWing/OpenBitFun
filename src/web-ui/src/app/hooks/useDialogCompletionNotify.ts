@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import type { AgenticEvent } from '@/infrastructure/api/service-api/AgentAPI';
 import { agentAPI } from '@/infrastructure/api';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
@@ -35,7 +36,8 @@ export const useDialogCompletionNotify = () => {
     window.addEventListener('focus', handleFocus);
     window.addEventListener('blur', handleBlur);
 
-    const unlisten = agentAPI.onDialogTurnCompleted(async (event) => {
+    const notified = new Map<string, string>();
+    const notify = async (event: AgenticEvent) => {
       // Send notification if page is hidden OR window lost OS focus
       const isBackground = document.hidden || !windowFocusedRef.current;
 
@@ -71,16 +73,26 @@ export const useDialogCompletionNotify = () => {
         t,
       });
 
-      await systemAPI.sendSystemNotification(
-        notificationCopy.title,
-        notificationCopy.body,
-      );
-    });
+      const turnId = event.turnId ?? event.turn_id;
+      const turn = session?.dialogTurns.find(turn => turn.id === turnId);
+      const receipt = `${turnId}:${turn?.recovery?.executionGeneration ?? turn?.recoveryEpoch ?? 0}:${event.success === false ? 'failed' : 'completed'}`;
+      if (notified.get(sessionId) === receipt) return;
+      notified.set(sessionId, receipt);
+      try {
+        await systemAPI.sendSystemNotification(notificationCopy.title, notificationCopy.body);
+      } catch (error) {
+        if (notified.get(sessionId) === receipt) notified.delete(sessionId);
+        log.warn('Failed to send dialog result notification', { sessionId, turnId, error });
+      }
+    };
+    const unlisten = agentAPI.onDialogTurnCompleted(notify);
+    const unlistenFailed = agentAPI.onDialogTurnFailed(event => notify({ ...event, success: false }));
 
     return () => {
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('blur', handleBlur);
       unlisten();
+      unlistenFailed();
     };
   }, [t]);
 };

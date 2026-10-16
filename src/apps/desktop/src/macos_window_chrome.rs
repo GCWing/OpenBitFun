@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::ptr::NonNull;
+use std::rc::Rc;
 
 use block2::RcBlock;
 use objc2::rc::Retained;
@@ -15,18 +16,10 @@ use objc2_app_kit::{
 use objc2_foundation::{NSNotification, NSNotificationCenter, NSObjectProtocol, NSRect};
 use tauri::{Emitter, Listener, Manager};
 
+use crate::macos_window_close::{CloseAfterFullscreen, FullscreenPhase};
+
 const FULLSCREEN_CHROME_EVENT: &str = "window://fullscreen-chrome";
 const FULLSCREEN_CHROME_HANDOFF: &str = "window://fullscreen-chrome-handoff";
-
-#[derive(Clone, Copy, Default, PartialEq, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-enum FullscreenPhase {
-    Entering,
-    Fullscreen,
-    Exiting,
-    #[default]
-    Windowed,
-}
 
 #[derive(Default)]
 struct Handoff {
@@ -87,6 +80,7 @@ struct ChromeUpdate {
 struct NativeChrome {
     handoff: Handoff,
     window: Option<Retained<NSWindow>>,
+    close: Option<Rc<CloseAfterFullscreen>>,
     hidden_buttons: Vec<(Retained<NSButton>, f64)>,
     #[cfg(debug_assertions)]
     last_button_geometry: Option<(u64, f64)>,
@@ -192,6 +186,20 @@ pub(crate) fn reset_renderer(app: &tauri::AppHandle) {
     });
 }
 
+pub(crate) fn request_hide(reason: &'static str) -> Result<(), String> {
+    let close = CHROME
+        .with_borrow(|chrome| chrome.close.clone())
+        .ok_or("Native main-window close lifecycle is unavailable")?;
+    close.request_hide(reason);
+    Ok(())
+}
+
+pub(crate) fn cancel_pending_hide() {
+    if let Some(close) = CHROME.with_borrow(|chrome| chrome.close.clone()) {
+        close.cancel();
+    }
+}
+
 fn remove_observers() {
     let center = NSNotificationCenter::defaultCenter();
     OBSERVERS.with_borrow_mut(|observers| {
@@ -267,6 +275,14 @@ pub(crate) fn install(window: &tauri::WebviewWindow) -> Result<(), String> {
         // SAFETY: The live Tauri window is retained only on the main thread.
         chrome.window =
             unsafe { Retained::retain(native_window as *const NSWindow as *mut NSWindow) };
+        chrome.close = chrome.window.clone().map(|window| {
+            CloseAfterFullscreen::new(window, |reason| {
+                crate::mark_main_window_hidden_on_macos(true);
+                log::info!(
+                    "Main window close requested on macOS; hid window instead of exiting: reason={reason}"
+                );
+            })
+        });
     });
     let center = NSNotificationCenter::defaultCenter();
     // SAFETY: These immutable notification names are provided by AppKit.
@@ -293,7 +309,7 @@ pub(crate) fn install(window: &tauri::WebviewWindow) -> Result<(), String> {
     for (name, phase) in notifications {
         let target = window.clone();
         let callback = RcBlock::new(move |_: NonNull<NSNotification>| {
-            CHROME.with_borrow_mut(|chrome| {
+            let close = CHROME.with_borrow_mut(|chrome| {
                 chrome.handoff.transition(phase);
                 // Synchronous with AppKit, before asynchronous WebKit delivery.
                 // Keep controls suppressed through BOTH native exit and paint.
@@ -305,7 +321,11 @@ pub(crate) fn install(window: &tauri::WebviewWindow) -> Result<(), String> {
                     chrome.handoff.awaiting_paint
                 );
                 chrome.emit(&target);
+                chrome.close.clone()
             });
+            if let Some(close) = close {
+                close.transition(phase);
+            }
         });
         // SAFETY: The filter is the live main NSWindow. The block captures only
         // a Send + Sync Tauri handle; queue=None delivers on the posting thread.

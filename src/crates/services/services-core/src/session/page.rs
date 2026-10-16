@@ -33,6 +33,8 @@ pub struct SessionActivitySummary {
     pub last_turn: Option<super::types::SessionLastTurn>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unread_completion: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unread_turn: Option<super::types::SessionLastTurn>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

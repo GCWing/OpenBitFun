@@ -23,6 +23,14 @@ pub fn session_event_publication(name: &str, payload: &Value) -> SessionEventPub
             persist_control: false,
         };
     }
+    // A next-input suggestion is not transcript content; its source turn was
+    // already synchronized by the completion event that precedes it.
+    if name == "agentic://prompt-suggestion" {
+        return SessionEventPublication {
+            synchronize_records: false,
+            persist_control: true,
+        };
+    }
     if name == "agentic://tool-event" {
         let kind = payload["toolEvent"]["event_type"].as_str().unwrap_or("");
         return SessionEventPublication {
@@ -152,5 +160,14 @@ mod publication_tests {
             session_event_publication("agentic://dialog-turn-completed", &json!({"turnId":"turn"}))
                 .persist_control
         );
+    }
+    #[test]
+    fn prompt_suggestion_reaches_controllers_without_record_synchronization() {
+        let policy = session_event_publication(
+            "agentic://prompt-suggestion",
+            &json!({"sessionId":"session","sourceTurnId":"turn","suggestion":"Run the tests"}),
+        );
+        assert!(!policy.synchronize_records);
+        assert!(policy.persist_control);
     }
 }

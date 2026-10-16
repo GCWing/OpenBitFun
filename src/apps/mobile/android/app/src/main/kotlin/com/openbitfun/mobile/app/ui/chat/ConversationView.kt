@@ -371,6 +371,7 @@ internal fun ConversationView(
                     modelCatalogFailed = state.modelCatalogFailure != null,
                     capabilities = ChatComposerCapabilities.RemoteChat,
                     placeholder = stringResource(R.string.message_input_label),
+                    promptSuggestion = state.promptSuggestion,
                     onDraftChange = {
                         submittedDraft = null
                         onIntent(RemoteSessionIntent.UpdateDraft(it))

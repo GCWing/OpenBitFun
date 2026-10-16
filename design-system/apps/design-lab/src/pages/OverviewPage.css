@@ -1,69 +1,117 @@
+/* Editorial homepage: hero, an empty showcase stage, a component sample, then
+   the three destinations. Sections are separated by hairlines, never fills.
+
+   Vertical rhythm: every block padding, section gap and stack gap on this page runs through
+   --_lab-home-air, so the whole page loosens or tightens from one number instead of from a dozen
+   stops. 2 is the current setting — the page's air is twice the reference scale (it started at the
+   reference, went to 1.5, and was raised again on request: raise or lower this one number).
+   Horizontal gaps stay where the grid puts them: widening the columns' gutters would change the
+   composition, not the breathing room. Air is inherited, so the footer reads the same variable. */
 .lab-page.design-home {
-  padding-block: var(--openbitfun-space-6) var(--openbitfun-space-12);
+  --_lab-home-air: 2;
+
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--openbitfun-space-16) * var(--_lab-home-air));
+  /* No block-end padding: the closing band is full bleed and therefore ends the page itself — its own
+     padding is what keeps the last line off the bottom of the window.
+     The air above the hero is the page's own rhythm (the same space-16 × air the page puts between
+     its blocks), so the nav sits over the headline the way every other block sits over the next.
+     It was briefly halved to squeeze the whole picture into the first screen; that read as a page
+     with no top margin, and the trade was the wrong way round — a reader only has to see the
+     picture start to know it is there, and the rest of it is one scroll away. */
+  padding-block: calc(var(--openbitfun-space-16) * var(--_lab-home-air)) 0;
 }
 
+/* Hero: one line of copy on the left, the brand mark as a standalone graphic top-right.
+   No rule underneath — the page separates its blocks with space alone.
+   The mark is the tall element, so the copy is centred against it rather than pinned to the
+   top: that is what balances the air above and below the headline. The hero adds no padding
+   of its own — the page's top padding is the single source of the air above it, so the nav
+   to mark gap equals the gap the page uses between its blocks, and the copy comes out with
+   the same distance above it (from the nav) as below it (to the showcase). */
 .design-home-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.4fr);
   align-items: center;
   gap: var(--openbitfun-space-12);
-  min-height: 520px;
-  padding-block: var(--openbitfun-space-8) var(--openbitfun-space-12);
+  padding: 0;
 }
 
 .design-home-heading {
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
 }
 
-.design-home-heading h1 {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--openbitfun-space-2);
-  margin: 0 0 var(--openbitfun-space-6);
-  font-family: var(--openbitfun-type-display-xxl-font-family);
-  font-size: var(--openbitfun-type-display-xxl-font-size);
-  font-weight: var(--openbitfun-type-display-xxl-font-weight);
-  line-height: var(--openbitfun-type-display-xxl-line-height);
-  letter-spacing: var(--openbitfun-type-display-xxl-letter-spacing);
+/* The headline states the design stance and what it is a stance about: one sentence, no
+   subtitle. Weight is the real 600 cut (see the @font-face block in design-layout.css) — the
+   reference site has no 600, and a synthesised bold on a display-size mono headline looks
+   smeared. Size, leading and tracking are the published fluid hero role (display-fluid-title:
+   32px → 3.2vw → 48px, display leading 1.1, tight tracking), so the sentence grows with the window
+   and needs no phone override of its own. One role to change if the headline should grow or
+   breathe: swap display-fluid-title for another display role.
+   Note the shell's root font-size is 14px, so 60rem is 840px here. */
+.design-home-slogan {
+  max-width: 60rem;
+  margin: 0;
+  font-size: var(--openbitfun-type-display-fluid-title-font-size);
+  font-weight: var(--openbitfun-font-weight-semibold);
+  line-height: var(--openbitfun-type-display-fluid-title-line-height);
+  letter-spacing: var(--openbitfun-type-display-fluid-title-letter-spacing);
   text-wrap: balance;
 }
 
-.design-home-name {
-  font-family: var(--openbitfun-type-display-md-font-family);
-  font-size: var(--openbitfun-type-display-md-font-size);
-  font-weight: var(--openbitfun-type-display-md-font-weight);
-  line-height: var(--openbitfun-type-display-md-line-height);
-  letter-spacing: var(--openbitfun-type-display-md-letter-spacing);
-}
-
-.design-home-title {
-  /* typography-audit: allow -- Scale the homepage brand heading to its hero slot; interface text retains the canonical display roles. */
-  font-size: clamp(var(--openbitfun-type-display-xxl-font-size), 9vw, calc(var(--openbitfun-type-display-xxl-font-size) * 2));
-}
-
 .design-home-emblem {
-  display: grid;
-  place-items: center;
-  justify-self: end;
-  width: min(100%, 460px);
+  grid-column: 2;
+  grid-row: 1;
+  display: block;
+  /* The mark carried its own optical padding, so it read as a graphic only when it was large and
+     pinned to the right edge of its column. The character keeps that box — same column, same square,
+     so the hero's balance is unchanged when the artwork swaps — but at 64% of it (400px box × 0.8,
+     then × 0.8 again on request): a figure standing beside the headline rather than a graphic
+     competing with it. One factor here, and both caps below follow it, so the artwork keeps its
+     ratio to the column at every width. */
+  --_lab-hero-art: 0.64;
+  /* The figure is centred on the copy text, not on the whole copy column. The action row under
+     the support line would otherwise pull the artwork down by half its footprint, so the mark
+     ends up 50px below the middle of the words it stands beside — the gap the eye reads as a
+     misalignment. Half the footprint is written from the same two things that build that row
+     (the button's own control height and the margin above it), so the figure keeps its relation
+     to the text if either one changes. It is a translate rather than a margin or padding on
+     purpose: the lift must not add a single pixel of height to the hero, because the hero's
+     height is what the first screen has left over for the picture. */
+  --_lab-hero-lift: calc((var(--openbitfun-control-height-md) + var(--openbitfun-space-8) * var(--_lab-home-air)) / 2);
+
+  justify-self: center;
+  width: min(calc(100% * var(--_lab-hero-art)), calc(400px * var(--_lab-hero-art)));
   min-width: 0;
   aspect-ratio: 1;
   color: var(--openbitfun-color-content-primary);
   pointer-events: none;
+  translate: 0 calc(-1 * var(--_lab-hero-lift));
 }
 
-.design-home-mark {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 1;
+/* The hatch owns the box, and the avatar fills whatever the box resolved to, so the character
+   scales with the column instead of pinning the artwork to a fixed size. */
+.design-home-character,
+.design-home-character-avatar {
+  inline-size: 100%;
+  block-size: 100%;
 }
 
-.design-home-description {
-  margin: 0;
+/* The support line under the brand line: the body-lg role (15px mono, 1.6 leading) with the
+   chrome's subtle 0.01em tracking, one step down from the headline and one step up from the nav, in the
+   secondary grey. It explains what the blocks are, so it stays on the headline's column and
+   never runs the full width of the page. */
+.design-home-support {
+  max-inline-size: 52rem;
+  margin: calc(var(--openbitfun-space-4) * var(--_lab-home-air)) 0 0;
   color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-body-md-font-size);
-  line-height: var(--openbitfun-type-body-md-line-height);
+  font-size: var(--openbitfun-type-body-lg-font-size);
+  line-height: var(--openbitfun-type-body-lg-line-height);
+  letter-spacing: var(--openbitfun-type-modifier-tracking-subtle-letter-spacing);
+  text-wrap: pretty;
 }
 
 .design-home-actions {
@@ -71,129 +119,397 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--openbitfun-space-3);
-  margin-top: var(--openbitfun-space-6);
+  margin-top: calc(var(--openbitfun-space-8) * var(--_lab-home-air));
 }
 
-.design-destination-grid {
+/* The showcase is a picture of the product rather than a screenshot: one frame holding the app's
+   sidebar and the welcome screen it opens on — brand mark, greeting, and the composer the user
+   types into. It is assembled from the same parts the product uses (NavigationPanel, SearchField,
+   SegmentedControl, ChatComposer), so the picture cannot drift from the system it depicts.
+   The markup below is the desktop surface of that picture; the frame it sits in — and the phone,
+   watch, and glasses it turns into — belong to preview/MultiSurfaceMorph. This block therefore only
+   sizes the stage the picture is shown on, and the surface's own layout.
+   Nothing inside it is reachable and it carries no heading of its own: the page is the slogan, the
+   picture, and the destinations. Products' own sample data stays English; the chrome labels are
+   locale-invariant too (see designMessages.ts), so the frame never translates half-way. */
+.design-home-preview {
+  /* The stage is the frame's largest state. It is sized from the window, not from the space left
+     over: the page spends its top air on the hero, so the picture is a little taller than the gap
+     the first screen has for it and finishes just under the fold on a 1000px window — about seven
+     eighths of it shows, which is enough to see the picture and to see it start changing. Capped so
+     it never outgrows a tall window, floored so it stays a legible picture on a short one — the
+     morph's own geometries are clamped by the stage, so every surface follows this height. */
+  block-size: clamp(380px, calc(100dvh - 552px), 560px);
+  /* The frame is a picture of the product, not of the Lab: anything inside that inherits
+     its font goes back to the design system's own body role. */
+  font-family: var(--openbitfun-type-body-md-font-family);
+}
+
+.design-home-preview-shell {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--openbitfun-space-6);
+  /* The sidebar takes the design system's own panel width, so the frame and the product agree. */
+  grid-template-columns: var(--openbitfun-layout-navigation-panel-inline-size) minmax(0, 1fr);
+  block-size: 100%;
+  min-block-size: 0;
 }
 
-.design-destination {
-  position: relative;
+/* Sidebar: the panel keeps its own surface and its block-fill selection. The footer loses its rule
+   — this frame separates its regions with fills and space, never with lines. */
+.design-home-preview-sidebar [data-openbitfun-part="footer"] {
+  border-block-start-color: transparent;
+}
+
+.design-home-preview-search {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  padding-block: var(--openbitfun-space-2) 0;
+}
+
+.design-home-preview-search > [data-openbitfun-component="search-field"] {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.design-home-preview-navigation {
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  gap: var(--openbitfun-space-8);
-  padding: var(--openbitfun-space-6);
-  border-radius: var(--openbitfun-radius-lg);
-  background: var(--openbitfun-color-surface-subtle);
+  gap: calc(var(--openbitfun-space-1) / 2);
 }
 
-.design-destination h2 {
+.design-home-preview-session {
+  color: var(--openbitfun-color-content-secondary);
+}
+
+.design-home-preview-session--child {
+  padding-inline-start: calc(var(--openbitfun-layout-navigation-panel-item-padding-inline) + var(--openbitfun-space-4));
+}
+
+.design-home-preview-device > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  min-inline-size: 0;
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-label-sm-font-size);
+}
+
+/* Pane: the window the product opens on. The greeting scales with the pane, not with the window,
+   so the frame stays a legible picture at every width the page allows. */
+.design-home-preview-pane {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  container-type: inline-size;
+  background: var(--openbitfun-color-surface-canvas);
+}
+
+.design-home-preview-pane-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--openbitfun-space-4);
+  padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
+}
+
+.design-home-preview-stage {
+  display: grid;
+  flex: 1;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-block-size: 0;
+  gap: calc(var(--openbitfun-space-8) * var(--_lab-home-air));
+  padding: calc(var(--openbitfun-space-4) * var(--_lab-home-air)) var(--openbitfun-space-6) calc(var(--openbitfun-space-5) * var(--_lab-home-air));
+}
+
+.design-home-preview-welcome {
+  display: grid;
+  align-self: center;
+  justify-items: center;
+  gap: var(--openbitfun-space-3);
+  min-inline-size: 0;
+  text-align: center;
+}
+
+.design-home-preview-welcome-mark {
+  margin-block-end: var(--openbitfun-space-1);
+}
+
+/* The display PageHeader is sized in the page's own scale; inside the frame it follows the frame
+   instead, so the window stays a legible picture at every width the page allows. */
+.design-home-preview-welcome-header [data-openbitfun-part="heading"] {
+  font-size: clamp(var(--openbitfun-font-size-2xl), 4.6cqi, var(--openbitfun-type-heading-welcome-font-size));
+  text-wrap: balance;
+}
+
+.design-home-preview-welcome-header [data-openbitfun-part="description"] {
+  color: var(--openbitfun-color-content-secondary);
+  font-size: clamp(var(--openbitfun-font-size-sm), 2.2cqi, var(--openbitfun-type-page-intro-font-size));
+}
+
+.design-home-preview-composer {
+  justify-self: center;
+  inline-size: min(100%, 40rem);
+}
+
+.design-home-preview-placeholder {
+  color: var(--openbitfun-color-content-muted);
+}
+
+.design-home-preview-context {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--openbitfun-space-1);
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-label-sm-font-size);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ usage band
+   The guide's contract block, restated in the homepage's own language and set between the picture
+   and the closing band: the page explains how its blocks are consumed before it sends anyone
+   anywhere. The block itself is shared (components/GuideContract) — only the page's rhythm and face
+   are applied here. Air follows --_lab-home-air like every other vertical gap on this page. */
+.design-home-contract {
+  display: grid;
+  gap: calc(var(--openbitfun-space-10) * var(--_lab-home-air));
+  padding-block-start: calc(var(--openbitfun-space-4) * var(--_lab-home-air));
+}
+
+.design-home-contract-title {
+  max-inline-size: 60rem;
   margin: 0;
-  font-family: var(--openbitfun-type-heading-section-font-family);
+  /* One step under the hero's sentence and two over the steps: the band is a closing note, not a
+     second headline. Fluid so it grows with the window like the rest of the page's display type. */
+  font-size: clamp(var(--openbitfun-font-size-3xl), 2.4vw, var(--openbitfun-type-display-sm-font-size));
+  font-weight: var(--openbitfun-font-weight-semibold);
+  line-height: var(--openbitfun-type-display-sm-line-height);
+  letter-spacing: var(--openbitfun-type-display-sm-letter-spacing);
+  text-wrap: balance;
+}
+
+/* The steps take the homepage's face rather than the guide's sans: on this page the whole block
+   reads as page copy, and only the code card steps out into its own mono. */
+.design-home-contract .guide-step-list {
+  gap: calc(var(--openbitfun-space-6) * var(--_lab-home-air));
+}
+
+.design-home-contract .guide-step-list :is(h2, h3) {
+  font-family: inherit;
+  margin-block-end: calc(var(--openbitfun-space-2) * var(--_lab-home-air));
+}
+
+/* ------------------------------------------------------------------ closing band
+   The page's one filled region: black in either scheme, so the band closes the page by interrupting
+   the surface instead of drawing another hairline. Every colour inside it therefore comes from the
+   system's on-dark pair, not from the scheme's own content roles.
+   The fill borrows content-on-light — the published black. The theme has no surface-inverse token
+   yet, so this is the same move the brand gallery makes when it borrows content-on-dark for a white
+   tile; if a surface-inverse token is ever added, this is the line that should switch to it. */
+.design-home-footer {
+  --_lab-band-pad-block: calc(var(--openbitfun-space-12) * var(--_lab-home-air));
+  --_lab-on-dark: var(--openbitfun-color-content-on-dark);
+  --_lab-on-dark-secondary: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 72%, transparent);
+  --_lab-on-dark-muted: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 50%, transparent);
+  --_lab-on-dark-rule: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 22%, transparent);
+
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--openbitfun-space-12) * var(--_lab-home-air));
+  /* Full-bleed geometry and column alignment are owned by design-layout.css. */
+  /* The band opens on the page's full rhythm but closes on half of it: the small print is the last
+     line on the page, so the space under it only has to hold the band's edge rather than separate
+     it from anything. */
+  padding-block: var(--_lab-band-pad-block) calc(var(--openbitfun-space-6) * var(--_lab-home-air));
+  color: var(--_lab-on-dark);
+  background: var(--openbitfun-color-content-on-light);
+}
+
+.design-home-footer-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 3fr);
+  gap: var(--openbitfun-space-12);
+}
+
+.design-home-footer-identity {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--openbitfun-space-3) * var(--_lab-home-air));
+  min-inline-size: 0;
+  padding-inline-end: var(--openbitfun-space-6);
+  border-inline-end: var(--openbitfun-border-width-default) solid var(--_lab-on-dark-rule);
+}
+
+/* Same lockup treatment as the topbar's wordmark (see .design-wordmark-link in
+   design-layout.css): the site's 25px/500 mono with -0.05em tracking, so the name reads as one
+   brand wherever it appears on the page. Only the prompt glyph in front of it is new.
+   Here it is also the band's one outbound link: the arrow is dim until the pointer or keyboard
+   reaches it, and the band's own colour pair keeps the name readable on black. */
+.design-home-footer-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  margin: 0;
+  color: var(--_lab-on-dark);
+  text-decoration: none;
+}
+
+.design-home-footer-wordmark-arrow {
+  color: var(--_lab-on-dark-muted);
+  transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+
+.design-home-footer-wordmark:hover .design-home-footer-wordmark-arrow,
+.design-home-footer-wordmark:focus-visible .design-home-footer-wordmark-arrow {
+  color: var(--_lab-on-dark);
+}
+
+/* From here down the band speaks the homepage's own type language, not a set of one-off values:
+   the topbar nav's 13px mono at the chrome's 1.4 leading and 0.01em tracking (see
+   .design-primary-navigation a in design-layout.css), the wordmark's lockup above, and only the
+   headings and the small print step away from that one size. */
+.design-home-footer-tagline {
+  margin: 0;
+  max-inline-size: 34ch;
+  color: var(--_lab-on-dark-secondary);
+  font-size: var(--openbitfun-type-label-md-font-size);
+  line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
+  letter-spacing: var(--openbitfun-type-modifier-tracking-subtle-letter-spacing);
+}
+
+/* The reference's step strip: eight small squares, the first one lit. Decorative, so it is a
+   picture rather than a control, and it ends the block on the same line the columns end on. */
+.design-home-footer-steps {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  margin-block-start: auto;
+}
+
+.design-home-footer-steps i {
+  inline-size: var(--openbitfun-space-1);
+  block-size: var(--openbitfun-space-1);
+  background: var(--_lab-on-dark-muted);
+}
+
+.design-home-footer-steps i:first-child {
+  background: var(--openbitfun-color-accent-default);
+}
+
+.design-home-footer-paths {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--openbitfun-space-10);
+}
+
+.design-home-footer-path {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: calc(var(--openbitfun-space-4) * var(--_lab-home-air));
+  min-inline-size: 0;
+}
+
+.design-home-footer-path-icon {
+  color: var(--_lab-on-dark);
+}
+
+.design-home-footer-path h2 {
+  margin: 0;
   font-size: var(--openbitfun-type-heading-section-font-size);
   font-weight: var(--openbitfun-type-heading-section-font-weight);
   line-height: var(--openbitfun-type-heading-section-line-height);
-  letter-spacing: var(--openbitfun-type-heading-section-letter-spacing);
+  letter-spacing: var(--openbitfun-letter-spacing-tight);
 }
 
-.design-destination h2 a {
-  display: flex;
+.design-home-footer-path h2 a {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--openbitfun-space-3);
+  gap: var(--openbitfun-space-2);
   color: inherit;
   text-decoration: none;
 }
 
-.design-destination h2 a::after {
+/* The whole column is the link, so the arrow can sit on its own line the way the reference sets
+   it without shrinking the hit area to a word. */
+.design-home-footer-path h2 a::after {
   position: absolute;
   inset: 0;
-  border-radius: var(--openbitfun-radius-lg);
   content: "";
 }
 
-.design-destination h2 a:focus-visible {
+.design-home-footer-path h2 a:focus-visible {
   outline: none;
 }
 
-.design-destination:focus-within {
+.design-home-footer-path:focus-within {
   outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
   outline-offset: var(--openbitfun-focus-offset);
 }
 
-.design-destination-arrow {
-  flex: none;
-  color: var(--openbitfun-color-content-muted);
+.design-home-footer-path p {
+  margin: 0;
+  max-inline-size: 32ch;
+  color: var(--_lab-on-dark-secondary);
+  font-size: var(--openbitfun-type-label-md-font-size);
+  line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
+  letter-spacing: var(--openbitfun-type-modifier-tracking-subtle-letter-spacing);
 }
 
-.design-destination:hover .design-destination-arrow,
-.design-destination:focus-within .design-destination-arrow {
-  color: var(--openbitfun-color-content-primary);
+.design-home-footer-path-arrow {
+  color: var(--_lab-on-dark-muted);
+  transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 }
 
-.design-destination p {
-  margin: var(--openbitfun-space-2) 0 0;
-  color: var(--openbitfun-color-content-secondary);
-  font-size: var(--openbitfun-type-body-sm-font-size);
-  line-height: var(--openbitfun-type-body-sm-line-height);
+.design-home-footer-path:hover .design-home-footer-path-arrow,
+.design-home-footer-path:focus-within .design-home-footer-path-arrow {
+  color: var(--_lab-on-dark);
 }
 
-.design-destination-specimen {
+.design-home-footer-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--openbitfun-space-3);
-  min-height: var(--openbitfun-space-16);
-  margin-top: auto;
-  pointer-events: none;
+  justify-content: space-between;
+  gap: calc(var(--openbitfun-space-3) * var(--_lab-home-air)) var(--openbitfun-space-8);
+  color: var(--_lab-on-dark-secondary);
+  font-size: var(--openbitfun-type-label-sm-font-size);
+  line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
+  letter-spacing: var(--openbitfun-type-modifier-tracking-subtle-letter-spacing);
 }
 
-.design-home-type-sample {
-  font-family: var(--openbitfun-type-display-md-font-family);
-  font-size: var(--openbitfun-type-display-md-font-size);
-  font-weight: var(--openbitfun-type-display-md-font-weight);
-  line-height: var(--openbitfun-type-display-md-line-height);
-  letter-spacing: var(--openbitfun-type-display-md-letter-spacing);
+.design-home-footer-meta p {
+  margin: 0;
 }
 
-.design-home-palette {
-  display: flex;
-  margin-inline-start: var(--openbitfun-space-2);
-  overflow: hidden;
-  border-radius: var(--openbitfun-radius-pill);
+.design-home-footer-meta a {
+  color: inherit;
+  text-decoration: none;
 }
 
-.design-home-palette i {
-  width: var(--openbitfun-space-6);
-  height: var(--openbitfun-space-8);
-  background: var(--openbitfun-color-content-primary);
+.design-home-footer-meta a:hover {
+  color: var(--_lab-on-dark);
+  text-decoration: underline;
 }
-
-.design-home-palette i:nth-child(2) { background: var(--openbitfun-color-content-secondary); }
-.design-home-palette i:nth-child(3) { background: var(--openbitfun-color-content-muted); }
-.design-home-palette i:nth-child(4) { background: var(--openbitfun-color-accent-default); }
-.design-destination-specimen--brand { gap: var(--openbitfun-space-4); }
-.design-destination-specimen--brand img { display: block; object-fit: contain; }
 
 @media (max-width: 860px) {
-  .design-home-hero { min-height: 400px; gap: var(--openbitfun-space-6); }
-  .design-destination-grid { grid-template-columns: minmax(0, 1fr); gap: var(--openbitfun-space-4); }
-  .design-destination { flex-direction: row; align-items: center; justify-content: space-between; }
-  .design-destination-specimen { flex: none; max-width: 50%; margin-top: 0; }
+  .lab-page.design-home { gap: calc(var(--openbitfun-space-12) * var(--_lab-home-air)); }
+  .design-home-hero { grid-template-columns: minmax(0, 1fr); gap: var(--openbitfun-space-6); padding-block: 0 calc(var(--openbitfun-space-12) * var(--_lab-home-air)); }
+  .design-home-emblem { grid-column: 1; grid-row: 2; justify-self: start; width: min(calc(40% * var(--_lab-hero-art)), calc(var(--openbitfun-space-16) * 3 * var(--_lab-hero-art))); translate: 0; }
+  .design-home-preview-shell { grid-template-columns: minmax(0, 1fr); }
+  .design-home-preview-sidebar { display: none; }
+  .design-home-preview-stage { gap: calc(var(--openbitfun-space-6) * var(--_lab-home-air)); padding-inline: var(--openbitfun-space-4); }
+  .design-home-footer { --_lab-band-pad-block: calc(var(--openbitfun-space-8) * var(--_lab-home-air)); }
+  .design-home-footer-top { grid-template-columns: minmax(0, 1fr); gap: calc(var(--openbitfun-space-8) * var(--_lab-home-air)); }
+  .design-home-footer-identity { padding-inline-end: 0; border-inline-end: 0; }
+  .design-home-footer-steps { margin-block-start: calc(var(--openbitfun-space-2) * var(--_lab-home-air)); }
 }
 
 @media (max-width: 600px) {
-  .lab-page.design-home { padding-block: var(--openbitfun-space-6); }
-  .design-home-hero { grid-template-columns: minmax(0, 1fr); min-height: 0; padding-block: var(--openbitfun-space-4) var(--openbitfun-space-8); }
-  .design-home-heading { text-align: center; }
-  .design-home-heading h1 { align-items: center; }
-  .design-home-title { font-size: var(--openbitfun-type-display-xxl-font-size); }
-  .design-home-emblem { grid-row: 1; justify-self: center; width: min(70%, 280px); }
-  .design-home-actions { justify-content: center; }
-  .design-destination { flex-direction: column; align-items: stretch; gap: var(--openbitfun-space-5); padding: var(--openbitfun-space-5); }
-  .design-destination-specimen { max-width: none; min-height: var(--openbitfun-space-12); }
+  .lab-page.design-home { gap: calc(var(--openbitfun-space-10) * var(--_lab-home-air)); padding-block: calc(var(--openbitfun-space-8) * var(--_lab-home-air)) 0; }
+  .design-home-hero { gap: var(--openbitfun-space-6); padding-block: 0 calc(var(--openbitfun-space-10) * var(--_lab-home-air)); }
+  .design-home-emblem { width: min(calc(35% * var(--_lab-hero-art)), calc(var(--openbitfun-space-16) * 2 * var(--_lab-hero-art))); }
+  .design-home-footer-paths { grid-template-columns: minmax(0, 1fr); gap: calc(var(--openbitfun-space-8) * var(--_lab-home-air)); }
+  .design-home-footer { --_lab-band-pad-block: calc(var(--openbitfun-space-6) * var(--_lab-home-air)); gap: calc(var(--openbitfun-space-8) * var(--_lab-home-air)); }
 }

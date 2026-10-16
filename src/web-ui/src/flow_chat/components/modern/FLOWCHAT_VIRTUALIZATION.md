@@ -128,6 +128,26 @@ the saved hint, attempts, or member identities.
 
 ## Measurement compensation and cached offsets
 
+Geometry updates and React rendering have separate delivery contracts. The
+virtualizer updates its size cache, applies owner-approved compensation and
+publishes the physical offset synchronously. Its local core adapter coalesces
+render requests within a commit and permits at most 16 notification-driven
+commits before yielding to an animation frame. The frame renders current state;
+it does not retain a scroll target or replay a former owner's write. Cleanup
+cancels the frame, including session remounts and StrictMode effect replay.
+
+This bounds a converging measurement cascade as well as an oscillating one:
+many near-empty rows can require more than React's nested-update limit while
+the window replaces estimates with measurements. Do not defer only the opening
+reconciliation callback: follow layout effects and physical range clamping can
+also advance the window. Explicit `measureRenderedItems` remains synchronous
+for callers that must read geometry before the next React commit. Normal small
+cascades still settle synchronously; the budget reset alone causes no render.
+`useFlowChatVirtualizer.cascade.test.tsx` covers tiny and zero-height rows,
+convergence across frames, reader takeover and remount cleanup using real hooks
+and supplied geometry. It is not proof of the production crash's data trigger
+or native paint timing.
+
 When the viewport owner accepts a shift for a measured row wholly above the
 reader, the virtualizer publishes the actual scroll offset after updating its
 size cache, before selecting the next rendered window. This applies during
@@ -265,12 +285,6 @@ the matching scroll event lands a frame later, so that base can be stale. The
 owner's displacement is applied before the new size enters the cache, while
 the anchor remains responsible for restoring relationships across larger layout
 transactions.
-
-The measurement decision is recorded as the switch-gated, coalesced
-`virtualizer.itemResize` probe: item identity, estimated and measured sizes,
-the above-viewport decision, and the real scroll geometry before and after the
-owner's displacement. It deliberately omits flow-item contents, which made the
-temporary investigation probe too large for a lasting diagnostic trail.
 
 **Measurement is forced before any position is read in the commit that changed
 the items.** The library skips its inline resize while the reader is scrolling,

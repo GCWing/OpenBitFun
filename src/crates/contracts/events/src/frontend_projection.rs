@@ -207,6 +207,7 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
             success,
             finish_reason,
             has_final_response,
+            background_delivery,
             ..
         } => Some(AgenticFrontendEvent::new(
             "agentic://dialog-turn-completed",
@@ -218,6 +219,7 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
                 "success": success,
                 "finishReason": finish_reason,
                 "hasFinalResponse": has_final_response,
+                "backgroundDelivery": background_delivery,
             }),
         )),
         AgenticEvent::SessionTitleGenerated {
@@ -231,6 +233,20 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
                 "title": title,
                 "method": method,
                 "timestamp": chrono::Utc::now().timestamp_millis(),
+            }),
+        )),
+        AgenticEvent::PromptSuggestionGenerated {
+            session_id,
+            turn_id,
+            suggestion,
+        } => Some(AgenticFrontendEvent::new(
+            "agentic://prompt-suggestion",
+            // Not `turnId`: clients treat `turnId` as a write to that turn and
+            // drop it once the turn settled, which always precedes this hint.
+            json!({
+                "sessionId": session_id,
+                "sourceTurnId": turn_id,
+                "suggestion": suggestion,
             }),
         )),
         AgenticEvent::DialogTurnCancelled {
@@ -613,11 +629,49 @@ mod tests {
             success: Some(true),
             finish_reason: Some("stop".to_string()),
             has_final_response: Some(true),
+            background_delivery: None,
         })
         .expect("projected");
 
         assert_eq!(projected.event_name, "agentic://dialog-turn-completed");
         assert_eq!(projected.payload["durationMs"], 21_206);
+    }
+
+    #[test]
+    fn background_completion_round_trips_and_projects_additive_delivery_facts() {
+        use openbitfun_core_types::background_delivery::{
+            BackgroundDelivery, BackgroundReportDisposition, BackgroundReportPolicy,
+        };
+        let mut delivery = BackgroundDelivery::pending(
+            "any-task".into(),
+            "run".into(),
+            BackgroundReportPolicy::Conditional,
+        );
+        delivery.disposition = BackgroundReportDisposition::Quiet;
+        delivery.resolved_at_ms = Some(1);
+        let event = AgenticEvent::DialogTurnCompleted {
+            session_id: "session".into(),
+            turn_id: "run".into(),
+            total_rounds: 0,
+            total_tools: 0,
+            duration_ms: 0,
+            partial_recovery_reason: None,
+            success: Some(true),
+            finish_reason: Some("background_quiet".into()),
+            has_final_response: Some(false),
+            background_delivery: Some(delivery),
+        };
+        let mut old = serde_json::to_value(&event).unwrap();
+        let restored: AgenticEvent = serde_json::from_value(old.clone()).unwrap();
+        let projected = project_agentic_frontend_event(restored).unwrap();
+        assert_eq!(projected.payload["backgroundDelivery"]["runId"], "run");
+        assert_eq!(
+            projected.payload["backgroundDelivery"]["disposition"],
+            "quiet"
+        );
+        // Legacy payloads lack the additive field and keep their established completion contract.
+        old.as_object_mut().unwrap().remove("background_delivery");
+        assert!(serde_json::from_value::<AgenticEvent>(old).is_ok());
     }
 
     #[test]
@@ -786,6 +840,26 @@ mod tests {
         assert_eq!(projected.event_name, "session_title_generated");
         assert_eq!(projected.payload["sessionId"], "session-1");
         assert!(projected.payload["timestamp"].as_i64().is_some());
+    }
+
+    #[test]
+    fn prompt_suggestion_projects_session_scoped_hint() {
+        let projected = project_agentic_frontend_event(AgenticEvent::PromptSuggestionGenerated {
+            session_id: "session-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            suggestion: "Run the tests".to_string(),
+        })
+        .expect("projected");
+
+        assert_eq!(projected.event_name, "agentic://prompt-suggestion");
+        assert_eq!(
+            projected.payload,
+            json!({
+                "sessionId": "session-1",
+                "sourceTurnId": "turn-1",
+                "suggestion": "Run the tests",
+            })
+        );
     }
 
     #[test]

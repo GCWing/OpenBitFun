@@ -385,6 +385,41 @@ describe('VirtualMessageList natural scroll contract', () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([
+    { name: 'a session without config', config: undefined, canSynchronize: true },
+    { name: 'an ordinary session', config: {}, canSynchronize: true },
+    { name: 'a dispatch observer', config: { dispatchJobId: 'job-1' }, canSynchronize: false },
+  ])('keeps both history error boundaries usable for $name', async ({ config, canSynchronize }) => {
+    mocks.activeSession = { ...mocks.activeSession, config };
+    const onBoundaryIntent = vi.fn(() => 'exhausted' as const);
+    await act(async () => {
+      root.render(
+        <VirtualMessageList
+          presentationMode="history-window"
+          historyBoundaryState={{ before: 'error', after: 'error' }}
+          onHistoryWindowBoundaryIntent={onBoundaryIntent}
+        />,
+      );
+    });
+    await settleOpenReveal();
+
+    const boundaries = container.querySelectorAll('[data-history-paging-sentinel="error"]');
+    expect(boundaries).toHaveLength(2);
+    for (const [index, direction] of (['before', 'after'] as const).entries()) {
+      const button = boundaries[index].querySelector('button');
+      if (canSynchronize) {
+        expect(button).not.toBeNull();
+        await act(async () => { button!.click(); });
+        expect(onBoundaryIntent).toHaveBeenCalledWith(direction, expect.objectContaining({
+          synchronizeHistory: true,
+        }));
+      } else {
+        expect(button).toBeNull();
+      }
+    }
+    if (!canSynchronize) expect(onBoundaryIntent).not.toHaveBeenCalled();
+  });
+
   it('reconciles opening measurements only while follow owns the active viewport', () => {
     act(() => root.render(<VirtualMessageList />));
     expect(mocks.reconcileOpeningMeasurement?.()).toBe(false);

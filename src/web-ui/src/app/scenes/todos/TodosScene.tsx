@@ -310,6 +310,7 @@ const TodosScene: React.FC = () => {
           name: draft.name.trim(),
           payload: { text: draft.text.trim() },
           enabled: draft.enabled,
+          ...(editingJob?.reportPolicy !== undefined ? { reportPolicy: draft.reportPolicy } : {}),
           schedule,
           target,
         };

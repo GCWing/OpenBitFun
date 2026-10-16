@@ -99,6 +99,13 @@
       "tokens": ["composer_action_size", "composer_collapsed_height", "composer_expanded_height", "composer_collapsed_radius", "composer_expanded_radius"],
       "platformNotes": "Keyboard, dictation, and attachment pickers remain native adapters. The focused two-row form stays compact and exists to expose message context controls; multiline content and attachments may grow it further. The trailing action is the single filled action for Send, Dictate, or Stop."
     },
+    "prompt_suggestion": {
+      "purpose": "Offer the host's next-input suggestion above the remote conversation composer.",
+      "anatomy": ["suggestion_text", "full_width_touch_target"],
+      "states": ["available", "draft_hidden", "busy_hidden", "disconnected_hidden", "retired"],
+      "tokens": ["body_medium", "muted", "control_touch_size", "conversation_overlay_side_inset"],
+      "platformNotes": "Compact and wide layouts use a quiet, leading-aligned button with wrapping text and a minimum 48-unit touch target. Show only for the latest completed turn when the draft is empty and the session is idle and connected. Tapping copies the exact text into the native editor and focuses it without sending. New turns, session changes and host stream gaps retire the hint. Suggestions stay outside persisted transcripts; older hosts need no fallback request."
+    },
     "composer_model_selector": {
       "purpose": "Changes the model for the message being composed without leaving the conversation or creation flow.",
       "anatomy": ["optional_modal_header", "selected_mark", "primary_label", "supporting_label", "scrolling_model_rows"],

@@ -81,6 +81,16 @@ describe('projectDeviceInterconnectionOverview', () => {
     expect(overview.connectionService?.kind).toBe('official');
   });
 
+  it('includes controllers from both Relay routes without duplicating one browser', () => {
+    const overview = projectDeviceInterconnectionOverview(baseInput({ remoteStatus: {
+      ...disconnectedStatus, connections: [
+        { method: 'openbitfun_server', relay_connected: true, relay_url: 'https://remote.openbitfun.com/v/1.0.2', clients: [{ id: 'same', name: 'Shared browser' }] },
+        { method: 'lan', relay_connected: true, relay_url: 'http://192.168.1.2:9700', clients: [{ id: 'same', name: 'Shared browser' }, { id: 'lan', name: 'LAN phone' }] },
+      ],
+    } }));
+    expect(overview.connectedDevices.map(device => device.name).sort()).toEqual(['LAN phone', 'Shared browser']);
+  });
+
   it('names a paired bot once, as a controller rather than a second connection service', () => {
     const overview = projectDeviceInterconnectionOverview(baseInput({
       remoteStatus: { ...disconnectedStatus, bot_connected: 'Weixin(wxid_9f3a)' },

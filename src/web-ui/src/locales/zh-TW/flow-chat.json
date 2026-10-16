@@ -172,9 +172,10 @@
     "failedTitle": "歷史會話載入失敗",
     "failedDescription": "可以重新載入已儲存的會話內容；若會話來自其他裝置，請先檢查帳號登入與網路連線。",
     "preparingOlderHistory": "正在準備更早的歷史記錄...",
-    "olderHistoryNotReady": "更早的歷史記錄暫未準備好。",
-    "newerHistoryNotReady": "更新的歷史記錄暫未準備好。",
+    "olderHistoryNotReady": "較早的記錄讀取失敗；目前內容仍可查看。",
+    "newerHistoryNotReady": "後續記錄讀取失敗；目前內容仍可查看。",
     "remoteSessionMissing": "在後端找不到該會話資料。若剛重新連接過 SSH 遠端工作區，請關閉並重新開啟該遠端項目，或新增會話後再試。",
+    "synchronize": "重新同步記錄",
     "retry": "重試"
   },
   "usage": {
@@ -631,6 +632,7 @@
   "input": {
     "placeholder": "有什麼可以幫您...",
     "placeholderWithContext": "輸入消息，或拖放檔案新增上下文...",
+    "promptSuggestionAccept": "{{key}}",
     "send": "發送",
     "sendShortcut": "發送 (⏎)",
     "stop": "停止",
@@ -3577,5 +3579,12 @@
     "edit": "恢復草稿",
     "noDraft": "完整草稿僅在提交訊息的裝置上可用。",
     "legacy": "舊佇列中的草稿，請逐條傳送或恢復。"
+  },
+  "backgroundDelivery": {
+    "recoveryCompleted": "該次執行已恢復並完成。",
+    "adjudicationUsage": "投遞判定額外使用 {{tokens}} tokens",
+    "quiet": "背景任務已完成 · 無需回報",
+    "running": "背景任務執行中",
+    "executionDetails": "執行記錄"
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "OpenBitFun",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
@@ -117,12 +117,12 @@
     "target:gc": "node scripts/cargo-target-gc.mjs",
     "product:check": "node scripts/product-customization/cli.mjs check",
     "product:explain": "node scripts/product-customization/cli.mjs explain",
-    "product:test": "node --test --test-concurrency=1 scripts/product-customization/*.test.mjs scripts/cli-product.test.mjs scripts/desktop-tauri-build.test.mjs scripts/data-migrator-tauri-build.test.mjs",
-    "data-migrator:dev": "cargo run -p openbitfun-data-migrator --bin openbitfun-data-migrator",
-    "data-migrator:check": "cargo check -p openbitfun-data-migrator",
-    "data-migrator:theme:generate": "node scripts/generate-data-migrator-theme.mjs",
-    "data-migrator:theme:check": "node scripts/generate-data-migrator-theme.mjs --check",
-    "data-migrator:build": "node scripts/data-migrator-tauri-build.mjs",
+    "product:test": "node --test --test-concurrency=1 scripts/product-customization/*.test.mjs scripts/cli-product.test.mjs scripts/desktop-tauri-build.test.mjs scripts/data-tools-tauri-build.test.mjs",
+    "data-tools:dev": "cargo run -p openbitfun-data-tools --bin openbitfun-data-tools",
+    "data-tools:check": "cargo check -p openbitfun-data-tools",
+    "data-tools:theme:generate": "node scripts/generate-data-tools-theme.mjs",
+    "data-tools:theme:check": "node scripts/generate-data-tools-theme.mjs --check",
+    "data-tools:build": "node scripts/data-tools-tauri-build.mjs",
     "desktop:build": "node scripts/desktop-tauri-build.mjs",
     "desktop:build:fast": "node scripts/desktop-tauri-build.mjs --debug --no-bundle",
     "desktop:build:release-fast": "node scripts/desktop-tauri-build.mjs --no-bundle -- --profile release-fast --features devtools",

@@ -1,6 +1,10 @@
 @layer openbitfun.components {
   .root { box-sizing: border-box; min-inline-size: 0; color: var(--openbitfun-color-content-primary); }
   .trigger { display: flex; inline-size: 100%; min-block-size: 44px; align-items: center; gap: var(--openbitfun-space-2); margin: 0; padding: var(--openbitfun-space-2) 0; border: 0; color: inherit; background: transparent; cursor: pointer; text-align: start; font: inherit; }
+  @media (hover: hover) and (pointer: fine) {
+    .trigger:not(:disabled):hover,
+    .root[data-openbitfun-preview-state="hover"] .trigger:not(:disabled) { color: var(--openbitfun-color-content-primary); background: var(--openbitfun-color-action-neutral-surface-hover); box-shadow: 0 0 0 var(--openbitfun-space-2) var(--openbitfun-color-action-neutral-surface-hover); }
+  }
   .trigger:focus-visible { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: var(--openbitfun-focus-offset); border-radius: var(--openbitfun-radius-sm); }
   .trigger:disabled { color: var(--openbitfun-color-content-disabled); cursor: not-allowed; }
   .leading { display: grid; inline-size: 20px; block-size: 20px; flex: 0 0 20px; place-items: center; }

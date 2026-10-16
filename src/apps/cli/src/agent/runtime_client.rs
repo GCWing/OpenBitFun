@@ -3295,6 +3295,7 @@ mod dual_backend_behavior_tests {
                         success: Some(true),
                         finish_reason: Some("fixture-complete".to_string()),
                         has_final_response: Some(true),
+                        background_delivery: None,
                     },
                     None,
                 )

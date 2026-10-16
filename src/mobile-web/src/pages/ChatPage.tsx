@@ -94,6 +94,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
 
   const messages = getMessages(sessionId);
   const [input, setInput] = useState('');
+  const [promptSuggestion, setPromptSuggestion] = useState<string | null>(null);
   const [liveTitle, setLiveTitle] = useState(sessionName);
   const [modelCatalog, setModelCatalog] = useState<RemoteModelCatalog | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string>('auto');
@@ -878,6 +879,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
               resp.model_catalog,
             ));
           }
+          if (resp.prompt_suggestion !== undefined) setPromptSuggestion(resp.prompt_suggestion);
           setActiveTurn(resp.active_turn ?? null);
         }, initialCatalog?.version || 0, history => { if(isInitCurrent()){setHasMore(history.hasMore);hasMoreRef.current=history.hasMore;} }, () => { if(isInitCurrent())setMailboxInvalidation(value=>value+1); },
         // Stream failures are stated, not hidden: an older host or a lost
@@ -901,6 +903,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
       streamRef.current?.stop();
       streamRef.current = null;
       setActiveTurn(null);
+      setPromptSuggestion(null);
     };
   }, [
     appendNewMessages,
@@ -1020,6 +1023,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
       // remain retryable, and an acknowledgement must not erase newer typing.
       const draftUnchanged = inputRef.current?.value === input;
       setInput(current => current === input ? '' : current);
+      setPromptSuggestion(null);
       setPendingImages(current => current.filter(image => !imgs.includes(image)));
       if (!wasStreaming && draftUnchanged) setInputExpanded(false);
       streamRef.current?.nudge();
@@ -1072,6 +1076,17 @@ const ChatPage: React.FC<ChatPageProps> = ({
   const expandInput = useCallback(() => {
     setInputExpanded(true);
     requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
+
+  const acceptPromptSuggestion = useCallback((suggestion: string) => {
+    setInput(suggestion);
+    setInputExpanded(true);
+    requestAnimationFrame(() => {
+      const editor = inputRef.current;
+      if (!editor) return;
+      editor.focus();
+      editor.setSelectionRange(editor.value.length, editor.value.length);
+    });
   }, []);
 
   useEffect(() => {
@@ -1300,6 +1315,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
         onRemoveImage={removeImage}
         onSend={handleSend}
         pendingImages={pendingImages}
+        promptSuggestion={promptSuggestion}
+        onAcceptPromptSuggestion={acceptPromptSuggestion}
         streaming={isStreaming}
       />
 
