@@ -417,6 +417,32 @@ fn install_macos(
 }
 
 #[cfg(target_os = "windows")]
+fn app_user_model_id_property(
+    launch_id: &str,
+) -> windows::core::Result<windows::Win32::System::Com::StructuredStorage::PROPVARIANT> {
+    use std::mem::ManuallyDrop;
+    use windows::Win32::System::Com::StructuredStorage::{
+        PROPVARIANT, PROPVARIANT_0, PROPVARIANT_0_0, PROPVARIANT_0_0_0,
+    };
+    use windows::Win32::System::Variant::VT_LPWSTR;
+    use windows::Win32::UI::Shell::SHStrDupW;
+
+    let app_id = windows::core::HSTRING::from(format!("com.openbitfun.miniapp.{launch_id}"));
+    // SAFETY: SHStrDupW copies the live UTF-16 string with the COM allocator.
+    // PROPVARIANT owns that allocation and frees it through PropVariantClear.
+    let owned = unsafe { SHStrDupW(&app_id)? };
+    Ok(PROPVARIANT {
+        Anonymous: PROPVARIANT_0 {
+            Anonymous: ManuallyDrop::new(PROPVARIANT_0_0 {
+                vt: VT_LPWSTR,
+                Anonymous: PROPVARIANT_0_0_0 { pwszVal: owned },
+                ..Default::default()
+            }),
+        },
+    })
+}
+
+#[cfg(target_os = "windows")]
 fn install_windows(
     record: &LaunchRecord,
     manifest: &Path,
@@ -463,23 +489,13 @@ fn install_windows(
                 link.SetArguments(&HSTRING::from(arguments))?;
                 link.SetIconLocation(&HSTRING::from(dir.join("icon.ico").as_os_str()), 0)?;
                 use windows::Win32::Foundation::PROPERTYKEY;
-                use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
-                use windows::Win32::System::Variant::VT_LPWSTR;
                 use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
                 let properties: IPropertyStore = link.cast()?;
                 let key = PROPERTYKEY {
                     fmtid: windows::core::GUID::from_u128(0x9f4c2855_9f79_4b39_a8d0_e1d42de1d5f3),
                     pid: 5,
                 };
-                let mut app_id: Vec<u16> = format!("com.openbitfun.miniapp.{}", record.launch_id)
-                    .encode_utf16()
-                    .chain(Some(0))
-                    .collect();
-                // SetValue copies this borrowed string; PROPVARIANT has no Rust Drop.
-                let mut value = PROPVARIANT::default();
-                value.Anonymous.Anonymous.vt = VT_LPWSTR;
-                value.Anonymous.Anonymous.Anonymous.pwszVal =
-                    windows::core::PWSTR(app_id.as_mut_ptr());
+                let value = app_user_model_id_property(&record.launch_id)?;
                 properties.SetValue(&key, &value)?;
                 properties.Commit()?;
                 let persist: IPersistFile = link.cast()?;
@@ -503,6 +519,18 @@ fn install_windows(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_app_user_model_id_owns_a_wide_property_value() {
+        let value = app_user_model_id_property("notes").unwrap();
+        assert_eq!(value.vt(), windows::Win32::System::Variant::VT_LPWSTR);
+        // SAFETY: the helper returns an owning VT_LPWSTR value, which remains
+        // alive while its null-terminated string is read, then frees it on Drop.
+        let app_id = unsafe { value.Anonymous.Anonymous.Anonymous.pwszVal.to_string() }.unwrap();
+        assert_eq!(app_id, "com.openbitfun.miniapp.notes");
+    }
+
     fn fixture(root: &Path) -> LaunchRecord {
         LaunchRecord {
             protocol_version: 1,
