@@ -26,6 +26,20 @@ export interface SessionRelationship {
 }
 
 export interface SessionCustomMetadata extends Record<string, unknown> {
+  importedFrom?: string;
+  externalHistoryMode?: 'follow';
+  externalHistoryPending?: boolean;
+  externalContentVersion?: string;
+  externalSourceStatus?: 'available' | 'unavailable';
+  externalSourceIncomplete?: boolean;
+  externalObservedFingerprint?: string;
+  externalMaterializedObservation?: string;
+  externalBranchOf?: {
+    sessionId: string;
+    ecosystemId: string;
+    sourceSessionId: string;
+    contentVersion: string;
+  };
   kind?: SessionKind;
   parentSessionId?: string | null;
   parentRequestId?: string | null;

@@ -47,6 +47,8 @@ import {
 } from '../submittedMessagePresentation';
 import { finishSubmittedMessageScrollIntent, peekSubmittedMessageScrollIntent } from '../submittedMessageScrollIntent';
 import { FLOWCHAT_MESSAGE_SUBMITTED_EVENT } from '../../events/flowchatNavigation';
+import { forkChatSession } from './SessionModule';
+import { viewedExternalForkTurn } from '../../utils/externalHistory';
 
 export { syncSessionModelSelection } from '../../utils/modelSync';
 export { markCurrentTurnItemsAsCancelled } from '../../utils/turnCancellation';
@@ -62,6 +64,7 @@ interface SessionConflictRetry {
 const sessionConflictRetries = new Map<string, SessionConflictRetry>();
 const latestSendBySession = new Map<string, symbol>();
 const draftSubmissions = new Set<string>();
+const externalForks = new Map<string, Promise<string>>();
 
 function clearSessionConflictRetry(sendKey: string): void {
   const current = sessionConflictRetries.get(sendKey);
@@ -258,6 +261,27 @@ async function sendMessageInternal(
     throw new Error(`Session does not exist: ${sessionId}`);
   }
   const surfaceScopeAtSend = getActiveSurfaceScope();
+  if (session.externalHistory?.mode === 'follow') {
+    if (surfaceScopeAtSend.surfaceId !== 'local') throw new Error(i18nService.t('flow-chat:externalHistory.unsupportedSurface'));
+    assertSessionConversationCanSubmit(sessionId, session, i18nService.t('flow-chat:chatInput.targetUnavailable'));
+    assertSessionSubmissionAllowed(sessionId, options?.sessionMutationLeaseId);
+    const sourceTurnId = viewedExternalForkTurn(session);
+    if (!sourceTurnId) throw new Error(i18nService.t('flow-chat:externalHistory.openBeforeContinue'));
+    const key = surfaceScopeAtSend.key('external-history-fork', surfaceScopeAtSend.epoch, sessionId);
+    let fork = externalForks.get(key);
+    if (!fork) {
+      fork = forkChatSession(context, sessionId, sourceTurnId);
+      externalForks.set(key, fork);
+    }
+    try {
+      const branchId = await fork;
+      surfaceScopeAtSend.assertCurrent('continue external history in native branch');
+      options?.onSessionForked?.(sessionId, branchId);
+      return await sendMessageInternal(context, message, branchId, displayMessage, agentType, switchToMode, options);
+    } finally {
+      if (externalForks.get(key) === fork) externalForks.delete(key);
+    }
+  }
   if (session.sessionKind === 'subagent'
     && getSessionConversationCapability(sessionId, session).reason === 'metadata_pending') {
     const parent = session.parentSessionId

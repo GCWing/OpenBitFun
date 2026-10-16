@@ -67,8 +67,8 @@ export async function activateMainSession(sessionId: string, options?: SessionAc
   if (isTargetActive()) {
     const activeSession = flowChatStore.getState().sessions.get(sessionId) ?? null;
     if (
-      activeSession?.isHistorical &&
-      (activeSession.historyState === 'metadata-only' || activeSession.historyState === 'failed')
+      activeSession?.externalHistory?.mode === 'follow' || (activeSession?.isHistorical &&
+      (activeSession.historyState === 'metadata-only' || activeSession.historyState === 'failed'))
     ) {
       await flowChatManager.switchChatSession(sessionId, isCurrent);
       if (!isTargetActive()) {

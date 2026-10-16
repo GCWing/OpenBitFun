@@ -276,6 +276,7 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
             pendingLargePastes: { ...(options?.composerDraft?.pendingLargePastes ?? {}) },
           },
           foregroundSubmission: true,
+          onSessionForked: (_sourceSessionId, branchSessionId) => { sessionId = branchSessionId; },
           sendImmediately: sendImmediately && !isAcpFlowSession(targetSession),
           ...(userMessageMetadata ? { userMessageMetadata } : {}),
           ...(options?.execution ? { execution: options.execution } : {}),

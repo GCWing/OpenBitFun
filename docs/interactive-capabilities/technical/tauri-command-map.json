@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "292fa0bdf7821da4588d4a1e1e4ef2b89d16d6b52bae655452fbd35dad91b966",
-  "commandCount": 676,
+  "catalogDigest": "d5b8d80b7ff09050f81fab7d2dcc5125db12a0232af1ef8bf94ce571b08efd0f",
+  "commandCount": 678,
   "coverage": {
-    "commandCount": 676,
-    "documentedCommandCount": 626,
+    "commandCount": 678,
+    "documentedCommandCount": 628,
     "implementationCommandCount": 50,
     "implementationDigest": "1dc90be1a699f521e7faee78c128d6332ef0806daccb389b288fbe2fa3fd3c2c"
   },
@@ -5326,6 +5326,23 @@
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
+      "id": "list_removed_external_sessions",
+      "moduleId": "external_session_import",
+      "capabilityId": "feature.ecosystem-compatibility",
+      "capabilityIds": [
+        "feature.ecosystem-compatibility"
+      ],
+      "documentedItemIds": [
+        "feature.ecosystem-compatibility:codex-session-import",
+        "feature.ecosystem-compatibility:zcode-session-import"
+      ],
+      "visibility": "documented",
+      "rustPath": "list_removed_external_sessions",
+      "sourceFile": "src/apps/desktop/src/api/external_session_import_api.rs",
+      "signature": "fn list_removed_external_sessions( request: ListRemovedExternalSessionsRequest, ) -> ExternalSourceOperationResult<Vec<RemovedExternalSession>>",
+      "remoteWorkspacePolicy": "RemoteUnsupported"
+    },
+    {
       "id": "list_sessions",
       "moduleId": "agentic",
       "capabilityId": "feature.ai-assistant",
@@ -7930,6 +7947,23 @@
       "sourceFile": "src/apps/desktop/src/api/mcp_api.rs",
       "signature": "fn restart_mcp_server( state: State<'_, AppState>, server_id: String, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "restore_removed_external_session",
+      "moduleId": "external_session_import",
+      "capabilityId": "feature.ecosystem-compatibility",
+      "capabilityIds": [
+        "feature.ecosystem-compatibility"
+      ],
+      "documentedItemIds": [
+        "feature.ecosystem-compatibility:codex-session-import",
+        "feature.ecosystem-compatibility:zcode-session-import"
+      ],
+      "visibility": "documented",
+      "rustPath": "restore_removed_external_session",
+      "sourceFile": "src/apps/desktop/src/api/external_session_import_api.rs",
+      "signature": "fn restore_removed_external_session( request: RestoreRemovedExternalSessionRequest, ) -> ExternalSourceOperationResult<()>",
+      "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
       "id": "restore_session",

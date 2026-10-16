@@ -325,12 +325,17 @@ describe('ecosystem compatibility scene presentation contract', () => {
     expect(runtimes.map((runtime) => runtime.spec.id)).toEqual([
       'claude-code',
       'codex',
+      'zcode',
       'pi',
       'dsh',
       'opencode',
       'cursor',
     ]);
     expect(runtimes.flatMap((runtime) => runtime.acpClients)).toEqual([]);
+    const zcode = runtimes.find((runtime) => runtime.spec.id === 'zcode')!;
+    expect(zcode.spec.sessionImport).toBe('zcode');
+    expect(zcode.spec.acpClientId).toBeUndefined();
+    expect(zcode.capabilityIds).not.toContain('runtime');
   });
 
   it('uses locally cached official product marks instead of generic product glyphs', () => {

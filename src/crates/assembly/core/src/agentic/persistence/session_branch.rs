@@ -16,6 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Runtime-owned history; saving a fork never persists its temporary source.
 pub(crate) struct TransientSessionBranchSource {
     pub session: Session,
+    pub metadata: Option<crate::service::session::SessionMetadata>,
     pub turns: Vec<DialogTurnData>,
     pub context_snapshots: Vec<(usize, Vec<Message>)>,
     pub prompt_cache: Option<SessionPromptCache>,
@@ -39,8 +40,7 @@ impl PersistenceManager {
         workspace_path: &Path,
         request: &SessionBranchRequest,
     ) -> OpenBitFunResult<SessionBranchResult> {
-        self.branch_session_with_transient_source(workspace_path, request, None)
-            .await
+        Box::pin(self.branch_session_with_transient_source(workspace_path, request, None)).await
     }
 
     pub(crate) async fn branch_transient_session(
@@ -49,7 +49,9 @@ impl PersistenceManager {
         request: &SessionBranchRequest,
         source: TransientSessionBranchSource,
     ) -> OpenBitFunResult<SessionBranchResult> {
-        self.branch_session_with_transient_source(workspace_path, request, Some(source))
+        // Both native and external history forks copy complete persisted state.
+        // Do not embed that future into each nested runtime facade.
+        Box::pin(self.branch_session_with_transient_source(workspace_path, request, Some(source)))
             .await
     }
 
@@ -74,8 +76,13 @@ impl PersistenceManager {
             }
             (
                 source.session.clone(),
-                self.build_session_metadata(workspace_path, &source.session, None)
-                    .await,
+                match &source.metadata {
+                    Some(metadata) => metadata.clone(),
+                    None => {
+                        self.build_session_metadata(workspace_path, &source.session, None)
+                            .await
+                    }
+                },
             )
         } else {
             let session = self
@@ -309,19 +316,27 @@ impl PersistenceManager {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64;
-            let branched_metadata = build_branched_session_metadata(BranchSessionMetadataFacts {
-                source_metadata: &source_metadata,
-                target_session_id: target_session_id.clone(),
-                target_session_name: target_session_name.clone(),
-                target_agent_type: target_agent_type.clone(),
-                source_session_id: &request.source_session_id,
-                source_turn_id: &request.source_turn_id,
-                source_turn_index,
-                boundary: request.boundary,
-                branched_turns: &branched_turns,
-                branch_lineage: &branch_lineage,
-                now_ms,
-            });
+            #[allow(unused_mut)]
+            let mut branched_metadata =
+                build_branched_session_metadata(BranchSessionMetadataFacts {
+                    source_metadata: &source_metadata,
+                    target_session_id: target_session_id.clone(),
+                    target_session_name: target_session_name.clone(),
+                    target_agent_type: target_agent_type.clone(),
+                    source_session_id: &request.source_session_id,
+                    source_turn_id: &request.source_turn_id,
+                    source_turn_index,
+                    boundary: request.boundary,
+                    branched_turns: &branched_turns,
+                    branch_lineage: &branch_lineage,
+                    now_ms,
+                });
+
+            #[cfg(feature = "external-sources")]
+            crate::external_session_import::deferred::tracking::branch_metadata(
+                &source_metadata,
+                &mut branched_metadata,
+            );
 
             self.save_session_metadata(workspace_path, &branched_metadata)
                 .await?;

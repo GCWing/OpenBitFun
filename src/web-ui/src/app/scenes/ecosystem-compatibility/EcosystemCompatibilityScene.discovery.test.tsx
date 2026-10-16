@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   workspaceId: 'workspace-a' as string | null,
   workspacePath: '/workspace',
   peerDeviceId: '',
+  sessionMounts: 0,
   skills: [] as Array<Record<string, unknown>>,
   t: (key: string, values?: Record<string, unknown>) => key === 'productSummary.assets' ? `assets:${values?.count}` : key,
 }));
@@ -60,6 +61,13 @@ vi.mock('@/infrastructure/config/services/AIExperienceConfigService', () => ({ a
   addChangeListener: () => () => {},
 } }));
 vi.mock('@/infrastructure/runtime', () => ({ isTauriRuntime: () => true }));
+vi.mock('./ExternalAgentSessions', async () => {
+  const { useState } = await import('react');
+  return { default: function SessionDiscovery({ ecosystemId }: { ecosystemId: string }) {
+    const [mount] = useState(() => ++mocks.sessionMounts);
+    return <section data-session-mount={mount} data-session-source={ecosystemId} />;
+  } };
+});
 vi.mock('@/infrastructure/api/service-api/ConfigAPI', () => ({ configAPI: { getGlobalSkillSettings: async () => ({ directSkillManagementVersion: 1, globallyDisabledUserSkillKeys: [], globallyDisabledProjectSkillKeys: [] }), getConfig: async () => ({ enable_agent_companion: false }), getSkillScanReport: async () => ({ skills: mocks.skills, diagnostics: [] }) } }));
 vi.mock('@/infrastructure/api/service-api/ExternalHooksAPI', () => ({ externalHooksAPI: {
   getCatalog: async () => ({ sources: [], entries: [], providers: [], failedProviderIds: [], discoveryPending: false }),
@@ -105,6 +113,7 @@ describe('compatibility discovery lifecycle', () => {
     mocks.workspaceId = 'workspace-a';
     mocks.workspacePath = '/workspace';
     mocks.peerDeviceId = '';
+    mocks.sessionMounts = 0;
     mocks.skills = [];
     container = document.createElement('div');
     document.body.append(container);
@@ -122,6 +131,36 @@ describe('compatibility discovery lifecycle', () => {
     const trigger = container.querySelector<HTMLButtonElement>('[data-content-group="mcp"] button[aria-haspopup="dialog"]');
     if (trigger && !container.querySelector('[data-ecosystem-category="mcp"]')) await act(async () => trigger.click());
   }
+
+  it('preserves the host session discovery control when navigation switches workspace', async () => {
+    mocks.getDiscoverySnapshot.mockResolvedValue(snapshot(true, false, true));
+    await act(async () => root.render(<EcosystemCompatibilityScene />));
+    const sessions = container.querySelector('[data-session-mount]');
+    const content = container.querySelector('[data-external-agent-content]');
+    expect(sessions).not.toBeNull();
+    expect(sessions?.parentElement).toBe(content?.parentElement);
+    mocks.workspaceId = 'imported-source-workspace';
+    mocks.workspacePath = '/imported-source';
+    await act(async () => root.render(<EcosystemCompatibilityScene />));
+    expect(container.querySelector('[data-session-mount]')).toBe(sessions);
+    expect(mocks.sessionMounts).toBe(1);
+    expect(container.querySelector('[data-external-agent-content]')).not.toBe(content);
+  });
+
+  it('switches between Codex and Zcode with isolated discovery controls', async () => {
+    mocks.getDiscoverySnapshot.mockResolvedValue(snapshot(true));
+    await act(async () => root.render(<EcosystemCompatibilityScene />));
+    const codexView = container.querySelector('[data-session-source="codex"]');
+    mocks.selectedProductId = 'zcode';
+    await act(async () => root.render(<EcosystemCompatibilityScene />));
+    expect(container.querySelector('[data-session-source="zcode"]')).not.toBeNull();
+    expect(container.querySelector('[data-session-source="codex"]')).toBeNull();
+    expect(container.querySelector('[data-session-mount]')).not.toBe(codexView);
+    expect(container.querySelector('[data-external-agent-content="zcode"]')).not.toBeNull();
+    mocks.peerDeviceId = 'peer-other';
+    await act(async () => root.render(<EcosystemCompatibilityScene />));
+    expect(container.querySelector('[data-session-source="zcode"]')).not.toBeNull();
+  });
 
   it('uses the Cursor brand mark and does not present shared directories as agents', async () => {
     mocks.selectedProductId = 'cursor';

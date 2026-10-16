@@ -2,6 +2,37 @@
 
 This document captures UI behavior conventions for Flow Chat tool cards.
 
+## Imported session tools
+
+Imported Codex and Zcode history uses the existing native card registry. A pure
+read-time projection matches tool names and semantics, then adapts arguments and
+results to each card's contract. Examples: Codex `exec` -> `RunCode`, shell calls
+and Zcode `Bash` -> `ExecCommand`, file reads/writes/edits -> `Read`/`Write`/`Edit`,
+and plans -> `TodoWrite`. Search, fetch, and image tools reuse their native cards.
+Unmatched tools, including multi-file patches and code-cell waits, use the existing
+`DefaultToolCard`; they must not be assigned to a different native workflow merely
+because the names sound similar. Mixed-operation `web.run` also stays generic.
+
+The Turn's existing `userMessage.metadata.importedFrom` supplies provenance, so
+old imports gain this presentation without migration. Native continuation Turns
+keep their own runtime behavior. Original names, arguments, results and IDs remain
+unchanged in persisted history; the projected clone is never written back.
+
+Imported cards use recorded payloads and cannot approve a call, open a source path
+against the current filesystem, run a plan, or query/modify native snapshots.
+Imported file changes stay outside native snapshot revision groups. Standard card
+reader state, expansion, result previews and height contracts are shared, with no
+separate imported-card UI and no new viewport writes.
+
+Focused contracts:
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/utils/importedToolPresentation.test.ts src/flow_chat/components/FlowToolCard.test.tsx src/flow_chat/tool-cards/RunCodeToolCard.test.tsx src/flow_chat/tool-cards/FileOperationToolCard.test.tsx src/flow_chat/store/FlowChatStore.test.ts
+```
+
+These tests cover projection, native rendering, history action isolation and old
+payload round trips. They do not establish visual fidelity or remote runtime behavior.
+
 ## OpenBitFun controls
 
 `OpenBitFunControlToolCard` composes the public Ambient and Prominent frameworks.

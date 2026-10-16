@@ -51,6 +51,7 @@ import {
 import type { AcpClientInfo } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { loadWorkspaceAcpMenuClients } from './workspaceAcpMenuClients';
 import WorkspaceAcpSessionSubmenu from './WorkspaceAcpSessionSubmenu';
+import WorkspaceSessionSourceFilter from './WorkspaceSessionSourceFilter';
 import SessionsSection from '../sessions/SessionsSection';
 import { useWorkspaceSessionViewStore } from '../../workspaceSessionView';
 import {
@@ -165,6 +166,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
   const menuAnchorRef = useRef<HTMLDivElement>(null);
   const menuPopoverRef = useRef<HTMLDivElement>(null);
   const acpSubmenuRef = useRef<HTMLDivElement>(null);
+  const sourceSubmenuRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const menuPosition = useSideAnchoredPopoverPosition({
     open: menuOpen,
@@ -482,7 +484,8 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
       const isInsideTriggerArea = menuRef.current?.contains(target);
       const isInsidePopover = menuPopoverRef.current?.contains(target);
       const isInsideAcpSubmenu = acpSubmenuRef.current?.contains(target);
-      if (!isInsideTriggerArea && !isInsidePopover && !isInsideAcpSubmenu) {
+      const isInsideSourceSubmenu = sourceSubmenuRef.current?.contains(target);
+      if (!isInsideTriggerArea && !isInsidePopover && !isInsideAcpSubmenu && !isInsideSourceSubmenu) {
         setMenuOpen(false);
       }
     };
@@ -952,6 +955,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                     {t('ssh.portForward.menuEntry')}
                   </MenuItem>
                 ) : null}
+                <WorkspaceSessionSourceFilter ref={sourceSubmenuRef} workspaceId={workspace.id} onSelect={() => setMenuOpen(false)} />
                 <MenuSeparator />
                 <MenuItem
                   leading={<Icon glyph={EyeOff} size="sm" />}
@@ -1463,6 +1467,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                 >
                   {t('nav.sessions.manage')}
                 </MenuItem>
+                <WorkspaceSessionSourceFilter ref={sourceSubmenuRef} workspaceId={workspace.id} onSelect={() => setMenuOpen(false)} />
                 <MenuItem
                   leading={<Icon glyph={FolderOpen} size="sm" />}
                   tone="danger"

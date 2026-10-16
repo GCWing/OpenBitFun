@@ -15,6 +15,7 @@ import { isShellToolName } from '../grouping/activityClassification';
 import { getControlHubInput, isControlHubObservation } from './runtimeToolCardModel';
 import { SEMANTIC_BUILTIN_TOOL_NAMES, getBuiltinToolInput, getBuiltinToolAttention, isSemanticBuiltinTool } from './builtinToolCardPolicy';
 import { readInteractionInput, readToolRecord } from './toolInteractionModel';
+import { importedToolCardName } from '../utils/importedToolPresentation';
 
 type ToolCardDefinition = Omit<ToolCardConfig, 'attention' | 'presentation'>;
 
@@ -635,7 +636,11 @@ export function getToolCardConfig(toolName: string, input?: unknown): ToolCardCo
   }
 
   // Match by name or fall back to defaults.
-  return TOOL_CARD_CONFIGS[toolName] || {
+  return TOOL_CARD_CONFIGS[toolName] || getDefaultToolCardConfig(toolName);
+}
+
+function getDefaultToolCardConfig(toolName: string): ToolCardConfig {
+  return {
     ...getToolCardClassification(toolName),
     toolName,
     displayName: `Tool: ${toolName}`,
@@ -652,6 +657,9 @@ export function getToolCardConfig(toolName: string, input?: unknown): ToolCardCo
 export function getToolItemCardConfig(
   toolItem: FlowToolItem,
 ): ToolCardConfig {
+  if (toolItem.importedSource && !importedToolCardName(toolItem)) {
+    return { ...getDefaultToolCardConfig(toolItem.toolName), attention: 'ambient', presentation: 'standard' };
+  }
   const effective = projectEffectiveToolItem(toolItem);
   const config = getToolCardConfig(effective.toolName, effective.toolName === 'OpenBitFunControl'
     ? getOpenBitFunControlInput(effective)

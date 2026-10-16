@@ -158,6 +158,7 @@ export const localSessionDriver: SessionDriver = {
     sessionId: string,
     removal: SessionCascadeRemoval,
   ): Promise<void> {
+    const scope = getActiveSurfaceScope();
     const session = context.flowChatStore.getState().sessions.get(sessionId);
     log.info('Dispatch diagnostic: delete routed to persisted backend session', {
       sessionId,
@@ -167,6 +168,7 @@ export const localSessionDriver: SessionDriver = {
       sessionId,
       removal.removedActiveSession ? { nextActiveSessionId: null } : undefined,
     );
+    scope.assertCurrent('clean up deleted session');
 
     removal.removedSessionIds.forEach(id => {
       context.processingManager.clearSessionStatus(id);
@@ -179,6 +181,7 @@ export const localSessionDriver: SessionDriver = {
     sessionId: string,
     removal: SessionCascadeRemoval,
   ): Promise<void> {
+    const scope = getActiveSurfaceScope();
     const session = context.flowChatStore.getState().sessions.get(sessionId);
     if (!session) {
       throw new Error(`Session does not exist: ${sessionId}`);
@@ -186,6 +189,7 @@ export const localSessionDriver: SessionDriver = {
 
     if (session.draft?.phase !== 'editing') {
       await sessionAPI.archiveSession(sessionId, requireSessionOwningWorkspaceId(session));
+      scope.assertCurrent('complete session archive');
     }
 
     context.flowChatStore.removeSession(

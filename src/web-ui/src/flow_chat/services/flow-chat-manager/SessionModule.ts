@@ -233,6 +233,10 @@ async function hydrateHistoricalSession(
         deferFullHistoryUntilActive,
       });
     surfaceScope.assertCurrent('finish historical session hydration');
+    if (session.externalHistory?.mode === 'follow') {
+      await context.flowChatStore.ensurePersistedSessionMetadata(sessionId, workspaceId, true);
+      surfaceScope.assertCurrent('load opened source metadata');
+    }
   })();
 
   context.pendingHistoryLoads.set(pendingKey, loadPromise);
@@ -255,13 +259,30 @@ async function hydrateHistoricalSession(
     if (isSurfaceChangedError(error)) {
       throw error;
     }
+    surfaceScope.assertCurrent('handle historical session failure');
+    // A failed first read still records source availability in metadata. Keep
+    // that state visible without retrying the external history or losing the
+    // original read failure if this metadata-only request also fails.
+    if (context.flowChatStore.getState().sessions.get(sessionId)?.externalHistory?.mode === 'follow') {
+      try {
+        await context.flowChatStore.ensurePersistedSessionMetadata(sessionId, workspaceId, true);
+      } catch (metadataError) {
+        if (isSurfaceChangedError(metadataError)) throw metadataError;
+        log.debug('Failed to refresh unavailable source metadata', { sessionId, metadataError });
+      }
+      surfaceScope.assertCurrent('show failed source history');
+    }
     recordHistorySessionDiagnosticEvent(sessionId, 'hydrate_request_failed');
     startupTrace.markPhase('historical_session_hydrate_request_failed', {
       durationMs: elapsedMs(traceStartedAt),
     });
     log.error('Failed to load session history', { sessionId, error });
     if (notifyOnError) {
-      notificationService.warning('Failed to load session history, showing empty session', {
+      const sourceHistory = context.flowChatStore.getState().sessions.get(sessionId)?.externalHistory;
+      const message = sourceHistory?.sourceStatus === 'unavailable' && !sourceHistory.contentVersion
+        ? i18nService.t('flow-chat:externalHistory.unavailableWithoutCache')
+        : 'Failed to load session history, showing empty session';
+      notificationService.warning(message, {
         duration: 3000
       });
     }
@@ -326,6 +347,7 @@ export function preloadHistoricalSessionForOpen(
   }
 
   const session = context.flowChatStore.getState().sessions.get(sessionId);
+  if (session?.externalHistory?.mode === 'follow') return;
   if (!shouldHydrateHistoricalSessionBeforeSwitch(session)) {
     return;
   }
@@ -524,7 +546,8 @@ export async function switchChatSession(
     const switchRequestId = ++latestSwitchRequestId;
     const session = context.flowChatStore.getState().sessions.get(sessionId);
     const isRemoteSession = isRemoteTraceContext(session?.remoteConnectionId, session?.remoteSshHost);
-    const shouldHydrateBeforeSwitch = shouldHydrateHistoricalSessionBeforeSwitch(session);
+    const shouldHydrateBeforeSwitch = session?.externalHistory?.mode === 'follow'
+      || shouldHydrateHistoricalSessionBeforeSwitch(session);
     const shouldActivateBeforeHydrate =
       shouldHydrateBeforeSwitch &&
       consumeRecentHistorySessionOpenIntent(sessionId);
@@ -539,7 +562,7 @@ export async function switchChatSession(
     });
 
     const touchActiveSessionInBackground = () => {
-      if (session?.draft || driverForSession(sessionId, session).id === 'dispatch') {
+      if (session?.draft || session?.externalHistory?.mode === 'follow' || driverForSession(sessionId, session).id === 'dispatch') {
         return;
       }
       scheduleSessionActivityTouch(surfaceScope, () => {
@@ -581,6 +604,7 @@ export async function switchChatSession(
           // and then activate a metadata-only session with no load left running.
           // Also upgrades any speculative active-only preload we are reusing.
           deferFullHistoryUntilActive: shouldActivateBeforeHydrate,
+          allowNonHistorical: session?.externalHistory?.mode === 'follow',
           isRetryStillRelevant: () => (
             surfaceScope.isCurrent() && switchRequestId === latestSwitchRequestId && isStillRelevant()
           ),
@@ -678,6 +702,7 @@ export async function deleteChatSession(
       removedActiveSession,
     });
   } catch (error) {
+    if (isSurfaceChangedError(error)) throw error;
     log.error('Failed to delete chat session', { sessionId, error });
     notificationService.error('Failed to delete session', {
       duration: 3000
@@ -716,6 +741,7 @@ export async function archiveChatSession(
       removedActiveSession,
     });
   } catch (error) {
+    if (isSurfaceChangedError(error)) throw error;
     log.error('Failed to archive chat session', { sessionId, error });
     notificationService.error('Failed to archive session', {
       duration: 3000
@@ -777,6 +803,7 @@ export async function forkChatSession(
   sourceSessionId: string,
   sourceTurnId: string
 ): Promise<string> {
+  const surfaceScope = getActiveSurfaceScope();
   const sourceSession = context.flowChatStore.getState().sessions.get(sourceSessionId);
   if (!sourceSession) {
     throw new Error(`Session does not exist: ${sourceSessionId}`);
@@ -798,6 +825,18 @@ export async function forkChatSession(
     sourceSessionId,
     sourceTurnId,
     requireSessionOwningWorkspaceId(sourceSession));
+  surfaceScope.assertCurrent('fork session');
+
+  if (sourceSession.externalHistory?.mode === 'follow'
+    && sourceSession.externalContinuationPermissionMode !== undefined) {
+    await agentAPI.updateSessionPermissionMode({
+      sessionId: response.sessionId,
+      mode: sourceSession.externalContinuationPermissionMode,
+      workspaceId: requireSessionOwningWorkspaceId(sourceSession),
+      workspacePath: executionWorkspacePath,
+    });
+    surfaceScope.assertCurrent('configure fork permission mode');
+  }
 
   const currentState = context.flowChatStore.getState();
   if (!currentState.sessions.has(response.sessionId)) {
@@ -825,6 +864,11 @@ export async function forkChatSession(
   }
 
   await context.flowChatStore.loadSessionHistory(response.sessionId, { deferFullHistoryUntilActive: true });
+  surfaceScope.assertCurrent('load forked session');
+  if (sourceSession.externalHistory?.mode === 'follow') {
+    await context.flowChatStore.ensurePersistedSessionMetadata(response.sessionId, requireSessionOwningWorkspaceId(sourceSession), true);
+    surfaceScope.assertCurrent('load fork lineage');
+  }
   context.flowChatStore.switchSession(response.sessionId);
 
   return response.sessionId;

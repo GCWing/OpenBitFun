@@ -344,6 +344,21 @@ impl SessionMetadataStore {
         self.write_json_atomic(&self.index_path(), &index).await
     }
 
+    /// Snapshot of the native navigation index without a directory scan. This
+    /// is also the source for merging lightweight external history references.
+    pub async fn list_indexed_metadata(
+        &self,
+    ) -> Result<Vec<SessionMetadata>, SessionMetadataStoreError> {
+        if !self.sessions_root().exists() {
+            return Ok(Vec::new());
+        }
+        let lock = self.get_index_lock().await;
+        let _guard = lock.lock().await;
+        let _file_guard = self.lock_index_file().await?;
+        let (index, _) = self.read_or_rebuild_index_locked().await?;
+        Ok(compatible_metadata_list(index.sessions))
+    }
+
     pub async fn list_metadata(&self) -> Result<Vec<SessionMetadata>, SessionMetadataStoreError> {
         if !self.sessions_root().exists() {
             return Ok(Vec::new());

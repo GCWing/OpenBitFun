@@ -4218,6 +4218,7 @@ export const forbiddenContentUnderRules = [
         'src/crates/adapters/codex-adapter/tests/codex_source_contracts/mcp_source.rs',
         'src/crates/assembly/core/src/external_sources.rs',
         'src/crates/assembly/core/src/external_hooks.rs',
+        'src/crates/assembly/core/src/external_session_import.rs',
         'src/crates/assembly/core/src/instruction_sources.rs',
       ],
       message: 'Codex declarative source adapter may only be imported by its fixtures and reviewed composition roots',

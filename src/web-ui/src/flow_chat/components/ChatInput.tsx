@@ -71,6 +71,8 @@ import { modeReducer, initialModeState } from '../reducers/modeReducer';
 import { CHAT_INPUT_CONFIG } from '../constants/chatInputConfig';
 import { useMessageSender } from '../hooks/useMessageSender';
 import { useChatInputState } from '../store/chatInputStateStore';
+import { ExternalHistoryNotice } from './ExternalHistoryNotice';
+import { readComposerPermissionMode } from '../utils/externalHistory';
 import { useInputHistoryStore } from '../store/inputHistoryStore';
 import {
   isPromptSuggestionAcceptKey,
@@ -2530,14 +2532,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         const permissionSessionId = isBtwDraftTarget
           ? effectiveTargetSession?.parentSessionId : effectiveTargetSessionId;
         if (!permissionSessionId) return;
-        const response = await agentAPI.getSessionPermissionMode({
+        const response = await readComposerPermissionMode({
+          externalHistory: effectiveTargetSession?.externalHistory,
+          externalContinuationPermissionMode: effectiveTargetSession?.externalContinuationPermissionMode,
+        }, () => agentAPI.getSessionPermissionMode({
           sessionId: permissionSessionId,
           turnId: activePermissionTurnId ?? undefined,
           workspaceId: sessionOwningId,
           workspacePath: sessionOwningPath,
           remoteConnectionId: effectiveTargetSession?.remoteConnectionId,
           remoteSshHost: effectiveTargetSession?.remoteSshHost,
-        });
+        }));
         if (permissionModeRequestGenerationRef.current !== generation) return;
         setSessionPermissionMode(response.mode ?? null);
         setSessionPermissionModeUnread(false);
@@ -2575,6 +2580,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     effectiveTargetSession?.remoteSshHost,
     effectiveTargetSession?.parentSessionId,
     effectiveTargetSession?.draft,
+    effectiveTargetSession?.externalHistory,
+    effectiveTargetSession?.externalContinuationPermissionMode,
     isBtwDraftTarget,
     isAcpTargetSession,
     t,
@@ -2590,6 +2597,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     const targetSessionId = effectiveTargetSessionId;
     const store = FlowChatStore.getInstance();
     const draftSession = store.getState().sessions.get(targetSessionId);
+    if (draftSession?.externalHistory?.mode === 'follow') {
+      store.setState(state => {
+        const current = state.sessions.get(targetSessionId);
+        return current?.externalHistory?.mode === 'follow'
+          ? { ...state, sessions: new Map(state.sessions).set(targetSessionId, {
+            ...current, externalContinuationPermissionMode: nextMode,
+          }) } : state;
+      });
+      setSessionPermissionMode(nextMode);
+      setArmedTurnPermissionMode(null);
+      setActiveTurnPermissionMode(null);
+      return;
+    }
     if (draftSession?.draft) {
       if (workspaceSubmittingRef.current || draftSession.draft.phase !== 'editing') return;
       store.setState(state => {
@@ -6443,6 +6463,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           data-testid="chat-input-container"
           aria-busy={caps.transferInFlight}
         >
+        <ExternalHistoryNotice session={effectiveTargetSession} active={isSceneActive} />
         {recommendationContext && (
           <SmartRecommendations
             context={recommendationContext}

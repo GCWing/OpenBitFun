@@ -10,6 +10,11 @@ import { createTodoRenderItems } from './todoRenderItems';
 import { TodoWriteDisplay } from './TodoWriteDisplay';
 import { getToolCardConfig } from './toolCardMetadata';
 import { FLOWCHAT_COLLAPSE_DURATION_MS } from '../components/modern/flowChatCollapseMotion';
+import { projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
+
+const todoHook = vi.hoisted(() => ({
+  read: vi.fn<(...args: unknown[]) => Array<{ content: string; status: string }>>(() => []),
+}));
 
 vi.mock('react-i18next', async (importOriginal) => ({
   ...await importOriginal<typeof import('react-i18next')>(),
@@ -20,7 +25,7 @@ vi.mock('react-i18next', async (importOriginal) => ({
 }));
 
 vi.mock('../hooks/useDialogTurnTodos', () => ({
-  useDialogTurnTodos: () => [],
+  useDialogTurnTodos: (...args: unknown[]) => todoHook.read(...args),
 }));
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -77,6 +82,7 @@ describe('TodoWriteDisplay expansion', () => {
   let root: Root;
 
   beforeEach(() => {
+    todoHook.read.mockReset().mockReturnValue([]);
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
@@ -132,6 +138,20 @@ describe('TodoWriteDisplay expansion', () => {
       vi.advanceTimersByTime(FLOWCHAT_COLLAPSE_DURATION_MS);
     });
     expect(container.querySelector('[data-openbitfun-part="todoList"]')).toBeNull();
+  });
+
+  it('shows the recorded imported plan through the native todo card without current-session tasks', () => {
+    todoHook.read.mockReturnValue([{ content: 'Current session task', status: 'in_progress' }]);
+    const toolItem = projectEffectiveToolItem({
+      id: 'foreign-plan', type: 'tool', timestamp: 1, status: 'completed', importedSource: 'codex', toolName: 'update_plan',
+      toolCall: { id: 'foreign-plan', input: { plan: [{ step: 'Recorded plan task', status: 'in_progress' }] } },
+      toolResult: { success: true, result: 'Plan updated' },
+    });
+    act(() => root.render(<TodoWriteDisplay toolItem={toolItem} config={config} sessionId="native" turnId="turn" />));
+    expect(container.querySelector('[data-openbitfun-adapter="todo-write"]')).not.toBeNull();
+    expect(container.textContent).toContain('Recorded plan task');
+    expect(container.textContent).not.toContain('Current session task');
+    expect(todoHook.read).toHaveBeenCalledWith(undefined, 'turn');
   });
 
   it('shows the first task when all tasks are pending', () => {

@@ -1,0 +1,25 @@
+[package]
+name = "openbitfun-zcode-adapter"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Read-only Zcode session adapter for OpenBitFun"
+autotests = false
+
+[lib]
+name = "openbitfun_zcode_adapter"
+crate-type = ["rlib"]
+
+[dependencies]
+openbitfun-product-domains = { path = "../../contracts/product-domains", features = ["external-sources"] }
+dirs = { workspace = true }
+hex = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

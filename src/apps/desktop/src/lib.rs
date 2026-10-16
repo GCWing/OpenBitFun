@@ -86,6 +86,7 @@ use api::custom_agent_api::{
 };
 use api::diff_api::*;
 use api::external_hooks_api::*;
+use api::external_session_import_api::*;
 use api::external_sources_api::*;
 use api::git_agent_api::*;
 use api::git_api::*;
@@ -1401,6 +1402,8 @@ pub async fn run() {
             reveal_external_source_location,
             get_external_source_control_snapshot,
             get_external_source_discovery_snapshot,
+            list_removed_external_sessions,
+            restore_removed_external_session,
             apply_external_source_control_action_command,
             get_external_ecosystem_awareness_command,
             acknowledge_external_ecosystems_command,

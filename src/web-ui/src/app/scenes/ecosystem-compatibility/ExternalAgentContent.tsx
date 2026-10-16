@@ -611,6 +611,7 @@ export default function ExternalAgentContent({ scopeKey, actionsRef, onActionSta
   }, [canImport, importDisabled, undoDisabled, refreshDisabled, onActionStateChange]);
 
   return (
+    <>
     <section className="ecosystem-compatibility__section" data-external-agent-content={runtime.spec.ecosystemId}>
       {notice && !kind && !review && !undo && !batch && !batchUndo ? <Alert className="ecosystem-compatibility__notice ecosystem-compatibility__feedback" role="status" showIcon={false} message={notice} /> : null}
       {loading ? <LoadingState size="sm">{t('loading')}</LoadingState> : null}
@@ -817,5 +818,6 @@ export default function ExternalAgentContent({ scopeKey, actionsRef, onActionSta
         </DialogFooter> : null}
       </Dialog>
     </section>
+    </>
   );
 }

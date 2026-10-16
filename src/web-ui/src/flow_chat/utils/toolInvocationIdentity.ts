@@ -1,4 +1,5 @@
 import type { FlowToolItem } from '../types/flow-chat';
+import { importedToolDisplayName, projectImportedToolItem } from './importedToolPresentation';
 
 export const DEFERRED_TOOL_GATEWAY_NAME = 'CallDeferredTool';
 
@@ -58,11 +59,13 @@ export function effectiveToolInvocation(
   };
 }
 
-export function getEffectiveToolName(toolItem: Pick<FlowToolItem, 'toolName' | 'toolCall'>): string {
+export function getEffectiveToolName(toolItem: Pick<FlowToolItem, 'toolName' | 'toolCall' | 'importedSource'>): string {
+  if (toolItem.importedSource) return importedToolDisplayName(toolItem);
   return effectiveToolInvocation(toolItem.toolName, toolItem.toolCall?.input).toolName;
 }
 
 export function projectEffectiveToolItem(toolItem: FlowToolItem): FlowToolItem {
+  if (toolItem.importedSource) return projectImportedToolItem(toolItem);
   const effective = effectiveToolInvocation(toolItem.toolName, toolItem.toolCall?.input);
   if (!effective.isDeferred) {
     return toolItem;

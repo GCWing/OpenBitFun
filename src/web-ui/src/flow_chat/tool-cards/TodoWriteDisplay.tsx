@@ -37,20 +37,23 @@ export const TodoWriteDisplay: React.FC<ToolCardProps> = ({
     toolName: toolItem.toolName,
   });
 
-  const turnTodos = useDialogTurnTodos(sessionId, turnId);
+  const turnTodos = useDialogTurnTodos(toolItem.importedSource ? undefined : sessionId, turnId);
 
   const todosToDisplay: TodoLike[] = useMemo(() => {
     if (isParamsStreaming && partialParams?.todos && Array.isArray(partialParams.todos)) {
       return partialParams.todos as TodoLike[];
     }
-    if (turnTodos.length > 0) {
+    if (!toolItem.importedSource && turnTodos.length > 0) {
       return turnTodos as TodoLike[];
     }
     if (toolResult?.result?.todos && Array.isArray(toolResult.result.todos)) {
       return toolResult.result.todos as TodoLike[];
     }
+    if (Array.isArray(toolItem.toolCall?.input?.todos)) {
+      return toolItem.toolCall.input.todos as TodoLike[];
+    }
     return [];
-  }, [partialParams, toolResult, isParamsStreaming, turnTodos]);
+  }, [partialParams, toolResult, isParamsStreaming, turnTodos, toolItem.importedSource, toolItem.toolCall?.input]);
 
   const todoRenderItems = useMemo(
     () => createTodoRenderItems(todosToDisplay),

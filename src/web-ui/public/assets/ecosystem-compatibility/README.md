@@ -6,6 +6,7 @@ These product marks are cached locally so the compatibility scene does not depen
 | --- | --- |
 | `claude-code.svg` | Claude official site: https://claude.ai/favicon.svg |
 | `codex.svg` | OpenAI Developers: https://developers.openai.com/favicon.svg |
+| `zcode.png` | Zcode official site: https://zcode.z.ai/favicon-192x192.png, retrieved 2026-10-13 |
 | `pi.svg` | Pi official site: https://pi.dev/favicon.svg |
 | `deepseek-harness.svg` | DeepSeek Harness official repository: https://raw.githubusercontent.com/deepseek-ai/deepseek-harness/master/website/public/favicon.svg |
 | `opencode.svg` | OpenCode official repository: https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/identity/mark.svg |

@@ -20,15 +20,21 @@ vi.mock('../tool-cards', async () => {
     getToolCardComponent: (toolName: string) => ({
       toolItem,
       isLastItem,
+      onOpenInEditor,
+      onOpenInPanel,
     }: {
       toolItem: FlowToolItem;
       isLastItem?: boolean;
+      onOpenInEditor?: unknown;
+      onOpenInPanel?: unknown;
     }) => {
       const capsule = useToolCapsulePresentation();
       return ReactModule.createElement('div', {
         'data-selected-card': toolName,
         'data-card-tool-name': toolItem.toolName,
         'data-is-last-item': String(isLastItem === true),
+        'data-input': JSON.stringify(toolItem.toolCall.input),
+        'data-has-file-actions': String(Boolean(onOpenInEditor || onOpenInPanel)),
         'data-capsule-has-fallback': String(Boolean(capsule?.fallbackContent)),
       });
     },
@@ -40,6 +46,12 @@ vi.mock('./FlowToolCardErrorBoundary', () => ({
 }));
 
 vi.mock('./ToolApprovalBar', () => ({ ToolApprovalBar: () => null }));
+
+vi.mock('../tool-cards/DefaultToolCard', () => ({
+  DefaultToolCard: ({ toolItem }: { toolItem: FlowToolItem }) => (
+    <div data-selected-card="DefaultToolCard" data-original-tool={toolItem.toolName} />
+  ),
+}));
 
 const permissionContextMock = vi.hoisted(() => ({
   pendingPermissionToolCallIds: new Set<string>(),
@@ -68,6 +80,51 @@ describe('FlowToolCard deferred identity', () => {
     act(() => root.unmount());
     container.remove();
     permissionContextMock.pendingPermissionToolCallIds.clear();
+  });
+
+  it('reuses the native Read card on hydration without granting imported calls a native approval', () => {
+    const item: FlowToolItem = {
+      id: 'imported', type: 'tool', toolName: 'Read', status: 'error', timestamp: 1,
+      toolCall: { id: 'imported', input: { file_path: '/remote/a' } },
+      toolResult: { success: false, error: 'failed', result: 'partial output' },
+    };
+    act(() => root.render(<FlowToolCard toolItem={item} />));
+    expect(container.querySelector('.flow-tool-card-wrapper')).toBeNull();
+    permissionContextMock.pendingPermissionToolCallIds.add('imported');
+    act(() => root.render(<FlowToolCard toolItem={{ ...item, importedSource: 'zcode' }} />));
+    expect(container.querySelector('[data-selected-card="Read"]')).not.toBeNull();
+    expect(container.querySelector('.flow-tool-card-wrapper--permission-pending')).toBeNull();
+    expect(container.querySelector('[data-card-tool-name="Read"]')).not.toBeNull();
+  });
+
+  it.each([
+    ['codex', 'exec', 'RunCode'], ['codex', 'exec_command', 'ExecCommand'],
+    ['codex', 'write_stdin', 'WriteStdin'], ['zcode', 'Bash', 'ExecCommand'],
+    ['zcode', 'Read', 'Read'], ['zcode', 'Write', 'Write'], ['zcode', 'Edit', 'Edit'],
+    ['zcode', 'WebSearch', 'WebSearch'], ['zcode', 'WebFetch', 'WebFetch'],
+    ['codex', 'update_plan', 'TodoWrite'],
+  ] as const)('selects the registered %s %s native card', (importedSource, toolName, nativeName) => {
+    const item: FlowToolItem = {
+      id: 'imported', type: 'tool', importedSource, toolName, status: 'completed', timestamp: 1,
+      toolCall: { id: 'imported', input: toolName === 'exec' ? 'text(1)' : { command: 'pwd' } },
+      toolResult: { success: true, result: 'done' },
+    };
+    act(() => root.render(<FlowToolCard toolItem={item} onOpenInEditor={vi.fn()} onOpenInPanel={vi.fn()} />));
+    const card = container.querySelector(`[data-selected-card="${nativeName}"]`);
+    expect(card).not.toBeNull();
+    expect(card?.getAttribute('data-has-file-actions')).toBe('false');
+    if (nativeName === 'RunCode') expect(JSON.parse(card!.getAttribute('data-input')!).code).toBe('text(1)');
+    if (nativeName === 'ExecCommand') expect(JSON.parse(card!.getAttribute('data-input')!).cmd).toBe('pwd');
+  });
+
+  it.each(['unknown', 'mcp__example__exec', 'clock.sleep', 'functions.wait', 'apply_patch', 'AskUserQuestion'])('uses the common card for unmatched imported %s', toolName => {
+    const item: FlowToolItem = {
+      id: 'unmatched', type: 'tool', importedSource: 'codex', toolName, status: 'completed', timestamp: 1,
+      toolCall: { id: 'unmatched', input: {} }, toolResult: { success: true, result: 'recorded output' },
+    };
+    act(() => root.render(<FlowToolCard toolItem={item} />));
+    expect(container.querySelector('[data-selected-card="DefaultToolCard"]')).not.toBeNull();
+    expect(container.querySelector('[data-original-tool]')?.getAttribute('data-original-tool')).toBe(toolName);
   });
 
   it('switches to the effective card once the deferred tool name is available', () => {

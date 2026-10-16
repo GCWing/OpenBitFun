@@ -17,8 +17,10 @@ openbitfun-static-hook-support = { path = "../static-hook-support" }
 dirs = { workspace = true }
 dunce = { workspace = true }
 hex = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }
 sha2 = { workspace = true }
 serde_json = { workspace = true }
+chrono = { workspace = true }
 toml = { workspace = true }
 url = { workspace = true }
 

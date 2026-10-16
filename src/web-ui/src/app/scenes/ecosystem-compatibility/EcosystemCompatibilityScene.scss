@@ -272,6 +272,24 @@
     min-inline-size: 0;
   }
 
+  &__removed-sessions {
+    max-block-size: 24rem;
+  }
+
+  &__removed-session {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--openbitfun-space-3);
+    padding-block: var(--openbitfun-space-2);
+  }
+
+  &__removed-session-info {
+    display: grid;
+    gap: var(--openbitfun-space-1);
+    min-inline-size: 0;
+  }
+
   &__section-heading {
     margin-block-end: var(--openbitfun-space-4);
 

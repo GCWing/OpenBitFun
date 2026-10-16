@@ -271,6 +271,15 @@
       }
     },
     "sessions": {
+      "removeSource": "从 OpenBitFun 移除",
+      "removeSourceConfirmTitle": "从 OpenBitFun 移除源会话？",
+      "removeSourceConfirmMessage": "“{{name}}”将从 OpenBitFun 移除。原应用中的会话和已有续聊分支都会保留，可在生态兼容设置中重新添加。",
+      "removeSourceExplanation": "源会话仅从 OpenBitFun 移除；原应用中的会话和续聊分支都会保留，可在生态兼容设置中重新添加。",
+      "removeSelected": "移除所选源会话",
+      "bulkRemoveSourceConfirmTitle": "移除所选源会话？",
+      "bulkRemoveSourceConfirmMessage": "将从 OpenBitFun 移除 {{count}} 个源会话。原应用中的会话和已有续聊分支都会保留，可在生态兼容设置中重新添加。",
+      "removedSelected": "已从列表移除 {{count}} 个会话。",
+      "removedSourceSucceeded": "已从 OpenBitFun 的 {{workspace}} 中移除“{{name}}”。",
       "newSession": "新建会话",
       "acpSessions": "ACP 会话",
       "dispatchRunningOn": "在 {{target}} 上运行（{{state}}）",
@@ -477,7 +486,12 @@
       "deleteAllArchivedFailed": "删除全部已归档会话失败",
       "archiveAllFailed": "归档会话失败",
       "bulkArchiveFailed": "批量归档会话失败",
-      "bulkDeleteFailed": "批量删除会话失败"
+      "bulkDeleteFailed": "批量删除会话失败",
+      "sourceAgentFilter": "会话来源",
+      "allSourceAgents": "全部 Agent",
+      "sourceAgentLabel": "来自 {{name}} 的会话",
+      "discoveryPartial": "部分外部会话无法发现，已有会话仍可使用。",
+      "discoveringExternal": "正在发现外部会话…"
     },
     "scheduledJobs": {
       "title": "定时任务",

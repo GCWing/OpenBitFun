@@ -72,6 +72,12 @@ For MiniApp titlebar metadata and legacy/future-field preservation, run
 `cargo test --locked -p openbitfun-product-domains --no-default-features --features miniapp --lib miniapp::chrome::tests`
 and the MiniApp contracts target below.
 
+For external session catalog and persisted candidate upgrade compatibility:
+
+```bash
+cargo test -p openbitfun-product-domains --no-default-features --features external-sources --lib session_import::tests
+```
+
 For MiniApp bridge/session or embedded bundle changes, use the focused contracts:
 
 ```bash

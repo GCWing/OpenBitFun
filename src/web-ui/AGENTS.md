@@ -138,6 +138,15 @@ For ecosystem discovery, import, or compatibility status presentation changes:
 pnpm --dir src/web-ui run test:run src/app/scenes/ecosystem-compatibility
 ```
 
+For followed external session views, refresh-on-open and first-send forks:
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/components/ExternalHistoryNotice.test.tsx src/flow_chat/utils/externalHistory.test.ts src/flow_chat/services/flow-chat-manager/MessageModule.test.ts src/flow_chat/services/flow-chat-manager/SessionModule.test.ts src/flow_chat/store/FlowChatStore.test.ts src/flow_chat/components/modern/UserMessageItem.test.tsx src/flow_chat/hooks/useMessageSender.test.tsx
+```
+
+These local store/DOM fixtures cover source-version pinning, device switches and
+explicit Peer gating; they do not validate native WebView or remote-host behavior.
+
 For application update discovery, skip persistence, notification timing, and
 download/install transitions, run the focused behavior tests (these do not
 establish visual fidelity):

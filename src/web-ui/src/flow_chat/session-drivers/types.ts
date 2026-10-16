@@ -25,6 +25,8 @@ export type { SessionDriverId } from './resolve';
 
 /** Options accepted by FlowChatManager.sendMessage, threaded to the driver. */
 export interface SendMessageOptions {
+  /** A followed source becomes an independent native submission target. */
+  onSessionForked?: (sourceSessionId: string, branchSessionId: string) => void;
   imageContexts?: ImageInputContextData[];
   imageDisplayData?: Array<{
     id: string;

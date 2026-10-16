@@ -1,0 +1,9 @@
+.external-history-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--openbitfun-space-1) var(--openbitfun-space-2);
+  padding: var(--openbitfun-space-1) var(--openbitfun-space-3);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  color: var(--openbitfun-color-content-secondary);
+}

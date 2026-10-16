@@ -858,6 +858,7 @@ describe('UserMessageItem steering tag', () => {
   });
 
   it.each([
+    { binding: { workspaceId: workspaceRecords.local.id, externalHistory: { mode: 'follow' }, config: {} }, reason: 'Source' },
     { binding: { workspaceId: workspaceRecords.remote.id, config: {} }, reason: 'Remote' },
     { binding: { workspaceId: workspaceRecords.local.id, config: { dispatchJobId: 'job-a100' } }, reason: 'Dispatch' },
     { binding: { workspaceId: workspaceRecords.local.id, config: { dispatchTarget: { kind: 'device', deviceId: 'target', workspacePath: '/w', displayName: 'Target' } } }, reason: 'Dispatch' },
@@ -900,10 +901,10 @@ describe('UserMessageItem steering tag', () => {
     const editButton = getMessageAction('edit');
 
     expect(rollbackButton?.disabled).toBe(true);
-    expect(rollbackButton?.getAttribute('aria-label')).toContain(`message.rollbackDisabled${reason}`);
+    expect(rollbackButton?.getAttribute('aria-label')).toContain(reason === 'Source' ? 'externalHistory.forkBeforeEdit' : `message.rollbackDisabled${reason}`);
     expect(rollbackButton?.hasAttribute('title')).toBe(false);
     expect(editButton?.disabled).toBe(true);
-    expect(editButton?.getAttribute('aria-label')).toContain(`message.editDisabled${reason}`);
+    expect(editButton?.getAttribute('aria-label')).toContain(reason === 'Source' ? 'externalHistory.forkBeforeEdit' : `message.editDisabled${reason}`);
     expect(editButton?.hasAttribute('title')).toBe(false);
   });
 

@@ -17,6 +17,11 @@ pub struct SessionMetadataPage {
     /// array is an authoritative empty status batch, not a missing capability.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub activities: Option<Vec<SessionActivitySummary>>,
+    /// Non-fatal host discovery issues. Native history remains available.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub discovery_warnings: Vec<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub discovery_pending: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,6 +56,8 @@ pub fn empty_session_metadata_page() -> SessionMetadataPage {
         next_cursor: None,
         has_more: false,
         activities: None,
+        discovery_warnings: Vec::new(),
+        discovery_pending: false,
     }
 }
 
@@ -121,6 +128,8 @@ pub fn build_session_metadata_page(
         next_cursor,
         has_more,
         activities: None,
+        discovery_warnings: Vec::new(),
+        discovery_pending: false,
     }
 }
 
@@ -147,6 +156,10 @@ fn session_parent_id(metadata: &SessionMetadata) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 fn session_metadata_page_offset(
@@ -182,4 +195,17 @@ fn session_metadata_page_cursor(metadata: &SessionMetadata) -> String {
         session_id: metadata.session_id.clone(),
     })
     .unwrap_or_else(|_| metadata.session_id.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_page_round_trips_without_discovery_fields() {
+        let legacy = serde_json::json!({"sessions": [], "totalTopLevelCount": 0, "loadedTopLevelCount": 0, "hasMore": false});
+        let page: SessionMetadataPage = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(page.discovery_warnings.is_empty());
+        assert_eq!(serde_json::to_value(page).unwrap(), legacy);
+    }
 }

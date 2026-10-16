@@ -1,4 +1,20 @@
 {
+  "externalHistory": {
+    "removed": "源会话已从 OpenBitFun 移除，当前分支保留独立历史。",
+    "restoreSource": "重新添加源会话",
+    "sourceMissing": "源会话已不可用，当前分支保留独立历史。",
+    "openFailed": "无法打开源会话。当前分支可正常使用，请稍后重试。",
+    "restoreFailed": "无法重新添加源会话。当前分支不受影响，请稍后重试。",
+    "unavailableWithoutCache": "来源不可用，且没有可用的缓存历史。请恢复来源后重新打开会话。",
+    "unsupportedSurface": "Peer 模式暂不支持跟随来源会话。请在来源主机上打开，或继续已有的 OpenBitFun 分支。",
+    "forkBeforeEdit": "请先分叉此来源会话，再编辑或回退历史。",
+    "followHint": "来自 {{source}} · 发送后在 OpenBitFun 新分支中继续",
+    "branchHint": "继续自 {{source}}",
+    "openSource": "打开来源会话",
+    "unavailable": "来源暂不可用，显示上次缓存",
+    "incomplete": "来源对话尚未完成，当前显示已读取的历史",
+    "openBeforeContinue": "请先打开来源会话并等待历史加载完成，再继续对话。"
+  },
   "subagentIdentity": {
     "names": {
       "bouncyBean": "豆豆",

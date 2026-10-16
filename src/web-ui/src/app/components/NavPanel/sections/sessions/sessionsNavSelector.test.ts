@@ -18,6 +18,12 @@ function state(sessions: Session[], activeSessionId: string | null = null): Flow
 }
 
 describe('createSessionsNavSelector', () => {
+  it('notifies navigation when metadata supplies an imported source label', () => {
+    const select = createSessionsNavSelector();
+    const value = session();
+    expect(select(state([value]))).toBe(1);
+    expect(select(state([{ ...value, importedSource: 'codex' }]))).toBe(2);
+  });
   it('reuses the revision when only non-navigation session data changes', () => {
     const select = createSessionsNavSelector();
     const first = session();

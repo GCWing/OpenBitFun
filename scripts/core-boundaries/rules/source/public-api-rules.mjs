@@ -13,6 +13,7 @@ export const publicApiContractSlices = [
   'external-source-pet-contract',
   'external-source-hook-contract',
   'external-source-reference-contract',
+  'external-session-import-contract',
   'user-instruction-source-boundary',
   'external-integration-policy-contract',
 ];
@@ -72,6 +73,7 @@ const contractSlices = {
   externalSourcePetContract: 'external-source-pet-contract',
   externalSourceHookContract: 'external-source-hook-contract',
   externalSourceReferenceContract: 'external-source-reference-contract',
+  externalSessionImportContract: 'external-session-import-contract',
   userInstructionSourceBoundary: 'user-instruction-source-boundary',
   externalIntegrationPolicyContract: 'external-integration-policy-contract',
 };
@@ -552,7 +554,17 @@ export const codexAdapterPublicApiEntries = [
   wireImpact: false,
   rationale: 'the adapter translates Codex package metadata; portable services own bounded resource IO and native copying',
   exit: 'remove only when an equivalent typed pet source provider owns this root',
-})));
+}))).concat([{
+  symbol: 'session',
+  owner: 'Codex adapter read-only session history translator',
+  consumer: 'openbitfun-core external_session_import composition facade',
+  verification: 'Codex session parser fixtures and core external_session_import tests',
+  p0: 'read-only Codex history import with native continuation and preserved provenance',
+  contractSlice: contractSlices.externalSessionImportContract,
+  wireImpact: false,
+  rationale: 'the adapter translates Codex transcript records; core owns native session persistence and lifecycle',
+  exit: 'remove only when an equivalent typed session history adapter replaces this module',
+}]);
 
 export const staticHookSupportPublicApiEntries = [
   // Shared by DSH/PI only for validated, redacted source/event construction.

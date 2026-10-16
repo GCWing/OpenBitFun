@@ -3863,8 +3863,8 @@
       "categoryId": "automation",
       "titleZh": "外部导入",
       "titleEn": "External Import",
-      "summaryZh": "查看五类外部 AI 生态的内容与状态，导入受支持的 Skill、MCP 和 Hook 副本，并查看 Command、Tool、子智能体的兼容使用状态。",
-      "summaryEn": "Inspect content and status from five external AI ecosystems, import supported Skill, MCP and Hook copies, and review compatibility usage for commands, tools and subagents.",
+      "summaryZh": "查看外部 AI 生态的内容与状态，导入受支持的 Skill、MCP、Hook，以及 Codex、Zcode 会话，并在 OpenBitFun 中继续对话。",
+      "summaryEn": "Inspect external AI content and status, import supported Skills, MCP, Hooks, and Codex or Zcode sessions, and continue conversations in OpenBitFun.",
       "keywordsZh": [
         "外部导入",
         "生态兼容",
@@ -3873,7 +3873,10 @@
         "OpenCode",
         "Claude Code",
         "Codex",
-        "导入"
+        "导入",
+        "Zcode",
+        "智谱",
+        "会话导入"
       ],
       "keywordsEn": [
         "external import",
@@ -3884,19 +3887,24 @@
         "OpenCode",
         "Claude Code",
         "Codex",
-        "import"
+        "import",
+        "Zcode",
+        "Z.ai",
+        "session import"
       ],
       "highlightsZh": [
         "按已识别与更多应用浏览；可发现表示支持查找，分类状态表示当前结果",
         "自动发现只控制列表更新；关闭后保留结果，仍可手动刷新，已接入的功能照常运行",
         "审阅并导入受支持的 Skill、MCP 与 Hook；Command、Tool、子智能体暂无副本导入",
-        "已导入表示副本已保存；在对应管理页确认启用与连接"
+        "已导入表示副本已保存；在对应管理页确认启用与连接",
+        "Codex、Zcode 会话按工作区自动发现；打开来源时刷新历史，首次发送创建独立分支，可移除和重新添加来源"
       ],
       "highlightsEn": [
         "Browse identified and more apps; discovery coverage and current category results are separate",
         "Automatic discovery controls list updates; pausing retains results and allows manual refresh without changing active integrations",
         "Review and import supported Skills, MCP and Hooks; command, tool and subagent copy import is unavailable",
-        "Imported means a copy was saved; confirm activation and connection in the relevant settings"
+        "Imported means a copy was saved; confirm activation and connection in the relevant settings",
+        "Discover Codex and Zcode sessions by workspace, refresh history on open, continue in a new branch on first send, and remove or restore source views"
       ],
       "items": [
         {
@@ -3931,6 +3939,40 @@
             "command:set_external_source_enabled_command",
             "command:update_external_integration_policy_command",
             "command:set_external_source_conflict_choice_command"
+          ]
+        },
+        {
+          "id": "codex-session-import",
+          "titleZh": "发现、移除和重新添加 Codex 来源会话，并在 OpenBitFun 分支中续聊",
+          "titleEn": "Discover, remove and restore Codex source sessions, then continue in OpenBitFun branches",
+          "control": {
+            "kind": "open",
+            "reasonCode": "unstructuredInteraction",
+            "reasonZh": "“发现、移除和重新添加 Codex 来源会话，并在 OpenBitFun 分支中续聊”由用户在生态兼容页开启发现或选择已移除的来源。打开来源时刷新历史，首次发送创建独立分支。归档、移除和分支删除各自独立，原应用历史保持不变。智能体打开入口，由用户选择具体会话。",
+            "reasonEn": "“Discover, remove and restore Codex source sessions, then continue in OpenBitFun branches” requires the user to enable discovery or select a removed source in ecosystem compatibility. Opening a source refreshes its history and first send creates an independent branch. Archives, source removal and branch deletion stay independent; original history is preserved. The Agent opens the entry for the user to choose a session."
+          },
+          "evidence": [
+            "command:list_removed_external_sessions",
+            "command:restore_removed_external_session",
+            "source:src/web-ui/src/app/scenes/ecosystem-compatibility/RemovedExternalSessions.tsx#RemovedExternalSessions",
+            "source:src/web-ui/src/app/scenes/ecosystem-compatibility/ExternalAgentSessions.tsx#ExternalAgentSessions"
+          ]
+        },
+        {
+          "id": "zcode-session-import",
+          "titleZh": "发现、移除和重新添加 Zcode 来源会话，并在 OpenBitFun 分支中续聊",
+          "titleEn": "Discover, remove and restore Zcode source sessions, then continue in OpenBitFun branches",
+          "control": {
+            "kind": "open",
+            "reasonCode": "unstructuredInteraction",
+            "reasonZh": "“发现、移除和重新添加 Zcode 来源会话，并在 OpenBitFun 分支中续聊”由用户在生态兼容页开启发现或选择已移除的来源。打开来源时刷新历史，首次发送创建独立分支。归档、移除和分支删除各自独立，原应用历史保持不变。智能体打开入口，由用户选择具体会话。",
+            "reasonEn": "“Discover, remove and restore Zcode source sessions, then continue in OpenBitFun branches” requires the user to enable discovery or select a removed source in ecosystem compatibility. Opening a source refreshes its history and first send creates an independent branch. Archives, source removal and branch deletion stay independent; original history is preserved. The Agent opens the entry for the user to choose a session."
+          },
+          "evidence": [
+            "command:list_removed_external_sessions",
+            "command:restore_removed_external_session",
+            "source:src/web-ui/src/app/scenes/ecosystem-compatibility/RemovedExternalSessions.tsx#RemovedExternalSessions",
+            "source:src/web-ui/src/app/scenes/ecosystem-compatibility/ExternalAgentSessions.tsx#ExternalAgentSessions"
           ]
         },
         {
@@ -9505,6 +9547,9 @@
       "capabilityId": "feature.git"
     },
     "external_sources": {
+      "capabilityId": "feature.ecosystem-compatibility"
+    },
+    "external_session_import": {
       "capabilityId": "feature.ecosystem-compatibility"
     },
     "snapshot_service": {

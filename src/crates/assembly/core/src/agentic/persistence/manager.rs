@@ -2,6 +2,9 @@
 //!
 //! Responsible for project-scoped session persistence.
 
+#[cfg(feature = "external-sources")]
+mod external_history;
+
 use crate::agentic::core::{
     sanitize_persisted_session_state, CompressionState, Message, MessageContent,
     PersistedSessionStateFile as StoredSessionStateFile, Session, SessionConfig, SessionState,
@@ -1331,10 +1334,21 @@ impl PersistenceManager {
             return Ok(Vec::new());
         }
 
-        self.session_metadata_store(workspace_path)
+        let metadata = self
+            .session_metadata_store(workspace_path)
             .list_metadata()
             .await
-            .map_err(Self::session_metadata_store_error)
+            .map_err(Self::session_metadata_store_error)?;
+        #[cfg(feature = "external-sources")]
+        let metadata = crate::external_session_import::deferred::merge_metadata(
+            &self.project_sessions_dir(workspace_path),
+            metadata,
+        )
+        .await?
+        .into_iter()
+        .filter(|metadata| !metadata.should_hide_from_user_lists())
+        .collect();
+        Ok(metadata)
     }
 
     pub async fn session_metadata_by_ids(
@@ -1342,10 +1356,31 @@ impl PersistenceManager {
         workspace_path: &Path,
         session_ids: &[String],
     ) -> OpenBitFunResult<Vec<SessionMetadata>> {
-        self.session_metadata_store(workspace_path)
+        let mut metadata = self
+            .session_metadata_store(workspace_path)
             .metadata_by_ids(session_ids)
             .await
-            .map_err(Self::session_metadata_store_error)
+            .map_err(Self::session_metadata_store_error)?;
+        #[cfg(feature = "external-sources")]
+        crate::external_session_import::deferred::refresh_metadata_titles(
+            &self.project_sessions_dir(workspace_path),
+            &mut metadata,
+        )
+        .await;
+        #[cfg(feature = "external-sources")]
+        for id in session_ids {
+            if !metadata.iter().any(|metadata| &metadata.session_id == id) {
+                if let Some(reference) = crate::external_session_import::deferred::metadata(
+                    &self.project_sessions_dir(workspace_path),
+                    id,
+                )
+                .await?
+                {
+                    metadata.push(reference);
+                }
+            }
+        }
+        Ok(metadata)
     }
 
     /// Lazily repair one legacy activity summary on a targeted navigation read.
@@ -1462,6 +1497,33 @@ impl PersistenceManager {
             return Ok(empty_session_metadata_page());
         }
 
+        #[cfg(feature = "external-sources")]
+        {
+            let root = self.project_sessions_dir(workspace_path);
+            let references = crate::external_session_import::deferred::has_references(&root).await;
+            if !matches!(references, Ok(false)) {
+                let native = self
+                    .session_metadata_store(workspace_path)
+                    .list_indexed_metadata()
+                    .await
+                    .map_err(Self::session_metadata_store_error)?;
+                if let Err(error) = references {
+                    warn!("External session references could not be paged: {error}");
+                    let mut page = openbitfun_services_core::session::build_session_metadata_page(
+                        native, cursor, limit,
+                    );
+                    page.discovery_warnings.push("External session index could not be read; existing native sessions remain available".into());
+                    return Ok(page);
+                }
+                let metadata =
+                    crate::external_session_import::deferred::merge_metadata(&root, native).await?;
+                return Ok(
+                    openbitfun_services_core::session::build_session_metadata_page(
+                        metadata, cursor, limit,
+                    ),
+                );
+            }
+        }
         self.session_metadata_store(workspace_path)
             .list_metadata_page(cursor, limit)
             .await
@@ -1480,10 +1542,18 @@ impl PersistenceManager {
             return Ok(Vec::new());
         }
 
-        self.session_metadata_store(workspace_path)
+        let metadata = self
+            .session_metadata_store(workspace_path)
             .list_metadata_including_internal()
             .await
-            .map_err(Self::session_metadata_store_error)
+            .map_err(Self::session_metadata_store_error)?;
+        #[cfg(feature = "external-sources")]
+        let metadata = crate::external_session_import::deferred::merge_metadata(
+            &self.project_sessions_dir(workspace_path),
+            metadata,
+        )
+        .await?;
+        Ok(metadata)
     }
 
     pub async fn save_session_metadata(
@@ -1520,6 +1590,15 @@ impl PersistenceManager {
                     "Injected session metadata write failure",
                 ));
             }
+        }
+        #[cfg(feature = "external-sources")]
+        if crate::external_session_import::deferred::save_metadata(
+            &self.project_sessions_dir(workspace_path),
+            metadata,
+        )
+        .await?
+        {
+            return Ok(());
         }
         self.session_metadata_store(workspace_path)
             .save_metadata(metadata)
@@ -1599,6 +1678,24 @@ impl PersistenceManager {
         updated.session_name = session_name.to_string();
         openbitfun_services_core::session::naming::clear_default_title(&mut updated, user_edited);
         updated.last_active_at = last_active_at;
+        if updated.session_name != original.session_name {
+            if let Some(custom) = updated
+                .custom_metadata
+                .as_mut()
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                if custom
+                    .get("importedFrom")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some()
+                {
+                    custom.insert(
+                        "externalSessionTitleOverride".into(),
+                        serde_json::json!(true),
+                    );
+                }
+            }
+        }
 
         let Err(write_error) = self
             .save_session_metadata_locked(workspace_path, &updated)
@@ -1776,10 +1873,113 @@ impl PersistenceManager {
         session_id: &str,
     ) -> OpenBitFunResult<Option<SessionMetadata>> {
         Self::validate_session_id(session_id)?;
-        self.session_metadata_store(workspace_path)
+        let metadata = self
+            .session_metadata_store(workspace_path)
             .load_metadata(session_id)
             .await
-            .map_err(Self::session_metadata_store_error)
+            .map_err(Self::session_metadata_store_error)?;
+        #[cfg(feature = "external-sources")]
+        {
+            let root = self.project_sessions_dir(workspace_path);
+            return match metadata {
+                Some(mut metadata) => {
+                    crate::external_session_import::deferred::refresh_metadata_titles(
+                        &root,
+                        std::slice::from_mut(&mut metadata),
+                    )
+                    .await;
+                    Ok(Some(metadata))
+                }
+                None => crate::external_session_import::deferred::metadata(&root, session_id).await,
+            };
+        }
+        #[cfg(not(feature = "external-sources"))]
+        Ok(metadata)
+    }
+
+    /// History access promotes one lightweight external reference through the
+    /// same writer locks as rename/delete/continuation. Metadata-only reads do
+    /// not enter this path, so navigation never reads transcript bodies.
+    #[cfg(feature = "external-sources")]
+    async fn ensure_external_session_materialized(
+        &self,
+        workspace_path: &Path,
+        session_id: &str,
+    ) -> OpenBitFunResult<()> {
+        use crate::external_session_import::deferred;
+        let root = self.project_sessions_dir(workspace_path);
+        let native = self
+            .session_metadata_store(workspace_path)
+            .load_metadata(session_id)
+            .await
+            .map_err(Self::session_metadata_store_error)?;
+        if native
+            .as_ref()
+            .is_some_and(|metadata| !deferred::needs_legacy_history_repair(metadata))
+        {
+            return Ok(());
+        }
+        if native.is_none() {
+            let reference = deferred::metadata(&root, session_id).await?;
+            if reference.is_none()
+                || reference
+                    .as_ref()
+                    .is_some_and(deferred::tracking::is_followed)
+            {
+                return Ok(());
+            }
+        }
+        if deferred::has_native_view(&root, session_id).await? {
+            return Ok(());
+        }
+        let _writer = match self.lock_session_write_operation(workspace_path, session_id) {
+            Ok(writer) => writer,
+            Err(OpenBitFunError::SessionInUse { .. }) if native.is_some() => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        let lock = self
+            .get_session_persistence_lock(workspace_path, session_id)
+            .await;
+        // Native writes call history helpers while holding this lock. Skip the
+        // optional legacy repair in that case instead of re-entering the lock.
+        let _guard = if native.is_some() {
+            let Ok(guard) = lock.try_lock() else {
+                return Ok(());
+            };
+            guard
+        } else {
+            lock.lock().await
+        };
+        let current = self
+            .session_metadata_store(workspace_path)
+            .load_metadata(session_id)
+            .await
+            .map_err(Self::session_metadata_store_error)?;
+        if current
+            .as_ref()
+            .is_some_and(|metadata| !deferred::needs_legacy_history_repair(metadata))
+        {
+            return Ok(());
+        }
+        // Legacy history decoding has a large future even when no repair is
+        // needed. Keep it off the nested native restore/admission futures.
+        Box::pin(deferred::materialize(&root, session_id)).await?;
+        if native.is_some() {
+            // The catalog is derived from Turn files and must include the
+            // repaired assistant content and any newly restored Turns.
+            match tokio::fs::remove_file(self.turn_catalog_path(workspace_path, session_id)).await {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => warn!(
+                    "Failed to invalidate repaired Session Turn catalog: session_id={} error={}",
+                    session_id, error
+                ),
+            }
+            #[cfg(feature = "product-search")]
+            self.invalidate_session_search(workspace_path, session_id)
+                .await;
+        }
+        Ok(())
     }
 
     async fn load_stored_session_state(
@@ -2043,6 +2243,8 @@ impl PersistenceManager {
         state: &SessionRevertState,
     ) -> OpenBitFunResult<()> {
         Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        Box::pin(self.assert_native_history_mutation(workspace_path, session_id)).await?;
         let _session_write = self.lock_session_write_operation(workspace_path, session_id)?;
         self.ensure_runtime_for_write(workspace_path).await?;
         self.ensure_session_dir(workspace_path, session_id).await?;
@@ -2612,6 +2814,8 @@ impl PersistenceManager {
         workspace_path: &Path,
         session: &Session,
     ) -> OpenBitFunResult<()> {
+        #[cfg(feature = "external-sources")]
+        Box::pin(self.assert_native_history_mutation(workspace_path, &session.session_id)).await?;
         Self::validate_session_id(&session.session_id)?;
         let _session_write =
             self.lock_session_write_operation(workspace_path, &session.session_id)?;
@@ -2786,6 +2990,15 @@ impl PersistenceManager {
         session_id: &str,
     ) -> OpenBitFunResult<(Session, Vec<DialogTurnData>, SessionTurnLoadTiming)> {
         Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        if let Some((session, turns, _, timing)) =
+            Box::pin(self.load_external_history_view(workspace_path, session_id, None)).await?
+        {
+            return Ok((session, turns, timing));
+        }
+        #[cfg(feature = "external-sources")]
+        self.ensure_external_session_materialized(workspace_path, session_id)
+            .await?;
         let request = SessionTurnLoadRequest {
             workspace_path: workspace_path.to_path_buf(),
             session_id: session_id.to_string(),
@@ -2885,6 +3098,19 @@ impl PersistenceManager {
         tail_turn_count: usize,
     ) -> OpenBitFunResult<(Session, Vec<DialogTurnData>, usize, SessionTurnLoadTiming)> {
         Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        if let Some(view) = Box::pin(self.load_external_history_view(
+            workspace_path,
+            session_id,
+            Some(tail_turn_count),
+        ))
+        .await?
+        {
+            return Ok(view);
+        }
+        #[cfg(feature = "external-sources")]
+        self.ensure_external_session_materialized(workspace_path, session_id)
+            .await?;
         let request = SessionTurnLoadRequest {
             workspace_path: workspace_path.to_path_buf(),
             session_id: session_id.to_string(),
@@ -3053,6 +3279,12 @@ impl PersistenceManager {
             .get_session_persistence_lock(workspace_path, session_id)
             .await;
         let _persistence_guard = persistence_lock.lock().await;
+        #[cfg(feature = "external-sources")]
+        crate::external_session_import::deferred::dismiss(
+            &self.project_sessions_dir(workspace_path),
+            session_id,
+        )
+        .await?;
         #[cfg(feature = "product-search")]
         self.remove_session_from_search(workspace_path, session_id)
             .await;
@@ -3159,6 +3391,27 @@ impl PersistenceManager {
         visible_total_turn_count: usize,
     ) -> OpenBitFunResult<SessionTurnCatalog> {
         Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        if let Some(bundle) = Box::pin(self.external_history_for_loaded_turns(
+            workspace_path,
+            session_id,
+            loaded_turns,
+        ))
+        .await?
+        {
+            return Ok(build_turn_catalog(
+                session_id,
+                bundle
+                    .turns
+                    .iter()
+                    .enumerate()
+                    .map(|(ordinal, turn)| turn_catalog_entry(turn, ordinal))
+                    .collect(),
+            ));
+        }
+        #[cfg(feature = "external-sources")]
+        self.ensure_external_session_materialized(workspace_path, session_id)
+            .await?;
         let _session_write = self.lock_session_write_operation(workspace_path, session_id)?;
 
         let (physical_indices, can_persist_physical_projection) = match self
@@ -3310,6 +3563,13 @@ impl PersistenceManager {
         request: &SessionTurnWindowRequest,
     ) -> OpenBitFunResult<SessionTurnWindowResponse> {
         Self::validate_session_id(&request.session_id)?;
+        #[cfg(feature = "external-sources")]
+        if let Some(window) = Box::pin(self.external_history_window(request)).await? {
+            return Ok(window);
+        }
+        #[cfg(feature = "external-sources")]
+        self.ensure_external_session_materialized(&request.workspace_path, &request.session_id)
+            .await?;
         let _session_write =
             self.lock_session_write_operation(&request.workspace_path, &request.session_id)?;
         let boundary_turn = self
@@ -3585,6 +3845,8 @@ impl PersistenceManager {
         turn: &DialogTurnData,
     ) -> OpenBitFunResult<()> {
         Self::validate_session_id(&turn.session_id)?;
+        #[cfg(feature = "external-sources")]
+        Box::pin(self.assert_native_history_mutation(workspace_path, &turn.session_id)).await?;
         #[cfg(test)]
         {
             let mut fault = self
@@ -3805,6 +4067,18 @@ impl PersistenceManager {
         turn_index: usize,
     ) -> OpenBitFunResult<Option<DialogTurnData>> {
         Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        if let Some(bundle) =
+            Box::pin(self.external_history_snapshot(workspace_path, session_id, false)).await?
+        {
+            return Ok(bundle
+                .turns
+                .into_iter()
+                .find(|turn| turn.turn_index == turn_index));
+        }
+        #[cfg(feature = "external-sources")]
+        self.ensure_external_session_materialized(workspace_path, session_id)
+            .await?;
         Ok(self
             .read_json_optional::<StoredDialogTurnFile>(&self.turn_path(
                 workspace_path,
@@ -3899,6 +4173,15 @@ impl PersistenceManager {
         session_id: &str,
     ) -> OpenBitFunResult<Vec<DialogTurnData>> {
         Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        if let Some(bundle) =
+            Box::pin(self.external_history_snapshot(workspace_path, session_id, false)).await?
+        {
+            return Ok(bundle.turns);
+        }
+        #[cfg(feature = "external-sources")]
+        self.ensure_external_session_materialized(workspace_path, session_id)
+            .await?;
         let started_at = Instant::now();
         let scan_started_at = Instant::now();
         let indexed_paths = self
@@ -4088,6 +4371,16 @@ impl PersistenceManager {
         if count == 0 {
             return Ok(Vec::new());
         }
+        #[cfg(feature = "external-sources")]
+        if let Some(bundle) =
+            Box::pin(self.external_history_snapshot(workspace_path, session_id, false)).await?
+        {
+            let start = bundle.turns.len().saturating_sub(count);
+            return Ok(bundle.turns.into_iter().skip(start).collect());
+        }
+        #[cfg(feature = "external-sources")]
+        self.ensure_external_session_materialized(workspace_path, session_id)
+            .await?;
 
         let started_at = Instant::now();
         let metadata_started_at = Instant::now();
@@ -4179,6 +4472,8 @@ impl PersistenceManager {
         turn_index: usize,
     ) -> OpenBitFunResult<()> {
         Self::validate_session_id(session_id)?;
+        #[cfg(feature = "external-sources")]
+        Box::pin(self.assert_native_history_mutation(workspace_path, session_id)).await?;
         let _session_write = self.lock_session_write_operation(workspace_path, session_id)?;
         let persistence_lock = self
             .get_session_persistence_lock(workspace_path, session_id)

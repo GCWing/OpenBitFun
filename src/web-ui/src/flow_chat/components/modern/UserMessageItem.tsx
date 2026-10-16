@@ -239,6 +239,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
       : -1;
     const isDispatchSession = resolveSessionDriverId(resolvedSessionId ?? '', currentSession ?? undefined) === 'dispatch';
     const isRemoteSession = !isLocalWorkspaceSession(currentSession ?? undefined, null) || isDispatchSession;
+    const isFollowedSource = currentSession?.externalHistory?.mode === 'follow';
     const isSystemTriggered = Boolean(
       message?.metadata?.triggerSource && message.metadata.triggerSource !== 'desktop_ui',
     );
@@ -249,6 +250,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
       !!resolvedSessionId &&
       actionTurnIndex >= 0 &&
       !isRemoteSession &&
+      !isFollowedSource &&
       isSessionIdle &&
       !sessionMutation &&
       !isEditSubmitting;
@@ -257,6 +259,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
       !!resolvedSessionId &&
       actionTurnIndex >= 0 &&
       !isRemoteSession &&
+      !isFollowedSource &&
       !isThreadGoalSystemMessage &&
       !isSystemTriggered &&
       !steeringStatus && !hostQueueStatus;
@@ -265,7 +268,9 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
     const canShowRollbackMenuItem = !isFailed && canShowRollbackAction && !steeringStatus && !hostQueueStatus;
     const canShowActionMenu = canShowEditAction || canShowRollbackMenuItem;
     const rollbackPending = sessionMutation?.kind === 'rollback' && sessionMutation.targetTurnId === turnId;
-    const editDisabledReason = isDispatchSession
+    const editDisabledReason = isFollowedSource
+      ? t('externalHistory.forkBeforeEdit')
+      : isDispatchSession
       ? t('message.editDisabledDispatch')
       : isRemoteSession
       ? t('message.editDisabledRemote')
@@ -280,6 +285,8 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
               : t('message.cannotEdit');
     const rollbackTooltip = canRollback
       ? t('message.rollbackTo', { index: actionTurnIndex + 1 })
+      : isFollowedSource
+        ? t('externalHistory.forkBeforeEdit')
       : isDispatchSession
         ? t('message.rollbackDisabledDispatch')
       : isRemoteSession

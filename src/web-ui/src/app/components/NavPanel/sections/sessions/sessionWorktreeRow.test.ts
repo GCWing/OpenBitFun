@@ -54,21 +54,13 @@ describe('worktree isolated session row', () => {
   });
 
   it('counts only the rows a linked worktree owns when sizing the expand toggle', () => {
-    // A linked worktree shares its main workspace's session directory, so the
-    // metadata page total counts the project's sessions too and must not drive
-    // the expand toggle.
-    expect(sessionsSection).toMatch(
-      /const sectionWorkspace = workspaceId\s*\n\s*\? openedWorkspacesList\.find\(workspace => workspace\.id === workspaceId\) \?\? null\s*\n\s*: null;/,
-    );
+    // Both the main checkout and linked worktrees share the storage total.
+    // Ownership behavior is covered with real hierarchies in sessionNavHierarchy.test.ts.
+    expect(sessionsSection).toContain('getWorkspaceSessionHierarchy(');
     expect(sessionsSection).toContain(
-      'const countOnlyOwnedTopLevelSessions = isLinkedWorktreeWorkspace(sectionWorkspace);',
+      'const totalTopLevelSessionCount = topLevelSessions.length;',
     );
-    expect(sessionsSection).toMatch(
-      /!hasActiveSessionFilter && !workspaceScopes\?\.length && !countOnlyOwnedTopLevelSessions\s*\n\s*\? getEffectiveTopLevelSessionCount\(/,
-    );
-    expect(sessionsSection).toMatch(
-      /import \{ isLinkedWorktreeWorkspace \} from '@\/shared\/types\/global-state';/,
-    );
+    expect(sessionsSection).not.toContain('getEffectiveTopLevelSessionCount');
   });
 
   it('explains the worktree execution in the row tooltip and badge title', () => {

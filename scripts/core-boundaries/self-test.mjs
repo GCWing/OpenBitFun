@@ -1982,6 +1982,7 @@ export function runManifestParserSelfTest({
   for (const dependencyName of [
     'openbitfun-claude-code-adapter',
     'openbitfun-codex-adapter',
+    'openbitfun-zcode-adapter',
     'openbitfun-static-hook-support',
   ]) {
     if (!forbiddenManifestDependencyRules.some(

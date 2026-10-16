@@ -9,6 +9,7 @@ import {
   deriveWorkspaceSessionWorktree,
   getNextWorkspaceSessionGrouping,
   matchesWorkspaceSessionView,
+  matchesWorkspaceSourceAgent,
   normalizeWorkspaceSessionGrouping,
 } from './workspaceSessionView';
 
@@ -28,6 +29,17 @@ const session = (overrides: Partial<Session>): Session => ({
 } as Session);
 
 describe('workspace session view model', () => {
+  it('filters on imported provenance independently of the OpenBitFun continuation mode', () => {
+    const codex = session({ importedSource: 'codex', config: { agentType: 'primary' } });
+    const zcode = session({ importedSource: 'zcode', config: { agentType: 'primary' } });
+    const native = session({ config: { agentType: 'primary' } });
+    expect([codex, zcode, native].filter(value => matchesWorkspaceSourceAgent(value, 'codex'))).toEqual([codex]);
+    expect([codex, zcode, native].filter(value => matchesWorkspaceSourceAgent(value, 'zcode'))).toEqual([zcode]);
+    expect([codex, zcode, native].filter(value => matchesWorkspaceSourceAgent(value, 'openbitfun'))).toEqual([native]);
+    expect([codex, zcode, native].filter(value => matchesWorkspaceSourceAgent(value, 'all'))).toHaveLength(3);
+    expect(deriveWorkspaceSessionSource(codex)).toBe('external');
+    expect(deriveWorkspaceSessionSource(native)).toBe('openbitfun');
+  });
   it('toggles between unified groups and the flat all-session view', () => {
     expect(getNextWorkspaceSessionGrouping('grouped')).toBe('all');
     expect(getNextWorkspaceSessionGrouping('all')).toBe('grouped');

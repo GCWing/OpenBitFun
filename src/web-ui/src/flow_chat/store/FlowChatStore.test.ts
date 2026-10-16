@@ -5,6 +5,7 @@ import { buildModelRoundItemGroups } from '../components/modern/modelRoundItemGr
 import { getVirtualItemFlowGroups } from '../grouping/selectors';
 import { convertDialogTurnToBackendFormat } from '../services/flow-chat-manager/PersistenceModule';
 import { sessionActivityStore } from './sessionActivityStore';
+import { sessionComposerStore } from './sessionComposerStore';
 import {
   LOCAL_SURFACE_ID,
   SurfaceChangedError,
@@ -854,8 +855,71 @@ describe('FlowChatStore metadata persistence callbacks', () => {
 });
 
 describe('FlowChatStore session removal active selection', () => {
+  beforeEach(() => {
+    resetStore();
+    apiMocks.deleteSession.mockReset().mockResolvedValue(undefined);
+    stateMachineManagerMock.delete.mockClear();
+    sessionComposerStore.setState({ drafts: {} });
+  });
   afterEach(() => {
     resetStore();
+    sessionComposerStore.setState({ drafts: {} });
+  });
+
+  it('keeps a failed deletion selected with its history, state machine and draft, then permits retry', async () => {
+    const session = createSession();
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]), activeSessionId: session.sessionId }));
+    sessionComposerStore.getState().setValue(session.sessionId, 'Unsent message');
+    apiMocks.deleteSession.mockRejectedValueOnce(new Error('Host is offline'));
+    await expect(flowChatStore.deleteSession(session.sessionId, { nextActiveSessionId: null }))
+      .rejects.toThrow('Host is offline');
+    expect(flowChatStore.getState().sessions.get(session.sessionId)).toBe(session);
+    expect(flowChatStore.getState().activeSessionId).toBe(session.sessionId);
+    expect(sessionComposerStore.getState().getDraft(session.sessionId).value).toBe('Unsent message');
+    expect(stateMachineManagerMock.delete).not.toHaveBeenCalled();
+    await flowChatStore.deleteSession(session.sessionId, { nextActiveSessionId: null });
+    expect(flowChatStore.getState().sessions.has(session.sessionId)).toBe(false);
+    expect(flowChatStore.getState().activeSessionId).toBeNull();
+    expect(sessionComposerStore.getState().getDraft(session.sessionId).value).toBe('');
+  });
+
+  it('does not delete an owner after a child deletion fails', async () => {
+    const parent = createSession({ sessionId: 'parent' });
+    const child = createSession({ sessionId: 'child', parentSessionId: 'parent' });
+    flowChatStore.setState(() => ({ sessions: new Map([[parent.sessionId, parent], [child.sessionId, child]]), activeSessionId: 'parent' }));
+    apiMocks.deleteSession.mockRejectedValueOnce(new Error('Child is still running'));
+    await expect(flowChatStore.deleteSession('parent')).rejects.toThrow('Child is still running');
+    expect(apiMocks.deleteSession).toHaveBeenCalledExactlyOnceWith('child', child.workspaceId);
+    expect([...flowChatStore.getState().sessions.keys()]).toEqual(['parent', 'child']);
+    expect(stateMachineManagerMock.delete).not.toHaveBeenCalled();
+  });
+
+  it.each(['source', 'branch'])('deletes only the selected %s and retains the independent conversation', async target => {
+    const source = createSession({ sessionId: 'source', externalHistory: { mode: 'follow' } });
+    const branch = createSession({ sessionId: 'branch', externalBranchOf: { sessionId: 'source', ecosystemId: 'codex', sourceSessionId: 'original', contentVersion: 'viewed' } });
+    const other = target === 'source' ? branch : source;
+    flowChatStore.setState(() => ({ sessions: new Map([[source.sessionId, source], [branch.sessionId, branch]]), activeSessionId: other.sessionId }));
+    sessionComposerStore.getState().setValue(other.sessionId, 'Keep this draft');
+    await flowChatStore.deleteSession(target);
+    expect(apiMocks.deleteSession).toHaveBeenCalledExactlyOnceWith(target, source.workspaceId);
+    expect(flowChatStore.getState().sessions.get(other.sessionId)).toBe(other);
+    expect(flowChatStore.getState().activeSessionId).toBe(other.sessionId);
+    expect(sessionComposerStore.getState().getDraft(other.sessionId).value).toBe('Keep this draft');
+  });
+
+  it('does not remove a same-id session on another device after deletion completes', async () => {
+    const session = createSession();
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]), activeSessionId: session.sessionId }));
+    const result = createDeferred<void>();
+    apiMocks.deleteSession.mockReturnValueOnce(result.promise);
+    const deletion = flowChatStore.deleteSession(session.sessionId);
+    activateSurface('peer-delete-test');
+    const peerSession = createSession({ title: 'Peer session' });
+    flowChatStore.setState(() => ({ sessions: new Map([[peerSession.sessionId, peerSession]]), activeSessionId: peerSession.sessionId }));
+    result.resolve();
+    await expect(deletion).rejects.toBeInstanceOf(SurfaceChangedError);
+    expect(flowChatStore.getState().sessions.get(peerSession.sessionId)).toBe(peerSession);
+    expect(stateMachineManagerMock.delete).not.toHaveBeenCalled();
   });
 
   it('can clear the active session atomically while keeping other sessions', () => {
@@ -1230,6 +1294,33 @@ describe('FlowChatStore round attempts', () => {
       expect(turn.modelRounds[0].renderHints).toEqual(payload.modelRounds[0].renderHints);
     }
     expect(JSON.stringify(payload)).toBe(serialized);
+  });
+
+  it.each(['codex', 'zcode'] as const)('derives %s provenance per Turn and round-trips legacy imported tool records', source => {
+    const record = {
+      turnId: 'imported-turn', sessionId: 'session-1', status: 'completed', timestamp: 1000,
+      userMessage: { id: 'user', content: 'Imported question', timestamp: 1000, metadata: { importedFrom: source } },
+      modelRounds: [{
+        id: 'round', roundIndex: 0, status: 'completed', timestamp: 1000,
+        textItems: [], thinkingItems: [], toolItems: [{
+          id: 'tool', toolName: source === 'codex' ? 'exec' : 'Bash', status: 'completed',
+          toolCall: { id: 'tool', input: source === 'codex' ? 'text(1)' : { command: 'pwd' } },
+          toolResult: { success: true, result: [{ type: 'input_text', text: 'original output' }] },
+        }],
+      }],
+    };
+    const native = { ...record, turnId: 'native-turn', userMessage: { ...record.userMessage, metadata: {} } };
+    const [restored, continued] = (flowChatStore as any).convertToDialogTurns([record, native]);
+    expect(restored.modelRounds[0].items[0].importedSource).toBe(source);
+    expect(continued.modelRounds[0].items[0].importedSource).toBeUndefined();
+    const saved = convertDialogTurnToBackendFormat(restored, 0);
+    expect(saved.userMessage.metadata.importedFrom).toBe(source);
+    expect(saved.modelRounds[0].toolItems[0].toolName).toBe(record.modelRounds[0].toolItems[0].toolName);
+    expect(saved.modelRounds[0].toolItems[0].toolCall).toEqual(record.modelRounds[0].toolItems[0].toolCall);
+    expect(saved.modelRounds[0].toolItems[0].toolResult).toEqual(record.modelRounds[0].toolItems[0].toolResult);
+    expect(saved.modelRounds[0].toolItems[0]).not.toHaveProperty('importedSource');
+    const [reloaded] = (flowChatStore as any).convertToDialogTurns([JSON.parse(JSON.stringify(saved))]);
+    expect(reloaded.modelRounds[0].items[0].importedSource).toBe(source);
   });
 
   it('supersedes active items from an older attempt when a newer attempt starts in the same round', () => {
@@ -1963,6 +2054,40 @@ describe('FlowChatStore historical session hydration state', () => {
       persistedTurnCount: turnCount,
       dialogTurns: [],
     });
+  });
+
+  it.each(['codex', 'zcode'])('preserves %s provenance when loading metadata without restoring a transcript', async importedFrom => {
+    apiMocks.listSessions.mockResolvedValueOnce([{
+      sessionId: 'imported-history', sessionName: 'Imported', agentType: 'primary', modelName: 'primary',
+      createdAt: 10, lastActiveAt: 20, customMetadata: { importedFrom, sourceSessionId: 'external-id' },
+    }]);
+    await flowChatStore.initializeFromDisk(fixtureWorkspaceId('D:/workspace/OpenBitFun'), undefined);
+    expect(flowChatStore.getState().sessions.get('imported-history')).toMatchObject({
+      importedSource: importedFrom, historyState: 'metadata-only', dialogTurns: [],
+    });
+    expect(apiMocks.restoreSessionView).not.toHaveBeenCalled();
+  });
+
+  it('refreshes followed-source names, activity and versions without replacing viewed history', async () => {
+    const workspaceId = fixtureWorkspaceId('D:/workspace/OpenBitFun');
+    const sourceMetadata = {
+      sessionId: 'followed-source', sessionName: 'Original source name', workspaceId,
+      agentType: 'primary', modelName: 'primary', createdAt: 10, lastActiveAt: 20,
+      customMetadata: { importedFrom: 'codex', externalHistoryMode: 'follow', externalHistoryPending: true, externalContentVersion: 'viewed' },
+    };
+    apiMocks.listSessions.mockResolvedValueOnce([sourceMetadata]);
+    await flowChatStore.initializeFromDisk(workspaceId, undefined);
+    const viewedTurns = flowChatStore.getState().sessions.get('followed-source')!.dialogTurns;
+    apiMocks.loadSessionMetadata.mockResolvedValueOnce({
+      ...sourceMetadata, sessionName: 'Renamed on the source', lastActiveAt: 42_000,
+      customMetadata: { ...sourceMetadata.customMetadata, externalContentVersion: 'new' },
+    });
+    await flowChatStore.ensurePersistedSessionMetadata('followed-source', workspaceId, true);
+    expect(flowChatStore.getState().sessions.get('followed-source')).toMatchObject({
+      title: 'Renamed on the source', lastActiveAt: 42_000, externalHistory: { mode: 'follow', contentVersion: 'new' },
+    });
+    expect(flowChatStore.getState().sessions.get('followed-source')!.dialogTurns).toBe(viewedTurns);
+    expect(apiMocks.restoreSessionView).not.toHaveBeenCalled();
   });
 
   it('lists pre-ID worktree sessions under their project without borrowing its execution identity', async () => {
@@ -3785,6 +3910,48 @@ describe('FlowChatStore historical session hydration state', () => {
       workspaceHostname: 'localhost',
     });
     expect(flowChatStore.getState().sessions.get('history-1')?.remoteSshHost).toBeUndefined();
+  });
+
+  it('refreshes recent metadata after a discovery setting changes while keeping ordinary page deduplication', async () => {
+    const workspaceId = fixtureWorkspaceId('D:/workspace/OpenBitFun');
+    const savedPage = {
+      sessions: [], totalTopLevelCount: 1, loadedTopLevelCount: 1, hasMore: false,
+      discoveryPending: false,
+    };
+    const discoveringPage = { ...savedPage, discoveryPending: true };
+    apiMocks.listSessionsPage.mockResolvedValueOnce(savedPage).mockResolvedValueOnce(discoveringPage);
+
+    await flowChatStore.loadSessionMetadataPage(workspaceId, 5, undefined, 'nav_initial');
+    await flowChatStore.loadSessionMetadataPage(workspaceId, 5, undefined, 'nav_initial');
+    expect(apiMocks.listSessionsPage).toHaveBeenCalledTimes(1);
+    const refreshed = await flowChatStore.loadSessionMetadataPage(
+      workspaceId, 5, undefined, 'sessions_nav_discovery_settings', { fresh: true },
+    );
+    expect(refreshed.discoveryPending).toBe(true);
+    expect(apiMocks.listSessionsPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('bypasses an older in-flight metadata read and retains the fresh page when that read completes late', async () => {
+    const workspaceId = fixtureWorkspaceId('D:/workspace/OpenBitFun');
+    const savedPage = {
+      sessions: [], totalTopLevelCount: 1, loadedTopLevelCount: 1, hasMore: false,
+      discoveryPending: false,
+    };
+    const previous = createDeferred<typeof savedPage>();
+    const discoveringPage = { ...savedPage, discoveryPending: true };
+    apiMocks.listSessionsPage.mockReturnValueOnce(previous.promise).mockResolvedValueOnce(discoveringPage);
+    const firstLoad = flowChatStore.loadSessionMetadataPage(workspaceId, 5, undefined, 'nav_initial');
+    await vi.waitFor(() => expect(apiMocks.listSessionsPage).toHaveBeenCalledTimes(1));
+
+    const refreshed = await flowChatStore.loadSessionMetadataPage(
+      workspaceId, 5, undefined, 'sessions_nav_discovery_settings', { fresh: true },
+    );
+    expect(refreshed.discoveryPending).toBe(true);
+    previous.resolve(savedPage);
+    await firstLoad;
+    const cached = await flowChatStore.loadSessionMetadataPage(workspaceId, 5, undefined, 'sessions_nav_discovery');
+    expect(cached.discoveryPending).toBe(true);
+    expect(apiMocks.listSessionsPage).toHaveBeenCalledTimes(2);
   });
 
   it('starts model config lookup while a paged metadata request is in flight', async () => {
@@ -7882,6 +8049,34 @@ describe('FlowChatStore device surfaces', () => {
     expect(flowChatStore.getState().sessions.get('local-1')).toMatchObject({
       historyState: 'metadata-only',
     });
+  });
+
+  it('retains the viewed history when a source refresh loses permission to apply', async () => {
+    seedSession('source-refresh');
+    stateMachineManagerMock.reset.mockClear();
+    const original = flowChatStore.getState().sessions.get('source-refresh');
+    let mayApply = true;
+    apiMocks.restoreSessionView.mockImplementationOnce(async () => {
+      mayApply = false;
+      return { session: restoredSession('source-refresh'), turns: [restoredTurn('source-refresh')], contextRestoreState: 'ready' };
+    });
+    await flowChatStore.loadSessionHistory('source-refresh', { shouldApply: () => mayApply });
+    expect(flowChatStore.getState().sessions.get('source-refresh')).toBe(original);
+    expect(stateMachineManagerMock.reset).not.toHaveBeenCalled();
+  });
+
+  it('rejects a followed peer source without falling back to controller history', async () => {
+    activateSurface(PEER_SURFACE_ID);
+    seedSession('peer-source');
+    const previousRelayReads = apiMocks.subscribeRelaySession.mock.calls.length;
+    flowChatStore.setState(prev => ({ ...prev, sessions: new Map(prev.sessions).set('peer-source', {
+      ...prev.sessions.get('peer-source')!, externalHistory: { mode: 'follow' },
+    }) }));
+    await expect(flowChatStore.loadSessionHistory('peer-source')).rejects.toThrow();
+    expect(flowChatStore.getState().sessions.get('peer-source')?.historyState).toBe('failed');
+    expect(apiMocks.restoreSessionView).not.toHaveBeenCalled();
+    expect(apiMocks.subscribeRelaySession).toHaveBeenCalledTimes(previousRelayReads);
+    expect(apiMocks.loadSessionTurns).not.toHaveBeenCalled();
   });
 
   it('never projects a local interaction snapshot into the peer selected mid-refresh', async () => {

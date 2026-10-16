@@ -1,5 +1,5 @@
 import type { FlowToolItem } from '../types/flow-chat';
-import { projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
+import { getEffectiveToolName, projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
 
 const shellTools = new Set(['ExecCommand', 'WriteStdin', 'ExecControl', 'Bash']);
 
@@ -33,13 +33,13 @@ export function awaitsApproval(item: FlowToolItem): boolean {
 
 /** A Shell run is an adjacent transcript segment, not a process/session id. */
 export function isShellActivity(item: FlowToolItem): boolean {
-  const effective = projectEffectiveToolItem(item);
-  return isShellToolName(effective.toolName)
+  return isShellToolName(getEffectiveToolName(item))
     && item.status !== 'rejected' && !awaitsApproval(item);
 }
 
 /** Fold only known low-level observations; unknown or consequential actions stay visible. */
 export function isInterfaceObservation(item: FlowToolItem): boolean {
+  if (item.importedSource) return false;
   if (['error', 'cancelled', 'rejected'].includes(item.status) || item.isParamsStreaming
     || (item.status === 'completed' && item.toolResult?.success !== true)
     || awaitsApproval(item)) return false;
@@ -76,10 +76,11 @@ function shellResult(item: FlowToolItem): Record<string, unknown> {
 export function shellActivityStats(items: readonly FlowToolItem[]): ShellActivityStats {
   const stats = { commands: 0, interactions: 0, controls: 0, running: 0, failed: 0, stopped: 0, nonZero: 0 };
   for (const item of items) {
-    const name = projectEffectiveToolItem(item).toolName;
-    const result = shellResult(item);
+    const name = getEffectiveToolName(item);
+    const effective = projectEffectiveToolItem(item);
+    const result = shellResult(effective);
     const completion = record(result.completion);
-    const failed = item.status === 'error' || item.toolResult?.success === false || result.status === 'session_not_found';
+    const failed = effective.status === 'error' || effective.toolResult?.success === false || result.status === 'session_not_found';
     const stopped = item.status === 'cancelled'
       || ['interrupted', 'killed', 'pruned'].includes(String(completion.status ?? ''));
     if (name === 'ExecCommand' || name === 'Bash') stats.commands++;

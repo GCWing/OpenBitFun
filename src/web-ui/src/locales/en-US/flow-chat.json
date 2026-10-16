@@ -1,4 +1,20 @@
 {
+  "externalHistory": {
+    "removed": "The source session was removed from OpenBitFun. This branch keeps its own history.",
+    "restoreSource": "Add source again",
+    "sourceMissing": "The source session is unavailable. This branch keeps its own history.",
+    "openFailed": "Could not open the source session. You can keep using this branch and retry later.",
+    "restoreFailed": "Could not add the source session again. This branch is unchanged; retry later.",
+    "unavailableWithoutCache": "The source is unavailable and no cached history is available. Restore the source and reopen this session.",
+    "unsupportedSurface": "Following source sessions is unavailable in Peer mode. Open the source on its host, or continue an existing OpenBitFun branch.",
+    "forkBeforeEdit": "Fork this source session before editing or rolling back its history.",
+    "followHint": "From {{source}} · Sending starts a new OpenBitFun branch",
+    "branchHint": "Continued from {{source}}",
+    "openSource": "Open source session",
+    "unavailable": "Source unavailable; showing the last cached view",
+    "incomplete": "The source conversation is unfinished; showing the available history",
+    "openBeforeContinue": "Open the source session and wait for its history to load before continuing."
+  },
   "subagentIdentity": {
     "names": {
       "bouncyBean": "Bouncy Bean",

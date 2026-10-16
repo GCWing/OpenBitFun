@@ -52,6 +52,8 @@ export interface FlowToolItem extends FlowItem {
   type: 'tool';
   /** Provider-facing identity. Deferred calls remain `CallDeferredTool`. */
   toolName: string;
+  /** Read-time provenance from the owning Turn, never a native runtime tool. */
+  importedSource?: 'codex' | 'zcode';
   terminalSessionId?: string;
   interruptionReason?: 'app_restart' | 'retry_superseded';
   toolCall: {
@@ -390,6 +392,19 @@ export type SessionContextRestoreState =
 
 // Session state.
 export interface Session {
+  /** Original history source; continuation mode is an independent fact. */
+  importedSource?: string;
+  /** Local composer selection, applied only after a source view is forked. */
+  externalContinuationPermissionMode?: import('@/infrastructure/api/service-api/AgentAPI').SessionPermissionMode | null;
+  externalHistory?: {
+    mode: 'follow';
+    contentVersion?: string;
+    sourceStatus?: 'available' | 'unavailable';
+    incomplete?: boolean;
+    observedFingerprint?: string;
+    materializedObservation?: string;
+  };
+  externalBranchOf?: import('@/shared/types/session-history').SessionCustomMetadata['externalBranchOf'];
   sessionId: string;
   title?: string;
   /**

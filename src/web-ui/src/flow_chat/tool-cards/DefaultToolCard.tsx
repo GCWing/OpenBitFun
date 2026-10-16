@@ -102,7 +102,7 @@ export const DefaultToolCard: React.FC<ToolCardProps> = ({
     toolName: config.toolName,
   });
 
-  const filteredInput = useMemo(() => sanitizeToolInput(toolCall?.input), [toolCall?.input]);
+  const filteredInput = useMemo(() => toolItem.importedSource ? toolCall?.input : sanitizeToolInput(toolCall?.input), [toolCall?.input, toolItem.importedSource]);
   const hasInput = useMemo(() => hasVisibleValue(filteredInput), [filteredInput]);
   const hasResult = toolResult !== undefined && toolResult !== null && config.resultDisplayType !== 'hidden';
   const errorMessage = status === 'error' ? toolResult?.error || t('toolCards.default.failed') : null;

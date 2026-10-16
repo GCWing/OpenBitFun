@@ -38,6 +38,7 @@ import {
   type EcosystemProductRuntime,
 } from './ecosystemCompatibilityModel';
 import ExternalAgentContent, { type ExternalAgentContentHandle, type ExternalAgentContentActionState } from './ExternalAgentContent';
+import ExternalAgentSessions from './ExternalAgentSessions';
 import { EcosystemDialog as Dialog } from './EcosystemDialog';
 import ExternalDiscoveryToggle from './ExternalDiscoveryToggle';
 import { ecosystemDiscoveryCache, rememberEcosystemCatalog } from './ecosystemDiscoveryCache';
@@ -50,6 +51,7 @@ const AcpAgentsConfig = lazyWithRecovery(
 const PRODUCT_ICON_SOURCES: Record<EcosystemProductId, string> = {
   'claude-code': '/assets/ecosystem-compatibility/claude-code.svg',
   codex: '/assets/ecosystem-compatibility/codex.svg',
+  zcode: '/assets/ecosystem-compatibility/zcode.png',
   pi: '/assets/ecosystem-compatibility/pi.svg',
   dsh: '/assets/ecosystem-compatibility/deepseek-harness.svg',
   opencode: '/assets/ecosystem-compatibility/opencode.svg',
@@ -117,6 +119,8 @@ const EcosystemCompatibilityScene: React.FC = () => {
   const discoveryControlRef = useRef<HTMLDivElement>(null);
   const externalContentRef = useRef<ExternalAgentContentHandle>(null);
   const [contentActionState, setContentActionState] = useState<{ scope: string; actions: ExternalAgentContentActionState }>();
+  const [sessionImportBusy, setSessionImportBusy] = useState(false);
+  const [sessionRefreshVersion, setSessionRefreshVersion] = useState(0);
   const [snapshotState, setSnapshotState] = useState<{ scope: string; value: ExternalSourceCatalogSnapshot | null }>();
   const [clientState, setClientState] = useState<{ scope: string; value: AcpClientInfo[] }>();
   const [supplementalState, setSupplementalState] = useState<{ scope: string; counts: Record<string, number> }>();
@@ -647,8 +651,11 @@ const EcosystemCompatibilityScene: React.FC = () => {
                       variant="outline"
                       labelBehavior="static"
                       aria-label={t('content.refresh')}
-                      disabled={loading || !contentActions || contentActions.refreshDisabled}
-                      onClick={() => void externalContentRef.current?.refresh()}
+                      disabled={loading || !contentActions || contentActions.refreshDisabled || sessionImportBusy}
+                      onClick={() => {
+                        setSessionRefreshVersion((value) => value + 1);
+                        void externalContentRef.current?.refresh();
+                      }}
                     >
                       {t('content.refresh')}
                     </Button>
@@ -686,6 +693,12 @@ const EcosystemCompatibilityScene: React.FC = () => {
                   </div>
                 ) : null}
                 {selectedRuntime.acpClients.length > 0 ? renderRun() : null}
+                {selectedRuntime.spec.sessionImport ? <ExternalAgentSessions
+                  key={JSON.stringify([peerDeviceId, selectedRuntime.spec.id])}
+                  ecosystemId={selectedRuntime.spec.sessionImport}
+                  onBusyChange={setSessionImportBusy}
+                  refreshVersion={sessionRefreshVersion}
+                /> : null}
                 <ExternalAgentContent
                   key={JSON.stringify([requestScope, selectedRuntime.spec.id])}
                   scopeKey={requestScope}

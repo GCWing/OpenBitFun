@@ -271,6 +271,15 @@
       }
     },
     "sessions": {
+      "removeSource": "從 OpenBitFun 移除",
+      "removeSourceConfirmTitle": "從 OpenBitFun 移除來源對話？",
+      "removeSourceConfirmMessage": "「{{name}}」將從 OpenBitFun 移除。原應用程式中的對話和既有續聊分支都會保留，可在生態相容設定中重新新增。",
+      "removeSourceExplanation": "來源對話僅從 OpenBitFun 移除；原應用程式中的對話和續聊分支都會保留，可在生態相容設定中重新新增。",
+      "removeSelected": "移除所選來源對話",
+      "bulkRemoveSourceConfirmTitle": "移除所選來源對話？",
+      "bulkRemoveSourceConfirmMessage": "將從 OpenBitFun 移除 {{count}} 個來源對話。原應用程式中的對話和既有續聊分支都會保留，可在生態相容設定中重新新增。",
+      "removedSelected": "已從清單移除 {{count}} 個對話。",
+      "removedSourceSucceeded": "已從 OpenBitFun 的 {{workspace}} 中移除「{{name}}」。",
       "newSession": "新增會話",
       "acpSessions": "ACP 會話",
       "dispatchRunningOn": "在 {{target}} 上執行（{{state}}）",
@@ -477,7 +486,12 @@
       "deleteAllArchivedFailed": "刪除全部已歸檔會話失敗",
       "archiveAllFailed": "歸檔會話失敗",
       "bulkArchiveFailed": "批量歸檔會話失敗",
-      "bulkDeleteFailed": "批量刪除會話失敗"
+      "bulkDeleteFailed": "批量刪除會話失敗",
+      "sourceAgentFilter": "工作階段來源",
+      "allSourceAgents": "全部 Agent",
+      "sourceAgentLabel": "來自 {{name}} 的工作階段",
+      "discoveryPartial": "部分外部工作階段無法探索，既有工作階段仍可使用。",
+      "discoveringExternal": "正在探索外部工作階段…"
     },
     "scheduledJobs": {
       "title": "定時任務",

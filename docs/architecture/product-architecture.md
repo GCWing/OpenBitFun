@@ -196,7 +196,7 @@ block-beta
 | Shared frontend | `src/shared` | `shared` |
 | Interfaces | `src/crates/interfaces/*` | `acp`、`app-server`、`app-server-client`、`app-server-protocol`、`sdk-host` |
 | Assembly | `src/crates/assembly/*` | `agent-content`、`core`、`external-sources`、`product-capabilities` |
-| Adapters | `src/crates/adapters/*` | `agent-runtime-ipc`、`ai-adapters`、`claude-code-adapter`、`codex-adapter`、`dsh-adapter`、`opencode-adapter`、`static-hook-support`、`transport`、`webdriver` |
+| Adapters | `src/crates/adapters/*` | `agent-runtime-ipc`、`ai-adapters`、`claude-code-adapter`、`codex-adapter`、`zcode-adapter`、`dsh-adapter`、`opencode-adapter`、`static-hook-support`、`transport`、`webdriver` |
 | Services | `src/crates/services/*` | `services-core`、`services-integrations`、`miniapp-market-service`、`skin-market-service`、`relay-service`、`page-function-runtime`、`terminal` |
 | Execution | `src/crates/execution/*` | `agent-runtime`、`agent-workflows`、`agent-stream`、`plugin-runtime-client`、`runtime-services`、`tool-contracts`、`tool-provider-groups`、`tool-execution` |
 | Contracts | `src/crates/contracts/*` | `core-types`、`events`、`runtime-ports`、`product-domains` |

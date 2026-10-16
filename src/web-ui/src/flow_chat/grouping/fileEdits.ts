@@ -19,6 +19,8 @@ function pathIn(value: Record<string, unknown> | undefined): string | undefined 
 export function fileEditTarget(item: FlowItem | undefined): string | undefined {
   if (item?.type !== 'tool') return undefined;
   const tool = projectEffectiveToolItem(item as FlowToolItem);
+  // Native revision groups consult live snapshots; imported edits have only recorded evidence.
+  if (tool.importedSource) return undefined;
   if (!['Edit', 'Write'].includes(tool.toolName) || tool.isParamsStreaming || awaitsApproval(tool)) return undefined;
   const input = object(tool.toolCall?.input);
   const result = object(tool.toolResult?.result);

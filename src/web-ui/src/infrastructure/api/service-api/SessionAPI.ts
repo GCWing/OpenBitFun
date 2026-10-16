@@ -43,6 +43,8 @@ export interface SessionMetadataPage {
   hasMore: boolean;
   /** Absent on older hosts; never interpret absence as an empty snapshot. */
   activities?: SessionActivitySummary[];
+  discoveryWarnings?: string[];
+  discoveryPending?: boolean;
 }
 
 export interface SessionLineageRequest {

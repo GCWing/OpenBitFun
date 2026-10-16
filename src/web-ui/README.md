@@ -291,8 +291,61 @@ preserve omitted source fields and existing app storage when updating.
 Open a disposable local workspace in Desktop and select an app under External Import.
 Use test content or reversible imported copies. Category discovery coverage is independent of copy import and execution support.
 
+For Codex and Zcode, enable **Automatically discover sessions** in Ecosystem
+Compatibility. Opening a local workspace adds a lightweight index of all matching
+source sessions to its regular list, including startup-restored workspace lists. A
+small source label identifies imported history. Use **Session source** in the
+workspace menu to show all agents or only OpenBitFun, Codex or Zcode. Filtering
+searches the complete metadata catalog, including sessions beyond the first page,
+while the workspace list initially shows five sessions. Use its existing expand
+controls to see more; switching sources starts folded again.
+Preferences are stored on the serving host; workspace filters are scoped by device
+and workspace. Older hosts display an unavailable switch. SSH workspace discovery
+is explicitly unsupported and never reads controller-side history.
+Opening a source session caches its history and keeps following the original Agent.
+The source refreshes once each time it is opened. Staying on the page, typing,
+returning to the window or viewing a native branch does not refresh it.
+The first send creates an independent OpenBitFun branch from the version you have
+viewed. The source keeps updating separately; later source messages are never merged
+into that branch. Edit or roll back source history after explicitly forking it.
+Startup and list operations do not copy transcript bodies. A missing source keeps
+its last cache, or reports a retryable error if it has never been opened. Renames,
+archives and deletions survive rediscovery. Turning discovery off keeps existing
+entries and copies. Old automatic imports keep their original row and ID. Opening
+validates their retained local history: untouched copies follow the source, while
+local continuations or edits remain independent. Manual imports remain independent.
+Permission choices in a source composer apply to the branch created on first send.
+Use **Remove from OpenBitFun** to hide a source without deleting its original history
+or any continuation branch. It stays removed across scans. In the source's ecosystem
+compatibility settings, **Removed source sessions → Add again** restores the same
+entry and its saved name. A branch whose source was removed also offers this action
+when you choose **Open source session**. Re-adding reads history only when opened.
+Source and branch archives/deletions are independent. Restore archived entries from
+the existing archived sessions page; new source messages do not unarchive them.
+Failed delete requests retain the affected session and its draft for retry.
+Peer mode explicitly disables following source views until its history stream can
+pin their versions; existing native branches retain their normal Peer behavior.
+Removed source management is also gated in Peer mode; use the source's owning host.
+Other clients without automatic source forking receive a read-only error on direct submission.
+Names use the original Agent's saved title. Codex reads its name index and local
+state database; Zcode uses the saved task title. Rediscovery corrects old prompt-preview
+names and refreshes source names while preserving names edited in OpenBitFun.
+Source views are excluded from workspace full-text search with a diagnostic;
+native branches can be searched. New branches use the host's configured model.
+Zcode reads saved top-level tasks from `~/.zcode/cli/db/db.sqlite`, including committed
+WAL data. Hidden inherited context and nested side/subagent tasks are excluded.
+Source data stays intact; attachment names are retained but attachment files are not copied.
+History discovery does not enable Zcode runtime, configuration, or plugin compatibility.
+
+Imported tool history reuses OpenBitFun's existing tool cards by matching names
+and equivalent operations. Programs, commands, file operations, searches and plans
+use their native cards; unmatched tools use the standard generic card. Existing
+imports receive this display when reopened. Original records remain unchanged,
+and imported cards cannot approve tools or act on current-workspace snapshots.
+
 | Check | Action | Expected result |
 |---|---|---|
+| Automatic session discovery | Enable Codex or Zcode session discovery, reopen a matching workspace, then continue its source in both apps | Discovery indexes metadata only; opening caches a followed view. First send forks the viewed version; later source changes stay separate. Drafts, rename/archive/delete, old native copies and missing-source caches remain intact |
 | Command discovery | Put `Reply with STATUS_OK.` in `.claude/commands/status-check.md`, then refresh the catalog | The category shows the discovered count and the category dialog lists the discovered commands. Viewing it neither enables execution nor offers unsupported copy import; runtime activation stays with its existing owner |
 | MCP copy versus connection | Review and import an existing supported MCP declaration, leaving the native copy disabled | The row says Imported and connection not confirmed. Check and enable the copy in MCP settings, which owns the actual connection result |
 | Read-only hooks | Select Pi or DSH with a configured extension and open the Hook category dialog | Static declarations are viewable without execution. Single and category import actions are absent |

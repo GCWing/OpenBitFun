@@ -40,6 +40,7 @@ import { toolGroupPickerAppearanceDescriptor } from '@/app/scenes/agents/compone
 import { inlineDiffPreviewAppearanceDescriptor } from '@/flow_chat/components/InlineDiffPreview.appearance';
 import { exportImageAppearanceDescriptor } from '@/flow_chat/components/modern/ExportImageButton.appearance';
 import { userMessageItemAppearanceDescriptor } from '@/flow_chat/components/modern/UserMessageItem.appearance';
+import { externalHistoryNoticeAppearanceDescriptor } from '@/flow_chat/components/ExternalHistoryNotice.appearance';
 import { sessionUsageReportCardAppearanceDescriptor } from '@/flow_chat/components/usage/SessionUsageReportCard.appearance';
 import { sessionUsageModalAppearanceDescriptor } from '@/flow_chat/components/usage/SessionUsageModal.appearance';
 import { createPlanDisplayAppearanceDescriptor } from '@/flow_chat/tool-cards/CreatePlanDisplay.appearance';
@@ -298,6 +299,7 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(inlineDiffPreviewAppearanceDescriptor)
     .registerComponent(exportImageAppearanceDescriptor)
     .registerComponent(userMessageItemAppearanceDescriptor)
+    .registerComponent(externalHistoryNoticeAppearanceDescriptor)
     .registerComponent(sessionUsageReportCardAppearanceDescriptor)
     .registerComponent(sessionUsageModalAppearanceDescriptor)
     .registerComponent(createPlanDisplayAppearanceDescriptor)

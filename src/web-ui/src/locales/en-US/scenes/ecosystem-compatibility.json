@@ -68,6 +68,28 @@
     "pet": "Pets",
     "instruction": "Instructions"
   },
+  "sessions": {
+    "removed": {
+      "title": "Removed source sessions",
+      "description": "Add a source session back to the session list. Its existing OpenBitFun branches remain independent; history updates when you open the source.",
+      "empty": "No source sessions have been removed.",
+      "restore": "Add again",
+      "restoreNamed": "Add “{{name}}” again",
+      "retry": "Retry",
+      "loadFailed": "Could not load removed source sessions. Retry when the host is available.",
+      "restoreFailed": "Could not add this source session again. The removal record is kept; retry later.",
+      "refreshFailed": "The source was added again, but the session list could not refresh. Reopen the workspace to see it.",
+      "unsupportedHost": "This host does not support restoring removed source sessions. Update the serving host and retry.",
+      "unsupportedSurface": "Manage removed source sessions on their owning host. This action is unavailable in Peer mode."
+    },
+    "autoDiscovery": {
+      "label": "Automatically discover {{name}} sessions",
+      "description": "When a workspace opens, list its {{name}} sessions using a lightweight index. The full history is saved locally the first time you open or continue a session. Unopened history requires the original source. Turning this off keeps existing entries and copies. SSH workspace discovery is not available.",
+      "unsupported": "This host does not support automatic session discovery. Update the serving host to enable it.",
+      "loadFailed": "Could not load automatic session discovery settings.",
+      "saveFailed": "Could not save the automatic session discovery setting."
+    }
+  },
   "import": {
     "title": "Import and reuse",
     "description": "See what content from {{name}} works with OpenBitFun. Import available items directly; other items show their current support status.",

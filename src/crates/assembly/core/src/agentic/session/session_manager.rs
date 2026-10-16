@@ -5778,13 +5778,16 @@ impl SessionManager {
             None
         };
         let claimed = self.claim_session_storage_path(session_id, session_storage_path, true)?;
-        let result = self
-            .restore_session_with_turns_from_claimed_storage_path_internal(
+        // Runtime restore includes history decoding and context reconstruction.
+        // Keep that state on the heap across the nested fork/restore facades.
+        let result = Box::pin(
+            self.restore_session_with_turns_from_claimed_storage_path_internal(
                 session_storage_path,
                 session_id,
                 include_internal,
-            )
-            .await;
+            ),
+        )
+        .await;
         if result.is_err() {
             self.release_failed_session_storage_path_claim(
                 session_id,
@@ -7921,6 +7924,7 @@ impl SessionManager {
             .collect();
         Ok(TransientSessionBranchSource {
             session,
+            metadata: None,
             turns,
             context_snapshots,
             prompt_cache: self.prompt_cache_store.get_cache(session_id),

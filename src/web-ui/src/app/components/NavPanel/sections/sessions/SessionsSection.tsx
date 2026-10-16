@@ -12,7 +12,7 @@ import { canCopySessionsOnSurface } from '@/infrastructure/peer-device/peerCapab
  */
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { subscribeOverlayInteraction, createOverlayPortal, Button, Icon, IconButton, Input, Menu, MenuItem, OverflowText, StatusPill, Tooltip } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, Alert, Button, Icon, IconButton, Input, Menu, MenuItem, OverflowText, StatusPill, Tooltip } from '@openbitfun/ui';
 import { Loader2, Archive, FolderGit2, FolderOpen, ListChecks } from 'lucide-react';
 import { RetainedMountBoundary } from '@/shared/presence';
 import { useI18n } from '@/infrastructure/i18n';
@@ -24,7 +24,6 @@ import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext'
 import { sessionAPI } from '@/infrastructure/api/service-api/SessionAPI';
 import { createLogger } from '@/shared/utils/logger';
 import { isSamePath } from '@/shared/utils/pathUtils';
-import { isLinkedWorktreeWorkspace } from '@/shared/types/global-state';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores';
 import {
@@ -48,6 +47,8 @@ import {
   DEFAULT_WORKSPACE_SESSION_FILTERS,
   hasWorkspaceSessionFilters,
   matchesWorkspaceSessionView,
+  matchesWorkspaceSourceAgent,
+  sessionSourceAgentLabel,
   useWorkspaceSessionViewStore,
 } from '../../workspaceSessionView';
 import { stateMachineManager } from '@/flow_chat/state-machine';
@@ -57,7 +58,11 @@ import { isDefaultSessionTitle, resolveSessionTitle } from '@/flow_chat/utils/se
 import { useSessionTitleNumbers } from '@/flow_chat/hooks/useSessionTitleNumbers';
 import { SessionTitleNumber } from '@/flow_chat/components/SessionTitleNumber';
 import { useSessionComposerStore } from '@/flow_chat/store/sessionComposerStore';
-import { getActiveSurfaceId, isSurfaceChangedError, surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceId, getActiveSurfaceScope, isSurfaceChangedError, surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
+import { getWorkspaceSessionHierarchy } from './sessionNavHierarchy';
+import { useWorkspaceSessionCatalog } from './useWorkspaceSessionCatalog';
+import { useWorkspaceSessionDiscovery } from './useWorkspaceSessionDiscovery';
+import { useSessionNavExpansion } from './useSessionNavExpansion';
 import { isSessionNavRowActive } from './sessionNavSelection';
 import { isSessionRowPointerTarget } from './sessionOpenPointer';
 import {
@@ -101,8 +106,6 @@ import {
   hasStartupOverlayHandedOff,
 } from './sessionMetadataStartup';
 import {
-  getEffectiveTopLevelSessionCount,
-  getSessionBufferPrefetchLimit,
   getSessionDisplayLimit,
   getSessionExpandToggleState,
   SESSIONS_LEVEL_0,
@@ -122,12 +125,6 @@ type HistoryOpenIntentDispatchResult = 'none' | 'dispatched' | 'already-pending'
 /** Page size for the fully-expanded (level 2) session list. */
 const SESSIONS_LEVEL_2_PAGE = 200;
 
-/**
- * Delay before topping the off-screen row buffer back up. Keeps the refill out
- * of the startup burst and coalesces the repeated deletes of a cleanup pass.
- */
-const SESSIONS_BUFFER_PREFETCH_DELAY_MS = 800;
-
 const getTitle = (session: Session): string =>
   resolveSessionTitle(session, (key, options) => i18nService.t(key, options));
 
@@ -142,24 +139,6 @@ function DefaultSessionTitlePreview({ sessionId, createdAt }: Pick<Session, 'ses
     </div>
   );
 }
-
-const countTopLevelSessionsInScope = (
-  sessions: Iterable<Session>, workspaceId?: string,
-): number => {
-  const scopedSessions = Array.from(sessions).filter((session: Session) => {
-    if (session.isTransient || session.sessionKind === 'subagent') return false;
-    return workspaceId ? sessionBelongsToWorkspaceNavRow(session, workspaceId) : !session.workspaceId;
-  });
-
-  const knownIds = new Set(scopedSessions.map(session => session.sessionId));
-  return scopedSessions.reduce((count, session) => {
-    const parentSessionId = resolveSessionRelationship(session).parentSessionId;
-    if (parentSessionId && knownIds.has(parentSessionId)) {
-      return count;
-    }
-    return count + 1;
-  }, 0);
-};
 
 const getChildSessionBadge = (kind: Session['sessionKind']): string => {
   const normalizedKind =
@@ -250,12 +229,21 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   const storedSessionOrdering = useWorkspaceSessionViewStore(state => state.ordering);
   const storedSessionShow = useWorkspaceSessionViewStore(state => state.show);
   const storedSessionFilters = useWorkspaceSessionViewStore(state => state.filters);
+  const sourceAgents = useWorkspaceSessionViewStore(state => state.sourceAgents);
+  const sourceAgent = sourceAgents[surfaceScopedKey(getActiveSurfaceId(), workspaceId)] ?? 'all';
+  const hasSourceFilter = sourceAgent !== 'all' || Boolean(workspaceScopes?.some(scope =>
+    (sourceAgents[surfaceScopedKey(getActiveSurfaceId(), scope.workspaceId)] ?? 'all') !== 'all'));
+  const matchesSourceAgent = useCallback((session: Session) => matchesWorkspaceSourceAgent(
+    session,
+    sourceAgents[surfaceScopedKey(getActiveSurfaceId(), workspaceId ?? session.workspaceId ?? session.config.workspaceId)] ?? 'all',
+  ), [sourceAgents, workspaceId]);
   const sessionOrdering = useWorkspaceViewPreferences ? storedSessionOrdering : 'created';
   const sessionShow = useWorkspaceViewPreferences ? storedSessionShow : 'all';
   const sessionFilters = useWorkspaceViewPreferences
     ? storedSessionFilters
     : DEFAULT_WORKSPACE_SESSION_FILTERS;
-  const hasActiveSessionFilter = sessionShow !== 'all' || hasWorkspaceSessionFilters(sessionFilters);
+  const hasWorkspaceViewFilter = sessionShow !== 'all' || hasWorkspaceSessionFilters(sessionFilters);
+  const hasActiveSessionFilter = hasSourceFilter || hasWorkspaceViewFilter;
   const showAllWithoutLimit = layout === 'flat' && Boolean(workspaceScopes?.length);
   const sessionListClassName = `openbitfun-nav-panel__inline-list${layout === 'flat' ? ' is-flat-workspace-view' : ''}`;
   const { setActiveWorkspace, openWorkspace, openedWorkspacesList, currentWorkspace } = useWorkspaceContext();
@@ -276,28 +264,18 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   const dispatchTransportByJobId = useDispatchJobStore(state => state.transportByJobId);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
-  const [expandLevel, setExpandLevel] = useState<0 | 1 | 2>(0);
-  // Grouped workspace history keeps its existing level-2 paging. The flat
-  // aggregate projection bypasses this display cap and streams every page in.
-  const [level2DisplayCount, setLevel2DisplayCount] = useState(SESSIONS_LEVEL_2_PAGE);
-
-  useEffect(() => {
-    if (expandLevel !== 2) {
-      setLevel2DisplayCount(SESSIONS_LEVEL_2_PAGE);
-    }
-  }, [expandLevel]);
+  const { expandLevel, level2DisplayCount, setExpandLevel, setLevel2DisplayCount } = useSessionNavExpansion(
+    `${surfaceScopedKey(getActiveSurfaceId(), workspaceId)}:${sourceAgent}`,
+    SESSIONS_LEVEL_2_PAGE,
+  );
+  const surface = getActiveSurfaceScope();
+  const initialMetadataKey = surface.key(workspaceId, surface.epoch);
   const [metadataPageState, setMetadataPageState] = useState<{
-    totalTopLevelCount: number | null;
-    syncedTopLevelCount: number | null;
-    nextCursor?: string;
-    hasMore: boolean;
+    loadedScope: string | null;
     isLoading: boolean;
     loadError: boolean;
   }>({
-    totalTopLevelCount: null,
-    syncedTopLevelCount: null,
-    nextCursor: undefined,
-    hasMore: false,
+    loadedScope: null,
     isLoading: false,
     loadError: false,
   });
@@ -309,6 +287,23 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     failedScopeCount: 0,
   }));
   const [aggregateReloadRequestId, setAggregateReloadRequestId] = useState(0);
+  const [catalogRefreshVersion, setCatalogRefreshVersion] = useState(0);
+  const onDiscoveryCompleted = useCallback(() => {
+    setCatalogRefreshVersion(value => value + 1);
+    setAggregateReloadRequestId(value => value + 1);
+  }, []);
+  const discovery = useWorkspaceSessionDiscovery(
+    workspaceScopes?.map(scope => scope.workspaceId) ?? (workspaceId ? [workspaceId] : []),
+    isVisible,
+    onDiscoveryCompleted,
+  );
+  const observeDiscovery = discovery.observe;
+  const catalog = useWorkspaceSessionCatalog({
+    workspaceId,
+    enabled: isVisible && !workspaceScopes?.length && metadataPageState.loadedScope === initialMetadataKey,
+    refreshVersion: catalogRefreshVersion,
+    onPage: observeDiscovery,
+  });
   const [openMenuSessionId, setOpenMenuSessionId] = useState<string | null>(null);
   /** Second level of the session menu: pick what a Markdown export includes. */
   const [isExportScopeMenu, setIsExportScopeMenu] = useState(false);
@@ -352,14 +347,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     ? contextSessionMenuPosition
     : anchoredSessionMenuPosition;
   const metadataLoadRequestIdRef = useRef(0);
-  /** User-driven metadata loads still running; background loads yield to them. */
-  const foregroundLoadCountRef = useRef(0);
   const initialMetadataLoadKeyRef = useRef<string | null>(null);
   const sessionListRef = useRef<HTMLDivElement>(null);
-  /** Last (scope, live, synced) triple a background reconcile ran for. */
-  const liveReconcileSignatureRef = useRef<string | null>(null);
-  /** Last (scope, cursor, size) triple a buffer prefetch ran for. */
-  const bufferPrefetchSignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
     const selector = createSessionsNavSelector();
@@ -403,18 +392,13 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   useEffect(() => {
     metadataLoadRequestIdRef.current += 1;
     initialMetadataLoadKeyRef.current = null;
-    liveReconcileSignatureRef.current = null;
-    bufferPrefetchSignatureRef.current = null;
-    setExpandLevel(0);
     setMetadataPageState({
-      totalTopLevelCount: null,
-      syncedTopLevelCount: null,
-      nextCursor: undefined,
-      hasMore: false,
+      loadedScope: null,
       isLoading: false,
       loadError: false,
     });
-  }, [workspaceId]);
+    return () => { metadataLoadRequestIdRef.current += 1; };
+  }, [initialMetadataKey]);
 
   const workspaceScopesKey = useMemo(
     () => workspaceScopes?.map(scope => scope.workspaceId).join('|') ?? '',
@@ -437,8 +421,10 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
           const page = await flowChatStore.loadSessionMetadataPage(
             scope.workspaceId, SESSIONS_LEVEL_2_PAGE, cursor,
             'sessions_nav_all_grouping',
+            { fresh: aggregateReloadRequestId > 0 },
           );
           if (cancelled) return;
+          observeDiscovery(scope.workspaceId, page);
           cursor = page.hasMore ? page.nextCursor : undefined;
         } while (cursor);
 
@@ -477,6 +463,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   }, [
     aggregateReloadRequestId,
     isVisible,
+    observeDiscovery,
     sessionFilters.hideArchived,
     workspaceScopes,
     workspaceScopesKey,
@@ -501,58 +488,30 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
       limit: number,
       cursor: string | undefined,
       source: string,
-      options?: { background?: boolean },
     ) => {
       if (!workspaceId || limit <= 0) {
         return null;
       }
 
-      // A background refresh only re-syncs counts for a list that is already on
-      // screen. Surfacing its spinner (or its retry state) would make routine
-      // upkeep — such as replacing the row a delete consumed — flash the list.
-      // It also leaves the request id alone so it cannot strand a user-driven
-      // load (which would otherwise never clear its spinner); instead it drops
-      // its own result if anything else claimed the list meanwhile.
-      const isBackgroundLoad = options?.background === true;
-      if (isBackgroundLoad && foregroundLoadCountRef.current > 0) {
-        return null;
-      }
-
-      const requestId = isBackgroundLoad
-        ? metadataLoadRequestIdRef.current
-        : metadataLoadRequestIdRef.current + 1;
-      if (!isBackgroundLoad) {
-        metadataLoadRequestIdRef.current = requestId;
-        foregroundLoadCountRef.current += 1;
-        setMetadataPageState(prev => ({
-          ...prev,
-          isLoading: true,
-          loadError: false,
-        }));
-      }
+      const requestId = ++metadataLoadRequestIdRef.current;
+      setMetadataPageState(prev => ({ ...prev, isLoading: true, loadError: false }));
 
       try {
         const page = await flowChatStore.loadSessionMetadataPage(
           workspaceId, limit, cursor,
           source
         );
-        if (metadataLoadRequestIdRef.current === requestId) {
-          const syncedTopLevelCount = countTopLevelSessionsInScope(
-            flowChatStore.getState().sessions.values(),
-            workspaceId,
-          );
+        if (metadataLoadRequestIdRef.current === requestId && surface.isCurrent()) {
+          observeDiscovery(workspaceId, page);
           setMetadataPageState({
-            totalTopLevelCount: page.totalTopLevelCount,
-            syncedTopLevelCount,
-            nextCursor: page.nextCursor,
-            hasMore: page.hasMore,
+            loadedScope: initialMetadataKey,
             isLoading: false,
             loadError: false,
           });
         }
         return page;
       } catch (error) {
-        if (metadataLoadRequestIdRef.current === requestId && !isBackgroundLoad) {
+        if (metadataLoadRequestIdRef.current === requestId && surface.isCurrent()) {
           setMetadataPageState(prev => ({
             ...prev,
             isLoading: false,
@@ -561,16 +520,10 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
         }
         log.warn('Failed to load visible session metadata page', { error, workspaceId, cursor, limit });
         return null;
-      } finally {
-        if (!isBackgroundLoad) {
-          foregroundLoadCountRef.current = Math.max(foregroundLoadCountRef.current - 1, 0);
-        }
       }
     },
-    [workspaceId]
+    [initialMetadataKey, observeDiscovery, surface, workspaceId]
   );
-
-  const initialMetadataKey = workspaceId ?? '';
 
   const loadInitialMetadataPage = useCallback(
     async (source: string) => {
@@ -655,40 +608,15 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     workspaceId,
   ]);
 
-  useEffect(() => {
-    const needsExpandedDataset = sessionOrdering !== 'updated' || hasActiveSessionFilter;
-    if (!needsExpandedDataset || !isVisible || !workspaceId) {
-      return;
-    }
-
-    setExpandLevel(2);
-    setLevel2DisplayCount(SESSIONS_LEVEL_2_PAGE);
-    void loadMetadataPage(
-      SESSIONS_LEVEL_2_PAGE,
-      undefined,
-      'sessions_nav_view_preferences',
-    );
-  }, [
-    isVisible,
-    loadMetadataPage,
-    sessionOrdering,
-    hasActiveSessionFilter,
-    workspaceId,
-  ]);
-
   // When sessions are archived, reset stale metadata so the expand toggle
   // doesn't linger with old counts after all sessions are gone.
   useEffect(() => {
     const handler = () => {
       metadataLoadRequestIdRef.current += 1;
-      liveReconcileSignatureRef.current = null;
-      bufferPrefetchSignatureRef.current = null;
+      setCatalogRefreshVersion(value => value + 1);
       setExpandLevel(0);
       setMetadataPageState({
-        totalTopLevelCount: null,
-        syncedTopLevelCount: null,
-        nextCursor: undefined,
-        hasMore: false,
+        loadedScope: null,
         isLoading: false,
         loadError: false,
       });
@@ -698,7 +626,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     };
     window.addEventListener('openbitfun:session-archived', handler);
     return () => window.removeEventListener('openbitfun:session-archived', handler);
-  }, [isVisible, workspaceId, loadMetadataPage]);
+  }, [isVisible, workspaceId, loadMetadataPage, setExpandLevel]);
 
   const closeSessionMenu = useCallback(() => {
     setOpenMenuSessionId(null);
@@ -757,45 +685,13 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     };
   }, [isExportScopeMenu, openMenuSessionId, updateContextSessionMenuPosition]);
 
-  const sessions = useMemo(
-    () =>
-      Array.from(flowChatState.sessions.values())
-        .filter((s: Session) => {
-          if (s.isTransient) {
-            return false;
-          }
-          if (s.sessionKind === 'subagent') {
-            return false;
-          }
-          if (workspaceScopes?.length) {
-            return workspaceScopes.some(scope => sessionBelongsToWorkspaceNavRow(s, scope.workspaceId));
-          }
-          if (workspaceId) {
-            return sessionBelongsToWorkspaceNavRow(s, workspaceId);
-          }
-          return !s.workspaceId;
-        }),
-    [flowChatState.sessions, workspaceId, workspaceScopes]
-  );
-
   const { topLevelSessions: allTopLevelSessions, childrenByParent } = useMemo(() => {
     // Activity timestamps can change independently of the session records.
     void orderingRevision;
-    const childMap = new Map<string, Session[]>();
-    const parents: Session[] = [];
-
-    const knownIds = new Set(sessions.map(s => s.sessionId));
-
-    for (const s of sessions) {
-      const pid = resolveSessionRelationship(s).parentSessionId;
-      if (pid && typeof pid === 'string' && pid.trim() && knownIds.has(pid)) {
-        const list = childMap.get(pid) || [];
-        list.push(s);
-        childMap.set(pid, list);
-      } else {
-        parents.push(s);
-      }
-    }
+    const { topLevelSessions: parents, childrenByParent: childMap } = getWorkspaceSessionHierarchy(
+      flowChatState.sessions.values(),
+      workspaceScopes?.length ? workspaceScopes.map(scope => scope.workspaceId) : workspaceId ? [workspaceId] : [],
+    );
 
     const compareForCurrentView = (left: Session, right: Session) =>
       compareWorkspaceNavSessions(
@@ -815,16 +711,16 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
       topLevelSessions: [...parents].sort(compareForCurrentView),
       childrenByParent: childMap,
     };
-  }, [orderingRevision, runningSessionIds, sessionOrdering, sessions]);
+  }, [flowChatState.sessions, orderingRevision, runningSessionIds, sessionOrdering, workspaceId, workspaceScopes]);
 
   const topLevelSessions = useMemo(
-    () => allTopLevelSessions.filter(session => matchesWorkspaceSessionView(
+    () => allTopLevelSessions.filter(session => matchesSourceAgent(session) && matchesWorkspaceSessionView(
       session,
       sessionShow,
       sessionFilters,
       runningSessionIds.has(session.sessionId),
     )),
-    [allTopLevelSessions, runningSessionIds, sessionFilters, sessionShow],
+    [allTopLevelSessions, matchesSourceAgent, runningSessionIds, sessionFilters, sessionShow],
   );
 
   const visibleChildrenByParent = useMemo(() => {
@@ -832,7 +728,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
 
     const filtered = new Map<string, Session[]>();
     for (const [parentId, children] of childrenByParent) {
-      filtered.set(parentId, children.filter(session => matchesWorkspaceSessionView(
+      filtered.set(parentId, children.filter(session => matchesSourceAgent(session) && matchesWorkspaceSessionView(
         session,
         sessionShow,
         sessionFilters,
@@ -840,7 +736,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
       )));
     }
     return filtered;
-  }, [childrenByParent, hasActiveSessionFilter, runningSessionIds, sessionFilters, sessionShow]);
+  }, [childrenByParent, hasActiveSessionFilter, matchesSourceAgent, runningSessionIds, sessionFilters, sessionShow]);
 
   const sessionDisplayLimit = useMemo(() => {
     return getSessionDisplayLimit({
@@ -851,32 +747,11 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     });
   }, [topLevelSessions.length, expandLevel, level2DisplayCount, showAllWithoutLimit]);
 
-  // A linked worktree stores its sessions in its main workspace's session root,
-  // so a metadata page loaded for that directory counts the project's sessions
-  // as well. That total cannot describe this row: the extra rows it counts belong
-  // to the project, and a "show more" affordance built on it promises rows this
-  // list can never reveal. Only the rows this workspace owns are counted here.
-  // Resolve the row's own workspace, not the active one, because a nested row
-  // renders while another workspace is active.
-  const sectionWorkspace = workspaceId
-    ? openedWorkspacesList.find(workspace => workspace.id === workspaceId) ?? null
-    : null;
-  const countOnlyOwnedTopLevelSessions = isLinkedWorktreeWorkspace(sectionWorkspace);
-
-  const totalTopLevelSessionCount =
-    !hasActiveSessionFilter && !workspaceScopes?.length && !countOnlyOwnedTopLevelSessions
-      ? getEffectiveTopLevelSessionCount(
-          metadataPageState.totalTopLevelCount,
-          metadataPageState.syncedTopLevelCount,
-          allTopLevelSessions.length,
-          metadataPageState.isLoading,
-        )
-      : topLevelSessions.length;
-  const hasMoreUnloadedSessions =
-    !hasActiveSessionFilter
-    && !workspaceScopes?.length
-    && !countOnlyOwnedTopLevelSessions
-    && allTopLevelSessions.length < totalTopLevelSessionCount;
+  // A storage root can include several workspace rows, including the main
+  // checkout. Its page total is never the total for this filtered list.
+  const totalTopLevelSessionCount = topLevelSessions.length;
+  const isSessionCountComplete = !workspaceId || Boolean(workspaceScopes?.length)
+    || (catalog.complete && !discovery.pending && !discovery.failed);
   const expandToggleState = getSessionExpandToggleState(totalTopLevelSessionCount, expandLevel);
   // The visible label stays short ("Show more") and the remaining count rides in
   // a trailing `+N` chip; screen readers get the full sentence via aria-label.
@@ -891,16 +766,16 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
       const count = expandToggleState.collapsedRemainingCount;
       return {
         label: t('nav.sessions.showMoreLabel'),
-        ariaLabel: t('nav.sessions.showMore', { count }),
-        remainingCount: count,
+        ariaLabel: isSessionCountComplete ? t('nav.sessions.showMore', { count }) : t('nav.sessions.showMoreLabel'),
+        remainingCount: isSessionCountComplete ? count : null,
       };
     }
     if (expandToggleState.action === 'show-all') {
       const count = expandToggleState.expandedRemainingCount;
       return {
         label: t('nav.sessions.showAllLabel'),
-        ariaLabel: t('nav.sessions.showAll', { count }),
-        remainingCount: count,
+        ariaLabel: isSessionCountComplete ? t('nav.sessions.showAll', { count }) : t('nav.sessions.showAllLabel'),
+        remainingCount: isSessionCountComplete ? count : null,
       };
     }
     return {
@@ -912,99 +787,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     expandToggleState.action,
     expandToggleState.collapsedRemainingCount,
     expandToggleState.expandedRemainingCount,
+    isSessionCountComplete,
     t,
-  ]);
-
-  useEffect(() => {
-    if (
-      !isVisible ||
-      !workspaceId ||
-      metadataPageState.isLoading ||
-      metadataPageState.totalTopLevelCount === null ||
-      metadataPageState.syncedTopLevelCount === null ||
-      allTopLevelSessions.length === metadataPageState.syncedTopLevelCount
-    ) {
-      return;
-    }
-
-    // Re-running for a scope whose counts have not moved would spin on a
-    // failing backend, since a background load leaves the state untouched.
-    const signature = [
-      initialMetadataKey,
-      allTopLevelSessions.length,
-      metadataPageState.syncedTopLevelCount,
-    ].join('\n');
-    if (liveReconcileSignatureRef.current === signature) {
-      return;
-    }
-    liveReconcileSignatureRef.current = signature;
-
-    void loadMetadataPage(SESSIONS_LEVEL_0, undefined, 'sessions_nav_live_reconcile', {
-      background: true,
-    });
-  }, [
-    initialMetadataKey,
-    isVisible,
-    loadMetadataPage,
-    metadataPageState.isLoading,
-    metadataPageState.syncedTopLevelCount,
-    metadataPageState.totalTopLevelCount,
-    allTopLevelSessions.length,
-    workspaceId,
-  ]);
-
-  // Keep a few rows loaded past the visible slice. Deleting a session then
-  // promotes an already-loaded row in the same commit instead of leaving a gap
-  // until a metadata round trip lands.
-  useEffect(() => {
-    if (
-      !isVisible ||
-      !workspaceId ||
-      metadataPageState.isLoading ||
-      metadataPageState.loadError ||
-      metadataPageState.totalTopLevelCount === null ||
-      !metadataPageState.nextCursor
-    ) {
-      return;
-    }
-
-    const prefetchLimit = getSessionBufferPrefetchLimit({
-      expandLevel,
-      loadedTopLevelCount: allTopLevelSessions.length,
-      totalTopLevelCount: totalTopLevelSessionCount,
-      hasMore: metadataPageState.hasMore,
-    });
-    if (prefetchLimit <= 0) {
-      return;
-    }
-
-    const signature = [initialMetadataKey, metadataPageState.nextCursor, prefetchLimit].join('\n');
-    if (bufferPrefetchSignatureRef.current === signature) {
-      return;
-    }
-
-    const cursor = metadataPageState.nextCursor;
-    const timer = window.setTimeout(() => {
-      bufferPrefetchSignatureRef.current = signature;
-      void loadMetadataPage(prefetchLimit, cursor, 'sessions_nav_buffer_prefetch', {
-        background: true,
-      });
-    }, SESSIONS_BUFFER_PREFETCH_DELAY_MS);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    allTopLevelSessions.length,
-    expandLevel,
-    initialMetadataKey,
-    isVisible,
-    loadMetadataPage,
-    metadataPageState.hasMore,
-    metadataPageState.isLoading,
-    metadataPageState.loadError,
-    metadataPageState.nextCursor,
-    metadataPageState.totalTopLevelCount,
-    totalTopLevelSessionCount,
-    workspaceId,
   ]);
 
   const visibleItems = useMemo(() => {
@@ -1269,12 +1053,15 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     async (e: React.MouseEvent, sessionId: string) => {
       e.stopPropagation();
       const session = flowChatStore.getState().sessions.get(sessionId);
+      const sourceView = session?.externalHistory?.mode === 'follow';
       const confirmed = await confirmDanger(
-        t('nav.sessions.deleteConfirmTitle'),
-        t('nav.sessions.deleteConfirmMessage', {
+        sourceView ? t('nav.sessions.removeSourceConfirmTitle') : t('nav.sessions.deleteConfirmTitle'),
+        sourceView ? t('nav.sessions.removeSourceConfirmMessage', {
+          name: session ? resolveSessionTitle(session) : t('nav.sessions.untitled'),
+        }) : t('nav.sessions.deleteConfirmMessage', {
           name: session ? resolveSessionTitle(session) : t('nav.sessions.untitled'),
         }),
-        { confirmText: t('nav.sessions.delete') },
+        { confirmText: sourceView ? t('nav.sessions.removeSource') : t('nav.sessions.delete') },
       );
       if (!confirmed) return;
 
@@ -1437,58 +1224,33 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     [handleConfirmEdit, handleCancelEdit]
   );
 
-  const handleExpandToggle = useCallback(async () => {
-    if (metadataPageState.isLoading) {
-      return;
-    }
-
-    const loadedTopLevelCount = topLevelSessions.length;
-    const total = totalTopLevelSessionCount;
-
+  const handleExpandToggle = useCallback(() => {
     if (expandLevel === 0) {
-      const targetCount = Math.min(total, SESSIONS_LEVEL_1);
-      if (
-        loadedTopLevelCount < targetCount &&
-        hasMoreUnloadedSessions &&
-        metadataPageState.nextCursor
-      ) {
-        await loadMetadataPage(
-          targetCount - loadedTopLevelCount,
-          metadataPageState.nextCursor,
-          'sessions_nav_expand_level_1'
-        );
-      }
       setExpandLevel(1);
       return;
     }
-
-    if (expandLevel === 1 && total > SESSIONS_LEVEL_1) {
-      if (
-        loadedTopLevelCount < total &&
-        hasMoreUnloadedSessions &&
-        metadataPageState.nextCursor
-      ) {
-        await loadMetadataPage(
-          total - loadedTopLevelCount,
-          metadataPageState.nextCursor,
-          'sessions_nav_expand_all'
-        );
-      }
+    if (expandLevel === 1 && totalTopLevelSessionCount > SESSIONS_LEVEL_1) {
       setExpandLevel(2);
       return;
     }
-
     setExpandLevel(0);
-  }, [
-    expandLevel,
-    hasMoreUnloadedSessions,
-    loadMetadataPage,
-    metadataPageState.isLoading,
-    metadataPageState.nextCursor,
-    topLevelSessions.length,
-    totalTopLevelSessionCount,
-  ]);
+  }, [expandLevel, setExpandLevel, totalTopLevelSessionCount]);
 
+  const sourceFilterStatus = discovery.failed ? (
+    <Button variant="outline" size="sm" onClick={discovery.retry}>{t('nav.sessions.partialLoadFailedRetry')}</Button>
+  ) : catalog.loading || discovery.pending ? (
+    <div className="openbitfun-nav-panel__inline-loading" role="status">
+      <Loader2 className="openbitfun-nav-panel__inline-loading-icon" aria-hidden="true" />
+      <OverflowText>{t(discovery.pending ? 'nav.sessions.discoveringExternal' : 'nav.sessions.loading')}</OverflowText>
+    </div>
+  ) : catalog.failed ? (
+    <Button variant="outline" size="sm" onClick={() => setCatalogRefreshVersion(value => value + 1)}>
+      {t('nav.sessions.partialLoadFailedRetry')}
+    </Button>
+  ) : null;
+  const discoveryNotice = discovery.warnings.length > 0 ? (
+    <Alert tone="warning" role="status" title={discovery.warnings.join('\n')} message={t('nav.sessions.discoveryPartial')} />
+  ) : null;
   const aggregateLoadStatus = showAllWithoutLimit
     ? aggregateLoadState.isLoading
       ? (
@@ -1522,6 +1284,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     : null;
 
   if (allTopLevelSessions.length === 0) {
+    if (sourceFilterStatus) return <div className={sessionListClassName}>{sourceFilterStatus}{discoveryNotice}</div>;
     if (aggregateLoadStatus) {
       return (
         <div data-openbitfun-component="sessions-section" data-openbitfun-part="root" className={sessionListClassName}>
@@ -1557,6 +1320,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     }
     return (
       <div className={sessionListClassName}>
+        {discoveryNotice}
         {presentation?.kind === 'assistant' ? (
           <div className="openbitfun-nav-panel__inline-empty is-assistant" aria-disabled="true">
             <AssistantAvatar
@@ -1581,6 +1345,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   }
 
   if (topLevelSessions.length === 0) {
+    if (sourceFilterStatus) return <div className={sessionListClassName}>{sourceFilterStatus}{discoveryNotice}</div>;
     if (aggregateLoadState.isLoading && aggregateLoadStatus) {
       return (
         <div className={sessionListClassName}>
@@ -1590,6 +1355,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     }
     return (
       <div className={sessionListClassName}>
+        {discoveryNotice}
         <div className="openbitfun-nav-panel__inline-empty" aria-disabled="true">
           {t('nav.sessions.viewMenu.noMatches')}
         </div>
@@ -1600,6 +1366,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
 
   return (
     <div className={sessionListClassName} ref={sessionListRef}>
+      {sourceFilterStatus}
+      {discoveryNotice}
       {visibleItems.map(({ session, level }) => {
           const isEditing = editingSessionId === session.sessionId;
           const relationship = resolveSessionRelationship(session);
@@ -1851,6 +1619,12 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                             <StatusPill tone="neutral">{t('nav.sessions.defaultSession')}</StatusPill>
                           )}
                         </span>
+                    {session.importedSource ? (
+                      <StatusPill className="openbitfun-nav-panel__inline-item-source-badge" tone="neutral"
+                        title={t('nav.sessions.sourceAgentLabel', { name: sessionSourceAgentLabel(session.importedSource) })}>
+                        {sessionSourceAgentLabel(session.importedSource)}
+                      </StatusPill>
+                    ) : null}
                     {isChildSession ? (
                       <StatusPill className="openbitfun-nav-panel__inline-item-btw-badge" tone="neutral">
                         {childSessionBadge}
@@ -2148,7 +1922,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                             data-testid="nav-session-menu-delete"
                             data-session-id={session.sessionId}
                           >
-                            <span>{t('nav.sessions.delete')}</span>
+                            <span>{t(session.externalHistory?.mode === 'follow' ? 'nav.sessions.removeSource' : 'nav.sessions.delete')}</span>
                           </MenuItem>
                         </>
                       )}
@@ -2181,17 +1955,19 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
           type="button"
           className="openbitfun-nav-panel__inline-toggle"
           data-testid="nav-session-list-load-more"
-          aria-label={t('nav.sessions.showMore', {
+          aria-label={isSessionCountComplete ? t('nav.sessions.showMore', {
             count: topLevelSessions.length - sessionDisplayLimit,
-          })}
+          }) : t('nav.sessions.showMoreLabel')}
           onClick={() => setLevel2DisplayCount(prev => prev + SESSIONS_LEVEL_2_PAGE)}
         >
           <OverflowText className="openbitfun-nav-panel__inline-toggle-label">
             {t('nav.sessions.showMoreLabel')}
           </OverflowText>
-          <span className="openbitfun-nav-panel__inline-toggle-count" aria-hidden>
-            +{topLevelSessions.length - sessionDisplayLimit}
-          </span>
+          {isSessionCountComplete && (
+            <span className="openbitfun-nav-panel__inline-toggle-count" aria-hidden>
+              +{topLevelSessions.length - sessionDisplayLimit}
+            </span>
+          )}
           <span className="openbitfun-nav-panel__inline-toggle-trailing">
             <Icon name="chevron-down" size="xs" className="openbitfun-nav-panel__inline-toggle-chevron" aria-hidden />
           </span>
@@ -2222,7 +1998,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
           <span className="openbitfun-nav-panel__inline-toggle-trailing">
             {metadataPageState.isLoading ? (
               <Loader2 className="openbitfun-nav-panel__inline-toggle-spinner" aria-hidden />
-            ) : expandToggleLabels.remainingCount === null ? (
+            ) : expandToggleState.action === 'show-less' ? (
               <Icon name="chevron-up" size="xs" className="openbitfun-nav-panel__inline-toggle-chevron" aria-hidden />
             ) : (
               <Icon name="chevron-down" size="xs" className="openbitfun-nav-panel__inline-toggle-chevron" aria-hidden />

@@ -187,6 +187,30 @@ test('Pi Skill discovery may use bounded static-source support without opening o
   }
 });
 
+test('Codex session history imports stay behind reviewed composition roots', async () => {
+  const rule = forbiddenContentUnderRules.find(
+    (rule) => rule.reason === 'Codex declarative source adapter imports are limited to its fixtures and composition roots',
+  );
+  assert.ok(rule);
+  const sourcePath = 'src/crates/assembly/core/src/external_session_import.rs';
+  const source = await readFile(new URL(`../${sourcePath}`, import.meta.url), 'utf8');
+  assert.match(source, /use openbitfun_codex_adapter::session/);
+  assert.deepEqual(findForbiddenContentMatches(source, rule.patterns, sourcePath), []);
+  for (const rejectedPath of [
+    'src/crates/assembly/core/src/agentic/persistence/manager.rs',
+    'src/apps/desktop/src/api/session.rs',
+  ]) {
+    assert.ok(findForbiddenContentMatches(source, rule.patterns, rejectedPath).length > 0,
+      `Codex transcript translation must remain behind the import facade at ${rejectedPath}`);
+  }
+  const publicApi = publicApiAllowlistRules.find(
+    (rule) => rule.path === 'src/crates/adapters/codex-adapter/src/lib.rs',
+  );
+  const session = publicApi?.allowedSymbolEntries.find((entry) => entry.symbol === 'session');
+  assert.equal(session?.contractSlice, 'external-session-import-contract');
+  assert.match(session?.consumer ?? '', /external_session_import/);
+});
+
 test('Cargo manifest discovery ignores nested local-agent worktrees', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'openbitfun-core-boundaries-'));
   t.after(() => rm(root, { recursive: true, force: true }));

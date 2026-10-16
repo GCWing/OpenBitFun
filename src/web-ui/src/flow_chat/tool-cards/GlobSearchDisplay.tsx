@@ -89,7 +89,8 @@ export const GlobSearchDisplay: React.FC<ToolCardProps> = ({
 
   const pattern = getSearchPattern();
   const searchPath = getSearchPath();
-  const hasDetails = status === 'completed' && files.length > 0;
+  const textOutput = files.length === 0 && typeof toolResult?.result?.content === 'string' ? toolResult.result.content : '';
+  const hasDetails = (status === 'completed' || Boolean(toolItem.importedSource)) && (files.length > 0 || textOutput.length > 0);
   const hasResultData = Array.isArray(toolResult?.result)
     || Array.isArray(toolResult?.result?.files) || Array.isArray(toolResult?.result?.matches);
 
@@ -118,12 +119,13 @@ export const GlobSearchDisplay: React.FC<ToolCardProps> = ({
         details={hasDetails ? [
           { label: `${t('toolCards.globSearch.labelPattern')}:`, value: pattern },
           { label: `${t('toolCards.globSearch.labelPath')}:`, value: searchPath },
-          {
+          ...(hasResultData ? [{
             label: `${t('toolCards.globSearch.labelStats')}:`,
             value: stats.directories > 0
               ? t('toolCards.globSearch.filesAndDirs', { files: stats.files, directories: stats.directories })
               : t('toolCards.globSearch.filesCount', { count: stats.files }),
-          },
+          }] : []),
+          ...(textOutput ? [{ label: t('toolCards.common.executionResult'), value: textOutput }] : []),
         ] : undefined}
         results={hasDetails ? files.slice(0, 50).map((file: any, index: number) => {
           const fileName = typeof file === 'string' ? file : (file.name || file.path || '');

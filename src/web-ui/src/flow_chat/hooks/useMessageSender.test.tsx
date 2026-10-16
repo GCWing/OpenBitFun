@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useMessageSender } from './useMessageSender';
 import type { ConversationExcerptContext } from '@/shared/types/context';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
+import { FLOWCHAT_MESSAGE_SUBMITTED_EVENT } from '../events/flowchatNavigation';
 
 const mocks = vi.hoisted(() => {
   const createChatSession = vi.fn();
@@ -174,6 +175,23 @@ describe('useMessageSender', () => {
     await act(async () => root.render(<Probe />));
     await act(async () => sendFromProbe?.());
     expect(mocks.sendMessage.mock.calls[0][5].sendImmediately).toBe(behavior === 'immediate');
+  });
+
+  it('announces the new native branch after an external source is forked', async () => {
+    const submitted = vi.fn();
+    window.addEventListener(FLOWCHAT_MESSAGE_SUBMITTED_EVENT, submitted);
+    mocks.sendMessage.mockImplementationOnce(async (...args: unknown[]) => {
+      const options = args[5] as { onSessionForked: (sourceId: string, branchId: string) => void };
+      options.onSessionForked('created-session', 'native-branch');
+    });
+    try {
+      await act(async () => root.render(<Probe />));
+      await act(async () => sendFromProbe?.());
+      expect(submitted).toHaveBeenCalledOnce();
+      expect(submitted.mock.calls[0][0].detail.sessionId).toBe('native-branch');
+    } finally {
+      window.removeEventListener(FLOWCHAT_MESSAGE_SUBMITTED_EVENT, submitted);
+    }
   });
 
   it.each([true, false])('preserves explicit send intent (%s) without reading the preference', async sendImmediately => {

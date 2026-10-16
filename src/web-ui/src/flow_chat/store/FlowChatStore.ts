@@ -1,6 +1,7 @@
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import { resolveLegacySessionWorkspace } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
 import { projectUserQuestionTiming } from '../utils/userQuestionTiming';
+import { externalHistoryFromMetadata } from '../utils/externalHistory';
 /**
  * Flow Chat global state store
  * Prevents state loss when components remount
@@ -5364,53 +5365,36 @@ export class FlowChatStore {
   }
 
   public async deleteSession(sessionId: string, options?: RemoveSessionOptions): Promise<void> {
+    const scope = getActiveSurfaceScope();
     const sessionIdsToDelete = this.getCascadeSessionIds(sessionId);
     if (sessionIdsToDelete.length === 0) {
       return;
     }
-    if (options) {
-      this.pendingRemoveSessionOptions.set(sessionId, options);
-    }
-
-    const { stateMachineManager } = await import('../state-machine');
-    sessionIdsToDelete.forEach(id => {
-      stateMachineManager.delete(id);
-    });
-
+    const pendingOptions = this.pendingRemoveSessionOptions;
+    if (options) pendingOptions.set(sessionId, options);
     try {
-      const { agentAPI } = await import('@/infrastructure/api/service-api/AgentAPI');
-      const deleteResults = await Promise.allSettled(
-        sessionIdsToDelete.map(async id => {
-          const sess = this.state.sessions.get(id);
-          if (sess?.draft?.phase === 'editing') return;
-          const workspacePath = sess ? sessionProjectWorkspacePath(sess) : undefined;
-          if (!workspacePath) {
+      // Children are ordered before their owner. A failed child must keep its
+      // parent, and a rejected mutation must keep the session and its drafts.
+      for (const id of sessionIdsToDelete) {
+        scope.assertCurrent('delete session');
+        const sess = this.state.sessions.get(id);
+        if (sess?.draft?.phase !== 'editing') {
+          if (!sess || !sessionProjectWorkspacePath(sess)) {
             throw new Error(`Workspace path not found for session ${id}`);
           }
-
-          await agentAPI.deleteSession(
-            id,
-            this.sessionHistoryWorkspaceId(id)
-          );
-        })
-      );
-
-      deleteResults.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          log.error('Failed to delete session on backend', {
-            sessionId: sessionIdsToDelete[index],
-            error: result.reason,
-          });
+          await agentAPI.deleteSession(id, this.sessionHistoryWorkspaceId(id));
+          scope.assertCurrent('complete session deletion');
         }
-      });
-    } catch (error) {
-      log.error('Failed to delete session on backend', { sessionId, error });
+        stateMachineManager.delete(id);
+        const removedIds = this.removeSession(id, id === sessionId ? options : undefined);
+        // A host deletion event may already have removed the presentation.
+        const confirmedIds = [...new Set([id, ...removedIds])];
+        sessionComposerStore.getState().removeDrafts(confirmedIds);
+        askUserQuestionDraftStore.getState().removeSessionDrafts(confirmedIds);
+      }
+    } finally {
+      pendingOptions.delete(sessionId);
     }
-
-    const removedSessionIds = this.removeSession(sessionId, options);
-    sessionComposerStore.getState().removeDrafts(removedSessionIds);
-    askUserQuestionDraftStore.getState().removeSessionDrafts(removedSessionIds);
-    this.pendingRemoveSessionOptions.delete(sessionId);
   }
 
   public removeSession(sessionId: string, options?: RemoveSessionOptions): string[] {
@@ -7346,7 +7330,9 @@ export class FlowChatStore {
         scope.assertCurrent('processPersistedSessionMetadata');
         const existingSession = this.state.sessions.get(metadata.sessionId);
         if ((existingSession?.workspaceId || existingSession?.config.workspaceId)
-          && !(existingSession?.sessionKind === 'subagent' && existingSession.continuationPolicy === undefined)) {
+          && !(existingSession?.sessionKind === 'subagent' && existingSession.continuationPolicy === undefined)
+          && !existingSession?.externalHistory && !existingSession?.externalBranchOf
+          && !metadata.customMetadata?.externalHistoryMode && !metadata.customMetadata?.externalBranchOf) {
           return;
         }
         if (!includeArchived && metadata.status === 'archived') {
@@ -7399,15 +7385,22 @@ export class FlowChatStore {
           const existing = prev.sessions.get(metadata.sessionId);
           if (existing) {
             const continuationPolicy = existing.continuationPolicy ?? relationship.continuationPolicy;
+            const importedSource = metadata.customMetadata?.importedFrom ?? existing.importedSource;
+            const externalHistory = externalHistoryFromMetadata(metadata.customMetadata);
+            const externalBranchOf = metadata.customMetadata?.externalBranchOf;
+            const followedFields = externalHistory ? { ...titleState, lastActiveAt: metadata.lastActiveAt } : {};
             if (existing.workspaceId || existing.config.workspaceId || !workspaceId) {
-              if (continuationPolicy === existing.continuationPolicy) return prev;
+              if (continuationPolicy === existing.continuationPolicy && importedSource === existing.importedSource
+                && (!externalHistory || (existing.title === titleState.title && existing.lastActiveAt === metadata.lastActiveAt))
+                && JSON.stringify(externalHistory) === JSON.stringify(existing.externalHistory)
+                && JSON.stringify(externalBranchOf) === JSON.stringify(existing.externalBranchOf)) return prev;
               const sessions = new Map(prev.sessions);
-              sessions.set(metadata.sessionId, { ...existing, continuationPolicy });
+              sessions.set(metadata.sessionId, { ...existing, ...followedFields, continuationPolicy, importedSource, externalHistory, externalBranchOf });
               return { ...prev, sessions };
             }
             const sessions = new Map(prev.sessions);
             sessions.set(metadata.sessionId, {
-              ...existing, workspaceId, projectWorkspaceId, continuationPolicy,
+              ...existing, ...followedFields, workspaceId, projectWorkspaceId, continuationPolicy, importedSource, externalHistory, externalBranchOf,
               workspacePath: metadata.workspacePath || workspacePath,
               projectWorkspacePath: metadata.projectWorkspacePath || workspacePath,
               ...remoteScope,
@@ -7438,6 +7431,9 @@ export class FlowChatStore {
             status: 'idle',
             persistedStatus: metadata.status,
             persistedTurnCount: metadata.turnCount,
+            importedSource: metadata.customMetadata?.importedFrom,
+            externalHistory: externalHistoryFromMetadata(metadata.customMetadata),
+            externalBranchOf: metadata.customMetadata?.externalBranchOf,
             config: {
               agentType: restoredAgentType,
               modelName: metadata.modelName,
@@ -7528,10 +7524,11 @@ export class FlowChatStore {
   public async ensurePersistedSessionMetadata(
     sessionId: string,
     workspaceId: string,
+    force = false,
   ): Promise<boolean> {
     const scope = getActiveSurfaceScope();
     const existing = this.state.sessions.get(sessionId);
-    if ((existing?.workspaceId || existing?.config.workspaceId)
+    if (!force && (existing?.workspaceId || existing?.config.workspaceId)
       && !(existing?.sessionKind === 'subagent' && existing.continuationPolicy === undefined)) {
       return true;
     }
@@ -7558,7 +7555,8 @@ export class FlowChatStore {
     workspaceId: string,
     limit: number,
     cursor?: string,
-    traceSource = 'unknown'
+    traceSource = 'unknown',
+    options?: { fresh?: boolean },
   ): Promise<SessionMetadataPage> {
     const { remoteConnectionId, remoteSshHost } = this.workspaceForId(workspaceId);
     const requestKey = this.getMetadataPageRequestKey(
@@ -7566,7 +7564,7 @@ export class FlowChatStore {
     );
     const existingRequest = this.metadataPageRequests.get(requestKey);
     const remote = isRemoteTraceContext(remoteConnectionId, remoteSshHost);
-    if (existingRequest) {
+    if (existingRequest && !options?.fresh) {
       const completedAtMs = existingRequest.completedAtMs;
       const isRecentCompletedRequest =
         completedAtMs !== undefined &&
@@ -7582,10 +7580,10 @@ export class FlowChatStore {
         });
         return existingRequest.promise;
       }
+    }
 
-      if (existingRequest.cleanupTimer) {
-        clearTimeout(existingRequest.cleanupTimer);
-      }
+    if (existingRequest) {
+      if (existingRequest.cleanupTimer) clearTimeout(existingRequest.cleanupTimer);
       this.metadataPageRequests.delete(requestKey);
     }
 
@@ -7886,6 +7884,9 @@ export class FlowChatStore {
               status: 'idle',
               persistedStatus: metadata.status,
               persistedTurnCount: metadata.turnCount,
+              importedSource: metadata.customMetadata?.importedFrom,
+              externalHistory: externalHistoryFromMetadata(metadata.customMetadata),
+              externalBranchOf: metadata.customMetadata?.externalBranchOf,
               config: {
                 agentType: restoredAgentType,
                 modelName: metadata.modelName,
@@ -8485,6 +8486,8 @@ export class FlowChatStore {
       limit?: number;
       includeInternal?: boolean;
       deferFullHistoryUntilActive?: boolean;
+      /** A background source refresh must not replace a view after drafting starts. */
+      shouldApply?: () => boolean;
     }
   ): Promise<void> {
     const traceStartedAt = nowMs();
@@ -8548,6 +8551,12 @@ export class FlowChatStore {
       return;
     }
     if (scope.surfaceId !== 'local') {
+      if (initialSession?.externalHistory?.mode === 'follow') {
+        // Relay history has its own cursor/version contract. Until it can pin
+        // immutable source snapshots, do not silently project a stale source.
+        this.setSessionHistoryState(sessionId, 'failed');
+        throw new Error(i18nService.t('flow-chat:externalHistory.unsupportedSurface'));
+      }
       this.setSessionHistoryState(sessionId, 'hydrating');
       await this.loadRelaySessionHistory(sessionId);
       scope.assertCurrent('load relay session history');
@@ -8561,6 +8570,7 @@ export class FlowChatStore {
       initialSession.historyState === 'metadata-only';
     let hydratingStateNotified = false;
     const notifyHydratingState = (): void => {
+      if (options?.shouldApply) return;
       if (suppressInitialHydratingState) {
         return;
       }
@@ -8753,6 +8763,7 @@ export class FlowChatStore {
       // machine they are about to drive is shared, so a stale hydrate must stop
       // here rather than commit into whichever surface is rendered now.
       scope.assertCurrent('loadSessionHistory');
+      if (options?.shouldApply && !options.shouldApply()) return;
       // A local restore may have started just before the observer bound this
       // session. Re-check ownership after every restore await and before any
       // commit or state-machine mutation so that late empty history cannot
@@ -9140,6 +9151,8 @@ export class FlowChatStore {
               id: tool.id,
               type: 'tool' as const,
               toolName: tool.toolName,
+              importedSource: metadata?.importedFrom === 'codex' || metadata?.importedFrom === 'zcode'
+                ? metadata.importedFrom : undefined,
               toolCall: tool.toolCall,
               interruptionReason: normalizePersistedToolInterruptionReason(
                 tool.interruptionReason,

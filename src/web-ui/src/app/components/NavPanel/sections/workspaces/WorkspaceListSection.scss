@@ -915,11 +915,11 @@
     animation: openbitfun-footer-menu-in var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-decelerate) forwards;
   }
 
-  &__workspace-acp-menu-trigger.is-open {
+  &__workspace-submenu-trigger.is-open {
     background: var(--openbitfun-color-action-neutral-surface);
   }
 
-  &__workspace-acp-submenu {
+  &__workspace-submenu {
     &[data-placement='right'] {
       transform-origin: top left;
     }
@@ -1343,7 +1343,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .openbitfun-nav-panel__workspace-item-menu-popover,
-  .openbitfun-nav-panel__workspace-acp-submenu {
+  .openbitfun-nav-panel__workspace-submenu {
     animation: none;
   }
 }

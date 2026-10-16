@@ -1253,6 +1253,15 @@ impl CoreAgentRuntimeCompatibility {
         &self,
         workspace_path: &Path,
     ) -> OpenBitFunResult<Vec<SessionMetadata>> {
+        #[cfg(feature = "external-sources")]
+        for warning in crate::external_session_import::auto_discovery::discover_for_storage_path(
+            workspace_path,
+        )
+        .await
+        .warnings
+        {
+            log::warn!("External session discovery: {warning}");
+        }
         self.persistence.list_session_metadata(workspace_path).await
     }
 
@@ -1262,9 +1271,22 @@ impl CoreAgentRuntimeCompatibility {
         cursor: Option<&str>,
         limit: usize,
     ) -> OpenBitFunResult<SessionMetadataPage> {
-        self.persistence
+        #[cfg(feature = "external-sources")]
+        let warnings = crate::external_session_import::auto_discovery::discover_for_storage_path(
+            workspace_path,
+        )
+        .await;
+        #[allow(unused_mut)]
+        let mut page = self
+            .persistence
             .list_session_metadata_page(workspace_path, cursor, limit)
-            .await
+            .await?;
+        #[cfg(feature = "external-sources")]
+        {
+            page.discovery_warnings.extend(warnings.warnings);
+            page.discovery_pending = warnings.pending;
+        }
+        Ok(page)
     }
 
     /// A bounded navigation read over metadata + current runtime owners. Initial
@@ -1439,6 +1461,19 @@ impl CoreAgentRuntimeCompatibility {
         }
 
         let metadata = self.list_persisted_sessions(storage_path).await?;
+        #[cfg(feature = "external-sources")]
+        let has_deferred_history = metadata.iter().any(|metadata| {
+            crate::external_session_import::deferred::is_deferred(metadata)
+                || crate::external_session_import::deferred::tracking::is_followed(metadata)
+        });
+        #[cfg(feature = "external-sources")]
+        let metadata = metadata
+            .into_iter()
+            .filter(|metadata| {
+                !crate::external_session_import::deferred::is_deferred(metadata)
+                    && !crate::external_session_import::deferred::tracking::is_followed(metadata)
+            })
+            .collect::<Vec<_>>();
         let documents = metadata
             .iter()
             .map(session_search_document)
@@ -1458,6 +1493,15 @@ impl CoreAgentRuntimeCompatibility {
             .await
             .map_err(session_search_index_error)?;
         let mut diagnostics = Vec::new();
+
+        #[cfg(feature = "external-sources")]
+        if has_deferred_history {
+            diagnostics.push(SessionSearchDiagnostic {
+                code: SessionSearchDiagnosticCode::SessionIndexStale,
+                session_id: None,
+                message: "Followed external history is excluded from workspace content search; fork it into a native session to include it".into(),
+            });
+        }
 
         for session_id in reconciliation.stale_session_ids {
             let Some(source_revision) = revisions.get(&session_id) else {
@@ -2170,6 +2214,44 @@ impl CoreSessionOperationsPort {
         .await
     }
 
+    #[cfg(feature = "external-sources")]
+    async fn fork_external_history_at_turn(
+        &self,
+        storage_path: &Path,
+        source_session_id: &str,
+        source_turn_id: Option<&str>,
+        boundary: SessionBranchBoundary,
+    ) -> PortResult<Option<AgentSessionForkResult>> {
+        let Some(source) = self
+            .persistence
+            .external_history_branch_source(storage_path, source_session_id, source_turn_id)
+            .await
+            .map_err(runtime_port_error)?
+        else {
+            return Ok(None);
+        };
+        let source_turn_id = match source_turn_id {
+            Some(id) => id.to_owned(),
+            None => latest_persisted_turn_id(&source.turns).map_err(runtime_port_error)?,
+        };
+        let result = self
+            .persistence
+            .branch_transient_session(
+                storage_path,
+                &SessionBranchRequest {
+                    source_session_id: source_session_id.to_owned(),
+                    source_turn_id,
+                    boundary,
+                },
+                source,
+            )
+            .await
+            .map_err(runtime_port_error)?;
+        self.finish_session_fork(storage_path, source_session_id, result)
+            .await
+            .map(Some)
+    }
+
     async fn fork_at_persisted_turn(
         &self,
         storage_path: &Path,
@@ -2230,6 +2312,18 @@ impl CoreSessionOperationsPort {
                 .map_err(runtime_port_error)?;
             (execution_id.to_owned(), is_transient)
         };
+        // Keep the optional source decoding/fork state out of native restore futures.
+        #[cfg(feature = "external-sources")]
+        if let Some(result) = Box::pin(self.fork_external_history_at_turn(
+            storage_path,
+            &source_session_id,
+            source_turn_id.as_deref(),
+            boundary,
+        ))
+        .await?
+        {
+            return Ok(result);
+        }
         if is_transient {
             let _guard = session_manager
                 .acquire_session_mutation(&source_session_id)

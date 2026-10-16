@@ -113,7 +113,7 @@ export const RunCodeToolCard: React.FC<ToolCardProps> = ({
         program={code ? (
           <CodePreview
             content={code}
-            language="typescript"
+            language={asText(toolCall?.input?.language) || 'typescript'}
             showLineNumbers={false}
             maxHeight={320}
             autoScrollToBottom={false}

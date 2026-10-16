@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   dispatchSession: false,
   openDispatchFile: vi.fn<(...args: unknown[]) => Promise<void>>(async () => undefined),
   snapshotsAvailable: true,
+  snapshotSessionIds: [] as Array<string | undefined>,
   emitSnapshotEvent: vi.fn(),
   getOperationSummary: vi.fn<(sessionId: string, operationId: string) => Promise<{
     linesAdded: number; linesRemoved: number;
@@ -83,13 +84,16 @@ vi.mock('@/infrastructure/i18n/hooks/useI18n', () => ({
 }));
 
 vi.mock('../../tools/snapshot_system/hooks/useSnapshotState', () => ({
-  useSnapshotState: () => ({
+  useSnapshotState: (sessionId?: string) => {
+    mocks.snapshotSessionIds.push(sessionId);
+    return ({
     surfaceEpoch: getActiveSurfaceScope().epoch,
     snapshotsAvailable: mocks.snapshotsAvailable,
     files: [],
     error: null,
     clearError: vi.fn(),
-  }),
+    });
+  },
 }));
 
 vi.mock('../../tools/snapshot_system/core/SnapshotEventBus', () => ({
@@ -165,6 +169,7 @@ describe('FileOperationToolCard', () => {
 
     mocks.currentWorkspace = undefined;
     mocks.snapshotsAvailable = true;
+    mocks.snapshotSessionIds = [];
     mocks.emitSnapshotEvent.mockClear();
     mocks.getOperationSummary.mockReset().mockResolvedValue(null);
     mocks.createDiffEditorTab.mockReset();
@@ -189,6 +194,30 @@ describe('FileOperationToolCard', () => {
     } as FlowToolItem));
   }
   const groupHeader = () => container.querySelector('[data-openbitfun-component="file-edit-group"][data-openbitfun-part="header"]');
+
+  it.each(['local', 'peer-b'])('renders imported file changes without live file or snapshot actions on %s', async surface => {
+    activateSurface(surface);
+    const toolItem: FlowToolItem = { ...groupItems(true)[0], importedSource: 'zcode', endTime: 1 };
+    await act(async () => root.render(<FileOperationToolCard toolItem={toolItem} config={groupConfig} sessionId="native-session" onOpenInEditor={mocks.openFile} />));
+    await act(async () => root.render(<FileOperationToolCard toolItem={{ ...toolItem, endTime: 2 }} config={groupConfig} sessionId="native-session" onOpenInEditor={mocks.openFile} />));
+    expect(container.querySelector('[data-testid="chat-file-change-card"]')).not.toBeNull();
+    expect(container.querySelector('[data-openbitfun-change="added"]')?.textContent).toBe('+1');
+    expect(container.querySelector('[data-testid="chat-file-change-open-file"]')).toBeNull();
+    expect(mocks.snapshotSessionIds.every(id => id === undefined)).toBe(true);
+    expect(mocks.getOperationSummary).not.toHaveBeenCalled();
+    expect(mocks.getOperationDiff).not.toHaveBeenCalled();
+    expect(mocks.emitSnapshotEvent).not.toHaveBeenCalled();
+    expect(mocks.openFile).not.toHaveBeenCalled();
+  });
+
+  it('keeps imported plan-file writes on the ordinary file card without native plan actions', async () => {
+    const toolItem: FlowToolItem = { ...groupItems(true)[0], toolName: 'Write', importedSource: 'zcode',
+      toolCall: { id: 'foreign-plan', input: { file_path: '/remote/task.plan.md', content: '# Recorded plan' } } };
+    await act(async () => root.render(<FileOperationToolCard toolItem={toolItem} config={groupConfig} sessionId="session" />));
+    expect(container.querySelector('[data-testid="chat-file-change-card"]')).not.toBeNull();
+    expect(mocks.writePlanDisplayProps).toHaveLength(0);
+    expect(mocks.getOperationSummary).not.toHaveBeenCalled();
+  });
   async function renderFileGroup(items: FlowToolItem[], expanded = false, sessionId = 'session') {
     await act(async () => root.render(<FileEditGroupView items={items} sessionId={sessionId}
       expanded={expanded} summary="2 edits" itemCount={items.length}

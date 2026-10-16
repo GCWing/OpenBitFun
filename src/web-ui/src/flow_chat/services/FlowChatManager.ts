@@ -92,6 +92,7 @@ type FlowChatSendMessageOptions = Pick<
   | 'preserveTurnOnStartError'
   | 'onSessionConflictRetryStart'
   | 'onSessionConflictRetrySuccess'
+  | 'onSessionForked'
   | 'sessionMutationLeaseId'
 >;
 

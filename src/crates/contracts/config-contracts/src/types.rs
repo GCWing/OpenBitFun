@@ -203,6 +203,10 @@ pub struct AppConfig {
     /// Defaults for opt-in managed Git worktrees.
     #[serde(default)]
     pub worktrees: WorktreeSettings,
+    /// Opt-in discovery of external session history on the serving host.
+    /// Unknown ecosystem keys survive upgrades; only installed readers consume them.
+    #[serde(default)]
+    pub external_session_discovery: HashMap<String, bool>,
 }
 
 /// An explicit empty source list stays empty; defaults apply only to absent settings.
@@ -1932,6 +1936,7 @@ impl Default for AppConfig {
             close_button_behavior: default_close_button_behavior(),
             hooks: AgentHooksConfig::default(),
             worktrees: WorktreeSettings::default(),
+            external_session_discovery: HashMap::new(),
         }
     }
 }
@@ -4202,5 +4207,27 @@ mod user_question_timeout_tests {
                 value
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod external_session_discovery_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_configuration_stays_opted_out_and_unknown_agent_preferences_round_trip() {
+        let mut legacy = serde_json::to_value(AppConfig::default()).unwrap();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("external_session_discovery");
+        legacy["language"] = serde_json::json!("en-US");
+        let old: AppConfig = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(old.external_session_discovery.is_empty());
+        assert_eq!(old.language, "en-US");
+        legacy["external_session_discovery"] =
+            serde_json::json!({"codex": true, "zcode": false, "future-agent": true});
+        let config: AppConfig = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(serde_json::to_value(config).unwrap(), legacy);
     }
 }

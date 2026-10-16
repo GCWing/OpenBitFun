@@ -2379,6 +2379,14 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             self.ensure_runtime_ownership(&workspace.root_path, None, None)?;
         }
         let workspace = workspace_service.open_workspace_by_id(workspace_id).await?;
+        #[cfg(feature = "external-sources")]
+        for warning in
+            crate::external_session_import::auto_discovery::discover_workspace(&workspace, true)
+                .await
+                .warnings
+        {
+            log::warn!("External session discovery: {warning}");
+        }
         if workspace.workspace_kind != WorkspaceKind::Remote {
             if let Err(error) = crate::service::snapshot::initialize_snapshot_manager_for_workspace(
                 &workspace.id,
@@ -6250,6 +6258,14 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             None => None,
         };
 
+        #[cfg(feature = "external-sources")]
+        if let Some(restore) = requested_restore.as_ref() {
+            self.session_manager
+                .persistence_manager()
+                .assert_native_history_mutation(&restore.effective_storage_path, &session_id)
+                .await?;
+        }
+
         // Get latest session, restoring from persistence on demand so every entry
         // point can use the same start_dialog_turn flow. A loaded session must keep
         // the same storage identity as this invocation.
@@ -8663,6 +8679,11 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         session_id: &str,
         undo: bool,
     ) -> OpenBitFunResult<(AgentSessionComposerUpdate, bool, usize)> {
+        #[cfg(feature = "external-sources")]
+        self.session_manager
+            .persistence_manager()
+            .assert_native_history_mutation(session_storage_path, session_id)
+            .await?;
         let workspace = self.local_revert_workspace(session_id).await?;
         let snapshot_manager =
             crate::service::snapshot::get_or_create_snapshot_manager(&workspace.id, None)
@@ -8809,6 +8830,11 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         Vec<String>,
         Vec<String>,
     )> {
+        #[cfg(feature = "external-sources")]
+        self.session_manager
+            .persistence_manager()
+            .assert_native_history_mutation(session_storage_path, session_id)
+            .await?;
         let workspace = self.local_revert_workspace(session_id).await?;
         let persistence = self.session_manager.persistence_manager();
         let current = persistence
@@ -9061,6 +9087,11 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         turn_id: Option<&str>,
         history: Option<Option<usize>>,
     ) -> OpenBitFunResult<(Vec<DialogTurnData>, Option<usize>)> {
+        #[cfg(feature = "external-sources")]
+        self.session_manager
+            .persistence_manager()
+            .assert_relay_history_supported(storage, session_id)
+            .await?;
         let _mutation = self
             .session_manager
             .acquire_session_mutation(session_id)

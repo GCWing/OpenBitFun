@@ -68,6 +68,28 @@
     "pet": "寵物",
     "instruction": "指令與規則"
   },
+  "sessions": {
+    "removed": {
+      "title": "已移除的來源對話",
+      "description": "將來源對話重新新增至對話清單。既有的 OpenBitFun 續聊分支保持獨立，來源對話在開啟時更新歷史。",
+      "empty": "沒有已移除的來源對話。",
+      "restore": "重新新增",
+      "restoreNamed": "重新新增「{{name}}」",
+      "retry": "重試",
+      "loadFailed": "無法讀取已移除的來源對話，請在主機可用後重試。",
+      "restoreFailed": "無法重新新增此來源對話。移除記錄已保留，請稍後重試。",
+      "refreshFailed": "來源對話已重新新增，但清單重新整理失敗。請重新開啟工作區查看。",
+      "unsupportedHost": "目前主機不支援重新新增已移除的來源對話，請更新執行對話的主機後重試。",
+      "unsupportedSurface": "請在對話所屬主機管理已移除的來源對話，Peer 模式暫不支援此操作。"
+    },
+    "autoDiscovery": {
+      "label": "自動探索 {{name}} 工作階段",
+      "description": "開啟工作區時，只建立 {{name}} 工作階段的輕量索引並顯示於清單。首次開啟或繼續對話時才儲存完整歷史；尚未開啟的工作階段仍依賴原始來源。關閉開關保留既有項目與副本。暫不支援 SSH 工作區探索。",
+      "unsupported": "目前主機不支援工作階段自動探索，請更新工作階段所在主機後啟用。",
+      "loadFailed": "無法載入工作階段自動探索設定。",
+      "saveFailed": "無法儲存工作階段自動探索設定。"
+    }
+  },
   "import": {
     "title": "匯入與複用",
     "description": "查看 {{name}} 可與 OpenBitFun 搭配使用的內容。可匯入的內容可以直接加入，其餘內容會顯示目前支援狀態。",

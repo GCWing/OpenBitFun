@@ -146,6 +146,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
   const toolId = toolItem.id ?? toolCall?.id;
   const status = getToolCardStatus(toolItem);
   const isFailed = status === 'error';
+  const imported = Boolean(toolItem.importedSource);
   
   // Streaming stays in the summary until the reader asks for the live preview.
   const [isContentExpanded, setIsContentExpanded] = useToolCardDisclosure('isContentExpanded');
@@ -162,14 +163,15 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
   
   const {
     surfaceEpoch,
-    snapshotsAvailable,
+    snapshotsAvailable: nativeSnapshotsAvailable,
     error,
     clearError
-  } = useSnapshotState(sessionId);
+  } = useSnapshotState(imported ? undefined : sessionId);
+  const snapshotsAvailable = !imported && nativeSnapshotsAvailable;
   // A recorded operation is viewable even when older Session history has no
   // complete snapshot coverage. Absence preserves compatibility with old hosts.
   const isDispatchSession = hasSessionFileProvider(sessionId);
-  const operationSnapshotAvailable = !isDispatchSession
+  const operationSnapshotAvailable = !imported && !isDispatchSession
     && (snapshotsAvailable || toolResult?.result?.snapshot_recorded === true);
   const eventBus = SnapshotEventBus.getInstance();
   const { workspace: currentWorkspace } = useOptionalCurrentWorkspace();
@@ -478,6 +480,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
   }, [snapshotsAvailable, operationSnapshotAvailable, sessionId, currentFilePath, openFilePath, toolCall?.id, fileName, toolItem.toolName]);
 
   const canOpenFullCode =
+    !imported &&
     !isFailed &&
     toolItem.toolName !== 'Delete' &&
     status === 'completed' &&
@@ -507,7 +510,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
   ]);
 
   const handleCodeLineClick = useCallback(async (lineNumber: number, filePath?: string) => {
-    if (!filePath) return;
+    if (imported || !filePath) return;
     if (openFileThroughSession(sessionId, filePath, fileName, { start: lineNumber })) {
       return;
     }
@@ -517,7 +520,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
     } catch (error) {
       log.error('Failed to jump to line', { filePath, lineNumber, error });
     }
-  }, [sessionId, fileName]);
+  }, [imported, sessionId, fileName]);
 
   const renderExpandedContent = () => {
     if (isFailed) return null;
@@ -540,7 +543,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
               showLineNumbers={false}
               maxHeight={previewMaxHeight}
               autoScrollToBottom={false}
-              onLineClick={handleCodeLineClick}
+              onLineClick={imported ? undefined : handleCodeLineClick}
             />
           </div>
         );
@@ -579,7 +582,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
               showLineNumbers={false}
               maxHeight={previewMaxHeight}
               autoScrollToBottom={false}
-              onLineClick={handleCodeLineClick}
+              onLineClick={imported ? undefined : handleCodeLineClick}
             />
           </div>
         );
@@ -706,6 +709,7 @@ export const FileOperationToolCard: React.FC<FileOperationToolCardProps> = (prop
   const targetPath = fileOperationPath(props.toolItem);
   const planFilePath = resolveOpenFilePath(targetPath, currentWorkspace?.rootPath);
   const isPlanWrite = props.toolItem.toolName === 'Write'
+    && !props.toolItem.importedSource
     && !isFailedFileOperation(props.toolItem)
     && planFilePath.replace(/\\/g, '/').toLowerCase().endsWith('.plan.md');
 

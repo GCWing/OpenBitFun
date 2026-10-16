@@ -375,6 +375,27 @@ local versus remote instruction composition:
 cargo test --locked -p openbitfun-core --no-default-features --features external-sources,git --lib instruction_
 ```
 
+For external session indexing, immutable source views, viewed-version forks,
+legacy materialization, workspace ownership and cancellation (including the full-text search build):
+
+```bash
+cargo test -p openbitfun-core --no-default-features --features external-sources,git,product-search --lib external_session_import::
+cargo test -p openbitfun-core --no-default-features --features external-sources,git,product-search --lib agentic::persistence::manager::tests
+cargo test -p openbitfun-core --no-default-features --features external-sources,git,product-search --lib session_fork_
+cargo test -p openbitfun-core --no-default-features --features external-sources,git,product-search --lib agentic::persistence::session_branch::tests
+cargo test -p openbitfun-core --no-default-features --features external-sources,git,product-search --lib agentic::session::session_manager::tests::restore_session_
+```
+
+Optional read-only Zcode-to-temporary-native-store verification uses the same
+target with `inspect_installed_zcode_native_import -- --ignored --nocapture`.
+It reads the installed source and writes only inside a temporary test directory.
+
+The same target also supports `inspect_installed_codex_history_repair -- --ignored --nocapture`.
+Set `OPENBITFUN_TEST_NATIVE_SESSIONS_ROOT` and `OPENBITFUN_TEST_NATIVE_SESSION_ID`
+to an existing answerless Codex import. It reads the installed native copy and
+Codex source, exercises the repair in a temporary copy, and verifies the original
+native history is unchanged.
+
 Detached Dispatch controller, target query compatibility, and managed-baseline checks:
 
 ```bash

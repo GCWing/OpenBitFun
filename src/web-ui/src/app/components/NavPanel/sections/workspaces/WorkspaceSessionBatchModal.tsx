@@ -20,6 +20,7 @@ import { Archive } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
 import { sessionAPI } from '@/infrastructure/api/service-api/SessionAPI';
 import type { SessionMetadata } from '@/shared/types/session-history';
+import { externalHistoryFromMetadata } from '@/flow_chat/utils/externalHistory';
 import { sessionBelongsToWorkspaceNavRow, compareSessionMetadataForDisplay } from '@/flow_chat/utils/sessionOrdering';
 import { deriveSessionRelationshipFromMetadata, resolveSessionRelationship } from '@/flow_chat/utils/sessionMetadata';
 import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
@@ -249,10 +250,15 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
     if (selectedCount === 0) {
       return;
     }
+    const sourceCount = sessions.filter(item => selectedSessionIds.has(item.metadata.sessionId)
+      && externalHistoryFromMetadata(item.metadata.customMetadata)).length;
+    const onlySources = sourceCount === selectedCount;
     const confirmed = await confirmDanger(
-      t('nav.sessions.bulkDeleteConfirmTitle'),
-      t('nav.sessions.bulkDeleteConfirmMessage', { count: selectedCount }),
-      { confirmText: t('nav.sessions.deleteSelected') },
+      onlySources ? t('nav.sessions.bulkRemoveSourceConfirmTitle') : t('nav.sessions.bulkDeleteConfirmTitle'),
+      onlySources ? t('nav.sessions.bulkRemoveSourceConfirmMessage', { count: selectedCount })
+        : t('nav.sessions.bulkDeleteConfirmMessage', { count: selectedCount })
+          + (sourceCount ? ` ${t('nav.sessions.removeSourceExplanation')}` : ''),
+      { confirmText: onlySources ? t('nav.sessions.removeSelected') : t('nav.sessions.deleteSelected') },
     );
     if (!confirmed) {
       return;
@@ -279,7 +285,7 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
 
       if (successIds.size > 0) {
         await refreshWorkspaceSessions();
-        notificationService.success(t('nav.sessions.deletedSelected', { count: successIds.size }), { duration: 3000 });
+        notificationService.success(t(sourceCount ? 'nav.sessions.removedSelected' : 'nav.sessions.deletedSelected', { count: successIds.size }), { duration: 3000 });
       }
       if (successIds.size !== deletionPlan.allIds.length) {
         notificationService.error(t('nav.sessions.bulkDeleteFailed'), { duration: 4000 });
@@ -460,7 +466,9 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
           loading={actionKind === 'delete'}
           leadingIcon={<Icon name="delete" size="sm" />}
         >
-          {t('nav.sessions.deleteSelected')}
+          {t(selectedCount > 0 && sessions.filter(item => selectedSessionIds.has(item.metadata.sessionId))
+            .every(item => !!externalHistoryFromMetadata(item.metadata.customMetadata))
+            ? 'nav.sessions.removeSelected' : 'nav.sessions.deleteSelected')}
         </Button>
         <div className="workspace-session-batch-modal__footer-actions">
           <Button type="button" variant="fill" onClick={onClose} disabled={isBusy}>

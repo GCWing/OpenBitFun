@@ -1,4 +1,20 @@
 {
+  "externalHistory": {
+    "removed": "來源對話已從 OpenBitFun 移除，目前分支保留獨立歷史。",
+    "restoreSource": "重新新增來源對話",
+    "sourceMissing": "來源對話已無法使用，目前分支保留獨立歷史。",
+    "openFailed": "無法開啟來源對話。目前分支可正常使用，請稍後重試。",
+    "restoreFailed": "無法重新新增來源對話。目前分支不受影響，請稍後重試。",
+    "unavailableWithoutCache": "來源無法使用，且沒有可用的快取歷史。請恢復來源後重新開啟對話。",
+    "unsupportedSurface": "Peer 模式暫不支援跟隨來源會話。請在來源主機上開啟，或繼續已有的 OpenBitFun 分支。",
+    "forkBeforeEdit": "請先分叉此來源會話，再編輯或回退歷史。",
+    "followHint": "來自 {{source}} · 傳送後在 OpenBitFun 新分支中繼續",
+    "branchHint": "繼續自 {{source}}",
+    "openSource": "開啟來源會話",
+    "unavailable": "來源暫時無法使用，顯示上次快取",
+    "incomplete": "來源對話尚未完成，目前顯示已讀取的歷史",
+    "openBeforeContinue": "請先開啟來源會話並等待歷史載入完成，再繼續對話。"
+  },
   "subagentIdentity": {
     "names": {
       "bouncyBean": "豆豆",

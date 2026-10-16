@@ -9,6 +9,7 @@ export type WorkspaceSessionShow = 'all' | 'unread' | 'attention';
 export type WorkspaceSessionStatus = 'running' | 'attention' | 'error' | 'completed' | 'idle';
 export type WorkspaceSessionEnvironment = 'local' | 'remote' | 'detached';
 export type WorkspaceSessionSource = 'openbitfun' | 'external';
+export type WorkspaceSessionSourceAgent = 'all' | 'openbitfun' | 'codex' | 'zcode';
 export type WorkspaceSessionWorktree = 'main' | 'worktree';
 
 export interface WorkspaceSessionFilters {
@@ -27,6 +28,9 @@ export interface WorkspaceSessionViewPreferences {
 }
 
 interface WorkspaceSessionViewState extends WorkspaceSessionViewPreferences {
+  /** Keys include the serving device, because workspace IDs can repeat across hosts. */
+  sourceAgents: Record<string, WorkspaceSessionSourceAgent>;
+  setSourceAgent: (scope: string, source: WorkspaceSessionSourceAgent) => void;
   collapseAllRequestId: number;
   setGrouping: (grouping: WorkspaceSessionGrouping) => void;
   setOrdering: (ordering: WorkspaceSessionOrdering) => void;
@@ -69,6 +73,8 @@ export const useWorkspaceSessionViewStore = create<WorkspaceSessionViewState>()(
   persist(
     (set) => ({
       ...DEFAULT_WORKSPACE_SESSION_VIEW,
+      sourceAgents: {},
+      setSourceAgent: (scope, source) => set(state => ({ sourceAgents: { ...state.sourceAgents, [scope]: source } })),
       collapseAllRequestId: 0,
       setGrouping: grouping => set({ grouping }),
       setOrdering: ordering => set({ ordering }),
@@ -93,9 +99,9 @@ export const useWorkspaceSessionViewStore = create<WorkspaceSessionViewState>()(
     }),
     {
       name: 'openbitfun.workspace-session-view.v2',
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => localStorage),
-      partialize: ({ grouping, ordering, show, filters }) => ({ grouping, ordering, show, filters }),
+      partialize: ({ grouping, ordering, show, filters, sourceAgents }) => ({ grouping, ordering, show, filters, sourceAgents }),
       migrate: (persistedState: unknown) => {
         const state = persistedState && typeof persistedState === 'object'
           ? persistedState as Partial<WorkspaceSessionViewState> & { grouping?: unknown }
@@ -103,6 +109,7 @@ export const useWorkspaceSessionViewStore = create<WorkspaceSessionViewState>()(
         return {
           ...state,
           grouping: normalizeWorkspaceSessionGrouping(state.grouping),
+          sourceAgents: state.sourceAgents ?? {},
         } as WorkspaceSessionViewState;
       },
     },
@@ -127,7 +134,15 @@ export function deriveWorkspaceSessionEnvironment(session: Session): WorkspaceSe
 }
 
 export function deriveWorkspaceSessionSource(session: Session): WorkspaceSessionSource {
-  return session.config.agentType?.startsWith('acp:') ? 'external' : 'openbitfun';
+  return session.importedSource || session.config.agentType?.startsWith('acp:') ? 'external' : 'openbitfun';
+}
+
+export function matchesWorkspaceSourceAgent(session: Session, source: WorkspaceSessionSourceAgent): boolean {
+  return source === 'all' || (session.importedSource || 'openbitfun') === source;
+}
+
+export function sessionSourceAgentLabel(source: string): string {
+  return ({ codex: 'Codex', zcode: 'Zcode', openbitfun: 'OpenBitFun' } as Record<string, string>)[source] ?? source;
 }
 
 export function deriveWorkspaceSessionWorktree(session: Session): WorkspaceSessionWorktree {

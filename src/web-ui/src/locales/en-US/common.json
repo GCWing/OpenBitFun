@@ -271,6 +271,15 @@
       }
     },
     "sessions": {
+      "removeSource": "Remove from OpenBitFun",
+      "removeSourceConfirmTitle": "Remove source session from OpenBitFun?",
+      "removeSourceConfirmMessage": "“{{name}}” will be removed from OpenBitFun. The original session and existing continuation branches are kept. You can add the source again in ecosystem compatibility settings.",
+      "removeSourceExplanation": "Source sessions are only removed from OpenBitFun; original sessions and continuation branches are kept and sources can be added again in ecosystem compatibility settings.",
+      "removeSelected": "Remove selected sources",
+      "bulkRemoveSourceConfirmTitle": "Remove selected source sessions?",
+      "bulkRemoveSourceConfirmMessage": "Remove {{count}} source sessions from OpenBitFun? Original sessions and existing continuation branches are kept. Sources can be added again in ecosystem compatibility settings.",
+      "removedSelected": "Removed {{count}} sessions from the list.",
+      "removedSourceSucceeded": "Removed “{{name}}” from OpenBitFun in {{workspace}}.",
       "newSession": "New session",
       "acpSessions": "ACP sessions",
       "dispatchRunningOn": "Runs on {{target}} ({{state}})",
@@ -477,7 +486,12 @@
       "deleteAllArchivedFailed": "Failed to delete all archived sessions",
       "archiveAllFailed": "Failed to archive sessions",
       "bulkArchiveFailed": "Failed to archive selected sessions",
-      "bulkDeleteFailed": "Failed to delete selected sessions"
+      "bulkDeleteFailed": "Failed to delete selected sessions",
+      "sourceAgentFilter": "Session source",
+      "allSourceAgents": "All agents",
+      "sourceAgentLabel": "Imported from {{name}}",
+      "discoveryPartial": "Some external sessions could not be discovered. Existing sessions remain available.",
+      "discoveringExternal": "Discovering external sessions…"
     },
     "scheduledJobs": {
       "title": "Scheduled Jobs",

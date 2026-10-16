@@ -1134,6 +1134,8 @@ mod tests {
             ("app.right_panel.width", json!(420)),
             ("app.flow_chat.show_permission_mode_control", json!(false)),
             ("app.hooks.project_hooks_enabled", json!(true)),
+            ("app.external_session_discovery.codex", json!(true)),
+            ("app.external_session_discovery.zcode", json!(false)),
             (
                 "app.keybindings",
                 json!({"version": 1, "overrides": {"session.new": {"key": "n", "alt": true}}}),

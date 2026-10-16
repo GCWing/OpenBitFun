@@ -123,6 +123,7 @@ openbitfun-dsh-adapter = { path = "../../adapters/dsh-adapter", optional = true 
 openbitfun-opencode-plugin-host = { path = "../../adapters/opencode-plugin-host", optional = true }
 openbitfun-claude-code-adapter = { path = "../../adapters/claude-code-adapter", optional = true }
 openbitfun-codex-adapter = { path = "../../adapters/codex-adapter", optional = true }
+openbitfun-zcode-adapter = { path = "../../adapters/zcode-adapter", optional = true }
 openbitfun-plugin-runtime-client = { path = "../../execution/plugin-runtime-client", optional = true }
 
 [features]
@@ -278,6 +279,7 @@ external-sources = [
     "dep:openbitfun-pi-adapter",
     "dep:openbitfun-claude-code-adapter",
     "dep:openbitfun-codex-adapter",
+    "dep:openbitfun-zcode-adapter",
     "dep:openbitfun-external-sources",
     "openbitfun-services-integrations/hook-import",
     "plugin-source",

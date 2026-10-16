@@ -40,6 +40,7 @@ const mockDispatchProgress = vi.fn();
 const mockDispatchRefresh = vi.fn();
 const mockBindSession = vi.fn();
 const mockEnsureBackendSession = vi.fn();
+const mockForkChatSession = vi.fn();
 const mockNotificationError = vi.fn();
 const mockNotificationDismiss = vi.fn();
 const mockPendingList = vi.fn((): unknown[] => []);
@@ -131,6 +132,7 @@ vi.mock('../../../shared/notification-system', () => ({
 }));
 
 vi.mock('./SessionModule', () => ({
+  forkChatSession: (...args: unknown[]) => mockForkChatSession(...args),
   ensureBackendSession: (...args: unknown[]) => mockEnsureBackendSession(...args),
   getModelMaxTokens: vi.fn(async (modelId: string) => modelId === 'primary' ? 32000 : 64000),
   retryCreateBackendSession: vi.fn(),
@@ -257,6 +259,50 @@ describe('MessageModule session writer conflict', () => {
     expect(mockHostQueueSubmit).not.toHaveBeenCalled();
     expect(mockStartDialogTurn).not.toHaveBeenCalled();
     expect(session.dialogTurns).toEqual([]);
+  });
+
+  it('forks the viewed source before submitting and leaves source history untouched', async () => {
+    const { context, session } = conflictContext('external-source');
+    Object.assign(session, {
+      historyState: 'ready', externalHistory: { mode: 'follow', contentVersion: 'newer-source' },
+      dialogTurns: [{ id: 'viewed-turn', userMessage: { metadata: { externalContentVersion: 'viewed-version' } } }],
+    });
+    const branch = { ...session, sessionId: 'native-branch', externalHistory: undefined, dialogTurns: [...session.dialogTurns] };
+    const sessions = new Map([[session.sessionId, session], [branch.sessionId, branch]]);
+    context.flowChatStore.getState = () => ({ sessions, activeSessionId: branch.sessionId });
+    context.flowChatStore.addDialogTurn.mockImplementation((id: string, turn: any) => sessions.get(id)!.dialogTurns.push(turn));
+    mockForkChatSession.mockResolvedValue('native-branch');
+    mockEnsureBackendSession.mockResolvedValue(undefined);
+    mockGetConfigs.mockResolvedValue({});
+    const onSessionForked = vi.fn();
+    await sendMessage(context, 'Continue here', session.sessionId, undefined, undefined, undefined, { onSessionForked });
+    expect(mockForkChatSession).toHaveBeenCalledWith(context, 'external-source', 'viewed-turn');
+    expect(onSessionForked).toHaveBeenCalledExactlyOnceWith('external-source', 'native-branch');
+    expect(mockStartDialogTurn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'native-branch', userInput: 'Continue here' }));
+    expect(session.dialogTurns).toHaveLength(1);
+  });
+
+  it('keeps the draft and source untouched when a fork fails', async () => {
+    const { context, session } = conflictContext('external-source');
+    Object.assign(session, {
+      historyState: 'ready', externalHistory: { mode: 'follow' },
+      dialogTurns: [{ id: 'viewed-turn', userMessage: { metadata: { externalContentVersion: 'viewed-version' } } }],
+    });
+    mockForkChatSession.mockRejectedValue(new Error('Source version unavailable'));
+    await expect(sendMessage(context, 'Keep my draft', session.sessionId)).rejects.toThrow('Source version unavailable');
+    expect(mockStartDialogTurn).not.toHaveBeenCalled();
+    expect(context.flowChatStore.addDialogTurn).not.toHaveBeenCalled();
+  });
+
+  it('does not fork an archived source before rejecting submission', async () => {
+    const { context, session } = conflictContext('archived-source');
+    Object.assign(session, {
+      historyState: 'ready', persistedStatus: 'archived', externalHistory: { mode: 'follow' },
+      dialogTurns: [{ id: 'viewed-turn', userMessage: { metadata: { externalContentVersion: 'viewed-version' } } }],
+    });
+    await expect(sendMessage(context, 'Keep this draft', session.sessionId)).rejects.toMatchObject({ reason: 'archived' });
+    expect(mockForkChatSession).not.toHaveBeenCalled();
+    expect(mockStartDialogTurn).not.toHaveBeenCalled();
   });
 
   it('rechecks capability after backend readiness without creating an optimistic turn', async () => {

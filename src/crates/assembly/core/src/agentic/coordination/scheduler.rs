@@ -2271,7 +2271,9 @@ impl DialogScheduler {
         session_id: &str,
         queued_turn: &QueuedTurn,
     ) -> Result<String, SchedulerSubmitError> {
-        let result = self.start_turn_inner(session_id, queued_turn).await;
+        // Startup crosses restore, history and context owners. Keep its state
+        // off the nested queue and background-result admission futures.
+        let result = Box::pin(self.start_turn_inner(session_id, queued_turn)).await;
         if let Ok(id) = &result {
             self.host_queue
                 .lock()
