@@ -56,7 +56,7 @@
   max-width: 60rem;
   margin: 0;
   font-size: var(--openbitfun-type-display-fluid-title-font-size);
-  font-weight: var(--openbitfun-font-weight-semibold);
+  font-weight: var(--openbitfun-type-display-sm-font-weight);
   line-height: var(--openbitfun-type-display-fluid-title-line-height);
   letter-spacing: var(--openbitfun-type-display-fluid-title-letter-spacing);
   text-wrap: balance;
@@ -239,13 +239,13 @@
 /* The display PageHeader is sized in the page's own scale; inside the frame it follows the frame
    instead, so the window stays a legible picture at every width the page allows. */
 .design-home-preview-welcome-header [data-openbitfun-part="heading"] {
-  font-size: clamp(var(--openbitfun-font-size-2xl), 4.6cqi, var(--openbitfun-type-heading-welcome-font-size));
+  font-size: clamp(var(--openbitfun-type-heading-panel-font-size), 4.6cqi, var(--openbitfun-type-heading-welcome-font-size)); /* typography-audit: allow -- This scaled specimen keeps fluid container/viewport geometry between the established type scale bounds. */
   text-wrap: balance;
 }
 
 .design-home-preview-welcome-header [data-openbitfun-part="description"] {
   color: var(--openbitfun-color-content-secondary);
-  font-size: clamp(var(--openbitfun-font-size-sm), 2.2cqi, var(--openbitfun-type-page-intro-font-size));
+  font-size: clamp(var(--openbitfun-type-body-sm-font-size), 2.2cqi, var(--openbitfun-type-page-intro-font-size)); /* typography-audit: allow -- This scaled specimen keeps fluid container/viewport geometry between the established type scale bounds. */
 }
 
 .design-home-preview-composer {
@@ -282,8 +282,8 @@
   margin: 0;
   /* One step under the hero's sentence and two over the steps: the band is a closing note, not a
      second headline. Fluid so it grows with the window like the rest of the page's display type. */
-  font-size: clamp(var(--openbitfun-font-size-3xl), 2.4vw, var(--openbitfun-type-display-sm-font-size));
-  font-weight: var(--openbitfun-font-weight-semibold);
+  font-size: clamp(var(--openbitfun-font-size-3xl), 2.4vw, var(--openbitfun-type-display-sm-font-size)); /* typography-audit: allow -- This scaled specimen keeps fluid container/viewport geometry between the established type scale bounds. */
+  font-weight: var(--openbitfun-type-display-sm-font-weight);
   line-height: var(--openbitfun-type-display-sm-line-height);
   letter-spacing: var(--openbitfun-type-display-sm-letter-spacing);
   text-wrap: balance;
@@ -420,7 +420,7 @@
   font-size: var(--openbitfun-type-heading-section-font-size);
   font-weight: var(--openbitfun-type-heading-section-font-weight);
   line-height: var(--openbitfun-type-heading-section-line-height);
-  letter-spacing: var(--openbitfun-letter-spacing-tight);
+  letter-spacing: var(--openbitfun-type-display-sm-letter-spacing);
 }
 
 .design-home-footer-path h2 a {

@@ -1,17 +1,17 @@
 /* IBM Plex Mono, latin subset, as served by openbitfun.com. The product site sets both body and
    display to it, so the homepage follows; CJK still falls back to the platform sans below. */
 @font-face {
-  font-family: "IBM Plex Mono";
+  font-family: "IBM Plex Mono"; /* typography-audit: allow -- @font-face needs the literal bundled family name. */
   font-style: normal;
-  font-weight: 400;
+  font-weight: 400; /* typography-audit: allow -- @font-face selects this bundled font file by its literal weight. */
   font-display: swap;
   src: url("./assets/fonts/ibm-plex-mono-latin-400.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: "IBM Plex Mono";
+  font-family: "IBM Plex Mono"; /* typography-audit: allow -- @font-face needs the literal bundled family name. */
   font-style: normal;
-  font-weight: 500;
+  font-weight: 500; /* typography-audit: allow -- @font-face selects this bundled font file by its literal weight. */
   font-display: swap;
   src: url("./assets/fonts/ibm-plex-mono-latin-500.woff2") format("woff2");
 }
@@ -20,9 +20,9 @@
    homepage headline, so 600 (SemiBold, the same OFL 1.1 family) is self-hosted here
    rather than letting the browser synthesise a fake bold from 400. */
 @font-face {
-  font-family: "IBM Plex Mono";
+  font-family: "IBM Plex Mono"; /* typography-audit: allow -- @font-face needs the literal bundled family name. */
   font-style: normal;
-  font-weight: 600;
+  font-weight: 600; /* typography-audit: allow -- @font-face selects this bundled font file by its literal weight. */
   font-display: swap;
   src: url("./assets/fonts/ibm-plex-mono-latin-600.woff2") format("woff2");
 }
@@ -194,7 +194,7 @@
   background: transparent;
   font-family: var(--_lab-label-font);
   font-size: var(--openbitfun-type-label-md-font-size);
-  font-weight: var(--openbitfun-font-weight-regular);
+  font-weight: var(--openbitfun-type-label-md-font-weight);
   line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
   letter-spacing: var(--openbitfun-type-modifier-tracking-subtle-letter-spacing);
   text-decoration: none;
@@ -235,7 +235,7 @@
 .design-primary-navigation a[aria-current], .design-secondary-navigation a[aria-current] {
   color: var(--openbitfun-color-content-primary);
   background: var(--openbitfun-color-selection-surface);
-  font-weight: var(--openbitfun-font-weight-semibold);
+  font-weight: var(--openbitfun-type-label-selected-font-weight);
 }
 /* The group parent is the open branch, so it does not take a second filled row: the fill marks the
    chapter being read, and two stacked fills would read as one heavy block. Declared after the
@@ -290,12 +290,12 @@
   color: var(--openbitfun-color-content-caption);
   font-family: var(--_lab-label-font);
   font-size: var(--openbitfun-type-label-xs-font-size);
-  font-weight: var(--openbitfun-font-weight-regular);
+  font-weight: var(--openbitfun-type-label-md-font-weight);
   line-height: var(--openbitfun-type-modifier-leading-ui-line-height);
   letter-spacing: var(--openbitfun-type-modifier-tracking-wide-letter-spacing);
   text-transform: none;
 }
-.page-kicker-index { color: var(--openbitfun-color-content-primary); font-weight: var(--openbitfun-font-weight-semibold); font-variant-numeric: tabular-nums; }
+.page-kicker-index { color: var(--openbitfun-color-content-primary); font-weight: var(--openbitfun-type-label-selected-font-weight); font-variant-numeric: tabular-nums; }
 .lab-shell :is(.page-heading, .component-detail-heading, .colors-heading-copy, .guide-hero) p { margin: 0; max-width: 46rem; color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-md-font-size); line-height: var(--openbitfun-type-body-md-line-height); }
 .design-brand-page p, .design-foundation-section p, .design-component-usage p, .design-component-tokens p { color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-md-font-size); line-height: var(--openbitfun-type-body-md-line-height); }
 .design-component-card :is(h2, h3) a { display: flex; gap: var(--openbitfun-space-3); align-items: center; justify-content: space-between; color: inherit; text-decoration: none; }
@@ -306,7 +306,7 @@
 .design-catalog-filters { display: flex; gap: var(--openbitfun-space-2); flex-wrap: wrap; padding-block: var(--openbitfun-space-3); margin-bottom: var(--openbitfun-space-8); }
 .design-catalog-filter { position: relative; padding: var(--openbitfun-space-2) var(--openbitfun-space-3); border: 0; border-radius: var(--_lab-radius-control); background: transparent; color: var(--openbitfun-color-content-muted); font: inherit; font-size: var(--openbitfun-type-body-sm-font-size); cursor: pointer; }
 .design-catalog-filter:hover { background: var(--openbitfun-component-button-fill-background); color: var(--openbitfun-color-content-secondary); }
-.design-catalog-filter[aria-pressed="true"] { background: var(--openbitfun-color-selection-surface); color: var(--openbitfun-color-content-primary); font-weight: var(--openbitfun-font-weight-semibold); }
+.design-catalog-filter[aria-pressed="true"] { background: var(--openbitfun-color-selection-surface); color: var(--openbitfun-color-content-primary); font-weight: var(--openbitfun-type-label-selected-font-weight); }
 .lab-page.design-component-library { display: block; padding-block: 0; min-height: calc(100dvh - var(--_lab-topbar-height)); }
 /* The directory keeps its own scroll region inside the rail: a route branch, then the long list,
    then the sibling routes, so neither the preview nor the rest of the section moves with it. */
@@ -317,13 +317,13 @@
 /* Categories are separated by space, not by a rule: the same reason the page index dropped its
    hairlines, and the caption weight already carries the grouping. */
 .design-library-group + .design-library-group { margin-top: var(--openbitfun-space-5); }
-.design-library-group h3 { margin: 0; padding: var(--openbitfun-space-2) var(--openbitfun-space-2); color: var(--openbitfun-color-content-caption); font-family: var(--_lab-label-font); font-size: var(--openbitfun-type-label-xs-font-size); font-weight: var(--openbitfun-font-weight-regular); letter-spacing: var(--openbitfun-type-modifier-tracking-wide-letter-spacing); }
+.design-library-group h3 { margin: 0; padding: var(--openbitfun-space-2) var(--openbitfun-space-2); color: var(--openbitfun-color-content-caption); font-family: var(--_lab-label-font); font-size: var(--openbitfun-type-label-xs-font-size); font-weight: var(--openbitfun-type-label-md-font-weight); letter-spacing: var(--openbitfun-type-modifier-tracking-wide-letter-spacing); }
 .design-library-group ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0; }
 .design-library-link { position: relative; display: flex; align-items: center; gap: var(--openbitfun-space-3); min-height: var(--openbitfun-control-height-md); padding: var(--openbitfun-space-2); border-radius: var(--_lab-radius-control); color: var(--openbitfun-color-content-secondary); font-family: var(--_lab-label-font); font-size: var(--openbitfun-type-label-sm-font-size); line-height: var(--openbitfun-type-modifier-leading-ui-line-height); letter-spacing: var(--openbitfun-type-modifier-tracking-subtle-letter-spacing); text-decoration: none; }
 .design-library-link > * { min-width: 0; }
 .design-library-link::before { counter-increment: lab-component; content: counter(lab-component, decimal-leading-zero); flex: none; color: var(--openbitfun-color-content-caption); font-variant-numeric: tabular-nums; }
 .design-library-link:hover { color: var(--openbitfun-color-content-primary); background: transparent; }
-.design-library-link[aria-current="page"] { color: var(--openbitfun-color-content-primary); background: var(--openbitfun-color-selection-surface); font-weight: var(--openbitfun-font-weight-semibold); }
+.design-library-link[aria-current="page"] { color: var(--openbitfun-color-content-primary); background: var(--openbitfun-color-selection-surface); font-weight: var(--openbitfun-type-label-selected-font-weight); }
 .design-library-link[aria-current="page"]::before { color: var(--openbitfun-color-content-primary); }
 .design-library-empty { padding: var(--openbitfun-space-3); color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); }
 .design-library-content { min-width: 0; padding-block: var(--openbitfun-space-6) var(--openbitfun-space-12); }
