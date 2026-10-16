@@ -910,3 +910,37 @@
     @include nav-font.nav-panel-text-icon;
   }
 }
+
+// ── Manual (drag) reordering ────────────────────────────────────────────────────
+// The dragged row and the drop slot live on the row itself; the drop line is the
+// same accent rail the workspace reorder uses, drawn on the slot's edge. Flat
+// selectors on purpose: `&__inline-item` above is the row's one definition and a
+// second nested block would fork it.
+.openbitfun-nav-panel__inline-item.is-manual-dragging {
+  opacity: 0.42;
+}
+
+.openbitfun-nav-panel__inline-item.is-manual-drop-before,
+.openbitfun-nav-panel__inline-item.is-manual-drop-after {
+  background: color-mix(in srgb, var(--openbitfun-color-accent-default) 8%, transparent);
+}
+
+.openbitfun-nav-panel__inline-item-manual-drop-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 2px;
+  margin: 0;
+  background: var(--openbitfun-color-accent-default);
+  border-radius: 999px;
+  pointer-events: none;
+
+  .is-manual-drop-before & {
+    top: 0;
+  }
+
+  .is-manual-drop-after & {
+    bottom: 0;
+  }
+}

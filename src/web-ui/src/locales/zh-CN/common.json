@@ -314,7 +314,8 @@
           "updated": "最近更新",
           "status": "状态",
           "created": "最新创建",
-          "name": "名称"
+          "name": "名称",
+          "manual": "手动排序"
         },
         "show": {
           "label": "显示",
