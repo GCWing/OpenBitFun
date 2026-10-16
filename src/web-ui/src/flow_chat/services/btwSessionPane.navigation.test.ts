@@ -85,14 +85,14 @@ describe('subagent pane navigation through production stores', () => {
     expect(flowChatManager.hydrateSessionHistoryForDetail).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])('opens a visible child tab before the panel mounts, worktree=%s', worktree => {
+  it.each([false, true])('opens a visible child tab before the panel mounts, worktree=%s', async worktree => {
     openParent(worktree ? { workspaceId: 'worktree', projectWorkspaceId: 'project', workspacePath: '/worktrees/parent' } : {});
     openBtwSessionInAuxPane({ childSessionId: 'child', parentSessionId: 'parent', sessionKind: 'subagent' });
     const canvas = useAgentCanvasStore.getState();
     expect(canvas.scopeKey).toBe('parent');
     expect(canvas.primaryGroup.tabs).toHaveLength(1);
     expect(isCanvasTabVisibleForSession(canvas.primaryGroup.tabs[0], 'parent')).toBe(true);
-    expect(appManager.getState().layout.rightPanelCollapsed).toBe(false);
+    await vi.waitFor(() => expect(appManager.getState().layout.rightPanelCollapsed).toBe(false));
     switchAgentCanvasScope('parent');
     expect(useAgentCanvasStore.getState().primaryGroup.tabs[0].id).toBe(canvas.primaryGroup.tabs[0].id);
     expect(Object.values(useContentResourceStore.getState().resources)).toHaveLength(0);
@@ -100,7 +100,7 @@ describe('subagent pane navigation through production stores', () => {
     openBtwSessionInAuxPane({ childSessionId: 'child', parentSessionId: 'parent', sessionKind: 'subagent' });
     expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
     expect(useAgentCanvasStore.getState().primaryGroup.tabs[0].id).toBe(canvas.primaryGroup.tabs[0].id);
-    expect(appManager.getState().layout.rightPanelCollapsed).toBe(false);
+    await vi.waitFor(() => expect(appManager.getState().layout.rightPanelCollapsed).toBe(false));
   });
 
   it('opens into the requested parent while retaining another session canvas', async () => {

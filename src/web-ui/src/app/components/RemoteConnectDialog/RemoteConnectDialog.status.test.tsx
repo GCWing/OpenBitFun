@@ -94,7 +94,7 @@ function deferred<T>() {
 
 function Harness({ initialGroup }: { initialGroup?: 'network' | 'bot' }) {
   const [open, setOpen] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   return <DesignSystemProvider portalHost={document.body}>
     <button data-testid="reopen-remote-connect" onClick={() => setOpen(true)}>Open connections</button>
     <DeviceStatusControl open={sidebarOpen} onOpenChange={setSidebarOpen} onManageDevices={() => setOpen(true)} />
@@ -114,8 +114,8 @@ function element(selector: string): HTMLElement {
 const dialog = () => element('[data-openbitfun-component="remote-connect-dialog"][data-openbitfun-part="root"]');
 const overviewNetwork = () => element('[data-openbitfun-part="overviewAction"][data-openbitfun-group="network"]');
 const cardStatus = () => (document.querySelector('[data-openbitfun-part="pairingCard"] [role="status"]') ?? element('[data-openbitfun-part="connections"] [role="status"]')).textContent;
-const attachedMobile = () => document.querySelector('[data-testid="nav-footer-device-status"] [data-openbitfun-device-kind="mobile"]');
-const attachedBot = () => document.querySelector('[data-testid="nav-footer-device-status"] [data-openbitfun-device-kind="message-app"]');
+const attachedMobile = () => document.querySelector('[data-testid="nav-device-status-connected-devices"] [data-openbitfun-device-kind="mobile"]');
+const attachedBot = () => document.querySelector('[data-testid="nav-device-status-connected-devices"] [data-openbitfun-device-kind="message-app"]');
 
 async function click(target: HTMLElement) { await act(async () => { target.click(); }); }
 async function clickText(key: string) {

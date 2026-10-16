@@ -118,12 +118,12 @@ export const TabBar: React.FC<TabBarProps> = ({
     if (activeTabId && tabsListRef.current?.clientWidth) {
       tabWrapperRefs.current.get(activeTabId)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
-  }, [activeTabId, overflowInset]);
+  }, [activeTabId]);
 
   useLayoutEffect(() => {
     revealActiveTab();
     updateOverflow();
-  }, [revealActiveTab, updateOverflow]);
+  }, [overflowInset, revealActiveTab, updateOverflow]);
 
   useLayoutEffect(updateOverflow, [updateOverflow, overflowTabIds.length]);
 

@@ -152,28 +152,6 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
   const currentId = peerContext?.peerMode.active ? peerContext.peerMode.deviceId : availableTargets?.localId;
   const previewTarget = availableTargets?.devices.find(device => device.device_id === previewId);
   const isPreviewing = Boolean(previewTarget && previewTarget.device_id !== currentId);
-  const connectPreview = async () => {
-    if (!peerContext || !availableTargets || !previewTarget || !isPreviewing || switchingRef.current || previewMotion.isTransitioning) return;
-    const target = previewTarget;
-    // A confirmed-incompatible peer is shown so its state is legible, but it is
-    // never a control target. This machine is never gated by its own flag.
-    if (target.device_id !== availableTargets.localId && !isDeviceControllable(target)) return;
-    switchingRef.current = true;
-    const alreadyConnected = peerContext.attachments.some(attachment => (
-      attachment.deviceId === target.device_id && attachment.health === 'ready'
-    ));
-    setSwitchingAction(target.device_id === availableTargets.localId || alreadyConnected ? 'switch' : 'connect');
-    try {
-      if (target.device_id === availableTargets.localId) await peerContext.switchToLocal('manual');
-      else await peerContext.switchToDevice(target.device_id, resolveDeviceName(target.device_id, target.device_alias ?? target.device_name ?? target.device_id));
-      popoverRef.current?.focus();
-    } catch (error) {
-      warning(error instanceof Error ? error.message : String(error));
-    } finally {
-      switchingRef.current = false;
-      setSwitchingAction(null);
-    }
-  };
   const platformHint = typeof navigator === 'undefined'
     ? ''
     : `${navigator.platform ?? ''} ${navigator.userAgent ?? ''}`;
@@ -258,6 +236,28 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
     paginationRef,
     onSelect: selectPreview,
   });
+  const connectPreview = async () => {
+    if (!peerContext || !availableTargets || !previewTarget || !isPreviewing || switchingRef.current || previewMotion.isTransitioning) return;
+    const target = previewTarget;
+    // A confirmed-incompatible peer is shown so its state is legible, but it is
+    // never a control target. This machine is never gated by its own flag.
+    if (target.device_id !== availableTargets.localId && !isDeviceControllable(target)) return;
+    switchingRef.current = true;
+    const alreadyConnected = peerContext.attachments.some(attachment => (
+      attachment.deviceId === target.device_id && attachment.health === 'ready'
+    ));
+    setSwitchingAction(target.device_id === availableTargets.localId || alreadyConnected ? 'switch' : 'connect');
+    try {
+      if (target.device_id === availableTargets.localId) await peerContext.switchToLocal('manual');
+      else await peerContext.switchToDevice(target.device_id, resolveDeviceName(target.device_id, target.device_alias ?? target.device_name ?? target.device_id));
+      popoverRef.current?.focus();
+    } catch (error) {
+      warning(error instanceof Error ? error.message : String(error));
+    } finally {
+      switchingRef.current = false;
+      setSwitchingAction(null);
+    }
+  };
   const browseDevice = (direction: -1 | 1) => {
     if (!availableTargets || switchingRef.current) return;
     const selectedId = previewMotion.pendingDeviceId() ?? previewTarget?.device_id ?? currentId ?? '';

@@ -49,7 +49,7 @@ function compiledRules(filename: string) {
       findFileUrl(url: string) {
         if (!url.startsWith('@/')) return null;
         const unresolved = resolve(webRoot, 'src', url.slice(2));
-        const candidates = extname(unresolved)
+        const candidates = ['.scss', '.sass', '.css'].includes(extname(unresolved))
           ? [unresolved]
           : [
               `${unresolved}.scss`,
@@ -98,21 +98,22 @@ describe('Truncated product text line boxes', () => {
     ['components/NavPanel/sections/sessions/SessionsSection.scss', '.openbitfun-nav-panel__inline-toggle'],
     ['components/NavPanel/sections/workspaces/WorkspaceListSection.scss', '.openbitfun-nav-panel__workspace-item-label'],
     ['components/NavPanel/sections/workspaces/WorkspaceListSection.scss', '.openbitfun-nav-panel__assistant-item-label'],
-    ['scenes/skills/SkillsScene.scss', '.skills-card__name'],
-    ['scenes/skills/SkillsScene.scss', '.skills-card__desc'],
+    ['scenes/skills/components/SkillCard.scss', '.skills-card__name'],
+    ['scenes/skills/components/SkillCard.scss', '.skills-card__desc'],
   ])('%s gives %s a font-relative, descender-safe line height', (filename, selector) => {
     const lineHeight = selector === '.skills-card__name'
-      ? 'var(--openbitfun-type-label-sm-line-height)'
-      : selector === '.skills-card__desc'
-        ? 'var(--openbitfun-type-meta-line-height)'
-        : 'var(--openbitfun-type-body-sm-line-height)';
+      ? 'var(--openbitfun-type-heading-card-line-height)'
+      : 'var(--openbitfun-type-body-sm-line-height)';
     expect(compiledRules(filename)(selector)['line-height']).toBe(lineHeight);
   });
 
-  it('delegates single-line overflow while retaining the two-line skills description clamp', () => {
-    const skills = compiledRules('scenes/skills/SkillsScene.scss');
+  it('delegates skills text overflow and keeps session text inside its line box', () => {
+    const skills = compiledRules('scenes/skills/components/SkillCard.scss');
     expect(skills('.skills-card__name')['text-overflow']).toBeUndefined();
-    expect(skills('.skills-card__desc')['-webkit-line-clamp']).toBe('2');
+    expect(skills('.skills-card__desc')['-webkit-line-clamp']).toBeUndefined();
+    const skillCard = readFileSync(resolve(webRoot, 'src/app/scenes/skills/components/SkillCard.tsx'), 'utf8');
+    expect(skillCard).toContain('<OverflowText behavior="marquee" title="">{name}</OverflowText>');
+    expect(skillCard).toMatch(/<OverflowText\b[^>]*className="skills-card__desc"/);
     const sessions = compiledRules('components/NavPanel/sections/sessions/SessionsSection.scss');
     expect(sessions('.openbitfun-nav-panel__inline-item-label')['text-overflow']).toBeUndefined();
     expect(sessions('.openbitfun-nav-panel__inline-item-label')['line-height']).toBe('inherit');
