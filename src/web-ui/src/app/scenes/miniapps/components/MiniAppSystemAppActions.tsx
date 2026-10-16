@@ -30,7 +30,8 @@ export function MiniAppSystemAppActions({ app, workspacePath, supported, compact
   const generation = useRef(0);
 
   useEffect(() => {
-    const current = ++generation.current;
+    generation.current += 1;
+    const current = generation.current;
     const scope = getActiveSurfaceScope();
     setPaths([]);
     setError(false);

@@ -135,7 +135,7 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
     } finally {
       setLoading(false);
     }
-  }, [appearanceMode, initialPath, presentationSupported, hostEpoch, viewId]);
+  }, [appearanceMode, initialPath, presentationSupported]);
 
   const markReady = useCallback(() => {
     setContentReady(true);
@@ -159,7 +159,7 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
     if (appId) {
       void load(appId);
     }
-  }, [appId, load]);
+  }, [appId, load, hostEpoch, viewId]);
 
   useEffect(() => {
     const tabId = `miniapp:${appId}` as SceneTabId;
