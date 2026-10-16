@@ -986,6 +986,20 @@ describe('FlowChatStore session removal active selection', () => {
     expect(flowChatStore.getState().activeSessionId).toBeNull();
     expect(Array.from(flowChatStore.getState().sessions.keys())).toEqual(['session-keep']);
   });
+
+  it('deletes a session whose workspace directory is unavailable (ID-first backend)', async () => {
+    const session = createSession({
+      sessionId: 'session-legacy',
+      title: 'Legacy assistant session',
+      workspacePath: undefined,
+      projectWorkspacePath: undefined,
+    });
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]), activeSessionId: session.sessionId }));
+    await flowChatStore.deleteSession(session.sessionId, { nextActiveSessionId: null });
+    expect(apiMocks.deleteSession).toHaveBeenCalledExactlyOnceWith(session.sessionId, session.workspaceId);
+    expect(flowChatStore.getState().sessions.has(session.sessionId)).toBe(false);
+    expect(flowChatStore.getState().activeSessionId).toBeNull();
+  });
 });
 
 describe('FlowChatStore token usage', () => {
