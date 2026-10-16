@@ -176,6 +176,8 @@ interface ExtendedFlexiblePanelProps extends FlexiblePanelProps {
   isActive?: boolean;
   /** File no longer exists on disk (from editor); drives tab "deleted" label */
   onFileMissingFromDiskChange?: (missing: boolean) => void;
+  /** The hosting pane is being resized; width-derived measurement waits for it to settle. */
+  resizeSuspended?: boolean;
 }
 
 const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
@@ -189,6 +191,7 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
   isActive = true,
   onFileMissingFromDiskChange,
   terminalResizeSuspended = false,
+  resizeSuspended = false,
 }) => {
   const { t, formatDate } = useI18n('components');
   const documentSession = useEditorDocument();
@@ -856,6 +859,7 @@ const FlexiblePanel: React.FC<ExtendedFlexiblePanelProps> = memo(({
               workspacePath={content.data?.workspacePath || workspacePath}
               viewKind={content.data?.viewKind}
               displayTitle={content.data?.displayTitle}
+              resizeSuspended={resizeSuspended}
             />
           </React.Suspense>
         );

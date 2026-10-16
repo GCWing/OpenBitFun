@@ -41,6 +41,8 @@ export interface ContentCanvasProps {
   toolbarActions?: React.ReactNode;
   /** Suspend terminal fit/PTY resize while the hosting panel is animating. */
   terminalResizeSuspended?: boolean;
+  /** The hosting pane is being resized; width-derived measurement waits for it to settle. */
+  resizeSuspended?: boolean;
   /** Whether this host exposes Mission Control. */
   missionControlEnabled?: boolean;
   /** Host-provided content for the no-tabs state. */
@@ -58,6 +60,7 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
   onCollapsePanel,
   toolbarActions,
   terminalResizeSuspended = false,
+  resizeSuspended = false,
   missionControlEnabled = true,
   emptyState,
 }) => {
@@ -212,6 +215,7 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
             disablePopOut={disablePopOut}
             toolbarActions={toolbarActions}
             terminalResizeSuspended={terminalResizeSuspended}
+            resizeSuspended={resizeSuspended}
           />
         </div>
 

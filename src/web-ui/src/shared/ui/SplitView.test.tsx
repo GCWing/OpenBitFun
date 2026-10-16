@@ -13,6 +13,8 @@ describe('shared SplitView interaction contract', () => {
   let resized: () => void;
   let changed: ReturnType<typeof vi.fn>;
   let resizing: ReturnType<typeof vi.fn>;
+  /** Every element whose box was measured, in order, so the tests can attribute reads. */
+  let measured: HTMLElement[];
   const part = (name: string) => container.querySelector<HTMLElement>(`[data-openbitfun-component="split-view"][data-openbitfun-part="${name}"]`)!;
   const render = (props: Partial<SplitViewProps> = {}) => act(() => root.render(<SplitView
     primary={<SplitViewPrimaryDock><textarea aria-label="Draft" defaultValue="unsent" /></SplitViewPrimaryDock>}
@@ -23,19 +25,22 @@ describe('shared SplitView interaction contract', () => {
   />));
   const key = (target: HTMLElement, value: string, shiftKey = false) => act(() => target.dispatchEvent(new KeyboardEvent('keydown', { key: value, shiftKey, bubbles: true, cancelable: true })));
   const pointer = (type: string, x: number, pointerId = 1) => act(() => {
-    const event = new MouseEvent(type, { clientX: x, button: 0, bubbles: true, cancelable: true });
+    const event = new MouseEvent(type, { button: 0, bubbles: true, cancelable: true });
+    // jsdom coerces `clientX` to an integer, which would hide sub-pixel drags.
+    Object.defineProperty(event, 'clientX', { value: x });
     Object.defineProperty(event, 'pointerId', { value: pointerId });
     part('resizeHandle').dispatchEvent(event);
   });
 
   beforeEach(() => {
     width = 1001;
-    changed = vi.fn(); resizing = vi.fn();
+    changed = vi.fn(); resizing = vi.fn(); measured = [];
     vi.useFakeTimers();
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => cb(0), 16));
     vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id));
     vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { resized = callback; } observe() {} disconnect() {} });
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      measured.push(this);
       return { width: this.getAttribute('data-openbitfun-part') === 'divider' ? 1 : width } as DOMRect;
     });
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
@@ -142,6 +147,69 @@ describe('shared SplitView interaction contract', () => {
     expect(changed).toHaveBeenCalledExactlyOnceWith(480);
     expect(resizing.mock.calls).toEqual([[true], [false]]);
     expect(document.body.style.cursor).toBe('crosshair'); expect(document.body.style.userSelect).toBe('text');
+  });
+
+  it('caches the container width at pointerdown and never re-measures while dragging', () => {
+    render();
+    const root = part('root');
+    const rootReads = () => measured.filter(element => element === root).length;
+    measured.length = 0;
+    pointer('pointerdown', 600);
+    // The only root read left in the drag path is the one that seeds the drag.
+    expect(rootReads()).toBe(1);
+    const readsAtPointerDown = measured.length;
+    pointer('pointermove', 560);
+    act(() => vi.advanceTimersByTime(16));
+    expect(root.style.getPropertyValue('--_split-view-right-size')).toBe('440px');
+    pointer('pointermove', 500);
+    act(() => vi.advanceTimersByTime(16));
+    expect(root.style.getPropertyValue('--_split-view-right-size')).toBe('500px');
+    expect(rootReads()).toBe(1);
+    expect(measured.length).toBe(readsAtPointerDown);
+    // Clamping still uses the cached width and commits once at release.
+    pointer('pointerup', 480);
+    expect(changed).toHaveBeenCalledExactlyOnceWith(520);
+  });
+
+  it('skips the live write for a sub-pixel move and writes again on a rounded change', () => {
+    render();
+    const root = part('root');
+    const setProperty = vi.spyOn(CSSStyleDeclaration.prototype, 'setProperty');
+    const sizeWrites = () => setProperty.mock.calls.filter(([name]) => name === '--_split-view-right-size').length;
+    pointer('pointerdown', 600);
+    expect(root.style.getPropertyValue('--_split-view-right-size')).toBe('400px');
+    const writesAtPointerDown = sizeWrites();
+    pointer('pointermove', 600.3);
+    act(() => vi.advanceTimersByTime(16));
+    expect(root.style.getPropertyValue('--_split-view-right-size')).toBe('400px');
+    expect(sizeWrites()).toBe(writesAtPointerDown);
+    expect(changed).not.toHaveBeenCalled();
+    pointer('pointermove', 599);
+    act(() => vi.advanceTimersByTime(16));
+    expect(root.style.getPropertyValue('--_split-view-right-size')).toBe('401px');
+    expect(sizeWrites()).toBe(writesAtPointerDown + 1);
+  });
+
+  it('re-seeds the sub-pixel guard when a re-render rewrites the displayed size mid-drag', () => {
+    render({ rightSize: 600 });
+    const root = part('root');
+    width = 701; act(() => resized());
+    expect(root.style.getPropertyValue('--_split-view-right-size')).toBe('400px');
+    pointer('pointerdown', 600); pointer('pointermove', 610);
+    act(() => vi.advanceTimersByTime(16));
+    expect(root.style.getPropertyValue('--_split-view-right-size')).toBe('390px');
+    // The container grows mid-drag: the root's ResizeObserver re-renders and React
+    // overwrites the inline width with the new resolved size, while `drag.painted`
+    // still holds what the drag wrote (390).
+    width = 1001; act(() => resized());
+    expect(root.style.getPropertyValue('--_split-view-right-size')).toBe('600px');
+    // 390.25 rounds to the stale painted value, but the DOM holds 600px, so the move
+    // must still write instead of being skipped as "already painted".
+    pointer('pointermove', 609.75);
+    act(() => vi.advanceTimersByTime(16));
+    expect(root.style.getPropertyValue('--_split-view-right-size')).toBe('390.25px');
+    pointer('pointerup', 609.75);
+    expect(changed).toHaveBeenCalledExactlyOnceWith(390.25);
   });
 
   it.each(['pointercancel', 'lostpointercapture', 'Escape', 'mode', 'layout'])('cancels without persisting on %s', reason => {

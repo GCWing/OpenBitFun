@@ -37,6 +37,8 @@ interface ChatPaneProps {
   workspacePath?: string;
   isDragging?: boolean;
   showChatInput?: boolean;
+  /** The hosting pane is being resized; width-derived measurement waits for it to settle. */
+  resizeSuspended?: boolean;
   /** Whether the host-owned session right panel is open. */
   isRightPanelOpen?: boolean;
   /** Toggle the host-owned session right panel. */
@@ -58,6 +60,7 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
   workspacePath,
   isDragging = false,
   showChatInput = false,
+  resizeSuspended = false,
   isRightPanelOpen = false,
   onToggleRightPanel,
   emptyState,
@@ -134,6 +137,7 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
       <FlowChatContainer
         className="openbitfun-chat-pane__chat-container"
         isViewportActive={isSceneActive}
+        resizeSuspended={resizeSuspended}
         isRightPanelOpen={isRightPanelOpen}
         onToggleRightPanel={onToggleRightPanel}
         emptyState={emptyState}

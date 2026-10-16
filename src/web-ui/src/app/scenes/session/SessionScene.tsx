@@ -49,6 +49,9 @@ const SessionScene: React.FC<SessionSceneProps> = ({ workspacePath, isEntering =
   const isContentOnly = pane.mode === 'content-only';
   const isBottomHidden = isContentOnly || state.layout.bottomTerminalPanelCollapsed;
   const isDragging = isDraggingContent || isDraggingBottom;
+  // A pane-resize drag moves both panes' widths every frame; the transcripts
+  // measure only once the settled layout is in place.
+  const isPaneResizeSuspended = isDraggingContent || isContentSettling;
   const bottomTerminalPanelMode = isBottomHidden ? 'collapsed'
     : getPanelDisplayMode(currentBottomHeight, BOTTOM_TERMINAL_PANEL_CONFIG);
 
@@ -230,6 +233,7 @@ const SessionScene: React.FC<SessionSceneProps> = ({ workspacePath, isEntering =
               data-openbitfun-scene="session" data-openbitfun-part="chat">
               <ChatPane width={0} isFullscreen={false} isSceneActive={isActive && !isContentOnly}
                 isDragging={isDragging} workspacePath={workspacePath} showChatInput
+                resizeSuspended={isPaneResizeSuspended}
                 isRightPanelOpen={pane.mode !== 'chat-only'} onToggleRightPanel={pane.toggleContent} />
             </div>
           }
@@ -238,7 +242,8 @@ const SessionScene: React.FC<SessionSceneProps> = ({ workspacePath, isEntering =
               data-openbitfun-scene="session" data-openbitfun-part="auxiliary">
               <AuxPane workspacePath={workspacePath} isSceneActive={isActive && pane.mode !== 'chat-only'}
                 isFullscreen={isContentOnly} onToggleFullscreen={pane.toggleMaximized}
-                terminalResizeSuspended={isContentSettling || isDraggingContent} />
+                terminalResizeSuspended={isContentSettling || isDraggingContent}
+                resizeSuspended={isPaneResizeSuspended} />
             </div>
           }
         />

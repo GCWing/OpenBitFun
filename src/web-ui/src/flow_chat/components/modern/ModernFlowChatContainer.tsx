@@ -128,6 +128,8 @@ const log = createLogger('ModernFlowChatContainer');
 interface ModernFlowChatContainerProps {
   className?: string;
   isViewportActive?: boolean;
+  /** The hosting pane is being resized; width-derived measurement waits for it to settle. */
+  resizeSuspended?: boolean;
   /** Whether the host-owned session right panel is open. */
   isRightPanelOpen?: boolean;
   /** Toggle the host-owned session right panel. */
@@ -299,6 +301,7 @@ function backgroundCommandSummaryFromActivity(activity: BackgroundCommandActivit
 export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = ({
   className = '',
   isViewportActive = true,
+  resizeSuspended = false,
   isRightPanelOpen = false,
   onToggleRightPanel,
   emptyState,
@@ -2817,6 +2820,7 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
                   items={virtualItems}
                   latestTurnId={latestTurnId}
                   isViewportActive={isViewportActive}
+                  measurementSuspended={resizeSuspended}
                   presentationMode={isRenderingHistoryProjection ? 'history-window' : 'tail'}
                   viewportMode={isViewportDetachedFromLiveTail ? 'history-reading' : 'live-tail'}
                   historyWindow={isShowingHistoryPresentation ? activeHistoryPresentation?.range ?? null : null}

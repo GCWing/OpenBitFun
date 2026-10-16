@@ -103,6 +103,8 @@ export interface BtwSessionPanelProps {
   workspacePath?: string;
   viewKind?: BtwSessionViewKind;
   displayTitle?: string;
+  /** The hosting pane is being resized; width-derived measurement waits for it to settle. */
+  resizeSuspended?: boolean;
 }
 
 const resolveSessionTitle = (session?: Pick<Session, 'title'> | null, fallback = 'Side thread') =>
@@ -154,6 +156,7 @@ const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & { viewState: BtwPa
   workspacePath,
   viewKind,
   displayTitle,
+  resizeSuspended = false,
   viewState,
 }) => {
   const { t } = useTranslation('flow-chat');
@@ -1205,6 +1208,7 @@ const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & { viewState: BtwPa
               onExpandGroup={onExpandGroup}
               isHistorical={childSession.isHistorical === true}
               viewState={viewState}
+              measurementSuspended={resizeSuspended}
             />
           )}
           {childSession.sessionKind === 'btw' && <FlowChatSelectionBar rootRef={scrollContainerRef}

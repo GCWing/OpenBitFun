@@ -222,6 +222,8 @@ export interface VirtualMessageListProps {
   /** Session catalog identity, independent from the current history window. */
   latestTurnId?: string;
   isViewportActive?: boolean;
+  /** The hosting pane is being resized; width-derived measurement waits for it to settle. */
+  measurementSuspended?: boolean;
   presentationMode?: 'tail' | 'history-window';
   viewportMode?: 'live-tail' | 'history-reading';
   historyWindow?: ActiveTurnRenderRange | null;
@@ -380,6 +382,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   items,
   latestTurnId,
   isViewportActive = true,
+  measurementSuspended = false,
   presentationMode = 'tail',
   viewportMode = presentationMode === 'history-window' ? 'history-reading' : 'live-tail',
   historyWindow = null,
@@ -457,6 +460,10 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   const observedViewportBoxRef = useRef<{ width: number; height: number } | null>(null);
   /** Native minimization withdraws the scroller without unmounting the session. */
   const isViewportSuspendedRef = useRef(false);
+  const measurementSuspendedRef = useRef(measurementSuspended);
+  measurementSuspendedRef.current = measurementSuspended;
+  /** The last width the observer saw while the pane was still moving. */
+  const pendingViewportWidthRef = useRef<number | null>(null);
   const suspendedViewportScrollTopRef = useRef<number | null>(null);
   const viewportResumeFrameRef = useRef<number | null>(null);
   /** Remaining resize callbacks over which to keep a resting viewport at the end. */
@@ -541,6 +548,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
         .join(','),
     ].join('|'),
     isViewportSuspended: () => isViewportSuspendedRef.current,
+    measurementSuspended,
     scrollPaddingStartPx: FLOWCHAT_TURN_TOP_GAP_PX,
     writeViewport: viewportOwner.write,
     shiftViewport: viewportOwner.shift,
@@ -1572,7 +1580,18 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
         tailRealignCallbacksRef.current = TAIL_REALIGN_RESIZE_CALLBACKS;
       }
       setViewportHeightPx(nextViewportBox.height);
-      setViewportWidthPx(nextViewportBox.width);
+      /*
+       * A divider drag changes this scroller's width every frame, and both the
+       * row estimates and the heights measured against them are derived from
+       * it. Publish only the settled width: the release effect below applies
+       * the width the drag ended on exactly once, and the virtualizer's
+       * layout-signature pass runs against that layout rather than each frame.
+       */
+      if (measurementSuspendedRef.current) {
+        pendingViewportWidthRef.current = nextViewportBox.width;
+      } else {
+        setViewportWidthPx(nextViewportBox.width);
+      }
 
       /*
        * Before paint, and ahead of everything below: this observer is the one
@@ -1632,6 +1651,20 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     viewportAnchor,
     viewportOwner,
   ]);
+
+  /*
+   * One re-measure for a pane drag, against the width the drag ended on.
+   *
+   * The observer above holds the width while the drag is in flight, so the last
+   * box it saw is the settled layout. Publishing it here moves the estimates
+   * and re-measures the rendered rows once, instead of once per frame.
+   */
+  useLayoutEffect(() => {
+    if (measurementSuspended) return;
+    const pending = pendingViewportWidthRef.current;
+    pendingViewportWidthRef.current = null;
+    if (pending !== null) setViewportWidthPx(current => (current === pending ? current : pending));
+  }, [measurementSuspended]);
 
   /**
    * Top-align a Turn, without scrolling into the reserved blank to do it.

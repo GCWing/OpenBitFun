@@ -20,6 +20,8 @@ export interface EditorAreaProps {
   disablePopOut?: boolean;
   toolbarActions?: React.ReactNode;
   terminalResizeSuspended?: boolean;
+  /** The hosting pane is being resized; width-derived measurement waits for it to settle. */
+  resizeSuspended?: boolean;
 }
 
 export const EditorArea: React.FC<EditorAreaProps> = ({
@@ -33,6 +35,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   disablePopOut = false,
   toolbarActions,
   terminalResizeSuspended = false,
+  resizeSuspended = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const topRowRef = useRef<HTMLDivElement>(null);
@@ -161,6 +164,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
       disablePopOut={disablePopOut}
       toolbarActions={toolbarActions === undefined || groupId === toolbarGroupId ? toolbarActions : null}
       terminalResizeSuspended={terminalResizeSuspended}
+      resizeSuspended={resizeSuspended}
     />
   );
 

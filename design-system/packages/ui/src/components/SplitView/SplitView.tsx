@@ -60,6 +60,10 @@ export function SplitView({
   const frameRef = useRef<number | null>(null);
   const dragRef = useRef<{
     pointerId: number; target: HTMLDivElement; x: number; size: number; latest: number;
+    /** Container width sampled once at pointerdown, so moves never force a layout read. */
+    containerWidth: number;
+    /** Last size written to the CSS variable, so a sub-pixel move can skip the write. */
+    painted: number;
     cursor: string; userSelect: string;
   } | null>(null);
   const callbacks = useRef({ onRightSizeChange, onResizeStateChange });
@@ -87,6 +91,16 @@ export function SplitView({
     window.addEventListener('resize', measure);
     return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
   }, [mode, layout]);
+
+  // `--_split-view-right-size` is what the pane geometry actually reads, and React
+  // rewrites it whenever `resolvedSize` changes (a container/window resize during the
+  // drag re-renders with a new resolved size while the drag keeps writing the variable
+  // directly). Keep the sub-pixel guard anchored to the displayed value, otherwise a
+  // later move that rounds to the size the drag last wrote would be skipped and the
+  // pane would stay at the re-rendered width for the rest of the gesture.
+  useLayoutEffect(() => {
+    if (dragRef.current) dragRef.current.painted = resolvedSize;
+  }, [resolvedSize]);
 
   const finishResize = useCallback((commit: boolean) => {
     const drag = dragRef.current;
@@ -116,15 +130,20 @@ export function SplitView({
   const updateDrag = (event: PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    const measuredWidth = rootRef.current?.getBoundingClientRect().width ?? 0;
-    const currentBounds = measuredWidth > 0
-      ? sizeBounds(measuredWidth, dividerWidth, minLeftSize, minRightSize, maxRightSize) : bounds;
+    const currentBounds = drag.containerWidth > 0
+      ? sizeBounds(drag.containerWidth, dividerWidth, minLeftSize, minRightSize, maxRightSize) : bounds;
     const delta = (drag.x - event.clientX) * resizeDirection;
     drag.latest = Math.min(currentBounds.max, Math.max(currentBounds.min, drag.size + delta));
     if (frameRef.current !== null) return;
     frameRef.current = requestAnimationFrame(() => {
       frameRef.current = null;
-      if (dragRef.current) rootRef.current?.style.setProperty('--_split-view-right-size', `${dragRef.current.latest}px`);
+      const current = dragRef.current;
+      if (!current) return;
+      // A sub-pixel move paints the same rounded width; keep the written value
+      // instead of dirtying the DOM style on every animation frame.
+      if (Math.round(current.latest) === Math.round(current.painted)) return;
+      current.painted = current.latest;
+      rootRef.current?.style.setProperty('--_split-view-right-size', `${current.latest}px`);
     });
   };
 
@@ -166,6 +185,8 @@ export function SplitView({
             dragRef.current = {
               pointerId: event.pointerId, target: event.currentTarget, x: event.clientX,
               size: resolvedSize, latest: resolvedSize,
+              containerWidth: rootRef.current?.getBoundingClientRect().width ?? 0,
+              painted: resolvedSize,
               cursor: document.body.style.cursor, userSelect: document.body.style.userSelect,
             };
             event.currentTarget.setPointerCapture?.(event.pointerId);

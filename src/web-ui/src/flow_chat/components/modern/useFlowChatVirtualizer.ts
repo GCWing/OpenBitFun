@@ -240,6 +240,15 @@ export interface UseFlowChatVirtualizerOptions<T> {
   /** The host has temporarily withdrawn the scroller, such as window minimization. */
   isViewportSuspended?: () => boolean;
   /**
+   * A pane resize is changing the available width on every frame.
+   *
+   * Both the estimates and every measured row are derived from that width, so
+   * there is no settled layout to measure against until the gesture ends. The
+   * layout-signature pass below holds for the duration and runs exactly once
+   * when this goes back to false.
+   */
+  measurementSuspended?: boolean;
+  /**
    * Gap kept above a Turn that has been scrolled to the top of the viewport.
    * Applied by the virtualizer itself so that its re-aim, which runs while
    * items below the target are still measuring, keeps the same gap.
@@ -408,6 +417,7 @@ export function useFlowChatVirtualizer<T>({
   startAtTailOnMount = false,
   reconcileOpeningMeasurement,
   isViewportSuspended = () => false,
+  measurementSuspended = false,
   scrollPaddingStartPx,
   writeViewport,
   shiftViewport = () => false,
@@ -471,6 +481,8 @@ export function useFlowChatVirtualizer<T>({
   estimateContextRef.current = estimateContext;
   const isViewportSuspendedRef = useRef(isViewportSuspended);
   isViewportSuspendedRef.current = isViewportSuspended;
+  const measurementSuspendedRef = useRef(measurementSuspended);
+  measurementSuspendedRef.current = measurementSuspended;
 
   const [contentStartPx, setContentStartPx] = useState(0);
   useEffect(() => {
@@ -761,11 +773,26 @@ export function useFlowChatVirtualizer<T>({
   const measuredLayoutRef = useRef(layoutSignature);
   const previousKeysRef = useRef(new Set<string>());
   const retiredMeasurementsRef = useRef(0);
+  /** A pass owed to a layout that a pane drag had not finished moving. */
+  const pendingLayoutMeasureRef = useRef(false);
   useLayoutEffect(() => {
     const keys = new Set(items.map(getItemKeyRef.current));
     for (const key of previousKeysRef.current) if (!keys.has(key)) retiredMeasurementsRef.current++;
     previousKeysRef.current = keys;
-    if (measuredLayoutRef.current === layoutSignature && retiredMeasurementsRef.current < 2048) return;
+    if (measuredLayoutRef.current === layoutSignature && retiredMeasurementsRef.current < 2048
+      && !pendingLayoutMeasureRef.current) return;
+    /*
+     * A divider drag changes the available width every frame, and everything
+     * this pass reads — the estimates and the rendered rows' heights — is
+     * derived from that width. Measuring each intermediate width is what the
+     * drag would spend its frame on, so the invalidation is remembered rather
+     * than acted on: `measuredLayoutRef` keeps the settled signature, and the
+     * release runs exactly one pass against the layout that stopped moving.
+     */
+    if (measurementSuspendedRef.current) {
+      pendingLayoutMeasureRef.current = true;
+      return;
+    }
     if (isViewportSuspendedRef.current()) return;
     const scroller = scrollerRef.current;
     const before = (virtualizer as unknown as MeasuringVirtualizer).getMeasurements();
@@ -781,7 +808,9 @@ export function useFlowChatVirtualizer<T>({
     }
     measuredLayoutRef.current = layoutSignature;
     retiredMeasurementsRef.current = 0;
-  }, [itemKeyRevision, layoutSignature, items, measureRenderedItems, scrollerRef, shiftViewport, virtualizer]);
+    pendingLayoutMeasureRef.current = false;
+  }, [itemKeyRevision, layoutSignature, items, measureRenderedItems, scrollerRef, shiftViewport, virtualizer,
+    measurementSuspended]);
 
   const getItemBounds = useCallback((index: number): FlowChatItemBounds | null => {
     const measurement = (virtualizer as unknown as MeasuringVirtualizer)
