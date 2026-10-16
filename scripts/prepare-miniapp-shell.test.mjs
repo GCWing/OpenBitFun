@@ -8,6 +8,17 @@ import { prepareMiniAppShell, SHELL_NAME } from './prepare-miniapp-shell.mjs';
 import { prepareTauriConfig } from './desktop-tauri-build.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
+
+test('the standalone shell supplies an existing Windows resource icon', () => {
+  const shellDir = join(ROOT, 'src/apps/miniapp-shell');
+  const config = JSON.parse(readFileSync(join(shellDir, 'tauri.conf.json'), 'utf8'));
+  const icon = config.bundle.icon.find(path => path.endsWith('.ico'));
+  assert.ok(icon, 'tauri-build requires an ICO for the Windows executable resource');
+  const bytes = readFileSync(resolve(shellDir, icon));
+  assert.equal(bytes.readUInt32LE(0), 0x00010000);
+  assert.ok(bytes.readUInt16LE(4) > 0, 'the ICO must contain an image');
+});
+
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'openbitfun-miniapp-shell-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
