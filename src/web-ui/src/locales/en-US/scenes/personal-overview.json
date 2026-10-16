@@ -2,14 +2,6 @@
   "loadingValue": "…",
   "unavailableValue": "—",
   "retry": "Refresh",
-  "account": {
-    "signIn": "Sign in",
-    "signOut": "Sign out",
-    "signOutFailed": "Could not sign out. Please try again.",
-    "continue": "Continue sign-in",
-    "expired": "Sign-in authorization expired. Please sign in again.",
-    "failed": "Could not sign in. Please try again."
-  },
   "greetings": {
     "spotted": "Hey, caught you peeking!",
     "mystery": "Well hello, mystery guest!",
@@ -44,13 +36,15 @@
   "devices": {
     "title": "Devices",
     "manage": "Manage devices",
+    "scrollPrevious": "Scroll devices left",
+    "scrollNext": "Scroll devices right",
     "online": "Online",
     "offline": "Offline",
     "current": "Current device",
     "thisDevice": "This device",
     "incompatible": "Update required for control",
     "loading": "Loading devices…",
-    "signInHint": "Sign in to see your devices and continue your work across them.",
+    "signInHint": "Sign in to connect more devices",
     "failed": "Could not refresh devices. Any devices shown may be out of date. Retry or open device management to check the connection.",
     "empty": "No linked devices yet. Sign in to the same account on another device to connect it.",
     "viewAll": "View all {{count}} devices"
@@ -64,9 +58,13 @@
     "title": "Token activity"
   },
   "miniApps": {
+    "start": "Launch",
+    "backToOverview": "Back to home",
     "create": "Create Mini App",
     "manage": "Manage Mini Apps",
-    "more": "{{count}} more",
+    "installed": "Installed",
+    "runningCount": "{{count}} running",
+    "moreInstalled": "View {{count}} more Mini Apps",
     "loading": "Loading Mini Apps…",
     "failed": "Could not load Mini Apps from the active host. Check the connection and host support, then retry.",
     "empty": "No Mini Apps yet"
@@ -78,11 +76,8 @@
     "incomplete": "Some Skill sources could not be fully read. Open Skill management for details.",
     "diagnosticsUnavailable": "This host does not provide scan diagnostics. The count reflects the Skills returned by the host.",
     "installed": "Installed Skills",
-    "installedCount": "Total skills: {{count}}",
+    "installedDescription": "Reuse installed skills in your tasks.",
     "discover": "Find More Skills",
     "discoverDescription": "Discover more reusable skills."
-  },
-  "catalog": {
-    "datesIncomplete": "Some items have no update time and are excluded from recent ordering."
   }
 }

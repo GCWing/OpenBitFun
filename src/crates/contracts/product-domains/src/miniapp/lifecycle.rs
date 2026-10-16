@@ -18,6 +18,7 @@ pub struct MiniAppCreateInput {
     pub source: MiniAppSource,
     pub permissions: MiniAppPermissions,
     pub ai_context: Option<MiniAppAiContext>,
+    pub chrome: Option<crate::miniapp::chrome::MiniAppChrome>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -30,6 +31,7 @@ pub struct MiniAppUpdatePatch {
     pub source: Option<MiniAppSource>,
     pub permissions: Option<MiniAppPermissions>,
     pub ai_context: Option<MiniAppAiContext>,
+    pub chrome: Option<crate::miniapp::chrome::MiniAppChrome>,
 }
 
 impl MiniAppUpdatePatch {
@@ -65,7 +67,7 @@ fn canonical_json(value: Value) -> Value {
 /// Hash the user-controlled MiniApp content while excluding lifecycle counters,
 /// compiled output, and runtime state.
 pub fn miniapp_content_hash(app: &MiniApp) -> String {
-    let payload = canonical_json(json!({
+    let mut payload = json!({
         "name": &app.name,
         "description": &app.description,
         "icon": &app.icon,
@@ -76,7 +78,12 @@ pub fn miniapp_content_hash(app: &MiniApp) -> String {
         "aiContext": &app.ai_context,
         "runtimeProfile": app.runtime_profile,
         "i18n": &app.i18n,
-    }));
+    });
+    // Keep hashes of legacy apps stable when the new optional field is absent.
+    if let Some(chrome) = &app.chrome {
+        payload["chrome"] = json!(chrome);
+    }
+    let payload = canonical_json(payload);
     let encoded = serde_json::to_vec(&payload)
         .expect("MiniApp content consists only of serializable domain fields");
     format!("sha256:{}", hex::encode(Sha256::digest(encoded)))
@@ -129,6 +136,7 @@ pub fn build_created_app(
     );
 
     let mut app = MiniApp {
+        chrome: input.chrome,
         id,
         name: input.name,
         description: input.description,
@@ -180,6 +188,9 @@ pub fn apply_update_patch(
     }
     if let Some(permissions) = patch.permissions {
         app.permissions = permissions;
+    }
+    if let Some(chrome) = patch.chrome {
+        app.chrome = Some(chrome);
     }
     if let Some(ai_context) = patch.ai_context {
         app.ai_context = Some(ai_context);
@@ -277,6 +288,7 @@ pub fn apply_draft_to_active(
     app.permissions = draft.permissions;
     app.ai_context = draft.ai_context;
     app.i18n = draft.i18n;
+    app.chrome = draft.chrome;
     app.version = current.version + 1;
     app.updated_at = now;
     app.compiled_html = compiled_html;
@@ -465,6 +477,7 @@ mod tests {
     #[test]
     fn prepare_imported_meta_rehomes_identity_and_timestamps_without_changing_product_fields() {
         let mut meta = crate::miniapp::types::MiniAppMeta {
+            chrome: None,
             id: "template-id".to_string(),
             name: "Imported".to_string(),
             description: "Imported app".to_string(),
@@ -496,6 +509,7 @@ mod tests {
         let app = build_created_app(
             "app-1".to_string(),
             MiniAppCreateInput {
+                chrome: None,
                 name: "App".to_string(),
                 description: "Desc".to_string(),
                 icon: "box".to_string(),

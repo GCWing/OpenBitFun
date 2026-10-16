@@ -1,0 +1,21 @@
+[package]
+name = "openbitfun-miniapp-ipc"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+publish = false
+description = "Private local protocol shared by MiniApp windows and the Desktop host"
+
+[dependencies]
+openbitfun-product-domains = { path = "../../contracts/product-domains", features = ["miniapp"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "net"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

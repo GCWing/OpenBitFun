@@ -208,10 +208,9 @@ const isSpecialModel = (value: string): value is 'primary' | 'fast' => {
 function resolveConcreteModelId(
   modelId: string,
   defaultModels: DefaultModelsConfig,
+  models: readonly AIModelConfig[],
 ): string | undefined {
-  if (modelId === 'primary') return defaultModels.primary ?? undefined;
-  if (modelId === 'fast') return defaultModels.fast ?? defaultModels.primary ?? undefined;
-  return modelId || undefined;
+  return resolveModelReference(models, modelId, defaultModels)?.id;
 }
 
 const formatContextWindow = (contextWindow?: number): string | null => {
@@ -678,7 +677,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const externalLocalDefaultModelId = useMemo((): string | undefined => {
     if (!externalSelection?.includeLocalCatalog) return undefined;
     const configured = modeDefaultModelId?.trim() || modeModel;
-    const concrete = resolveConcreteModelId(configured, defaultModels);
+    const concrete = resolveConcreteModelId(configured, defaultModels, allModels);
     return concrete && allModels.some(model => model.id === concrete && isSelectableTextChatModel(model))
       ? concrete
       : undefined;
@@ -743,7 +742,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     if (!modelId) return null;
 
     if (modelId === 'primary' || modelId === 'fast') {
-      const actualModelId = resolveConcreteModelId(modelId, defaultModels);
+      const actualModelId = resolveConcreteModelId(modelId, defaultModels, allModels);
       if (!actualModelId) return null;
 
       const model = allModels.find(m => m.id === actualModelId && isSelectableTextChatModel(m));
@@ -1056,7 +1055,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   }, [activeProviderGroup, activeProviderKey, closeProviderLevel, dropdownOpen, activePanel]);
 
   const currentNativeModelId = getCurrentModelId();
-  const concreteModelId = resolveConcreteModelId(currentNativeModelId, defaultModels);
+  const concreteModelId = resolveConcreteModelId(currentNativeModelId, defaultModels, allModels);
   const currentModelId = externalSelection ? externalCurrentModelId
     : isAcpSession ? acpOptions?.currentModelId || acpAvailableModels[0]?.id || ''
       : currentNativeModelId;
@@ -1198,7 +1197,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   }, [concreteModelId, externalSelection, isAcpSession, selectedReasoningPreset, targetIsSubagent]);
 
   const recentPresetForModel = useCallback((modelId: string): string | undefined => {
-    const resolvedModelId = resolveConcreteModelId(modelId, defaultModels);
+    const resolvedModelId = resolveConcreteModelId(modelId, defaultModels, allModels);
     if (!resolvedModelId) return undefined;
     const projection = modelCatalog?.models.find(model => model.id === resolvedModelId)?.reasoning;
     if (projection?.status !== 'known') return undefined;
@@ -1206,7 +1205,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     return projection.presets?.some(preset => preset.id === recentPreset)
       ? recentPreset
       : undefined;
-  }, [defaultModels, modelCatalog]);
+  }, [allModels, defaultModels, modelCatalog]);
   
   const handleSelectModel = useCallback(async (modelId: string, mode: UpcomingModelMode | null = null) => {
     if (disabled || externalSelection?.disabled || loading || reasoningLoading) return false;
@@ -1320,11 +1319,11 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       rememberManualModel();
       setUpcomingMode(mode ? { id: mode, scopeKey: modelSelectionScopeKey } : null);
       setPreSessionReasoningSelection({
-        modelId: resolveConcreteModelId(modelId, defaultModels) ?? modelId,
+        modelId: resolveConcreteModelId(modelId, defaultModels, allModels) ?? modelId,
         presetId: nextReasoningPreset,
       });
       if (sessionId && !mode) {
-        setRecentReasoningPreset(resolveConcreteModelId(modelId, defaultModels) ?? modelId, nextReasoningPreset);
+        setRecentReasoningPreset(resolveConcreteModelId(modelId, defaultModels, allModels) ?? modelId, nextReasoningPreset);
       }
 
       log.info('Mode model updated', { mode: currentMode, modelId });
@@ -1893,15 +1892,15 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const rememberedManualModelId = manualModelRef.current?.scopeKey === modelSelectionScopeKey
     ? manualModelRef.current.modelId : getRecentManualModel(modelSelectionScopeKey);
   const manualModelConfig = allModels.find(model => model.id === resolveConcreteModelId(
-    rememberedManualModelId ?? currentNativeModelId, defaultModels,
+    rememberedManualModelId ?? currentNativeModelId, defaultModels, allModels,
   ));
   const manualModelLabel = manualModelConfig?.model_name
     || getAvailabilityLabel(rememberedManualModelId ? 'target-model-unavailable' : nativeAvailability.status, t);
   const displayedProviderGroup = providerGroups.find(group => group.key === selectedProviderKey);
-  const openCurrentProviderModels = () => {
+  const openModelChoices = () => {
     if (disabled || loading || externalSelection?.disabled) return;
     openPanel('models', true);
-    if (displayedProviderGroup) openProviderLevel(displayedProviderGroup.key, true);
+    if (!isNativeModelSelection && displayedProviderGroup) openProviderLevel(displayedProviderGroup.key, true);
   };
   const isSelectionPanel = activePanel === 'models' || activePanel === 'providers';
   const acpModeLabel = acpMode?.option.options.find(option => option.value === acpMode.currentValue)?.name
@@ -2191,6 +2190,44 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     <>{renderUnavailableModelMenu(displayedAvailability, isNativeModelSelection)}</>
                   ) : (
                     <>
+                      {isNativeModelSelection && activePanel === 'models' && (
+                        <>
+                          {(['primary', 'fast'] as const).map(modelId => {
+                            const model = resolveModelReference(allModels, modelId, defaultModels);
+                            const isSelected = currentModelId === modelId && !currentModelMode;
+                            const label = t(modelId === 'primary' ? 'modelSelector.primaryModel' : 'modelSelector.fastModel');
+                            const tooltip = model
+                              ? buildResolvedModelTooltipText(model.model_name, {
+                                providerName: getProviderDisplayName(model),
+                                contextWindow: model.context_window,
+                              }, label)
+                              : t('modelSelector.modelNotConfigured');
+
+                            return (
+                              <Tooltip key={modelId} content={tooltip} placement="right">
+                                <MenuItem
+                                  role="menuitemradio"
+                                  checked={isSelected}
+                                  data-testid="chat-model-selector-option"
+                                  data-model-id={modelId}
+                                  data-model-name={model?.model_name || modelId}
+                                  data-selected={isSelected ? 'true' : 'false'}
+                                  data-openbitfun-component="model-selector"
+                                  data-openbitfun-part="option"
+                                  data-openbitfun-state={isSelected ? 'selected' : undefined}
+                                  metadata={<OverflowText>{model?.model_name || t('modelSelector.modelNotConfigured')}</OverflowText>}
+                                  shortcut={isSelected ? <Icon name="check-line" size="sm" aria-hidden /> : undefined}
+                                  disabled={!model || disabled || loading || reasoningLoading}
+                                  onClick={() => handleSelectModelFromMenu(modelId)}
+                                >
+                                  {label}
+                                </MenuItem>
+                              </Tooltip>
+                            );
+                          })}
+                          <MenuSeparator />
+                        </>
+                      )}
                       {providerGroups.map(group => {
                         const isSelected = selectedProviderKey === group.key;
 
@@ -2296,12 +2333,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                             data-testid="chat-model-selector-settings-model"
                             data-model-menu-target="models"
                             aria-label={`${t('modelSelector.model')}: ${settingsModelLabel}`}
-                            onClick={openCurrentProviderModels}
+                            onClick={openModelChoices}
                             onKeyDown={event => {
                               if (event.key !== 'ArrowRight') return;
                               event.preventDefault();
                               event.stopPropagation();
-                              openCurrentProviderModels();
+                              openModelChoices();
                             }}
                             disabled={disabled || loading || externalSelection?.disabled}
                           >

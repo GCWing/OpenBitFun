@@ -7,7 +7,7 @@ import { useI18n } from '@/infrastructure/i18n';
 import {
   confirmDanger,
 } from '@/infrastructure/confirm-dialog';
-import { LogIn, LogOut, Pencil, Check, X } from 'lucide-react';
+import { LogOut, Pencil, Check, X } from 'lucide-react';
 import { DeviceSystemGlyph } from '../NavPanel/components/DeviceSystemGlyph';
 import { reportedHostKind } from '../NavPanel/deviceInterconnectionOverview';
 import { remoteConnectAPI, deviceDisplayName, deviceMetadataLabel } from '@/infrastructure/api/service-api/RemoteConnectAPI';
@@ -854,7 +854,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                   <span className="account-panel__security-note">{t('accountLogin.securityNote')}</span>
                 </span>
                 <div className="account-panel__actions" data-openbitfun-component="remote-account-panel" data-openbitfun-part="actions">
-                  <Button variant="primary" size="sm" leadingIcon={<LogIn size={14} />} onClick={handleLogin} loading={loading && identity.status !== 'authorizing'}>
+                  <Button variant="primary" size="sm" onClick={handleLogin} loading={loading && identity.status !== 'authorizing'}>
                     {identity.status === 'authorizing' ? t('accountLogin.reopen') : loading ? t('accountLogin.processing') : t('accountLogin.login')}
                   </Button>
                 </div>

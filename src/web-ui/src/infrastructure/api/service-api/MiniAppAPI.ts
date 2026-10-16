@@ -1,6 +1,9 @@
 import { api } from './ApiClient';
 import { createTauriCommandError } from '../errors/TauriCommandError';
 
+import type { MiniAppChrome } from '../../../../../shared/miniapp-chrome/titlebar';
+export type { MiniAppChrome, MiniAppChromeAction } from '../../../../../shared/miniapp-chrome/titlebar';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface EsmDep {
@@ -192,6 +195,7 @@ export interface MiniAppI18n {
 }
 
 export interface MiniAppMeta {
+  chrome?: MiniAppChrome;
   id: string;
   name: string;
   description: string;
@@ -219,6 +223,7 @@ export interface MiniApp extends MiniAppMeta {
 }
 
 export interface CreateMiniAppRequest {
+  chrome?: MiniAppChrome;
   name: string;
   description: string;
   icon?: string;
@@ -230,6 +235,7 @@ export interface CreateMiniAppRequest {
 }
 
 export interface UpdateMiniAppRequest {
+  chrome?: MiniAppChrome;
   name?: string;
   description?: string;
   icon?: string;

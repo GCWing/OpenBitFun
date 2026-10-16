@@ -2,7 +2,7 @@ import type { ComponentMeta } from "../../registry.types";
 
 export const actionCardMeta = {
   category: "action",
-  description: "An actionable card with independent leading, title, description, selection, and sibling action areas.",
+  description: "An actionable card with independent content and inline or floating glass sibling actions.",
   maturity: "stable",
   name: "ActionCard",
   props: [
@@ -12,6 +12,7 @@ export const actionCardMeta = {
     { name: "description", type: "ReactNode" },
     { name: "leading", type: "ReactNode" },
     { defaultValue: "[]", name: "actions", type: "readonly ActionCardAction[]" },
+    { defaultValue: "inline", name: "actionPlacement", type: "inline | floating" },
     { defaultValue: "sm", name: "size", type: "sm | md" },
     { defaultValue: "false", name: "selected", type: "boolean" },
     { defaultValue: "false", name: "disabled", type: "boolean" },
@@ -26,6 +27,9 @@ export const actionCardMeta = {
     "color.content.primary",
     "color.content.secondary",
     "color.border.default",
+    "color.border.subtle",
+    "color.surface.raised",
+    "effect.blur.subtle",
     "color.focus.ring",
     "control.actionCard.smMinBlockSize",
     "control.actionCard.mdMinBlockSize",
@@ -38,6 +42,8 @@ export const actionCardMeta = {
     "control.actionCard.actionsGap",
     "control.actionCard.actionsPaddingInlineEnd",
     "control.actionCard.radius",
+    "control.iconButton.standardSize",
+    "control.iconButton.standardIconSize",
     "type.heading.section.fontSize",
     "type.body.sm.fontSize",
     "type.actionRow.lineHeight",

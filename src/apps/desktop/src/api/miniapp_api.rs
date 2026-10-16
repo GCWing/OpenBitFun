@@ -14,7 +14,7 @@ use openbitfun_core::miniapp::ai_bridge::{
 use openbitfun_core::miniapp::lifecycle::{
     draft_worker_key, miniapp_runtime_event_payload, miniapp_worker_stopped_payload,
     should_emit_worker_restarted, should_stop_worker_for_runtime_update, worker_restart_reason,
-    workspace_root_from_input,
+    workspace_root_from_input, MiniAppCreateInput, MiniAppUpdatePatch,
 };
 use openbitfun_core::miniapp::rate_limit::{MiniAppRateLimitState, MiniAppRateLimitSubject};
 use openbitfun_core::miniapp::{
@@ -33,6 +33,20 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, State};
 
+#[tauri::command]
+pub(crate) async fn miniapp_presentation(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    request: crate::miniapp_desktop::PresentationRequest,
+) -> Result<Value, String> {
+    crate::miniapp_desktop::miniapp_presentation(app, window, request).await
+}
+
+#[tauri::command]
+pub(crate) fn miniapp_shell_call(request: Value) -> Result<Value, String> {
+    crate::miniapp_desktop::miniapp_shell_call(request)
+}
+
 // ============== Request/Response DTOs ==============
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +62,8 @@ pub struct CreateMiniAppRequest {
     #[serde(default)]
     pub permissions: MiniAppPermissions,
     pub ai_context: Option<MiniAppAiContext>,
+    #[serde(default)]
+    pub chrome: Option<openbitfun_product_domains::miniapp::chrome::MiniAppChrome>,
     #[serde(default)]
     pub workspace_path: Option<String>,
 }
@@ -119,6 +135,8 @@ pub struct UpdateMiniAppRequest {
     pub source: Option<MiniAppSourceDto>,
     pub permissions: Option<MiniAppPermissions>,
     pub ai_context: Option<MiniAppAiContext>,
+    #[serde(default)]
+    pub chrome: Option<openbitfun_product_domains::miniapp::chrome::MiniAppChrome>,
     #[serde(default)]
     pub workspace_path: Option<String>,
 }
@@ -391,15 +409,18 @@ pub async fn create_miniapp(
     let workspace_root = workspace_root_from_input(request.workspace_path.as_deref());
     let app = state
         .miniapp_manager
-        .create(
-            request.name,
-            request.description,
-            request.icon,
-            request.category,
-            request.tags,
-            source,
-            request.permissions,
-            request.ai_context,
+        .create_with_input(
+            MiniAppCreateInput {
+                name: request.name,
+                description: request.description,
+                icon: request.icon,
+                category: request.category,
+                tags: request.tags,
+                source,
+                permissions: request.permissions,
+                ai_context: request.ai_context,
+                chrome: request.chrome,
+            },
             workspace_root.as_deref(),
         )
         .await
@@ -421,16 +442,19 @@ pub async fn update_miniapp(
     let workspace_root = workspace_root_from_input(request.workspace_path.as_deref());
     let app = state
         .miniapp_manager
-        .update(
+        .update_with_patch(
             &app_id,
-            request.name,
-            request.description,
-            request.icon,
-            request.category,
-            request.tags,
-            request.source.map(Into::into),
-            request.permissions,
-            request.ai_context,
+            MiniAppUpdatePatch {
+                name: request.name,
+                description: request.description,
+                icon: request.icon,
+                category: request.category,
+                tags: request.tags,
+                source: request.source.map(Into::into),
+                permissions: request.permissions,
+                ai_context: request.ai_context,
+                chrome: request.chrome,
+            },
             workspace_root.as_deref(),
         )
         .await
@@ -1231,13 +1255,14 @@ pub async fn miniapp_decline_builtin_update(
 
 // ============== AI commands ==============
 
-/// Active AI stream cancellation flags: stream_id → cancel flag.
-static AI_STREAM_REGISTRY: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+/// Active AI stream cancellation flags: (app_id, stream_id) → cancel flag.
+static AI_STREAM_REGISTRY: OnceLock<Mutex<HashMap<(String, String), Arc<AtomicBool>>>> =
+    OnceLock::new();
 
 /// Per-app rate limiter state: app_id → (request_count, window_start_ms).
 static AI_RATE_LIMITER: OnceLock<Mutex<MiniAppRateLimitState>> = OnceLock::new();
 
-fn ai_stream_registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+fn ai_stream_registry() -> &'static Mutex<HashMap<(String, String), Arc<AtomicBool>>> {
     AI_STREAM_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -1464,7 +1489,10 @@ pub async fn miniapp_ai_chat(
         let mut registry = ai_stream_registry()
             .lock()
             .unwrap_or_else(|p| p.into_inner());
-        registry.insert(stream_id.clone(), cancel_flag.clone());
+        registry.insert(
+            (request.app_id.clone(), stream_id.clone()),
+            cancel_flag.clone(),
+        );
     }
 
     let response_stream_id = stream_id.clone();
@@ -1527,7 +1555,7 @@ pub async fn miniapp_ai_chat(
                     let mut registry = ai_stream_registry()
                         .lock()
                         .unwrap_or_else(|p| p.into_inner());
-                    registry.remove(&stream_id);
+                    registry.remove(&(app_id.clone(), stream_id.clone()));
                     return;
                 }
             }
@@ -1541,12 +1569,27 @@ pub async fn miniapp_ai_chat(
         let mut registry = ai_stream_registry()
             .lock()
             .unwrap_or_else(|p| p.into_inner());
-        registry.remove(&stream_id);
+        registry.remove(&(app_id.clone(), stream_id.clone()));
     });
 
     Ok(MiniAppAiChatStartedResponse {
         stream_id: response_stream_id,
     })
+}
+
+/// Explicit instance shutdown also owns streams whose presentation was closed.
+pub(crate) fn cancel_miniapp_streams(app_id: &str) {
+    ai_stream_registry()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .retain(|(owner, _), flag| {
+            if owner == app_id {
+                flag.store(true, Ordering::SeqCst);
+                false
+            } else {
+                true
+            }
+        });
 }
 
 /// Cancel an ongoing AI stream.
@@ -1558,11 +1601,11 @@ pub async fn miniapp_ai_cancel(
     let mut registry = ai_stream_registry()
         .lock()
         .unwrap_or_else(|p| p.into_inner());
-    if let Some(flag) = registry.get(&request.stream_id) {
+    if let Some(flag) = registry.get(&(request.app_id.clone(), request.stream_id.clone())) {
         flag.store(true, Ordering::SeqCst);
     }
     // Remove from registry so it gets GC'd
-    registry.remove(&request.stream_id);
+    registry.remove(&(request.app_id, request.stream_id));
     Ok(())
 }
 
@@ -1619,4 +1662,29 @@ pub async fn miniapp_ai_list_models(
     );
 
     Ok(models)
+}
+
+#[cfg(test)]
+mod miniapp_desktop_stream_tests {
+    use super::*;
+    #[test]
+    fn stopping_one_instance_cancels_its_streams_without_touching_another_app() {
+        let own = uuid::Uuid::new_v4().to_string();
+        let other = uuid::Uuid::new_v4().to_string();
+        let a = Arc::new(AtomicBool::new(false));
+        let b = Arc::new(AtomicBool::new(false));
+        {
+            let mut registry = ai_stream_registry().lock().unwrap();
+            registry.insert((own.clone(), "same-id".into()), a.clone());
+            registry.insert((other.clone(), "same-id".into()), b.clone());
+        }
+        cancel_miniapp_streams(&own);
+        assert!(a.load(Ordering::SeqCst));
+        assert!(!b.load(Ordering::SeqCst));
+        assert!(ai_stream_registry()
+            .lock()
+            .unwrap()
+            .contains_key(&(other.clone(), "same-id".into())));
+        cancel_miniapp_streams(&other);
+    }
 }

@@ -68,6 +68,10 @@ cargo check -p openbitfun-core --features product-full
 
 For documentation-only changes, run `git diff --check`.
 
+For MiniApp titlebar metadata and legacy/future-field preservation, run
+`cargo test --locked -p openbitfun-product-domains --no-default-features --features miniapp --lib miniapp::chrome::tests`
+and the MiniApp contracts target below.
+
 For MiniApp bridge/session or embedded bundle changes, use the focused contracts:
 
 ```bash

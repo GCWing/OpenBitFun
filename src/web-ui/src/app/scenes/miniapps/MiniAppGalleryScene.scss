@@ -1,4 +1,4 @@
-$miniapp-gallery-content-inline-size: min(calc(100% - var(--openbitfun-space-6)), 880px);
+@use '@/infrastructure/config/components/common/config-page-layout.tokens' as configLayout;
 
 .miniapp-gallery-scene {
   display: flex;
@@ -37,14 +37,31 @@ $miniapp-gallery-content-inline-size: min(calc(100% - var(--openbitfun-space-6))
   }
 }
 
-// Both panes share one compact content rail. Keep this geometry at the scene
-// owner so the library and submissions cannot drift independently.
+// Use the home page frame for both panes, including their header and tabs.
 .miniapp-gallery-pane {
   background: var(--openbitfun-color-surface-scene);
 
+  &__account-actions {
+    display: flex;
+    justify-content: flex-end;
+    flex-shrink: 0;
+    padding: var(--openbitfun-space-4) configLayout.$config-page-content-inline-padding 0;
+  }
+
+  &__detail-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+    gap: var(--openbitfun-space-3);
+    padding: var(--openbitfun-space-4) configLayout.$config-page-content-inline-padding 0;
+  }
+
   .gallery-page-header {
+    @include configLayout.content-frame;
     position: relative;
-    width: $miniapp-gallery-content-inline-size;
+    flex-direction: column;
+    align-items: stretch;
     padding: 28px 0 0;
     box-sizing: border-box;
     background: var(--openbitfun-color-surface-scene);
@@ -52,8 +69,14 @@ $miniapp-gallery-content-inline-size: min(calc(100% - var(--openbitfun-space-6))
     -webkit-backdrop-filter: none;
   }
 
+  .gallery-page-header__identity {
+    width: 100%;
+    text-align: center;
+  }
+
   .gallery-page-header__subtitle {
     max-width: 410px;
+    margin-inline: auto;
   }
 
   .gallery-page-header__title {
@@ -61,11 +84,13 @@ $miniapp-gallery-content-inline-size: min(calc(100% - var(--openbitfun-space-6))
   }
 
   .gallery-page-header__actions {
+    justify-content: flex-end;
+    width: 100%;
     padding-top: 0;
   }
 
   .gallery-zones {
-    width: $miniapp-gallery-content-inline-size;
+    @include configLayout.content-frame;
     gap: var(--openbitfun-space-6);
     padding: var(--openbitfun-space-4) 0 var(--openbitfun-space-8);
   }
@@ -76,23 +101,29 @@ $miniapp-gallery-content-inline-size: min(calc(100% - var(--openbitfun-space-6))
 }
 
 .miniapp-gallery-tabs {
-  width: $miniapp-gallery-content-inline-size;
-  margin: var(--openbitfun-space-4) auto 0;
-  box-sizing: border-box;
+  @include configLayout.content-frame;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--openbitfun-space-2);
+  margin-block: var(--openbitfun-space-4) 0;
+
+  &__categories {
+    min-width: 0;
+    overflow-x: auto;
+  }
 }
 
 .miniapp-submissions__workspace,
 .miniapp-submissions__remote-warning,
 .miniapp-submissions__loading,
 .miniapp-submissions .gallery-empty {
-  width: $miniapp-gallery-content-inline-size;
+  @include configLayout.content-frame;
 }
 
 @container miniapp-gallery-scene (max-width: 760px) {
   .miniapp-gallery-pane {
     .gallery-page-header {
-      flex-direction: column;
-      width: calc(100% - var(--openbitfun-space-8));
       padding-top: var(--openbitfun-space-6);
     }
 
@@ -102,7 +133,6 @@ $miniapp-gallery-content-inline-size: min(calc(100% - var(--openbitfun-space-6))
     }
 
     .gallery-zones {
-      width: calc(100% - var(--openbitfun-space-8));
       padding-top: var(--openbitfun-space-5);
     }
 
@@ -116,17 +146,5 @@ $miniapp-gallery-content-inline-size: min(calc(100% - var(--openbitfun-space-6))
       margin-left: 0;
       justify-content: flex-start;
     }
-  }
-
-  .miniapp-gallery-tabs {
-    width: calc(100% - var(--openbitfun-space-8));
-    margin-top: var(--openbitfun-space-4);
-  }
-
-  .miniapp-submissions__workspace,
-  .miniapp-submissions__remote-warning,
-  .miniapp-submissions__loading,
-  .miniapp-submissions .gallery-empty {
-    width: calc(100% - var(--openbitfun-space-8));
   }
 }

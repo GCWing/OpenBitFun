@@ -97,9 +97,13 @@ describe('MiniApp and conversation navigation', () => {
   it('does not retain an old topic when a different runner claims the app without a binding', () => {
     bind('slides');
     openMiniAppConversation('slides');
+    useMiniAppStore.getState().clearComposerSession('slides', 'slides#1');
+    syncMiniAppConversations();
+    expect(useConversationDockStore.getState().open).toBe(true);
     useMiniAppStore.getState().claimComposer('slides', { token: 'slides#replacement', surfaceId: 'local' });
     syncMiniAppConversations();
     expect(useConversationDockStore.getState().entries).toEqual([]);
+    expect(useConversationDockStore.getState().open).toBe(true);
   });
 
   it('follows main app navigation only from an expanded MiniApp conversation', () => {

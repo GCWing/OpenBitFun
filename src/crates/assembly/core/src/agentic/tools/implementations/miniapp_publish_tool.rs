@@ -612,6 +612,7 @@ mod tests {
         use openbitfun_product_domains::miniapp::types::{MiniAppI18n, MiniAppLocaleStrings};
         use std::collections::HashMap;
         MiniAppMeta {
+            chrome: None,
             id: id.to_string(),
             name: name.to_string(),
             description: String::new(),

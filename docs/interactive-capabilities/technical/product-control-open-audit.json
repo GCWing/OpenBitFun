@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "a0070347f9527a6eddeb84b5cd0a93d345c378aa008ce857976f02a9f4bd3d2f",
+  "catalogDigest": "292fa0bdf7821da4588d4a1e1e4ef2b89d16d6b52bae655452fbd35dad91b966",
   "count": 212,
   "reasonCounts": {
     "externalAuth": 4,
@@ -1243,6 +1243,7 @@
         "command:miniapp_host_call",
         "command:miniapp_worker_call",
         "command:miniapp_runtime_status",
+        "command:miniapp_presentation",
         "command:miniapp_worker_list_running",
         "command:miniapp_worker_stop",
         "command:miniapp_draft_host_call",

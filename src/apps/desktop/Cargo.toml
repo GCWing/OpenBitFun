@@ -19,6 +19,7 @@ tauri-build = { workspace = true }
 serde_json = { workspace = true }
 
 [dependencies]
+openbitfun-miniapp-ipc = { path = "../../crates/adapters/miniapp-ipc" }
 openbitfun-services-core = { path = "../../crates/services/services-core", features = ["pet-packages"] }
 # Internal crates
 openbitfun-core = { path = "../../crates/assembly/core", features = ["product-full"] }
@@ -131,6 +132,7 @@ windows = { workspace = true, features = [
   "Win32_System_SystemServices",
   "Win32_System_Threading",
   "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
   "Win32_System_Ole",
   "Win32_System_Variant",
   "Win32_System_WinRT",
@@ -140,6 +142,7 @@ windows = { workspace = true, features = [
   "Win32_UI_Accessibility",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
+  "Win32_UI_Shell_PropertiesSystem",
   "Win32_UI_WindowsAndMessaging",
 ] }
 windows-core = { workspace = true }

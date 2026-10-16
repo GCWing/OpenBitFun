@@ -667,6 +667,11 @@ async function main() {
 
   if (desktopMode) {
     prepTasks.push({
+      name: 'Prepare lightweight MiniApp shell',
+      hint: 'Hint: run `pnpm run prepare:miniapp-shell`',
+      promise: runCommandPrefixed('miniapp-shell', 'node', ['scripts/prepare-miniapp-shell.mjs']),
+    });
+    prepTasks.push({
       name: 'Prepare OpenCode extension Host',
       hint: 'Hint: install Bun, then run `pnpm run plugin-host:prepare`',
       promise: runCommandPrefixed('plugin-host', 'pnpm', ['run', 'plugin-host:prepare']),

@@ -6,10 +6,11 @@ import { useConversationDockStore } from '@/app/stores/conversationDockStore';
 import { useMiniAppStore } from './miniAppStore';
 import { beginMiniAppOperation, isMiniAppClosing, requestMiniAppClose, trackMiniAppStream } from './miniAppLifecycle';
 
-const runtime = vi.hoisted(() => ({ stop: vi.fn(), cancel: vi.fn(), cancelStream: vi.fn(), notify: vi.fn() }));
+const runtime = vi.hoisted(() => ({ stop: vi.fn(), cancel: vi.fn(), cancelStream: vi.fn(), notify: vi.fn(), detach: vi.fn(), release: vi.fn(), snapshot: null as { instances: { appId: string }[] } | null }));
 vi.mock('@/infrastructure/api/service-api/MiniAppAPI', () => ({ miniAppAPI: {
   workerStop: runtime.stop, agentCancelStaleRuns: runtime.cancel, aiCancel: runtime.cancelStream,
 } }));
+vi.mock('./miniAppPresentationStore', () => ({ detachMiniAppTab: runtime.detach, useMiniAppPresentationStore: { getState: () => ({ release: runtime.release, snapshot: runtime.snapshot }) } }));
 vi.mock('@/shared/notification-system', () => ({ notificationService: { error: runtime.notify } }));
 
 const app = { id: 'slides', name: 'Slides', permissions: { node: { enabled: true }, agent: { enabled: true } } } as MiniAppMeta;
@@ -18,13 +19,44 @@ const entry = { kind: 'miniapp' as const, surfaceId: 'local', appId: app.id, ses
 describe('explicit MiniApp shutdown', () => {
   beforeEach(() => {
     activateSurface('local'); vi.resetAllMocks();
+    runtime.snapshot = null;
+    runtime.detach.mockResolvedValue(false);
     runtime.stop.mockResolvedValue(undefined); runtime.cancel.mockResolvedValue({ cancelledRuns: 1 }); runtime.cancelStream.mockResolvedValue(undefined);
     useSceneStore.getState().resetForPeerSwitch();
     useMiniAppStore.setState({ ...useMiniAppStore.getInitialState(), apps: [app], runningWorkerIds: [app.id] });
     useMiniAppStore.getState().claimComposer(app.id, { token: entry.claimToken, sessionId: entry.sessionId });
     useConversationDockStore.setState(useConversationDockStore.getInitialState());
     useConversationDockStore.getState().add(entry);
+    useConversationDockStore.getState().setOpen(true);
     useSceneStore.getState().openScene('miniapp:slides');
+  });
+
+  it('releases a transferred tab and its composer while the destination keeps running', async () => {
+    runtime.detach.mockResolvedValue(true);
+    runtime.snapshot = { instances: [{ appId: app.id }] };
+    const control = { kind: 'control' as const, surfaceId: 'local', workspaceKey: 'control', sessionId: 'control' };
+    useConversationDockStore.getState().add(control, false);
+    await useSceneStore.getState().closeScene('miniapp:slides');
+    expect(runtime.release).toHaveBeenCalledExactlyOnceWith(app.id);
+    expect(useSceneStore.getState().openTabs).toEqual([]);
+    expect(useConversationDockStore.getState().entries).toEqual([control]);
+    expect(useConversationDockStore.getState().open).toBe(false);
+    expect(useMiniAppStore.getState().composerClaims).toEqual({});
+    expect(runtime.stop).not.toHaveBeenCalled();
+    expect(runtime.cancel).not.toHaveBeenCalled();
+    expect(runtime.cancelStream).not.toHaveBeenCalled();
+    expect(useMiniAppStore.getState().runningWorkerIds).toContain(app.id);
+  });
+
+  it('reflects host-owned shutdown when the last managed view closes', async () => {
+    runtime.detach.mockResolvedValue(true);
+    runtime.snapshot = { instances: [] };
+    await useSceneStore.getState().closeScene('miniapp:slides');
+    expect(useSceneStore.getState().openTabs).toEqual([]);
+    expect(useMiniAppStore.getState().runningWorkerIds).toEqual([]);
+    expect(runtime.stop).not.toHaveBeenCalled(); // The host already performed cleanup.
+    expect(runtime.release).toHaveBeenCalledExactlyOnceWith(app.id);
+    expect(useConversationDockStore.getState().open).toBe(false);
   });
 
   it('closes the app, its runs, streams and dock entry through the scene close action', async () => {
@@ -40,6 +72,7 @@ describe('explicit MiniApp shutdown', () => {
     expect(useMiniAppStore.getState().runningWorkerIds).toEqual([]);
     expect(useMiniAppStore.getState().composerClaims).toEqual({});
     expect(useConversationDockStore.getState().entries).toEqual([]);
+    expect(useConversationDockStore.getState().open).toBe(false);
   });
 
   it('retains the app and conversation when a runtime shutdown request fails', async () => {
@@ -48,11 +81,13 @@ describe('explicit MiniApp shutdown', () => {
     expect(useSceneStore.getState().openTabs.map(tab => tab.id)).toEqual(['miniapp:slides']);
     expect(useMiniAppStore.getState().runningWorkerIds).toContain(app.id);
     expect(useConversationDockStore.getState().entries).toEqual([entry]);
+    expect(useConversationDockStore.getState().open).toBe(true);
     expect(runtime.notify).toHaveBeenCalledTimes(1);
     expect(isMiniAppClosing(app.id)).toBe(false);
   });
 
-  it('drains accepted starts, rejects new starts and deduplicates repeated close gestures', async () => {
+  it.each([false, true])('drains accepted starts and deduplicates close gestures (managed: %s)', async managed => {
+    runtime.detach.mockResolvedValue(managed);
     const finish = beginMiniAppOperation(app.id, getActiveSurfaceScope());
     const close = vi.fn();
     const first = requestMiniAppClose(app.id, close);
@@ -60,9 +95,10 @@ describe('explicit MiniApp shutdown', () => {
     expect(first).toBe(second);
     await Promise.resolve();
     expect(runtime.cancel).not.toHaveBeenCalled();
+    expect(runtime.detach).not.toHaveBeenCalled();
     expect(() => beginMiniAppOperation(app.id, getActiveSurfaceScope())).toThrow('MiniApp is closing');
     finish(); await first;
-    expect(runtime.stop).toHaveBeenCalledTimes(1);
+    expect(runtime.stop).toHaveBeenCalledTimes(managed ? 0 : 1);
     expect(close).toHaveBeenCalledTimes(1);
   });
 
@@ -75,6 +111,7 @@ describe('explicit MiniApp shutdown', () => {
     expect(runtime.stop).not.toHaveBeenCalled();
     expect(runtime.notify).not.toHaveBeenCalled();
     expect(useConversationDockStore.getState().entries).toEqual([entry]);
+    expect(useConversationDockStore.getState().open).toBe(true);
   });
 
   it('does not interpret surface teardown as closing an application', () => {

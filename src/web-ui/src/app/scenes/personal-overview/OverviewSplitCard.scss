@@ -1,0 +1,69 @@
+.overview-split-card {
+  &__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  &__pane {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+    gap: var(--openbitfun-layout-card-gap-md);
+    padding: var(--openbitfun-space-6);
+    border: 0;
+    border-radius: 0;
+    color: var(--openbitfun-color-content-primary);
+    background: transparent;
+    font: inherit;
+    text-align: start;
+  }
+  &__pane + &__pane::before {
+    content: '';
+    position: absolute;
+    inset-block: var(--openbitfun-space-6);
+    inset-inline-start: 0;
+    border-inline-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    pointer-events: none;
+  }
+  &__pane--action {
+    cursor: pointer;
+    &:hover { background: var(--openbitfun-color-action-quiet-hover); }
+    &:focus-visible {
+      outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+      outline-offset: calc(-1 * (var(--openbitfun-focus-width) + var(--openbitfun-focus-offset)));
+    }
+  }
+  &__title {
+    width: 100%;
+    min-width: 0;
+    font-family: var(--openbitfun-type-heading-card-font-family);
+    font-size: var(--openbitfun-type-heading-card-font-size);
+    font-weight: var(--openbitfun-type-heading-card-font-weight);
+    line-height: var(--openbitfun-type-heading-card-line-height);
+    letter-spacing: var(--openbitfun-type-heading-card-letter-spacing);
+  }
+  &__value {
+    display: flex;
+    align-items: center;
+    min-block-size: 1lh;
+    font-family: var(--openbitfun-type-heading-page-font-family);
+    font-size: var(--openbitfun-type-heading-page-font-size);
+    font-weight: var(--openbitfun-type-heading-page-font-weight);
+    line-height: var(--openbitfun-type-heading-page-line-height);
+    letter-spacing: var(--openbitfun-type-heading-page-letter-spacing);
+    font-variant-numeric: tabular-nums;
+  }
+  &__description {
+    min-height: 2lh;
+    overflow-wrap: anywhere;
+    color: var(--openbitfun-color-content-secondary);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+  }
+  &__content {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    width: 100%;
+  }
+}

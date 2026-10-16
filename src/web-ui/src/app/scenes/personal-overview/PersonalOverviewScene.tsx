@@ -1,12 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActionCard, Button, Card, Icon, OverflowText, ScrollArea, Spinner } from '@openbitfun/ui';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Button, Icon, ScrollArea, Spinner } from '@openbitfun/ui';
 import { useSubagentAvatarMotion } from '@openbitfun/ui/brand';
-import { Ellipsis } from 'lucide-react';
 import { useAccountIdentity } from '@/infrastructure/account-identity/useAccountIdentity';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { confirmDialog } from '@/infrastructure/confirm-dialog';
-import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
+import type { MiniAppMeta } from '@/infrastructure/api/service-api/MiniAppAPI';
 import { useNotification } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import { useSceneStore } from '@/app/stores/sceneStore';
@@ -14,22 +14,22 @@ import { useAgentsStore } from '../agents/agentsStore';
 import { useNurseryStore } from '../profile/nurseryStore';
 import { projectMiniAppActivity } from '../miniapps/miniAppActivity';
 import { useMiniAppCreation } from '../miniapps/hooks/useMiniAppCreation';
-import { pickLocalizedString } from '../miniapps/utils/pickLocalizedString';
-import { renderMiniAppIcon } from '../miniapps/utils/miniAppIcons';
 import { useSkillsSceneStore, type SkillTab } from '../skills/skillsSceneStore';
 import { summarizeOverviewUsage } from './overviewData';
-import { recentMiniApps } from './overviewCatalog';
 import { UsageActivityGrid } from '@/infrastructure/config/components/UsageActivityGrid';
 import { usePersonalOverview } from './usePersonalOverview';
 import { getOverviewIdentity } from './overviewIdentity';
 import { OverviewAccountButton } from './OverviewAccountButton';
 import { OverviewDevicesSection } from './OverviewDevicesSection';
+import { OverviewSplitCard, OverviewSplitCardAction, OverviewSplitCardSection } from './OverviewSplitCard';
+import { OverviewMiniAppLogos } from './OverviewMiniAppLogos';
 import joystickArtwork from '@/flow_chat/assets/subagent-avatars/robot-04.svg?raw';
 import './PersonalOverviewScene.scss';
 
 const log = createLogger('PersonalOverviewScene');
 const StandaloneAddSkillDialog = React.lazy(() => import('../skills/components/AddSkillDialog').then(module => ({ default: module.StandaloneAddSkillDialog })));
 const CreateAgentDialog = React.lazy(() => import('../agents/components/CreateAgentDialog'));
+const MiniAppGalleryScene = React.lazy(() => import('../miniapps/MiniAppGalleryScene'));
 
 // Reuse the authored IP and its existing motion rig; no account data enters SVG markup.
 const overviewArtwork = joystickArtwork
@@ -37,29 +37,16 @@ const overviewArtwork = joystickArtwork
   .replace(/\s(?:aria-labelledby|role)="[^"]*"/g, '');
 
 const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
-  const { t, formatNumber, resolvedTimeZone, currentLanguage } = useI18n('scenes/personal-overview');
+  const { t, formatNumber, resolvedTimeZone } = useI18n('scenes/personal-overview');
   const identity = useAccountIdentity();
   const { usage, agents, miniApps, skills, refresh } = usePersonalOverview(resolvedTimeZone, isActive);
   const { creating: creatingMiniApp, createMiniApp } = useMiniAppCreation();
+  const surfaceScope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope);
   const openTabs = useSceneStore(state => state.openTabs);
   const miniAppActivities = useMemo(() => miniApps.status === 'ready'
     ? projectMiniAppActivity(miniApps.data.apps, openTabs, miniApps.data.runningWorkerIds)
     : [], [miniApps, openTabs]);
-  const miniAppPreview = useMemo(() => miniApps.status === 'ready'
-    ? recentMiniApps(miniApps.data.apps)
-    : null, [miniApps]);
-  const miniAppItems = useMemo(() => {
-    // Keep active apps reachable, then fill the remaining preview slots by recency.
-    const apps = new Map(miniAppActivities.map(({ app }) => [app.id, app]));
-    miniAppPreview?.items.forEach(({ item }) => apps.set(item.id, item));
-    if (miniApps.status === 'ready') {
-      miniApps.data.apps.forEach(app => apps.set(app.id, app));
-    }
-    return [...apps.values()].slice(0, 3);
-  }, [miniAppPreview, miniAppActivities, miniApps]);
-  const remainingMiniAppCount = miniApps.status === 'ready'
-    ? Math.max(0, miniApps.data.apps.length - miniAppItems.length)
-    : 0;
+  const miniAppItems = miniApps.status === 'ready' ? miniApps.data.apps : [];
   const catalogCount = (status: string, value: number) => status === 'ready'
     ? formatNumber(value)
     : t(status === 'loading' ? 'loadingValue' : 'unavailableValue');
@@ -68,10 +55,31 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
   const [creatingAssistant, setCreatingAssistant] = useState(false);
   const [addingSkill, setAddingSkill] = useState(false);
   const [creatingAgent, setCreatingAgent] = useState(false);
+  const surfaceEpoch = surfaceScope.epoch;
+  const [miniAppDetail, setMiniAppDetail] = useState<{ app: MiniAppMeta; epoch: number } | null>(null);
+  const showingMiniAppDetail = miniAppDetail?.epoch === surfaceEpoch;
+  const overviewScrollRef = useRef<HTMLDivElement>(null);
+  const overviewReturnPosition = useRef<{ scrollTop: number; focus: HTMLElement | null } | null>(null);
+
+  useLayoutEffect(() => {
+    if (showingMiniAppDetail || !overviewReturnPosition.current) return;
+    const { scrollTop, focus } = overviewReturnPosition.current;
+    if (overviewScrollRef.current) overviewScrollRef.current.scrollTop = scrollTop;
+    if (focus?.isConnected) focus.focus({ preventScroll: true });
+  }, [showingMiniAppDetail]);
+
+  const openMiniAppDetails = (app: MiniAppMeta) => {
+    overviewReturnPosition.current = {
+      scrollTop: overviewScrollRef.current?.scrollTop ?? 0,
+      focus: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+    };
+    setMiniAppDetail({ app, epoch: surfaceEpoch });
+  };
   useEffect(() => {
     if (!isActive) {
       setAddingSkill(false);
       setCreatingAgent(false);
+      setMiniAppDetail(null);
     }
   }, [isActive]);
   const assistantCreationPending = useRef(false);
@@ -174,220 +182,193 @@ const PersonalOverviewScene: React.FC<{ isActive?: boolean }> = ({ isActive = tr
   ];
 
   return (
-    <div className="personal-overview" data-openbitfun-scene="personal-overview" data-openbitfun-part="root">
-      <div className="personal-overview__account-actions">
-        <OverviewAccountButton identity={identity} />
-      </div>
-      <ScrollArea className="personal-overview__scroll">
-        <div className="personal-overview__content">
-          <header className="personal-overview__identity" data-openbitfun-scene="personal-overview" data-openbitfun-part="identity">
-            <span
-              ref={avatarRef}
-              className="personal-overview__avatar"
-              data-openbitfun-scene="personal-overview"
-              data-openbitfun-part="avatar"
-              aria-hidden="true"
-            >
-              <span className="personal-overview__avatar-art" data-subagent-motion-art="true" dangerouslySetInnerHTML={{ __html: overviewArtwork }} />
-            </span>
-            {displayName && <h1 className="personal-overview__name">{displayName}</h1>}
-            {displayedIdentity?.handle && <p className="personal-overview__handle">{displayedIdentity.handle}</p>}
-          </header>
-
-          <section aria-label={t('metrics.title')}>
-            <dl className="personal-overview__metrics" aria-busy={usage.status === 'loading'} data-openbitfun-scene="personal-overview" data-openbitfun-part="metrics">
-              {metrics.map(metric => (
-                <div className="personal-overview__metric" key={metric.label} title={metric.hint}>
-                  <dt className="personal-overview__metric-label">{metric.label}</dt>
-                  <dd className="personal-overview__metric-value">{metric.value}</dd>
-                </div>
-              ))}
-            </dl>
-            {(usage.status === 'failed' || usage.status === 'unsupported') && (
-              <div className="personal-overview__message" role="status">
-                <span>{t(usage.status === 'unsupported' ? 'usage.unsupported' : 'usage.failed')}</span>
-                <Button variant="secondary" size="sm" onClick={refresh}>{t('retry')}</Button>
-              </div>
-            )}
-          </section>
-
-          <section className="personal-overview__section" aria-labelledby="overview-agents-title" data-openbitfun-scene="personal-overview" data-openbitfun-part="agents">
-            <div className="personal-overview__section-header">
-              <h2 id="overview-agents-title" className="personal-overview__section-title">{t('agents.title')}</h2>
-              <div className="personal-overview__section-actions">
-                <Button className="personal-overview__section-action" variant="text" size="sm" leadingIcon={<Icon name="plus" size="sm" />} onClick={createAgent} data-testid="personal-overview-create-agent">
-                  {t('agents.create')}
-                </Button>
-                <span className="personal-overview__action-divider" aria-hidden="true" />
-                <Button className="personal-overview__section-action" variant="text" size="sm" leadingIcon={<Icon name="plus" size="sm" />} loading={creatingAssistant} onClick={() => void createAssistant()} data-testid="personal-overview-create-assistant">
-                  {t('agents.createAssistant')}
-                </Button>
-              </div>
-            </div>
-            <Card appearance="subtle" radius="lg" clip>
-              <div className="personal-overview__agent-grid">
-                {agentCards.map(card => (
-                  <button className="personal-overview__agent" type="button" key={card.id} onClick={card.onClick} data-testid={`personal-overview-${card.id}`} data-overflow-trigger>
-                    <OverflowText className="personal-overview__agent-name">{card.title}</OverflowText>
-                    <span className="personal-overview__agent-count">{card.count}</span>
-                    <span className="personal-overview__agent-description">{card.description}</span>
-                  </button>
-                ))}
-              </div>
-            </Card>
-            {agents.status !== 'ready' && (
-              <div className="personal-overview__message" role="status">
-                <span>{t(agents.status === 'loading' ? 'agents.loading' : 'agents.failed')}</span>
-                {agents.status !== 'loading' && <Button variant="secondary" size="sm" onClick={refresh}>{t('retry')}</Button>}
-              </div>
-            )}
-          </section>
-
-          <OverviewDevicesSection identity={identity} />
-
-          <section className="personal-overview__section" aria-labelledby="overview-miniapps-title" aria-busy={miniApps.status === 'loading'} data-openbitfun-scene="personal-overview" data-openbitfun-part="miniApps" data-catalog-status={miniApps.status}>
-            <div className="personal-overview__section-header">
-              <h2 id="overview-miniapps-title" className="personal-overview__section-title">{t('common:scenes.miniApps')}</h2>
-              <Button
-                className="personal-overview__section-action"
-                variant="text"
-                size="sm"
-                leadingIcon={<Icon name="plus" size="sm" />}
-                loading={creatingMiniApp}
-                onClick={() => void createMiniApp()}
-                data-testid="personal-overview-create-miniapp"
+    <>
+      {showingMiniAppDetail && miniAppDetail && (
+        <React.Suspense fallback={<div className="personal-overview__placeholder" role="status"><Spinner size="md" /></div>}>
+          <MiniAppGalleryScene key={`${surfaceEpoch}:${miniAppDetail.app.id}`} initialDetailApp={miniAppDetail.app}
+            detailBackLabel={t('miniApps.backToOverview')} onDetailBack={() => { setMiniAppDetail(null); refresh(); }} />
+        </React.Suspense>
+      )}
+      <div className="personal-overview" hidden={showingMiniAppDetail} data-openbitfun-scene="personal-overview" data-openbitfun-part="root">
+        {identity.resolved && identity.status === 'signed-in' && identity.me && (
+          <div className="personal-overview__account-actions">
+            <OverviewAccountButton identity={identity} />
+          </div>
+        )}
+        <ScrollArea ref={overviewScrollRef} className="personal-overview__scroll">
+          <div className="personal-overview__content">
+            <header className="personal-overview__identity" data-openbitfun-scene="personal-overview" data-openbitfun-part="identity">
+              <span
+                ref={avatarRef}
+                className="personal-overview__avatar"
+                data-openbitfun-scene="personal-overview"
+                data-openbitfun-part="avatar"
+                aria-hidden="true"
               >
-                {t('miniApps.create')}
-              </Button>
-            </div>
-            <div className="personal-overview__catalog">
-              <ul className="personal-overview__catalog-grid personal-overview__catalog-grid--miniapps">
-                {miniAppItems.map(app => {
-                  const active = miniAppActivities.some(activity => activity.app.id === app.id);
-                  return (
-                    <li key={app.id} className="personal-overview__catalog-cell">
-                      <ActionCard
-                        className="personal-overview__catalog-action"
-                        leading={renderMiniAppIcon(app.icon || 'box', 'lg')}
-                        body={(
-                          <span className="personal-overview__catalog-copy">
-                            <OverflowText className="personal-overview__catalog-item-name">{pickLocalizedString(app, currentLanguage, 'name')}</OverflowText>
-                            <OverflowText className="personal-overview__catalog-item-description">{pickLocalizedString(app, currentLanguage, 'description')}</OverflowText>
-                          </span>
-                        )}
-                        onClick={() => useSceneStore.getState().openScene(`miniapp:${app.id}`)}
-                        data-testid={active ? 'personal-overview-miniapp-activity' : 'personal-overview-recent-miniapp'}
-                        data-miniapp-id={app.id}
-                      />
-                    </li>
-                  );
-                })}
-                <li className="personal-overview__catalog-cell">
-                  <ActionCard
-                    className="personal-overview__catalog-action"
-                    leading={<Icon glyph={Ellipsis} size="lg" />}
-                    body={<OverflowText className="personal-overview__catalog-item-name">{remainingMiniAppCount > 0 ? t('miniApps.more', { count: formatNumber(remainingMiniAppCount) }) : t('miniApps.manage')}</OverflowText>}
-                    onClick={() => useSceneStore.getState().openScene('miniapps')}
-                    data-testid="personal-overview-more-miniapps"
-                  />
-                </li>
-              </ul>
-              {miniApps.status === 'ready' && miniAppItems.length === 0 && <p className="personal-overview__catalog-empty">{t('miniApps.empty')}</p>}
-              {miniAppPreview?.incomplete && <p className="personal-overview__catalog-empty" role="status">{t('catalog.datesIncomplete')}</p>}
-              {miniApps.status !== 'ready' && (
-                <div className="personal-overview__catalog-status" role="status">
-                  <span>{t(miniApps.status === 'loading' ? 'miniApps.loading' : 'miniApps.failed')}</span>
-                  {miniApps.status !== 'loading' && <Button variant="secondary" size="sm" onClick={refresh}>{t('retry')}</Button>}
+                <span className="personal-overview__avatar-art" data-subagent-motion-art="true" dangerouslySetInnerHTML={{ __html: overviewArtwork }} />
+              </span>
+              {displayName && <h1 className="personal-overview__name">{displayName}</h1>}
+              {displayedIdentity?.handle && <p className="personal-overview__handle">{displayedIdentity.handle}</p>}
+            </header>
+
+            <section aria-label={t('metrics.title')}>
+              <dl className="personal-overview__metrics" aria-busy={usage.status === 'loading'} data-openbitfun-scene="personal-overview" data-openbitfun-part="metrics">
+                {metrics.map(metric => (
+                  <div className="personal-overview__metric" key={metric.label} title={metric.hint}>
+                    <dt className="personal-overview__metric-label">{metric.label}</dt>
+                    <dd className="personal-overview__metric-value">{metric.value}</dd>
+                  </div>
+                ))}
+              </dl>
+              {(usage.status === 'failed' || usage.status === 'unsupported') && (
+                <div className="personal-overview__message" role="status">
+                  <span>{t(usage.status === 'unsupported' ? 'usage.unsupported' : 'usage.failed')}</span>
+                  <Button variant="secondary" size="sm" onClick={refresh}>{t('retry')}</Button>
                 </div>
               )}
-            </div>
-          </section>
+            </section>
 
-          <section className="personal-overview__section" aria-labelledby="overview-skills-title" aria-busy={skills.status === 'loading'} data-openbitfun-scene="personal-overview" data-openbitfun-part="skills">
-            <div className="personal-overview__section-header">
-              <h2 id="overview-skills-title" className="personal-overview__section-title">{t('common:scenes.skills')}</h2>
-              <Button
-                className="personal-overview__section-action"
-                variant="text"
-                size="sm"
-                leadingIcon={<Icon name="plus" size="sm" />}
-                onClick={addSkill}
-                data-testid="personal-overview-add-skill"
-              >
-                {t('skills.add')}
-              </Button>
-            </div>
-            <div className="personal-overview__catalog">
-              <ul className="personal-overview__catalog-grid personal-overview__catalog-grid--skills">
-                <li className="personal-overview__catalog-cell">
-                  <ActionCard
-                    className="personal-overview__catalog-action"
-                    leading={<Icon name="book-open" size="lg" />}
-                    body={(
-                      <span className="personal-overview__catalog-copy">
-                        <OverflowText className="personal-overview__catalog-item-name">{t('skills.installed')}</OverflowText>
-                        <OverflowText className="personal-overview__catalog-item-description">{t('skills.installedCount', { count: catalogCount(skills.status, skills.status === 'ready' ? skills.data.skills.length : 0) })}</OverflowText>
-                      </span>
+            <section className="personal-overview__section" aria-labelledby="overview-agents-title" data-openbitfun-scene="personal-overview" data-openbitfun-part="agents">
+              <div className="personal-overview__section-header">
+                <h2 id="overview-agents-title" className="personal-overview__section-title">{t('agents.title')}</h2>
+                <div className="personal-overview__section-actions">
+                  <Button className="personal-overview__section-action" variant="text" size="sm" leadingIcon={<Icon name="plus" size="sm" />} onClick={createAgent} data-testid="personal-overview-create-agent">
+                    {t('agents.create')}
+                  </Button>
+                  <span className="personal-overview__action-divider" aria-hidden="true" />
+                  <Button className="personal-overview__section-action" variant="text" size="sm" leadingIcon={<Icon name="plus" size="sm" />} loading={creatingAssistant} onClick={() => void createAssistant()} data-testid="personal-overview-create-assistant">
+                    {t('agents.createAssistant')}
+                  </Button>
+                </div>
+              </div>
+              <OverviewSplitCard>
+                {agentCards.map(card => (
+                  <OverviewSplitCardAction key={card.id} title={card.title} value={card.count}
+                    description={card.description} onClick={card.onClick} data-testid={`personal-overview-${card.id}`} />
+                ))}
+              </OverviewSplitCard>
+              {agents.status !== 'ready' && (
+                <div className="personal-overview__message" role="status">
+                  <span>{t(agents.status === 'loading' ? 'agents.loading' : 'agents.failed')}</span>
+                  {agents.status !== 'loading' && <Button variant="secondary" size="sm" onClick={refresh}>{t('retry')}</Button>}
+                </div>
+              )}
+            </section>
+
+            <OverviewDevicesSection identity={identity} />
+
+            <section className="personal-overview__section" aria-labelledby="overview-miniapps-title" aria-busy={miniApps.status === 'loading'} data-openbitfun-scene="personal-overview" data-openbitfun-part="miniApps" data-catalog-status={miniApps.status}>
+              <div className="personal-overview__section-header">
+                <h2 id="overview-miniapps-title" className="personal-overview__section-title">{t('common:scenes.miniApps')}</h2>
+                <Button
+                  className="personal-overview__section-action"
+                  variant="text"
+                  size="sm"
+                  leadingIcon={<Icon name="plus" size="sm" />}
+                  loading={creatingMiniApp}
+                  onClick={() => void createMiniApp()}
+                  data-testid="personal-overview-create-miniapp"
+                >
+                  {t('miniApps.create')}
+                </Button>
+              </div>
+              <div className="personal-overview__catalog">
+                <OverviewSplitCard>
+                  <OverviewSplitCardAction
+                    title={t('common:scenes.miniApps')}
+                    value={<span data-testid="personal-overview-miniapp-count">{catalogCount(miniApps.status, miniAppItems.length)}</span>}
+                    description={t('miniApps.runningCount', { count: catalogCount(miniApps.status, miniAppActivities.length) })}
+                    onClick={() => useSceneStore.getState().openScene('miniapps')}
+                    data-testid="personal-overview-miniapp-summary"
+                  />
+                  <OverviewSplitCardSection title={t('miniApps.installed')}>
+                    {miniApps.status === 'ready' ? miniAppItems.length > 0 ? (
+                      <OverviewMiniAppLogos apps={miniAppItems} onDetails={openMiniAppDetails}
+                        onLaunch={appId => useSceneStore.getState().openScene(`miniapp:${appId}`)}
+                        onViewAll={() => useSceneStore.getState().openScene('miniapps')} />
+                    ) : <p className="personal-overview__catalog-empty">{t('miniApps.empty')}</p> : (
+                      <div className="personal-overview__catalog-status" role="status">
+                        <span>{t(miniApps.status === 'loading' ? 'miniApps.loading' : 'miniApps.failed')}</span>
+                        {miniApps.status !== 'loading' && <Button variant="secondary" size="sm" onClick={refresh}>{t('retry')}</Button>}
+                      </div>
                     )}
+                  </OverviewSplitCardSection>
+                </OverviewSplitCard>
+              </div>
+            </section>
+
+            <section className="personal-overview__section" aria-labelledby="overview-skills-title" aria-busy={skills.status === 'loading'} data-openbitfun-scene="personal-overview" data-openbitfun-part="skills">
+              <div className="personal-overview__section-header">
+                <h2 id="overview-skills-title" className="personal-overview__section-title">{t('common:scenes.skills')}</h2>
+                <Button
+                  className="personal-overview__section-action"
+                  variant="text"
+                  size="sm"
+                  leadingIcon={<Icon name="plus" size="sm" />}
+                  onClick={addSkill}
+                  data-testid="personal-overview-add-skill"
+                >
+                  {t('skills.add')}
+                </Button>
+              </div>
+              <div className="personal-overview__catalog">
+                <OverviewSplitCard>
+                  <OverviewSplitCardAction
+                    title={t('skills.installed')}
+                    value={catalogCount(skills.status, skills.status === 'ready' ? skills.data.skills.length : 0)}
+                    description={t('skills.installedDescription')}
                     onClick={() => openSkills('installed')}
                     data-testid="personal-overview-skills"
                   />
-                </li>
-                <li className="personal-overview__catalog-cell">
-                  <ActionCard
-                    className="personal-overview__catalog-action"
-                    leading={<Icon name="search" size="lg" />}
-                    body={(
-                      <span className="personal-overview__catalog-copy">
-                        <OverflowText className="personal-overview__catalog-item-name">{t('skills.discover')}</OverflowText>
-                        <OverflowText className="personal-overview__catalog-item-description">{t('skills.discoverDescription')}</OverflowText>
-                      </span>
-                    )}
+                  <OverviewSplitCardAction
+                    title={t('skills.discover')}
+                    value={<Icon name="search" size="lg" />}
+                    description={t('skills.discoverDescription')}
                     onClick={() => openSkills('discover')}
                     data-testid="personal-overview-discover-skills"
                   />
-                </li>
-              </ul>
-              {skills.status !== 'ready' ? (
-                <div className="personal-overview__catalog-status" role="status">
-                  <span>{t(skills.status === 'loading' ? 'skills.loading' : 'skills.failed')}</span>
-                  {skills.status !== 'loading' && <Button variant="secondary" size="sm" onClick={refresh}>{t('retry')}</Button>}
-                </div>
-              ) : (skills.data.diagnostics.length > 0 || !skills.data.diagnosticsAvailable) && (
-                <div className="personal-overview__catalog-status" role="status">
-                  <span>{t(skills.data.diagnosticsAvailable ? 'skills.incomplete' : 'skills.diagnosticsUnavailable')}</span>
+                </OverviewSplitCard>
+                {skills.status !== 'ready' ? (
+                  <div className="personal-overview__catalog-status" role="status">
+                    <span>{t(skills.status === 'loading' ? 'skills.loading' : 'skills.failed')}</span>
+                    {skills.status !== 'loading' && <Button variant="secondary" size="sm" onClick={refresh}>{t('retry')}</Button>}
+                  </div>
+                ) : (skills.data.diagnostics.length > 0 || !skills.data.diagnosticsAvailable) && (
+                  <div className="personal-overview__catalog-status" role="status">
+                    <span>{t(skills.data.diagnosticsAvailable ? 'skills.incomplete' : 'skills.diagnosticsUnavailable')}</span>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="personal-overview__section" aria-labelledby="overview-activity-title" data-openbitfun-scene="personal-overview" data-openbitfun-part="activity">
+              <div className="personal-overview__section-header">
+                <h2 id="overview-activity-title" className="personal-overview__section-title">{t('activity.title')}</h2>
+              </div>
+              {usage.status === 'loading' ? (
+                <div className="personal-overview__placeholder" role="status"><Spinner size="md" /><span>{t('usage.loading')}</span></div>
+              ) : usage.status !== 'ready' ? (
+                <div className="personal-overview__placeholder"><p>{t(usage.status === 'unsupported' ? 'usage.unsupported' : 'usage.failed')}</p></div>
+              ) : (
+                <div className="personal-overview__heatmap">
+                  <UsageActivityGrid points={usage.data.stats.trend} timeZone={resolvedTimeZone} now={usage.data.now} />
                 </div>
               )}
-            </div>
-          </section>
-
-          <section className="personal-overview__section" aria-labelledby="overview-activity-title" data-openbitfun-scene="personal-overview" data-openbitfun-part="activity">
-            <div className="personal-overview__section-header">
-              <h2 id="overview-activity-title" className="personal-overview__section-title">{t('activity.title')}</h2>
-            </div>
-            {usage.status === 'loading' ? (
-              <div className="personal-overview__placeholder" role="status"><Spinner size="md" /><span>{t('usage.loading')}</span></div>
-            ) : usage.status !== 'ready' ? (
-              <div className="personal-overview__placeholder"><p>{t(usage.status === 'unsupported' ? 'usage.unsupported' : 'usage.failed')}</p></div>
-            ) : (
-              <div className="personal-overview__heatmap">
-                <UsageActivityGrid points={usage.data.stats.trend} timeZone={resolvedTimeZone} now={usage.data.now} />
-              </div>
-            )}
-          </section>
-        </div>
-      </ScrollArea>
-      {addingSkill && isActive && (
-        <React.Suspense fallback={null}>
-          <StandaloneAddSkillDialog open onOpenChange={setAddingSkill} onAdded={refresh} />
-        </React.Suspense>
-      )}
-      {creatingAgent && isActive && (
-        <React.Suspense fallback={null}>
-          <CreateAgentDialog onClose={() => setCreatingAgent(false)} onCreated={refresh} />
-        </React.Suspense>
-      )}
-    </div>
+            </section>
+          </div>
+        </ScrollArea>
+        {addingSkill && isActive && (
+          <React.Suspense fallback={null}>
+            <StandaloneAddSkillDialog open onOpenChange={setAddingSkill} onAdded={refresh} />
+          </React.Suspense>
+        )}
+        {creatingAgent && isActive && (
+          <React.Suspense fallback={null}>
+            <CreateAgentDialog onClose={() => setCreatingAgent(false)} onCreated={refresh} />
+          </React.Suspense>
+        )}
+      </div>
+    </>
   );
 };
 

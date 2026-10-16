@@ -17,7 +17,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: "xs" | "sm" | "md" | "lg";
   tone?: "danger" | "neutral";
   trailingIcon?: ReactNode;
-  variant?: "fill" | "glass" | "outline" | "primary" | "secondary" | "text";
+  variant?: "fill" | "glass" | "outline" | "primary" | "quiet" | "secondary" | "text";
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({

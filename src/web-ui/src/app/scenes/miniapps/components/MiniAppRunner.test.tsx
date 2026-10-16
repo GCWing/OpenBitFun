@@ -68,7 +68,7 @@ describe('MiniAppRunner strict bridge startup', () => {
       root?.render(<MiniAppRunner app={app} strictRuntime />);
     });
 
-    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    let iframe = container.querySelector('iframe') as HTMLIFrameElement;
     expect(iframe).toBeTruthy();
     expect(iframe.getAttribute('src')).toBe('about:blank');
     expect(iframe.getAttribute('srcdoc')).toBeNull();
@@ -79,6 +79,7 @@ describe('MiniAppRunner strict bridge startup', () => {
       root?.render(<MiniAppRunner app={app} strictRuntime />);
     });
 
+    iframe = container.querySelector('iframe') as HTMLIFrameElement;
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(createObjectURL.mock.calls[0][0]).toBeInstanceOf(Blob);
     expect(iframe.getAttribute('src')).toBe('blob:market-lens-1');
@@ -94,6 +95,7 @@ describe('MiniAppRunner strict bridge startup', () => {
     });
 
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:market-lens-1');
+    iframe = container.querySelector('iframe') as HTMLIFrameElement;
     expect(iframe.getAttribute('src')).toBe('blob:market-lens-2');
 
     await act(async () => {
@@ -102,4 +104,34 @@ describe('MiniAppRunner strict bridge startup', () => {
     root = null;
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:market-lens-2');
   });
+  it('delivers only declared enabled chrome actions to its own iframe and releases the binding', async () => {
+    const ref = { current: null as ((actionId: string) => void) | null };
+    const customApp = { ...app, chrome: { titlebar: { actions: [
+      { id: 'export', icon: 'download' as const, label: 'Export' },
+      { id: 'disabled', icon: 'save' as const, label: 'Save', enabled: false },
+    ] } } };
+    await act(async () => { root?.render(<MiniAppRunner app={customApp} strictRuntime chromeActionRef={ref} />); });
+    const target = container.querySelector('iframe')!.contentWindow!;
+    const send = vi.spyOn(target, 'postMessage');
+    ref.current?.('export');
+    ref.current?.('disabled');
+    ref.current?.('unknown');
+    expect(send).toHaveBeenCalledExactlyOnceWith({ type: 'openbitfun:event', event: 'chrome:action', payload: { actionId: 'export' } }, '*');
+    act(() => { root?.unmount(); }); root = null;
+    expect(ref.current).toBeNull();
+  });
+
+  it('acknowledges a loaded document once, never the initial blank frame', async () => {
+    const ready = vi.fn();
+    await act(async () => { root?.render(<MiniAppRunner app={app} strictRuntime onReady={ready} />); });
+    await act(async () => { container.querySelector('iframe')?.dispatchEvent(new Event('load')); });
+    expect(ready).not.toHaveBeenCalled();
+    bridgeMock.ready = true;
+    await act(async () => { root?.render(<MiniAppRunner app={app} strictRuntime onReady={ready} />); });
+    expect(ready).not.toHaveBeenCalled();
+    await act(async () => { container.querySelector('iframe')?.dispatchEvent(new Event('load')); });
+    await act(async () => { container.querySelector('iframe')?.dispatchEvent(new Event('load')); });
+    expect(ready).toHaveBeenCalledTimes(1);
+  });
+
 });

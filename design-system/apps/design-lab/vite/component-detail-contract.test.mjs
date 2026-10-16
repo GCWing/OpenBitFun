@@ -141,7 +141,7 @@ test("Button preview exposes the public presentation variants", async () => {
   assert.ok(declaration);
   assert.deepEqual(
     [...declaration[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]),
-    ["outline", "fill", "secondary", "primary", "text"],
+    ["outline", "fill", "secondary", "primary", "quiet", "text"],
   );
 });
 

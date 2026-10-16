@@ -474,3 +474,65 @@ const savePath = await app.dialog.save({
 ```
 
 依赖 URL 的域名必须在 `permissions.net.allow` 中声明。
+
+## MiniApp window chrome
+
+`meta.json` may contain an optional `chrome.titlebar`. The host renders a
+customizable row while preserving platform window conventions: actual native
+traffic lights on macOS, and the main app's right-hand caption controls on Windows.
+The same declared app actions appear at the right of OpenBitFun's top bar when
+embedded. The Shell keeps its native lifecycle controls and return-to-app icon.
+
+```json
+{
+  "chrome": {
+    "titlebar": {
+      "showTitle": true,
+      "showIcon": false,
+      "titleAlignment": "start",
+      "density": "compact",
+      "buttonShape": "rounded",
+      "surface": "surface-scene",
+      "foreground": "content-primary",
+      "border": "border-subtle",
+      "actions": [{
+        "id": "export", "icon": "download", "label": "Export",
+        "labels": {"zh-CN": "导出", "zh-TW": "匯出"}, "enabled": true
+      }]
+    }
+  }
+}
+```
+
+The app logo is hidden by default; set `showIcon: true` to display it.
+An optional `title` overrides the localized app name. `titleAlignment` is `start`
+or `center`; `density` is `compact` or `comfortable`; `buttonShape` is `square`
+or `rounded` for app/return buttons. System controls cannot be moved or restyled
+by the app. Legacy `controlsPosition` values are retained for compatibility and
+ignored by the renderer. macOS keeps the main app's toolbar height even with
+`compact` density, reserving space for its native traffic lights. Semantic `surface` choices
+are `surface-scene`, `surface-canvas`, `surface-raised`, `surface-subtle`;
+`foreground` is `content-primary`, `content-secondary`, `content-muted`;
+`border` is `border-subtle`, `border-default`, `border-strong`.
+
+Action IDs must be unique and labels nonempty. Supported action icon keys:
+`download`, `save`, `search`, `settings`, `refresh`, `plus`, `play`, `stop`,
+`check`, `share`, `help`. Handle actions in `source/ui.js`:
+
+```js
+const handleAction = ({ actionId }) => {
+  if (actionId === 'export') exportDocument();
+};
+app.chrome?.onAction(handleAction);
+// app.chrome?.offAction(handleAction) removes this subscription.
+```
+
+Actions are delivered only to the owning content view, with its existing
+permissions. They never invoke arbitrary native commands. In a draft, the
+window controls are inert and the titlebar's appearance can be previewed; macOS
+previews reserve native control space without drawing imitation traffic lights.
+Editing `chrome` does not grant host permissions. Use `{ "chrome": {} }` to
+restore defaults. `OpenBitFunControl` create/update operations also accept
+`chrome`, so remote controllers can edit the configuration without accessing a
+local path. Native presentation remains unavailable for remote workspaces,
+Peer Device Mode, mobile and Detached Dispatch.

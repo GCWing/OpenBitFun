@@ -209,7 +209,7 @@ function ReferenceDisclosure({ label, children }: { label: string; children: Rea
   );
 }
 
-const buttonVariants = ["outline", "fill", "secondary", "primary", "text"] as const;
+const buttonVariants = ["outline", "fill", "secondary", "primary", "quiet", "text"] as const;
 const iconButtonVariants = ["annotation", "quiet", "glass", "outline", "fill", "primary"] as const;
 const iconButtonSizes = ["xs", "standard", "sm", "md", "lg"] as const;
 const buttonInspectorStates = ["default", "hover", "active"] as const;

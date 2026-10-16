@@ -392,7 +392,7 @@ pub fn show_main_window(app: &tauri::AppHandle) {
         }
         log::info!("Main window shown via tray");
     } else {
-        log::warn!("Tray: show_main_window called but main window not found");
+        crate::handle_secondary_launch(app);
     }
 }
 
@@ -432,6 +432,6 @@ fn toggle_main_window(app: &tauri::AppHandle) {
             show_main_window(app);
         }
     } else {
-        log::warn!("Tray toggle requested but main window not found");
+        crate::handle_secondary_launch(app);
     }
 }

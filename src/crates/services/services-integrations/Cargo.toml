@@ -175,6 +175,7 @@ mcp = [
     "process-tree",
 ]
 miniapp-storage = [
+    "openbitfun-services-core/json-io",
     "dep:openbitfun-product-domains",
     "openbitfun-product-domains/miniapp",
     "tokio/fs",

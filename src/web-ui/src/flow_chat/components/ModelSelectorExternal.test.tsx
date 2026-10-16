@@ -314,6 +314,9 @@ describe('ModelSelector external transport reuse', () => {
       )?.click();
     });
     await act(async () => {
+      document.body.querySelector<HTMLButtonElement>('[data-testid="chat-model-selector-provider"]')?.click();
+    });
+    await act(async () => {
       document.body.querySelector<HTMLButtonElement>(
         '[data-testid="chat-model-selector-option"][data-model-id="model-b"]',
       )?.click();
@@ -428,6 +431,8 @@ describe('ModelSelector external transport reuse', () => {
     await act(async () => trigger.click());
     expect(document.body.querySelector('[data-testid="chat-model-selector-loading"]')).toBeNull();
     expect(document.body.querySelector('[data-testid="chat-model-selector-option"][data-model-id="remote-model"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="chat-model-selector-option"][data-model-id="primary"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="chat-model-selector-option"][data-model-id="fast"]')).toBeNull();
     await act(async () => resolveConfig({ 'ai.models': [] }));
   });
 

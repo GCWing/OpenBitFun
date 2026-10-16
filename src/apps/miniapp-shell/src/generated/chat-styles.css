@@ -1,0 +1,3051 @@
+/* Generated from the Hi and FlowChat style owners by scripts/generate-miniapp-chat-styles.mjs. */
+@charset "UTF-8";@layer openbitfun.components {
+  .miniapp-LauncherButton-root,
+  .miniapp-LauncherButton-icon,
+  .miniapp-LauncherButton-label {
+    box-sizing: border-box;
+  }
+
+  .miniapp-LauncherButton-root {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: var(--openbitfun-control-launcher-button-min-inline-size);
+    block-size: var(--openbitfun-control-launcher-button-block-size);
+    gap: var(--openbitfun-control-launcher-button-gap);
+    margin: 0;
+    padding-block: 0;
+    padding-inline: var(--openbitfun-control-launcher-button-padding-inline);
+    border: 0;
+    border-radius: var(--openbitfun-control-launcher-button-radius) 0 0 0;
+    color: var(--openbitfun-color-control-launcher-content);
+    background: var(--openbitfun-color-control-launcher-background);
+    font-family: var(--openbitfun-type-code-meta-font-family);
+    font-size: var(--openbitfun-type-code-meta-font-size);
+    font-weight: var(--openbitfun-type-code-meta-font-weight);
+    font-synthesis: none;
+    letter-spacing: var(--openbitfun-type-code-meta-letter-spacing);
+    line-height: var(--openbitfun-type-code-meta-line-height);
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+      background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  .miniapp-LauncherButton-root:is(:hover, [data-openbitfun-preview-state="hover"]):not(:disabled) {
+    color: var(--openbitfun-color-control-launcher-content-hover);
+    background: var(--openbitfun-color-control-launcher-background-hover);
+  }
+
+  .miniapp-LauncherButton-root:is(:active, [data-openbitfun-preview-state="active"]):not(:disabled) {
+    color: var(--openbitfun-color-control-launcher-content-pressed);
+    background: var(--openbitfun-color-control-launcher-background-pressed);
+  }
+
+  .miniapp-LauncherButton-root:is(:focus-visible, [data-openbitfun-preview-state="focus-visible"]) {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: calc(var(--openbitfun-focus-offset) * -1);
+  }
+
+  .miniapp-LauncherButton-root:disabled {
+    color: var(--openbitfun-color-control-launcher-content-disabled);
+    cursor: not-allowed;
+    opacity: var(--openbitfun-opacity-disabled);
+  }
+
+  .miniapp-LauncherButton-icon {
+    display: inline-flex;
+    flex: 0 0 var(--openbitfun-control-launcher-button-icon-size);
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--openbitfun-control-launcher-button-icon-size);
+    block-size: var(--openbitfun-control-launcher-button-icon-size);
+    color: currentColor;
+  }
+
+  .miniapp-LauncherButton-icon > :where(svg, img),
+  .miniapp-LauncherButton-icon > [data-openbitfun-component="icon"] {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  .miniapp-LauncherButton-label {
+    min-inline-size: 0;
+    overflow: hidden;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .miniapp-LauncherButton-root {
+      transition: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .miniapp-LauncherButton-root {
+      border: var(--openbitfun-border-width-default) solid ButtonText;
+      color: ButtonText;
+      background: ButtonFace;
+    }
+
+    .miniapp-LauncherButton-root:is(:hover, :active):not(:disabled) {
+      color: HighlightText;
+      background: Highlight;
+    }
+
+    .miniapp-LauncherButton-root:focus-visible {
+      outline-color: Highlight;
+    }
+  }
+}
+@layer openbitfun.components {
+  .miniapp-IconButton-button {
+    --_icon-button-background: transparent;
+    --_icon-button-background-hover: var(--openbitfun-color-action-neutral-surface-hover);
+    --_icon-button-background-active: var(--openbitfun-color-action-neutral-surface-hover);
+    --_icon-button-content: var(--openbitfun-color-content-primary);
+    --_icon-button-icon-size: var(--openbitfun-control-icon-size-sm);
+    --_icon-button-size: var(--openbitfun-control-height-sm);
+
+    position: relative;
+    /* Match Button: the pseudo-element owns hover feedback, not the native control. */
+    -webkit-appearance: none;
+    appearance: none;
+    box-sizing: border-box;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--_icon-button-size);
+    block-size: var(--_icon-button-size);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--openbitfun-radius-sm);
+    color: var(--_icon-button-content);
+    background: transparent;
+    cursor: pointer;
+    isolation: isolate;
+    transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  .miniapp-IconButton-button::before {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--_icon-button-background);
+    content: "";
+    pointer-events: none;
+    transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  .miniapp-IconButton-button:is(:hover, [data-openbitfun-preview-state="hover"]):not(:disabled)::before {
+    background: var(--_icon-button-background-hover);
+  }
+
+  .miniapp-IconButton-button:is(:active, [data-openbitfun-preview-state="active"]):not(:disabled)::before {
+    background: var(--_icon-button-background-active);
+  }
+
+  .miniapp-IconButton-button:focus-visible {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: var(--openbitfun-focus-offset);
+  }
+
+  .miniapp-IconButton-button[data-openbitfun-variant="annotation"][data-openbitfun-tone="neutral"]:not(:disabled) {
+    --_icon-button-content: var(--openbitfun-color-content-muted);
+  }
+
+  .miniapp-IconButton-button[data-openbitfun-variant="annotation"][data-openbitfun-tone="neutral"]:is(:hover, :active, :focus-visible, [data-openbitfun-preview-state="hover"], [data-openbitfun-preview-state="active"]):not(:disabled) {
+    --_icon-button-content: var(--openbitfun-color-content-secondary);
+  }
+
+  .miniapp-IconButton-button:disabled {
+    --_icon-button-content: var(--openbitfun-color-action-neutral-content-disabled);
+
+    cursor: not-allowed;
+  }
+
+  .miniapp-IconButton-button[data-openbitfun-variant="fill"],
+  .miniapp-IconButton-button[data-openbitfun-variant="primary"] {
+    background: var(--openbitfun-color-surface-tertiary);
+  }
+
+  .miniapp-IconButton-button[data-openbitfun-variant="fill"] {
+    --_icon-button-background: var(--openbitfun-color-action-neutral-surface);
+    --_icon-button-background-hover: var(--openbitfun-color-action-neutral-surface-hover);
+    --_icon-button-background-active: var(--openbitfun-color-action-neutral-surface-pressed);
+  }
+
+  .miniapp-IconButton-button[data-openbitfun-variant="outline"] {
+    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-action-neutral-surface-hover);
+  }
+
+  .miniapp-IconButton-button[data-openbitfun-variant="outline"]:is(:hover, :active, [data-openbitfun-preview-state="hover"], [data-openbitfun-preview-state="active"]):not(:disabled) {
+    border-color: transparent;
+  }
+
+  .miniapp-IconButton-button[data-openbitfun-variant="primary"] {
+    --_icon-button-background: var(--openbitfun-color-action-primary-background);
+    --_icon-button-background-hover: var(--openbitfun-color-action-primary-hover);
+    --_icon-button-background-active: var(--openbitfun-color-action-primary-pressed);
+    --_icon-button-content: var(--openbitfun-color-action-primary-content);
+  }
+
+  .miniapp-IconButton-button[data-openbitfun-variant="primary"]:disabled {
+    --_icon-button-background: var(--openbitfun-color-action-neutral-surface);
+    --_icon-button-content: var(--openbitfun-color-action-neutral-content-disabled);
+  }
+
+  .miniapp-IconButton-button[data-openbitfun-tone="danger"] {
+    --_icon-button-background-hover: var(--openbitfun-color-status-danger-surface);
+    --_icon-button-background-active: var(--openbitfun-color-status-danger-surface);
+    --_icon-button-content: var(--openbitfun-color-status-danger-emphasis);
+  }
+
+  .miniapp-IconButton-button[data-openbitfun-tone="danger"][data-openbitfun-variant="fill"] {
+    --_icon-button-background: var(--openbitfun-color-status-danger-surface);
+  }
+
+  .miniapp-IconButton-button[data-openbitfun-tone="danger"][data-openbitfun-variant="primary"] {
+    --_icon-button-background: var(--openbitfun-color-status-danger-content);
+    --_icon-button-background-hover: var(--openbitfun-color-status-danger-content);
+    --_icon-button-background-active: var(--openbitfun-color-status-danger-content);
+    --_icon-button-content: var(--openbitfun-color-content-inverse);
+  }
+
+  .miniapp-IconButton-button[data-openbitfun-shape="circle"] {
+    border-radius: var(--openbitfun-radius-pill);
+  }
+
+  .miniapp-IconButton-button[data-size="xs"] {
+    --_icon-button-icon-size: var(--openbitfun-control-icon-button-xs-icon-size);
+    --_icon-button-size: var(--openbitfun-control-icon-button-xs-size);
+  }
+
+  .miniapp-IconButton-button[data-size="xs"][data-openbitfun-variant="annotation"] {
+    --_icon-button-icon-size: var(--openbitfun-control-icon-size-xs);
+  }
+
+  .miniapp-IconButton-button[data-size="xs"][data-openbitfun-shape="square"] {
+    border-radius: var(--openbitfun-radius-xs);
+  }
+
+  .miniapp-IconButton-button[data-size="standard"] {
+    --_icon-button-icon-size: var(--openbitfun-control-icon-button-standard-icon-size);
+    --_icon-button-size: var(--openbitfun-control-icon-button-standard-size);
+  }
+
+  .miniapp-IconButton-button[data-size="md"] {
+    --_icon-button-icon-size: var(--openbitfun-control-icon-size-md);
+    --_icon-button-size: var(--openbitfun-control-height-md);
+  }
+
+  .miniapp-IconButton-button[data-size="lg"] {
+    --_icon-button-icon-size: var(--openbitfun-control-icon-size-lg);
+    --_icon-button-size: var(--openbitfun-control-height-lg);
+  }
+
+  .miniapp-IconButton-icon,
+  .miniapp-IconButton-progress {
+    --openbitfun-opacity-icon-artwork: 1;
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--_icon-button-icon-size);
+    block-size: var(--_icon-button-icon-size);
+    z-index: 1;
+  }
+
+  .miniapp-IconButton-icon > :where(svg, img),
+  .miniapp-IconButton-icon > [data-openbitfun-component="icon"] {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  .miniapp-IconButton-progress {
+    border: 2px solid currentColor;
+    border-inline-end-color: transparent;
+    border-radius: var(--openbitfun-radius-pill);
+    opacity: 0;
+  }
+
+  .miniapp-IconButton-button[data-loading="true"] .miniapp-IconButton-icon {
+    opacity: 0;
+  }
+
+  .miniapp-IconButton-button[data-loading="true"] .miniapp-IconButton-progress {
+    opacity: 1;
+    animation: miniapp-IconButton-openbitfun-icon-button-progress var(--openbitfun-motion-duration-loop) linear infinite;
+  }
+
+  @keyframes miniapp-IconButton-openbitfun-icon-button-progress {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .miniapp-IconButton-button,
+    .miniapp-IconButton-button::before,
+    .miniapp-IconButton-progress {
+      transition: none;
+    }
+
+    .miniapp-IconButton-button[data-loading="true"] .miniapp-IconButton-progress {
+      animation: none;
+      border-inline-end-color: currentColor;
+      opacity: 0.72;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .miniapp-IconButton-button {
+      border: var(--openbitfun-border-width-default) solid ButtonText;
+    }
+
+    .miniapp-IconButton-button:focus-visible {
+      outline-color: Highlight;
+    }
+  }
+}
+@layer openbitfun.components {
+  .miniapp-ChatComposer-root {
+    display: flex;
+    min-inline-size: 0;
+    inline-size: 100%;
+    flex-direction: column;
+    border-radius: var(--openbitfun-control-composer-surface-radius);
+    color: var(--openbitfun-color-content-primary);
+    background: transparent;
+    font-family:var(--openbitfun-type-body-md-font-family);
+  }
+
+  .miniapp-ChatComposer-root[data-has-context="true"] {
+    background: var(--openbitfun-color-composer-context-background);
+    backdrop-filter: blur(var(--openbitfun-control-composer-context-blur));
+    -webkit-backdrop-filter: blur(var(--openbitfun-control-composer-context-blur));
+  }
+
+  .miniapp-ChatComposer-context {
+    display: flex;
+    min-inline-size: 0;
+    min-block-size: var(--openbitfun-space-8);
+    align-items: center;
+    padding-inline: var(--openbitfun-space-2);
+  }
+
+  .miniapp-ChatComposer-body {
+    display: flex;
+    min-inline-size: 0;
+    inline-size: 100%;
+    flex-direction: column;
+    gap: var(--openbitfun-space-2);
+  }
+
+  .miniapp-ChatComposer-queue {
+    /* The wrapper exists when a queue component later renders `null`. Keeping
+       it out of the box tree makes both that transition and the no-queue path
+       geometrically identical to a composer that never received the slot. */
+    display: contents;
+  }
+
+  .miniapp-ChatComposer-surface {
+    display: grid;
+    min-inline-size: 0;
+    inline-size: 100%;
+    min-block-size: var(--openbitfun-control-height-md);
+    box-sizing: border-box;
+    align-items: center;
+    gap: var(--openbitfun-control-composer-surface-gap);
+    padding: var(--openbitfun-control-composer-surface-padding);
+    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-composer-border);
+    border-radius: var(--openbitfun-control-composer-surface-radius);
+    color: var(--openbitfun-color-content-primary);
+    background: var(--openbitfun-color-surface-raised);
+    box-shadow: var(--openbitfun-shadow-composer);
+    transition:
+      border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+      box-shadow var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  .miniapp-ChatComposer-surface[data-openbitfun-layout="compact"] {
+    block-size: var(--openbitfun-control-chat-composer-compact-height);
+    gap: var(--openbitfun-control-chat-composer-compact-gap);
+    grid-template-areas: "start content end";
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: var(--openbitfun-control-chat-composer-compact-track-height);
+    min-block-size: var(--openbitfun-control-chat-composer-compact-height);
+    align-content: center;
+    align-items: center;
+    padding-block: var(--openbitfun-control-chat-composer-compact-padding-block);
+    padding-inline: var(--openbitfun-control-chat-composer-compact-padding-inline);
+    border-radius: var(--openbitfun-control-composer-surface-radius);
+  }
+
+  .miniapp-ChatComposer-surface[data-openbitfun-layout="expanded"] {
+    grid-template-areas:
+      "content content"
+      "start end";
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(var(--openbitfun-space-12), 1fr) auto;
+    min-block-size: calc(
+      var(--openbitfun-control-height-md) +
+      var(--openbitfun-control-height-md) +
+      var(--openbitfun-control-height-md)
+    );
+    align-items: end;
+  }
+
+  .miniapp-ChatComposer-surface:focus-within {
+    border-color: var(--openbitfun-color-border-default);
+  }
+
+  .miniapp-ChatComposer-content {
+    grid-area: content;
+    box-sizing: border-box;
+    display: flex;
+    min-inline-size: 0;
+    align-self: stretch;
+    align-items: center;
+    padding: var(--openbitfun-space-1);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    font-weight: var(--openbitfun-type-body-md-font-weight);
+    line-height: var(--openbitfun-type-body-md-line-height);
+  }
+
+  .miniapp-ChatComposer-surface[data-openbitfun-layout="expanded"] .miniapp-ChatComposer-content {
+    align-items: flex-start;
+  }
+
+  .miniapp-ChatComposer-surface[data-openbitfun-layout="compact"] .miniapp-ChatComposer-content {
+    block-size: var(--openbitfun-control-chat-composer-compact-track-height);
+    align-self: center;
+    padding: 0;
+  }
+
+  .miniapp-ChatComposer-startActions,
+  .miniapp-ChatComposer-endActions {
+    box-sizing: border-box;
+    display: inline-flex;
+    min-inline-size: 0;
+    min-block-size: var(--openbitfun-control-chat-composer-control-height);
+    align-items: center;
+  }
+
+  .miniapp-ChatComposer-startActions {
+    grid-area: start;
+    justify-self: start;
+    gap: var(--openbitfun-space-2);
+  }
+
+  .miniapp-ChatComposer-endActions {
+    grid-area: end;
+    justify-self: end;
+    gap: var(--openbitfun-space-1);
+  }
+
+  .miniapp-ChatComposer-actionButton[data-openbitfun-component="icon-button"] {
+    inline-size: var(--openbitfun-control-chat-composer-control-height);
+    block-size: var(--openbitfun-control-chat-composer-control-height);
+    min-inline-size: var(--openbitfun-control-chat-composer-control-height);
+    min-block-size: var(--openbitfun-control-chat-composer-control-height);
+    border-radius: var(--openbitfun-radius-pill);
+  }
+
+  .miniapp-ChatComposer-actionButton[data-openbitfun-component="icon-button"] [data-openbitfun-part="icon"] {
+    inline-size: var(--openbitfun-control-chat-composer-action-icon-size);
+    block-size: var(--openbitfun-control-chat-composer-action-icon-size);
+  }
+
+  .miniapp-ChatComposer-actionButton[data-openbitfun-variant="fill"][aria-expanded="true"] {
+    background: var(--openbitfun-color-action-neutral-surface-hover);
+  }
+
+  .miniapp-ChatComposer-surface[data-openbitfun-layout="compact"] .miniapp-ChatComposer-startActions,
+  .miniapp-ChatComposer-surface[data-openbitfun-layout="compact"] .miniapp-ChatComposer-endActions {
+    block-size: var(--openbitfun-control-chat-composer-compact-track-height);
+    min-block-size: 0;
+    align-self: center;
+  }
+
+  .miniapp-ChatComposer-root[data-openbitfun-state~="disabled"] .miniapp-ChatComposer-surface {
+    cursor: not-allowed;
+    opacity: var(--openbitfun-opacity-disabled);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .miniapp-ChatComposer-surface {
+      transition: none;
+    }
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .miniapp-ChatComposer-root[data-has-context="true"] {
+      background: var(--openbitfun-color-surface-panel);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .miniapp-ChatComposer-root[data-has-context="true"] {
+      background: Canvas;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+    .miniapp-ChatComposer-surface,
+    .miniapp-ChatComposer-surface:focus-within {
+      border-color: CanvasText;
+      box-shadow: none;
+    }
+  }
+}
+/** Modeless conversation host; transcript and composer reuse FlowChat. */
+/**
+ * Product-shell surface recipes for custom shells that are not public
+ * @openbitfun/ui overlays. Geometry and color remain owned by canonical design
+ * tokens; public Dialog, Menu, Popover, and Tooltip anatomy must not consume
+ * these mixins.
+ */
+.openbitfun-fmc {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  z-index: calc(var(--openbitfun-layer-overlay) + 1);
+  pointer-events: none;
+}
+
+.openbitfun-fmc__button {
+  position: relative;
+  z-index: 2;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 0.18s linear, visibility 0s linear, color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard), background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.openbitfun-fmc--open .openbitfun-fmc__button {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.22s linear, visibility 0s linear 0.22s, color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard), background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+
+.openbitfun-fmc__panel {
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default);
+  border-radius: var(--openbitfun-radius-lg);
+  background: var(--openbitfun-color-surface-raised);
+  box-shadow: var(--openbitfun-shadow-lg);
+}
+@supports (-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)) {
+  .openbitfun-fmc__panel {
+    background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 94%, transparent);
+    -webkit-backdrop-filter: var(--openbitfun-effect-blur-medium);
+    backdrop-filter: var(--openbitfun-effect-blur-medium);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .openbitfun-fmc__panel {
+    background: var(--openbitfun-color-surface-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+.openbitfun-fmc__panel {
+  container-type: inline-size;
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  z-index: 1;
+  width: 480px;
+  height: 680px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+  display: none;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+.openbitfun-fmc[data-openbitfun-mode=chat] .openbitfun-fmc__panel {
+  right: 16px;
+  bottom: 16px;
+}
+.openbitfun-fmc__panel {
+  transform-origin: bottom right;
+  opacity: 0;
+  transform: translate(12px, 12px) scale(0.9);
+  visibility: hidden;
+  pointer-events: none;
+  transition: display 0.18s, opacity 0.18s linear, transform 0.18s cubic-bezier(0.4, 0, 1, 1), visibility 0s linear 0.18s, background-color 700ms cubic-bezier(0.23, 1, 0.32, 1), color 700ms cubic-bezier(0.23, 1, 0.32, 1), border-radius 700ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition-behavior: allow-discrete;
+}
+.openbitfun-fmc__panel--open {
+  display: flex;
+  opacity: 1;
+  transform: translate(0, 0) scale(1);
+  visibility: visible;
+  pointer-events: auto;
+  transition: display 0.22s, opacity 0.22s linear, transform 0.22s cubic-bezier(0.23, 1, 0.32, 1), visibility 0s linear 0s, background-color 700ms cubic-bezier(0.23, 1, 0.32, 1), color 700ms cubic-bezier(0.23, 1, 0.32, 1), border-radius 700ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition-behavior: allow-discrete;
+}
+@starting-style {
+  .openbitfun-fmc__panel--open {
+    opacity: 0;
+    transform: translate(12px, 12px) scale(0.9);
+  }
+}
+
+.openbitfun-fmc__header {
+  flex: 0 0 auto;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  padding-block: var(--openbitfun-space-1);
+  padding-inline: var(--openbitfun-space-2) var(--openbitfun-space-1);
+  gap: 4px;
+  border-bottom: 1px solid var(--openbitfun-color-border-subtle);
+}
+
+.openbitfun-fmc__title-wrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+.openbitfun-fmc__body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.openbitfun-fmc__body .openbitfun-chat-pane__content {
+  flex: 1;
+  min-height: 0;
+  background: transparent;
+}
+.openbitfun-fmc__body .modern-flowchat-container {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow-x: hidden;
+}
+.openbitfun-fmc__body .modern-flowchat-container > .flowchat-header {
+  display: none;
+}
+
+.openbitfun-fmc__miniapp-session-pending {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  text-align: center;
+}
+
+.openbitfun-fmc__miniapp-welcome {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  color: var(--openbitfun-color-content-primary);
+}
+
+.openbitfun-fmc__miniapp-welcome-content {
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 36px 32px;
+}
+.openbitfun-fmc__miniapp-welcome-content h2 {
+  max-width: 420px;
+  margin: 8px 0 0;
+  font-size: var(--openbitfun-type-heading-dialog-font-size);
+  font-weight: var(--openbitfun-type-label-selected-font-weight);
+  line-height: var(--openbitfun-type-modifier-leading-dense-line-height);
+  letter-spacing: var(--openbitfun-type-heading-dialog-letter-spacing);
+}
+
+.openbitfun-fmc__miniapp-welcome-icon {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--openbitfun-color-content-primary);
+  border-radius: var(--openbitfun-radius-lg);
+  border: 1px solid var(--openbitfun-color-border-subtle);
+  background: var(--openbitfun-color-surface-subtle);
+  box-shadow: 0 12px 28px -18px color-mix(in srgb, var(--openbitfun-color-content-on-light) 30%, transparent);
+}
+
+.openbitfun-fmc__miniapp-welcome-eyebrow {
+  margin-top: 18px;
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  font-weight: var(--openbitfun-type-label-sm-font-weight);
+  letter-spacing: var(--openbitfun-type-modifier-tracking-wider-letter-spacing);
+}
+
+.openbitfun-fmc__miniapp-welcome-description {
+  max-width: 420px;
+  margin: 12px 0 0;
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  line-height: var(--openbitfun-type-body-lg-line-height);
+}
+
+.openbitfun-fmc__miniapp-workspace {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 6px 9px;
+  box-sizing: border-box;
+  border: 1px solid var(--openbitfun-color-border-subtle);
+  border-radius: var(--openbitfun-radius-base);
+  background: var(--openbitfun-color-surface-subtle);
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+}
+.openbitfun-fmc__miniapp-workspace span:not([data-overflow-content]) {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.openbitfun-fmc__miniapp-suggestions {
+  width: 100%;
+  margin-top: 28px;
+}
+
+.openbitfun-fmc__miniapp-suggestions-label {
+  margin-bottom: 8px;
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+}
+
+.openbitfun-fmc__miniapp-suggestions-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.openbitfun-fmc__miniapp-suggestion {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--openbitfun-color-border-subtle);
+  border-radius: var(--openbitfun-radius-sm);
+  background: var(--openbitfun-color-surface-subtle);
+  color: var(--openbitfun-color-content-secondary);
+  font: inherit;
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  line-height: var(--openbitfun-type-meta-line-height);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard), border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard), color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard), transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.openbitfun-fmc__miniapp-suggestion span {
+  min-width: 0;
+}
+.openbitfun-fmc__miniapp-suggestion svg {
+  flex: 0 0 auto;
+  color: var(--openbitfun-color-content-muted);
+}
+.openbitfun-fmc__miniapp-suggestion:hover {
+  border-color: var(--openbitfun-color-field-border-hover);
+  background: var(--openbitfun-color-action-neutral-surface-hover);
+  color: var(--openbitfun-color-content-primary);
+}
+.openbitfun-fmc__miniapp-suggestion:active {
+  background: var(--openbitfun-color-action-neutral-surface-hover);
+}
+.openbitfun-fmc__miniapp-suggestion:focus-visible {
+  outline: 2px solid var(--openbitfun-color-accent-default);
+  outline-offset: 2px;
+}
+
+@container (max-width: 420px) {
+  .openbitfun-fmc__miniapp-welcome-content {
+    padding-inline: 24px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .openbitfun-fmc__button,
+  .openbitfun-fmc--open .openbitfun-fmc__button,
+  .openbitfun-fmc__panel,
+  .openbitfun-fmc__miniapp-suggestion {
+    transition: none;
+    transform: none;
+  }
+}
+.openbitfun-fmc__tabs {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.openbitfun-fmc__mode-switch {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+.openbitfun-fmc__view {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.openbitfun-fmc__view[hidden] {
+  display: none;
+}
+
+.openbitfun-fmc__call-status {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  padding-inline: var(--openbitfun-space-3);
+  border-bottom: 1px solid var(--openbitfun-color-border-subtle);
+}
+.openbitfun-fmc__call-status > button:first-child {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  color: var(--openbitfun-color-content-secondary);
+  cursor: pointer;
+}
+
+.openbitfun-fmc__panel--drop {
+  outline: 2px solid var(--openbitfun-color-border-strong);
+}
+
+.openbitfun-fmc[data-openbitfun-communication-mode=voice] .openbitfun-fmc__panel {
+  border: 0;
+  border-radius: calc(var(--openbitfun-space-8) + var(--openbitfun-space-1));
+  background: var(--openbitfun-color-content-on-light);
+  color: var(--openbitfun-color-content-on-dark);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .openbitfun-fmc[data-openbitfun-communication-mode=voice] .openbitfun-fmc__panel {
+    background: color-mix(in srgb, var(--openbitfun-color-content-on-light) 80%, transparent);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .openbitfun-fmc[data-openbitfun-communication-mode=voice] .openbitfun-fmc__panel {
+    background: var(--openbitfun-color-content-on-light);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+.openbitfun-fmc__header--identity {
+  position: absolute;
+  top: var(--openbitfun-space-3);
+  right: var(--openbitfun-space-3);
+  z-index: 2;
+  min-height: 0;
+  border: 0;
+  padding: 0;
+}
+.openbitfun-fmc__header--identity .openbitfun-fmc__mode-switch,
+.openbitfun-fmc__header--identity .openbitfun-fmc__title-wrapper {
+  display: none;
+}/**
+ * Standalone chat input styles
+ */
+/**
+ * Product-shell surface recipes for custom shells that are not public
+ * @openbitfun/ui overlays. Geometry and color remain owned by canonical design
+ * tokens; public Dialog, Menu, Popover, and Tooltip anatomy must not consume
+ * these mixins.
+ */
+.openbitfun-context-drop-zone.openbitfun-chat-input-drop-zone {
+  box-sizing: border-box;
+  position: absolute;
+  flex: 0 0 auto;
+  bottom: var(--openbitfun-space-6);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  min-width: 0;
+  max-width: var(--openbitfun-control-flow-chat-transcript-max-width);
+  z-index: var(--openbitfun-layer-overlay);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  /*
+   * The composer card is a panel of the transcript, so it takes the transcript
+   * content inset. A space-2 inset here stopped the card 4px short of the text
+   * and tool-card column it sits under.
+   *
+   * This zone is centred on the panel, so the transcript scroller has to
+   * reserve its scrollbar gutter on both edges; a one-sided gutter would centre
+   * the reading column half a scrollbar to the leading side of this card.
+   */
+  padding: 0 var(--openbitfun-control-flow-chat-content-padding-inline);
+  pointer-events: auto !important;
+}
+@media (max-width: 768px) {
+  .openbitfun-context-drop-zone.openbitfun-chat-input-drop-zone {
+    padding-inline: var(--openbitfun-control-flow-chat-content-padding-inline-mobile);
+  }
+}
+.openbitfun-context-drop-zone.openbitfun-chat-input-drop-zone.openbitfun-chat-input-drop-zone--conversation {
+  position: relative;
+  inset: auto;
+  transform: none;
+  max-width: none;
+  z-index: auto;
+  padding: var(--openbitfun-space-2) var(--openbitfun-space-3) var(--openbitfun-space-3);
+}
+.openbitfun-context-drop-zone.openbitfun-chat-input-drop-zone.openbitfun-context-drop-zone--can-accept .openbitfun-chat-input__composer {
+  outline: var(--openbitfun-border-width-default) solid var(--openbitfun-color-field-border-hover);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--openbitfun-color-content-on-light) 45%, transparent), inset 0 1px 0 color-mix(in srgb, var(--openbitfun-color-content-on-dark) 12%, transparent);
+}
+.openbitfun-context-drop-zone.openbitfun-chat-input-drop-zone.openbitfun-context-drop-zone--cannot-accept .openbitfun-chat-input__composer {
+  outline: var(--openbitfun-border-width-default) solid var(--openbitfun-color-status-danger-border);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--openbitfun-color-content-on-light) 40%, transparent), 0 0 20px var(--openbitfun-color-status-danger-content);
+}
+
+.openbitfun-chat-input__voice-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--openbitfun-space-1);
+  flex-shrink: 0;
+  min-width: 24px;
+}
+.openbitfun-chat-input__voice-cluster--recording {
+  min-width: 270px;
+}
+.openbitfun-chat-input__voice-cluster--setup {
+  min-width: min(340px, 100%);
+}
+
+.openbitfun-chat-input__voice-control-shell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.openbitfun-chat-input__voice-control {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 50%;
+  color: var(--openbitfun-color-content-secondary);
+  flex-shrink: 0;
+}
+.openbitfun-chat-input__voice-control:not(:disabled):hover {
+  color: var(--openbitfun-color-content-primary);
+}
+
+.openbitfun-chat-input__voice-spinner {
+  animation: openbitfun-voice-input-spin 0.9s linear infinite;
+}
+
+.openbitfun-chat-input__voice-pill {
+  display: inline-flex;
+  align-items: center;
+  width: clamp(270px, 27vw, 320px);
+  max-width: 100%;
+  min-width: 270px;
+  height: 32px;
+  padding: 0 2px 0 9px;
+  gap: 5px;
+  border: 1px solid var(--openbitfun-color-border-default);
+  border-radius: var(--openbitfun-radius-pill);
+  background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 94%, var(--openbitfun-color-action-neutral-surface));
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--openbitfun-color-content-on-light) 12%, transparent), inset 0 1px 0 color-mix(in srgb, var(--openbitfun-color-content-on-dark) 4%, transparent);
+  animation: openbitfun-voice-pill-in 220ms cubic-bezier(0.18, 0.9, 0.3, 1.18) both;
+}
+
+.openbitfun-chat-input__voice-setup-pill {
+  display: inline-flex;
+  align-items: center;
+  width: clamp(320px, 34vw, 390px);
+  max-width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: 2px 3px 2px 10px;
+  gap: 7px;
+  border: 1px solid var(--openbitfun-color-border-default);
+  border-radius: var(--openbitfun-radius-pill);
+  background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 94%, var(--openbitfun-color-action-neutral-surface));
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--openbitfun-color-content-on-light) 12%, transparent), inset 0 1px 0 color-mix(in srgb, var(--openbitfun-color-content-on-dark) 4%, transparent);
+  animation: openbitfun-voice-pill-in 220ms cubic-bezier(0.18, 0.9, 0.3, 1.18) both;
+}
+
+.openbitfun-chat-input__voice-setup-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--openbitfun-color-content-secondary);
+}
+
+.openbitfun-chat-input__voice-setup-copy {
+  position: relative;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+  white-space: nowrap;
+}
+
+.openbitfun-chat-input__voice-setup-progress {
+  position: absolute;
+  right: 0;
+  bottom: -2px;
+  left: 0;
+  height: 2px;
+  overflow: hidden;
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-border-subtle);
+}
+.openbitfun-chat-input__voice-setup-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--openbitfun-color-accent-default);
+  transition: width 180ms ease;
+}
+
+.openbitfun-chat-input__voice-setup-action {
+  flex: 0 0 auto;
+}
+
+.openbitfun-chat-input__voice-setup-pill > [data-openbitfun-part=action] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  line-height: 0;
+}
+
+.openbitfun-chat-input__voice-setup-dismiss[data-openbitfun-component=icon-button] {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  flex: 0 0 24px;
+  border-radius: 50%;
+  color: var(--openbitfun-color-content-muted);
+}
+
+.openbitfun-chat-input__voice-pill-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  color: var(--openbitfun-color-status-danger-content);
+}
+
+.openbitfun-chat-input__voice-pill-recording-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--openbitfun-color-status-danger-content);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--openbitfun-color-status-danger-content) 9%, transparent);
+  animation: openbitfun-voice-recording-dot 1.6s ease-in-out infinite;
+}
+
+.openbitfun-chat-input__voice-low-volume {
+  color: var(--openbitfun-color-status-warning-content);
+  animation: openbitfun-voice-low-volume 1.2s ease-in-out infinite;
+}
+
+.openbitfun-chat-input__voice-pill-time {
+  min-width: 36px;
+  color: var(--openbitfun-color-content-primary);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  font-weight: var(--openbitfun-type-label-selected-font-weight);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--openbitfun-type-modifier-leading-none-line-height);
+}
+
+.openbitfun-chat-input__voice-pill-timeline {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(32, minmax(1px, 1fr));
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 78px;
+  height: 18px;
+  gap: 2px;
+  overflow: hidden;
+  color: var(--openbitfun-color-content-secondary);
+  pointer-events: none;
+}
+.openbitfun-chat-input__voice-pill-timeline--paused {
+  opacity: 0.58;
+}
+
+.openbitfun-chat-input__voice-pill-timeline-bar {
+  justify-self: center;
+  width: min(2px, 100%);
+  height: 18px;
+  border-radius: var(--openbitfun-radius-pill);
+  background: currentColor;
+  transform: scaleY(0.12);
+  transform-origin: center;
+  transition: transform 72ms linear, opacity 72ms linear;
+}
+
+.openbitfun-chat-input__voice-pill-divider {
+  width: 1px;
+  height: 16px;
+  flex: 0 0 1px;
+  background: var(--openbitfun-color-border-subtle);
+}
+
+.openbitfun-chat-input__voice-pill-action-shell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  block-size: var(--openbitfun-control-chat-composer-control-height);
+  flex: 0 0 auto;
+  line-height: 0;
+}
+
+.openbitfun-chat-input__voice-pill-action[data-openbitfun-component=icon-button] {
+  transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard), transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.openbitfun-chat-input__voice-pill-action[data-openbitfun-component=icon-button].openbitfun-chat-input__voice-pill-action--cancel:not(:disabled) {
+  color: var(--openbitfun-color-content-muted);
+}
+.openbitfun-chat-input__voice-pill-action[data-openbitfun-component=icon-button].openbitfun-chat-input__voice-pill-action--transcribe:not(:disabled) {
+  color: var(--openbitfun-color-content-secondary);
+}
+.openbitfun-chat-input__voice-pill-action[data-openbitfun-component=icon-button]:is(.openbitfun-chat-input__voice-pill-action--cancel,
+.openbitfun-chat-input__voice-pill-action--transcribe):not(:disabled):hover {
+  color: var(--openbitfun-color-content-primary);
+}
+
+@keyframes openbitfun-voice-input-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes openbitfun-voice-pill-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0.94) scaleY(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes openbitfun-voice-recording-dot {
+  0%, 100% {
+    transform: scale(0.92);
+    opacity: 0.76;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+@keyframes openbitfun-voice-low-volume {
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .openbitfun-chat-input__voice-spinner,
+  .openbitfun-chat-input__voice-pill,
+  .openbitfun-chat-input__voice-setup-pill,
+  .openbitfun-chat-input__voice-pill-recording-dot,
+  .openbitfun-chat-input__voice-low-volume,
+  .openbitfun-chat-input__voice-pill-action {
+    animation: none;
+    transition: none;
+  }
+}
+@container chat-input (max-width: 640px) {
+  .openbitfun-chat-input__voice-cluster--recording {
+    min-width: 220px;
+  }
+  .openbitfun-chat-input__voice-cluster--setup {
+    min-width: min(280px, 100%);
+  }
+  .openbitfun-chat-input__voice-pill {
+    width: min(100%, 240px);
+    min-width: 220px;
+  }
+  .openbitfun-chat-input__voice-setup-pill {
+    width: min(100%, 300px);
+  }
+  .openbitfun-chat-input__voice-pill-timeline {
+    min-width: 28px;
+    gap: 1px;
+  }
+}
+.openbitfun-chat-input {
+  container: chat-input/inline-size;
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  transform: translateY(0);
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.openbitfun-chat-input__placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  color: color-mix(in srgb, var(--openbitfun-color-content-muted) 52%, transparent);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  line-height: var(--openbitfun-type-flow-support-line-height);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+.openbitfun-chat-input__prompt-suggestion {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-control-flow-chat-inline-gap);
+}
+.openbitfun-chat-input__prompt-suggestion-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.openbitfun-chat-input__prompt-suggestion-hint {
+  flex-shrink: 0;
+  padding-inline: var(--openbitfun-space-1);
+  font-family: inherit;
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  font-weight: var(--openbitfun-type-label-sm-font-weight);
+  letter-spacing: var(--openbitfun-type-modifier-tracking-subtle-letter-spacing);
+  color: var(--openbitfun-color-content-muted);
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  border-radius: var(--openbitfun-radius-sm);
+}
+.openbitfun-chat-input--multi-line .openbitfun-chat-input__placeholder {
+  padding-top: 1px;
+}
+.openbitfun-chat-input--capsule .openbitfun-chat-input__placeholder {
+  top: 50%;
+  transform: translateY(-50%);
+}
+:root[data-openbitfun-appearance-mode=light] .openbitfun-chat-input__placeholder, :root[data-openbitfun-appearance-mode=light] .openbitfun-chat-input__placeholder, .light .openbitfun-chat-input__placeholder {
+  color: color-mix(in srgb, var(--openbitfun-color-content-secondary) 48%, transparent);
+}
+.openbitfun-chat-input__space-hint {
+  display: none;
+}
+.openbitfun-chat-input__space-key {
+  display: inline-block;
+  padding: 0 4px;
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  font-weight: var(--openbitfun-type-label-sm-font-weight);
+  letter-spacing: var(--openbitfun-type-modifier-tracking-subtle-letter-spacing);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+.openbitfun-chat-input__cancel-shortcut {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: var(--openbitfun-control-flow-chat-inline-gap);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  line-height: var(--openbitfun-type-flow-support-line-height);
+  color: var(--openbitfun-color-content-muted);
+  opacity: 0.72;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.openbitfun-chat-input__capsule-divider {
+  width: 1px;
+  height: 14px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--openbitfun-color-content-muted) 28%, transparent);
+  pointer-events: none;
+}
+:root[data-openbitfun-appearance-mode=light] .openbitfun-chat-input .openbitfun-chat-input__capsule-divider, :root[data-openbitfun-appearance-mode=light] .openbitfun-chat-input .openbitfun-chat-input__capsule-divider, .light .openbitfun-chat-input .openbitfun-chat-input__capsule-divider {
+  background: color-mix(in srgb, var(--openbitfun-color-content-muted) 20%, transparent);
+}
+.openbitfun-chat-input--non-agent .openbitfun-chat-input__input-area,
+.openbitfun-chat-input--non-agent .openbitfun-chat-input__actions-left,
+.openbitfun-chat-input--non-agent .openbitfun-chat-input__actions-right,
+.openbitfun-chat-input--non-agent .openbitfun-chat-input__recommendations {
+  opacity: 0.25;
+  transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.openbitfun-chat-input--non-agent:hover .openbitfun-chat-input__input-area,
+.openbitfun-chat-input--non-agent:hover .openbitfun-chat-input__actions-left,
+.openbitfun-chat-input--non-agent:hover .openbitfun-chat-input__actions-right,
+.openbitfun-chat-input--non-agent:hover .openbitfun-chat-input__recommendations, .openbitfun-chat-input--non-agent:focus-within .openbitfun-chat-input__input-area,
+.openbitfun-chat-input--non-agent:focus-within .openbitfun-chat-input__actions-left,
+.openbitfun-chat-input--non-agent:focus-within .openbitfun-chat-input__actions-right,
+.openbitfun-chat-input--non-agent:focus-within .openbitfun-chat-input__recommendations {
+  opacity: 1;
+}
+.openbitfun-chat-input {
+  gap: var(--openbitfun-control-flow-chat-control-gap);
+}
+.openbitfun-chat-input__recommendations {
+  margin-bottom: var(--openbitfun-control-flow-chat-card-gap);
+}
+.openbitfun-chat-input__cowork-examples {
+  margin-bottom: var(--openbitfun-control-flow-chat-card-gap);
+}
+.openbitfun-chat-input > * {
+  pointer-events: auto;
+}
+.openbitfun-chat-input__container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--openbitfun-control-flow-chat-card-gap);
+  justify-content: center;
+}
+.openbitfun-chat-input__container .session-file-modifications-bar {
+  width: 100%;
+  max-width: var(--openbitfun-control-flow-chat-transcript-max-width);
+}
+.openbitfun-chat-input__container > * {
+  pointer-events: auto;
+}
+.openbitfun-chat-input__box {
+  position: relative;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  display: block;
+  pointer-events: auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+.openbitfun-chat-input__box::before {
+  content: none;
+}
+.openbitfun-chat-input__box > * {
+  pointer-events: auto;
+}
+.openbitfun-chat-input__composer {
+  width: 100%;
+  min-width: 0;
+}
+.openbitfun-chat-input__content {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-self: stretch;
+  flex-direction: column;
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-chat-input__actions-left,
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-chat-input__actions-right {
+  display: flex;
+  min-width: 0;
+  height: var(--openbitfun-control-chat-composer-control-height);
+  align-items: center;
+  align-self: center;
+  padding: 0;
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-chat-input__actions-left {
+  justify-content: flex-start;
+  gap: var(--openbitfun-space-2);
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-chat-input__actions-right {
+  justify-content: flex-end;
+  gap: var(--openbitfun-space-1);
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-chat-input__model-usage-group,
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-model-selector {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-model-selector {
+  box-sizing: border-box;
+  gap: 2px;
+  height: var(--openbitfun-control-chat-composer-control-height);
+  padding: 0 var(--openbitfun-space-1) 0 0;
+  border: 0;
+  border-radius: var(--openbitfun-radius-pill);
+  background: transparent;
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-model-selector:hover, .openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-model-selector[data-openbitfun-state=open] {
+  background: var(--openbitfun-color-action-quiet-hover);
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-model-selector__trigger {
+  min-width: 0;
+  height: var(--openbitfun-control-chat-composer-control-height);
+  padding: 0 var(--openbitfun-space-1) 0 var(--openbitfun-space-2);
+  border: 0;
+  border-radius: var(--openbitfun-radius-pill);
+  background: transparent;
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  opacity: 1;
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-model-selector__name {
+  max-width: min(160px, 22cqi);
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-model-selector__trigger-reasoning {
+  max-width: min(72px, 12cqi);
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-reasoning-preset-selector[data-openbitfun-presentation=label] .openbitfun-reasoning-preset-selector__trigger {
+  width: auto;
+  height: 20px;
+  padding-inline: 2px;
+  border-radius: var(--openbitfun-radius-sm);
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-chat-input__voice-control.icon-btn {
+  width: var(--openbitfun-control-chat-composer-control-height) !important;
+  height: var(--openbitfun-control-chat-composer-control-height) !important;
+  min-width: var(--openbitfun-control-chat-composer-control-height) !important;
+  min-height: var(--openbitfun-control-chat-composer-control-height) !important;
+  border-radius: var(--openbitfun-radius-pill) !important;
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-chat-input__voice-control.icon-btn {
+  border: 0;
+  background: transparent;
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-chat-input__voice-control.icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-chat-input__breathing-circle {
+  width: var(--openbitfun-control-chat-composer-control-height) !important;
+  height: var(--openbitfun-control-chat-composer-control-height) !important;
+}
+@container chat-input (max-width: 360px) {
+  .openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface][data-openbitfun-layout=compact] .openbitfun-model-selector__trigger-reasoning {
+    display: none;
+  }
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface][data-openbitfun-layout=compact] .openbitfun-chat-input__actions-left,
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface][data-openbitfun-layout=compact] .openbitfun-chat-input__actions-right {
+  height: 100%;
+  align-self: stretch;
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface][data-openbitfun-layout=compact] .openbitfun-chat-input__voice-cluster,
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface][data-openbitfun-layout=compact] .openbitfun-chat-input__voice-control-shell {
+  height: 100%;
+}
+.openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface][data-openbitfun-layout=expanded] .openbitfun-harness-selector__trigger {
+  height: var(--openbitfun-control-chat-composer-control-height);
+  border-radius: var(--openbitfun-radius-pill);
+}
+.openbitfun-chat-input--capsule .openbitfun-chat-input__content {
+  height: 100%;
+  justify-content: center;
+}
+.openbitfun-chat-input--capsule .openbitfun-chat-input__input-area {
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  justify-content: center;
+}
+.openbitfun-chat-input--capsule .openbitfun-chat-input__input-area .rich-text-input {
+  width: 100%;
+  min-height: var(--openbitfun-control-chat-composer-compact-track-height) !important;
+  max-height: var(--openbitfun-control-chat-composer-compact-track-height) !important;
+  overflow: hidden;
+  padding: 0 !important;
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  /* typography-audit: allow -- compact input uses the control track as its single-line box */
+  line-height: var(--openbitfun-control-chat-composer-compact-track-height);
+  pointer-events: auto;
+}
+.openbitfun-chat-input--capsule .openbitfun-chat-input__cowork-examples,
+.openbitfun-chat-input--capsule .openbitfun-chat-input__recommendations,
+.openbitfun-chat-input--capsule .openbitfun-chat-input__target-switcher,
+.openbitfun-chat-input--capsule .openbitfun-chat-input__image-strip {
+  display: none !important;
+}
+.openbitfun-chat-input--multi-line .openbitfun-chat-input__input-area {
+  min-height: 48px;
+}
+.openbitfun-chat-input--multi-line .openbitfun-chat-input__input-area .rich-text-input {
+  max-height: 102px;
+}
+.openbitfun-chat-input__target-switcher {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.125rem;
+  padding-bottom: 7px;
+  margin-bottom: 0.06rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--openbitfun-color-content-on-dark) 8%, transparent);
+  animation: openbitfun-chat-input-fade-in 0.1s ease-out;
+}
+.openbitfun-chat-input__target-switcher-label {
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  color: var(--openbitfun-color-content-muted);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  padding: 0.12rem var(--openbitfun-control-flow-chat-card-expanded-padding-block) 0.12rem 0;
+  margin-right: var(--openbitfun-control-flow-chat-inline-gap);
+  flex-shrink: 0;
+  letter-spacing: var(--openbitfun-type-modifier-tracking-wide-letter-spacing);
+  opacity: 0.72;
+}
+.openbitfun-chat-input__target-tab {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--openbitfun-control-flow-chat-inline-gap);
+  padding: 0.12rem var(--openbitfun-control-flow-chat-card-expanded-padding-block);
+  border: none;
+  background: transparent;
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  white-space: nowrap;
+  outline: none;
+}
+.openbitfun-chat-input__target-tab:focus-visible {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--openbitfun-color-accent-hover) 40%, transparent);
+  color: var(--openbitfun-color-content-primary);
+}
+.openbitfun-chat-input__target-tab:hover:not(.openbitfun-chat-input__target-tab--active) {
+  color: var(--openbitfun-color-content-secondary);
+  background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 4%, transparent);
+}
+.openbitfun-chat-input__target-tab--active {
+  color: color-mix(in srgb, var(--openbitfun-color-accent-default) 95%, var(--openbitfun-color-content-primary));
+  font-weight: var(--openbitfun-type-label-sm-font-weight);
+  background: color-mix(in srgb, var(--openbitfun-color-accent-default) 9%, transparent);
+}
+.openbitfun-chat-input__target-tab-separator, .openbitfun-chat-input__target-tab-name {
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  opacity: 0.65;
+}
+.openbitfun-chat-input__target-tab-separator {
+  flex-shrink: 0;
+}
+.openbitfun-chat-input__target-tab-name {
+  max-width: 110px;
+}
+.openbitfun-chat-input__input-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-height: 48px;
+  overflow: visible;
+  padding-bottom: 4px;
+}
+.openbitfun-chat-input__input-area .rich-text-input {
+  font-size: var(--openbitfun-type-flow-control-font-size);
+}
+.openbitfun-chat-input__action-button {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--openbitfun-color-content-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 140ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  padding: 0;
+  opacity: 0.3;
+}
+.openbitfun-chat-input__box:focus-within .openbitfun-chat-input__action-button {
+  opacity: 1;
+}
+.openbitfun-chat-input__action-button:hover {
+  background: var(--openbitfun-color-action-neutral-surface-hover);
+  color: var(--openbitfun-color-content-primary);
+  opacity: 1;
+}
+.openbitfun-chat-input__action-button:focus-visible {
+  opacity: 1;
+  outline: 2px solid color-mix(in srgb, var(--openbitfun-color-accent-hover) 40%, transparent);
+  outline-offset: 1px;
+}
+.openbitfun-chat-input__agent-boost {
+  position: relative;
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.openbitfun-chat-input__agent-boost-trigger {
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+  line-height: 0;
+}
+.openbitfun-chat-input__agent-boost-empty {
+  padding: var(--openbitfun-control-flow-chat-card-expanded-padding-inline) var(--openbitfun-control-flow-chat-card-expanded-padding-inline);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  color: var(--openbitfun-color-content-muted);
+  text-align: center;
+  line-height: var(--openbitfun-type-flow-support-line-height);
+}
+.openbitfun-chat-input__agent-boost-empty--inline {
+  padding: var(--openbitfun-control-flow-chat-card-expanded-padding-block) var(--openbitfun-control-flow-chat-card-expanded-padding-inline) var(--openbitfun-control-flow-chat-card-expanded-padding-inline);
+  text-align: left;
+}
+.openbitfun-chat-input__boost-submenu-host {
+  position: relative;
+  width: 100%;
+}
+.openbitfun-chat-input__boost-submenu-panel {
+  position: fixed;
+  z-index: calc(var(--openbitfun-layer-dropdown) + 20);
+}
+.openbitfun-chat-input__boost-submenu-loading, .openbitfun-chat-input__boost-submenu-empty {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: var(--openbitfun-control-flow-chat-control-gap);
+  padding: var(--openbitfun-control-flow-chat-card-expanded-padding-inline) var(--openbitfun-control-flow-chat-card-expanded-padding-inline);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  color: var(--openbitfun-color-content-muted);
+}
+.openbitfun-chat-input__boost-submenu-spinner {
+  animation: openbitfun-chat-input-spin 0.8s linear infinite;
+  color: var(--openbitfun-color-accent-default);
+}
+.openbitfun-chat-input__mode-pending-indicator {
+  font-size: var(--openbitfun-type-flow-micro-font-size);
+  color: color-mix(in srgb, var(--openbitfun-color-status-warning-content) 90%, transparent);
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  font-weight: var(--openbitfun-type-label-sm-font-weight);
+  line-height: var(--openbitfun-type-flow-meta-line-height);
+  vertical-align: middle;
+}
+.openbitfun-chat-input__mode-dropdown {
+  position: fixed;
+  z-index: var(--openbitfun-layer-dropdown);
+}
+.openbitfun-chat-input__slash-command-picker {
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default);
+  border-radius: var(--openbitfun-radius-lg);
+  background: var(--openbitfun-color-surface-raised);
+  box-shadow: var(--openbitfun-shadow-lg);
+}
+@supports (-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)) {
+  .openbitfun-chat-input__slash-command-picker {
+    background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 94%, transparent);
+    -webkit-backdrop-filter: var(--openbitfun-effect-blur-medium);
+    backdrop-filter: var(--openbitfun-effect-blur-medium);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .openbitfun-chat-input__slash-command-picker {
+    background: var(--openbitfun-color-surface-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+.openbitfun-chat-input__slash-command-picker {
+  position: fixed;
+  width: min(260px, 100vw - 16px);
+  max-height: min(280px, 100vh - 16px);
+  overflow: hidden;
+  z-index: var(--openbitfun-layer-dropdown);
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  animation: none;
+}
+.openbitfun-chat-input__slash-command-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--openbitfun-control-flow-chat-card-expanded-padding-block) var(--openbitfun-control-flow-chat-card-expanded-padding-inline);
+  border-bottom: 1px solid var(--openbitfun-color-border-subtle);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  font-weight: var(--openbitfun-type-label-sm-font-weight);
+  color: var(--openbitfun-color-content-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--openbitfun-type-modifier-tracking-wider-letter-spacing);
+}
+.openbitfun-chat-input__slash-command-hint {
+  font-size: var(--openbitfun-type-flow-meta-font-size);
+  color: var(--openbitfun-color-content-muted);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  text-transform: none;
+  letter-spacing: var(--openbitfun-type-body-sm-letter-spacing);
+}
+.openbitfun-chat-input__slash-command-list {
+  max-height: min(240px, 100vh - 56px);
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.openbitfun-chat-input__slash-command-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px var(--openbitfun-control-flow-chat-card-expanded-padding-inline) 4px;
+}
+.openbitfun-chat-input__slash-command-section-line {
+  flex: 1;
+  min-width: 16px;
+  height: 1px;
+  background: var(--openbitfun-color-border-subtle);
+}
+.openbitfun-chat-input__slash-command-section-title {
+  flex: 0 0 auto;
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  font-weight: var(--openbitfun-type-label-selected-font-weight);
+  letter-spacing: var(--openbitfun-type-modifier-tracking-wider-letter-spacing);
+  text-transform: uppercase;
+  color: var(--openbitfun-color-content-muted);
+}
+.openbitfun-chat-input__slash-command-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--openbitfun-control-flow-chat-control-gap);
+  padding: var(--openbitfun-control-flow-chat-inline-gap) var(--openbitfun-control-flow-chat-card-expanded-padding-inline);
+  cursor: pointer;
+  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  min-width: 0;
+}
+.openbitfun-chat-input__slash-command-item:hover {
+  background: var(--openbitfun-color-action-quiet-hover);
+}
+.openbitfun-chat-input__slash-command-item--selected {
+  background: var(--openbitfun-color-action-neutral-surface-hover);
+}
+.openbitfun-chat-input__slash-command-item--active .openbitfun-chat-input__slash-command-name {
+  color: color-mix(in srgb, var(--openbitfun-color-accent-default) 95%, var(--openbitfun-color-content-primary));
+}
+.openbitfun-chat-input__slash-command-name {
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  font-weight: var(--openbitfun-type-label-sm-font-weight);
+  color: color-mix(in srgb, var(--openbitfun-color-accent-default) 90%, var(--openbitfun-color-content-primary));
+  font-family: var(--openbitfun-type-code-md-font-family);
+  flex: 0 0 112px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.openbitfun-chat-input__slash-command-label {
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  color: var(--openbitfun-color-content-secondary);
+  flex: 1;
+  min-width: 0;
+  line-height: var(--openbitfun-type-meta-line-height);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.openbitfun-chat-input__slash-command-label--single-line {
+  display: block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  -webkit-line-clamp: unset;
+}
+.openbitfun-chat-input__slash-command-current {
+  font-size: var(--openbitfun-type-flow-meta-font-size);
+  padding: 0.12rem 0.32rem;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--openbitfun-color-accent-default) 15%, transparent);
+  color: color-mix(in srgb, var(--openbitfun-color-accent-default) 90%, var(--openbitfun-color-content-primary));
+  font-weight: var(--openbitfun-type-label-sm-font-weight);
+  flex: 0 0 auto;
+}
+.openbitfun-chat-input {
+  /*
+   * External commands that cannot run yet. The badge keeps the reason visible
+   * in the list instead of waiting for the click that reveals it, matching the
+   * hints the TUI command menu appends to its descriptions.
+   */
+}
+.openbitfun-chat-input__slash-command-status {
+  font-size: var(--openbitfun-type-flow-meta-font-size);
+  padding: 0.12rem 0.32rem;
+  border-radius: 3px;
+  font-weight: var(--openbitfun-type-label-sm-font-weight);
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.openbitfun-chat-input__slash-command-status--restricted {
+  background: color-mix(in srgb, var(--openbitfun-color-status-warning-content) 15%, transparent);
+  color: color-mix(in srgb, var(--openbitfun-color-status-warning-content) 90%, var(--openbitfun-color-content-primary));
+}
+.openbitfun-chat-input__slash-command-status--choose {
+  background: var(--openbitfun-color-surface-tertiary);
+  color: var(--openbitfun-color-content-secondary);
+}
+.openbitfun-chat-input__slash-command-empty {
+  padding: var(--openbitfun-space-4) var(--openbitfun-control-flow-chat-card-expanded-padding-inline);
+  text-align: center;
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  color: var(--openbitfun-color-content-muted);
+}
+.openbitfun-chat-input__slash-command-empty--retry {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.openbitfun-chat-input__slash-command-empty--retry:hover {
+  background: var(--openbitfun-color-action-neutral-surface-hover);
+  color: var(--openbitfun-color-content-secondary);
+}
+:root[data-openbitfun-appearance-mode=light] .openbitfun-chat-input__mode-option:not(.openbitfun-chat-input__mode-option--disabled):hover, :root[data-openbitfun-appearance-mode=light] .openbitfun-chat-input__mode-option:not(.openbitfun-chat-input__mode-option--disabled):hover, .light .openbitfun-chat-input__mode-option:not(.openbitfun-chat-input__mode-option--disabled):hover {
+  background: var(--openbitfun-color-action-quiet-hover);
+}
+:root[data-openbitfun-appearance-mode=light] .openbitfun-chat-input__mode-submenu-content, :root[data-openbitfun-appearance-mode=light] .openbitfun-chat-input__mode-submenu-content, .light .openbitfun-chat-input__mode-submenu-content {
+  background: color-mix(in srgb, var(--openbitfun-color-content-muted) 4%, transparent);
+}
+:root[data-openbitfun-appearance-mode=light] .openbitfun-chat-input__mode-submenu-content .openbitfun-chat-input__mode-option:hover:not(.openbitfun-chat-input__mode-option--disabled), :root[data-openbitfun-appearance-mode=light] .openbitfun-chat-input__mode-submenu-content .openbitfun-chat-input__mode-option:hover:not(.openbitfun-chat-input__mode-option--disabled), .light .openbitfun-chat-input__mode-submenu-content .openbitfun-chat-input__mode-option:hover:not(.openbitfun-chat-input__mode-option--disabled) {
+  background: var(--openbitfun-color-action-quiet-hover);
+}
+:root[data-openbitfun-appearance-mode=light] .openbitfun-chat-input__mode-submenu-trigger:hover, :root[data-openbitfun-appearance-mode=light] .openbitfun-chat-input__mode-submenu-trigger:hover, .light .openbitfun-chat-input__mode-submenu-trigger:hover {
+  background: var(--openbitfun-color-action-quiet-hover);
+}
+.openbitfun-chat-input__actions-left {
+  display: flex;
+  height: var(--openbitfun-control-chat-composer-control-height);
+  align-items: center;
+  gap: var(--openbitfun-space-1);
+  min-width: 0;
+}
+.openbitfun-chat-input__model-usage-group {
+  display: inline-flex;
+  height: var(--openbitfun-control-chat-composer-control-height);
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.openbitfun-chat-input__actions-right {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-1);
+  height: var(--openbitfun-control-chat-composer-control-height);
+}
+.openbitfun-chat-input__split-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.openbitfun-chat-input__send-action {
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.openbitfun-chat-input {
+  /* The public composer action owns send geometry and states. Stop keeps its
+     product-specific live-task presentation without changing visual size. */
+}
+.openbitfun-chat-input__send-button--breathing {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+  cursor: pointer;
+}
+.openbitfun-chat-input__box:focus-within .openbitfun-chat-input__send-button--breathing, .openbitfun-chat-input__send-button--breathing:hover {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.openbitfun-chat-input__send-button--breathing:hover .openbitfun-chat-input__breathing-circle {
+  filter: none;
+  background: var(--openbitfun-color-action-primary-hover);
+  border-color: color-mix(in srgb, var(--openbitfun-color-action-primary-content) 24%, transparent);
+  box-shadow: var(--openbitfun-shadow-base);
+}
+.openbitfun-chat-input__send-button--breathing:hover .openbitfun-chat-input__breathing-circle::after {
+  background: var(--openbitfun-color-action-primary-content);
+  box-shadow: none;
+}
+.openbitfun-chat-input__loading-spinner {
+  position: absolute;
+  inset: 1.5px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  border-top-color: var(--openbitfun-color-action-primary-content);
+  animation: openbitfun-chat-input-spin 0.8s linear infinite;
+}
+.openbitfun-chat-input {
+  /* Stop keeps the same action surface so state changes do not shift hierarchy. */
+}
+.openbitfun-chat-input__breathing-circle {
+  position: relative;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 120ms ease;
+  background: var(--openbitfun-color-action-primary-background);
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+.openbitfun-chat-input__breathing-circle::after {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--openbitfun-color-action-primary-content);
+  box-shadow: none;
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+.openbitfun-chat-input__queued-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 11px;
+  height: 11px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--openbitfun-color-status-danger-content);
+  color: var(--openbitfun-color-content-on-dark);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--openbitfun-type-flow-micro-font-size);
+  font-weight: var(--openbitfun-type-heading-page-font-weight);
+  line-height: var(--openbitfun-type-modifier-leading-none-line-height);
+  box-shadow: 0 0 0 1px var(--openbitfun-color-surface-panel);
+  pointer-events: none;
+}
+
+@keyframes openbitfun-chat-input-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes openbitfun-chat-input-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  .openbitfun-chat-input__voice-pill-action:not(:disabled):hover,
+  .openbitfun-chat-input__voice-pill-send:not(:disabled):hover {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .openbitfun-chat-input,
+  .openbitfun-chat-input__input-area,
+  .openbitfun-chat-input__actions-left,
+  .openbitfun-chat-input__actions-right,
+  .openbitfun-chat-input__recommendations,
+  .openbitfun-chat-input__action-button,
+  .openbitfun-chat-input__send-button,
+  .openbitfun-chat-input__breathing-circle,
+  .openbitfun-chat-input__slash-command-item {
+    transition-duration: 0ms;
+  }
+  .openbitfun-chat-input__loading-spinner,
+  .openbitfun-chat-input__boost-submenu-spinner {
+    animation: none;
+  }
+}.flow-text-block .markdown-renderer pre,
+.flow-text-block .markdown-renderer .code-block-wrapper,
+.flow-text-block .markdown-renderer .table-wrapper,
+.flow-text-block .markdown-renderer .mermaid-block,
+.flow-text-block .markdown-renderer blockquote,
+.flow-text-block .markdown-renderer .custom-blockquote,
+.flow-text-block .markdown-renderer details {
+  box-shadow: none;
+}
+.flow-text-block {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  box-sizing: border-box;
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-flow-body-font-family);
+  font-size: var(--openbitfun-type-flow-body-font-size);
+  font-weight: var(--openbitfun-type-flow-body-font-weight);
+  line-height: var(--openbitfun-type-flow-body-line-height);
+  letter-spacing: var(--openbitfun-type-flow-body-letter-spacing);
+}
+.flow-text-block .text-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.flow-text-block.streaming .markdown-renderer {
+  animation: none;
+}
+.flow-text-block--runtime-status {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-control-flow-chat-control-gap);
+  min-height: var(--openbitfun-control-tool-card-ambient-row-min-block-size);
+  color: var(--openbitfun-color-content-secondary);
+  font-family: var(--openbitfun-type-flow-support-font-family);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  font-weight: var(--openbitfun-type-flow-support-font-weight);
+  line-height: var(--openbitfun-type-flow-support-line-height);
+  letter-spacing: var(--openbitfun-type-flow-support-letter-spacing);
+}
+/**
+ * User message item styles (BEM).
+ */
+.user-message-item-shell {
+  box-sizing: border-box;
+  padding-inline: var(--openbitfun-control-flow-chat-content-padding-inline);
+}
+@media (max-width: 768px) {
+  .user-message-item-shell {
+    padding-inline: var(--openbitfun-control-flow-chat-content-padding-inline-mobile);
+  }
+}
+.user-message-item-shell {
+  --_user-message-radius: var(--openbitfun-control-flow-chat-user-message-radius);
+  --_user-message-padding-inline: var(--_user-message-radius);
+  position: relative;
+  margin: var(--openbitfun-control-flow-chat-user-message-margin-block-start) 0 var(--openbitfun-control-flow-chat-flow-item-gap);
+}
+
+.user-message-item {
+  box-sizing: border-box;
+  /*
+   * The shell owns the same reading column as replies. Keep the bubble surface
+   * on that column's content edge — the edge the tool cards and the composer
+   * card end on. Extending the bubble by its radius instead (so the rounded
+   * surface overhung the column while its text met the column) left the sent
+   * message one radius past the trailing edge of both.
+   */
+  width: fit-content;
+  max-width: var(--openbitfun-control-flow-chat-user-message-max-width);
+  padding: var(--openbitfun-control-flow-chat-user-message-padding-block) var(--_user-message-padding-inline);
+  background: transparent;
+  border: none;
+  border-radius: var(--_user-message-radius);
+  margin-block: 0;
+  margin-inline: auto 0;
+  box-shadow: none;
+  transition: opacity 140ms ease;
+  /*
+   * No CSS mount animation: virtualized remounts are already settled.
+   * useSubmittedMessageMotion owns the one-shot feedback for an explicit send;
+   * it changes only paint on the contents, never this row's measured layout.
+   */
+  position: relative;
+}
+
+.user-message-item__surface {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--openbitfun-color-action-quiet-hover);
+  pointer-events: none;
+  transform-origin: right center;
+}
+
+.user-message-item--editing .user-message-item__surface {
+  display: none;
+}
+
+.user-message-item--forming .user-message-item__surface::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--openbitfun-color-action-quiet-hover);
+  pointer-events: none;
+  animation: user-message-forming-fill 3.4s ease-in-out 260ms infinite;
+}
+
+@keyframes user-message-forming-fill {
+  0%, 100% {
+    opacity: 0.08;
+  }
+  50% {
+    opacity: 0.16;
+  }
+}
+.user-message-item__submission-error {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--openbitfun-control-flow-chat-inline-gap);
+  width: fit-content;
+  max-width: var(--openbitfun-control-flow-chat-user-message-max-width);
+  margin-block-start: var(--openbitfun-space-1);
+  margin-inline: auto 0;
+  color: var(--openbitfun-color-status-danger-content);
+  font-size: var(--openbitfun-type-flow-meta-font-size);
+  line-height: var(--openbitfun-type-flow-meta-line-height);
+}
+
+.user-message-item__submission-error-icon {
+  flex: none;
+}
+
+.user-message-item--editing {
+  width: auto;
+  max-width: none;
+  margin-inline: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.user-message-item__timestamp {
+  /* The timestamp shares the external meta row with the action cluster. */
+  color: var(--openbitfun-color-content-muted);
+  font-family: var(--openbitfun-type-flow-meta-font-family);
+  font-size: var(--openbitfun-type-flow-meta-font-size);
+  font-weight: var(--openbitfun-type-flow-meta-font-weight);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--openbitfun-type-flow-meta-line-height);
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard), visibility var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+
+.user-message-item-shell:hover .user-message-item__timestamp,
+.user-message-item-shell:focus-within .user-message-item__timestamp {
+  opacity: 1;
+  visibility: visible;
+}
+
+.user-message-item__meta {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  column-gap: var(--openbitfun-space-2);
+  row-gap: 0;
+  min-block-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  margin-inline-end: calc((var(--openbitfun-control-flow-chat-row-icon-size) - var(--openbitfun-control-flow-chat-metadata-action-size)) / 2);
+  padding-block: calc(var(--openbitfun-space-1) / 2) 0;
+  padding-inline: 0;
+  pointer-events: auto;
+}
+
+.user-message-item__main {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--openbitfun-control-flow-chat-inline-gap);
+}
+
+.user-message-item__main-contents-bridge {
+  display: contents;
+}
+
+.user-message-item__steering-tag {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: fit-content;
+  padding: 0.12rem 0.44rem;
+  border-radius: 999px;
+  font-size: var(--openbitfun-type-flow-micro-font-size);
+  font-weight: var(--openbitfun-type-label-selected-font-weight);
+  line-height: var(--openbitfun-type-flow-meta-line-height);
+  letter-spacing: var(--openbitfun-type-body-sm-letter-spacing);
+  user-select: none;
+}
+
+.user-message-item__steering-tag--pending {
+  color: var(--openbitfun-color-status-warning-content);
+  background: var(--openbitfun-color-status-warning-surface);
+  border: 1px solid var(--openbitfun-color-status-warning-border);
+}
+
+.user-message-item__actions {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--openbitfun-space-1) / 2);
+  flex: 0 0 auto;
+  margin: 0;
+}
+.user-message-item__actions:empty {
+  display: none;
+}
+.user-message-item__actions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+
+.user-message-item-shell:hover .user-message-item__actions,
+.user-message-item__actions[data-menu-open],
+.user-message-item-shell:focus-within .user-message-item__actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.user-message-item__blocks {
+  margin-top: var(--openbitfun-control-flow-chat-flow-item-gap);
+}
+
+.user-message-item__content {
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: 100%;
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  font-weight: var(--openbitfun-type-flow-control-font-weight);
+  line-height: var(--openbitfun-type-flow-body-line-height);
+  color: var(--openbitfun-color-content-primary);
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+  min-width: 0; /* Ensures the content can shrink properly. */
+  max-height: 4.75em; /* Collapsed: up to 3 compact lines. */
+  user-select: text;
+  transition: none;
+}
+
+.user-message-item--expanded {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.user-message-item--expanded:not(.user-message-item--editing) {
+  background: var(--openbitfun-color-action-quiet-hover);
+}
+.user-message-item--expanded:not(.user-message-item--editing) .user-message-item__surface {
+  display: none;
+}
+
+.user-message-item--failed {
+  --_failed-font-size: var(--openbitfun-type-flow-control-font-size);
+  --_failed-line-height: var(--openbitfun-type-support-line-height);
+  border: none;
+  box-shadow: none;
+}
+.user-message-item--failed .user-message-item__failed-inline-cluster {
+  display: flex;
+  flex-flow: row wrap;
+  align-items: flex-start;
+  column-gap: var(--openbitfun-control-flow-chat-inline-gap);
+  row-gap: 0.28em;
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+}
+.user-message-item--failed .user-message-item__failed-body {
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--openbitfun-control-flow-chat-inline-gap);
+}
+.user-message-item--failed .user-message-item__content {
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: 100%;
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--_failed-font-size);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  font-style: italic;
+  line-height: var(--_failed-line-height);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--openbitfun-color-content-muted) 72%, transparent);
+}
+.user-message-item--failed .user-message-item__failed-body .user-message-item__steering-tag {
+  align-self: flex-start;
+}
+
+.user-message-item--expanded .user-message-item__content {
+  white-space: pre-wrap;
+  display: block;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
+  text-overflow: unset;
+  max-height: none;
+  overflow-wrap: break-word;
+}
+
+.user-message-item__copy-btn,
+.user-message-item__edit-rollback-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  inline-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  block-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  min-inline-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  min-block-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  padding: 0;
+  border: none;
+  border-radius: var(--openbitfun-radius-sm);
+}
+.user-message-item__copy-btn::before,
+.user-message-item__edit-rollback-btn::before {
+  content: none;
+}
+.user-message-item__copy-btn > [data-openbitfun-part=icon],
+.user-message-item__edit-rollback-btn > [data-openbitfun-part=icon] {
+  --openbitfun-opacity-icon-artwork: inherit;
+  display: contents;
+}
+.user-message-item__copy-btn > :where([data-openbitfun-part=icon]) > :where(svg, [data-openbitfun-component=icon]),
+.user-message-item__edit-rollback-btn > :where([data-openbitfun-part=icon]) > :where(svg, [data-openbitfun-component=icon]) {
+  inline-size: var(--openbitfun-control-flow-chat-row-icon-size);
+  block-size: var(--openbitfun-control-flow-chat-row-icon-size);
+  display: block;
+  flex-shrink: 0;
+}
+.user-message-item__copy-btn,
+.user-message-item__edit-rollback-btn {
+  background: transparent;
+  color: var(--openbitfun-color-content-secondary);
+  cursor: pointer;
+  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  align-self: center;
+  outline: none;
+  user-select: none;
+}
+.user-message-item__copy-btn:hover:not(:disabled),
+.user-message-item__edit-rollback-btn:hover:not(:disabled) {
+  background: transparent;
+  color: var(--openbitfun-color-content-primary);
+  box-shadow: none;
+}
+.user-message-item__copy-btn:focus-visible,
+.user-message-item__edit-rollback-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--openbitfun-color-accent-hover) 40%, transparent);
+  outline-offset: 1px;
+}
+.user-message-item__copy-btn:disabled,
+.user-message-item__edit-rollback-btn:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.user-message-item__copy-btn.copied {
+  color: var(--openbitfun-color-status-success-content);
+  background: var(--openbitfun-color-status-success-surface);
+}
+
+.user-message-item__edit-layout {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--openbitfun-control-flow-chat-inline-gap);
+}
+
+.user-message-edit-composer {
+  width: 100%;
+}
+
+.user-message-edit-composer__textarea {
+  width: 100%;
+  min-height: var(--openbitfun-control-height-sm);
+  max-height: 45vh;
+  overflow-y: auto;
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  line-height: var(--openbitfun-type-flow-body-line-height);
+}
+
+.user-message-edit-composer__rich-input {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--openbitfun-control-height-sm);
+  max-height: 45vh;
+  overflow-y: auto;
+}
+.user-message-edit-composer__rich-input .rich-text-input {
+  min-height: var(--openbitfun-control-height-sm);
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  line-height: var(--openbitfun-type-flow-body-line-height);
+}
+
+.user-message-edit-composer__actions {
+  width: 100%;
+}
+
+.user-message-item__rollback-spinner {
+  animation: user-message-item-spin 1s linear infinite;
+}
+
+@keyframes user-message-item-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.user-message-item__images {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-block: 0 6px;
+}
+
+.user-message-item__image-thumb {
+  /* Attachment-sized, not a hero image: the text stays the primary content. */
+  width: 72px;
+  height: 72px;
+  border-radius: 5px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid var(--openbitfun-color-border-default);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.user-message-item__image-thumb:hover {
+  transform: scale(1.03);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--openbitfun-color-content-on-light) 30%, transparent);
+}
+.user-message-item__image-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.user-message-item__lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: var(--openbitfun-layer-fullscreen);
+  background: color-mix(in srgb, var(--openbitfun-color-content-on-light) 80%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: user-message-lightbox-fade-in 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.user-message-item__lightbox img {
+  max-width: 90vw;
+  max-height: 85vh;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px var(--openbitfun-color-overlay-scrim);
+  object-fit: contain;
+}
+
+.user-message-item__lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 15%, transparent);
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--openbitfun-color-content-on-dark);
+  cursor: pointer;
+  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.user-message-item__lightbox-close:hover {
+  background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 30%, transparent);
+}
+.user-message-item__lightbox-close:focus-visible {
+  outline: 2px solid var(--openbitfun-color-content-on-dark);
+  outline-offset: 2px;
+}
+
+@keyframes user-message-lightbox-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .user-message-item--forming .user-message-item__surface::after {
+    animation: none;
+    opacity: 0.08;
+  }
+  .user-message-item,
+  .user-message-item__timestamp,
+  .user-message-item__actions,
+  .user-message-item__copy-btn,
+  .user-message-item__edit-rollback-btn,
+  .user-message-item__image-thumb,
+  .user-message-item__lightbox-close {
+    transition-duration: 0ms;
+  }
+  .user-message-item__lightbox {
+    animation: none;
+  }
+}
+.user-message-item__lightbox[data-openbitfun-component=dialog] {
+  padding: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.user-message-item__lightbox-surface[data-openbitfun-component=dialog] {
+  width: 100%;
+  height: 100%;
+  max-inline-size: none;
+  max-block-size: none;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  animation: none;
+}
+
+.user-message-item__lightbox-close[data-openbitfun-component=icon-button]::before {
+  content: none;
+}
+.user-message-item__lightbox-close[data-openbitfun-component=icon-button] > [data-openbitfun-part=icon] {
+  display: contents;
+}
+/* Model round item styles (BEM). */
+.model-round-item:is([data-flow-item-stack], .explore-region__content, .flow-group-content-segment):not([data-agent-card-grid]) > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item,
+.subagent-projection-text--truncated):not([hidden]):not([data-thinking-attachment=side]) {
+  margin: 0 0 var(--openbitfun-control-flow-chat-paragraph-gap) 0;
+}
+.model-round-item:is([data-flow-item-stack], .explore-region__content, .flow-group-content-segment):not([data-agent-card-grid]) > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item,
+.subagent-projection-text--truncated):not([hidden]):not([data-thinking-attachment=side]):has(> .flow-tool-card-wrapper:empty) {
+  margin-bottom: 0;
+}
+.model-round-item > .flow-thinking-item[data-thinking-attachment=side] {
+  margin-bottom: 0;
+}
+.model-round-item > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-tool-capsule=true]) {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  interpolate-size: allow-keywords;
+}
+.model-round-item > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-capsule-row=true]) {
+  display: block;
+  inline-size: var(--openbitfun-control-flow-chat-capsule-inline-size);
+  max-inline-size: 100%;
+  vertical-align: top;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .model-round-item > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-capsule-row=true]) {
+    transition: inline-size 520ms var(--openbitfun-motion-easing-smooth), max-inline-size 520ms var(--openbitfun-motion-easing-smooth);
+  }
+}
+.model-round-item > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-capsule-row=true][data-capsule-parallel=true]) {
+  display: inline-block;
+  max-inline-size: calc(100% - var(--openbitfun-space-2));
+  margin-inline-end: var(--openbitfun-space-2);
+}
+.model-round-item {
+  box-sizing: border-box;
+  padding-inline: var(--openbitfun-control-flow-chat-content-padding-inline);
+}
+@media (max-width: 768px) {
+  .model-round-item {
+    padding-inline: var(--openbitfun-control-flow-chat-content-padding-inline-mobile);
+  }
+}
+.model-round-item {
+  /*
+   * The composition assigns one body-paragraph gap to each item, including
+   * expanded/prominent tools and the last item across virtual-row boundaries.
+   *
+   * No mount / enter animation lives here on purpose. The list is virtualized:
+   * any animation keyed off mount replays whenever an item scrolls back into
+   * view, and any animation keyed off `--streaming` → `--complete` replays when
+   * the typewriter finishes. Both read as the whole chat refreshing.
+   */
+  margin-bottom: 0;
+  padding-block: 0;
+  position: relative;
+  opacity: 1;
+}
+.model-round-item__continuation {
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--openbitfun-type-flow-meta-font-size);
+  line-height: var(--openbitfun-type-flow-meta-line-height);
+  margin-bottom: var(--openbitfun-space-1);
+}
+.model-round-item--streaming {
+  opacity: 1;
+  margin-bottom: 0;
+  animation: none;
+}
+.model-round-item--complete {
+  opacity: 1;
+}
+
+.model-round-item__header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--openbitfun-control-flow-chat-inline-gap);
+  padding: 0 var(--openbitfun-control-flow-chat-control-gap);
+}
+
+.model-round-item__footer {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  column-gap: var(--openbitfun-space-2);
+  row-gap: 0;
+  min-block-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  margin-inline-end: calc((var(--openbitfun-control-flow-chat-row-icon-size) - var(--openbitfun-control-flow-chat-metadata-action-size)) / 2);
+  padding: var(--openbitfun-space-1) 0;
+  margin-top: var(--openbitfun-space-1);
+}
+.model-round-item__footer[data-footer-reveal=hover] {
+  opacity: 0;
+  pointer-events: none;
+}
+.model-round-item__footer[data-footer-reveal=hover]:focus-within, .model-round-item__footer[data-footer-reveal=hover]:has([aria-describedby], [aria-expanded=true]) {
+  opacity: 1;
+  pointer-events: auto;
+}
+.model-round-item__footer--pending {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.model-round-item__actions {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--openbitfun-space-1) / 2);
+  flex: 0 0 auto;
+  margin: 0;
+}
+.model-round-item__actions:empty {
+  display: none;
+}
+
+.model-round-item__usage {
+  margin-inline-end: auto;
+}
+
+.model-round-item__completion {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  margin-inline-start: auto;
+  min-inline-size: 0;
+}
+
+.model-round-item__meta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  min-width: 0;
+  color: var(--openbitfun-color-content-muted);
+  font-family: var(--openbitfun-type-flow-meta-font-family);
+  font-size: var(--openbitfun-type-flow-meta-font-size);
+  font-weight: var(--openbitfun-type-flow-meta-font-weight);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--openbitfun-type-flow-meta-line-height);
+  white-space: nowrap;
+}
+
+.model-round-item__meta-item {
+  flex: 0 0 auto;
+}
+
+.model-round-item__history-loader {
+  color: var(--openbitfun-color-content-muted);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  line-height: var(--openbitfun-type-flow-support-line-height);
+  padding: var(--openbitfun-control-flow-chat-inline-gap) 0;
+}
+
+.model-round-item__retry-history {
+  display: flex;
+  min-inline-size: 0;
+  flex-direction: column;
+  margin-bottom: var(--openbitfun-control-flow-chat-flow-item-gap);
+}
+
+.model-round-item__retry-attempt {
+  min-inline-size: 0;
+}
+
+.model-round-item__attempt-diagnostic-toggle {
+  inline-size: 100%;
+  justify-content: flex-start;
+  color: var(--openbitfun-color-status-warning-content);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  text-align: start;
+}
+
+.model-round-item__attempt-diagnostic-details {
+  padding-inline: calc(var(--openbitfun-control-button-xs-padding-inline) + var(--openbitfun-border-width-default));
+}
+
+.model-round-item__retry-attempt-content:is([data-flow-item-stack], .explore-region__content, .flow-group-content-segment):not([data-agent-card-grid]) > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item,
+.subagent-projection-text--truncated):not([hidden]):not([data-thinking-attachment=side]) {
+  margin: 0 0 var(--openbitfun-control-flow-chat-paragraph-gap) 0;
+}
+.model-round-item__retry-attempt-content:is([data-flow-item-stack], .explore-region__content, .flow-group-content-segment):not([data-agent-card-grid]) > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item,
+.subagent-projection-text--truncated):not([hidden]):not([data-thinking-attachment=side]):has(> .flow-tool-card-wrapper:empty) {
+  margin-bottom: 0;
+}
+.model-round-item__retry-attempt-content:is([data-flow-item-stack], .explore-region__content, .flow-group-content-segment):not([data-agent-card-grid]) > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item,
+.subagent-projection-text--truncated):not([hidden]):not([data-thinking-attachment=side]):is(:last-child, :has(+ .flowchat-capsule-row-break:last-child)) {
+  margin-bottom: 0;
+}
+.model-round-item__retry-attempt-content > .flow-thinking-item[data-thinking-attachment=side] {
+  margin-bottom: 0;
+}
+.model-round-item__retry-attempt-content > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-tool-capsule=true]) {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  interpolate-size: allow-keywords;
+}
+.model-round-item__retry-attempt-content > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-capsule-row=true]) {
+  display: block;
+  inline-size: var(--openbitfun-control-flow-chat-capsule-inline-size);
+  max-inline-size: 100%;
+  vertical-align: top;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .model-round-item__retry-attempt-content > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-capsule-row=true]) {
+    transition: inline-size 520ms var(--openbitfun-motion-easing-smooth), max-inline-size 520ms var(--openbitfun-motion-easing-smooth);
+  }
+}
+.model-round-item__retry-attempt-content > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-capsule-row=true][data-capsule-parallel=true]) {
+  display: inline-block;
+  max-inline-size: calc(100% - var(--openbitfun-space-2));
+  margin-inline-end: var(--openbitfun-space-2);
+}
+.model-round-item__retry-attempt-content {
+  min-inline-size: 0;
+}
+.model-round-item__retry-attempt-content:empty {
+  display: none;
+}
+.model-round-item__retry-attempt-content > .model-round-item__retry-history:last-child {
+  margin-bottom: 0;
+}
+
+.model-round-item__action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  inline-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  block-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  min-inline-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  min-block-size: var(--openbitfun-control-flow-chat-metadata-action-size);
+  padding: 0;
+  border: none;
+  border-radius: var(--openbitfun-radius-sm);
+}
+.model-round-item__action-btn::before {
+  content: none;
+}
+.model-round-item__action-btn > [data-openbitfun-part=icon] {
+  --openbitfun-opacity-icon-artwork: inherit;
+  display: contents;
+}
+.model-round-item__action-btn > :where([data-openbitfun-part=icon]) > :where(svg, [data-openbitfun-component=icon]) {
+  inline-size: var(--openbitfun-control-flow-chat-row-icon-size);
+  block-size: var(--openbitfun-control-flow-chat-row-icon-size);
+  display: block;
+  flex-shrink: 0;
+}
+.model-round-item__action-btn {
+  background: transparent;
+  color: var(--openbitfun-color-content-muted);
+  cursor: pointer;
+  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1), opacity 140ms ease;
+  opacity: 1;
+}
+.model-round-item__action-btn:hover {
+  background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 8%, transparent);
+  color: var(--openbitfun-color-content-primary);
+}
+.model-round-item__action-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--openbitfun-color-accent-hover) 40%, transparent);
+  outline-offset: 1px;
+}
+.model-round-item__action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.model-round-item__copy-btn.copied {
+  color: var(--openbitfun-color-status-success-content);
+  background: var(--openbitfun-color-status-success-surface);
+}
+
+.model-round-item__copy-menu-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.model-round-item__copy-menu {
+  position: fixed;
+  z-index: var(--openbitfun-layer-popover);
+}
+
+.model-round-item__fork-btn .spinning {
+  animation: model-round-item-spin 1s linear infinite;
+}
+
+.model-round-item__export-btn .spinning {
+  animation: model-round-item-spin 1s linear infinite;
+}
+.model-round-item__export-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@keyframes model-round-item-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes flow-tool-completed-exit {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 96px;
+    margin-bottom: var(--openbitfun-control-flow-chat-flow-item-gap);
+  }
+  55% {
+    opacity: 0.72;
+    transform: translateY(-1px);
+    max-height: 96px;
+    margin-bottom: var(--openbitfun-control-flow-chat-flow-item-gap);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4px);
+    max-height: 0;
+    margin-bottom: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flowchat-flow-item--tool-active,
+  .flowchat-flow-item--tool-completed {
+    animation: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .model-round-item__action-btn {
+    transition-duration: 0ms;
+  }
+}.miniapp-chat.openbitfun-fmc {
+  z-index: 10;
+}
+
+.miniapp-chat__panel.openbitfun-fmc__panel {
+  max-height: calc(100dvh - var(--openbitfun-layout-toolbar-md-height) - var(--openbitfun-space-8));
+}
+
+.miniapp-chat__body {
+  position: relative;
+}
+
+.miniapp-chat__messages {
+  container: flow-chat-transcript/inline-size;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable both-edges;
+  padding-block-end: calc(var(--openbitfun-control-chat-composer-compact-height) + var(--openbitfun-space-6) + var(--openbitfun-space-6));
+}
+
+.miniapp-chat__transcript {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  max-width: var(--openbitfun-control-flow-chat-transcript-max-width);
+  margin-inline: auto;
+}
+@container flow-chat-transcript (min-width: 0px) {
+  .miniapp-chat__transcript {
+    width: calc(100% - var(--openbitfun-control-flow-chat-turn-rail-offset) - var(--openbitfun-control-flow-chat-turn-rail-width) - var(--openbitfun-space-1) - var(--openbitfun-space-2));
+  }
+}
+.miniapp-chat__transcript {
+  flex-shrink: 0;
+  padding-block: var(--openbitfun-space-4);
+}
+
+.miniapp-chat__transcript:has(> .miniapp-chat__welcome:only-child) {
+  flex: 1;
+  width: 100%;
+  max-width: none;
+  padding: 0;
+}
+
+.miniapp-chat__welcome .openbitfun-fmc__miniapp-welcome-icon svg {
+  width: calc(var(--openbitfun-space-6) + var(--openbitfun-space-1));
+  height: calc(var(--openbitfun-space-6) + var(--openbitfun-space-1));
+}
+
+.miniapp-chat__suggestions .miniapp-chat__glyph {
+  display: inline-flex;
+}
+
+.miniapp-chat__suggestions svg {
+  width: var(--openbitfun-control-icon-size-xs);
+  height: var(--openbitfun-control-icon-size-xs);
+}
+
+.miniapp-chat__message p {
+  margin: 0;
+}
+
+.miniapp-chat__message[data-role=assistant] {
+  margin-block-end: var(--openbitfun-control-flow-chat-paragraph-gap);
+}
+
+.miniapp-chat__input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-height: 160px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--openbitfun-type-flow-control-font-family);
+  font-size: var(--openbitfun-type-flow-control-font-size);
+  font-weight: var(--openbitfun-type-flow-control-font-weight);
+  line-height: var(--openbitfun-type-flow-body-line-height);
+  resize: none;
+  outline: none;
+}
+
+.miniapp-chat__input::placeholder {
+  color: var(--openbitfun-color-content-muted);
+}
+
+.miniapp-chat__title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.miniapp-chat__note {
+  flex-shrink: 0;
+  padding: var(--openbitfun-space-2) var(--openbitfun-space-3);
+  color: var(--openbitfun-color-content-secondary);
+  font-family: var(--openbitfun-type-flow-support-font-family);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  font-weight: var(--openbitfun-type-flow-support-font-weight);
+  line-height: var(--openbitfun-type-flow-support-line-height);
+  overflow-wrap: anywhere;
+}
+
+.miniapp-chat__note[data-error=true] {
+  color: var(--openbitfun-color-status-danger-content);
+}
+
+.miniapp-chat__launcher[data-attention=true]::after {
+  content: "";
+  position: absolute;
+  inset-block-start: var(--openbitfun-space-1);
+  inset-inline-end: var(--openbitfun-space-1);
+  inline-size: var(--openbitfun-space-1);
+  block-size: var(--openbitfun-space-1);
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-accent-default);
+}
+
+.miniapp-chat [hidden] {
+  display: none !important;
+}

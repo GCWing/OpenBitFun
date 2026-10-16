@@ -1297,6 +1297,7 @@ fn miniapp_lifecycle_create_and_update_helpers_preserve_manager_contract() {
     let created = build_created_app(
         "app-1".to_string(),
         MiniAppCreateInput {
+            chrome: None,
             name: "Demo".to_string(),
             description: "Demo app".to_string(),
             icon: "sparkles".to_string(),
@@ -1340,6 +1341,7 @@ fn miniapp_lifecycle_create_and_update_helpers_preserve_manager_contract() {
         ..MiniAppPermissions::default()
     };
     let patch = MiniAppUpdatePatch {
+        chrome: None,
         name: Some("Updated".to_string()),
         source: Some(updated_source.clone()),
         permissions: Some(updated_permissions.clone()),
@@ -1382,6 +1384,7 @@ fn miniapp_lifecycle_create_and_update_helpers_preserve_manager_contract() {
     let metadata_only = apply_update_patch(
         &updated,
         MiniAppUpdatePatch {
+            chrome: None,
             tags: Some(vec!["metadata".to_string()]),
             ..MiniAppUpdatePatch::default()
         },
@@ -1898,6 +1901,7 @@ fn miniapp_runtime_facade_owns_manager_create_update_draft_and_apply_workflows()
     let created = block_on(facade.create_app(
         "created".to_string(),
         MiniAppCreateInput {
+            chrome: None,
             name: "Created".to_string(),
             description: "Created app".to_string(),
             icon: "box".to_string(),
@@ -1922,6 +1926,7 @@ fn miniapp_runtime_facade_owns_manager_create_update_draft_and_apply_workflows()
         "created".to_string(),
         created.clone(),
         MiniAppUpdatePatch {
+            chrome: None,
             source: Some(MiniAppSource {
                 css: "body { color: red; }".to_string(),
                 ..MiniAppSource::default()
@@ -2300,6 +2305,7 @@ fn miniapp_customization_decline_policy_updates_existing_and_trims_old_records()
 
 fn sample_miniapp_for_lifecycle(source: MiniAppSource) -> MiniApp {
     MiniApp {
+        chrome: None,
         id: "demo".to_string(),
         name: "Demo".to_string(),
         description: "Demo app".to_string(),
@@ -2317,4 +2323,43 @@ fn sample_miniapp_for_lifecycle(source: MiniAppSource) -> MiniApp {
         runtime_profile: Default::default(),
         i18n: None,
     }
+}
+
+#[test]
+fn miniapp_chrome_legacy_roundtrip_and_draft_rollback_keep_app_identity() {
+    use openbitfun_product_domains::miniapp::chrome::MiniAppChrome;
+    let app = sample_miniapp_for_lifecycle(MiniAppSource::default());
+    let mut old = serde_json::to_value(&app).unwrap();
+    old.as_object_mut().unwrap().remove("chrome");
+    let legacy: MiniApp = serde_json::from_value(old.clone()).unwrap();
+    assert!(legacy.chrome.is_none());
+    let roundtrip = serde_json::to_value(&legacy).unwrap();
+    assert_eq!(roundtrip, old);
+    let chrome: MiniAppChrome = serde_json::from_value(serde_json::json!({
+        "futureChromeField": {"enabled":true},
+        "titlebar": {"title":"Custom", "density":"compact", "futureBarField":7,
+          "actions":[{"id":"export","icon":"download","label":"Export","futureActionField":true}]}
+    }))
+    .unwrap();
+    chrome.validate().unwrap();
+    let mut draft = legacy.clone();
+    draft.chrome = Some(chrome.clone());
+    let applied = apply_draft_to_active(&legacy, draft, "<html>same</html>".into(), 5000);
+    assert_eq!(applied.id, legacy.id);
+    assert_eq!(applied.chrome, Some(chrome.clone()));
+    assert_eq!(applied.version, legacy.version + 1);
+    assert_ne!(
+        miniapp_content_hash(&applied),
+        miniapp_content_hash(&legacy)
+    );
+    let encoded = serde_json::to_value(&applied).unwrap();
+    assert_eq!(encoded["chrome"]["futureChromeField"]["enabled"], true);
+    assert_eq!(encoded["chrome"]["titlebar"]["futureBarField"], 7);
+    assert_eq!(
+        encoded["chrome"]["titlebar"]["actions"][0]["futureActionField"],
+        true
+    );
+    let rolled_back = prepare_rollback_app(&applied, legacy, 6000);
+    assert_eq!(rolled_back.id, applied.id);
+    assert!(rolled_back.chrome.is_none());
 }

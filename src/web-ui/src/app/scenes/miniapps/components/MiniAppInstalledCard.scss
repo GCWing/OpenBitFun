@@ -1,0 +1,75 @@
+.miniapp-installed-card {
+  position: relative;
+  min-width: 0;
+
+  &__surface:not(:hover):not(:active) {
+    background: transparent;
+  }
+
+  &__surface:hover {
+    outline-color: transparent;
+  }
+
+  &__surface [data-openbitfun-part='actions'] {
+    gap: var(--openbitfun-space-2);
+  }
+
+  &__surface [data-openbitfun-component='icon-button']:hover:not(:disabled) .miniapp-installed-card__launch-icon {
+    color: var(--openbitfun-color-status-success-emphasis);
+  }
+
+  &:nth-child(even)::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: calc(-1 * var(--openbitfun-space-3));
+    inset-block-start: 50%;
+    transform: translateY(-50%);
+    block-size: var(--openbitfun-space-6);
+    border-inline-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default);
+    pointer-events: none;
+  }
+
+  &__surface [data-openbitfun-part='leading'] {
+    flex: 0 0 var(--openbitfun-space-8);
+    inline-size: var(--openbitfun-space-8);
+    block-size: var(--openbitfun-space-8);
+    > [data-openbitfun-component='icon'] {
+      inline-size: 100%;
+      block-size: 100%;
+    }
+  }
+
+  &__copy {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: var(--openbitfun-space-2);
+    min-width: 0;
+  }
+
+  &__title {
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    min-width: 0;
+    color: var(--openbitfun-color-content-primary);
+    font-family: var(--openbitfun-type-heading-card-font-family);
+    font-size: var(--openbitfun-type-heading-card-font-size);
+    font-weight: var(--openbitfun-type-heading-card-font-weight);
+    line-height: var(--openbitfun-type-heading-card-line-height);
+    letter-spacing: var(--openbitfun-type-heading-card-letter-spacing);
+  }
+
+  &__description {
+    color: var(--openbitfun-color-content-secondary);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+  }
+
+}
+
+@container miniapp-gallery-scene (max-width: 480px) {
+  .miniapp-installed-card:nth-child(even)::before {
+    display: none;
+  }
+}

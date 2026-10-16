@@ -178,6 +178,14 @@ impl Default for AppearanceConfig {
 }
 
 impl AppearanceConfig {
+    pub(crate) fn miniapp_mode() -> &'static str {
+        if Self::load_startup_bootstrap_config().appearance.is_light {
+            "light"
+        } else {
+            "dark"
+        }
+    }
+
     pub fn get_builtin_appearance(appearance_id: &str) -> Option<Self> {
         Self::startup_appearance_bootstrap_manifest()
             .appearances

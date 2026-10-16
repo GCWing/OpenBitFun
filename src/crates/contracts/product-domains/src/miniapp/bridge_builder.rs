@@ -206,6 +206,12 @@ pub fn build_bridge_script(
       offUserMessage:  (fn) => app.off('chat:userMessage', fn),
     }},
 
+    // Per-app titlebar actions are delivered only to this content view.
+    chrome: {{
+      onAction: (fn) => app.on('chrome:action', fn),
+      offAction: (fn) => app.off('chrome:action', fn),
+    }},
+
     // Clipboard namespace — proxies to host navigator.clipboard (bypasses sandbox restriction).
     clipboard: {{
       writeText: (text) => _rpc('clipboard.writeText', {{ text }}),

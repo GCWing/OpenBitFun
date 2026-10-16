@@ -255,6 +255,8 @@ pub struct MiniApp {
     /// Optional per-locale overrides for `name` / `description` / `tags`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub i18n: Option<MiniAppI18n>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chrome: Option<crate::miniapp::chrome::MiniAppChrome>,
 }
 
 /// MiniApp metadata only (for list views; no source/compiled_html).
@@ -281,6 +283,8 @@ pub struct MiniAppMeta {
     /// Optional per-locale overrides for `name` / `description` / `tags`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub i18n: Option<MiniAppI18n>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chrome: Option<crate::miniapp::chrome::MiniAppChrome>,
 }
 
 impl From<&MiniApp> for MiniAppMeta {
@@ -300,6 +304,7 @@ impl From<&MiniApp> for MiniAppMeta {
             runtime: app.runtime.clone(),
             runtime_profile: app.runtime_profile,
             i18n: app.i18n.clone(),
+            chrome: app.chrome.clone(),
         }
     }
 }

@@ -1,0 +1,248 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/appearance.css"><link rel="stylesheet" href="/chat-styles.css"><link rel="stylesheet" href="/window-controls.css"><link rel="stylesheet" href="/titlebar.css">
+<style>
+:root { font-family: var(--openbitfun-type-body-sm-font-family); font-size: var(--openbitfun-type-body-sm-font-size); background: var(--openbitfun-color-surface-scene); color: var(--openbitfun-color-content-primary); }
+html, body { margin: 0; height: 100%; }
+body { display: flex; flex-direction: column; background: var(--openbitfun-color-surface-scene); color: var(--openbitfun-color-content-primary); }
+#resize-borders > div { position: fixed; z-index: 20; }
+#resize-borders [data-direction="North"], #resize-borders [data-direction="South"] { left: 6px; right: 6px; height: 4px; cursor: ns-resize; }
+#resize-borders [data-direction="North"] { top: 0; }
+#resize-borders [data-direction="South"] { bottom: 0; }
+#resize-borders [data-direction="East"], #resize-borders [data-direction="West"] { top: 6px; bottom: 6px; width: 4px; cursor: ew-resize; }
+#resize-borders [data-direction="East"] { right: 0; }
+#resize-borders [data-direction="West"] { left: 0; }
+#resize-borders [data-direction="NorthEast"], #resize-borders [data-direction="NorthWest"], #resize-borders [data-direction="SouthEast"], #resize-borders [data-direction="SouthWest"] { width: 6px; height: 6px; }
+#resize-borders [data-direction="NorthEast"] { top: 0; right: 0; cursor: nesw-resize; }
+#resize-borders [data-direction="NorthWest"] { top: 0; left: 0; cursor: nwse-resize; }
+#resize-borders [data-direction="SouthEast"] { bottom: 0; right: 0; cursor: nwse-resize; }
+#resize-borders [data-direction="SouthWest"] { bottom: 0; left: 0; cursor: nesw-resize; }
+
+
+
+#status button, #permissions button, #titlebar button { font: inherit; }
+button { cursor: pointer; }
+#status button { padding: 5px 12px; }
+iframe { flex: 1; min-height: 0; width: 100%; border: 0; }
+#status { padding: 12px; white-space: pre-wrap; overflow: auto; }
+#permissions { position: relative; z-index: 11; background: var(--openbitfun-color-surface-raised); padding: 12px; border-top: 1px solid var(--openbitfun-color-border-subtle); max-height: 180px; overflow: auto; }
+#permissions p { white-space: pre-wrap; overflow-wrap: anywhere; }
+[hidden] { display: none !important; }
+</style></head><body>
+<header id="titlebar"></header>
+<div id="status" role="status"><span id="status-text">OpenBitFun…</span><button id="retry" hidden></button></div>
+<div id="resize-borders" aria-hidden="true" hidden></div>
+<iframe id="app" title="MiniApp" sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads" referrerpolicy="no-referrer" hidden></iframe>
+<aside id="permissions" aria-live="polite" hidden></aside>
+<div id="miniapp-chat" hidden></div>
+<script type="module">
+import { mountTitlebar } from '/titlebar.js';
+import { mountMiniAppChat } from '/miniapp-chat.js';
+const icons = await fetch('/icons.json').then(response => response.json());
+const windowLabels = await fetch('/labels.json').then(response => response.json());
+const chatLabels = await fetch('/chat-labels.json').then(response => response.json());
+(() => {
+  'use strict';
+  const native = (operation, params = {}) => window.__TAURI__.core.invoke('miniapp_shell_call', { request: { operation, params } });
+  const platform = window.__MINIAPP_PLATFORM__;
+  const frame = document.getElementById('app');
+  const status = document.getElementById('status');
+  const statusText = document.getElementById('status-text');
+  let bootstrap, cursor = 0, documentUrl, bridgeGeneration = 0, composerGeneration = 0, bindingGeneration = 0;
+  const chat = mountMiniAppChat(document.getElementById('miniapp-chat'), {
+    icons,
+    onSend: payload => event('chat:userMessage', payload),
+    onStop: params => native('rpc', { method: 'agent.cancel', params }),
+    loadSnapshot: sessionId => native('chatSnapshot', { sessionId }),
+  });
+  let stopped = false, pollGeneration = 0, transferring = false, titlebar, contentReady = false;
+  const nativeState = state => {
+    titlebar?.setMaximized(state.maximized || state.fullscreen);
+    titlebar?.setFullscreen(state.fullscreen);
+    document.getElementById('resize-borders').hidden = platform === 'macos' || state.maximized || state.fullscreen;
+  };
+  const transfer = async () => {
+    if (!bootstrap || !contentReady || transferring || !confirm(bootstrap.ui.transferWarning)) return;
+    transferring = true; titlebar?.setTransferring(true);
+    try { await native('tab'); statusText.textContent = bootstrap.ui.transferring; status.hidden = false; }
+    catch (cause) { transferring = false; titlebar?.setTransferring(false); error(cause); }
+  };
+  const windowAction = async action => {
+    if (action === 'tab') return transfer();
+    try {
+      const state = await native(action);
+      if (state) nativeState(state);
+    } catch (cause) { error(cause); }
+  };
+  const renderTitlebar = () => {
+    titlebar?.destroy();
+    const locale = bootstrap?.locale || navigator.language;
+    const app = bootstrap?.app;
+    titlebar = mountTitlebar(document.getElementById('titlebar'), {
+      chrome: bootstrap?.presentationCapabilities?.includes('miniapp_custom_chrome_v1') ? app?.chrome : undefined, title: app?.i18n?.locales?.[locale]?.name || app?.name || 'MiniApp',
+      icon: app?.icon || 'app', icons, locale, platform, ready: contentReady,
+      labels: { titlebar: 'MiniApp', openTab: 'MiniApp', ...(windowLabels[locale] || windowLabels[windowLabels.aliases[locale.toLowerCase()] || windowLabels.fallbackLocale]), ...bootstrap?.ui },
+      onAction: actionId => event('chrome:action', { actionId }), onWindowAction: windowAction,
+      onDrag: () => { void native('drag').catch(error); },
+    });
+    titlebar.setTransferring(!bootstrap || transferring);
+    void native('windowState').then(nativeState).catch(error);
+  };
+  for (const direction of platform === 'macos' ? [] : ['North','South','East','West','NorthEast','NorthWest','SouthEast','SouthWest']) {
+    const region = document.createElement('div'); region.dataset.direction = direction;
+    region.onmousedown = e => { if (e.button === 0) { e.preventDefault(); void native('resize', { direction }).catch(error); } };
+    document.getElementById('resize-borders').append(region);
+  }
+  let resizeFrame;
+  const refreshWindowState = () => {
+    cancelAnimationFrame(resizeFrame);
+    resizeFrame = requestAnimationFrame(() => { void native('windowState').then(nativeState).catch(error); });
+  };
+  window.addEventListener('resize', refreshWindowState);
+  window.addEventListener('focus', refreshWindowState);
+  window.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w') { e.preventDefault(); void windowAction('close'); }
+    if (e.key === 'F11' || e.metaKey && e.ctrlKey && e.key.toLowerCase() === 'f') { e.preventDefault(); void windowAction('fullscreen'); }
+  });
+  const event = (name, payload) => frame.contentWindow?.postMessage({ type: 'openbitfun:event', event: name, payload }, '*');
+  const error = value => { statusText.textContent = String(value); status.hidden = false; document.getElementById('retry').hidden = false; };
+  const local = (method, params) => native('local', { method, params });
+  const localMethods = new Set(['dialog.open','dialog.save','dialog.message','system.openExternal','system.revealInFolder','notifications.system']);
+  window.addEventListener('message', async message => {
+    if (message.source !== frame.contentWindow || !message.data || typeof message.data.method !== 'string') return;
+    const { id, method, params = {} } = message.data;
+    const generation = bridgeGeneration;
+    const requestId = chat.getRequestId();
+    const assertCurrent = () => { if (generation !== bridgeGeneration) throw new Error('MiniApp content view changed'); };
+    const reply = result => frame.contentWindow?.postMessage({ jsonrpc: '2.0', id, result }, '*');
+    try {
+      if (method === 'openbitfun/request-locale') { reply({ locale: bootstrap.locale }); event('localeChange', { locale: bootstrap.locale }); return; }
+      if (method === 'openbitfun/request-appearance') { event('appearanceChange', { mode: bootstrap.appearanceMode, vars: {} }); return; }
+      if (localMethods.has(method)) { reply(await local(method, params)); return; }
+      if (method === 'clipboard.readText' || method === 'clipboard.writeText') {
+        await local(method, params);
+        reply(method === 'clipboard.readText' ? await navigator.clipboard.readText() : await navigator.clipboard.writeText(String(params.text ?? '')));
+        return;
+      }
+      if (method === 'chat.claimComposer') {
+        const claim = ++composerGeneration;
+        await local(method, params); assertCurrent();
+        if (claim !== composerGeneration) throw new Error('MiniApp composer claim changed');
+        chat.claim(params); reply(null); return;
+      }
+      if (method === 'chat.focusSession') {
+        const binding = ++bindingGeneration;
+        await local(method, params); assertCurrent();
+        if (binding !== bindingGeneration) throw new Error('MiniApp chat binding changed');
+        await chat.focusSession(params.sessionId); assertCurrent(); reply(null); return;
+      }
+      if (method === 'chat.releaseComposer') { composerGeneration++; bindingGeneration++; chat.release(); reply(null); return; }
+      if (method === 'chat.clearSession') { bindingGeneration++; chat.clearSession(); reply(null); return; }
+      if (method === 'chat.setComposerDraft') { chat.setDraft(params.text); reply(null); return; }
+      if (method === 'chat.completeUserMessage') { reply(chat.complete(params)); return; }
+      const result = await native('rpc', { method, params });
+      assertCurrent();
+      if (method === 'agent.run') chat.acceptedRun(result, requestId);
+      reply(result);
+    } catch (cause) { frame.contentWindow?.postMessage({ jsonrpc: '2.0', id, error: { code: -32000, message: String(cause) } }, '*'); }
+  });
+  let permissionKey = '';
+  function renderPermissions(requests) {
+    const panel = document.getElementById('permissions');
+    const key = JSON.stringify(requests);
+    chat.setApproval(requests.length > 0);
+    if (key === permissionKey) return;
+    permissionKey = key; panel.replaceChildren(); panel.hidden = requests.length === 0;
+    for (const request of requests) {
+      const row = document.createElement('div');
+      const title = document.createElement('strong'); title.textContent = bootstrap.ui.permissionTitle;
+      const details = document.createElement('p');
+      details.textContent = [request.action, request.projectPath, ...(request.resources || [])].filter(Boolean).join('\n');
+      row.append(title, details);
+      for (const [reply, label] of [['once', bootstrap.ui.allowOnce], ['reject', bootstrap.ui.reject]]) {
+        const button = document.createElement('button'); button.textContent = label;
+        button.onclick = async () => {
+          for (const control of row.querySelectorAll('button')) control.disabled = true;
+          try { await native('permissions', { requestId: request.requestId, reply }); permissionKey = ''; }
+          catch (cause) { error(cause); for (const control of row.querySelectorAll('button')) control.disabled = false; }
+        };
+        row.append(button);
+      }
+      panel.append(row);
+    }
+  }
+  async function poll(generation) {
+    while (!stopped && generation === pollGeneration) {
+      try {
+        const batch = await native('poll', { after: cursor });
+        if (generation !== pollGeneration) return;
+        chat.setConnected(true);
+        if (batch.released) { stopped = true; await native('close'); return; }
+        if (transferring && !batch.pendingView) { transferring = false; titlebar?.setTransferring(false); error(bootstrap.ui.transferFailed); }
+        if (batch.resyncRequired) {
+          // The chat snapshot does not recover app-owned Worker/AI events.
+          error(bootstrap.ui.eventGap);
+          if (bootstrap.presentationCapabilities?.includes('miniapp_chat_snapshot_v1')) await chat.resync();
+        }
+        if (generation !== pollGeneration) return;
+        for (const item of batch.events ?? []) {
+          if (item.sequence <= cursor) continue;
+          if (item.event === 'focus') await native('focus');
+          else if (item.event === 'reload' && !transferring) { void start(); return; }
+          else {
+            event(item.event, item.payload);
+            if (item.event === 'agent:event') chat.event(item.payload);
+          }
+          cursor = item.sequence;
+        }
+        cursor = Math.max(cursor, batch.cursor ?? 0);
+        renderPermissions(await native('permissions'));
+      } catch (cause) { if (generation !== pollGeneration) return; chat.setConnected(false); error(cause); }
+      await new Promise(resolve => setTimeout(resolve, 750));
+    }
+  }
+  async function start() {
+    try {
+      bootstrap = await native('bootstrap');
+      if (bootstrap.reused) return;
+      const ui = bootstrap.ui;
+      if (bootstrap.instance.primaryView?.kind === 'tab' && !bootstrap.transferConfirmed && !confirm(ui.transferWarning)) {
+        await native('close'); return;
+      }
+      document.documentElement.style.colorScheme = bootstrap.appearanceMode;
+      document.documentElement.dataset.appearanceMode = bootstrap.appearanceMode;
+      document.documentElement.dataset.openbitfunAppearanceMode = bootstrap.appearanceMode;
+      contentReady = false;
+      renderTitlebar();
+      bridgeGeneration++;
+      composerGeneration++; bindingGeneration++;
+      cursor = 0; permissionKey = '';
+      const locale = bootstrap.locale;
+      chat.configure({
+        labels: chatLabels[locale] || chatLabels[windowLabels.aliases[locale.toLowerCase()] || windowLabels.fallbackLocale],
+        appName: bootstrap.app.i18n?.locales?.[locale]?.name || bootstrap.app.name,
+        appIcon: bootstrap.app.icon,
+        description: bootstrap.app.i18n?.locales?.[locale]?.description || bootstrap.app.description,
+        snapshotSupported: bootstrap.presentationCapabilities?.includes('miniapp_chat_snapshot_v1'),
+      });
+      document.documentElement.lang = bootstrap.locale;
+      document.title = bootstrap.app.chrome?.titlebar?.title || bootstrap.app.i18n?.locales?.[bootstrap.locale]?.name || bootstrap.app.name;
+      document.getElementById('retry').textContent = ui.retry;
+      document.getElementById('retry').hidden = true;
+      if (documentUrl) URL.revokeObjectURL(documentUrl);
+      documentUrl = URL.createObjectURL(new Blob([bootstrap.app.compiled_html], { type: 'text/html;charset=utf-8' }));
+      frame.onload = async () => {
+        try { await native('ready'); contentReady = true; titlebar?.setReady(true); status.hidden = true; frame.hidden = false; event('activate', {}); }
+        catch (cause) { error(cause); }
+      };
+      frame.setAttribute('sandbox', bootstrap.app.runtime_profile === 'market_strict' ? 'allow-scripts allow-downloads' : 'allow-scripts allow-forms allow-modals allow-popups allow-downloads');
+      frame.src = documentUrl;
+      stopped = false;
+      void poll(++pollGeneration);
+    } catch (cause) { error(cause); await native('focus'); }
+  }
+  document.getElementById('retry').onclick = start;
+  renderTitlebar();
+  void start();
+})();
+</script></body></html>

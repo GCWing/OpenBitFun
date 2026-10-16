@@ -258,6 +258,26 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
         value: "写入",
     },
     GeneratedSharedTermEntry {
+        locale: LocaleId::ZhCN,
+        key: "window.close",
+        value: "关闭应用窗口",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhCN,
+        key: "window.maximize",
+        value: "最大化应用窗口",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhCN,
+        key: "window.minimize",
+        value: "最小化应用窗口",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhCN,
+        key: "window.restore",
+        value: "还原应用窗口",
+    },
+    GeneratedSharedTermEntry {
         locale: LocaleId::ZhTW,
         key: "agents.Claw",
         value: "助理",
@@ -448,6 +468,26 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
         value: "寫入",
     },
     GeneratedSharedTermEntry {
+        locale: LocaleId::ZhTW,
+        key: "window.close",
+        value: "關閉應用視窗",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhTW,
+        key: "window.maximize",
+        value: "最大化應用視窗",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhTW,
+        key: "window.minimize",
+        value: "最小化應用視窗",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::ZhTW,
+        key: "window.restore",
+        value: "還原應用視窗",
+    },
+    GeneratedSharedTermEntry {
         locale: LocaleId::EnUS,
         key: "agents.Claw",
         value: "Assistant",
@@ -636,6 +676,26 @@ pub const GENERATED_SHARED_TERMS: &[GeneratedSharedTermEntry] = &[
         locale: LocaleId::EnUS,
         key: "tools.write",
         value: "Write",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::EnUS,
+        key: "window.close",
+        value: "Close app window",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::EnUS,
+        key: "window.maximize",
+        value: "Maximize app window",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::EnUS,
+        key: "window.minimize",
+        value: "Minimize app window",
+    },
+    GeneratedSharedTermEntry {
+        locale: LocaleId::EnUS,
+        key: "window.restore",
+        value: "Restore app window",
     },
 ];
 

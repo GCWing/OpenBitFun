@@ -13,16 +13,15 @@ function readRelative(filename: string): string {
 const cardCss = compile(fileURLToPath(new URL('./MiniAppCard.scss', import.meta.url))).css;
 
 describe('Mini App card presentation', () => {
-  it('keeps destructive actions in details and uses one unified app count', () => {
+  it('keeps destructive actions in details and a unified app list', () => {
     const library = readRelative('../views/MiniAppLibraryView.tsx');
 
     expect(readRelative('./MiniAppCard.tsx')).not.toContain('name="delete"');
-    expect(library).toContain('<NumberBadge value={libraryItems.length} />');
     expect(library).not.toContain('miniapp-running-zone');
     expect(library).not.toContain('gallery-zone-badge');
   });
 
-  it('merges installed and marketplace apps into the shared library surface', () => {
+  it('keeps installed, marketplace, and creation tabs in the shared gallery', () => {
     const library = readRelative('../views/MiniAppLibraryView.tsx');
     const submissions = readRelative('../views/MiniAppSubmissionsView.tsx');
     const tabs = readRelative('../MiniAppGalleryScene.tsx');
@@ -34,35 +33,38 @@ describe('Mini App card presentation', () => {
       'buildMiniAppLibraryItems(marketItems, apps, marketOrigins, sort)',
     );
     expect(library).toContain('<MiniAppLibraryRow');
+    expect(library).toContain('<MiniAppInstalledCard');
     expect(library).not.toContain('<MiniAppCard');
     expect(tabs).toContain('<TabGroup');
     expect(tabs).not.toContain('distribution="fill"');
     expect(tabs).toContain('size="sm"');
-    expect(tabs).toContain("type MiniAppGalleryTab = 'apps' | 'submissions';");
+    expect(tabs).toContain("type MiniAppGalleryTab = 'installed' | 'market' | 'submissions';");
     expect(tabs).not.toContain('MiniAppMarketView');
     expect(submissions).toContain('<Disclosure');
     expect(submissions).toContain('<IconButton');
     expect(submissions).not.toContain('miniapp-submissions__advanced-toggle');
   });
 
-  it('keeps both gallery panes on the same content rail', () => {
+  it('keeps both gallery panes on the home page content frame', () => {
     const sceneStyles = readRelative('../MiniAppGalleryScene.scss');
     const gallery = readRelative('../views/MiniAppLibraryView.tsx');
     const submissions = readRelative('../views/MiniAppSubmissionsView.tsx');
     const submissionStyles = readRelative('../views/MiniAppSubmissionsView.scss');
 
     expect(gallery).toContain('className="miniapp-gallery-pane miniapp-gallery"');
-    expect(submissions.match(/className="miniapp-gallery-pane miniapp-submissions"/g)).toHaveLength(3);
-    expect(submissions.match(/<GalleryPageHeader/g)).toHaveLength(3);
-    expect(sceneStyles).toContain(
-      '$miniapp-gallery-content-inline-size: min(calc(100% - var(--openbitfun-space-6)), 880px);',
+    expect(submissions.match(/className="miniapp-gallery-pane miniapp-submissions"/g)).toHaveLength(1);
+    expect(submissions.match(/<GalleryPageHeader/g)).toHaveLength(1);
+    expect(sceneStyles).toContain("@use '@/infrastructure/config/components/common/config-page-layout.tokens' as configLayout;");
+    expect(sceneStyles).not.toContain('880px');
+    expect(sceneStyles).not.toContain('width: calc(');
+    expect(sceneStyles).toMatch(
+      /\.miniapp-gallery-pane \{[\s\S]*?\.gallery-page-header \{[\s\S]*?@include configLayout\.content-frame;/,
     );
     expect(sceneStyles).toMatch(
-      /\.miniapp-gallery-pane \{[\s\S]*?\.gallery-page-header \{[\s\S]*?width: \$miniapp-gallery-content-inline-size;/,
+      /\.miniapp-gallery-pane \{[\s\S]*?\.gallery-zones \{[\s\S]*?@include configLayout\.content-frame;/,
     );
-    expect(sceneStyles).toMatch(
-      /\.miniapp-gallery-pane \{[\s\S]*?\.gallery-zones \{[\s\S]*?width: \$miniapp-gallery-content-inline-size;/,
-    );
+    expect(sceneStyles).toMatch(/\.miniapp-gallery-tabs \{\s*@include configLayout\.content-frame;/);
+    expect(sceneStyles).toMatch(/\.miniapp-submissions \.gallery-empty \{\s*@include configLayout\.content-frame;/);
     expect(sceneStyles).toContain('scrollbar-gutter: stable;');
     expect(submissionStyles).not.toContain('1360px');
     expect(submissionStyles).toMatch(/&__workspace \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
@@ -82,24 +84,26 @@ describe('Mini App card presentation', () => {
     expect(stylesheet).toMatch(/&__footer \{[\s\S]*?margin-top: auto;/);
   });
 
-  it('renders one full-width app per row and keeps skeleton geometry aligned', () => {
+  it('matches the home device grid and keeps preview-card skeletons aligned', () => {
     const source = readRelative('../views/MiniAppLibraryView.tsx');
     const stylesheet = readRelative('../views/MiniAppLibraryView.scss');
     const sceneStyles = readRelative('../MiniAppGalleryScene.scss');
 
-    expect(source).toContain('className="miniapp-gallery__list" role="list"');
-    expect(source.match(/cardHeight=\{126\}/g)).toHaveLength(2);
-    expect(stylesheet).toMatch(/&__list \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
+    expect(source).toContain('<MarketList className={libraryListClassName} role="list"');
+    expect(source).not.toContain('minCardWidth={640}');
+    expect(stylesheet).toMatch(/&__list \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);[\s\S]*?gap: var\(--openbitfun-space-4\);/);
     expect(stylesheet).toMatch(
-      /&__list\.gallery-grid--skeleton \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
+      /&__list\.gallery-grid--skeleton \{[\s\S]*?height: auto;[\s\S]*?aspect-ratio: 16 \/ 9;/,
     );
     expect(sceneStyles).toContain('container-name: miniapp-gallery-scene;');
     expect(sceneStyles).toMatch(
-      /@container miniapp-gallery-scene \(max-width: 760px\) \{[\s\S]*?\.gallery-page-header \{[\s\S]*?flex-direction: column;/,
+      /\.gallery-page-header \{[\s\S]*?flex-direction: column;/,
     );
-    expect(stylesheet).toContain('@container miniapp-gallery-scene (min-width: 640px)');
-    expect(stylesheet).not.toContain('@container miniapp-gallery-scene (min-width: 520px)');
-    expect(stylesheet).toContain('grid-template-columns: minmax(0, 224px) minmax(0, 1fr);');
+    expect(stylesheet).toMatch(
+      /@container miniapp-gallery-scene \(max-width: 600px\) \{\s*\.miniapp-gallery__list \{\s*grid-template-columns: minmax\(0, 1fr\);/,
+    );
+    expect(stylesheet).toContain('border-radius: var(--openbitfun-layout-card-radius-lg);');
+    expect(stylesheet).not.toContain('grid-template-columns: minmax(0, 224px) minmax(0, 1fr);');
   });
 
   it('groups catalog controls below the tabs without repeating the page heading', () => {
@@ -114,7 +118,7 @@ describe('Mini App card presentation', () => {
     expect(pageHeader).not.toContain('<SearchField');
     expect(allAppsZone).toContain("aria-label={t('allApps')}");
     expect(allAppsZone).toMatch(
-      /miniapp-gallery__filters[\s\S]*?<SearchField[\s\S]*?miniapp-gallery__categories[\s\S]*?miniapp-gallery__sort[\s\S]*?<NumberBadge/,
+      /miniapp-gallery__filters[\s\S]*?<SearchField[\s\S]*?miniapp-gallery__categories[\s\S]*?miniapp-gallery__sort/,
     );
   });
 
@@ -139,7 +143,7 @@ describe('Mini App card presentation', () => {
     expect(row).toContain('<Icon name="arrow-down" size="xs"');
     expect(row).toContain('<HardDrive size={13}');
     expect(stylesheet).toMatch(
-      /&__summary \{[\s\S]*?grid-template-rows: auto minmax\(0, 1fr\) var\(--openbitfun-type-meta-line-height\);[\s\S]*?block-size: 126px;[\s\S]*?padding: var\(--openbitfun-space-3\) var\(--openbitfun-space-4\);/,
+      /&__summary \{[\s\S]*?grid-template-rows: auto minmax\(0, 1fr\) var\(--openbitfun-type-meta-line-height\);[\s\S]*?block-size: 126px;[\s\S]*?padding: var\(--openbitfun-space-3\) var\(--openbitfun-space-5\);/,
     );
     expect(stylesheet).toMatch(
       /&__meta \{[\s\S]*?align-self: end;[\s\S]*?block-size: var\(--openbitfun-type-meta-line-height\);/,

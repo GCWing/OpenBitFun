@@ -46,6 +46,7 @@ export const noCoreDependencyCrates = [
   'agent-runtime',
   'agent-workflows',
   'agent-runtime-ipc',
+  'miniapp-ipc',
   'app-server-client',
   'app-server-protocol',
   'plugin-runtime-client',
@@ -72,6 +73,14 @@ export const noCoreDependencyCrates = [
 ];
 
 export const forbiddenManifestDependencyRules = [
+  {
+    dependencyNames: ['openbitfun-miniapp-ipc'],
+    scanRoots: ['src/apps', 'src/crates', 'OpenBitFun-Installer/src-tauri'],
+    workspaceManifestPath: 'Cargo.toml',
+    allowManifestPaths: ['src/apps/desktop/Cargo.toml', 'src/apps/miniapp-shell/Cargo.toml'],
+    reason: 'the private MiniApp window protocol has two local Desktop consumers',
+    message: 'miniapp-ipc is private to Desktop and its lightweight MiniApp shell',
+  },
   {
     dependencyNames: ['rmcp'],
     scanRoots: ['src/apps', 'src/crates', 'OpenBitFun-Installer/src-tauri'],

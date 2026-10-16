@@ -177,6 +177,11 @@
     // Cap the whole tab, including its label padding and close-action reserve.
     max-inline-size: 220px;
   }
+
+  &__tabs [data-openbitfun-part='label'] {
+    // Reserve three full-width characters, excluding tab padding and actions.
+    min-inline-size: 3em;
+  }
 }
 
 @media (hover: hover) and (pointer: fine) {

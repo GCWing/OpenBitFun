@@ -15,6 +15,7 @@ import { useConfirmDialogStore } from '@/infrastructure/confirm-dialog';
 import { notificationStore } from '@/shared/notification-system';
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import type { AIModelCatalog } from '@/infrastructure/api/service-api/AIApi';
+import type { DefaultModelsConfig } from '@/infrastructure/config/types';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -158,6 +159,13 @@ describe('ModelSelector provider levels', () => {
     }
   };
 
+  const openModelList = async () => {
+    await openSettingsMenu();
+    await act(async () => document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="chat-model-selector-settings-model"]',
+    )!.click());
+  };
+
   const modeTrigger = () => document.body.querySelector<HTMLButtonElement>(
     '[data-testid="chat-model-selector-settings-mode"]',
   )!;
@@ -193,10 +201,11 @@ describe('ModelSelector provider levels', () => {
     models: unknown[] = CATALOG_MODELS,
     modeModel = 'primary',
     sessionId?: string,
+    defaultModels: DefaultModelsConfig = { primary: 'acme-fast', fast: 'umbra-main' },
   ) => {
     vi.mocked(configManager.getConfigs).mockResolvedValue({
       'ai.models': models,
-      'ai.default_models': { primary: 'acme-fast', fast: 'umbra-main' },
+      'ai.default_models': defaultModels,
       'ai.agent_model_defaults': { mode: modeModel },
     });
 
@@ -426,28 +435,34 @@ describe('ModelSelector provider levels', () => {
 
   });
 
-  it.each(['primary', 'fast', 'acme-deep'])('opens the current provider models from the model entry for %s', async modelId => {
+  it.each(['primary', 'fast', 'acme-deep'])('offers default shortcuts before providers from the model entry for %s', async modelId => {
     await renderSelector(CATALOG_MODELS, modelId);
     await openSettingsMenu();
 
     const modelControl = () => document.body.querySelector<HTMLButtonElement>(
       '[data-testid="chat-model-selector-settings-model"]',
     )!;
-    const isUmbra = modelId === 'fast';
-    const selectedModelId = modelId === 'primary' ? 'acme-fast' : isUmbra ? 'umbra-main' : modelId;
     await act(async () => modelControl().click());
 
     expect(document.body.querySelector('[data-testid="chat-model-selector-menu"]')
-      ?.getAttribute('data-menu-level')).toBe('provider');
-    expect(providerRows()).toHaveLength(0);
-    expect(modelOption(selectedModelId)?.getAttribute('aria-checked')).toBe('true');
-    expect(document.activeElement).toBe(modelOption(selectedModelId));
-    expect(Boolean(modelOption('acme-deep'))).toBe(!isUmbra);
-    expect(Boolean(modelOption('umbra-main'))).toBe(isUmbra);
-    expect(modelOption('primary')).toBeNull();
+      ?.getAttribute('data-menu-level')).toBe('models');
+    expect(providerRows()).toHaveLength(2);
+    const choices = Array.from(sharedPanelItems()!.querySelectorAll<HTMLButtonElement>(
+      '[data-model-id], [data-provider-key]',
+    ));
+    expect(choices.map(row => row.dataset.modelId || row.dataset.providerKey))
+      .toEqual(['primary', 'fast', 'provider-acme', 'provider-umbra']);
+    expect(modelOption('primary')?.getAttribute('aria-checked')).toBe(String(modelId === 'primary'));
+    expect(modelOption('fast')?.getAttribute('aria-checked')).toBe(String(modelId === 'fast'));
+    expect(modelOption('primary')?.textContent).toContain('modelSelector.primaryModel');
+    expect(modelOption('primary')?.textContent).toContain('acme-fast-native');
+    expect(modelOption('primary')?.dataset.tooltip).toBe('acme-fast-native · Acme');
+    expect(modelOption('fast')?.textContent).toContain('modelSelector.fastModel');
+    expect(modelOption('fast')?.textContent).toContain('umbra-main-native');
+    expect(document.activeElement).toBe(modelId === 'acme-deep' ? providerRows()[0] : modelOption(modelId));
 
     await act(async () => document.body.querySelector<HTMLButtonElement>(
-      '[data-testid="chat-model-selector-back"]',
+      '[data-testid="chat-model-selector-summary-back"]',
     )!.click());
     expect(optionsPanel()).toBeNull();
     expect(document.activeElement).toBe(modelControl());
@@ -455,13 +470,87 @@ describe('ModelSelector provider levels', () => {
     await act(async () => modelControl().dispatchEvent(
       new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
     ));
-    expect(Boolean(modelOption('acme-deep'))).toBe(!isUmbra);
+    expect(modelOption('primary')).not.toBeNull();
     await act(async () => optionsPanel()!.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
     ));
     expect(optionsPanel()).toBeNull();
     expect(document.activeElement).toBe(modelControl());
     expect(configManager.setConfig).not.toHaveBeenCalled();
+  });
+
+  it.each(['primary', 'fast'])('persists the %s shortcut as a symbolic session selection', async modelId => {
+    flowChatStoreMocks.sessions.set('session-a', { config: { modelName: 'acme-deep' } });
+    await renderSelector(CATALOG_MODELS, 'acme-deep', 'session-a');
+    await openModelList();
+    await act(async () => modelOption(modelId)!.click());
+
+    expect(agentAPI.updateSessionModel).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-a', modelName: modelId,
+    }));
+    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_defaults.mode', modelId);
+    expect(flowChatStoreMocks.sessions.get('session-a')?.config.modelName).toBe(modelId);
+    expect(optionsPanel()).toBeNull();
+    await act(async () => document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="chat-model-selector-settings-model"]',
+    )!.click());
+    expect(modelOption(modelId)?.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it.each([undefined, 'removed-model', 'disabled-fast'])('resolves the fast shortcut through primary when fast is %s', async fast => {
+    await renderSelector([
+      ...CATALOG_MODELS,
+      { ...CATALOG_MODELS[2], id: 'disabled-fast', enabled: false },
+    ], 'acme-deep', undefined, { primary: 'acme-fast', fast });
+    await openModelList();
+    expect(modelOption('fast')?.disabled).toBe(false);
+    expect(modelOption('fast')?.dataset.modelName).toBe('acme-fast-native');
+    await act(async () => modelOption('fast')!.click());
+    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_defaults.mode', 'fast');
+    expect(document.body.querySelector('[data-testid="chat-model-selector-settings-model"]')?.textContent)
+      .toContain('acme-fast-native');
+    await act(async () => document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="chat-model-selector-settings-model"]',
+    )!.click());
+    expect(modelOption('fast')?.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('disables unresolved default shortcuts while keeping concrete models selectable', async () => {
+    await renderSelector(CATALOG_MODELS, 'acme-deep', undefined, {});
+    await openModelList();
+    for (const modelId of ['primary', 'fast']) {
+      expect(modelOption(modelId)?.disabled).toBe(true);
+      expect(modelOption(modelId)?.textContent).toContain('modelSelector.modelNotConfigured');
+      await act(async () => modelOption(modelId)!.click());
+    }
+    expect(configManager.setConfig).not.toHaveBeenCalled();
+    await openProvider('provider-acme');
+    await act(async () => modelOption('acme-fast')!.click());
+    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_defaults.mode', 'acme-fast');
+  });
+
+  it('resolves shortcuts from the selected peer surface without retaining local model labels', async () => {
+    await renderSelector();
+    await openModelList();
+    expect(modelOption('primary')?.dataset.modelName).toBe('acme-fast-native');
+
+    let finishPeerConfig!: (config: Record<string, unknown>) => void;
+    vi.mocked(configManager.getConfigs).mockReturnValueOnce(new Promise(resolve => { finishPeerConfig = resolve; }));
+    await act(async () => { activateSurface('peer-model-host'); });
+    expect(document.body.textContent).not.toContain('acme-fast-native');
+    expect(modelOption('primary')).toBeNull();
+
+    await act(async () => finishPeerConfig({
+      'ai.models': [model('peer-model', 'Peer', 'provider-peer', 'https://peer.test/v1')],
+      'ai.default_models': { primary: 'peer-model' },
+      'ai.agent_model_defaults': { mode: 'primary' },
+    }));
+    await openModelList();
+    expect(modelOption('primary')?.dataset.modelName).toBe('peer-model-native');
+    expect(modelOption('fast')?.dataset.modelName).toBe('peer-model-native');
+    expect(document.body.textContent).not.toContain('acme-fast-native');
+    await act(async () => modelOption('fast')!.click());
+    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_defaults.mode', 'fast');
   });
 
   it('presents an existing enabled override as Auto without rewriting it', async () => {
@@ -1017,6 +1106,7 @@ describe('ModelSelector provider levels', () => {
     await act(async () => document.body.querySelector<HTMLButtonElement>(
       '[data-testid="chat-model-selector-settings-model"]',
     )!.click());
+    await openProvider('provider-acme');
     expect(modelOption('acme-deep')?.getAttribute('aria-checked')).toBe('true');
     expect(modelOption('umbra-main')).toBeNull();
   });
@@ -1063,7 +1153,7 @@ describe('ModelSelector provider levels', () => {
     await openProvider('provider-acme');
     expect(modelOption('acme-deep')).not.toBeNull();
 
-    // Reopening starts at the summary; opening models goes straight to the current provider.
+    // Reopening starts at the summary; opening models restores defaults and providers.
     await act(async () => {
       container.querySelector<HTMLButtonElement>(
         '[data-testid="chat-model-selector-btn"]',
@@ -1078,8 +1168,9 @@ describe('ModelSelector provider levels', () => {
       '[data-testid="chat-model-selector-settings-model"]',
     )!.click());
     expect(optionsPanel()?.dataset.panelKind).toBe('models');
-    expect(providerRows()).toHaveLength(0);
-    expect(modelOption('acme-deep')).not.toBeNull();
+    expect(providerRows()).toHaveLength(2);
+    expect(modelOption('primary')).not.toBeNull();
+    expect(modelOption('acme-deep')).toBeNull();
   });
 
   it('keeps the selector visible and actionable when no model is configured', async () => {
@@ -1404,7 +1495,7 @@ describe('ModelSelector provider levels', () => {
     expect(document.body.querySelectorAll('[role="menu"]')).toHaveLength(1);
 
     await act(async () => document.body.querySelector<HTMLButtonElement>(
-      '[data-testid="chat-model-selector-back"]',
+      '[data-testid="chat-model-selector-summary-back"]',
     )!.click());
     const reasoningRow = document.body.querySelector<HTMLButtonElement>(
       '[data-testid="chat-model-selector-settings-reasoning"]',

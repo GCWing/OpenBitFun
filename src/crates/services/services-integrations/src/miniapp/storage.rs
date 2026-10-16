@@ -12,9 +12,51 @@ use openbitfun_product_domains::miniapp::storage::{
     VERSIONS_DIR, WORKER_JS,
 };
 use openbitfun_product_domains::miniapp::types::{MiniApp, MiniAppMeta, MiniAppSource, NpmDep};
+use openbitfun_services_core::json_store::JsonFileStore;
 use serde_json;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+/// Shared by manager storage and the Worker framework bridge. A malformed file
+/// is an error, never an empty replacement. The legacy object format is retained.
+pub(crate) async fn read_storage_file(path: &Path) -> MiniAppStorageResult<serde_json::Value> {
+    let value: serde_json::Map<String, serde_json::Value> = JsonFileStore
+        .read_optional(path)
+        .await
+        .map_err(|error| {
+            if error.is_deserialization() {
+                MiniAppStorageError::parse(error)
+            } else {
+                MiniAppStorageError::io(error)
+            }
+        })?
+        .unwrap_or_default();
+    Ok(serde_json::Value::Object(value))
+}
+
+pub(crate) async fn update_storage_file(
+    path: &Path,
+    key: &str,
+    value: serde_json::Value,
+) -> MiniAppStorageResult<()> {
+    JsonFileStore
+        .update_locked(
+            path,
+            serde_json::Map::<String, serde_json::Value>::new(),
+            |object| {
+                object.insert(key.to_string(), value);
+            },
+        )
+        .await
+        .map_err(|error| {
+            if error.is_deserialization() {
+                MiniAppStorageError::parse(error)
+            } else {
+                MiniAppStorageError::io(error)
+            }
+        })?;
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MiniAppStorageErrorKind {
@@ -433,6 +475,7 @@ impl MiniAppStorage {
         let compiled_html = self.load_compiled_html(app_id).await?;
 
         Ok(MiniApp {
+            chrome: meta.chrome,
             id: meta.id,
             name: meta.name,
             description: meta.description,
@@ -682,6 +725,9 @@ impl MiniAppStorage {
         source_dir: &std::path::Path,
         app: &MiniApp,
     ) -> MiniAppStorageResult<()> {
+        if let Some(chrome) = &app.chrome {
+            chrome.validate().map_err(MiniAppStorageError::parse)?;
+        }
         tokio::fs::create_dir_all(app_dir).await.map_err(|e| {
             MiniAppStorageError::io(format!(
                 "Failed to create miniapp dir {}: {}",
@@ -817,6 +863,7 @@ impl MiniAppStorage {
                 }
             })?;
         Ok(MiniApp {
+            chrome: meta.chrome,
             id: meta.id,
             name: meta.name,
             description: meta.description,
@@ -1000,14 +1047,7 @@ impl MiniAppStorage {
 
     /// Load app storage (KV JSON). Returns empty object if missing.
     pub async fn load_app_storage(&self, app_id: &str) -> MiniAppStorageResult<serde_json::Value> {
-        let p = self.storage_path(app_id);
-        if !p.exists() {
-            return Ok(serde_json::json!({}));
-        }
-        let c = tokio::fs::read_to_string(&p)
-            .await
-            .map_err(|e| MiniAppStorageError::io(format!("Failed to read storage: {}", e)))?;
-        Ok(serde_json::from_str(&c).unwrap_or_else(|_| serde_json::json!({})))
+        read_storage_file(&self.storage_path(app_id)).await
     }
 
     pub async fn load_draft_storage(
@@ -1017,13 +1057,7 @@ impl MiniAppStorage {
     ) -> MiniAppStorageResult<serde_json::Value> {
         self.ensure_active_drafts_root_readable(app_id, draft_id)?;
         let p = self.draft_dir(app_id, draft_id).join(STORAGE_JSON);
-        if !p.exists() {
-            return Ok(serde_json::json!({}));
-        }
-        let c = tokio::fs::read_to_string(&p)
-            .await
-            .map_err(|e| MiniAppStorageError::io(format!("Failed to read draft storage: {}", e)))?;
-        Ok(serde_json::from_str(&c).unwrap_or_else(|_| serde_json::json!({})))
+        read_storage_file(&p).await
     }
 
     /// Save app storage (merge with existing or replace).
@@ -1034,17 +1068,7 @@ impl MiniAppStorage {
         value: serde_json::Value,
     ) -> MiniAppStorageResult<()> {
         self.ensure_app_dir(app_id).await?;
-        let mut current = self.load_app_storage(app_id).await?;
-        let obj = current.as_object_mut().ok_or_else(|| {
-            MiniAppStorageError::validation("App storage is not an object".to_string())
-        })?;
-        obj.insert(key.to_string(), value);
-        let p = self.storage_path(app_id);
-        let json = serde_json::to_string_pretty(&current).map_err(MiniAppStorageError::parse)?;
-        tokio::fs::write(&p, json)
-            .await
-            .map_err(|e| MiniAppStorageError::io(format!("Failed to write storage: {}", e)))?;
-        Ok(())
+        update_storage_file(&self.storage_path(app_id), key, value).await
     }
 
     pub async fn save_draft_storage(
@@ -1059,18 +1083,7 @@ impl MiniAppStorage {
         tokio::fs::create_dir_all(&dir)
             .await
             .map_err(|e| MiniAppStorageError::io(format!("Failed to create draft dir: {}", e)))?;
-        let mut current = self.load_draft_storage(app_id, draft_id).await?;
-        let obj = current.as_object_mut().ok_or_else(|| {
-            MiniAppStorageError::validation("Draft storage is not an object".to_string())
-        })?;
-        obj.insert(key.to_string(), value);
-        let json = serde_json::to_string_pretty(&current).map_err(MiniAppStorageError::parse)?;
-        tokio::fs::write(dir.join(STORAGE_JSON), json)
-            .await
-            .map_err(|e| {
-                MiniAppStorageError::io(format!("Failed to write draft storage: {}", e))
-            })?;
-        Ok(())
+        update_storage_file(&dir.join(STORAGE_JSON), key, value).await
     }
 
     pub async fn load_customization_metadata(
@@ -1478,6 +1491,42 @@ mod tests {
 
         port.delete("demo_app".to_string()).await.unwrap();
         assert!(port.list_app_ids().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn concurrent_storage_owners_merge_keys_and_preserve_legacy_json() {
+        let root = TestTempDir::new("openbitfun-miniapp-storage-concurrency");
+        let path = root.path().join("storage.json");
+        fs::write(&path, r#"{"legacy":{"nested":[1,true,null]}}"#).unwrap();
+        let mut writes = Vec::new();
+        for index in 0..24 {
+            let path = path.clone();
+            writes.push(tokio::spawn(async move {
+                update_storage_file(&path, &format!("key-{index}"), serde_json::json!(index))
+                    .await
+                    .unwrap();
+            }));
+        }
+        for task in writes {
+            task.await.unwrap();
+        }
+        let value = read_storage_file(&path).await.unwrap();
+        assert_eq!(value["legacy"], serde_json::json!({"nested":[1,true,null]}));
+        assert_eq!(value.as_object().unwrap().len(), 25);
+    }
+
+    #[tokio::test]
+    async fn invalid_storage_is_reported_without_overwriting_original_bytes() {
+        let root = TestTempDir::new("openbitfun-miniapp-storage-corrupt");
+        let path = root.path().join("storage.json");
+        for source in ["{partial", "[1,2]", "null"] {
+            fs::write(&path, source).unwrap();
+            assert!(read_storage_file(&path).await.is_err());
+            assert!(update_storage_file(&path, "new", serde_json::json!(1))
+                .await
+                .is_err());
+            assert_eq!(fs::read_to_string(&path).unwrap(), source);
+        }
     }
 
     #[tokio::test]
@@ -1904,8 +1953,47 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn chrome_survives_disk_draft_version_and_legacy_roundtrips() {
+        let root = TestTempDir::new("openbitfun-miniapp-chrome");
+        let storage = MiniAppStorage::new(root.path().join("miniapps"));
+        let mut app = sample_app("chrome-app");
+        storage.save(&app).await.unwrap();
+        assert!(storage.load(&app.id).await.unwrap().chrome.is_none());
+        app.chrome = Some(
+            serde_json::from_value(
+                serde_json::json!({"titlebar":{"title":"Window", "showIcon":false}}),
+            )
+            .unwrap(),
+        );
+        storage.save(&app).await.unwrap();
+        storage
+            .save_draft(&app.id, "draft", &app, &serde_json::json!({}))
+            .await
+            .unwrap();
+        storage.save_version(&app.id, 1, &app).await.unwrap();
+        assert_eq!(storage.load(&app.id).await.unwrap().chrome, app.chrome);
+        assert_eq!(
+            storage
+                .load_draft_app(&app.id, "draft")
+                .await
+                .unwrap()
+                .chrome,
+            app.chrome
+        );
+        assert_eq!(
+            storage.load_version(&app.id, 1).await.unwrap().chrome,
+            app.chrome
+        );
+        let original = fs::read(storage.meta_path(&app.id)).unwrap();
+        app.chrome.as_mut().unwrap().titlebar.surface = "invalid-css".into();
+        assert!(storage.save(&app).await.is_err());
+        assert_eq!(fs::read(storage.meta_path(&app.id)).unwrap(), original);
+    }
+
     fn sample_app(id: &str) -> MiniApp {
         MiniApp {
+            chrome: None,
             id: id.to_string(),
             name: "Demo".to_string(),
             description: "Demo app".to_string(),

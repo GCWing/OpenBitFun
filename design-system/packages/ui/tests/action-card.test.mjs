@@ -10,7 +10,7 @@ test("ActionCard keeps its native trigger and sibling actions independent", () =
     createElement(ActionCard, {
       actions: [
         { icon: createElement("svg"), id: "pin", label: "Pin" },
-        { icon: createElement("svg"), id: "more", label: "More" },
+        { icon: createElement("svg"), id: "more", label: "More", "aria-haspopup": "menu", "aria-expanded": true, "aria-controls": "card-menu" },
       ],
       description: "Start a conversation",
       leading: createElement("svg", { "data-icon": "message" }),
@@ -30,6 +30,30 @@ test("ActionCard keeps its native trigger and sibling actions independent", () =
   assert.match(markup, /data-openbitfun-part="description"[^>]*data-overflow-behavior="marquee"[^>]*><span[^>]*>Start a conversation<\/span><\/span>/);
   assert.equal((markup.match(/<button/g) ?? []).length, 3);
   assert.ok(triggerEnd < siblingAction);
+  assert.match(markup, /aria-controls="card-menu" aria-expanded="true" aria-haspopup="menu" aria-label="More"/);
+  assert.doesNotMatch(markup, /data-openbitfun-variant="glass"/);
+});
+
+test("floating card actions share glass styling at the larger standard size without changing their independent state", () => {
+  const markup = renderToStaticMarkup(createElement(ActionCard, {
+    actionPlacement: "floating",
+    actions: [
+      { id: "launch", label: "Launch", tooltip: "Launching app", icon: createElement("svg"), loading: true },
+      { id: "delete", label: "Delete", icon: createElement("svg"), tone: "danger" },
+    ],
+    description: "The full description remains beneath the floating actions.",
+  }, "A long application title"));
+
+  assert.match(markup, /data-action-placement="floating"/);
+  assert.match(markup, /data-openbitfun-part="actions"/);
+  assert.equal((markup.match(/<button\b/g) ?? []).length, 3);
+  assert.equal((markup.match(/data-openbitfun-variant="glass"/g) ?? []).length, 2);
+  assert.equal((markup.match(/data-openbitfun-shape="circle"/g) ?? []).length, 2);
+  assert.equal((markup.match(/data-size="standard"/g) ?? []).length, 2);
+  assert.match(markup, /aria-busy="true"/);
+  assert.match(markup, /data-openbitfun-tone="danger"/);
+  assert.match(markup, /The full description remains beneath the floating actions\./);
+  assert.ok(markup.indexOf("</button>") < markup.lastIndexOf("<button"));
 });
 
 test("ActionCard disables its trigger and sibling actions as one contract", () => {

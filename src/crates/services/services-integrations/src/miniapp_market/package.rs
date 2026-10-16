@@ -179,6 +179,7 @@ pub fn validate_market_package(bytes: &[u8]) -> Result<ValidatedMarketPackage, M
 
 pub fn build_market_package(app: &MiniApp) -> Result<Vec<u8>, MarketPackageError> {
     let meta = MarketPackageMeta {
+        chrome: app.chrome.clone(),
         name: app.name.clone(),
         description: app.description.clone(),
         icon: app.icon.clone(),
@@ -302,6 +303,11 @@ fn validate_no_remote_executable_content(
 }
 
 fn validate_package_meta(meta: &MarketPackageMeta) -> Result<(), MarketPackageError> {
+    if let Some(chrome) = &meta.chrome {
+        chrome
+            .validate()
+            .map_err(|error| MarketPackageError::new("invalid_chrome", error))?;
+    }
     if meta.name.trim().is_empty() || meta.name.chars().count() > 80 {
         return Err(MarketPackageError::new(
             "invalid_name",
@@ -403,6 +409,10 @@ mod tests {
     #[test]
     fn generated_package_roundtrips_through_strict_validator() {
         let app = MiniApp {
+            chrome: Some(
+                serde_json::from_value(serde_json::json!({"titlebar":{"title":"Packaged window"}}))
+                    .unwrap(),
+            ),
             id: "local-id".to_string(),
             name: "Safe App".to_string(),
             description: "A safe application".to_string(),
@@ -437,6 +447,7 @@ mod tests {
         let bytes = build_market_package(&app).unwrap();
         let validated = validate_market_package(&bytes).unwrap();
         assert_eq!(validated.meta.name, "Safe App");
+        assert_eq!(validated.meta.chrome, app.chrome);
         assert!(!validated.sha256.is_empty());
     }
 

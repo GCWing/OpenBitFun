@@ -162,6 +162,14 @@ Node.js 或本地目录。更新前先读取应用，使用它的 `appId` 和 `e
 - `ui.js` 负责状态、渲染、事件、i18n
 - `worker.js` 只承载真正需要后台执行的逻辑
 
+窗口控制栏也属于 MiniApp 定制点：在 `meta.json` 的 `chrome.titlebar`
+中声明外观、布局和应用动作；在 `source/ui.js` 通过 `app.chrome?.onAction`
+处理动作。草稿预览包含独立窗口栏；应用内动作由主顶部栏承载。
+系统控件遵循宿主平台：macOS 保留原生红绿灯，Windows 复用主应用右侧窗口按钮。
+只定制标题、应用按钮和语义配色，不移动或重绘系统控件。
+配置字段与图标列表见 `api-reference.md` 的 MiniApp window chrome。
+不要在应用内容中再复制原生窗口按钮，也不要直接调用 Tauri。
+
 ### 6. 只使用真实存在的宿主能力
 
 MiniApp 里可用的是 `window.app`。

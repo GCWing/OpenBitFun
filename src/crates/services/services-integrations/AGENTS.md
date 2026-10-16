@@ -158,6 +158,11 @@ boundaries, and bounded disk storage), run:
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features miniapp-market --lib market_image::tests
 ```
 
+For MiniApp instance leases, storage transactions, and Worker lifecycle, use
+`cargo test --locked -p openbitfun-services-integrations --no-default-features --features miniapp-runtime --lib miniapp::`.
+Framework Worker storage shares the host JSON transaction owner; preserve custom
+`worker.js` method overrides before routing built-in `storage.*` requests.
+
 On Windows with an initialized WSL distribution, set `OPENBITFUN_TEST_WSL_DISTRO`
 and run `cargo test -p openbitfun-services-integrations --no-default-features
 --features remote-ssh-concrete --lib wsl_windows_workspace_transport -- --ignored`

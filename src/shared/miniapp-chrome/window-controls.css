@@ -1,0 +1,141 @@
+/* Shared desktop caption controls. macOS uses native AppKit traffic lights. */
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.window-controls__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--openbitfun-radius-sm);
+  color: var(--openbitfun-color-action-quiet-content);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  position: relative;
+  overflow: visible;
+  outline: none;
+  user-select: none;
+}
+.window-controls__btn::after {
+  display: none;
+}
+.window-controls__btn svg {
+  display: block;
+  flex-shrink: 0;
+  position: relative;
+  opacity: 1;
+  z-index: 2;
+  stroke: currentColor;
+  transition: stroke-width 0.3s var(--openbitfun-motion-easing-smooth);
+}
+.window-controls__btn:hover:not(:disabled) svg {
+  stroke-width: 2.5;
+}
+.window-controls__btn::before {
+  display: none;
+}
+.window-controls__btn:hover {
+  background: var(--openbitfun-color-action-quiet-hover);
+  color: var(--openbitfun-color-content-primary);
+  border-color: var(--openbitfun-color-border-subtle);
+}
+.window-controls__btn:active {
+  opacity: 0.8;
+}
+.window-controls__btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--openbitfun-color-accent-default) 40%, transparent);
+  outline-offset: 2px;
+}
+.window-controls__btn--minimize:hover {
+  background: var(--openbitfun-color-action-quiet-hover);
+  color: var(--openbitfun-color-content-primary);
+  border-color: var(--openbitfun-color-border-subtle);
+}
+.window-controls__btn--minimize:focus-visible {
+  outline-color: color-mix(in srgb, var(--openbitfun-color-accent-default) 40%, transparent);
+}
+.window-controls__btn--maximize:hover {
+  background: var(--openbitfun-color-action-quiet-hover);
+  color: var(--openbitfun-color-content-primary);
+  border-color: var(--openbitfun-color-border-subtle);
+}
+.window-controls__btn--maximize:focus-visible {
+  outline-color: color-mix(in srgb, var(--openbitfun-color-accent-default) 40%, transparent);
+}
+.window-controls__btn--close:hover {
+  background: var(--openbitfun-color-action-quiet-hover);
+  color: var(--openbitfun-color-status-danger-content);
+  border-color: var(--openbitfun-color-border-subtle);
+}
+.window-controls__btn--close:focus-visible {
+  outline-color: var(--openbitfun-color-status-danger-content);
+}
+.window-controls__btn:disabled {
+  opacity: var(--openbitfun-opacity-disabled);
+  cursor: default;
+  pointer-events: none;
+}
+.window-controls__btn:disabled:hover {
+  background: transparent;
+  color: var(--openbitfun-color-action-quiet-content);
+  border-color: transparent;
+}
+
+@media (max-width: 768px) {
+  .window-controls {
+    gap: 4px;
+  }
+  .window-controls__btn {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--openbitfun-radius-sm);
+  }
+  .window-controls__btn svg {
+    width: 12px;
+    height: 12px;
+  }
+}
+@media (prefers-contrast: high) {
+  .window-controls__btn:hover {
+    border-width: 2px;
+  }
+}
+.window-controls--windows {
+  align-items: stretch;
+  gap: 0;
+  height: 100%;
+}
+.window-controls--windows .window-controls__btn {
+  flex: 0 0 46px;
+  width: 46px;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  color: var(--openbitfun-color-content-primary);
+  cursor: default;
+}
+.window-controls--windows .window-controls__btn svg {
+  width: 12px;
+  height: 12px;
+  transition: none;
+}
+.window-controls--windows .window-controls__btn:focus-visible {
+  outline-offset: -2px;
+}
+.window-controls--windows .window-controls__btn--close:hover:not(:disabled) {
+  background: var(--openbitfun-color-status-danger-content);
+  color: var(--openbitfun-color-content-on-dark);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .window-controls__btn {
+    transition: none;
+  }
+}

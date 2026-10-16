@@ -4,8 +4,8 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "a0070347f9527a6eddeb84b5cd0a93d345c378aa008ce857976f02a9f4bd3d2f",
-  "ownerDigest": "b96bf9292a92548facbd835b8b89c4865bfdd984b356c9001995f552c6a34f51",
+  "digest": "292fa0bdf7821da4588d4a1e1e4ef2b89d16d6b52bae655452fbd35dad91b966",
+  "ownerDigest": "0d90452aea46f54ca82cfe25b6d96f1f374e83b1962e2066d378c14c1cab35db",
   "searchAcceptance": [
     {
       "id": "companion-pet-mixed",
@@ -5944,6 +5944,10 @@
           "category": {
             "type": "string"
           },
+          "chrome": {
+            "description": "Per-app titlebar configuration; see MiniApp chrome.titlebar contract. Use {} to restore defaults.",
+            "type": "object"
+          },
           "css": {
             "type": "string"
           },
@@ -6075,6 +6079,10 @@
           },
           "category": {
             "type": "string"
+          },
+          "chrome": {
+            "description": "Per-app titlebar configuration; see MiniApp chrome.titlebar contract. Use {} to restore defaults.",
+            "type": "object"
           },
           "css": {
             "type": "string"
@@ -22578,6 +22586,10 @@
               "category": {
                 "type": "string"
               },
+              "chrome": {
+                "description": "Per-app titlebar configuration; see MiniApp chrome.titlebar contract. Use {} to restore defaults.",
+                "type": "object"
+              },
               "css": {
                 "type": "string"
               },
@@ -22677,6 +22689,10 @@
               },
               "category": {
                 "type": "string"
+              },
+              "chrome": {
+                "description": "Per-app titlebar configuration; see MiniApp chrome.titlebar contract. Use {} to restore defaults.",
+                "type": "object"
               },
               "css": {
                 "type": "string"

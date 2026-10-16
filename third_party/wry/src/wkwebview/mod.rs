@@ -32,9 +32,11 @@ use class::{
 use dpi::{LogicalPosition, LogicalSize};
 #[cfg(target_os = "macos")]
 use objc2::runtime::Bool;
+#[cfg(any(debug_assertions, feature = "devtools", feature = "mac-proxy"))]
+use objc2::runtime::NSObject;
 use objc2::{
   rc::Retained,
-  runtime::{AnyObject, NSObject, ProtocolObject},
+  runtime::{AnyObject, ProtocolObject},
   AllocAnyThread, DeclaredClass, MainThreadOnly, Message,
 };
 #[cfg(target_os = "macos")]

@@ -80,6 +80,7 @@ flowchart LR
 | 范围 | 当前状态 |
 |---|---|
 | Embedded Desktop GUI | 当前继续使用 Desktop 事件投影和 Tauri adapter；按实际打开的本机 workspace 延迟取得并持有 Embedded ownership，不增加后台进程；Embedded direct Runtime 是后续 Host/infrastructure 目标，不在此处宣称已接线 |
+| MiniApp 本机独立窗口 | `apps/miniapp-shell` 是单独构建的窗口进程，不链接 Desktop、Core 或 Agent Runtime；通过 `adapters/miniapp-ipc` 的私有 v1 UDS/Named Pipe 使用同一 Desktop host 的实例、Agent、存储、任务与权限 owner。主界面未启动时可后台启动 Desktop host，但不会按 MiniApp 复制 Runtime。窗口／标签页切换期间保留实例，最后一个已提交或待就绪视图关闭后停止该 MiniApp 的 Worker、Agent 和流；断连、刷新或切换设备不等于显式关闭。这不是 Shared TUI v18 或通用 Shared App Server，远程四种场景不提供本机窗口回退 |
 | Embedded interactive TUI | 当前直接通过 `CliAgentRuntimeClient` 调用 `AgentRuntime` typed API，并直接调用对应 owner/service API；不创建 App Server client/server、in-memory transport、JSON-RPC handshake 或 App Server 线程 |
 | Embedded Headless CLI/Peer Host | 保留各自独立 Runtime adapter、展示和断流策略；不因交互式 TUI 迁移而强制使用 App Server |
 | ACP/SDK Host | 使用同一个 Runtime 事件入口的 session-scoped 订阅；各自协议和进程生命周期保持独立 |

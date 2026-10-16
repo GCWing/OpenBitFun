@@ -128,6 +128,15 @@ Keep `outline` for ordinary toolbar utilities and secondary choices. A neutral
 `tone="danger"` for destructive actions. Disabled and loading states belong to
 the same variant; do not switch a primary action to outline when it is disabled.
 
+Use `quiet` for compact toolbar text actions such as refresh, submit, and open
+in browser. It uses neutral secondary text, a transparent surface and border at
+rest, then primary text and a subtle border on hover or press, without an
+underline. It shares native focus, disabled, and loading behavior with other
+variants, uses the base corner radius and `space.3` inline padding, and keeps
+the selected size's height and typography. Use `text` for link-like emphasis.
+Consumers should select this variant instead of recreating its colors and
+hover border in product CSS.
+
 Button outline and text variants have transparent resting surfaces. Fill and
 primary state colors come from the theme's `component.button.*` contract, with
 variant-specific disabled content. The secondary variant keeps its opaque
@@ -749,6 +758,8 @@ Extra-large (`xl`) dialogs have an 800px maximum width and continue shrinking wi
 Keep `Dialog` and `Sheet` mounted and set `open={false}` to close them. They retain the last committed children, size, placement, classes, and styles during the exit animation, with interaction disabled, so clearing an owner selection does not resize the surface. Reopening uses the latest presentation and cancels the pending exit. Owners that conditionally mount an editor can remove it in `onExitComplete`, which runs once after the surface unmounts.
 
 PageHeader `md` uses the settings title with a primary 15px description; `display` uses the welcome heading and medium 17px introduction with a 12px gap. ActionCard uses 12px padding, section-heading typography (15px semibold), and a primary 13px single-line action description. Its inset outline does not inflate the 62px medium minimum height; longer content keeps the independent sibling actions and OverflowText behavior.
+
+`ActionCard actionPlacement="floating"` overlays its independent action buttons without reserving text width. It shares the circular glass material, pointer-hover and keyboard-focus reveal, touch visibility, and reduced-transparency fallback used by tab-close actions and Capsules. Cards use the larger standard icon-button size; tabs and Capsules retain the compact xs size. The default `inline` placement keeps actions in the layout. Each action can provide `loading`, `disabled`, `tone`, and an optional `tooltip` while the main card remains a separate native button.
 
 KeyHint uses 10px text on a 10px line and 2px block padding. StatusPill uses a 14px line with 2px block padding; opt into `emphasis` for short mode labels such as Ask, while ordinary status descriptions retain readable content colors. LauncherButton owns a 72px minimum width, 40px height, 10px side padding, 4px gap, 12px icon and 11px monospace text. Product shells may retain a deliberate compact greeting that expands into this geometry.
 

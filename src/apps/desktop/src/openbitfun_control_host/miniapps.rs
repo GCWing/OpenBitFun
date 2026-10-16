@@ -5,7 +5,8 @@
 
 use openbitfun_core::infrastructure::events::{emit_global_event, BackendEvent};
 use openbitfun_core::miniapp::lifecycle::{
-    miniapp_runtime_event_payload, should_stop_worker_for_runtime_update,
+    miniapp_runtime_event_payload, should_stop_worker_for_runtime_update, MiniAppCreateInput,
+    MiniAppUpdatePatch,
 };
 use openbitfun_core::miniapp::{
     EsmDep, JsWorkerPool, MiniApp, MiniAppManager, MiniAppPermissions, MiniAppSource, NpmDep,
@@ -44,6 +45,7 @@ struct Input {
     category: Option<String>,
     tags: Option<Vec<String>>,
     permissions: Option<MiniAppPermissions>,
+    chrome: Option<openbitfun_product_domains::miniapp::chrome::MiniAppChrome>,
     html: Option<String>,
     css: Option<String>,
     ui_js: Option<String>,
@@ -80,7 +82,7 @@ fn editable_app(app: &MiniApp) -> Value {
     json!({
         "appId": app.id, "version": app.version, "name": app.name,
         "description": app.description, "icon": app.icon, "category": app.category,
-        "tags": app.tags, "permissions": app.permissions,
+        "tags": app.tags, "permissions": app.permissions, "chrome": app.chrome,
         "html": app.source.html, "css": app.source.css, "uiJs": app.source.ui_js,
         "workerJs": app.source.worker_js, "esmDependencies": app.source.esm_dependencies,
         "npmDependencies": app.source.npm_dependencies,
@@ -165,30 +167,36 @@ pub(super) async fn execute(
     );
     let app = if let Some(previous) = previous {
         manager
-            .update(
+            .update_with_patch(
                 &previous.id,
-                input.name,
-                input.description,
-                input.icon,
-                input.category,
-                input.tags,
-                Some(source),
-                input.permissions,
-                None,
+                MiniAppUpdatePatch {
+                    name: input.name,
+                    description: input.description,
+                    icon: input.icon,
+                    category: input.category,
+                    tags: input.tags,
+                    source: Some(source),
+                    permissions: input.permissions,
+                    chrome: input.chrome,
+                    ai_context: None,
+                },
                 None,
             )
             .await
     } else {
         manager
-            .create(
-                input.name.ok_or("name is required")?,
-                input.description.unwrap_or_default(),
-                input.icon.unwrap_or_else(|| "app-window".into()),
-                input.category.unwrap_or_else(|| "utility".into()),
-                input.tags.unwrap_or_default(),
-                source,
-                input.permissions.unwrap_or_default(),
-                None,
+            .create_with_input(
+                MiniAppCreateInput {
+                    name: input.name.ok_or("name is required")?,
+                    description: input.description.unwrap_or_default(),
+                    icon: input.icon.unwrap_or_else(|| "app-window".into()),
+                    category: input.category.unwrap_or_else(|| "utility".into()),
+                    tags: input.tags.unwrap_or_default(),
+                    source,
+                    permissions: input.permissions.unwrap_or_default(),
+                    chrome: input.chrome,
+                    ai_context: None,
+                },
                 None,
             )
             .await
@@ -259,11 +267,16 @@ mod tests {
             Operation::Create,
             Some(&json!({
                 "name": "Creative test", "html": "<div id=\"counter\">Ready</div>",
-                "uiJs": "document.querySelector('#counter').textContent = 'Working';"
+                "uiJs": "document.querySelector('#counter').textContent = 'Working';",
+                "chrome": {"titlebar":{"title":"Created window"}}
             })),
         )
         .await
         .unwrap();
+        assert_eq!(
+            created["app"]["chrome"]["titlebar"]["title"],
+            "Created window"
+        );
         let id = created["app"]["appId"].as_str().unwrap();
         let version = created["app"]["version"].as_u64().unwrap();
         manager.set_storage(id, "counter", json!(42)).await.unwrap();
@@ -282,7 +295,7 @@ mod tests {
         // resetting the app or its storage, then edit through the same owner.
         let meta_path = paths.miniapp_dir(id).join("meta.json");
         let mut meta: Value = serde_json::from_slice(&std::fs::read(&meta_path).unwrap()).unwrap();
-        for field in ["runtime", "runtime_profile", "i18n"] {
+        for field in ["runtime", "runtime_profile", "i18n", "chrome"] {
             meta.as_object_mut().unwrap().remove(field);
         }
         std::fs::write(&meta_path, serde_json::to_vec(&meta).unwrap()).unwrap();
@@ -301,12 +314,17 @@ mod tests {
             None,
             Operation::Update,
             Some(&json!({
-                "appId": id, "expectedVersion": version, "css": "#counter { padding: 12px; }"
+                "appId": id, "expectedVersion": version, "css": "#counter { padding: 12px; }",
+                "chrome": {"titlebar":{"title":"Updated window"}}
             })),
         )
         .await
         .unwrap();
         assert_eq!(updated["app"]["version"], version + 1);
+        assert_eq!(
+            updated["app"]["chrome"]["titlebar"]["title"],
+            "Updated window"
+        );
         assert_eq!(updated["app"]["uiJs"], created["app"]["uiJs"]);
         assert_eq!(manager.get_storage(id, "counter").await.unwrap(), json!(42));
         assert!(execute(

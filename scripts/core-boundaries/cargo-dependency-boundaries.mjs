@@ -563,6 +563,8 @@ const THIRD_PARTY_CAPABILITY_PROFILES = new Map([
       })],
       // Desktop owns bounded controller-local drag thumbnail decoding.
       // Keep only its raster input formats and PNG/JPEG output codecs.
+      // Independent MiniApp windows decode only their host-generated PNG icon.
+      ['openbitfun-miniapp-shell', dependencyProfile(['png'], { useDefaultFeatures: false })],
       ['openbitfun-desktop', dependencyProfile(['bmp', 'gif', 'jpeg', 'png', 'webp'], {
         useDefaultFeatures: false,
       })],

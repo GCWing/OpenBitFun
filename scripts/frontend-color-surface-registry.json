@@ -163,6 +163,39 @@
       }
     },
     {
+      "id": "miniapp-chrome",
+      "label": "Shared MiniApp titlebar",
+      "kind": "canonical-web",
+      "owner": "MiniApp host chrome using canonical design tokens",
+      "root": "src/shared/miniapp-chrome",
+      "audit": {
+        "engine": "theme",
+        "policy": "canonical-ui-zero",
+        "packageContracts": [
+          "@openbitfun/design-tokens",
+          "@openbitfun/theme-openbitfun"
+        ],
+        "excludePaths": [
+          "generated"
+        ]
+      }
+    },
+    {
+      "id": "miniapp-shell",
+      "label": "Standalone MiniApp Shell",
+      "kind": "canonical-web",
+      "owner": "MiniApp host chrome using canonical design tokens",
+      "root": "src/apps/miniapp-shell",
+      "audit": {
+        "engine": "theme",
+        "policy": "canonical-ui-zero",
+        "packageContracts": [
+          "@openbitfun/design-tokens",
+          "@openbitfun/theme-openbitfun"
+        ]
+      }
+    },
+    {
       "id": "desktop-bootstrap",
       "label": "Desktop pre-JavaScript bootstrap pages",
       "kind": "canonical-web",
@@ -424,6 +457,16 @@
       "id": "desktop-appearance-projection",
       "surfaceIds": ["web-ui", "desktop-bootstrap"],
       "command": ["node", "scripts/generate-startup-appearance-bootstrap.mjs", "--check"]
+    },
+    {
+      "id": "miniapp-chat-styles",
+      "surfaceIds": ["miniapp-shell"],
+      "command": ["node", "scripts/generate-miniapp-chat-styles.mjs", "--check"]
+    },
+    {
+      "id": "miniapp-chrome-theme",
+      "surfaceIds": ["miniapp-chrome", "miniapp-shell"],
+      "command": ["node", "scripts/generate-miniapp-chrome-theme.mjs", "--check"]
     },
     {
       "id": "miniapp-appearance-projection",

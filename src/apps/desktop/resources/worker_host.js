@@ -17,7 +17,8 @@ const execAsync = promisify(execCallback);
 
 const policy = JSON.parse(process.argv[2] || '{}');
 const appDir = process.cwd();
-const storagePath = path.join(appDir, 'storage.json');
+const storageRequests = new Map();
+let storageRequestId = 0;
 
 function rpcSend(obj) {
   process.stderr.write(JSON.stringify(obj) + '\n');
@@ -44,17 +45,12 @@ function isPathAllowed(targetPath, mode) {
   return scopes.some((scope) => resolved.startsWith(path.resolve(scope)));
 }
 
-function loadStorage() {
-  try {
-    const data = fs.readFileSync(storagePath, 'utf8');
-    return JSON.parse(data);
-  } catch {
-    return {};
-  }
-}
-
-function saveStorage(obj) {
-  fs.writeFileSync(storagePath, JSON.stringify(obj, null, 2), 'utf8');
+function storageCall(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = 'storage-' + (++storageRequestId);
+    storageRequests.set(id, { resolve, reject });
+    rpcSend({ hostRequest: 'storage', id, method, params });
+  });
 }
 
 let userHandlers = {};
@@ -169,13 +165,7 @@ async function dispatch(method, params) {
   }
 
   if (ns === 'storage') {
-    const store = loadStorage();
-    if (name === 'get') return store[params.key];
-    if (name === 'set') {
-      store[params.key] = params.value;
-      saveStorage(store);
-      return null;
-    }
+    if (name === 'get' || name === 'set') return storageCall(method, params);
   }
 
   throw new Error('Unknown method: ' + method);
@@ -192,6 +182,14 @@ rl.on('line', async (line) => {
   try {
     msg = JSON.parse(line);
   } catch {
+    return;
+  }
+  if (typeof msg.hostResponse === 'string') {
+    const pending = storageRequests.get(msg.hostResponse);
+    if (!pending) return;
+    storageRequests.delete(msg.hostResponse);
+    if (msg.error) pending.reject(new Error(msg.error));
+    else pending.resolve(msg.result);
     return;
   }
   const { id, method, params } = msg;

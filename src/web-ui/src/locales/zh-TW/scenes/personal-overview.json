@@ -2,14 +2,6 @@
   "loadingValue": "…",
   "unavailableValue": "—",
   "retry": "重新整理",
-  "account": {
-    "signIn": "登入帳號",
-    "signOut": "登出帳號",
-    "signOutFailed": "登出失敗，請稍後重試。",
-    "continue": "繼續登入",
-    "expired": "登入授權已過期，請重新登入。",
-    "failed": "登入失敗，請稍後重試。"
-  },
   "greetings": {
     "spotted": "嘿，被我發現你啦！",
     "mystery": "唷，神祕訪客！",
@@ -44,13 +36,15 @@
   "devices": {
     "title": "裝置",
     "manage": "管理裝置",
+    "scrollPrevious": "向左捲動裝置",
+    "scrollNext": "向右捲動裝置",
     "online": "在線",
     "offline": "離線",
     "current": "目前裝置",
     "thisDevice": "此裝置",
     "incompatible": "需更新後互控",
     "loading": "正在載入裝置…",
-    "signInHint": "登入帳號，查看你的裝置並在裝置之間繼續工作。",
+    "signInHint": "登入帳號，連接更多裝置",
     "failed": "無法重新整理裝置，已顯示的資訊可能不是最新狀態。請重試或在裝置管理中檢查連線。",
     "empty": "暫無已關聯的裝置。在其他裝置上登入同一帳號即可關聯。",
     "viewAll": "查看全部 {{count}} 台裝置"
@@ -64,9 +58,13 @@
     "title": "Token 活動"
   },
   "miniApps": {
+    "start": "啟動",
+    "backToOverview": "返回首頁",
     "create": "建立小應用",
     "manage": "管理小應用",
-    "more": "更多 {{count}} 個",
+    "installed": "已安裝",
+    "runningCount": "執行中 {{count}} 個",
+    "moreInstalled": "查看其餘 {{count}} 個小應用",
     "loading": "正在載入小應用…",
     "failed": "無法載入目前主機的小應用，請檢查連線與主機支援後重試。",
     "empty": "暫無小應用"
@@ -78,11 +76,8 @@
     "incomplete": "部分技能來源未能完整讀取，請進入技能管理查看詳情。",
     "diagnosticsUnavailable": "目前主機未提供掃描診斷，以上為主機傳回的技能數量。",
     "installed": "已安裝技能",
-    "installedCount": "共 {{count}} 個技能",
+    "installedDescription": "在任務中重複使用已安裝的技能。",
     "discover": "搜尋更多技能",
     "discoverDescription": "探索更多可重複使用的技能。"
-  },
-  "catalog": {
-    "datesIncomplete": "部分項目缺少更新時間，未參與最近排序。"
   }
 }

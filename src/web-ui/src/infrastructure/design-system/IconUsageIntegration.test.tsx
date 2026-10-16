@@ -41,7 +41,7 @@ describe('catalog icon consumer integration', () => {
   });
 
   it('uses catalog marks in navigation, the creative entry and string-based menus', () => {
-    expect(source('app/scenes/personal-overview/PersonalOverviewScene.tsx')).toContain("renderMiniAppIcon(app.icon || 'box', 'lg')");
+    expect(source('app/scenes/personal-overview/OverviewMiniAppLogos.tsx')).toContain("renderMiniAppIcon(app.icon || 'box', 'lg')");
     expect(source('app/components/NavBar/NavBar.tsx')).toContain('<Icon name="sidebar-left"');
     const harnessSource = source('app/scenes/agents/components/AgentHarnessOverview.tsx');
     expect(harnessSource).toContain('HARNESS_PRESENTATION[id]');

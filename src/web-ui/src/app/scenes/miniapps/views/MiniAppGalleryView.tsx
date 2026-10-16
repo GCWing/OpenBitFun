@@ -415,7 +415,7 @@ const MiniAppGalleryView: React.FC<MiniAppGalleryViewProps> = ({ tabs }) => {
                 aria-haspopup="menu"
                 aria-expanded={importMenuOpen}
                 data-testid="miniapp-import-action"
-                icon={<Icon name="plus" size="sm" />}
+                icon={<Icon glyph={PackagePlus} size="sm" />}
               />
               {importMenuOpen ? createOverlayPortal(
                 <Menu

@@ -875,7 +875,7 @@
     "usernamePlaceholder": "请输入用户名",
     "passwordPlaceholder": "请输入密码",
     "authServerPlaceholder": "https://auth.example.com",
-    "login": "使用邮箱或 GitHub 登录",
+    "login": "登录账号",
     "cancel": "取消",
     "emptyFields": "请填写所有字段",
     "invalidCredentialsLength": "用户名或密码过长",

@@ -12,7 +12,7 @@ import { subscribeOverlayInteraction, createOverlayPortal, OverflowText,
   DialogTitle,
 } from '@openbitfun/ui';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Github, Loader2, LogOut } from 'lucide-react';
+import { Loader2, LogOut } from 'lucide-react';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useI18n } from '@/infrastructure/i18n';
 import {
@@ -30,6 +30,7 @@ import './AccountIdentityControls.scss';
 
 export interface AccountIdentityControlsProps {
   className?: string;
+  showSignIn?: boolean;
   loginOpen?: boolean;
   onLoginOpenChange?: (open: boolean) => void;
   onIdentityChanged?: () => void | Promise<void>;
@@ -37,6 +38,7 @@ export interface AccountIdentityControlsProps {
 
 export function AccountIdentityControls({
   className,
+  showSignIn = true,
   loginOpen: controlledLoginOpen,
   onLoginOpenChange,
   onIdentityChanged,
@@ -231,19 +233,17 @@ export function AccountIdentityControls({
             getAppearanceOverlayHost(),
           )}
         </div>
-      ) : (
+      ) : showSignIn ? (
         <Button
           size="sm"
           variant="outline"
           disabled={!account.resolved}
           onClick={() => setLoginOpen(true)}
         >
-          {!account.resolved || account.status === 'authorizing'
-            ? <Loader2 size={14} className="market-account-controls__spinner" />
-            : <Github size={14} />}
+          {!account.resolved && <Loader2 size={14} className="market-account-controls__spinner" />}
           {t('market.signIn')}
         </Button>
-      )}
+      ) : null}
 
       <Dialog
         open={loginOpen && !account.me}
@@ -265,23 +265,20 @@ export function AccountIdentityControls({
           data-openbitfun-part="login"
         >
           <div className="market-account-login__mark" aria-hidden="true">
-            <Github size={28} />
+            <Icon name="user" size="lg" />
           </div>
           <div className="market-account-login__copy">
-            <strong>{t('market.account.dialogHeading')}</strong>
-            <p>{t('market.account.dialogDescription')}</p>
+            {account.status === 'authorizing' ? (
+              <p
+                className="market-account-login__waiting"
+                role="status"
+                data-openbitfun-component="market-account-controls"
+                data-openbitfun-part="waiting"
+              >
+                {t('market.account.waiting')}
+              </p>
+            ) : <p>{t('market.account.dialogDescription')}</p>}
           </div>
-          {account.status === 'authorizing' && (
-            <div
-              className="market-account-login__waiting"
-              role="status"
-              data-openbitfun-component="market-account-controls"
-              data-openbitfun-part="waiting"
-            >
-              <Loader2 size={16} className="market-account-controls__spinner" />
-              <span>{t('market.account.waiting')}</span>
-            </div>
-          )}
           {errorText && account.status !== 'authorizing' && (
             <p
               className="market-account-login__error"
@@ -304,9 +301,6 @@ export function AccountIdentityControls({
               variant="primary"
               onClick={() => void signIn()}
             >
-              {account.status === 'authorizing'
-                ? <Loader2 size={14} className="market-account-controls__spinner" />
-                : <Github size={14} />}
               {account.status === 'authorizing'
                 ? t('market.account.reopen')
                 : t('market.account.continue')}

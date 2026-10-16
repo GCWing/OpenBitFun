@@ -375,6 +375,7 @@ flowchart LR
 | Web Server | Embedded Agent Runtime、WebSocket App Server、Health/Info；当前只允许 loopback 单用户模式 |
 | Relay Server | WebSocket/HTTP bridge、账户与同步；不包含 Agent Runtime |
 | Plugin Host | 可选的受管 Bun 子进程；执行配置中显式声明的 OpenCode package plugin，由本地 Agent Runtime 进程监督，不按 Session 或插件各启一个进程 |
+| MiniApp Shell | 单独编译的轻量窗口程序，通过私有本机 IPC 复用 Desktop host 中的执行与状态 owner；不链接 Core/Agent Runtime，不复制 Desktop 主程序。macOS 导出包只有 Shell、图标与身份，Windows/Linux 使用随主产品安装的 Shell。旧 v1 启动记录与实例身份保持兼容。自定义窗口栏由 MiniApp 的可选 `chrome.titlebar` 元数据声明，Shell 与草稿预览共享轻量渲染器；macOS 保留原生红绿灯，Windows 复用主应用右侧窗口按钮，系统控件位置与形状不可由 MiniApp 覆盖；原生窗口操作仍归 Shell，应用内操作通过 SceneChrome 进入主顶部栏 |
 
 ### 2.5 Scenarios (+1) · Level 0
 

@@ -228,6 +228,7 @@
     "hostBridges": [
       "mark_openbitfun_control_surface_ready",
       "mark_openbitfun_control_surface_unready",
+    "miniapp_shell_call",
       "peer_host_invoke_complete",
       "product_control_invoke",
       "report_openbitfun_control_result",
@@ -3117,6 +3118,7 @@
             "command:miniapp_host_call",
             "command:miniapp_worker_call",
             "command:miniapp_runtime_status",
+        "command:miniapp_presentation",
             "command:miniapp_worker_list_running",
             "command:miniapp_worker_stop",
             "command:miniapp_draft_host_call",

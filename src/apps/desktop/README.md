@@ -51,6 +51,109 @@ Path-scoped rules load only after a matching file is read, and only when the
 Claude family is selected. Use `/reload instructions` after changing the files
 to rebuild startup context on the next message.
 
+## Independent MiniApps
+
+MiniApps use a customizable titlebar in independent windows, with native macOS
+traffic lights and the main application's right-hand Windows caption controls.
+The return icon brings the app back to OpenBitFun. Inside OpenBitFun, MiniApp actions live on
+the main top bar, alongside an icon to open an independent window. System app
+installation actions are available from **More app actions**. Customization uses
+the Creative mode icon; the default action group has no reload icon.
+
+Each app can customize `chrome.titlebar` in its `meta.json`: title and icon
+visibility, alignment, density, app button shape, semantic colors,
+and app action buttons. Draft previews include the same titlebar renderer used by
+the native shell. The titlebar logo is hidden by default; set `showIcon: true` to
+display it. The settings travel with imports, marketplace packages, saved
+versions and rollbacks. App actions emit `chrome:action` in the current view;
+minimize, maximize, drag, resize, close and return remain host operations.
+System button placement and appearance follow the host platform. Legacy
+`controlsPosition` values are preserved but do not move system controls. macOS
+keeps the main window's toolbar height and native control inset for both densities;
+draft previews reserve that space without drawing imitation traffic lights.
+Missing configuration uses the default custom titlebar. Existing exported apps
+need **Update system app** and a restart to use the new Shell. Older hosts and
+Shells remain compatible; custom chrome support is advertised as
+`miniapp_custom_chrome_v1` without changing the v1 launch-record format.
+
+Installed MiniApp cards offer **Open in app** and **Open in a window** before
+launch, including when an update is available. Running state appears on the
+same card. Selecting the current destination focuses it; selecting the other
+destination transfers it after confirmation. App details provide **Stop** and
+**Add system app** without requiring a launch first. A tab also provides **Open in
+a window** and **Add system app**. Every generated icon carries the OpenBitFun
+mark in its bottom-right corner. System launchers are placed in the user's
+Applications folder on macOS, Start Menu on Windows, and application menu on Linux.
+System app names show the app title without internal IDs. Once added, app details
+and the tab header offer **Update system app** and **Uninstall system app**.
+Updating refreshes older numbered or oversized launchers. Uninstalling removes
+only owned system entries, retaining the MiniApp, saved data and running tasks;
+it can be added again later. Removing an entry through the OS is also detected
+when app details are reopened.
+
+The system launcher can start OpenBitFun in the background. Closing the last tab
+or independent window stops that MiniApp's Worker, Agent runs and streams.
+During a window/tab transfer, a prepared destination keeps the instance alive;
+late close notifications from the source do not stop it. **Stop** ends an instance
+even while a presentation is open. A crashed shell is cleaned up after its lease
+expires. Refreshing, hiding a window or switching device surfaces is not a close.
+An explicit quit of OpenBitFun ends its host runtime. Window/tab switching reopens
+the document and retains saved data; save unsaved page state before confirming.
+The source closes only after the destination is ready. One installed app is bound
+to one workspace per host until its instance is stopped.
+
+Each native window uses a separately built **MiniApp Shell**, which contains only
+the window, local system adapters and private IPC. Agent execution, storage,
+tasks and instance management stay in the shared OpenBitFun host. macOS exports
+copy this small executable plus the icon and app identity; Windows/Linux entries
+point to the installed shell. The full Desktop program is never copied into an
+export. Updating an older system app upgrades its executable while retaining
+its launch identity and saved data.
+
+On macOS, Dock icons come from each MiniApp bundle's own ICNS. Independent
+windows and system installations use the same catalog glyph and fixed brand
+watermark, with a rounded body and transparent canvas inset. The shell always
+uses bundled resources, including beside a development host, so Tauri cannot
+replace the Dock icon with the OpenBitFun development icon. After upgrading an
+older exported app, choose **Update system app**, then quit and reopen that
+MiniApp to load the new executable and icon.
+
+The normal development and packaging commands prepare the optimized shell
+automatically. After changing shell Rust/HTML during an existing development
+session, run `pnpm run prepare:miniapp-shell` before reopening the MiniApp.
+Direct Cargo Desktop builds need the same preparation once. Packaging uses
+Tauri's `externalBin` for platform placement and signing; raw builds require the
+adjacent `openbitfun-miniapp-shell` executable (`.exe` on Windows).
+
+An independent window displays its own Agent permission requests through the
+shared runtime mailbox. Legacy MiniApps that call `agent.cancelStaleRuns` on every
+reload must use explicit per-turn cancellation instead in managed instances;
+automatic reload cleanup is rejected to preserve running work during transfers.
+The independent shell uses the configured light/dark mode at launch; its native
+chrome does not yet mirror live theme customizations from the main window.
+
+Independent windows have an app-specific **Hi** chat panel, enabled when the app
+claims the composer through `app.chat.claimComposer()`. The app can supply its
+title, welcome text and suggestions; messages continue through its existing
+`chat:userMessage` handler and Agent session. The panel follows only the app's
+bound topic and supports streaming replies, per-turn Stop and approval hints.
+Its launcher, floating panel, message typography/bubbles and composer compile
+the same style sources used by the main window's Hi and FlowChat. This shares
+appearance without adding React or the main window's runtime to the Shell.
+Collapsing or releasing chat does not stop accepted work. After a MiniApp closes
+or transfers to an independent window, the main window's Hi collapses when only
+its pinned control conversation remains (or no tabs remain). Other conversation
+tabs keep it expanded; topic switches and reloads do not trigger this cleanup.
+Compatible hosts advertise
+`miniapp_chat_snapshot_v1` to restore the latest 16 turns plus current execution
+after a reload or event gap; older hosts keep live chat and display the history
+limitation. Existing system apps need **Update system app** and a restart to
+load the new Shell chat assets.
+
+Independent presentation is unavailable for remote workspaces, Peer Device Mode,
+mobile/bot control, and detached CLI jobs. These entry points do not silently
+launch a local copy. App content control is reserved but not yet advertised.
+
 ## Session storage directories
 
 The workspace and session action menus include **Open session storage directory**.

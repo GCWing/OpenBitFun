@@ -1,3 +1,5 @@
+import { hasLocalMiniAppPresentation } from '@/infrastructure/api/service-api/MiniAppPresentationAPI';
+import { useMiniAppPresentationStore } from "../miniAppPresentationStore";
 /**
  * useMiniAppBridge — handles postMessage JSON-RPC from the MiniApp iframe:
  * worker.call → JS Worker, dialog.open/save/message → Tauri dialog,
@@ -59,6 +61,7 @@ export function useMiniAppBridge(
   app: MiniApp,
   runScope: MiniAppRunScope,
   strictRuntime = false,
+  boundWorkspacePath?: string | null,
 ) {
   const [bridgeReady, setBridgeReady] = useState(false);
   const surfaceScope = useRef(getActiveSurfaceScope()).current;
@@ -67,8 +70,8 @@ export function useMiniAppBridge(
   const { currentLanguage } = useI18n('scenes/miniapp');
   const appearanceRef = useRef(currentAppearance);
   appearanceRef.current = currentAppearance;
-  const workspacePathRef = useRef(workspacePath);
-  workspacePathRef.current = workspacePath;
+  const workspacePathRef = useRef(boundWorkspacePath === undefined ? workspacePath : boundWorkspacePath);
+  workspacePathRef.current = boundWorkspacePath === undefined ? workspacePath : boundWorkspacePath;
   const localeRef = useRef(currentLanguage);
   localeRef.current = currentLanguage;
 
@@ -452,6 +455,10 @@ export function useMiniAppBridge(
             return;
           }
           if (method === 'agent.cancelStaleRuns') {
+            if (hasLocalMiniAppPresentation() && runScopeRef.current.kind === 'active' && useMiniAppPresentationStore.getState().tabs[appId]) {
+              replyError('This instance survives view reloads. Cancel a specific Agent turn, or stop the instance explicitly in OpenBitFun.');
+              return;
+            }
             const result = await miniAppAPI.agentCancelStaleRuns(appId);
             reply(result);
             return;

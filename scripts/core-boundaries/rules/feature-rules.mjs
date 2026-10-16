@@ -296,6 +296,7 @@ export const optionalDependencyFeatureOwnerRules = [
           'mcp',
           'miniapp-market',
           'miniapp-runtime',
+          'miniapp-storage',
           'models-dev',
           'process-tree',
           'remote-connect',

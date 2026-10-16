@@ -875,7 +875,7 @@
     "usernamePlaceholder": "Enter username",
     "passwordPlaceholder": "Enter password",
     "authServerPlaceholder": "https://auth.example.com",
-    "login": "Sign in with email or GitHub",
+    "login": "Sign in",
     "cancel": "Cancel",
     "emptyFields": "Please fill in all fields",
     "invalidCredentialsLength": "Username or password is too long",

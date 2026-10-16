@@ -2,14 +2,6 @@
   "loadingValue": "…",
   "unavailableValue": "—",
   "retry": "刷新",
-  "account": {
-    "signIn": "登录账号",
-    "signOut": "退出登录",
-    "signOutFailed": "退出登录失败，请稍后重试。",
-    "continue": "继续登录",
-    "expired": "登录授权已过期，请重新登录。",
-    "failed": "登录失败，请稍后重试。"
-  },
   "greetings": {
     "spotted": "嘿，你被我发现啦！",
     "mystery": "哟，神秘来客！",
@@ -44,13 +36,15 @@
   "devices": {
     "title": "设备",
     "manage": "管理设备",
+    "scrollPrevious": "向左滚动设备",
+    "scrollNext": "向右滚动设备",
     "online": "在线",
     "offline": "离线",
     "current": "当前设备",
     "thisDevice": "此设备",
     "incompatible": "需更新后互控",
     "loading": "正在加载设备…",
-    "signInHint": "登录账号，查看你的设备并在设备之间继续工作。",
+    "signInHint": "登录账号，连接更多设备",
     "failed": "无法刷新设备，已显示的信息可能不是最新状态。请重试或在设备管理中检查连接。",
     "empty": "暂无已关联的设备。在其他设备上登录同一账号即可关联。",
     "viewAll": "查看全部 {{count}} 台设备"
@@ -64,9 +58,13 @@
     "title": "Token 活动"
   },
   "miniApps": {
+    "start": "启动",
+    "backToOverview": "返回首页",
     "create": "创建小应用",
     "manage": "管理小应用",
-    "more": "更多 {{count}} 个",
+    "installed": "已安装",
+    "runningCount": "运行中 {{count}} 个",
+    "moreInstalled": "查看其余 {{count}} 个小应用",
     "loading": "正在加载小应用…",
     "failed": "无法加载当前主机的小应用，请检查连接与主机支持后重试。",
     "empty": "暂无小应用"
@@ -78,11 +76,8 @@
     "incomplete": "部分技能来源未能完整读取，请进入技能管理查看详情。",
     "diagnosticsUnavailable": "当前主机未提供扫描诊断，以上为主机返回的技能数量。",
     "installed": "已安装技能",
-    "installedCount": "共 {{count}} 个技能",
+    "installedDescription": "在任务中复用已安装的技能。",
     "discover": "搜索更多技能",
     "discoverDescription": "发现更多可复用的技能。"
-  },
-  "catalog": {
-    "datesIncomplete": "部分项目缺少更新时间，未参与最近排序。"
   }
 }

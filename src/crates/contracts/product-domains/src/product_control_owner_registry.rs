@@ -213,6 +213,7 @@ fn miniapp_input(action: &str) -> Value {
             json!({ "type": "array", "items": { "type": "string" } }),
         );
         properties.insert("permissions".into(), json!({ "type": "object" }));
+        properties.insert("chrome".into(), json!({ "type": "object", "description": "Per-app titlebar configuration; see MiniApp chrome.titlebar contract. Use {} to restore defaults." }));
         properties.insert("esmDependencies".into(), json!({ "type": "array", "items": {
             "type": "object", "required": ["name"], "additionalProperties": false,
             "properties": { "name": { "type": "string" }, "version": { "type": "string" }, "url": { "type": "string" } }

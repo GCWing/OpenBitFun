@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "a0070347f9527a6eddeb84b5cd0a93d345c378aa008ce857976f02a9f4bd3d2f",
-  "commandCount": 674,
+  "catalogDigest": "292fa0bdf7821da4588d4a1e1e4ef2b89d16d6b52bae655452fbd35dad91b966",
+  "commandCount": 676,
   "coverage": {
-    "commandCount": 674,
-    "documentedCommandCount": 625,
-    "implementationCommandCount": 49,
-    "implementationDigest": "bc5063388e1b0dc13add3e967dd1b9c8638ee5e17d05ebcc680b419830c859ff"
+    "commandCount": 676,
+    "documentedCommandCount": 626,
+    "implementationCommandCount": 50,
+    "implementationDigest": "1dc90be1a699f521e7faee78c128d6332ef0806daccb389b288fbe2fa3fd3c2c"
   },
   "commands": [
     {
@@ -6225,6 +6225,22 @@
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
+      "id": "miniapp_presentation",
+      "moduleId": "miniapp",
+      "capabilityId": "feature.miniapps",
+      "capabilityIds": [
+        "feature.miniapps"
+      ],
+      "documentedItemIds": [
+        "feature.miniapps:runtime"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::miniapp_api::miniapp_presentation",
+      "sourceFile": "src/apps/desktop/src/api/miniapp_api.rs",
+      "signature": "fn miniapp_presentation( app: AppHandle, window: tauri::WebviewWindow, request: crate::miniapp_desktop::PresentationRequest, ) -> Result<Value, String>",
+      "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
       "id": "miniapp_recompile",
       "moduleId": "miniapp",
       "capabilityId": "feature.miniapps",
@@ -6287,6 +6303,20 @@
       "sourceFile": "src/apps/desktop/src/api/miniapp_api.rs",
       "signature": "fn miniapp_set_draft_permissions( state: State<'_, AppState>, request: MiniAppDraftPermissionsRequest, ) -> Result<MiniAppDraft, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "miniapp_shell_call",
+      "moduleId": "miniapp",
+      "capabilityId": "feature.miniapps",
+      "capabilityIds": [
+        "feature.miniapps"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::miniapp_api::miniapp_shell_call",
+      "sourceFile": "src/apps/desktop/src/api/miniapp_api.rs",
+      "signature": "fn miniapp_shell_call(request: Value) -> Result<Value, String>",
+      "remoteWorkspacePolicy": "LocalOnly"
     },
     {
       "id": "miniapp_sync_draft_from_fs",

@@ -1,4 +1,10 @@
 {
+  "window": {
+    "minimize": "最小化应用窗口",
+    "maximize": "最大化应用窗口",
+    "restore": "还原应用窗口",
+    "close": "关闭应用窗口"
+  },
   "product": {
     "name": "OpenBitFun",
     "remote": "OpenBitFun Remote"

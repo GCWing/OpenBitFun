@@ -194,6 +194,8 @@ pub struct MarketSubmissionDraftRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarketPackageMeta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chrome: Option<crate::miniapp::chrome::MiniAppChrome>,
     pub name: String,
     pub description: String,
     pub icon: String,

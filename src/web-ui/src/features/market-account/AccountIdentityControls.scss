@@ -112,11 +112,6 @@
     display: grid;
     gap: var(--openbitfun-space-2);
 
-    strong {
-      color: var(--openbitfun-color-content-primary);
-      font-size: var(--openbitfun-type-body-lg-font-size);
-    }
-
     p {
       max-width: 390px;
       margin: 0;
@@ -124,14 +119,6 @@
       font-size: var(--openbitfun-type-label-md-font-size);
       line-height: var(--openbitfun-type-support-line-height);
     }
-  }
-
-  &__waiting {
-    display: flex;
-    align-items: center;
-    gap: var(--openbitfun-space-2);
-    color: var(--openbitfun-color-content-secondary);
-    font-size: var(--openbitfun-type-label-md-font-size);
   }
 
   &__error {
@@ -147,7 +134,7 @@
 
   &__actions {
     display: flex;
-    justify-content: flex-end;
+    justify-content: center;
     gap: var(--openbitfun-space-2);
     width: 100%;
   }

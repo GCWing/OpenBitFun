@@ -6360,6 +6360,7 @@ dependencies = [
  "openbitfun-core",
  "openbitfun-core-types",
  "openbitfun-events",
+ "openbitfun-miniapp-ipc",
  "openbitfun-product-domains",
  "openbitfun-relay-service",
  "openbitfun-runtime-ports",
@@ -6496,6 +6497,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "openbitfun-miniapp-ipc"
+version = "1.0.6"
+dependencies = [
+ "openbitfun-product-domains",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "openbitfun-miniapp-market-server"
 version = "1.0.6"
 dependencies = [
@@ -6538,6 +6551,28 @@ dependencies = [
  "url",
  "uuid",
  "zip 4.6.1",
+]
+
+[[package]]
+name = "openbitfun-miniapp-shell"
+version = "1.0.6"
+dependencies = [
+ "image 0.25.10",
+ "objc2 0.6.4",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "openbitfun-miniapp-ipc",
+ "openbitfun-services-core",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tokio",
+ "uuid",
+ "windows 0.61.3",
 ]
 
 [[package]]

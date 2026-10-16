@@ -1,17 +1,26 @@
 import { OverflowText,
   Button,
+  Dialog,
+  DialogBody,
+  DialogClose,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogHeading,
+  DialogTitle,
   Disclosure,
   Field,
   Icon,
   IconButton,
   Input,
+  PageHeader,
   Select,
   StatusPill,
   Textarea,
 } from '@openbitfun/ui';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { AlertTriangle, Camera, Github, History, Loader2, PackageOpen, Send } from 'lucide-react';
+import { AlertTriangle, Camera, Loader2 } from 'lucide-react';
 import { GalleryEmpty, GalleryLayout, GalleryPageHeader } from '@/app/components/GalleryLayout';
 import { useI18n } from '@/infrastructure/i18n';
 import { AccountIdentityControls } from '@/features/market-account';
@@ -62,9 +71,10 @@ async function loadCurrentClientVersion(): Promise<string | undefined> {
 
 interface MiniAppSubmissionsViewProps {
   tabs?: React.ReactNode;
+  renderLayout?: (content: React.ReactNode, actions: React.ReactNode) => React.ReactElement;
 }
 
-const MiniAppSubmissionsView: React.FC<MiniAppSubmissionsViewProps> = ({ tabs }) => {
+const MiniAppSubmissionsView: React.FC<MiniAppSubmissionsViewProps> = ({ tabs, renderLayout }) => {
   const { t } = useI18n('scenes/miniapp');
   const notification = useNotification();
   const { workspace } = useCurrentWorkspace();
@@ -80,7 +90,13 @@ const MiniAppSubmissionsView: React.FC<MiniAppSubmissionsViewProps> = ({ tabs })
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [capturingScreenshot, setCapturingScreenshot] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formLoadFailed, setFormLoadFailed] = useState(false);
   const [progress, setProgress] = useState<MarketUploadProgress>();
+  const accountRevision = useRef(0);
+  const formId = useId();
 
   const localActionsDisabled = Boolean(workspace && isRemoteWorkspace(workspace));
   const selectedApp = useMemo(
@@ -89,12 +105,32 @@ const MiniAppSubmissionsView: React.FC<MiniAppSubmissionsViewProps> = ({ tabs })
   );
 
   const refresh = async () => {
+    const revision = accountRevision.current;
     setLoading(true);
+    try {
+      const records = me ? await miniAppMarketAPI.listSubmissions() : [];
+      if (revision === accountRevision.current) setSubmissions(records);
+    } catch (error) {
+      if (revision !== accountRevision.current) return;
+      log.error('Failed to load MiniApp submissions', error);
+      notification.error(t('market.messages.submissionsFailed', { error: String(error) }));
+    } finally {
+      if (revision === accountRevision.current) setLoading(false);
+    }
+  };
+
+  const openSubmissionForm = async () => {
+    if (localActionsDisabled || busy || formLoading || !me) return;
+    const revision = accountRevision.current;
+    setShowForm(true);
+    setFormLoading(true);
+    setFormLoadFailed(false);
     try {
       const [installed, currentClientVersion] = await Promise.all([
         miniAppAPI.listMiniApps(),
         draft.minOpenBitFunVersion ? Promise.resolve(undefined) : loadCurrentClientVersion(),
       ]);
+      if (revision !== accountRevision.current) return;
       setApps(installed);
       if (currentClientVersion) {
         setDraft((current) =>
@@ -104,24 +140,36 @@ const MiniAppSubmissionsView: React.FC<MiniAppSubmissionsViewProps> = ({ tabs })
       if (!selectedAppId && installed[0]) {
         selectApp(installed[0]);
       }
-      if (me) {
-        setSubmissions(await miniAppMarketAPI.listSubmissions());
-      } else {
-        setSubmissions([]);
-      }
     } catch (error) {
+      if (revision !== accountRevision.current) return;
+      setFormLoadFailed(true);
       log.error('Failed to load MiniApp submission workspace', error);
       notification.error(t('market.messages.submissionsFailed', { error: String(error) }));
     } finally {
-      setLoading(false);
+      if (revision === accountRevision.current) setFormLoading(false);
     }
   };
 
   useEffect(() => {
     if (!authResolved) return;
+    accountRevision.current += 1;
+    setShowForm(false);
+    setCapturingScreenshot(false);
+    setFormLoading(false);
+    setFormLoadFailed(false);
+    setSubmissions([]);
+    setApps([]);
+    setSelectedAppId('');
+    setDraft(createEmptyMarketSubmissionDraft());
+    setScreenshotPaths([]);
+    setBusy(false);
+    setProgress(undefined);
     void refresh();
     const stop = miniAppMarketAPI.onUploadProgress(setProgress);
-    return stop;
+    return () => {
+      accountRevision.current += 1;
+      stop();
+    };
     // Identity changes reload this account-owned workspace from the shared vault.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authResolved, me?.user.accountId, me?.user.githubId]);
@@ -161,7 +209,9 @@ const MiniAppSubmissionsView: React.FC<MiniAppSubmissionsViewProps> = ({ tabs })
 
   const captureCurrentApp = async () => {
     if (!selectedApp) return;
+    const revision = accountRevision.current;
     setBusy(true);
+    setCapturingScreenshot(true);
     const tabId: SceneTabId = `miniapp:${selectedApp.id}`;
     try {
       if (openTabs.some((tab) => tab.id === tabId)) {
@@ -170,14 +220,20 @@ const MiniAppSubmissionsView: React.FC<MiniAppSubmissionsViewProps> = ({ tabs })
         openScene(tabId);
       }
       await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      if (revision !== accountRevision.current) return;
       const path = await miniAppMarketAPI.captureWindow();
+      if (revision !== accountRevision.current) return;
       setScreenshotPaths((current) => [path, ...current].slice(0, 5));
       notification.success(t('market.submissions.captured'));
     } catch (error) {
+      if (revision !== accountRevision.current) return;
       notification.error(t('market.submissions.captureFailed', { error: String(error) }));
     } finally {
-      activateScene('miniapps');
-      setBusy(false);
+      if (revision === accountRevision.current) {
+        activateScene('miniapps');
+        setCapturingScreenshot(false);
+        setBusy(false);
+      }
     }
   };
 
@@ -187,6 +243,7 @@ const MiniAppSubmissionsView: React.FC<MiniAppSubmissionsViewProps> = ({ tabs })
       notification.error(t('market.submissions.missingFiles'));
       return;
     }
+    const revision = accountRevision.current;
     setBusy(true);
     setProgress({ phase: 'validating', completed: 0, total: 1 });
     try {
@@ -211,6 +268,7 @@ const MiniAppSubmissionsView: React.FC<MiniAppSubmissionsViewProps> = ({ tabs })
         },
         screenshotPaths,
       );
+      if (revision !== accountRevision.current) return;
       setSubmissions((current) => [created, ...current]);
       setDraft((current) => ({
         ...current,
@@ -219,77 +277,86 @@ const MiniAppSubmissionsView: React.FC<MiniAppSubmissionsViewProps> = ({ tabs })
         changelog: '',
       }));
       setScreenshotPaths([]);
+      setShowForm(false);
       notification.success(t('market.submissions.submitted'));
     } catch (error) {
+      if (revision !== accountRevision.current) return;
       notification.error(t('market.submissions.submitFailed', { error: String(error) }));
     } finally {
-      setBusy(false);
+      if (revision === accountRevision.current) setBusy(false);
     }
   };
 
   const withdraw = async (submissionId: string) => {
+    const revision = accountRevision.current;
     setBusy(true);
     try {
       const updated = await miniAppMarketAPI.withdrawSubmission(submissionId);
+      if (revision !== accountRevision.current) return;
       setSubmissions((current) =>
         current.map((item) => item.submissionId === submissionId ? updated : item),
       );
       notification.success(t('market.submissions.withdrawn'));
     } catch (error) {
+      if (revision !== accountRevision.current) return;
       notification.error(t('market.submissions.withdrawFailed', { error: String(error) }));
     } finally {
-      setBusy(false);
+      if (revision === accountRevision.current) setBusy(false);
     }
   };
 
-  if (!authResolved || loading) {
-    return (
+  const toolbarActions = !me || !authResolved ? null : (
+    <>
+      <Button size="sm" variant="quiet" onClick={() => void refresh()} disabled={busy || loading}>
+        {t('market.submissions.refresh')}
+      </Button>
+      <Button size="sm" variant="quiet" disabled={busy || loading || showForm || localActionsDisabled}
+        title={localActionsDisabled ? t('market.submissions.remoteUnsupported') : undefined}
+        onClick={() => void openSubmissionForm()}>
+        {t('market.submissions.newSubmission')}
+      </Button>
+    </>
+  );
+  const renderFrame = (content: React.ReactNode) => renderLayout
+    ? renderLayout(<div className="miniapp-submissions">{content}</div>, toolbarActions)
+    : (
       <GalleryLayout className="miniapp-gallery-pane miniapp-submissions">
+        <div className="miniapp-gallery-pane__account-actions"><AccountIdentityControls showSignIn={false} /></div>
         <GalleryPageHeader
           title={t('market.submissions.title')}
           subtitle={t('market.submissions.subtitle')}
+          actions={toolbarActions}
         />
         {tabs}
-        <div className="miniapp-submissions__loading"><Loader2 className="gallery-spinning" /></div>
+        {content}
       </GalleryLayout>
+  );
+
+  const renderEmptyState = (message: string, actions?: React.ReactNode) => (
+    <div className="miniapp-submissions__history-empty">
+      <div className="miniapp-submissions__empty-content">
+        <p className="miniapp-submissions__empty-message" role="status">{message}</p>
+        {actions}
+      </div>
+    </div>
+  );
+
+  if (!authResolved || loading) {
+    return renderFrame(
+      <div className="miniapp-submissions__loading"><Loader2 className="gallery-spinning" /></div>,
     );
   }
 
   if (!me) {
-    return (
-      <GalleryLayout className="miniapp-gallery-pane miniapp-submissions">
-        <GalleryPageHeader
-          title={t('market.submissions.title')}
-          subtitle={t('market.submissions.subtitle')}
-        />
-        {tabs}
-        <GalleryEmpty
-          icon={{ glyph: Github }}
-          message={t('market.submissions.signInRequired')}
-          action={<AccountIdentityControls />}
-        />
-      </GalleryLayout>
+    return renderFrame(
+      <div className="miniapp-submissions__workspace">
+        {renderEmptyState(t('market.submissions.signInRequired'), <AccountIdentityControls />)}
+      </div>,
     );
   }
 
-  return (
-    <GalleryLayout className="miniapp-gallery-pane miniapp-submissions">
-      <GalleryPageHeader
-        title={t('market.submissions.title')}
-        subtitle={t('market.submissions.subtitle')}
-        actions={(
-          <div className="miniapp-submissions__header-actions">
-            <Button size="sm" variant="outline" onClick={() => void refresh()} disabled={busy} leadingIcon={<Icon name="refresh" size="sm" />}>
-
-              {t('market.submissions.refresh')}
-            </Button>
-            <AccountIdentityControls />
-          </div>
-        )}
-      />
-
-      {tabs}
-
+  return renderFrame(
+    <>
       {localActionsDisabled ? (
         <div className="miniapp-submissions__remote-warning">
           <AlertTriangle size={16} />
@@ -302,273 +369,309 @@ const MiniAppSubmissionsView: React.FC<MiniAppSubmissionsViewProps> = ({ tabs })
         data-openbitfun-component="miniapp-submissions-view"
         data-openbitfun-part="root"
       >
-        <form
-          className="miniapp-submissions__form"
-          data-openbitfun-component="miniapp-submissions-view"
-          data-openbitfun-part="form"
-          onSubmit={(event) => void submit(event)}
+        <Dialog
+          open={showForm && !capturingScreenshot}
+          onOpenChange={() => { if (!busy) setShowForm(false); }}
+          size="xl"
+          className="miniapp-submissions miniapp-submissions__dialog"
+          closeOnEscape={!busy}
+          closeOnPointerOutside={!busy}
         >
-          <header className="miniapp-submissions__section-heading">
-            <h3>
-              <PackageOpen size={14} />
-              {t('market.submissions.newTitle')}
-            </h3>
-            <p>{t('market.submissions.newHint')}</p>
-          </header>
+          <DialogHeader>
+            <DialogHeading>
+              <DialogTitle>{t('market.submissions.newTitle')}</DialogTitle>
+              <DialogDescription>{t('market.submissions.newHint')}</DialogDescription>
+            </DialogHeading>
+            <DialogClose disabled={busy} />
+          </DialogHeader>
+          <DialogBody inset="none" className="miniapp-submissions__body">
+            <div className="miniapp-submissions__form-content">
+              {formLoading ? (
+                <div className="miniapp-submissions__loading"><Loader2 className="gallery-spinning" /></div>
+              ) : formLoadFailed ? (
+                <GalleryEmpty icon={{ glyph: AlertTriangle }} message={t('market.submissions.prepareFailed')}
+                  action={<Button onClick={() => void openSubmissionForm()}>{t('scene.retry')}</Button>} />
+              ) : (
+                <form
+                  id={formId}
+                  className="miniapp-submissions__form"
+                  data-openbitfun-component="miniapp-submissions-view"
+                  data-openbitfun-part="form"
+                  onSubmit={(event) => void submit(event)}
+                >
+                  <section className="miniapp-submissions__section" aria-label={t('market.submissions.basicInformation')}>
+                    <PageHeader title={t('market.submissions.basicInformation')} level={3} size="sm" />
+                    <Field label={t('market.submissions.app')} controlWidth="fill">
+                      <Select
+                        size="sm"
+                        value={selectedAppId}
+                        onValueChange={(value) => {
+                          const app = apps.find((item) => item.id === value);
+                          if (app) selectApp(app);
+                        }}
+                        disabled={busy || localActionsDisabled}
+                        options={apps.map((app) => ({ value: app.id, label: app.name }))}
+                      />
+                    </Field>
 
-          <Field label={t('market.submissions.app')} controlWidth="fill">
-            <Select
-              value={selectedAppId}
-              onValueChange={(value) => {
-                const app = apps.find((item) => item.id === value);
-                if (app) selectApp(app);
-              }}
-              disabled={busy || localActionsDisabled}
-              options={apps.map((app) => ({ value: app.id, label: app.name }))}
-            />
-          </Field>
+                    <Field label={t('market.submissions.name')} controlWidth="fill" required>
+                      <Input
+                        size="sm"
+                        value={draft.name}
+                        maxLength={80}
+                        disabled={busy}
+                        onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                      />
+                    </Field>
 
-          <Field label={t('market.submissions.name')} controlWidth="fill" required>
-            <Input
-              value={draft.name}
-              maxLength={80}
-              disabled={busy}
-              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-            />
-          </Field>
+                    <Field label={t('market.submissions.description')} controlWidth="fill" required>
+                      <Textarea
+                        value={draft.description}
+                        maxLength={500}
+                        required
+                        disabled={busy}
+                        onValueChange={(description) => setDraft({ ...draft, description })}
+                      />
+                    </Field>
+                  </section>
 
-          <label className="miniapp-submissions__field">
-            <span>{t('market.submissions.description')}</span>
-            <Textarea
-              value={draft.description}
-              maxLength={500}
-              required
-              disabled={busy}
-              onValueChange={(description) => setDraft({ ...draft, description })}
-            />
-          </label>
+                  <section className="miniapp-submissions__section" aria-label={t('market.submissions.screenshots')}>
+                    <PageHeader
+                      className="miniapp-submissions__screenshots"
+                      title={t('market.submissions.screenshots')}
+                      level={3}
+                      size="sm"
+                      action={
+                        <div className="miniapp-submissions__screenshots-actions">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={busy || localActionsDisabled}
+                            onClick={() => void chooseScreenshots()}
+                            leadingIcon={<Icon name="image" size="sm" />}
+                          >
+                            {t('market.submissions.choose')}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={busy || localActionsDisabled || !selectedApp}
+                            onClick={() => void captureCurrentApp()}
+                            leadingIcon={<Camera size={14} />}
+                          >
+                            {t('market.submissions.capture')}
+                          </Button>
+                        </div>
+                      }
+                    />
+                    <p className="miniapp-submissions__hint">{t('market.submissions.screenshotHint')}</p>
+                    {screenshotPaths.length ? (
+                      <div className="miniapp-submissions__files">
+                        {screenshotPaths.map((path) => (
+                          <div key={path}>
+                            <Icon name="image" size="sm" />
+                            <OverflowText title={path}>{fileName(path)}</OverflowText>
+                            <IconButton
+                              size="xs"
+                              aria-label={t('market.submissions.removeScreenshot')}
+                              title={t('market.submissions.removeScreenshot')}
+                              onClick={() =>
+                                setScreenshotPaths((current) => current.filter((item) => item !== path))
+                              }
+                              icon={<Icon name="xmark" size="xs" />}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
 
-          <div className="miniapp-submissions__screenshots">
-            <div className="miniapp-submissions__screenshots-copy">
-              <span>{t('market.submissions.screenshots')}</span>
-              <small>{t('market.submissions.screenshotHint')}</small>
+                  <Disclosure
+                    className="miniapp-submissions__advanced-disclosure"
+                    contentInnerClassName="miniapp-submissions__advanced-content"
+                    open={showAdvanced}
+                    onOpenChange={setShowAdvanced}
+                    summary={t('market.submissions.advanced')}
+                    description={!showAdvanced ? (
+                      <span>
+                        {[
+                          draft.slug,
+                          `v${draft.releaseNumber}`,
+                          marketCategoryLabel(
+                            normalizeCategory(draft.category) as (typeof MARKET_CATEGORIES)[number],
+                            t,
+                          ),
+                          draft.license.spdxExpression,
+                        ].filter(Boolean).join(' · ')}
+                      </span>
+                    ) : undefined}
+                  >
+                    <div className="miniapp-submissions__advanced">
+                      <div className="miniapp-submissions__form-grid">
+                        <Field
+                          label={t('market.submissions.slug')}
+                          description={t('market.submissions.slugHint')}
+                          controlWidth="fill"
+                          required
+                        >
+                          <Input
+                            size="sm"
+                            value={draft.slug}
+                            pattern="[a-z0-9][a-z0-9-]{2,62}"
+                            disabled={busy}
+                            onChange={(event) => setDraft({ ...draft, slug: event.target.value })}
+                          />
+                        </Field>
+                        <Field label={t('market.submissions.release')} controlWidth="fill" required>
+                          <Input
+                            size="sm"
+                            type="number"
+                            min={1}
+                            max={4294967295}
+                            value={draft.releaseNumber}
+                            disabled={busy}
+                            onChange={(event) =>
+                              setDraft({ ...draft, releaseNumber: Number(event.target.value) })
+                            }
+                          />
+                        </Field>
+                      </div>
+
+                      <div className="miniapp-submissions__form-grid">
+                        <Field label={t('market.submissions.category')} controlWidth="fill">
+                          <Select
+                            size="sm"
+                            value={draft.category}
+                            disabled={busy}
+                            onValueChange={(value) => setDraft({ ...draft, category: String(value) })}
+                            options={MARKET_CATEGORIES.map((value) => ({
+                              value,
+                              label: marketCategoryLabel(value, t),
+                            }))}
+                          />
+                        </Field>
+                        <Field label={t('market.submissions.minVersion')} controlWidth="fill" required>
+                          <Input
+                            size="sm"
+                            value={draft.minOpenBitFunVersion}
+                            disabled={busy}
+                            onChange={(event) =>
+                              setDraft({ ...draft, minOpenBitFunVersion: event.target.value })
+                            }
+                          />
+                        </Field>
+                      </div>
+
+                      <Field
+                        label={t('market.submissions.tags')}
+                        description={t('market.submissions.tagsHint')}
+                        controlWidth="fill"
+                      >
+                        <Input
+                          size="sm"
+                          value={draft.tags.join(', ')}
+                          disabled={busy}
+                          onChange={(event) =>
+                            setDraft({ ...draft, tags: event.target.value.split(',').slice(0, 10) })
+                          }
+                        />
+                      </Field>
+
+                      <Field label={t('market.submissions.changelog')} controlWidth="fill">
+                        <Textarea
+                          value={draft.changelog}
+                          maxLength={4000}
+                          placeholder={t('market.submissions.changelogPlaceholder')}
+                          disabled={busy}
+                          onValueChange={(changelog) => setDraft({ ...draft, changelog })}
+                        />
+                      </Field>
+
+                      <div className="miniapp-submissions__form-grid">
+                        <Field
+                          label={t('market.submissions.spdx')}
+                          description={t('market.submissions.licenseHint')}
+                          controlWidth="fill"
+                        >
+                          <Input
+                            size="sm"
+                            value={draft.license.spdxExpression ?? ''}
+                            disabled={busy}
+                            onChange={(event) =>
+                              setDraft({
+                                ...draft,
+                                license: { ...draft.license, spdxExpression: event.target.value },
+                              })
+                            }
+                          />
+                        </Field>
+                        <Field label={t('market.submissions.licenseUrl')} controlWidth="fill">
+                          <Input
+                            size="sm"
+                            type="url"
+                            value={draft.license.customUrl ?? ''}
+                            disabled={busy}
+                            onChange={(event) =>
+                              setDraft({
+                                ...draft,
+                                license: { ...draft.license, customUrl: event.target.value },
+                              })
+                            }
+                          />
+                        </Field>
+                      </div>
+
+                      <Field label={t('market.submissions.repository')} controlWidth="fill">
+                        <Input
+                          size="sm"
+                          type="url"
+                          value={draft.repositoryUrl ?? ''}
+                          disabled={busy}
+                          onChange={(event) => setDraft({ ...draft, repositoryUrl: event.target.value })}
+                        />
+                      </Field>
+                    </div>
+                  </Disclosure>
+
+                  {progress && busy ? (
+                    <div className="miniapp-submissions__progress">
+                      <div>
+                        <span>{progressLabel(progress.phase, t)}</span>
+                        <strong>{progress.completed}/{progress.total}</strong>
+                      </div>
+                      <progress value={progress.completed} max={Math.max(progress.total, 1)} />
+                    </div>
+                  ) : null}
+                </form>
+              )}
             </div>
-            <div className="miniapp-submissions__screenshots-actions">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={busy || localActionsDisabled}
-                onClick={() => void chooseScreenshots()}
-                leadingIcon={<Icon name="image" size="sm" />}
-              >
-
-                {t('market.submissions.choose')}
+          </DialogBody>
+          <DialogFooter separator>
+            <div className="miniapp-submissions__actions">
+              <Button type="button" size="sm" variant="fill" disabled={busy} onClick={() => setShowForm(false)}>
+                {t('confirmDelete.cancel')}
               </Button>
               <Button
-                type="button"
+                type="submit"
+                form={formId}
                 size="sm"
-                variant="outline"
-                disabled={busy || localActionsDisabled || !selectedApp}
-                onClick={() => void captureCurrentApp()}
-                leadingIcon={<Camera size={14} />}
+                variant="primary"
+                loading={busy}
+                disabled={busy || localActionsDisabled || formLoading || formLoadFailed || apps.length === 0}
               >
-
-                {t('market.submissions.capture')}
+                {t('market.submissions.submit')}
               </Button>
             </div>
-          </div>
-          {screenshotPaths.length ? (
-            <div className="miniapp-submissions__files">
-              {screenshotPaths.map((path) => (
-                <div key={path}>
-                  <Icon name="image" size="sm" />
-                  <OverflowText title={path}>{fileName(path)}</OverflowText>
-                  <IconButton
-                    size="xs"
-                    aria-label={t('market.submissions.removeScreenshot')}
-                    title={t('market.submissions.removeScreenshot')}
-                    onClick={() =>
-                      setScreenshotPaths((current) => current.filter((item) => item !== path))
-                    }
-                    icon={<Icon name="xmark" size="xs" />}
-                  />
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          <Disclosure
-            className="miniapp-submissions__advanced-disclosure"
-            open={showAdvanced}
-            onOpenChange={setShowAdvanced}
-            summary={t('market.submissions.advanced')}
-            description={!showAdvanced ? (
-              <span>
-                {[
-                  draft.slug,
-                  `v${draft.releaseNumber}`,
-                  marketCategoryLabel(
-                    normalizeCategory(draft.category) as (typeof MARKET_CATEGORIES)[number],
-                    t,
-                  ),
-                  draft.license.spdxExpression,
-                ].filter(Boolean).join(' · ')}
-              </span>
-            ) : undefined}
-          >
-            <div className="miniapp-submissions__advanced">
-              <div className="miniapp-submissions__form-grid">
-                <Field
-                  label={t('market.submissions.slug')}
-                  description={t('market.submissions.slugHint')}
-                  controlWidth="fill"
-                  required
-                >
-                  <Input
-                    value={draft.slug}
-                    pattern="[a-z0-9][a-z0-9-]{2,62}"
-                    disabled={busy}
-                    onChange={(event) => setDraft({ ...draft, slug: event.target.value })}
-                  />
-                </Field>
-                <Field label={t('market.submissions.release')} controlWidth="fill" required>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={4294967295}
-                    value={draft.releaseNumber}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setDraft({ ...draft, releaseNumber: Number(event.target.value) })
-                    }
-                  />
-                </Field>
-              </div>
-
-              <div className="miniapp-submissions__form-grid">
-                <Field label={t('market.submissions.category')} controlWidth="fill">
-                  <Select
-                    value={draft.category}
-                    disabled={busy}
-                    onValueChange={(value) => setDraft({ ...draft, category: String(value) })}
-                    options={MARKET_CATEGORIES.map((value) => ({
-                      value,
-                      label: marketCategoryLabel(value, t),
-                    }))}
-                  />
-                </Field>
-                <Field label={t('market.submissions.minVersion')} controlWidth="fill" required>
-                  <Input
-                    value={draft.minOpenBitFunVersion}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setDraft({ ...draft, minOpenBitFunVersion: event.target.value })
-                    }
-                  />
-                </Field>
-              </div>
-
-              <Field
-                label={t('market.submissions.tags')}
-                description={t('market.submissions.tagsHint')}
-                controlWidth="fill"
-              >
-                <Input
-                  value={draft.tags.join(', ')}
-                  disabled={busy}
-                  onChange={(event) =>
-                    setDraft({ ...draft, tags: event.target.value.split(',').slice(0, 10) })
-                  }
-                />
-              </Field>
-
-              <label className="miniapp-submissions__field">
-                <span>{t('market.submissions.changelog')}</span>
-                <Textarea
-                  value={draft.changelog}
-                  maxLength={4000}
-                  placeholder={t('market.submissions.changelogPlaceholder')}
-                  disabled={busy}
-                  onValueChange={(changelog) => setDraft({ ...draft, changelog })}
-                />
-              </label>
-
-              <div className="miniapp-submissions__form-grid">
-                <Field
-                  label={t('market.submissions.spdx')}
-                  description={t('market.submissions.licenseHint')}
-                  controlWidth="fill"
-                >
-                  <Input
-                    value={draft.license.spdxExpression ?? ''}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setDraft({
-                        ...draft,
-                        license: { ...draft.license, spdxExpression: event.target.value },
-                      })
-                    }
-                  />
-                </Field>
-                <Field label={t('market.submissions.licenseUrl')} controlWidth="fill">
-                  <Input
-                    type="url"
-                    value={draft.license.customUrl ?? ''}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setDraft({
-                        ...draft,
-                        license: { ...draft.license, customUrl: event.target.value },
-                      })
-                    }
-                  />
-                </Field>
-              </div>
-
-              <Field label={t('market.submissions.repository')} controlWidth="fill">
-                <Input
-                  type="url"
-                  value={draft.repositoryUrl ?? ''}
-                  disabled={busy}
-                  onChange={(event) => setDraft({ ...draft, repositoryUrl: event.target.value })}
-                />
-              </Field>
-            </div>
-          </Disclosure>
-
-          {progress && busy ? (
-            <div className="miniapp-submissions__progress">
-              <div>
-                <span>{progressLabel(progress.phase, t)}</span>
-                <strong>{progress.completed}/{progress.total}</strong>
-              </div>
-              <progress value={progress.completed} max={Math.max(progress.total, 1)} />
-            </div>
-          ) : null}
-
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={busy || localActionsDisabled || apps.length === 0}
-          >
-            {busy ? <Loader2 size={15} className="gallery-spinning" /> : <Send size={15} />}
-            {t('market.submissions.submit')}
-          </Button>
-        </form>
-
+          </DialogFooter>
+        </Dialog>
         <section
           className="miniapp-submissions__history"
+          aria-label={t('market.submissions.history')}
           data-openbitfun-component="miniapp-submissions-view"
           data-openbitfun-part="history"
         >
-          <header className="miniapp-submissions__section-heading">
-            <h3>
-              <History size={14} />
-              {t('market.submissions.history')}
-            </h3>
-            <p>{t('market.submissions.historyHint')}</p>
-          </header>
           {submissions.length ? (
             <div className="miniapp-submissions__list">
               {submissions.map((submission) => (
@@ -609,14 +712,10 @@ const MiniAppSubmissionsView: React.FC<MiniAppSubmissionsViewProps> = ({ tabs })
                 </article>
               ))}
             </div>
-          ) : (
-            <div className="miniapp-submissions__history-empty">
-              {t('market.submissions.noSubmissions')}
-            </div>
-          )}
+          ) : renderEmptyState(t('market.submissions.noSubmissions'))}
         </section>
       </div>
-    </GalleryLayout>
+    </>
   );
 };
 

@@ -1,6 +1,8 @@
 @use '@/infrastructure/config/components/common/config-page-layout.tokens' as configLayout;
 
 .personal-overview {
+  &[hidden] { display: none; }
+
   container: personal-overview / inline-size;
   display: flex;
   flex-direction: column;
@@ -23,7 +25,6 @@
     padding: 16px configLayout.$config-page-content-inline-padding 0;
   }
 
-  &__account-button,
   &__section-action {
     padding-inline: var(--openbitfun-space-3);
     border-color: transparent;
@@ -110,59 +111,6 @@
   &__section-title { display: flex; align-items: center; gap: var(--openbitfun-space-3); margin: 0; font-size: var(--openbitfun-type-heading-section-font-size); font-weight: var(--openbitfun-type-heading-section-font-weight); }
   &__placeholder { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 20px; min-height: 250px; padding: 28px; border-radius: 22px; background: var(--openbitfun-color-surface-subtle); color: var(--openbitfun-color-content-secondary); text-align: center; }
 
-  &__agent-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(220px, 1fr));
-    overflow-x: auto;
-  }
-  &__agent {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--openbitfun-layout-card-gap-md);
-    min-width: 0;
-    padding: var(--openbitfun-space-6);
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    color: var(--openbitfun-color-content-primary);
-    font: inherit;
-    text-align: start;
-    cursor: pointer;
-  }
-  &__agent + &__agent::before {
-    content: '';
-    position: absolute;
-    inset-block: var(--openbitfun-space-6);
-    inset-inline-start: 0;
-    border-inline-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-    pointer-events: none;
-  }
-  &__agent:hover { background: var(--openbitfun-color-action-quiet-hover); }
-  &__agent:focus-visible {
-    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
-    outline-offset: calc(-1 * (var(--openbitfun-focus-width) + var(--openbitfun-focus-offset)));
-  }
-  &__agent-name {
-    width: 100%;
-    min-width: 0;
-    font-family: var(--openbitfun-type-heading-card-font-family);
-    font-size: var(--openbitfun-type-heading-card-font-size);
-    font-weight: var(--openbitfun-type-heading-card-font-weight);
-    line-height: var(--openbitfun-type-heading-card-line-height);
-    letter-spacing: var(--openbitfun-type-heading-card-letter-spacing);
-  }
-  &__agent-count {
-    font-family: var(--openbitfun-type-heading-page-font-family);
-    font-size: var(--openbitfun-type-heading-page-font-size);
-    font-weight: var(--openbitfun-type-heading-page-font-weight);
-    line-height: var(--openbitfun-type-heading-page-line-height);
-    letter-spacing: var(--openbitfun-type-heading-page-letter-spacing);
-    font-variant-numeric: tabular-nums;
-  }
-  &__agent-description { color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); line-height: var(--openbitfun-type-body-sm-line-height); min-height: 2lh; overflow-wrap: anywhere; }
-
   &__catalog { display: flex; flex-direction: column; gap: var(--openbitfun-space-6); }
   &__catalog-item-name {
     color: var(--openbitfun-color-content-primary);
@@ -174,45 +122,7 @@
   }
   &__catalog-item-description,
   &__catalog-empty { margin: 0; color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); line-height: var(--openbitfun-type-body-sm-line-height); }
-  &__catalog-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--openbitfun-space-4) var(--openbitfun-space-6);
-    margin-block: 0;
-    // Keep icon edges aligned with the heading while hover surfaces extend outwards.
-    margin-inline: calc(-1 * var(--openbitfun-control-action-card-padding-inline));
-    padding: 0;
-    list-style: none;
-  }
   &__catalog-cell { display: flex; min-width: 0; }
-  &__catalog-grid--skills,
-  &__catalog-grid--miniapps &__catalog-cell { position: relative; }
-  &__catalog-grid--skills::after,
-  &__catalog-grid--miniapps &__catalog-cell:nth-child(even)::before {
-    content: '';
-    position: absolute;
-    inset-inline-start: 50%;
-    inset-block-start: 50%;
-    transform: translate(-50%, -50%);
-    block-size: var(--openbitfun-space-6);
-    border-inline-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default);
-    pointer-events: none;
-  }
-  &__catalog-grid--miniapps &__catalog-cell:nth-child(even)::before {
-    inset-inline-start: calc(-1 * var(--openbitfun-space-3));
-  }
-  &__catalog-action:not(:hover):not(:active) { background: transparent; }
-  &__catalog-action:hover { outline-color: transparent; }
-  &__catalog-action [data-openbitfun-part='leading'] {
-    flex-basis: var(--openbitfun-space-8);
-    inline-size: var(--openbitfun-space-8);
-    block-size: var(--openbitfun-space-8);
-
-    > [data-openbitfun-component='icon'] {
-      inline-size: 100%;
-      block-size: 100%;
-    }
-  }
   &__catalog-copy {
     display: flex;
     flex: 1;
@@ -222,26 +132,61 @@
   }
   &__catalog-status { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--openbitfun-space-3); color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); }
 
-  &__device-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  &__device-carousel { position: relative; min-inline-size: 0; }
+  &__device-track {
+    display: flex;
     gap: var(--openbitfun-space-4);
     margin: 0;
     padding: 0;
     list-style: none;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar { display: none; }
+
+    > .personal-overview__catalog-cell {
+      // Two complete cards, two gaps and 30% of the next card fill the strip.
+      flex: 0 0 max(220px, calc((100% - var(--openbitfun-space-4) - var(--openbitfun-space-4)) / 2.3));
+      max-inline-size: 100%;
+      scroll-snap-align: start;
+    }
+  }
+  &__device-scroll-control {
+    position: absolute;
+    inset-block-start: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+    &--previous { inset-inline-start: var(--openbitfun-space-2); }
+    &--next { inset-inline-end: var(--openbitfun-space-2); }
+  }
+  &__device-carousel:is(:hover, :focus-within) &__device-scroll-control {
+    opacity: 1;
+    pointer-events: auto;
   }
   &__device {
     display: flex;
     flex-direction: row;
-    align-items: flex-start;
+    align-items: center;
     gap: var(--openbitfun-space-4);
     width: 100%;
     min-width: 0;
+    min-block-size: 136px;
     padding: var(--openbitfun-space-5);
   }
   &__device-icon { display: flex; flex-shrink: 0; padding-block: var(--openbitfun-space-1); color: var(--openbitfun-color-content-secondary); }
   &__device-status { display: flex; flex-wrap: wrap; gap: var(--openbitfun-space-2); }
-  &__device-sign-in { text-align: center; }
+  &__device-sign-in {
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: 0;
+  }
 
   &__heatmap { padding: 20px; border-radius: 22px; }
 
@@ -252,12 +197,19 @@
     &__content { padding-block: 12px 48px; }
     &__identity { padding-bottom: 36px; }
     &__avatar { inline-size: 112px; block-size: 112px; }
-    &__device-grid { grid-template-columns: minmax(0, 1fr); }
     &__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 0; }
     &__metric + &__metric { border-inline-start: 0; }
     &__metric:nth-child(even) { border-inline-start: 1px solid var(--openbitfun-color-border-subtle); }
     &__metric:last-child { grid-column: 1 / -1; }
   }
+}
+
+@media (hover: none) {
+  .personal-overview__device-scroll-control { opacity: 1; pointer-events: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .personal-overview__device-scroll-control { transition: none; }
 }
 
 @container personal-overview (max-width: 440px) {

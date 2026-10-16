@@ -12,6 +12,7 @@ services.
 | Crate | Responsibility | Local doc |
 |---|---|---|
 | `agent-runtime-ipc` | Non-published private local IPC adapter for the opt-in first-party Shared TUI Runtime; closed interactive operations only | [AGENTS.md](agent-runtime-ipc/AGENTS.md) |
+| `miniapp-ipc` | Private local launch records, bounded framing and discovery shared by Desktop and the lightweight MiniApp Shell; no execution owners | [AGENTS.md](miniapp-ipc/AGENTS.md) |
 | `ai-adapters` | AI provider request/response adapters and stream protocol glue | [AGENTS.md](ai-adapters/AGENTS.md) |
 | `opencode-adapter` | OpenCode source semantics for user Instructions plus the live Command, standalone Tool, Subagent, MCP, and static Hook providers; managed-package static preview | [AGENTS.md](opencode-adapter/AGENTS.md) |
 | `dsh-adapter` | DeepSeek Harness (`dsh`) bundle/profile projection, static Hook bridge discovery and explicit MCP declarations | [AGENTS.md](dsh-adapter/AGENTS.md) |

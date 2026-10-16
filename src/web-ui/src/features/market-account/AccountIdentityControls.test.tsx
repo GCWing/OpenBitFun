@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     resolved: true,
     status: 'signed-out',
     me: null as null | {
+      email?: string;
       user: { githubId: number; login: string; avatarUrl: string };
       isAdmin: boolean;
     },
@@ -96,13 +97,14 @@ describe('AccountIdentityControls', () => {
     document.querySelector('[data-openbitfun-overlay-host="true"]')?.remove();
   });
 
-  it('opens the shared GitHub login dialog and starts the vault-backed flow', async () => {
+  it('opens the shared account login dialog and starts the vault-backed flow', async () => {
     await act(async () => root.render(<AccountIdentityControls />));
     const signIn = [...container.querySelectorAll('button')]
       .find(button => button.textContent?.includes('market.signIn'));
     await act(async () => signIn?.click());
 
     expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.querySelector('.market-account-login__mark [data-icon="user"]')).not.toBeNull();
     const continueButton = [...container.querySelectorAll('button')]
       .find(button => button.textContent?.includes('market.account.continue'));
     await act(async () => continueButton?.click());
@@ -115,11 +117,28 @@ describe('AccountIdentityControls', () => {
     const trigger = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('market.signIn'))!;
     expect(trigger.disabled).toBe(false);
     await act(async () => trigger.click());
+    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog.querySelector('[role="status"]')?.textContent).toContain('market.account.waiting');
+    expect(dialog.textContent).not.toContain('market.account.dialogDescription');
+    expect(dialog.querySelector('.market-account-controls__spinner')).toBeNull();
+    expect(trigger.querySelector('.market-account-controls__spinner')).toBeNull();
     const reopen = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('market.account.reopen'))!;
     expect(reopen.disabled).toBe(false);
     await act(async () => reopen.click());
     expect(mocks.reopenSignIn).toHaveBeenCalledOnce();
     expect(mocks.signIn).not.toHaveBeenCalled();
+  });
+
+  it('can hide the sign-in trigger while retaining a controlled login dialog', async () => {
+    await act(async () => root.render(<AccountIdentityControls showSignIn={false} />));
+    expect(container.querySelector('button')).toBeNull();
+
+    await act(async () => root.render(<AccountIdentityControls showSignIn={false} loginOpen />));
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    const continueButton = [...container.querySelectorAll('button')]
+      .find(button => button.textContent?.includes('market.account.continue'))!;
+    await act(async () => continueButton.click());
+    expect(mocks.signIn).toHaveBeenCalledOnce();
   });
 
   it('shows the shared avatar menu and logs out through the same account service', async () => {
@@ -138,6 +157,21 @@ describe('AccountIdentityControls', () => {
     expect(logout?.textContent).toContain('market.signOut');
     await act(async () => logout?.click());
     expect(mocks.logout).toHaveBeenCalledOnce();
+  });
+
+  it('shows the email identity in the signed-in account menu when the sign-in trigger is hidden', async () => {
+    mocks.account.status = 'signed-in';
+    mocks.account.me = {
+      email: 'alice@example.com',
+      user: { githubId: 0, login: 'user-internal', avatarUrl: '' },
+      isAdmin: false,
+    };
+    await act(async () => root.render(<AccountIdentityControls showSignIn={false} />));
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!;
+    expect(trigger.textContent).toContain('alice@example.com');
+    expect(trigger.textContent).not.toContain('user-internal');
+    await act(async () => trigger.click());
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain('alice@example.com');
   });
 
   it('keeps the portalled menu aligned to the trigger and inside the viewport', () => {

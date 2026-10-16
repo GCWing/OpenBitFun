@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { SessionSceneTarget } from '../components/SceneBar/types';
 import type { FlowChatFocusItemRequest } from '@/flow_chat/events/flowchatNavigation';
+import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 
 export interface DockConversation extends SessionSceneTarget {
   kind: 'control' | 'session' | 'miniapp';
@@ -95,7 +96,12 @@ export const useConversationDockStore = create<ConversationDockState>((set, get)
     set(state => {
       const hiddenMiniApps = { ...state.hiddenMiniApps };
       delete hiddenMiniApps[miniAppDockKey(surfaceId, appId)];
-      return { hiddenMiniApps };
+      // The pinned control reference is always present in Hi. Collapse only
+      // after a committed app close/transfer, including when composer cleanup
+      // already removed the app reference. Topic rebinding uses remove instead.
+      const collapse = surfaceId === getActiveSurfaceId()
+        && !state.entries.some(entry => entry.surfaceId === surfaceId && entry.kind !== 'control');
+      return { hiddenMiniApps, ...(collapse ? { open: false } : {}) };
     });
   },
   reorder: (source, target) => set(state => {

@@ -33,6 +33,12 @@ pub mod macos_menubar;
 mod macos_window_chrome;
 #[cfg(target_os = "macos")]
 mod macos_window_close;
+mod miniapp_desktop;
+
+// Keep one macro expansion: on macOS it emits a process-wide Info.plist symbol.
+fn desktop_context() -> tauri::Context<tauri::Wry> {
+    tauri::generate_context!()
+}
 mod openbitfun_control_host;
 pub mod runtime;
 pub mod sleep_prevention;
@@ -231,10 +237,7 @@ fn show_main_window_on_macos(app: &tauri::AppHandle, reason: &str) {
     cancel_main_window_close_request_on_macos(app);
 
     let Some(main_window) = app.get_webview_window("main") else {
-        log::warn!(
-            "Failed to show main window on macOS reopen event: reason={}, error=main window not found",
-            reason
-        );
+        handle_secondary_launch(app);
         return;
     };
 
@@ -278,6 +281,21 @@ fn show_main_window_for_secondary_launch(
     app: &tauri::AppHandle,
     attempt: &str,
 ) -> Result<(), String> {
+    if app.get_webview_window("main").is_none() {
+        #[cfg(target_os = "macos")]
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+        let trace = app.state::<DesktopStartupTrace>();
+        appearance::create_main_window(
+            app,
+            trace.trace_id(),
+            &trace,
+            None,
+            Arc::clone(
+                app.state::<Arc<frontend_workbench::FrontendWorkbenchManager>>()
+                    .inner(),
+            ),
+        );
+    }
     let Some(main_window) = app.get_webview_window("main") else {
         return Err("main window not found".to_string());
     };
@@ -410,6 +428,28 @@ fn get_startup_native_trace(
 /// Tauri application entry point
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() {
+    match miniapp_desktop::launch_manifest() {
+        Ok(Some(manifest)) => {
+            if let Err(error) = miniapp_desktop::run_shell(manifest) {
+                show_fatal_startup_error(&error);
+            }
+            return;
+        }
+        Err(error) => {
+            show_fatal_startup_error(&error);
+            return;
+        }
+        Ok(None) => {}
+    }
+    let miniapp_background = std::env::args_os().any(|arg| arg == "--miniapp-background");
+    let _miniapp_host_owner = match miniapp_desktop::claim_host(miniapp_background).await {
+        Ok(Some(owner)) => owner,
+        Ok(None) => return,
+        Err(error) => {
+            show_fatal_startup_error(&error);
+            return;
+        }
+    };
     let startup_started = Instant::now();
     let startup_trace_id = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -690,14 +730,18 @@ pub async fn run() {
         // developer's normal OpenBitFun instance. Its storage root and automation
         // port are already test-scoped, so joining the product single-instance
         // group would make the E2E child exit before WebDriver can attach.
-        if !logging::is_embedded_webdriver_mode() {
+        if !logging::is_embedded_webdriver_mode()
+            && std::env::var_os("OPENBITFUN_USER_ROOT").is_none()
+        {
             builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
                 log::info!(
                     "Existing OpenBitFun Desktop instance received launch request: args_count={}, cwd={}",
                     args.len(),
                     cwd
                 );
-                handle_secondary_launch(app);
+                if !args.iter().any(|arg| arg == "--miniapp-background") {
+                    handle_secondary_launch(app);
+                }
             }));
         }
     }
@@ -719,6 +763,7 @@ pub async fn run() {
         // window-state: its exit hook can overwrite repairs with stale cached data.
         .manage(window_state_support::MainWindowState::default())
         .manage(app_state)
+        .manage(miniapp_desktop::DesktopMiniApps::default())
         .manage(sleep_prevention::SleepPreventionState::default())
         .manage(desktop_runtime)
         .manage(coordinator_state)
@@ -1025,13 +1070,19 @@ pub async fn run() {
             };
             let window_started = Instant::now();
             startup_trace.record_phase("main_window_create_start", "native_window");
-            appearance::create_main_window(
+            if !miniapp_background {
+                appearance::create_main_window(
                 &app_handle,
                 &startup_trace_id,
                 &startup_trace,
                 workspace_startup_bootstrap_snapshot,
                 Arc::clone(&frontend_workbench),
             );
+            } else {
+                #[cfg(target_os = "macos")]
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            }
+            miniapp_desktop::install(&app_handle).map_err(std::io::Error::other)?;
             let window_duration_ms = elapsed_ms(window_started);
             startup_trace.record_step(
                 "native_step_end",
@@ -1207,6 +1258,12 @@ pub async fn run() {
 
                 if let tauri::WindowEvent::CloseRequested { api: _api, .. } = event {
                     if window.label() == "main" {
+                        if window.app_handle().state::<miniapp_desktop::DesktopMiniApps>().instances.snapshot().instances.iter().any(|instance|
+                            instance.primary_view.iter().chain(instance.pending_view.iter()).any(|view| view.kind == openbitfun_product_domains::miniapp::instances::MiniAppViewKind::Window)) {
+                            _api.prevent_close();
+                            let _ = window.hide();
+                            return;
+                        }
                         #[cfg(target_os = "macos")]
                         {
                             _api.prevent_close();
@@ -1258,6 +1315,8 @@ pub async fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            api::miniapp_api::miniapp_presentation,
+            api::miniapp_api::miniapp_shell_call,
             appearance::show_main_window,
             frontend_workbench::frontend_update_candidate_ready,
             frontend_workbench::frontend_update_candidate_failed,
@@ -1947,12 +2006,25 @@ pub async fn run() {
             api::debug_api::debug_open_devtools,
             api::debug_api::debug_close_devtools,
         ])
-        .build(tauri::generate_context!());
+        .build(desktop_context());
 
     match app {
         Ok(app) => {
             app.run(|app_handle, event| match event {
                 tauri::RunEvent::ExitRequested { api, code, .. } => {
+                    if code.is_none()
+                        && (app_handle.get_webview_window("main").is_none()
+                            || app_handle
+                                .state::<miniapp_desktop::DesktopMiniApps>()
+                                .instances
+                                .snapshot()
+                                .instances
+                                .iter()
+                                .any(|instance| instance.primary_view.is_some()))
+                    {
+                        api.prevent_exit();
+                        return;
+                    }
                     if !PROCESS_EXIT_CLEANUP_COMPLETE.load(Ordering::Acquire) {
                         api.prevent_exit();
                         request_desktop_exit(app_handle, code.unwrap_or(0), "tauri_exit_requested");
