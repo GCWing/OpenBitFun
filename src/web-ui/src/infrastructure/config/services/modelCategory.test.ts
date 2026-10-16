@@ -52,4 +52,17 @@ describe('model capability selection', () => {
       capabilities: [],
     })).toBe(false);
   });
+
+  it('maps image_generation category to the image_generation capability', () => {
+    const imageGenModel = {
+      id: 'dall-e-3',
+      enabled: true,
+      category: 'image_generation',
+      capabilities: [],
+    };
+
+    expect(getEffectiveModelCapabilities(imageGenModel)).toEqual(['image_generation']);
+    expect(isSelectableModelForCapability(imageGenModel, 'image_generation')).toBe(true);
+    expect(isSelectableTextChatModel(imageGenModel)).toBe(false);
+  });
 });
