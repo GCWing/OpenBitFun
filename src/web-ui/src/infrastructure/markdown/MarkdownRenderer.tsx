@@ -229,6 +229,7 @@ const EDITOR_OPENABLE_EXTENSIONS = new Set([
   'gitignore', 'gitattributes', 'editorconfig',
   'log', 'dockerfile', 'makefile', 'mk', 'gradle',
   'properties', 'plist', 'tex', 'mermaid', 'svg',
+  'cj',
 ]);
 const EDITOR_OPENABLE_BASENAMES = new Set([
   'dockerfile',
@@ -792,6 +793,8 @@ function formatCodeLanguageLabel(lang: string): string {
     makefile: 'Makefile',
     toml: 'TOML',
     xml: 'XML',
+    cangjie: 'Cangjie',
+    cj: 'Cangjie',
     rust: 'Rust',
     typescript: 'TypeScript',
     javascript: 'JavaScript',

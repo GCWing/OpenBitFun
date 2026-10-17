@@ -7,7 +7,7 @@ const extensions: Record<string, FilePreviewKind> = Object.fromEntries(
     spreadsheet: 'xls xlsx xlsm csv tsv ods numbers',
     presentation: 'ppt pptx odp key',
     document: 'doc docx odt rtf txt md markdown pages',
-    code: 'js jsx ts tsx py rs go java c h cpp hpp cs rb php swift kt vue svelte html css scss json yaml yml toml xml sql sh ps1 ipynb',
+    code: 'js jsx ts tsx py rs go java c h cpp hpp cs rb php swift kt vue svelte html css scss json yaml yml toml xml sql sh ps1 ipynb cj',
     archive: 'zip rar 7z tar gz bz2 xz tgz',
     audio: 'mp3 wav flac aac m4a ogg opus',
     video: 'mp4 mov mkv avi webm m4v wmv',

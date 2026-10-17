@@ -174,7 +174,12 @@ export const openBitFunDarkPalette: AppearancePalette = {
   monaco: {
     base: 'vs-dark',
     inherit: true,
-    rules: [],
+    // `vs-dark` has no rule for the `function` token, so function names fall back
+    // to the default foreground. Declared function names and call sites use that
+    // token (Cangjie, and any other language grammar that emits it).
+    rules: [
+      { token: 'function', foreground: 'DCDCAA' },
+    ],
     colors: {
       background: DARK_BACKGROUND_PRIMARY,
       foreground: DARK_TEXT_PRIMARY,

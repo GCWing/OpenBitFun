@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useState } from 'react';
 import { getLoadedPrismSyntaxHighlighter, loadPrismSyntaxHighlighter } from '@/shared/utils/syntaxHighlighterLoader';
 import { scheduleAfterStartupPaint } from '@/shared/utils/startupTaskScheduling';
+import { ensureCangjiePrismLanguage } from './cangjiePrismLanguage';
 import {
   isStartupRenderTraceEnabled,
   recordReactRenderProfile,
@@ -118,6 +119,7 @@ export const AsyncPrismSyntaxHighlighter: React.FC<AsyncPrismSyntaxHighlighterPr
       void loadPrismSyntaxHighlighter()
         .then((component) => {
           if (!cancelled) {
+            ensureCangjiePrismLanguage(component);
             setHighlighter(() => component);
           }
         })

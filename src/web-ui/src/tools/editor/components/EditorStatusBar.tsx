@@ -69,6 +69,7 @@ const getLanguageDisplayName = (language: string): string => {
     'dockerfile': 'Dockerfile',
     'plaintext': 'Plain Text',
     'toml': 'TOML',
+    'cangjie': 'Cangjie',
     'ini': 'INI',
     'vue': 'Vue',
     'svelte': 'Svelte',
