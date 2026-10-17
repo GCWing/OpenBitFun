@@ -1,6 +1,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-static INCLUDE_SENSITIVE_DIAGNOSTICS: AtomicBool = AtomicBool::new(true);
+// Fail closed until the config layer applies the saved preference (#3213):
+// sensitive diagnostics are opt-in everywhere else (config default, UI copy).
+static INCLUDE_SENSITIVE_DIAGNOSTICS: AtomicBool = AtomicBool::new(false);
 
 pub fn set_include_sensitive_diagnostics(enabled: bool) {
     INCLUDE_SENSITIVE_DIAGNOSTICS.store(enabled, Ordering::Relaxed);
