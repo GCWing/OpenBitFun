@@ -99,4 +99,19 @@ describe('FrontendLogLevelSync startup reads', () => {
     expect(loggerMocks.setIncludeSensitiveDiagnostics).toHaveBeenCalledWith(true);
     expect(loggerMocks.setFlowChatDiagnosticsEnabled).toHaveBeenCalledWith(false);
   });
+
+  it('defaults sensitive diagnostics to off when the saved value is missing', async () => {
+    configApiMocks.getConfigs.mockResolvedValueOnce({
+      [LOGGING_LEVEL_PATH]: 'debug',
+      [FLOW_CHAT_DIAGNOSTICS_PATH]: false,
+    });
+    configApiMocks.getRuntimeLoggingInfo.mockResolvedValueOnce({ effectiveLevel: 'warn' });
+
+    const { initializeFrontendLogLevelSync } = await importSyncModule();
+    await initializeFrontendLogLevelSync();
+
+    expect(loggerMocks.setLevel).toHaveBeenCalledWith(1);
+    expect(loggerMocks.setIncludeSensitiveDiagnostics).toHaveBeenCalledWith(false);
+    expect(loggerMocks.setFlowChatDiagnosticsEnabled).toHaveBeenCalledWith(false);
+  });
 });

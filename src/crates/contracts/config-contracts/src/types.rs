@@ -388,7 +388,7 @@ pub struct AppLoggingConfig {
     /// Allowed values: trace, debug, info, warn, error, off.
     pub level: String,
     /// Whether diagnostic logs may include sensitive troubleshooting payloads.
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub include_sensitive_diagnostics: bool,
     /// Whether the local UI records detailed Flow Chat viewport diagnostics.
     #[serde(default)]
@@ -1946,7 +1946,7 @@ impl Default for AppLoggingConfig {
         Self {
             // Set to Debug in early development for easier diagnostics
             level: "debug".to_string(),
-            include_sensitive_diagnostics: true,
+            include_sensitive_diagnostics: false,
             flow_chat_diagnostics: false,
             model_exchange_tracing: ModelExchangeTracingConfig::default(),
         }
@@ -3743,13 +3743,13 @@ mod tests {
     }
 
     #[test]
-    fn app_logging_defaults_to_sensitive_diagnostics_enabled() {
+    fn app_logging_defaults_to_sensitive_diagnostics_disabled() {
         let config: AppLoggingConfig = serde_json::from_value(serde_json::json!({
             "level": "trace"
         }))
         .expect("logging config without sensitive preference should deserialize");
 
-        assert!(config.include_sensitive_diagnostics);
+        assert!(!config.include_sensitive_diagnostics);
         assert!(!config.flow_chat_diagnostics);
         assert_eq!(
             config.model_exchange_tracing.mode,

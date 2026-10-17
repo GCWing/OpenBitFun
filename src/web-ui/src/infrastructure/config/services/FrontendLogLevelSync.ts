@@ -102,7 +102,7 @@ async function resolveInitialLoggingSettings(): Promise<InitialLoggingSettings> 
       includeSensitiveDiagnostics:
         typeof configs[LOGGING_INCLUDE_SENSITIVE_PATH] === 'boolean'
           ? configs[LOGGING_INCLUDE_SENSITIVE_PATH]
-          : true,
+          : false,
       flowChatDiagnostics: configs[FLOW_CHAT_DIAGNOSTICS_PATH] === true,
     };
   }
@@ -115,7 +115,7 @@ async function resolveInitialLoggingSettings(): Promise<InitialLoggingSettings> 
         includeSensitiveDiagnostics:
           typeof configs[LOGGING_INCLUDE_SENSITIVE_PATH] === 'boolean'
             ? configs[LOGGING_INCLUDE_SENSITIVE_PATH]
-            : true,
+            : false,
         flowChatDiagnostics: configs[FLOW_CHAT_DIAGNOSTICS_PATH] === true,
       };
     }
@@ -125,7 +125,7 @@ async function resolveInitialLoggingSettings(): Promise<InitialLoggingSettings> 
     includeSensitiveDiagnostics:
       typeof configs[LOGGING_INCLUDE_SENSITIVE_PATH] === 'boolean'
         ? configs[LOGGING_INCLUDE_SENSITIVE_PATH]
-        : true,
+        : false,
     flowChatDiagnostics: configs[FLOW_CHAT_DIAGNOSTICS_PATH] === true,
   };
 }
