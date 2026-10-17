@@ -268,6 +268,16 @@ pub struct AgentSessionModelSelection {
     pub reasoning_preset: Option<String>,
 }
 
+/// Explicit model or pool choice applied when creating a child session.
+/// Omission at the request boundary preserves the inherited pool binding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionModelTargetSelection {
+    pub selection: openbitfun_core_types::model_pool::ModelSelection,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_preset: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionModelSelectionUpdateRequest {
@@ -1706,6 +1716,27 @@ pub trait AgentUserShellCommandPort: Send + Sync {
 
 #[async_trait::async_trait]
 pub trait AgentSessionModelPort: Send + Sync {
+    async fn update_session_model_target(
+        &self,
+        _session_id: &str,
+        _selection: openbitfun_core_types::model_pool::ModelSelection,
+    ) -> PortResult<openbitfun_core_types::model_pool::SessionModelTarget> {
+        Err(PortError::new(
+            PortErrorKind::NotAvailable,
+            "model_pool_selection_v1 is not supported by this provider",
+        ))
+    }
+
+    async fn get_session_model_target(
+        &self,
+        _session_id: &str,
+    ) -> PortResult<openbitfun_core_types::model_pool::SessionModelTarget> {
+        Err(PortError::new(
+            PortErrorKind::NotAvailable,
+            "model_pool_selection_v1 is not supported by this provider",
+        ))
+    }
+
     async fn update_session_model_selection(
         &self,
         request: AgentSessionModelSelectionUpdateRequest,

@@ -664,7 +664,7 @@
   "sections": {
     "acquisition": "添加或导入模型",
     "selectionModes": "模型选用模式",
-    "pool": "模型池",
+    "pool": "全部模型",
     "more": "更多设置"
   },
   "acquisition": {
@@ -717,5 +717,43 @@
     "allProviders": "全部供应商",
     "acknowledge": "知道了"
   },
-  "editConfiguredProviderSubtitle": "更新此服务的 API 地址、密钥与模型"
+  "editConfiguredProviderSubtitle": "更新此服务的 API 地址、密钥与模型",
+  "pools": {
+    "empty": "暂无模型池",
+    "title": "模型池",
+    "unsupported": "此主机不支持模型池。",
+    "error": "操作失败，编辑内容已保留。若版本冲突，请刷新后重新打开模型池。",
+    "refresh": "刷新",
+    "ordered": "顺序优先",
+    "orderedHint": "需要分配或切换模型时，按列表顺序选择第一个可用模型。",
+    "balanced": "均衡分配",
+    "balancedHint": "为需要分配的会话轮流选择可用模型，尽量均匀分配。",
+    "delete": "删除",
+    "confirmDelete": "确认删除",
+    "deleteTitle": "删除模型池“{{name}}”？",
+    "deleteHint": "引用已删除模型池的会话需要重新选择模型。",
+    "create": "创建模型池",
+    "editTitle": "编辑模型池",
+    "name": "模型池名称",
+    "strategy": "路由策略",
+    "stickyHint": "健康的会话保持使用当前模型，策略仅影响新分配和故障切换。",
+    "up": "上移",
+    "down": "下移",
+    "remove": "移除",
+    "add": "添加模型",
+    "addHint": "模型池使用成员模型中最小的上下文窗口。建议添加能力和上下文容量相近的模型，以减少切换时的体验差异。",
+    "save": "保存",
+    "cancel": "取消",
+    "health": {
+      "unverified": "尚未验证",
+      "available": "可用",
+      "cooling_down": "冷却中",
+      "probing": "探测中",
+      "needs_attention": "配置需要处理",
+      "disabled": "已禁用",
+      "missing": "模型配置不存在"
+    },
+    "retry": "允许重试",
+    "invalidRecords": "当前版本无法读取部分模型池记录，这些记录已原样保留。"
+  }
 }

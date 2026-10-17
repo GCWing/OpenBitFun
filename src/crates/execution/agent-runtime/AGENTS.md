@@ -86,6 +86,18 @@ context/request identity; this module never calls providers, emits product event
 or writes sessions. It is an internal assembly-facing module, not a new SDK or
 wire capability.
 
+`model_pool` owns provider-neutral member selection, session affinity, shared
+health, cooldown/probe admission, and generation-fenced reservation decisions.
+It is gated by `agent-runtime`. Core supplies configured candidates, clocks,
+client preparation, persistence and accepted-response boundaries; this module
+must not call providers, query quotas, read configuration files or emit UI events.
+The shared selection DTO lives in `core-types`; pool configuration documents live
+in `config-contracts`. Focused verification:
+
+```bash
+cargo test --locked -p openbitfun-agent-runtime --no-default-features --features agent-runtime --lib model_pool
+```
+
 ## Test Target Layout
 
 Integration contracts use six explicit Cargo targets so package-level checks

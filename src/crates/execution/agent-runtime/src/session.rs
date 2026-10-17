@@ -222,6 +222,13 @@ pub struct SessionConfig {
     /// Model config ID used by this session (for token usage tracking)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
+    /// Authoritative pool selection; model_id is not a pool identifier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_pool_id: Option<String>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub model_pool_selection_revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_pool_binding: Option<openbitfun_core_types::model_pool::ModelPoolBinding>,
     /// Explicit reasoning preset selected for this session. `None` means the
     /// model's default preset (Auto).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -287,6 +294,10 @@ fn is_local_agent_route_owner(owner: &SessionAgentRouteOwner) -> bool {
     *owner == SessionAgentRouteOwner::Local
 }
 
+fn is_zero(value: &u64) -> bool {
+    *value == 0
+}
+
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
@@ -306,6 +317,9 @@ impl Default for SessionConfig {
             remote_connection_id: None,
             remote_ssh_host: None,
             model_id: None,
+            model_pool_id: None,
+            model_pool_selection_revision: 0,
+            model_pool_binding: None,
             reasoning_preset: None,
             permission_mode: None,
             continuation_policy: SessionContinuationPolicy::default(),
@@ -717,5 +731,51 @@ mod tests {
 impl SessionConfig {
     pub fn is_remote_workspace(&self) -> bool {
         self.workspace_kind == Some(openbitfun_core_types::WorkspaceKind::Remote)
+    }
+}
+
+#[cfg(test)]
+mod model_pool_compatibility_tests {
+    use super::*;
+
+    #[test]
+    fn model_pool_legacy_session_defaults_and_downgrade_guard() {
+        let mut legacy = serde_json::to_value(SessionConfig::default()).unwrap();
+        let object = legacy.as_object_mut().unwrap();
+        object.remove("model_pool_id");
+        object.remove("model_pool_binding");
+        object.remove("model_pool_selection_revision");
+        let mut config: SessionConfig = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(config.model_pool_id.is_none());
+        assert_eq!(config.model_pool_selection_revision, 0);
+        assert_eq!(serde_json::to_value(&config).unwrap(), legacy);
+        // Also accept the explicit zero written before default omission was added.
+        legacy["model_pool_selection_revision"] = serde_json::json!(0);
+        config = serde_json::from_value(legacy).unwrap();
+        assert_eq!(config.model_pool_selection_revision, 0);
+        config.model_pool_id = Some("p".into());
+        config.model_pool_selection_revision = 7;
+        config.model_id = None;
+        config.model_binding_policy = SessionModelBindingPolicy::Pool;
+        let encoded = serde_json::to_value(&config).unwrap();
+        assert_eq!(encoded["model_pool_selection_revision"], 7);
+        let restored: SessionConfig = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(restored.model_pool_id.as_deref(), Some("p"));
+        assert_eq!(restored.model_pool_selection_revision, 7);
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        enum LegacyPolicy {
+            Mutable,
+            ApprovedImmutable,
+        }
+        #[derive(serde::Deserialize)]
+        struct LegacyReader {
+            #[allow(dead_code)]
+            model_binding_policy: LegacyPolicy,
+        }
+        assert!(
+            serde_json::from_value::<LegacyReader>(encoded).is_err(),
+            "old runtimes must not run a pool as primary"
+        );
     }
 }

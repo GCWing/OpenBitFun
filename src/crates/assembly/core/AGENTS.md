@@ -271,6 +271,16 @@ For built-in provider overlay, trusted endpoint validation, and reasoning catalo
 cargo test -p openbitfun-core --no-default-features --features ai-adapter-runtime --lib infrastructure::ai::
 ```
 
+For model-pool image admission, compatibility filtering, and image projection:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib -- model_pool::tests image_input input_model_tests
+```
+
+These fixtures exercise both pool strategies, inherited bindings, read-only previews,
+Agent tool restrictions, and native/tool-assisted image paths. They do not contact
+providers or exercise live SSH, relay, peer, or dispatch connections.
+
 For model selector latency, run the catalog and session mutation owner fixtures:
 
 ```bash
@@ -404,6 +414,12 @@ Set `OPENBITFUN_TEST_NATIVE_SESSIONS_ROOT` and `OPENBITFUN_TEST_NATIVE_SESSION_I
 to an existing answerless Codex import. It reads the installed native copy and
 Codex source, exercises the repair in a temporary copy, and verifies the original
 native history is unchanged.
+
+External-subagent model inheritance uses the same owner feature:
+
+```bash
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,git,external-sources --lib external_subagents::tests::omitted_external_model
+```
 
 Detached Dispatch controller, target query compatibility, and managed-baseline checks:
 

@@ -39,6 +39,8 @@ Add AI providers and models, choose defaults, and configure proxy, subscription,
   - Add custom headers, request-body fields, and SSL behavior per provider
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 保存前测试供应商或模型连接并刷新运行时客户端
   - Test provider or model connectivity before saving and refresh the runtime client
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 管理模型池、路由策略与会话模型选择
+  - Manage model pools, routing strategies, and session model selection
 
 ## 怎么用 / How to use it
 

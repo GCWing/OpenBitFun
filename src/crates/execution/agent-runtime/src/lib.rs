@@ -31,6 +31,8 @@ pub mod event_source;
 pub mod events;
 #[cfg(feature = "agent-runtime")]
 pub mod evidence_ledger;
+#[cfg(feature = "agent-runtime")]
+pub mod model_pool;
 #[cfg(feature = "native-hook-settings")]
 pub mod native_hooks;
 #[cfg(feature = "agent-runtime")]

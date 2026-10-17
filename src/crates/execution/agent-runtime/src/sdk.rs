@@ -545,6 +545,23 @@ impl AgentRuntime {
         self.inner.update_session_model(request).await
     }
 
+    pub async fn update_session_model_target(
+        &self,
+        session_id: &str,
+        selection: openbitfun_core_types::model_pool::ModelSelection,
+    ) -> Result<openbitfun_core_types::model_pool::SessionModelTarget, RuntimeError> {
+        self.inner
+            .update_session_model_target(session_id, selection)
+            .await
+    }
+
+    pub async fn get_session_model_target(
+        &self,
+        session_id: &str,
+    ) -> Result<openbitfun_core_types::model_pool::SessionModelTarget, RuntimeError> {
+        self.inner.get_session_model_target(session_id).await
+    }
+
     pub async fn update_session_model_selection(
         &self,
         request: AgentSessionModelSelectionUpdateRequest,

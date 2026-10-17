@@ -348,6 +348,17 @@ export interface TaskModelsConfig {
   git_commit: TaskModelSelection;
 }
 
+export type ModelTargetSelection = { kind: 'model'; model_ref: string } | { kind: 'pool'; pool_id: string };
+export type AgentModelTargetSelection = ModelTargetSelection | { kind: 'inherit' };
+export interface AgentModelSelections {
+  mode: ModelTargetSelection;
+  subagents: {
+    default: AgentModelTargetSelection;
+    builtin: Record<string, AgentModelTargetSelection>;
+    fork: AgentModelTargetSelection;
+  };
+}
+
 export interface AgentModelDefaultsConfig {
   mode: string;
   subagents: {
@@ -361,6 +372,7 @@ export interface AIConfig {
   models: AIModelConfig[];
   default_models: DefaultModelsConfig;
   agent_model_defaults: AgentModelDefaultsConfig;
+  agent_model_selections?: AgentModelSelections;
   task_models: TaskModelsConfig;
   agent_profiles: Record<string, StoredAgentProfileConfigItem>;
   proxy: ProxyConfig;

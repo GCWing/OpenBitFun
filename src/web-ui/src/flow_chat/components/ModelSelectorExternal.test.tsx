@@ -101,7 +101,7 @@ vi.mock('@/infrastructure/config/services/ConfigManager', () => ({
           capabilities: ['text_chat'],
         },
       ],
-      'ai.agent_model_defaults': { mode: 'model-a' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'model-a' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
     })),
     onConfigChange: vi.fn(() => () => undefined),
     setConfig: vi.fn(async () => undefined),
@@ -250,7 +250,7 @@ describe('ModelSelector external transport reuse', () => {
         },
       ],
       'ai.default_models': { primary: 'model-a' },
-      'ai.agent_model_defaults': { mode: 'model-a' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'model-a' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
     });
     aiApiMocks.getModelCatalog.mockResolvedValueOnce({
       version: 1,

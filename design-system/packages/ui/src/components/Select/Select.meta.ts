@@ -6,7 +6,7 @@ export const selectMeta = {
   maturity: "stable",
   name: "Select",
   props: [
-    { name: "options", type: "readonly SelectOption[] (supports option-level testId and data-* attributes)" },
+    { name: "options", type: "readonly SelectOption[] (supports tooltip, testId and data-* attributes)" },
     { name: "value", type: "SelectValue" },
     { name: "defaultValue", type: "SelectValue" },
     { name: "placeholder", type: "string" },

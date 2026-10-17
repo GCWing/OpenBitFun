@@ -1340,6 +1340,37 @@ impl AgentRuntime {
             .map_err(RuntimeError::from)
     }
 
+    pub async fn update_session_model_target(
+        &self,
+        session_id: &str,
+        selection: openbitfun_core_types::model_pool::ModelSelection,
+    ) -> Result<openbitfun_core_types::model_pool::SessionModelTarget, RuntimeError> {
+        let port = self.session_model.as_ref().ok_or_else(|| {
+            RuntimeError::Port(PortError::new(
+                PortErrorKind::NotAvailable,
+                "agent session model port is not registered",
+            ))
+        })?;
+        port.update_session_model_target(session_id, selection)
+            .await
+            .map_err(RuntimeError::from)
+    }
+
+    pub async fn get_session_model_target(
+        &self,
+        session_id: &str,
+    ) -> Result<openbitfun_core_types::model_pool::SessionModelTarget, RuntimeError> {
+        let port = self.session_model.as_ref().ok_or_else(|| {
+            RuntimeError::Port(PortError::new(
+                PortErrorKind::NotAvailable,
+                "agent session model port is not registered",
+            ))
+        })?;
+        port.get_session_model_target(session_id)
+            .await
+            .map_err(RuntimeError::from)
+    }
+
     pub async fn update_session_model_selection(
         &self,
         request: AgentSessionModelSelectionUpdateRequest,

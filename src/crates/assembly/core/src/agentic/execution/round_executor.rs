@@ -84,6 +84,8 @@ pub(super) struct ModelRoundLifecycle {
     started_at: Instant,
     started_event_emitted: bool,
     attempts_started: u32,
+    pub(super) safe_to_switch_model: bool,
+    observed_effective_output: bool,
 }
 
 impl ModelRoundLifecycle {
@@ -93,7 +95,26 @@ impl ModelRoundLifecycle {
             started_at: Instant::now(),
             started_event_emitted: false,
             attempts_started: 0,
+            safe_to_switch_model: false,
+            observed_effective_output: false,
         }
+    }
+
+    fn observe_output(&mut self, has_effective_output: bool) {
+        self.observed_effective_output |= has_effective_output;
+        self.safe_to_switch_model &= !self.observed_effective_output;
+    }
+
+    pub(super) fn allows_pool_failover(&self, error: &OpenBitFunError) -> bool {
+        // Cancellation and local runtime failures also classify as Unknown.
+        // Only failures from the model request may enter pool recovery.
+        self.safe_to_switch_model
+            && matches!(
+                error,
+                OpenBitFunError::AIProvider(_)
+                    | OpenBitFunError::AIClient(_)
+                    | OpenBitFunError::Timeout(_)
+            )
     }
 
     fn take_started_event(&mut self) -> bool {
@@ -110,7 +131,7 @@ impl ModelRoundLifecycle {
         self.attempts_started
     }
 
-    fn attempts_started(&self) -> u32 {
+    pub(super) fn attempts_started(&self) -> u32 {
         self.attempts_started
     }
 }
@@ -120,6 +141,40 @@ impl RoundExecutor {
 
     fn should_retry_provider_error(category: &ErrorCategory) -> bool {
         openbitfun_agent_stream::retry::should_retry(category)
+    }
+
+    fn prefer_pool_alternative(
+        category: &ErrorCategory,
+        lifecycle: &ModelRoundLifecycle,
+        pool_attempt: Option<&super::model_pool::PoolAttempt>,
+    ) -> bool {
+        lifecycle.safe_to_switch_model
+            && matches!(
+                category,
+                ErrorCategory::Network
+                    | ErrorCategory::Timeout
+                    | ErrorCategory::RateLimit
+                    | ErrorCategory::ProviderUnavailable
+            )
+            && pool_attempt.is_some_and(|attempt| attempt.has_available_alternative())
+    }
+
+    fn exhausted_response_error(
+        message: String,
+        attempts: usize,
+        pool_selected: bool,
+    ) -> OpenBitFunError {
+        let message = format!("Stream retry budget exhausted after {attempts} attempts: {message}");
+        if pool_selected {
+            // Malformed model output is not an invalid user request. Allow the
+            // outer pool to exclude this member without poisoning global health.
+            OpenBitFunError::AIProvider(AiProviderError::classified(
+                message,
+                ErrorCategory::ModelError,
+            ))
+        } else {
+            OpenBitFunError::AIClient(message)
+        }
     }
 
     fn terminal_request_error(error: &anyhow::Error, attempts: u32) -> OpenBitFunError {
@@ -219,6 +274,22 @@ impl RoundExecutor {
             EventPriority::Normal,
         )
         .await;
+    }
+
+    pub(super) async fn record_pool_failover(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        lifecycle: &ModelRoundLifecycle,
+        model_id: &str,
+        category: &openbitfun_core_types::ErrorCategory,
+    ) {
+        let attempt_number = lifecycle.attempts_started();
+        self.emit_event(AgenticEvent::ModelRoundAttemptSuperseded {
+            session_id: session_id.into(), turn_id: turn_id.into(), round_id: lifecycle.round_id.clone(),
+            diagnostic: Self::retry_diagnostic(format!("{}:attempt:{attempt_number}", lifecycle.round_id),
+                attempt_number, "model_pool_failover", Some(format!("Model pool member {model_id} failed ({category:?}); selecting another compatible member")), &[]),
+        }, EventPriority::Normal).await;
     }
 
     fn parsed_memory_citation_from_stream_result(
@@ -338,6 +409,7 @@ impl RoundExecutor {
             context_window,
             &mut lifecycle,
             None,
+            None,
         )
         .await
     }
@@ -351,7 +423,10 @@ impl RoundExecutor {
         context_window: Option<usize>,
         lifecycle: &mut ModelRoundLifecycle,
         session_manager: Option<&SessionManager>,
+        pool_attempt: Option<&super::model_pool::PoolAttempt>,
     ) -> OpenBitFunResult<RoundResult> {
+        lifecycle.safe_to_switch_model =
+            pool_attempt.is_some() && !lifecycle.observed_effective_output;
         let round_started_at = lifecycle.started_at;
         let subagent_parent_info = context.subagent_parent_info.clone();
         let is_subagent = subagent_parent_info.is_some();
@@ -392,6 +467,8 @@ impl RoundExecutor {
                 Err(_) => Default::default(),
             };
         let allow_normal_tool_json_repair = global_config.ai.allow_tool_json_repair;
+        // Every member retains the ordinary recovery budget. The outer pool
+        // traversal owns member exclusion and never caps total requests at ten.
         let max_attempts = Self::MAX_STREAM_ATTEMPTS;
         let mut local_attempt_index = 0usize;
         let (stream_result, send_to_stream_ms, stream_processing_ms, final_trace_handle) = loop {
@@ -455,7 +532,12 @@ impl RoundExecutor {
                     let err_msg = format!("{e:#}");
                     let error = Self::terminal_request_error(&e, lifecycle.attempts_started());
                     let retryable = Self::should_retry_provider_error(&error.error_category());
-                    if retryable && local_attempt_index < max_attempts - 1 {
+                    let prefer_alternative = Self::prefer_pool_alternative(
+                        &error.error_category(),
+                        lifecycle,
+                        pool_attempt,
+                    );
+                    if retryable && !prefer_alternative && local_attempt_index < max_attempts - 1 {
                         self.record_retry_diagnostic(
                             &context,
                             &round_id,
@@ -490,7 +572,7 @@ impl RoundExecutor {
                         context.session_id,
                         round_id,
                         lifecycle.attempts_started(),
-                        if retryable { "retry_budget_exhausted" } else { "non_retryable_error" },
+                        if prefer_alternative { "model_pool_alternative" } else if retryable { "retry_budget_exhausted" } else { "non_retryable_error" },
                         error.error_category(),
                         error
                     );
@@ -555,6 +637,14 @@ impl RoundExecutor {
                 .await
             {
                 Ok(result) => {
+                    // Raw tool-argument fragments are not a usable tool call.
+                    // Preserve the output latch across all retries and recovery.
+                    lifecycle.observe_output(
+                        !result.full_text.trim().is_empty()
+                            || !result.full_thinking.is_empty()
+                            || result.reasoning_content_present
+                            || result.tool_calls.iter().any(|call| call.is_valid()),
+                    );
                     let stream_processing_ms = elapsed_ms_u64(stream_started_at);
                     let has_interrupted_invalid_tool_calls =
                         Self::has_interrupted_invalid_tool_calls(&result);
@@ -657,10 +747,11 @@ impl RoundExecutor {
                             ),
                         )
                         .await;
-                        return Err(OpenBitFunError::AIClient(format!(
-                            "Stream retry budget exhausted after {} attempts: {}",
-                            max_attempts, err_msg
-                        )));
+                        return Err(Self::exhausted_response_error(
+                            err_msg,
+                            max_attempts,
+                            pool_attempt.is_some(),
+                        ));
                     }
 
                     let no_effective_output = !result.has_effective_output;
@@ -722,10 +813,11 @@ impl RoundExecutor {
                             ),
                         )
                         .await;
-                        return Err(OpenBitFunError::AIClient(format!(
-                            "Stream retry budget exhausted after {} attempts: {}",
-                            max_attempts, err_msg
-                        )));
+                        return Err(Self::exhausted_response_error(
+                            err_msg,
+                            max_attempts,
+                            pool_attempt.is_some(),
+                        ));
                     }
 
                     if no_effective_output {
@@ -781,10 +873,11 @@ impl RoundExecutor {
                             ),
                         )
                         .await;
-                        return Err(OpenBitFunError::AIClient(format!(
-                            "Stream retry budget exhausted after {} attempts: {}",
-                            max_attempts, err_msg
-                        )));
+                        return Err(Self::exhausted_response_error(
+                            err_msg,
+                            max_attempts,
+                            pool_attempt.is_some(),
+                        ));
                     }
 
                     if is_partial_recovery {
@@ -810,6 +903,7 @@ impl RoundExecutor {
                     );
                 }
                 Err(stream_err) => {
+                    lifecycle.observe_output(stream_err.has_effective_output);
                     if matches!(&stream_err.error, OpenBitFunError::Cancelled(_)) {
                         Self::complete_model_exchange_trace(
                             trace_config.as_ref(),
@@ -833,7 +927,12 @@ impl RoundExecutor {
                         Self::error_trace_response("error", err_msg.clone()),
                     )
                     .await;
-                    if retryable && local_attempt_index < max_attempts - 1 {
+                    let prefer_alternative = Self::prefer_pool_alternative(
+                        &stream_error_category,
+                        lifecycle,
+                        pool_attempt,
+                    );
+                    if retryable && !prefer_alternative && local_attempt_index < max_attempts - 1 {
                         self.record_retry_diagnostic(
                             &context,
                             &round_id,
@@ -870,7 +969,7 @@ impl RoundExecutor {
                         context.session_id,
                         round_id,
                         lifecycle.attempts_started(),
-                        if retryable { "retry_budget_exhausted" } else { "non_retryable_error" },
+                        if prefer_alternative { "model_pool_alternative" } else if retryable { "retry_budget_exhausted" } else { "non_retryable_error" },
                         stream_err.has_effective_output,
                         stream_error_category,
                         err_msg
@@ -896,6 +995,30 @@ impl RoundExecutor {
             Self::final_trace_response(&stream_result),
         )
         .await;
+
+        // Accepted output and all following tool side effects are outside the
+        // member retry/failover boundary.
+        lifecycle.safe_to_switch_model = false;
+        if let Some(attempt) = pool_attempt {
+            let binding = attempt.accept().await?;
+            if let Some(manager) = session_manager {
+                // The response is already accepted. Persistence failure must not
+                // replay it (and must not duplicate tool execution).
+                if let Err(error) = manager
+                    .remember_model_pool_binding(
+                        &context.session_id,
+                        attempt.selection_revision,
+                        binding,
+                    )
+                    .await
+                {
+                    warn!(
+                        "Model pool binding persistence failed: session_id={}, error={error}",
+                        context.session_id
+                    );
+                }
+            }
+        }
 
         // Model returned successfully (output to AI log file)
         if let Some(ref reason) = stream_result.partial_recovery_reason {
@@ -1005,7 +1128,14 @@ impl RoundExecutor {
                     .with_thinking_signature(stream_result.thinking_signature.clone())
                     .with_reasoning_content_kind(stream_result.reasoning_content_kind)
                     .with_memory_citation(parsed_memory_citation)
-                    .with_model_response_replay(model_response_replay);
+                    .with_model_response_replay(model_response_replay)
+                    .with_model_pool_replay_fingerprint(pool_attempt.map(|attempt| {
+                        attempt
+                            .reservation
+                            .binding
+                            .configuration_fingerprint
+                            .clone()
+                    }));
 
             debug!("Returning RoundResult: has_more_rounds=false");
             debug!(
@@ -1062,7 +1192,14 @@ impl RoundExecutor {
                 .with_thinking_signature(stream_result.thinking_signature.clone())
                 .with_reasoning_content_kind(stream_result.reasoning_content_kind)
                 .with_memory_citation(parsed_memory_citation)
-                .with_model_response_replay(model_response_replay);
+                .with_model_response_replay(model_response_replay)
+                .with_model_pool_replay_fingerprint(pool_attempt.map(|attempt| {
+                    attempt
+                        .reservation
+                        .binding
+                        .configuration_fingerprint
+                        .clone()
+                }));
 
         // Publish the semantic assistant response before tool execution so
         // readers can observe the active tool call while it is running. Fork
@@ -1641,6 +1778,30 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn pool_failover_rejects_cancellation_and_local_errors_before_output() {
+        let mut lifecycle = ModelRoundLifecycle::new();
+        lifecycle.safe_to_switch_model = true;
+        for error in [
+            OpenBitFunError::Cancelled("cancelled during retry backoff".into()),
+            OpenBitFunError::service("runtime unavailable"),
+            OpenBitFunError::validation("invalid runtime request"),
+            OpenBitFunError::RecoverableContextOverflow(AiProviderError::classified(
+                "needs compression".into(),
+                ErrorCategory::ContextOverflow,
+            )),
+        ] {
+            assert!(!lifecycle.allows_pool_failover(&error), "{error}");
+        }
+        let error = OpenBitFunError::AIProvider(AiProviderError::classified(
+            "response recovery exhausted".into(),
+            ErrorCategory::Unknown,
+        ));
+        assert!(lifecycle.allows_pool_failover(&error));
+        lifecycle.observe_output(true);
+        assert!(!lifecycle.allows_pool_failover(&error));
+    }
+
+    #[test]
     fn deferred_tool_replay_uses_canonical_gateway_arguments() {
         let mut tool_calls = vec![ToolCall {
             tool_id: "call-1".to_string(),
@@ -1765,6 +1926,14 @@ pub(super) mod tests {
         }
 
         fn with_open_stream(replies: Vec<(u16, String)>, keep_open: bool) -> Self {
+            Self::with_options(replies, keep_open, None)
+        }
+
+        fn with_options(
+            replies: Vec<(u16, String)>,
+            keep_open: bool,
+            retry_after: Option<u64>,
+        ) -> Self {
             use std::io::{BufRead, Read, Write};
             use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -1822,7 +1991,10 @@ pub(super) mod tests {
                     } else {
                         "application/json"
                     };
-                    write!(socket, "HTTP/1.1 {status} Fixture\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len() + usize::from(keep_open)).unwrap();
+                    let retry_header = retry_after
+                        .map(|seconds| format!("Retry-After: {seconds}\r\n"))
+                        .unwrap_or_default();
+                    write!(socket, "HTTP/1.1 {status} Fixture\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n{retry_header}Connection: close\r\n\r\n{body}", body.len() + usize::from(keep_open)).unwrap();
                     socket.flush().unwrap();
                     while keep_open && !stopped.load(Ordering::Relaxed) {
                         std::thread::sleep(Duration::from_millis(5));
@@ -2009,6 +2181,7 @@ pub(super) mod tests {
             None,
             &mut lifecycle,
             Some(&manager),
+            None,
         );
         let observer = async {
             entered.notified().await;
@@ -2743,5 +2916,519 @@ pub(super) mod tests {
             ),
             16_000
         );
+    }
+    #[tokio::test]
+    async fn model_pool_failover_uses_one_round_and_one_request_per_member() {
+        let failure = RetryTestServer::new(vec![(
+            429,
+            json!({"error":{"message":"Rate limit exceeded"}}).to_string(),
+        )]);
+        let success = RetryTestServer::new(vec![retry_test_success()]);
+        let executor = test_round_executor();
+        let router = Arc::new(std::sync::Mutex::new(
+            openbitfun_agent_runtime::model_pool::ModelPoolRouter::default(),
+        ));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pool-state.json");
+        let first =
+            crate::agentic::execution::model_pool::test_attempt(router.clone(), path.clone());
+        assert_eq!(first.reservation.binding.model_id, "a");
+        let mut lifecycle = ModelRoundLifecycle::new();
+        let messages = vec![super::AIMessage::user("Test pool".into())];
+        let failure = {
+            let result = executor
+                .execute_round_with_lifecycle(
+                    failure.client(),
+                    test_round_context(),
+                    messages.clone(),
+                    None,
+                    None,
+                    &mut lifecycle,
+                    None,
+                    Some(&first),
+                )
+                .await;
+            assert_eq!(failure.requests.lock().unwrap().len(), 1);
+            result.unwrap_err()
+        };
+        assert!(lifecycle.safe_to_switch_model);
+        let provider = match failure {
+            OpenBitFunError::AIProvider(error) => error,
+            error => openbitfun_core_types::errors::AiProviderError::classified(
+                error.to_string(),
+                error.error_category(),
+            ),
+        };
+        assert!(first.fail(&provider, 60_000).await);
+        let second = crate::agentic::execution::model_pool::test_attempt(router.clone(), path);
+        assert_eq!(second.reservation.binding.model_id, "b");
+        executor
+            .execute_round_with_lifecycle(
+                success.client(),
+                test_round_context(),
+                messages,
+                None,
+                None,
+                &mut lifecycle,
+                None,
+                Some(&second),
+            )
+            .await
+            .unwrap();
+        assert_eq!(success.requests.lock().unwrap().len(), 1);
+        assert_eq!(lifecycle.attempts_started(), 2);
+        assert_eq!(
+            router
+                .lock()
+                .unwrap()
+                .binding("session-1:0")
+                .unwrap()
+                .model_id,
+            "b"
+        );
+        let events = executor.event_queue.dequeue_batch(100).await;
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event.event, AgenticEvent::ModelRoundStarted { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn model_pool_bound_member_goes_offline_between_turns() {
+        let original = RetryTestServer::new(vec![retry_test_success()]);
+        let original_client = original.client();
+        let fallback = RetryTestServer::new(vec![retry_test_success()]);
+        let executor = test_round_executor();
+        let router = Arc::new(std::sync::Mutex::new(
+            openbitfun_agent_runtime::model_pool::ModelPoolRouter::default(),
+        ));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pool-state.json");
+        let messages = vec![super::AIMessage::user("Test pool".into())];
+        let first =
+            crate::agentic::execution::model_pool::test_attempt(router.clone(), path.clone());
+        executor
+            .execute_round_with_lifecycle(
+                original_client.clone(),
+                test_round_context(),
+                messages.clone(),
+                None,
+                None,
+                &mut ModelRoundLifecycle::new(),
+                None,
+                Some(&first),
+            )
+            .await
+            .unwrap();
+        assert_eq!(original.requests.lock().unwrap().len(), 1);
+        assert_eq!(
+            router
+                .lock()
+                .unwrap()
+                .binding("session-1:0")
+                .unwrap()
+                .model_id,
+            "a"
+        );
+        drop(first);
+        // Stop listening, exactly like taking a mock provider offline after
+        // the first successful turn. This is not a fabricated HTTP error.
+        drop(original);
+
+        let retry =
+            crate::agentic::execution::model_pool::test_attempt(router.clone(), path.clone());
+        assert_eq!(retry.reservation.binding.model_id, "a");
+        let mut context = test_round_context();
+        context.dialog_turn_id = "turn-2".into();
+        context.turn_index = 1;
+        let mut lifecycle = ModelRoundLifecycle::new();
+        let error = executor
+            .execute_round_with_lifecycle(
+                original_client,
+                context.clone(),
+                messages.clone(),
+                None,
+                None,
+                &mut lifecycle,
+                None,
+                Some(&retry),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.error_category(), ErrorCategory::Network);
+        assert!(lifecycle.safe_to_switch_model);
+        assert_eq!(lifecycle.attempts_started(), 1);
+        let OpenBitFunError::AIProvider(provider) = error else {
+            panic!("connection refusal must preserve the provider error");
+        };
+        assert!(retry.fail(&provider, 60_000).await);
+        let next = crate::agentic::execution::model_pool::test_attempt(router.clone(), path);
+        assert_eq!(next.reservation.binding.model_id, "b");
+        executor
+            .execute_round_with_lifecycle(
+                fallback.client(),
+                context,
+                messages,
+                None,
+                None,
+                &mut lifecycle,
+                None,
+                Some(&next),
+            )
+            .await
+            .unwrap();
+        assert_eq!(lifecycle.attempts_started(), 2);
+        assert_eq!(fallback.requests.lock().unwrap().len(), 1);
+        assert_eq!(
+            router
+                .lock()
+                .unwrap()
+                .binding("session-1:0")
+                .unwrap()
+                .model_id,
+            "b"
+        );
+    }
+
+    #[tokio::test]
+    async fn model_pool_recovers_empty_and_malformed_output_on_the_same_member() {
+        let invalid_tool = format!(
+            "data: {}\n\ndata: [DONE]\n\n",
+            json!({
+                "id":"invalid", "object":"chat.completion.chunk", "created":1,
+                "model":"retry-test-model", "choices":[{"index":0,
+                "delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function",
+                "function":{"name":"Read","arguments":r#"{"value":+e1}"#}}]},"finish_reason":"tool_calls"}]
+            })
+        );
+        for body in [
+            "data: [DONE]\n\n".to_string(),
+            "data: not-json\n\n".to_string(),
+            invalid_tool,
+        ] {
+            let server = RetryTestServer::new(vec![(200, body.clone()), retry_test_success()]);
+            let router = Arc::new(std::sync::Mutex::new(
+                openbitfun_agent_runtime::model_pool::ModelPoolRouter::default(),
+            ));
+            let dir = tempfile::tempdir().unwrap();
+            let attempt = crate::agentic::execution::model_pool::test_attempt(
+                router.clone(),
+                dir.path().join("state.json"),
+            );
+            assert!(attempt.has_available_alternative());
+            let mut lifecycle = ModelRoundLifecycle::new();
+            test_round_executor()
+                .execute_round_with_lifecycle(
+                    server.client(),
+                    test_round_context(),
+                    vec![super::AIMessage::user("Recover".into())],
+                    None,
+                    None,
+                    &mut lifecycle,
+                    None,
+                    Some(&attempt),
+                )
+                .await
+                .unwrap();
+            assert_eq!(server.requests.lock().unwrap().len(), 2, "body={body}");
+            assert_eq!(lifecycle.attempts_started(), 2);
+            assert_eq!(
+                router
+                    .lock()
+                    .unwrap()
+                    .binding("session-1:0")
+                    .unwrap()
+                    .model_id,
+                "a"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn model_pool_exhausts_ten_member_attempts_then_allows_fallback() {
+        // An unclassified response failure must use the inner recovery budget.
+        // Keep real HTTP requests; advance only the Retry-After backoff below.
+        let server = RetryTestServer::with_options(
+            vec![(
+                418,
+                json!({"error":{"code":"unrecognized","message":"Unclassified provider failure"}})
+                    .to_string(),
+            )],
+            false,
+            Some(1),
+        );
+        let fallback = RetryTestServer::new(vec![retry_test_success()]);
+        let router = Arc::new(std::sync::Mutex::new(
+            openbitfun_agent_runtime::model_pool::ModelPoolRouter::default(),
+        ));
+        let dir = tempfile::tempdir().unwrap();
+        let first = crate::agentic::execution::model_pool::test_attempt(
+            router.clone(),
+            dir.path().join("state.json"),
+        );
+        let executor = test_round_executor();
+        let mut lifecycle = ModelRoundLifecycle::new();
+        let messages = vec![super::AIMessage::user("Recover".into())];
+        let context = test_round_context();
+        let mut retries = 0;
+        let error = {
+            let run = executor.execute_round_with_lifecycle(
+                server.client(),
+                context,
+                messages,
+                None,
+                None,
+                &mut lifecycle,
+                None,
+                Some(&first),
+            );
+            tokio::pin!(run);
+            loop {
+                tokio::select! {
+                    result = &mut run => break result.unwrap_err(),
+                    _ = tokio::time::sleep(Duration::from_millis(1)) => {
+                        for event in executor.event_queue.dequeue_batch(100).await {
+                            if let AgenticEvent::ModelRoundAttemptSuperseded { diagnostic, .. } = event.event {
+                                retries += 1;
+                                assert_eq!(diagnostic.attempt_index, retries);
+                                // The request future has yielded to backoff. Resume time
+                                // before polling it again so socket deadlines stay real.
+                                tokio::time::pause();
+                                tokio::time::advance(Duration::from_secs(1)).await;
+                                tokio::time::resume();
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        assert_eq!(retries, 9);
+        assert_eq!(server.requests.lock().unwrap().len(), 10);
+        assert_eq!(lifecycle.attempts_started(), 10);
+        assert!(lifecycle.safe_to_switch_model);
+        let OpenBitFunError::AIProvider(provider) = error else {
+            panic!("expected provider error");
+        };
+        assert_eq!(provider.category, ErrorCategory::ModelError);
+        assert!(first.fail(&provider, 60_000).await);
+        // Opaque output failures do not cool the member globally. The outer
+        // traversal excludes it explicitly rather than relying on health.
+        let candidates = ["a", "b"].map(|id| openbitfun_agent_runtime::model_pool::Candidate {
+            model_id: id.into(),
+            fingerprint: id.into(),
+            eligible: true,
+        });
+        assert!(router.lock().unwrap().has_available_alternative(
+            "b",
+            &candidates,
+            &Default::default(),
+            0
+        ));
+        let next = crate::agentic::execution::model_pool::test_attempt_excluding(
+            router.clone(),
+            dir.path().join("next.json"),
+            std::collections::BTreeSet::from(["a".into()]),
+        );
+        assert_eq!(next.reservation.binding.model_id, "b");
+        executor
+            .execute_round_with_lifecycle(
+                fallback.client(),
+                test_round_context(),
+                vec![super::AIMessage::user("Recover".into())],
+                None,
+                None,
+                &mut lifecycle,
+                None,
+                Some(&next),
+            )
+            .await
+            .unwrap();
+        assert_eq!(lifecycle.attempts_started(), 11);
+        assert_eq!(
+            router
+                .lock()
+                .unwrap()
+                .binding("session-1:0")
+                .unwrap()
+                .model_id,
+            "b"
+        );
+    }
+
+    #[tokio::test]
+    async fn model_pool_without_ready_alternative_retains_transient_retries() {
+        let server = RetryTestServer::with_options(
+            vec![
+                (
+                    429,
+                    json!({"error":{"message":"Rate limit exceeded"}}).to_string(),
+                ),
+                retry_test_success(),
+            ],
+            false,
+            Some(1),
+        );
+        let router = Arc::new(std::sync::Mutex::new(
+            openbitfun_agent_runtime::model_pool::ModelPoolRouter::default(),
+        ));
+        {
+            let mut locked = router.lock().unwrap();
+            let b = locked
+                .reserve(
+                    "other",
+                    "p",
+                    openbitfun_core_types::model_pool::ModelPoolStrategy::Ordered,
+                    &[openbitfun_agent_runtime::model_pool::Candidate {
+                        model_id: "b".into(),
+                        fingerprint: "b".into(),
+                        eligible: true,
+                    }],
+                    &Default::default(),
+                    0,
+                    100,
+                )
+                .unwrap();
+            locked.fail(
+                &b,
+                &AiProviderError::classified("auth".into(), ErrorCategory::Auth),
+                0,
+                100,
+            );
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let attempt = crate::agentic::execution::model_pool::test_attempt(
+            router,
+            dir.path().join("state.json"),
+        );
+        assert!(!attempt.has_available_alternative());
+        let mut lifecycle = ModelRoundLifecycle::new();
+        test_round_executor()
+            .execute_round_with_lifecycle(
+                server.client(),
+                test_round_context(),
+                vec![super::AIMessage::user("Retry".into())],
+                None,
+                None,
+                &mut lifecycle,
+                None,
+                Some(&attempt),
+            )
+            .await
+            .unwrap();
+        assert_eq!(server.requests.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn model_pool_output_from_an_earlier_attempt_blocks_later_failover() {
+        let partial = format!(
+            "data: {}\n\ndata: {}\n\n",
+            json!({"id":"partial","object":"chat.completion.chunk","created":1,"model":"retry-test-model",
+                "choices":[{"index":0,"delta":{"content":"Visible output"},"finish_reason":null}]}),
+            json!({"error":{"code":"server_error","message":"Stream interrupted"}})
+        );
+        let server = RetryTestServer::with_options(
+            vec![
+                (200, partial),
+                (
+                    429,
+                    json!({"error":{"message":"Rate limit exceeded"}}).to_string(),
+                ),
+                (
+                    401,
+                    json!({"error":{"message":"invalid api key"}}).to_string(),
+                ),
+            ],
+            false,
+            Some(1),
+        );
+        let router = Arc::new(std::sync::Mutex::new(
+            openbitfun_agent_runtime::model_pool::ModelPoolRouter::default(),
+        ));
+        let dir = tempfile::tempdir().unwrap();
+        let attempt = crate::agentic::execution::model_pool::test_attempt(
+            router,
+            dir.path().join("state.json"),
+        );
+        let mut lifecycle = ModelRoundLifecycle::new();
+        let error = test_round_executor()
+            .execute_round_with_lifecycle(
+                server.client(),
+                test_round_context(),
+                vec![super::AIMessage::user("Partial output".into())],
+                None,
+                None,
+                &mut lifecycle,
+                None,
+                Some(&attempt),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.error_category(), ErrorCategory::Auth);
+        assert_eq!(server.requests.lock().unwrap().len(), 3);
+        assert!(lifecycle.observed_effective_output);
+        assert!(!lifecycle.safe_to_switch_model);
+    }
+
+    #[tokio::test]
+    async fn model_pool_cancellation_after_output_never_switches_or_poisons_health() {
+        let body = format!(
+            "data: {}\n\n",
+            json!({"id":"pool-cancel","object":"chat.completion.chunk","created":1,
+            "model":"retry-test-model","choices":[{"index":0,"delta":{"content":"Committed"},"finish_reason":null}]})
+        );
+        let server = RetryTestServer::with_open_stream(vec![(200, body)], true);
+        let executor = test_round_executor();
+        let token = CancellationToken::new();
+        executor.register_cancel_token("turn-1", token.clone());
+        let router = Arc::new(std::sync::Mutex::new(
+            openbitfun_agent_runtime::model_pool::ModelPoolRouter::default(),
+        ));
+        let dir = tempfile::tempdir().unwrap();
+        let attempt = crate::agentic::execution::model_pool::test_attempt(
+            router.clone(),
+            dir.path().join("state.json"),
+        );
+        let mut lifecycle = ModelRoundLifecycle::new();
+        let run = executor.execute_round_with_lifecycle(
+            server.client(),
+            test_round_context(),
+            vec![super::AIMessage::user("Cancel after output".into())],
+            None,
+            None,
+            &mut lifecycle,
+            None,
+            Some(&attempt),
+        );
+        let cancel = async {
+            loop {
+                if executor
+                    .event_queue
+                    .dequeue_batch(100)
+                    .await
+                    .iter()
+                    .any(|event| matches!(event.event, AgenticEvent::TextChunk { .. }))
+                {
+                    token.cancel();
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        };
+        let (result, _) =
+            tokio::time::timeout(Duration::from_secs(5), async { tokio::join!(run, cancel) })
+                .await
+                .unwrap();
+        assert!(matches!(result, Err(OpenBitFunError::Cancelled(_))));
+        assert!(!lifecycle.safe_to_switch_model);
+        assert_eq!(server.requests.lock().unwrap().len(), 1);
+        drop(attempt);
+        let next = crate::agentic::execution::model_pool::test_attempt(
+            router,
+            dir.path().join("state.json"),
+        );
+        assert_eq!(next.reservation.binding.model_id, "a");
     }
 }

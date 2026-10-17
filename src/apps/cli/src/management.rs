@@ -188,7 +188,10 @@ pub(crate) async fn set_default_model(model_id: &str) -> Result<()> {
         .set_config("ai.default_models.primary", model_id)
         .await?;
     config_service
-        .set_config("ai.agent_model_defaults.mode", model_id)
+        .set_config(
+            "ai.agent_model_selections.mode",
+            serde_json::json!({"kind":"model", "model_ref": model_id}),
+        )
         .await?;
 
     println!("Default model set to: {}", model_id);

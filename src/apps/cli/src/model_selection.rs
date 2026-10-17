@@ -13,7 +13,10 @@ pub(crate) use openbitfun_core::service::config::model_projection::{
 /// Resolve the shared future-mode selector to the concrete enabled model shown
 /// by CLI model pickers and status surfaces.
 pub(crate) fn resolve_mode_model_id(ai_config: &AIConfig) -> Option<String> {
-    resolve_model_selector(ai_config, &ai_config.agent_model_defaults.mode)
+    ai_config
+        .mode_model_reference()
+        .ok()
+        .and_then(|reference| resolve_model_selector(ai_config, &reference))
 }
 
 /// Resolve the Runtime-owned Session selector to the concrete catalog model
@@ -23,10 +26,11 @@ pub(crate) fn resolve_session_model_display_id(
     ai_config: &AIConfig,
     session_selector: Option<&str>,
 ) -> Option<String> {
+    let fallback = ai_config.mode_model_reference().ok();
     let selector = session_selector
         .map(str::trim)
         .filter(|selector| !selector.is_empty())
-        .unwrap_or(ai_config.agent_model_defaults.mode.as_str());
+        .or(fallback.as_deref())?;
     resolve_model_selector(ai_config, selector)
 }
 
@@ -171,8 +175,13 @@ mod tests {
                 "primary": "primary-model",
                 "fast": "fast-model"
             },
-            "agent_model_defaults": {
-                "mode": selector
+            "agent_model_selections": {
+                "mode": {"kind": "model", "model_ref": selector},
+                "subagents": {
+                    "default": {"kind": "model", "model_ref": "fast"},
+                    "builtin": {},
+                    "fork": {"kind": "inherit"}
+                }
             }
         }))
         .expect("test AI config should deserialize")

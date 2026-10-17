@@ -9,6 +9,7 @@ const mockAddBtwThreadMarker = vi.fn();
 const mockUpdateSessionModelName = vi.fn();
 const mockUpdateSessionReasoningPreset = vi.fn();
 const mockEnsureBackendSession = vi.fn();
+const mockUpdateSessionModelPool = vi.fn();
 
 const sessions = new Map<string, any>();
 
@@ -24,6 +25,7 @@ vi.mock('@/infrastructure/api', () => ({
 vi.mock('../store/FlowChatStore', () => ({
   flowChatStore: {
     getState: () => ({ sessions }),
+    updateSessionModelPool: (...args: any[]) => mockUpdateSessionModelPool(...args),
     addExternalSession: (...args: any[]) => mockAddExternalSession(...args),
     updateSessionRelationship: (...args: any[]) => mockUpdateSessionRelationship(...args),
     updateSessionBtwOrigin: (...args: any[]) => mockUpdateSessionBtwOrigin(...args),
@@ -152,7 +154,9 @@ describe('BtwThreadService', () => {
     }));
   });
 
-  it('creates a temporary agent-backed /btw placeholder with its parent anchor', () => {
+  it('creates a temporary agent-backed /btw placeholder with its parent anchor and inherited pool', () => {
+    const binding = { poolId: 'pool-a', modelId: 'member-a', generation: 1 };
+    Object.assign(sessions.get('parent-1').config, { modelPoolId: 'pool-a', modelPoolBinding: binding });
     const result = createBtwSessionPlaceholder({
       parentSessionId: 'parent-1',
       workspacePath: '/workspace',
@@ -185,6 +189,22 @@ describe('BtwThreadService', () => {
       parentSessionId: 'parent-1',
       sessionKind: 'btw',
     });
+    expect(mockUpdateSessionModelPool).toHaveBeenCalledWith(result.childSessionId, 'pool-a', binding);
+  });
+
+  it('retains pending selection on failure and preserves the accepted binding on success', async () => {
+    const binding = { poolId: 'pool-b', modelId: 'member-b', generation: 2 };
+    sessions.set('btw-child', { sessionId: 'btw-child', sessionKind: 'btw',
+      config: { modelPoolId: 'pool-b', modelPoolSelectionPending: true, modelPoolBinding: binding } });
+    const params = { parentSessionId: 'parent-1', childSessionId: 'btw-child', question: 'Why?',
+      initialModelTarget: { selection: { kind: 'pool' as const, pool_id: 'pool-b' } } };
+    mockAskStream.mockRejectedValueOnce(new Error('offline'));
+    await expect(sendMessageToBtwSession(params)).rejects.toThrow('offline');
+    expect(mockUpdateSessionModelPool).not.toHaveBeenCalled();
+    await sendMessageToBtwSession(params);
+    expect(mockAskStream).toHaveBeenLastCalledWith(expect.objectContaining({ initialModelTarget: params.initialModelTarget }));
+    expect(mockAskStream.mock.calls.at(-1)?.[0]).not.toHaveProperty('modelId');
+    expect(mockUpdateSessionModelPool).toHaveBeenCalledWith('btw-child', 'pool-b', binding);
   });
 
   it('stores an absolute parent Turn index for a partial restored tail', () => {

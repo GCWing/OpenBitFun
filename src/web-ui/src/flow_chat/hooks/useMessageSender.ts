@@ -26,6 +26,8 @@ import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurfac
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { isBtwSessionDraft } from '../utils/modelSelectionTarget';
 import { sendMessageToBtwSession } from '../services/BtwThreadService';
+import { supportsBtwModelPools } from '@/infrastructure/api/service-api/ModelPoolAPI';
+import type { BtwInitialModelTarget } from '@/infrastructure/api/service-api/BtwAPI';
 import { buildImagePayload } from '../utils/imagePayload';
 import {
   FLOWCHAT_MESSAGE_SUBMITTED_EVENT,
@@ -104,6 +106,7 @@ interface UseMessageSenderReturn {
 export function useMessageSender(props: UseMessageSenderProps): UseMessageSenderReturn {
   const peer = usePeerDeviceModeOptional();
   const canSetInitialBtwModel = !peer?.peerMode.active || peer.currentPeerCapabilities?.btwInitialModelSelectionV1 === true;
+  const canSetInitialBtwTarget = supportsBtwModelPools();
   const {
     currentSessionId,
     contexts,
@@ -253,13 +256,29 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
         if (!parentSessionId) throw new Error('Side question is missing its parent session');
         await flowChatManager.ensureBackendSession(parentSessionId);
         surfaceScope.assertCurrent('prepare side question parent');
+        const { modelPoolId, modelPoolSelectionPending, modelName, reasoningPreset } = targetSession.config;
+        if (modelPoolId && modelPoolSelectionPending && !canSetInitialBtwTarget) {
+          throw new Error('This host does not support btw_model_pool_selection_v1');
+        }
+        // An inherited pool must retain the host's parent binding. Only explicit
+        // changes use typed selection; never flatten pool intent to modelName.
+        let initialModelTarget: BtwInitialModelTarget | undefined;
+        if (modelPoolId && modelPoolSelectionPending) {
+          initialModelTarget = { selection: { kind: 'pool', pool_id: modelPoolId } };
+        } else if (!modelPoolId && canSetInitialBtwTarget) {
+          initialModelTarget = {
+            selection: { kind: 'model', model_ref: modelName || 'primary' }, reasoningPreset,
+          };
+        }
         await sendMessageToBtwSession({ parentSessionId, childSessionId: targetSession.sessionId,
-          question: fullMessage, imagePayload, modelId: targetSession.config.modelName,
+          question: fullMessage, imagePayload,
+          ...(!modelPoolId && !initialModelTarget ? { modelId: modelName,
+            ...(canSetInitialBtwModel ? { initialModelSelection: {
+              modelId: modelName || 'primary', reasoningPreset,
+            } } : {}),
+          } : {}),
+          ...(initialModelTarget ? { initialModelTarget } : {}),
           userMessageMetadata,
-          ...(canSetInitialBtwModel ? { initialModelSelection: {
-            modelId: targetSession.config.modelName || 'primary',
-            reasoningPreset: targetSession.config.reasoningPreset,
-          } } : {}),
           requestId: targetSession.btwOrigin?.requestId,
         });
       } else await flowChatManager.sendMessage(
@@ -337,6 +356,7 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
     }
   }, [
     canSetInitialBtwModel,
+    canSetInitialBtwTarget,
     currentSessionId,
     contexts,
     onClearContexts,

@@ -4697,6 +4697,24 @@ export class FlowChatStore {
     });
   }
 
+  public updateSessionModelPool(
+    sessionId: string, poolId: string | undefined,
+    binding?: import('@/infrastructure/api/service-api/ModelPoolAPI').ModelPoolBinding,
+    pending = false,
+  ): void {
+    this.setState(prev => {
+      const session = prev.sessions.get(sessionId);
+      if (!session) return prev;
+      const sessions = new Map(prev.sessions);
+      sessions.set(sessionId, {
+        ...session,
+        config: { ...session.config, modelPoolId: poolId, modelPoolBinding: binding,
+          modelPoolSelectionPending: pending, ...(poolId ? { reasoningPreset: undefined } : {}) },
+      });
+      return { ...prev, sessions };
+    });
+  }
+
   public updateSessionReasoningPreset(sessionId: string, presetId?: string | null): void {
     this.setState(prev => {
       const session = prev.sessions.get(sessionId);

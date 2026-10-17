@@ -57,7 +57,7 @@ import {
 } from './agentVisibility';
 import { CustomAgentAPI } from '@/infrastructure/api/service-api/CustomAgentAPI';
 import { useComputerUseEnabled } from '@/infrastructure/config/hooks/useComputerUseEnabled';
-import type { ModeSkillInfo, SubagentModelSelection } from '@/infrastructure/config/types';
+import type { ModeSkillInfo, AgentModelTargetSelection } from '@/infrastructure/config/types';
 import {
   buildSkillCoverageSourceMap,
   getModeSkillRuntimeStatus,
@@ -78,20 +78,18 @@ function normalizeSelectValue(value: string | number | (string | number)[]): str
   return String(Array.isArray(value) ? (value[0] ?? '') : value);
 }
 
-function subagentModelOverrideValue(selection: SubagentModelSelection | undefined): string {
+function subagentModelOverrideValue(selection: AgentModelTargetSelection | undefined): string {
   if (!selection) {
     return DEFAULT_SUBAGENT_MODEL_OVERRIDE_VALUE;
   }
-  return selection.kind === 'inherit' ? 'inherit' : selection.model_id;
+  return JSON.stringify(selection);
 }
 
-function subagentModelSelectionFromValue(value: string): SubagentModelSelection | undefined {
+function subagentModelSelectionFromValue(value: string): AgentModelTargetSelection | undefined {
   if (value === DEFAULT_SUBAGENT_MODEL_OVERRIDE_VALUE) {
     return undefined;
   }
-  return value === 'inherit'
-    ? { kind: 'inherit' }
-    : { kind: 'fixed', model_id: value };
+  return JSON.parse(value) as AgentModelTargetSelection;
 }
 
 function getConfiguredEnabledSkillKeys(skills: ModeSkillInfo[]): string[] {
@@ -222,6 +220,7 @@ const AgentsHomeView: React.FC = () => {
     availableTools,
     toolCatalogStatus,
     configuredModels = [],
+    modelPools = [],
     getModeProfile,
     getAgentSkills,
     getModeManageableSubagents,
@@ -436,9 +435,9 @@ const AgentsHomeView: React.FC = () => {
       label: t('agentCard.modelSelector.default'),
       value: DEFAULT_SUBAGENT_MODEL_OVERRIDE_VALUE,
     },
-    { label: t('agentCard.modelSelector.inherit'), value: 'inherit' },
-    { label: t('agentCard.modelSelector.fast'), value: 'fast' },
-    { label: t('agentCard.modelSelector.primary'), value: 'primary' },
+    { label: t('agentCard.modelSelector.inherit'), value: JSON.stringify({ kind: 'inherit' }) },
+    { label: t('agentCard.modelSelector.fast'), value: JSON.stringify({ kind: 'model', model_ref: 'fast' }) },
+    { label: t('agentCard.modelSelector.primary'), value: JSON.stringify({ kind: 'model', model_ref: 'primary' }) },
     ...configuredModels
       .filter((model): model is typeof model & { id: string } => (
         typeof model.id === 'string'
@@ -446,8 +445,16 @@ const AgentsHomeView: React.FC = () => {
         && model.enabled !== false
         && (model.capabilities ?? []).includes('text_chat')
       ))
-      .map(buildModelOption),
-  ], [buildModelOption, configuredModels, t]);
+      .map(model => ({ ...buildModelOption(model), value: JSON.stringify({ kind: 'model', model_ref: model.id }) })),
+    ...((selectedAgent?.source ?? selectedAgent?.subagentSource) === 'builtin' ? modelPools.map(pool => ({ label: pool.name, value: JSON.stringify({ kind: 'pool', pool_id: pool.id }) })) : []),
+  ], [buildModelOption, configuredModels, modelPools, selectedAgent, t]);
+  const visibleSubagentModelOptions = subagentModelOptions.some(option => option.value === selectedSubagentModelValue)
+    ? subagentModelOptions
+    : [...subagentModelOptions, {
+      value: selectedSubagentModelValue,
+      label: selectedAgent?.subagentModelDisplayName ?? selectedAgent?.name ?? '',
+      disabled: true,
+    }];
   const handleSubagentModelChange = useCallback(async (
     value: string | number,
   ) => {
@@ -1130,7 +1137,7 @@ const AgentsHomeView: React.FC = () => {
                   <Combobox
                     size="sm"
                     className="agent-detail-dialog__model-select"
-                    options={subagentModelOptions}
+                    options={visibleSubagentModelOptions}
                     value={selectedSubagentModelValue}
                     onValueChange={(value) => void handleSubagentModelChange(value)}
                     disabled={savingSubagentModel}

@@ -2346,7 +2346,7 @@ pub async fn get_session_permission_mode(
     })
 }
 
-async fn ensure_session_loaded_for_selector_update(
+pub(crate) async fn ensure_session_loaded_for_selector_update(
     runtime: &DesktopRuntimeContext,
     session_id: &str,
     workspace_id: Option<String>,

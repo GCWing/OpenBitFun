@@ -2477,7 +2477,10 @@ impl CoreServiceAgentRuntime {
             return;
         };
         let _ = config_service
-            .set_config("ai.agent_model_defaults.mode", model_id)
+            .set_config(
+                "ai.agent_model_selections.mode",
+                serde_json::json!({"kind":"model", "model_ref": model_id}),
+            )
             .await;
     }
 

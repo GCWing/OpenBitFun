@@ -1304,8 +1304,7 @@ impl AppManagementService {
             ModelDefaultSlot::Mode => self
                 .config
                 .set_config(
-                    "ai.agent_model_defaults.mode",
-                    request.model_id.as_deref().unwrap_or("primary"),
+                    "ai.agent_model_selections.mode", serde_json::json!({"kind":"model", "model_ref": request.model_id.as_deref().unwrap_or("primary")}),
                 )
                 .await
                 .map_err(core_error)?,

@@ -2791,6 +2791,22 @@ impl PersistenceManager {
             serde_json::to_value(&session.config.reasoning_preset)?,
         );
         config.insert(
+            "model_pool_selection_revision".into(),
+            serde_json::to_value(session.config.model_pool_selection_revision)?,
+        );
+        config.insert(
+            "model_pool_id".into(),
+            serde_json::to_value(&session.config.model_pool_id)?,
+        );
+        config.insert(
+            "model_pool_binding".into(),
+            serde_json::to_value(&session.config.model_pool_binding)?,
+        );
+        config.insert(
+            "model_binding_policy".into(),
+            serde_json::to_value(session.config.model_binding_policy)?,
+        );
+        config.insert(
             "max_context_tokens".into(),
             serde_json::to_value(session.config.max_context_tokens)?,
         );

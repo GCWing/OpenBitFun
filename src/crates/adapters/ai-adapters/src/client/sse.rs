@@ -100,6 +100,22 @@ fn format_transport_error(label: &str, error: &reqwest::Error) -> String {
     message
 }
 
+fn transport_provider_error(label: &str, error: &reqwest::Error) -> AiProviderError {
+    // send() has not yielded a response or any model output. Preserve reqwest's
+    // typed cause: OS-localized messages and URL text cannot classify transport.
+    let category = if error.is_timeout() {
+        ErrorCategory::Timeout
+    } else if error.is_builder() || error.is_redirect() {
+        ErrorCategory::InvalidRequest
+    } else {
+        ErrorCategory::Network
+    };
+    let mut provider_error =
+        AiProviderError::classified(format_transport_error(label, error), category);
+    provider_error.provider = Some(label.to_string());
+    provider_error
+}
+
 fn provider_error_code(body: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(body).ok()?;
     let error = value.get("error").unwrap_or(&value);
@@ -458,8 +474,9 @@ where
             StreamSendOutcome::Transport(e) => {
                 drop(request_permit);
                 let connect_time = request_start_time.elapsed().as_millis();
-                let error_msg = format_transport_error(label, &e);
-                let error = anyhow!("{}", error_msg);
+                let provider_error = transport_provider_error(label, &e);
+                let error_msg = provider_error.message.clone();
+                let error = anyhow!(provider_error);
                 warn!(
                     "{} request failed: {}ms, transport_attempt {}/{}, error: {}",
                     label,
@@ -579,6 +596,74 @@ mod tests {
     };
 
     const CONCURRENCY_ERROR: &str = r#"{"error":{"message":"You've reached your concurrent request limit. Please wait for your ongoing requests to finish and try again.","type":"access_terminated_error"}}"#;
+
+    #[tokio::test]
+    async fn single_attempt_connection_refused_preserves_network_category() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        // A URL may contain words used by the legacy text classifier. The
+        // transport's typed cause, not the URL or OS language, owns admission.
+        let url = format!("http://{address}/timeout/invalid_request_error/v1/messages");
+        let client = crate::client::http::create_http_client(None, false);
+        let result = execute_sse_request(
+            "Anthropic Streaming API",
+            &url,
+            &serde_json::json!({"model": "test"}),
+            1,
+            None,
+            None,
+            || client.post(&url),
+            |_response, tx, _tx_raw, _remaining_ttft_timeout| async move {
+                drop(tx);
+            },
+        )
+        .await;
+        let error = match result {
+            Ok(_) => panic!("closed port must fail before any output"),
+            Err(error) => error,
+        };
+        let provider_error = error
+            .downcast_ref::<AiProviderError>()
+            .expect("transport failure must remain a structured provider error");
+        assert_eq!(provider_error.category, ErrorCategory::Network);
+        assert_eq!(
+            provider_error.provider.as_deref(),
+            Some("Anthropic Streaming API")
+        );
+        assert_eq!(provider_error.http_status, None);
+        assert!(provider_error.message.contains("cause 1:"));
+        assert!(provider_error.message.contains(&address.to_string()));
+    }
+
+    #[tokio::test]
+    async fn transport_provider_error_preserves_timeout_and_invalid_request_categories() {
+        let client = crate::client::http::create_http_client(None, false);
+        let invalid = client.post("not a valid URL").send().await.unwrap_err();
+        assert!(invalid.is_builder());
+        assert_eq!(
+            transport_provider_error("Anthropic Streaming API", &invalid).category,
+            ErrorCategory::InvalidRequest,
+        );
+
+        // Keep the listener open but never respond. The request deadline must
+        // remain Timeout rather than being flattened into a generic Network.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let timeout = client
+            .post(format!(
+                "http://{}/v1/messages",
+                listener.local_addr().unwrap()
+            ))
+            .timeout(Duration::from_millis(50))
+            .send()
+            .await
+            .unwrap_err();
+        assert!(timeout.is_timeout());
+        assert_eq!(
+            transport_provider_error("Anthropic Streaming API", &timeout).category,
+            ErrorCategory::Timeout,
+        );
+    }
 
     async fn limited_scope(name: &str) -> Arc<RequestCapacity> {
         let client = crate::client::http::create_http_client(None, false);

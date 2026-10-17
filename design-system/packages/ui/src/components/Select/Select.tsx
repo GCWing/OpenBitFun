@@ -22,6 +22,7 @@ import { Portal } from "../../overlay/Portal";
 import { useDesignSystem } from "../../overlay/useDesignSystem";
 import { useDismissibleLayer } from "../../overlay/useDismissibleLayer";
 import { Icon } from "../Icon";
+import { Tooltip } from "../Tooltip";
 import {
   Listbox,
   ListboxEmpty,
@@ -40,6 +41,8 @@ export interface SelectOption {
   disabled?: boolean;
   group?: string;
   label: string;
+  /** Optional help shown on hover for the option and selected value. */
+  tooltip?: string;
   testAttributes?: Record<`data-${string}`, string | number | boolean | undefined>;
   testId?: string;
   value: SelectValue;
@@ -331,8 +334,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     return () => form.removeEventListener("reset", handleReset);
   }, [defaultValue, options, placeholder, updateOpen, value]);
 
-  const renderListboxOption = (option: SelectOption) => (
-    <ListboxOption
+  const renderListboxOption = (option: SelectOption) => {
+    const row = <ListboxOption
       {...option.testAttributes}
       aria-label={option.label}
       data-testid={option.testId}
@@ -343,8 +346,13 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       value={option.value}
     >
       {option.label}
-    </ListboxOption>
-  );
+    </ListboxOption>;
+    return option.tooltip ? (
+      <Tooltip key={`${typeof option.value}:${option.value}`} content={option.tooltip} placement="right">
+        {row}
+      </Tooltip>
+    ) : row;
+  };
 
   const renderTriggerContent = () => (
     <>
@@ -356,6 +364,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       <OverflowText
         className={selectedOption ? styles.value : styles.placeholder}
         data-openbitfun-part="value"
+        title={selectedOption?.tooltip}
       >
         {selectedOption?.label ?? placeholder}
       </OverflowText>

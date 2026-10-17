@@ -10,6 +10,7 @@ pub mod background_delivery;
 pub mod errors;
 pub mod installer_config_handoff;
 pub mod model;
+pub mod model_pool;
 pub mod product_identity;
 pub mod session;
 pub mod session_usage;

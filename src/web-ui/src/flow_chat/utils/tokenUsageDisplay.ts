@@ -80,6 +80,8 @@ export function buildModelSelectorTooltipDetails(params: {
   modelName?: string;
   contextWindow?: number;
   configuredMaxOutputTokens?: number;
+  /** null hides the member threshold when a pool owns input admission. */
+  compressionTriggerTokens?: number | null;
   usage?: ContextUsageDisplay;
   t: TranslationFn;
 }): ModelSelectorTooltipDetails {
@@ -88,6 +90,7 @@ export function buildModelSelectorTooltipDetails(params: {
     modelName,
     contextWindow,
     configuredMaxOutputTokens,
+    compressionTriggerTokens,
     usage,
     t,
   } = params;
@@ -115,11 +118,11 @@ export function buildModelSelectorTooltipDetails(params: {
       label: t('modelSelector.tooltip.contextWindow'),
       value: formatCompactTokenCount(contextWindow),
     });
-    rows.push({
+    if (compressionTriggerTokens !== null) rows.push({
       key: 'compressionTrigger',
       label: t('modelSelector.tooltip.compressionTrigger'),
       value: formatCompactTokenCount(
-        getCompressionTriggerTokens(contextWindow, configuredMaxOutputTokens),
+        compressionTriggerTokens ?? getCompressionTriggerTokens(contextWindow, configuredMaxOutputTokens),
       ),
     });
   }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:1d617d6e336f2a60",
+  "digest": "fnv1a64:2d8d27a57b001bc4",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -9,11 +9,13 @@
   ],
   "capabilities": {
     "ids": [
+      "model_pool_selection_v1",
       "background_result_delivery_v1",
       "dialog_queue_v1",
       "idempotent_dialog_submit",
       "inline_image_attachments_v1",
       "btw_initial_model_selection_v1",
+      "btw_model_pool_selection_v1",
       "control_conversation_v1",
       "control_conversation_reset_v1",
       "targeted_session_rollback",
@@ -33,11 +35,13 @@
       "user_question_interaction_v1"
     ],
     "desktop": [
+      "model_pool_selection_v1",
       "background_result_delivery_v1",
       "dialog_queue_v1",
       "idempotent_dialog_submit",
       "inline_image_attachments_v1",
       "btw_initial_model_selection_v1",
+      "btw_model_pool_selection_v1",
       "control_conversation_v1",
       "control_conversation_reset_v1",
       "targeted_session_rollback",
@@ -57,6 +61,7 @@
       "user_question_interaction_v1"
     ],
     "cli": [
+      "model_pool_selection_v1",
       "background_result_delivery_v1",
       "dialog_queue_v1",
       "control_conversation_v1",
@@ -1573,6 +1578,17 @@
       }
     },
     {
+      "id": "delete_model_pool",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
+      }
+    },
+    {
       "id": "delete_persisted_session",
       "surface": "tauri_command",
       "remoteWorkspace": "LegacyUnaudited",
@@ -2920,6 +2936,28 @@
       }
     },
     {
+      "id": "get_model_pool_status",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
+      }
+    },
+    {
+      "id": "get_model_pools",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
+      }
+    },
+    {
       "id": "get_models_dev_catalog_status",
       "surface": "tauri_command",
       "remoteWorkspace": "LocalOnly",
@@ -3116,6 +3154,17 @@
       "cliPeer": {
         "kind": "unsupported",
         "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
+      "id": "get_session_model_target",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
       }
     },
     {
@@ -6218,6 +6267,17 @@
       }
     },
     {
+      "id": "retry_model_pool_member",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
+      }
+    },
+    {
       "id": "reveal_external_source_location",
       "surface": "tauri_command",
       "remoteWorkspace": "RemoteUnsupported",
@@ -6525,6 +6585,17 @@
       "cliPeer": {
         "kind": "unsupported",
         "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
+      "id": "save_model_pool",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
       }
     },
     {
@@ -8039,6 +8110,17 @@
       "id": "update_session_model",
       "surface": "tauri_command",
       "remoteWorkspace": "LegacyUnaudited",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
+      }
+    },
+    {
+      "id": "update_session_model_target",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
       "peer": {
         "kind": "proxied"
       },

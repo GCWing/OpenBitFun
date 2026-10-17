@@ -22,6 +22,7 @@ use super::PeerHostKind;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PeerHostCapability {
+    ModelPoolSelectionV1,
     /// Versioned, execution-host-owned background report decisions are persisted and projected.
     BackgroundResultDeliveryV1,
     DialogQueueV1,
@@ -32,6 +33,8 @@ pub enum PeerHostCapability {
     InlineImageAttachmentsV1,
     /// `btw_ask_stream` applies initial model and reasoning selection before the first turn.
     BtwInitialModelSelectionV1,
+    /// BTW accepts typed initial model/pool choices and retains inherited bindings.
+    BtwModelPoolSelectionV1,
     /// Persistent control conversations and idempotent voice history are available.
     ControlConversationV1,
     /// A fresh persistent control conversation can be selected without deleting history.
@@ -71,11 +74,13 @@ pub enum PeerHostCapability {
 impl PeerHostCapability {
     /// Every capability id, in wire order.
     pub const ALL: &'static [PeerHostCapability] = &[
+        Self::ModelPoolSelectionV1,
         Self::BackgroundResultDeliveryV1,
         Self::DialogQueueV1,
         Self::IdempotentDialogSubmit,
         Self::InlineImageAttachmentsV1,
         Self::BtwInitialModelSelectionV1,
+        Self::BtwModelPoolSelectionV1,
         Self::ControlConversationV1,
         Self::ControlConversationResetV1,
         Self::TargetedSessionRollback,
@@ -98,6 +103,7 @@ impl PeerHostCapability {
     /// The key used in the `peer_mode_ping` `capabilities` object.
     pub const fn key(self) -> &'static str {
         match self {
+            Self::ModelPoolSelectionV1 => "model_pool_selection_v1",
             Self::BackgroundResultDeliveryV1 => "background_result_delivery_v1",
             Self::DialogQueueV1 => "dialog_queue_v1",
             Self::IdempotentDialogSubmit => "idempotent_dialog_submit",
@@ -105,6 +111,7 @@ impl PeerHostCapability {
             Self::ControlConversationV1 => "control_conversation_v1",
             Self::ControlConversationResetV1 => "control_conversation_reset_v1",
             Self::BtwInitialModelSelectionV1 => "btw_initial_model_selection_v1",
+            Self::BtwModelPoolSelectionV1 => "btw_model_pool_selection_v1",
             Self::TargetedSessionRollback => "targeted_session_rollback",
             Self::TokenUsageStatistics => "token_usage_statistics",
             Self::MiniappAgentContextFilesV1 => "miniapp_agent_context_files_v1",
@@ -134,6 +141,7 @@ const DESKTOP_CAPABILITIES: &[PeerHostCapability] = PeerHostCapability::ALL;
 /// The CLI peer host has no MiniApp runtime, WSL connection setup, host-native
 /// ProductControl providers, or presentation surface.
 const CLI_CAPABILITIES: &[PeerHostCapability] = &[
+    PeerHostCapability::ModelPoolSelectionV1,
     PeerHostCapability::BackgroundResultDeliveryV1,
     PeerHostCapability::DialogQueueV1,
     PeerHostCapability::ControlConversationV1,
@@ -213,6 +221,10 @@ mod tests {
         assert!(!advertises(
             PeerHostKind::Cli,
             PeerHostCapability::BtwInitialModelSelectionV1
+        ));
+        assert!(!advertises(
+            PeerHostKind::Cli,
+            PeerHostCapability::BtwModelPoolSelectionV1
         ));
     }
 

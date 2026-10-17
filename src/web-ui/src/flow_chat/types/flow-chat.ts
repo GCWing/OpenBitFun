@@ -632,6 +632,10 @@ export interface Session {
 
 export interface SessionConfig {
   modelName?: string;
+  modelPoolId?: string;
+  /** Draft-only intent, committed after the runtime session is created. */
+  modelPoolSelectionPending?: boolean;
+  modelPoolBinding?: import('@/infrastructure/api/service-api/ModelPoolAPI').ModelPoolBinding;
   /** Explicit reasoning preset for the next turn; omitted means model default. */
   reasoningPreset?: string;
   agentType?: string;

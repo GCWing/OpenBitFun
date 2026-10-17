@@ -712,7 +712,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const peer = usePeerDeviceModeOptional();
   const isBtwDraftTarget = isBtwSessionDraft(effectiveTargetSession);
   const btwDraftSettingsInherited = isBtwDraftTarget && Boolean(peer?.peerMode.active)
-    && peer?.currentPeerCapabilities?.btwInitialModelSelectionV1 !== true;
+    && (effectiveTargetSession?.config.modelPoolId
+      ? peer?.currentPeerCapabilities?.btwModelPoolSelectionV1 !== true
+      : peer?.currentPeerCapabilities?.btwInitialModelSelectionV1 !== true
+        && peer?.currentPeerCapabilities?.btwModelPoolSelectionV1 !== true);
   // A submission keeps the session started even if every surviving Turn is
   // later rolled back. Before that first submission, the composer intentionally
   // stays expanded instead of collapsing as the empty draft is measured.

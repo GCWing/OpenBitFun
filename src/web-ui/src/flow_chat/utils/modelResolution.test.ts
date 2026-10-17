@@ -3,6 +3,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { modelPoolAPI } from '@/infrastructure/api/service-api/ModelPoolAPI';
 import { aiApi } from '@/infrastructure/api/service-api/AIApi';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import { setRecentReasoningPreset } from './reasoningPresets';
@@ -13,6 +14,8 @@ import {
   resolveReasoningPresetForSessionCreation,
 } from './modelResolution';
 import type { AIModelConfig } from '@/infrastructure/config/types';
+
+vi.mock('@/infrastructure/api/service-api/ModelPoolAPI', () => ({ modelPoolAPI: { status: vi.fn() }, supportsModelPools: () => true }));
 
 vi.mock('@/infrastructure/api/service-api/AIApi', () => ({
   aiApi: { getModelCatalog: vi.fn(), projectReasoningCatalog: vi.fn() },
@@ -70,6 +73,20 @@ describe('configured model identity', () => {
     expect(resolveModelReference([selected, { ...first, id: 'asdf' }], 'asdf')).toBeNull();
   });
 
+  it('uses the default pool context budget instead of the legacy primary model', async () => {
+    vi.mocked(configManager.getConfigs).mockResolvedValue({
+      'ai.models': models, 'ai.default_models': { primary: 'model-first' },
+      'ai.agent_model_defaults': { mode: 'model-first' },
+      'ai.agent_model_selections': { mode: { kind: 'pool', pool_id: 'workers' }, subagents: { default: { kind: 'inherit' }, builtin: {}, fork: { kind: 'inherit' } } },
+    });
+    vi.mocked(modelPoolAPI.status).mockResolvedValue([
+      { modelId: 'a', status: 'available', contextBudget: { contextWindow: 24000, inputLimit: 20000 } },
+      { modelId: 'b', status: 'cooling_down', contextBudget: { contextWindow: 16000, inputLimit: 12000 } },
+    ] as any);
+    await expect(getModelMaxTokens()).resolves.toBe(16000);
+    expect(modelPoolAPI.status).toHaveBeenCalledWith('workers');
+  });
+
   it('uses the selected account context window', async () => {
     vi.mocked(configManager.getConfigs).mockResolvedValue({
       'ai.models': models, 'ai.default_models': { primary: 'model-first' },
@@ -91,7 +108,7 @@ describe('reasoning preset session creation resolution', () => {
       get length() { return storage.size; },
     });
     vi.mocked(configManager.getConfigs).mockResolvedValue({
-      'ai.agent_model_defaults': { mode: 'primary' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'primary' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
       'ai.default_models': { primary: 'model-primary', fast: 'model-fast' },
       'ai.models': [
         {

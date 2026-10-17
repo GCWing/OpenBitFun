@@ -2,7 +2,7 @@
 //!
 //! Desktop adapter for the core `/btw` feature.
 //!
-//! `/btw` runs as a persistent child session that reuses the parent session's
+//! `/btw` runs as an ephemeral child session that reuses the parent session's
 //! full context snapshot while still flowing through the normal agentic event
 //! pipeline.
 
@@ -40,6 +40,9 @@ pub struct BtwAskStreamRequest {
     pub user_message_metadata: Option<serde_json::Value>,
     #[serde(default)]
     pub initial_model_selection: Option<openbitfun_runtime_ports::AgentSessionModelSelection>,
+    /// Requires btw_model_pool_selection_v1; omitted means inherit the parent binding.
+    #[serde(default)]
+    pub initial_model_target: Option<openbitfun_runtime_ports::AgentSessionModelTargetSelection>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -123,6 +126,7 @@ pub async fn btw_ask_stream(
             request.parent_turn_index,
             request.user_message_metadata,
             request.initial_model_selection,
+            request.initial_model_target,
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -181,6 +185,7 @@ mod tests {
         let request: BtwAskStreamRequest = serde_json::from_value(legacy.clone()).unwrap();
         assert!(request.user_message_metadata.is_none());
         assert!(request.initial_model_selection.is_none());
+        assert!(request.initial_model_target.is_none());
         let round_trip: BtwAskStreamRequest =
             serde_json::from_value(serde_json::to_value(request).unwrap()).unwrap();
         assert_eq!(round_trip.question, legacy["question"]);
@@ -211,6 +216,26 @@ mod tests {
         let auto: openbitfun_runtime_ports::AgentSessionModelSelection =
             serde_json::from_value(serde_json::json!({ "modelId": "primary" })).unwrap();
         assert!(auto.reasoning_preset.is_none());
+    }
+
+    #[test]
+    fn btw_request_round_trips_typed_pool_and_model_choices() {
+        for target in [
+            serde_json::json!({ "selection": { "kind": "pool", "pool_id": "pool-a" } }),
+            serde_json::json!({ "selection": { "kind": "model", "model_ref": "model-b" }, "reasoningPreset": "high" }),
+        ] {
+            let request: BtwAskStreamRequest = serde_json::from_value(serde_json::json!({
+                "requestId": "request-1", "sessionId": "parent", "childSessionId": "child",
+                "question": "Why?", "initialModelTarget": target,
+            }))
+            .unwrap();
+            assert!(request.model_id.is_none());
+            assert!(request.initial_model_selection.is_none());
+            assert_eq!(
+                serde_json::to_value(request).unwrap()["initialModelTarget"],
+                target
+            );
+        }
     }
 
     #[test]

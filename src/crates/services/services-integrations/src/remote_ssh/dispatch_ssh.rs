@@ -1199,7 +1199,13 @@ async fn account_daemon_cli_path(
 /// Keys of the `ai` config section that make up "model configuration": the
 /// model catalog (credentials included) plus every default-selection table the
 /// target consults when resolving a ready model.
-const MODEL_CONFIG_KEYS: [&str; 3] = ["models", "default_models", "agent_model_defaults"];
+const MODEL_CONFIG_KEYS: [&str; 5] = [
+    "models",
+    "default_models",
+    "agent_model_defaults",
+    "agent_model_selections",
+    "model_pools",
+];
 
 /// Write the controller's model configuration into the target's global config
 /// so `openbitfun dispatch probe` can report a ready model.
@@ -4057,6 +4063,8 @@ mod tests {
         let payload = serde_json::json!({
             "models": [{"id": "m1", "enabled": true}],
             "default_models": {"primary": "m1"},
+            "agent_model_selections": {"mode":{"kind":"model","model_ref":"m1"},"subagents":{"default":{"kind":"inherit"},"builtin":{},"fork":{"kind":"inherit"}}},
+            "model_pools": {"version":1,"pools":[]},
         });
         let payload = validate_model_config_payload(&payload).expect("valid payload");
 
@@ -4076,6 +4084,11 @@ mod tests {
         assert_eq!(merged["ai"]["max_rounds"], 7);
         assert_eq!(merged["ai"]["models"][0]["id"], "m1");
         assert_eq!(merged["ai"]["default_models"]["primary"], "m1");
+        assert_eq!(
+            merged["ai"]["agent_model_selections"],
+            payload["agent_model_selections"]
+        );
+        assert_eq!(merged["ai"]["model_pools"], payload["model_pools"]);
 
         // A corrupt target config aborts instead of being replaced.
         assert!(merge_model_config(Some("not json"), payload).is_err());

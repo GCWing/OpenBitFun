@@ -329,7 +329,13 @@ pub(super) async fn push_model_config(
     let ai = serde_json::to_value(&config.ai)
         .map_err(|error| anyhow::anyhow!("encode controller model configuration: {error}"))?;
     let mut payload = serde_json::Map::new();
-    for key in ["models", "default_models", "agent_model_defaults"] {
+    for key in [
+        "models",
+        "default_models",
+        "agent_model_defaults",
+        "agent_model_selections",
+        "model_pools",
+    ] {
         if let Some(value) = ai.get(key) {
             payload.insert(key.to_string(), value.clone());
         }

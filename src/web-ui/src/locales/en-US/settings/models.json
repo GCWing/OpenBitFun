@@ -664,7 +664,7 @@
   "sections": {
     "acquisition": "Add or import models",
     "selectionModes": "Model selection modes",
-    "pool": "Model pool",
+    "pool": "All models",
     "more": "More settings"
   },
   "acquisition": {
@@ -717,5 +717,43 @@
     "allProviders": "All providers",
     "acknowledge": "Got it"
   },
-  "editConfiguredProviderSubtitle": "Update the API address, key, and models for this provider"
+  "editConfiguredProviderSubtitle": "Update the API address, key, and models for this provider",
+  "pools": {
+    "empty": "No model pools yet",
+    "title": "Model pools",
+    "unsupported": "This host does not support model pools.",
+    "error": "The operation failed. Your edits have been kept. Refresh and reopen the pool after a revision conflict.",
+    "refresh": "Refresh",
+    "ordered": "Ordered failover",
+    "orderedHint": "Choose the first available model in list order when assigning or switching models.",
+    "balanced": "Balanced assignment",
+    "balancedHint": "Rotate new chat assignments across available models to spread them evenly.",
+    "delete": "Delete",
+    "confirmDelete": "Confirm deletion",
+    "deleteTitle": "Delete model pool “{{name}}”?",
+    "deleteHint": "Chats referencing a deleted pool will require a new model selection.",
+    "create": "Create pool",
+    "editTitle": "Edit model pool",
+    "name": "Pool name",
+    "strategy": "Routing strategy",
+    "stickyHint": "Healthy chats keep their model. The strategy applies to new assignments and failover.",
+    "up": "Move up",
+    "down": "Move down",
+    "remove": "Remove",
+    "add": "Add model",
+    "addHint": "The pool uses the smallest context window among its member models. Choose models with similar capabilities and context capacities for a more consistent experience when switching.",
+    "save": "Save",
+    "cancel": "Cancel",
+    "health": {
+      "unverified": "Not yet verified",
+      "available": "Available",
+      "cooling_down": "Cooling down",
+      "probing": "Probing",
+      "needs_attention": "Configuration needs attention",
+      "disabled": "Disabled",
+      "missing": "Model configuration missing"
+    },
+    "retry": "Allow retry",
+    "invalidRecords": "Some pool records cannot be read by this version. They have been preserved."
+  }
 }

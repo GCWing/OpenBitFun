@@ -62,10 +62,11 @@ pub fn model_list_projection(
         models: models.iter().map(model_summary).collect(),
         primary_model_id: resolve_selector(&config.ai, &config.ai.default_models.primary),
         fast_model_id: resolve_selector(&config.ai, &config.ai.default_models.fast),
-        mode_default_model_id: resolve_model_selector(
-            &config.ai,
-            &config.ai.agent_model_defaults.mode,
-        ),
+        mode_default_model_id: config
+            .ai
+            .mode_model_reference()
+            .ok()
+            .and_then(|reference| resolve_model_selector(&config.ai, &reference)),
     }
 }
 

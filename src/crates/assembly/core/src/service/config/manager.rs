@@ -300,6 +300,10 @@ impl ConfigManager {
 
     /// Creates the first config file using the already initialized defaults.
     async fn create_default_config(&mut self) -> OpenBitFunResult<()> {
+        self.config
+            .ai
+            .set_model_selections(Default::default())
+            .map_err(OpenBitFunError::validation)?;
         self.config.product_id = product_identity::product_id().to_string();
         self.config.schema_version = CURRENT_CONFIG_SCHEMA_VERSION;
         self.config.version = env!("CARGO_PKG_VERSION").to_string();
@@ -388,7 +392,7 @@ impl ConfigManager {
             .await
             .map_err(|e| OpenBitFunError::config(format!("Failed to read config file: {}", e)))?;
 
-        let config_value: Value = serde_json::from_str(&content).map_err(|error| {
+        let mut config_value: Value = serde_json::from_str(&content).map_err(|error| {
             OpenBitFunError::config(format!("Failed to parse config file as JSON: {error}"))
         })?;
         if let Err(contract_error) =
@@ -404,9 +408,14 @@ impl ConfigManager {
             return Err(contract_error);
         }
 
-        let mut config: GlobalConfig = serde_json::from_value(config_value).map_err(|error| {
-            OpenBitFunError::config(format!("Failed to deserialize config file: {error}"))
-        })?;
+        let mut config: GlobalConfig =
+            serde_json::from_value(config_value.clone()).map_err(|error| {
+                OpenBitFunError::config(format!("Failed to deserialize config file: {error}"))
+            })?;
+        let migrated_selections = config
+            .ai
+            .migrate_model_selections()
+            .map_err(OpenBitFunError::validation)?;
         let mut diagnostics =
             openbitfun_config_contracts::normalization::recover_persisted_config(&mut config);
         let validation_result = self
@@ -419,9 +428,24 @@ impl ConfigManager {
             ));
         }
 
+        if migrated_selections {
+            // Add only the new selection record; recovery must not overwrite source data.
+            config_value["ai"]["agent_model_selections"] =
+                config.ai.agent_model_selections.clone().unwrap();
+            let content = serde_json::to_string_pretty(&config_value)
+                .map_err(|error| OpenBitFunError::config(error.to_string()))?;
+            JsonFileStore
+                .write_text_atomic_strict(&self.config_file, &content)
+                .await
+                .map_err(|error| {
+                    OpenBitFunError::config(format!(
+                        "Failed to persist model selection migration: {error}"
+                    ))
+                })?;
+        }
         self.config = config;
         self.load_diagnostics = diagnostics;
-        debug!("Loaded OpenBitFun config from file without rewriting it");
+        debug!("Loaded OpenBitFun config from file");
         Ok(())
     }
 
@@ -507,6 +531,10 @@ impl ConfigManager {
             config.ai = ai;
         }
 
+        config
+            .ai
+            .migrate_model_selections()
+            .map_err(OpenBitFunError::validation)?;
         let mut diagnostics = normalize_typed_config(&mut config);
         diagnostics.extend(reconcile_model_references(&mut config).diagnostics);
         let validation_result = self.providers.validate_config(&config).await?;
@@ -647,19 +675,73 @@ impl ConfigManager {
         })?;
 
         reject_protected_metadata_path(path)?;
+        if path == "ai.agent_model_defaults" || path.starts_with("ai.agent_model_defaults.") {
+            return Err(OpenBitFunError::validation(
+                "Legacy Agent model defaults are read-only; use ai.agent_model_selections",
+            ));
+        }
         if self.get::<serde_json::Value>(path).ok().as_ref() == Some(&json_value) {
             return Ok(());
         }
-        let mut config = self.config_with_value(path, json_value)?;
-        // Selecting a future-session default changes only a reference to an
-        // already validated model. Keep legacy alias/fallback normalization,
-        // without constructing clients or revalidating every provider.
-        if path == "ai.agent_model_defaults.mode" {
-            reconcile_model_references(&mut config);
-            if config.ai.agent_model_defaults.mode == self.config.ai.agent_model_defaults.mode {
-                return Ok(());
-            }
+        // Typed writes use only the initialized selection area. A whole-area
+        // replacement can explicitly repair malformed selections.
+        if path == "ai.agent_model_selections" || path.starts_with("ai.agent_model_selections.") {
+            let mut config = self.config.clone();
+            let defaults = &mut config.ai;
+            let mut selections = if path == "ai.agent_model_selections" {
+                json_value
+            } else {
+                let mut value = serde_json::to_value(
+                    defaults
+                        .effective_model_selections()
+                        .map_err(OpenBitFunError::validation)?,
+                )?;
+                let keys: Vec<&str> = path
+                    .trim_start_matches("ai.agent_model_selections.")
+                    .split('.')
+                    .collect();
+                let (last, parents) = keys
+                    .split_last()
+                    .ok_or_else(|| OpenBitFunError::validation("Missing selection path"))?;
+                let mut target = &mut value;
+                for key in parents {
+                    target = target.get_mut(*key).ok_or_else(|| {
+                        OpenBitFunError::validation("Invalid model selection path")
+                    })?;
+                }
+                let object = target
+                    .as_object_mut()
+                    .ok_or_else(|| OpenBitFunError::validation("Invalid model selection path"))?;
+                if json_value.is_null() {
+                    object.remove(*last);
+                } else {
+                    object.insert((*last).into(), json_value);
+                }
+                value
+            };
+            let typed: openbitfun_config_contracts::model_pool::AgentModelSelections =
+                serde_json::from_value(selections.take()).map_err(|e| {
+                    OpenBitFunError::validation(format!("Invalid Agent model selections: {e}"))
+                })?;
+            validate_agent_model_selections(
+                &config.ai,
+                &typed,
+                config.ai.effective_model_selections().ok().as_ref(),
+            )?;
+            config
+                .ai
+                .set_model_selections(typed)
+                .map_err(OpenBitFunError::validation)?;
             return self.commit_config(config, Some(path)).await;
+        }
+        let mut config = self.config_with_value(path, json_value)?;
+        // Whole-document/AI replacements are ingestion boundaries, like import.
+        // Ordinary field updates must not perform legacy migration.
+        if path.is_empty() || path == "ai" {
+            config
+                .ai
+                .migrate_model_selections()
+                .map_err(OpenBitFunError::validation)?;
         }
         // Apply capability-driven canonicalization before validation and persistence.
         // Speech/embedding/image-only models must never carry text-generation sentinels.
@@ -687,13 +769,22 @@ impl ConfigManager {
 
     /// Resets configuration (supports dot-paths).
     pub async fn reset(&mut self, path: Option<&str>) -> OpenBitFunResult<()> {
+        let mut default_config = self.providers.get_default_config();
+        default_config
+            .ai
+            .set_model_selections(Default::default())
+            .map_err(OpenBitFunError::validation)?;
         let config = if let Some(path) = path {
             reject_protected_metadata_path(path)?;
-            let default_config = self.providers.get_default_config();
+            if path == "ai.agent_model_defaults" || path.starts_with("ai.agent_model_defaults.") {
+                return Err(OpenBitFunError::validation(
+                    "Legacy Agent model defaults are read-only; use ai.agent_model_selections",
+                ));
+            }
             let default_value = self.get_value_by_path_from_config(&default_config, path)?;
             self.config_with_value(path, default_value)?
         } else {
-            self.providers.get_default_config()
+            default_config
         };
 
         let validation_result = self.providers.validate_config(&config).await?;
@@ -760,10 +851,15 @@ impl ConfigManager {
     /// Imports configuration.
     pub async fn import_config(&mut self, config_data: serde_json::Value) -> OpenBitFunResult<()> {
         validate_current_config_value(&config_data, "Imported configuration")?;
-        let imported_config: GlobalConfig = serde_json::from_value(config_data).map_err(|e| {
-            OpenBitFunError::config(format!("Failed to parse imported config: {}", e))
-        })?;
+        let mut imported_config: GlobalConfig =
+            serde_json::from_value(config_data).map_err(|e| {
+                OpenBitFunError::config(format!("Failed to parse imported config: {}", e))
+            })?;
 
+        imported_config
+            .ai
+            .migrate_model_selections()
+            .map_err(OpenBitFunError::validation)?;
         let validation_result = self.providers.validate_config(&imported_config).await?;
         if !validation_result.valid {
             return Err(invalid_config_error(
@@ -1164,12 +1260,175 @@ mod tests {
                 .valid
         );
         assert!(!manager.load_diagnostics.is_empty());
+        let migrated_bytes = tokio::fs::read(path_manager.app_config_file())
+            .await
+            .unwrap();
+        let mut persisted: serde_json::Value = serde_json::from_slice(&migrated_bytes).unwrap();
+        let selection = persisted["ai"]
+            .as_object_mut()
+            .unwrap()
+            .remove("agent_model_selections")
+            .unwrap();
+        assert_eq!(
+            selection["subagents"]["default"],
+            serde_json::json!({"kind":"model", "model_ref":"missing-model"})
+        );
+        assert_eq!(
+            persisted,
+            serde_json::from_slice::<serde_json::Value>(&original).unwrap()
+        );
+        ConfigManager::new(manager_settings(path_manager.clone()))
+            .await
+            .unwrap();
         assert_eq!(
             tokio::fs::read(path_manager.app_config_file())
                 .await
                 .unwrap(),
-            original
+            migrated_bytes
         );
+    }
+
+    #[tokio::test]
+    async fn config_ingestion_migrates_legacy_selections_before_publishing() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().join("ingestion"),
+        ));
+        let mut manager = ConfigManager::new(manager_settings(paths.clone()))
+            .await
+            .unwrap();
+        for entry in ["import", "root", "ai"] {
+            let mut legacy = GlobalConfig::default();
+            legacy.ai.agent_model_defaults.mode = "fast".into();
+            let document = serde_json::to_value(&legacy).unwrap();
+            match entry {
+                "import" => manager.import_config(document).await.unwrap(),
+                "root" => manager.set("", document).await.unwrap(),
+                _ => manager.set("ai", document["ai"].clone()).await.unwrap(),
+            }
+            assert_eq!(manager.config.ai.mode_model_reference().unwrap(), "fast");
+            let disk: GlobalConfig =
+                serde_json::from_slice(&tokio::fs::read(paths.app_config_file()).await.unwrap())
+                    .unwrap();
+            assert_eq!(disk.ai.mode_model_reference().unwrap(), "fast");
+            assert_eq!(disk.ai.agent_model_defaults.mode, "fast");
+
+            // Presence, including invalid data, remains authoritative at every boundary.
+            let mut invalid = serde_json::to_value(&legacy).unwrap();
+            invalid["ai"]["agent_model_selections"] = serde_json::Value::Null;
+            match entry {
+                "import" => manager.import_config(invalid).await.unwrap(),
+                "root" => manager.set("", invalid).await.unwrap(),
+                _ => manager.set("ai", invalid["ai"].clone()).await.unwrap(),
+            }
+            assert_eq!(
+                manager.config.ai.agent_model_selections,
+                Some(serde_json::Value::Null)
+            );
+            assert!(manager.config.ai.effective_model_selections().is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn fresh_and_reset_configs_persist_typed_defaults() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().join("defaults"),
+        ));
+        let mut manager = ConfigManager::new(manager_settings(paths.clone()))
+            .await
+            .unwrap();
+        for reset in [None, Some("ai"), Some("ai.agent_model_selections")] {
+            let disk: GlobalConfig =
+                serde_json::from_slice(&tokio::fs::read(paths.app_config_file()).await.unwrap())
+                    .unwrap();
+            assert_eq!(
+                disk.ai.effective_model_selections().unwrap(),
+                Default::default()
+            );
+            manager
+                .set(
+                    "ai.agent_model_selections.subagents.builtin",
+                    serde_json::json!({}),
+                )
+                .await
+                .unwrap();
+            manager.reset(reset).await.unwrap();
+            assert_eq!(
+                manager.config.ai.effective_model_selections().unwrap(),
+                Default::default()
+            );
+        }
+        let disk: GlobalConfig =
+            serde_json::from_slice(&tokio::fs::read(paths.app_config_file()).await.unwrap())
+                .unwrap();
+        assert_eq!(
+            disk.ai.effective_model_selections().unwrap(),
+            Default::default()
+        );
+    }
+
+    #[tokio::test]
+    async fn ordinary_save_does_not_migrate_uninitialized_selections() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().join("no-migration"),
+        ));
+        let mut manager = ConfigManager::new(manager_settings(paths.clone()))
+            .await
+            .unwrap();
+        // Simulate an internal initialization bug: reads must fail until an ingestion
+        // boundary repairs it; unrelated writes must not silently convert old defaults.
+        manager.config.ai.agent_model_selections = None;
+        manager.set("app.language", "en-US").await.unwrap();
+        assert!(manager.config.ai.agent_model_selections.is_none());
+        let disk: GlobalConfig =
+            serde_json::from_slice(&tokio::fs::read(paths.app_config_file()).await.unwrap())
+                .unwrap();
+        assert!(disk.ai.agent_model_selections.is_none());
+        assert!(disk.ai.effective_model_selections().is_err());
+    }
+
+    #[tokio::test]
+    async fn present_invalid_selections_survive_load_and_unrelated_save() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().join("invalid-selections"),
+        ));
+        paths.initialize_user_directories().await.unwrap();
+        for invalid in [
+            serde_json::json!(null),
+            serde_json::json!({"mode":{"kind":"future"}}),
+        ] {
+            let mut document = serde_json::to_value(GlobalConfig::default()).unwrap();
+            document["ai"]["agent_model_selections"] = invalid.clone();
+            let original = serde_json::to_vec(&document).unwrap();
+            tokio::fs::write(paths.app_config_file(), &original)
+                .await
+                .unwrap();
+            let mut manager = ConfigManager::new(manager_settings(paths.clone()))
+                .await
+                .unwrap();
+            assert!(manager.config.ai.effective_model_selections().is_err());
+            assert_eq!(
+                tokio::fs::read(paths.app_config_file()).await.unwrap(),
+                original
+            );
+            manager.set("app.language", "en-US").await.unwrap();
+            let saved: serde_json::Value =
+                serde_json::from_slice(&tokio::fs::read(paths.app_config_file()).await.unwrap())
+                    .unwrap();
+            assert_eq!(saved["ai"]["agent_model_selections"], invalid);
+            assert!(manager
+                .reset(Some("ai.agent_model_defaults.mode"))
+                .await
+                .is_err());
+            manager
+                .reset(Some("ai.agent_model_selections"))
+                .await
+                .unwrap();
+            assert!(manager.config.ai.effective_model_selections().is_ok());
+        }
     }
 
     #[tokio::test]
@@ -1192,6 +1451,16 @@ mod tests {
             .unwrap();
         assert_eq!(manager.config.app.language, "en-US");
         assert_eq!(manager.config.appearance.selection, "openbitfun-midnight");
+        let persisted: GlobalConfig = serde_json::from_slice(
+            &tokio::fs::read(path_manager.app_config_file())
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            persisted.ai.effective_model_selections().unwrap(),
+            Default::default()
+        );
         assert_eq!(
             manager.config.schema_version,
             super::CURRENT_CONFIG_SCHEMA_VERSION
@@ -1343,4 +1612,66 @@ mod tests {
             serde_json::from_value(value).expect("sparse config should deserialize");
         assert_eq!(restored.ai.web_search, config.ai.web_search);
     }
+}
+
+fn validate_agent_model_selections(
+    ai: &super::types::AIConfig,
+    selections: &openbitfun_config_contracts::model_pool::AgentModelSelections,
+    previous: Option<&openbitfun_config_contracts::model_pool::AgentModelSelections>,
+) -> OpenBitFunResult<()> {
+    use openbitfun_config_contracts::model_pool::AgentModelSelection;
+    use openbitfun_core_types::model_pool::ModelSelection;
+    let validate = |selection: &AgentModelSelection| -> OpenBitFunResult<()> {
+        match selection {
+            AgentModelSelection::Model { model_ref } => {
+                let resolved = ai.resolve_model_selection(model_ref);
+                if !resolved.as_ref().is_some_and(|id| {
+                    ai.models.iter().any(|model| {
+                        &model.id == id
+                            && model.enabled
+                            && model.supports_capability(super::types::ModelCapability::TextChat)
+                    })
+                }) {
+                    return Err(OpenBitFunError::validation(format!(
+                        "Unavailable text-chat model: {model_ref}"
+                    )));
+                }
+            }
+            AgentModelSelection::Pool { pool_id } => {
+                let pool = ai
+                    .model_pools
+                    .get(pool_id)
+                    .map_err(OpenBitFunError::validation)?;
+                if pool.member_model_ids.is_empty() {
+                    return Err(OpenBitFunError::validation(
+                        "Cannot select an empty model pool",
+                    ));
+                }
+            }
+            AgentModelSelection::Inherit => {}
+        }
+        Ok(())
+    };
+    if previous.is_none_or(|old| old.mode != selections.mode) {
+        validate(&match &selections.mode {
+            ModelSelection::Model { model_ref } => AgentModelSelection::Model {
+                model_ref: model_ref.clone(),
+            },
+            ModelSelection::Pool { pool_id } => AgentModelSelection::Pool {
+                pool_id: pool_id.clone(),
+            },
+        })?;
+    }
+    if previous.is_none_or(|old| old.subagents.default != selections.subagents.default) {
+        validate(&selections.subagents.default)?;
+    }
+    if previous.is_none_or(|old| old.subagents.fork != selections.subagents.fork) {
+        validate(&selections.subagents.fork)?;
+    }
+    for (id, value) in &selections.subagents.builtin {
+        if previous.is_none_or(|old| old.subagents.builtin.get(id) != Some(value)) {
+            validate(value)?;
+        }
+    }
+    Ok(())
 }

@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "27ffaabb62f18c434a4ca5691c827a2cce75f9184e03b30bff65a7384151dfd8",
-  "commandCount": 678,
+  "catalogDigest": "aaa7661eec1ff163e378011f5c483d866c47b74850e29e3eb0bdbced7a805a0d",
+  "commandCount": 685,
   "coverage": {
-    "commandCount": 678,
-    "documentedCommandCount": 628,
+    "commandCount": 685,
+    "documentedCommandCount": 635,
     "implementationCommandCount": 50,
     "implementationDigest": "1dc90be1a699f521e7faee78c128d6332ef0806daccb389b288fbe2fa3fd3c2c"
   },
@@ -2044,6 +2044,22 @@
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
+      "id": "delete_model_pool",
+      "moduleId": "model_pool",
+      "capabilityId": "setting.ai.models",
+      "capabilityIds": [
+        "setting.ai.models"
+      ],
+      "documentedItemIds": [
+        "setting.ai.models:model-pools"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::model_pool_api::delete_model_pool",
+      "sourceFile": "src/apps/desktop/src/api/model_pool_api.rs",
+      "signature": "fn delete_model_pool(request: ModelPoolRequest) -> Result<ModelPoolDocument, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
       "id": "delete_persisted_session",
       "moduleId": "session",
       "capabilityId": "setting.data.archived",
@@ -3640,6 +3656,38 @@
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
+      "id": "get_model_pool_status",
+      "moduleId": "model_pool",
+      "capabilityId": "setting.ai.models",
+      "capabilityIds": [
+        "setting.ai.models"
+      ],
+      "documentedItemIds": [
+        "setting.ai.models:model-pools"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::model_pool_api::get_model_pool_status",
+      "sourceFile": "src/apps/desktop/src/api/model_pool_api.rs",
+      "signature": "fn get_model_pool_status( coordinator: State<'_, Arc<ConversationCoordinator>>, request: ModelPoolRequest, ) -> Result<Vec<ModelPoolMemberStatus>, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
+      "id": "get_model_pools",
+      "moduleId": "model_pool",
+      "capabilityId": "setting.ai.models",
+      "capabilityIds": [
+        "setting.ai.models"
+      ],
+      "documentedItemIds": [
+        "setting.ai.models:model-pools"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::model_pool_api::get_model_pools",
+      "sourceFile": "src/apps/desktop/src/api/model_pool_api.rs",
+      "signature": "fn get_model_pools() -> Result<ModelPoolDocument, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
       "id": "get_models_dev_catalog_status",
       "moduleId": "commands",
       "capabilityId": "setting.ai.models",
@@ -3908,6 +3956,22 @@
       "sourceFile": "src/apps/desktop/src/api/session_api.rs",
       "signature": "fn get_session_lineage( request: GetSessionLineageRequest, runtime: State<'_, DesktopRuntimeContext>, ) -> Result<Option<AgentSessionLineageSnapshot>, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
+    },
+    {
+      "id": "get_session_model_target",
+      "moduleId": "model_pool",
+      "capabilityId": "setting.ai.models",
+      "capabilityIds": [
+        "setting.ai.models"
+      ],
+      "documentedItemIds": [
+        "setting.ai.models:model-pools"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::model_pool_api::get_session_model_target",
+      "sourceFile": "src/apps/desktop/src/api/model_pool_api.rs",
+      "signature": "fn get_session_model_target( runtime: State<'_, DesktopRuntimeContext>, request: SessionModelTargetRequest, ) -> Result<SessionModelTarget, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "get_session_operations",
@@ -8016,6 +8080,22 @@
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
+      "id": "retry_model_pool_member",
+      "moduleId": "model_pool",
+      "capabilityId": "setting.ai.models",
+      "capabilityIds": [
+        "setting.ai.models"
+      ],
+      "documentedItemIds": [
+        "setting.ai.models:model-pools"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::model_pool_api::retry_model_pool_member",
+      "sourceFile": "src/apps/desktop/src/api/model_pool_api.rs",
+      "signature": "fn retry_model_pool_member( coordinator: State<'_, Arc<ConversationCoordinator>>, request: RetryModelPoolMemberRequest, ) -> Result<(), String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
       "id": "reveal_external_source_location",
       "moduleId": "external_sources",
       "capabilityId": "feature.ecosystem-compatibility",
@@ -8430,6 +8510,22 @@
       "sourceFile": "src/apps/desktop/src/api/diff_api.rs",
       "signature": "fn save_merged_diff_content(request: SaveMergedContentRequest) -> Result<(), String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "save_model_pool",
+      "moduleId": "model_pool",
+      "capabilityId": "setting.ai.models",
+      "capabilityIds": [
+        "setting.ai.models"
+      ],
+      "documentedItemIds": [
+        "setting.ai.models:model-pools"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::model_pool_api::save_model_pool",
+      "sourceFile": "src/apps/desktop/src/api/model_pool_api.rs",
+      "signature": "fn save_model_pool(request: SaveModelPoolRequest) -> Result<ModelPoolDocument, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "save_project_permission_rules",
@@ -10512,6 +10608,22 @@
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
       "signature": "fn update_session_model( runtime: State<'_, DesktopRuntimeContext>, request: UpdateSessionModelRequest, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "update_session_model_target",
+      "moduleId": "model_pool",
+      "capabilityId": "setting.ai.models",
+      "capabilityIds": [
+        "setting.ai.models"
+      ],
+      "documentedItemIds": [
+        "setting.ai.models:model-pools"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::model_pool_api::update_session_model_target",
+      "sourceFile": "src/apps/desktop/src/api/model_pool_api.rs",
+      "signature": "fn update_session_model_target( runtime: State<'_, DesktopRuntimeContext>, request: SessionModelTargetRequest, ) -> Result<SessionModelTarget, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "update_session_permission_mode",

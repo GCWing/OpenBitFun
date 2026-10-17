@@ -132,6 +132,8 @@ pub(crate) const INTERRUPTED_TURN_REASONING_FINGERPRINT_METADATA_KEY: &str =
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TurnAdmissionSessionFacts {
     model_id: Option<String>,
+    model_pool_id: Option<String>,
+    model_pool_selection_revision: u64,
     reasoning_preset: Option<String>,
     permission_mode: Option<PermissionMode>,
     max_context_tokens: usize,
@@ -151,6 +153,8 @@ impl TurnAdmissionSessionFacts {
     pub(crate) fn from_session(session: &Session) -> Self {
         Self {
             model_id: session.config.model_id.clone(),
+            model_pool_id: session.config.model_pool_id.clone(),
+            model_pool_selection_revision: session.config.model_pool_selection_revision,
             reasoning_preset: session.config.reasoning_preset.clone(),
             permission_mode: session.config.permission_mode,
             max_context_tokens: session.config.max_context_tokens,
@@ -174,6 +178,8 @@ impl TurnAdmissionSessionFacts {
 
     fn matches(&self, session: &Session) -> bool {
         self.model_id == session.config.model_id
+            && self.model_pool_id == session.config.model_pool_id
+            && self.model_pool_selection_revision == session.config.model_pool_selection_revision
             && self.reasoning_preset == session.config.reasoning_preset
             && self.permission_mode == session.config.permission_mode
             && self.max_context_tokens == session.config.max_context_tokens
@@ -232,22 +238,24 @@ fn session_model_allows_fallback(binding_policy: SessionModelBindingPolicy) -> b
     binding_policy == SessionModelBindingPolicy::Mutable
 }
 
-fn effective_session_model_selector<'a>(
-    ai_config: &'a crate::service::config::types::AIConfig,
-    session: &'a Session,
-) -> &'a str {
+fn effective_session_model_selector(
+    ai_config: &crate::service::config::types::AIConfig,
+    session: &Session,
+) -> String {
     session
         .config
         .model_id
         .as_deref()
         .map(str::trim)
-        .filter(|model_id| !model_id.is_empty())
-        .or_else(|| {
-            (session.kind != SessionKind::Subagent)
-                .then_some(ai_config.agent_model_defaults.mode.trim())
-                .filter(|model_id| !model_id.is_empty())
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            if session.kind == SessionKind::Subagent {
+                "primary".into()
+            } else {
+                ai_config.mode_model_reference().unwrap_or_default()
+            }
         })
-        .unwrap_or("primary")
 }
 
 fn concrete_model_for_session_selection<'a>(
@@ -260,9 +268,9 @@ fn concrete_model_for_session_selection<'a>(
         session.config.model_binding_policy,
         SessionModelBindingPolicy::ApprovedImmutable
     ) {
-        ai_config.resolve_model_reference(configured_model_id)
+        ai_config.resolve_model_reference(&configured_model_id)
     } else {
-        ai_config.resolve_model_selection(configured_model_id)
+        ai_config.resolve_model_selection(&configured_model_id)
     }?;
 
     ai_config
@@ -819,7 +827,7 @@ impl SessionManager {
     ) -> Option<usize> {
         Self::context_window_for_model_selection(
             ai_config,
-            effective_session_model_selector(ai_config, session),
+            &effective_session_model_selector(ai_config, session),
         )
     }
 
@@ -827,6 +835,9 @@ impl SessionManager {
         session: &mut Session,
         ai_config: &crate::service::config::types::AIConfig,
     ) -> Option<usize> {
+        if session.config.model_binding_policy == SessionModelBindingPolicy::Pool {
+            return None;
+        }
         let context_window = Self::session_context_window_from_ai_config(session, ai_config)?;
         session.config.max_context_tokens = context_window;
         Some(context_window)
@@ -836,6 +847,9 @@ impl SessionManager {
         session: &Session,
         ai_config: &crate::service::config::types::AIConfig,
     ) -> Option<String> {
+        if session.config.model_binding_policy == SessionModelBindingPolicy::Pool {
+            return None;
+        }
         let Some(preset_id) = session
             .config
             .reasoning_preset
@@ -1972,6 +1986,20 @@ impl SessionManager {
         self.ensure_token_anchors_loaded(session_id).await;
         self.token_anchor_store
             .select_latest_matching(session_id, messages)
+    }
+
+    pub async fn select_latest_matching_token_anchor_for_model(
+        &self,
+        session_id: &str,
+        messages: &[Message],
+        model_id: &str,
+    ) -> TokenAnchorSelection {
+        self.ensure_token_anchors_loaded(session_id).await;
+        self.token_anchor_store.select_latest_matching_for_model(
+            session_id,
+            messages,
+            Some(model_id),
+        )
     }
 
     pub async fn prune_token_anchors_to_messages(&self, session_id: &str, messages: &[Message]) {
@@ -4259,6 +4287,61 @@ impl SessionManager {
         include_internal: bool,
         validate_binding: impl FnOnce(&Session) -> OpenBitFunResult<()>,
     ) -> OpenBitFunResult<Session> {
+        self.update_session_selection_in_storage(
+            storage_path,
+            session_id,
+            model_id,
+            reasoning_preset,
+            include_internal,
+            None,
+            validate_binding,
+        )
+        .await
+    }
+
+    pub async fn update_session_model_target(
+        &self,
+        session_id: &str,
+        selection: &openbitfun_core_types::model_pool::ModelSelection,
+    ) -> OpenBitFunResult<Session> {
+        self.update_session_model_target_with_reasoning(session_id, selection, None)
+            .await
+    }
+
+    pub(crate) async fn update_session_model_target_with_reasoning(
+        &self,
+        session_id: &str,
+        selection: &openbitfun_core_types::model_pool::ModelSelection,
+        reasoning_preset: Option<&str>,
+    ) -> OpenBitFunResult<Session> {
+        use openbitfun_core_types::model_pool::ModelSelection;
+        let model_id = match selection {
+            ModelSelection::Model { model_ref } => model_ref.as_str(),
+            ModelSelection::Pool { .. } => "",
+        };
+        self.update_session_selection_in_storage(
+            None,
+            session_id,
+            model_id,
+            reasoning_preset,
+            true,
+            Some(selection),
+            |_| Ok(()),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn update_session_selection_in_storage(
+        &self,
+        storage_path: Option<&Path>,
+        session_id: &str,
+        model_id: &str,
+        reasoning_preset: Option<&str>,
+        include_internal: bool,
+        selection: Option<&openbitfun_core_types::model_pool::ModelSelection>,
+        validate_binding: impl FnOnce(&Session) -> OpenBitFunResult<()>,
+    ) -> OpenBitFunResult<Session> {
         let _mutation_guard = self.acquire_session_mutation(session_id).await?;
         let storage_path = storage_path.map(Path::to_path_buf).or_else(|| {
             Self::committed_session_storage_path(&self.session_storage_path_index, session_id)
@@ -4300,11 +4383,58 @@ impl SessionManager {
             }
         };
         validate_binding(&original_session)?;
+        if original_session.config.model_pool_id.is_some() && selection.is_none() {
+            return Err(OpenBitFunError::validation("This session uses a model pool; explicit model_pool_selection_v1 selection is required"));
+        }
+        if selection.is_some()
+            && original_session.config.model_binding_policy
+                == SessionModelBindingPolicy::ApprovedImmutable
+        {
+            return Err(OpenBitFunError::validation(
+                "An approved immutable model binding cannot be replaced by model pool selection",
+            ));
+        }
         let ai_config = Self::load_ai_config_for_model_resolution().await;
         let mut resolved_context_window = None;
         let mut auto_cleared_reasoning_preset = None;
         let mut updated_session = original_session.clone();
         updated_session.config.model_id = Some(model_id.to_string());
+        if let Some(selection) = selection {
+            updated_session.config.model_pool_selection_revision = original_session
+                .config
+                .model_pool_selection_revision
+                .saturating_add(1);
+            updated_session.config.model_pool_binding = None;
+            use openbitfun_core_types::model_pool::ModelSelection;
+            match selection {
+                ModelSelection::Pool { pool_id } => {
+                    let config_service =
+                        crate::service::config::get_global_config_service().await?;
+                    let pool = config_service.model_pool_store().await.get(pool_id).await?;
+                    if pool.member_model_ids.is_empty() {
+                        return Err(OpenBitFunError::validation(
+                            "Cannot select an empty model pool",
+                        ));
+                    }
+                    updated_session.config.model_pool_id = Some(pool_id.clone());
+                    updated_session.config.model_binding_policy = SessionModelBindingPolicy::Pool;
+                    updated_session.config.model_id = None;
+                }
+                ModelSelection::Model { model_ref } => {
+                    let config = ai_config.as_ref().ok_or_else(|| {
+                        OpenBitFunError::config("AI configuration is unavailable")
+                    })?;
+                    if config.resolve_model_selection(model_ref).is_none() {
+                        return Err(OpenBitFunError::validation(
+                            "Selected model is missing or disabled",
+                        ));
+                    }
+                    updated_session.config.model_pool_id = None;
+                    updated_session.config.model_binding_policy =
+                        SessionModelBindingPolicy::Mutable;
+                }
+            }
+        }
         updated_session.config.reasoning_preset = reasoning_preset
             .map(str::trim)
             .filter(|preset| !preset.is_empty() && !preset.eq_ignore_ascii_case("auto"))
@@ -4328,6 +4458,9 @@ impl SessionManager {
                 Self::sync_session_context_window_from_ai_config(&mut updated_session, ai_config);
         }
         if original_session.config.model_id == updated_session.config.model_id
+            && original_session.config.model_pool_id == updated_session.config.model_pool_id
+            && original_session.config.model_binding_policy
+                == updated_session.config.model_binding_policy
             && original_session.config.reasoning_preset == updated_session.config.reasoning_preset
             && original_session.config.max_context_tokens
                 == updated_session.config.max_context_tokens
@@ -4361,6 +4494,11 @@ impl SessionManager {
 
         if let Some(mut session) = self.sessions.get_mut(session_id) {
             session.config.model_id = updated_session.config.model_id.clone();
+            session.config.model_pool_selection_revision =
+                updated_session.config.model_pool_selection_revision;
+            session.config.model_pool_id = updated_session.config.model_pool_id.clone();
+            session.config.model_pool_binding = updated_session.config.model_pool_binding.clone();
+            session.config.model_binding_policy = updated_session.config.model_binding_policy;
             session.config.reasoning_preset = updated_session.config.reasoning_preset.clone();
             session.config.max_context_tokens = updated_session.config.max_context_tokens;
             session.updated_at = now;
@@ -4388,6 +4526,36 @@ impl SessionManager {
         }
 
         Ok(updated_session)
+    }
+
+    /// Persist affinity without replacing the user's selection or a newer selection.
+    pub async fn remember_model_pool_binding(
+        &self,
+        session_id: &str,
+        selection_revision: u64,
+        binding: openbitfun_core_types::model_pool::ModelPoolBinding,
+    ) -> OpenBitFunResult<()> {
+        let _guard = self.acquire_session_mutation(session_id).await?;
+        let Some(mut session) = self.get_session(session_id) else {
+            return Ok(());
+        };
+        if session.config.model_pool_id.as_deref() != Some(&binding.pool_id)
+            || session.config.model_pool_selection_revision != selection_revision
+        {
+            return Ok(());
+        }
+        session.config.model_pool_binding = Some(binding.clone());
+        if self.should_persist_session_id(session_id) {
+            if let Some(path) = self.effective_session_storage_path(session_id).await {
+                self.persistence_manager
+                    .save_session_model_selection(&path, &session)
+                    .await?;
+            }
+        }
+        if let Some(mut current) = self.sessions.get_mut(session_id) {
+            current.config.model_pool_binding = Some(binding);
+        }
+        Ok(())
     }
 
     /// Sets the session's own tool permission mode (in-memory + persistence).
@@ -8994,93 +9162,134 @@ impl SessionManager {
                         .to_string(),
                 )
             })?;
-        let resolved_model_id = user_message_metadata
-            .as_ref()
-            .and_then(|metadata| metadata.get(INTERRUPTED_TURN_RESOLVED_MODEL_ID_METADATA_KEY))
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|model_id| !model_id.is_empty())
-            .map(str::to_string)
-            .ok_or_else(|| {
-                OpenBitFunError::Validation(
-                    "Interrupted turn has no frozen resolved model; start a new turn instead"
-                        .to_string(),
-                )
-            })?;
-        let expected_model_binding_fingerprint = user_message_metadata
+        let pool_id = user_message_metadata
             .as_ref()
             .and_then(|metadata| {
-                metadata.get(INTERRUPTED_TURN_MODEL_BINDING_FINGERPRINT_METADATA_KEY)
+                metadata.get(crate::agentic::execution::model_pool::POOL_CONTEXT_KEY)
             })
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|fingerprint| !fingerprint.is_empty())
-            .map(str::to_string)
-            .ok_or_else(|| {
-                OpenBitFunError::Validation(
-                    "Interrupted turn has no frozen model binding; start a new turn instead"
-                        .to_string(),
-                )
-            })?;
-        let ai_config = Self::load_ai_config_for_model_resolution()
-            .await
-            .ok_or_else(|| {
-                OpenBitFunError::AIClient(
-                    "AI configuration is unavailable; retry interrupted turn recovery".to_string(),
-                )
-            })?;
-        let canonical_model_id = ai_config
-            .resolve_model_reference(&resolved_model_id)
-            .ok_or_else(|| {
-                OpenBitFunError::Validation(format!(
-                    "The interrupted turn model is unavailable: {resolved_model_id}"
-                ))
-            })?;
-        let model = ai_config
-            .models
-            .iter()
-            .find(|model| model.enabled && model.id == canonical_model_id)
-            .ok_or_else(|| {
-                OpenBitFunError::Validation(format!(
-                    "The interrupted turn model is unavailable: {resolved_model_id}"
-                ))
-            })?;
-        if model_runtime_binding_fingerprint(model) != expected_model_binding_fingerprint {
-            return Err(OpenBitFunError::Validation(format!(
+            .and_then(serde_json::Value::as_str);
+        let (resolved_model_id, expected_model_binding_fingerprint) = if let Some(pool_id) = pool_id
+        {
+            let service = crate::service::config::get_global_config_service().await?;
+            let pool = service.model_pool_store().await.get(pool_id).await?;
+            let config: crate::service::config::types::AIConfig =
+                service.get_config(Some("ai")).await?;
+            let bound = session
+                .config
+                .model_pool_binding
+                .as_ref()
+                .filter(|binding| binding.pool_id == pool_id);
+            let model = bound
+                .and_then(|binding| {
+                    config.models.iter().find(|model| {
+                        model.enabled
+                            && model.id == binding.model_id
+                            && pool.member_model_ids.contains(&model.id)
+                            && model_runtime_binding_fingerprint(model)
+                                == binding.configuration_fingerprint
+                    })
+                })
+                .or_else(|| {
+                    pool.member_model_ids.iter().find_map(|id| {
+                        config.models.iter().find(|model| {
+                            &model.id == id && model.enabled && model.supports_text_generation()
+                        })
+                    })
+                })
+                .ok_or_else(|| {
+                    OpenBitFunError::validation(
+                        "Interrupted turn model pool has no compatible configured members",
+                    )
+                })?;
+            (model.id.clone(), model_runtime_binding_fingerprint(model))
+        } else {
+            let resolved_model_id = user_message_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get(INTERRUPTED_TURN_RESOLVED_MODEL_ID_METADATA_KEY))
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|model_id| !model_id.is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    OpenBitFunError::Validation(
+                        "Interrupted turn has no frozen resolved model; start a new turn instead"
+                            .to_string(),
+                    )
+                })?;
+            let expected_model_binding_fingerprint = user_message_metadata
+                .as_ref()
+                .and_then(|metadata| {
+                    metadata.get(INTERRUPTED_TURN_MODEL_BINDING_FINGERPRINT_METADATA_KEY)
+                })
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|fingerprint| !fingerprint.is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    OpenBitFunError::Validation(
+                        "Interrupted turn has no frozen model binding; start a new turn instead"
+                            .to_string(),
+                    )
+                })?;
+            let ai_config = Self::load_ai_config_for_model_resolution()
+                .await
+                .ok_or_else(|| {
+                    OpenBitFunError::AIClient(
+                        "AI configuration is unavailable; retry interrupted turn recovery"
+                            .to_string(),
+                    )
+                })?;
+            let canonical_model_id = ai_config
+                .resolve_model_reference(&resolved_model_id)
+                .ok_or_else(|| {
+                    OpenBitFunError::Validation(format!(
+                        "The interrupted turn model is unavailable: {resolved_model_id}"
+                    ))
+                })?;
+            let model = ai_config
+                .models
+                .iter()
+                .find(|model| model.enabled && model.id == canonical_model_id)
+                .ok_or_else(|| {
+                    OpenBitFunError::Validation(format!(
+                        "The interrupted turn model is unavailable: {resolved_model_id}"
+                    ))
+                })?;
+            if model_runtime_binding_fingerprint(model) != expected_model_binding_fingerprint {
+                return Err(OpenBitFunError::Validation(format!(
                 "The interrupted turn model binding changed after interruption: {resolved_model_id}"
             )));
-        }
-        let resolved_reasoning_preset = match user_message_metadata
-            .as_ref()
-            .and_then(|metadata| metadata.get(INTERRUPTED_TURN_REASONING_PRESET_METADATA_KEY))
-        {
-            Some(serde_json::Value::Null) => None,
-            Some(serde_json::Value::String(value)) => value
-                .trim()
-                .is_empty()
-                .then_some(None)
-                .unwrap_or_else(|| Some(value.trim().to_string())),
-            _ => {
-                return Err(OpenBitFunError::Validation(
-                    "Interrupted turn has no frozen reasoning preset; start a new turn instead"
-                        .to_string(),
-                ))
             }
-        };
-        let expected_reasoning_fingerprint = user_message_metadata
-            .as_ref()
-            .and_then(|metadata| metadata.get(INTERRUPTED_TURN_REASONING_FINGERPRINT_METADATA_KEY))
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|fingerprint| !fingerprint.is_empty())
-            .ok_or_else(|| {
-                OpenBitFunError::Validation(
+            let resolved_reasoning_preset =
+                match user_message_metadata.as_ref().and_then(|metadata| {
+                    metadata.get(INTERRUPTED_TURN_REASONING_PRESET_METADATA_KEY)
+                }) {
+                    Some(serde_json::Value::Null) => None,
+                    Some(serde_json::Value::String(value)) => value
+                        .trim()
+                        .is_empty()
+                        .then_some(None)
+                        .unwrap_or_else(|| Some(value.trim().to_string())),
+                    _ => return Err(OpenBitFunError::Validation(
+                        "Interrupted turn has no frozen reasoning preset; start a new turn instead"
+                            .to_string(),
+                    )),
+                };
+            let expected_reasoning_fingerprint = user_message_metadata
+                .as_ref()
+                .and_then(|metadata| {
+                    metadata.get(INTERRUPTED_TURN_REASONING_FINGERPRINT_METADATA_KEY)
+                })
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|fingerprint| !fingerprint.is_empty())
+                .ok_or_else(|| {
+                    OpenBitFunError::Validation(
                     "Interrupted turn has no frozen reasoning fingerprint; start a new turn instead"
                         .to_string(),
                 )
-            })?;
-        let reasoning_selection =
-            match user_message_metadata.as_ref().and_then(|metadata| {
+                })?;
+            let reasoning_selection = match user_message_metadata.as_ref().and_then(|metadata| {
                 metadata.get(INTERRUPTED_TURN_REASONING_SELECTION_METADATA_KEY)
             }) {
                 Some(serde_json::Value::Null) => None,
@@ -9094,31 +9303,33 @@ impl SessionManager {
                         .to_string(),
                 )),
             };
-        if reasoning_selection != session.config.reasoning_preset {
-            return Err(OpenBitFunError::Validation(
+            if reasoning_selection != session.config.reasoning_preset {
+                return Err(OpenBitFunError::Validation(
                 "The session reasoning preset changed after interruption; start a new turn instead"
                     .to_string(),
             ));
-        }
-        let (current_resolved_reasoning_preset, current_reasoning_fingerprint) =
-            Self::resolve_effective_reasoning_preset_from_config(
-                &ai_config,
-                &resolved_model_id,
-                reasoning_selection.as_deref(),
-            )
-            .await?;
-        if current_resolved_reasoning_preset != resolved_reasoning_preset {
-            return Err(OpenBitFunError::Validation(
+            }
+            let (current_resolved_reasoning_preset, current_reasoning_fingerprint) =
+                Self::resolve_effective_reasoning_preset_from_config(
+                    &ai_config,
+                    &resolved_model_id,
+                    reasoning_selection.as_deref(),
+                )
+                .await?;
+            if current_resolved_reasoning_preset != resolved_reasoning_preset {
+                return Err(OpenBitFunError::Validation(
                 "The dialog turn reasoning contract changed after interruption; start a new turn instead"
                     .to_string(),
             ));
-        }
-        if current_reasoning_fingerprint != expected_reasoning_fingerprint {
-            return Err(OpenBitFunError::Validation(
+            }
+            if current_reasoning_fingerprint != expected_reasoning_fingerprint {
+                return Err(OpenBitFunError::Validation(
                 "The dialog turn reasoning runtime contract changed after interruption; start a new turn instead"
                     .to_string(),
             ));
-        }
+            }
+            (resolved_model_id, expected_model_binding_fingerprint)
+        };
         let user_input = turn.user_message.content.clone();
 
         let mut updated_session = session.clone();
@@ -14709,6 +14920,115 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn btw_typed_model_choice_leaves_inherited_pool_without_mutating_parent() {
+        use openbitfun_core_types::model_pool::{ModelPoolBinding, ModelSelection};
+        let workspace = TestWorkspace::new();
+        let manager = test_manager(Arc::new(
+            PersistenceManager::new(workspace.path_manager()).unwrap(),
+        ));
+        let mut parent = Session::new(
+            "Parent".into(),
+            "Standard".into(),
+            SessionConfig {
+                workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                model_id: Some("model-a".into()),
+                model_pool_id: Some("pool-a".into()),
+                model_pool_binding: Some(ModelPoolBinding {
+                    pool_id: "pool-a".into(),
+                    model_id: "model-a".into(),
+                    configuration_fingerprint: "model-a-v1".into(),
+                    generation: 3,
+                }),
+                model_binding_policy: SessionModelBindingPolicy::Pool,
+                ..Default::default()
+            },
+        );
+        parent.kind = SessionKind::EphemeralChild;
+        let snapshot = crate::agentic::fork_agent::ForkAgentContextSnapshot::from_parent_session(
+            &parent,
+            vec![],
+        )
+        .unwrap();
+        let mut child = Session::new(
+            "Side question".into(),
+            "Standard".into(),
+            snapshot.build_child_session_config(None),
+        );
+        child.kind = SessionKind::EphemeralChild;
+        assert_eq!(
+            child.config.model_pool_binding,
+            parent.config.model_pool_binding
+        );
+        let child_id = child.session_id.clone();
+        manager
+            .sessions
+            .insert(parent.session_id.clone(), parent.clone());
+        manager.sessions.insert(child_id.clone(), child.clone());
+        TEST_MODEL_RESOLUTION_AI_CONFIG
+            .scope(
+                ServiceAIConfig {
+                    models: vec![
+                        test_model("model-a", 128_000),
+                        configured_reasoning_model("model-b"),
+                    ],
+                    ..Default::default()
+                },
+                async {
+                    assert!(manager
+                        .update_session_model_selection(&child_id, "model-b", Some("high"))
+                        .await
+                        .is_err());
+                    assert!(manager
+                        .update_session_model_target_with_reasoning(
+                            &child_id,
+                            &ModelSelection::Model {
+                                model_ref: "missing".into()
+                            },
+                            Some("high")
+                        )
+                        .await
+                        .is_err());
+                    let unchanged = manager.get_session(&child_id).unwrap();
+                    assert_eq!(
+                        unchanged.config.model_pool_binding,
+                        child.config.model_pool_binding
+                    );
+                    assert_eq!(
+                        unchanged.config.model_pool_selection_revision,
+                        child.config.model_pool_selection_revision
+                    );
+                    let selected = manager
+                        .update_session_model_target_with_reasoning(
+                            &child_id,
+                            &ModelSelection::Model {
+                                model_ref: "model-b".into(),
+                            },
+                            Some("high"),
+                        )
+                        .await
+                        .unwrap();
+                    assert_eq!(selected.config.model_id.as_deref(), Some("model-b"));
+                    assert_eq!(selected.config.reasoning_preset.as_deref(), Some("high"));
+                    assert!(selected.config.model_pool_id.is_none());
+                    assert!(selected.config.model_pool_binding.is_none());
+                    assert_eq!(
+                        selected.config.model_binding_policy,
+                        SessionModelBindingPolicy::Mutable
+                    );
+                    assert_eq!(
+                        manager
+                            .get_session(&parent.session_id)
+                            .unwrap()
+                            .config
+                            .model_pool_binding,
+                        parent.config.model_pool_binding
+                    );
+                },
+            )
+            .await;
+    }
+
     fn configured_reasoning_model(id: &str) -> ServiceAIModelConfig {
         ServiceAIModelConfig {
             id: id.to_string(),
@@ -14920,7 +15240,16 @@ mod tests {
             ..Default::default()
         };
         ai_config.default_models.primary = Some("primary-model".to_string());
-        ai_config.agent_model_defaults.mode = "agent-model".to_string();
+        ai_config
+            .set_model_selections(
+                openbitfun_config_contracts::model_pool::AgentModelSelections {
+                    mode: openbitfun_core_types::model_pool::ModelSelection::Model {
+                        model_ref: "agent-model".into(),
+                    },
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
         let mut session = Session::new_with_id(
             "session-default".to_string(),
@@ -14939,7 +15268,16 @@ mod tests {
         assert_eq!(resolved, Some(1_000_000));
         assert_eq!(session.config.max_context_tokens, 1_000_000);
 
-        ai_config.agent_model_defaults.mode = "primary".to_string();
+        ai_config
+            .set_model_selections(
+                openbitfun_config_contracts::model_pool::AgentModelSelections {
+                    mode: openbitfun_core_types::model_pool::ModelSelection::Model {
+                        model_ref: "primary".into(),
+                    },
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         session.config.max_context_tokens = 256_000;
 
         let resolved =
@@ -14959,7 +15297,16 @@ mod tests {
             ..Default::default()
         };
         ai_config.default_models.primary = Some("primary-model".to_string());
-        ai_config.agent_model_defaults.mode = "mode-model".to_string();
+        ai_config
+            .set_model_selections(
+                openbitfun_config_contracts::model_pool::AgentModelSelections {
+                    mode: openbitfun_core_types::model_pool::ModelSelection::Model {
+                        model_ref: "mode-model".into(),
+                    },
+                    ..Default::default()
+                },
+            )
+            .unwrap();
 
         let mut session = Session::new_with_id(
             "subagent-default".to_string(),
@@ -20199,5 +20546,18 @@ mod tests {
                 .await,
             None
         );
+    }
+    #[test]
+    fn model_pool_admission_fences_pool_and_selection_revision() {
+        let mut session = Session::new("Pool".into(), "Standard".into(), SessionConfig::default());
+        session.config.model_binding_policy = SessionModelBindingPolicy::Pool;
+        session.config.model_pool_id = Some("p".into());
+        let facts = super::TurnAdmissionSessionFacts::from_session(&session);
+        assert!(facts.matches(&session));
+        session.config.model_pool_id = Some("q".into());
+        assert!(!facts.matches(&session));
+        session.config.model_pool_id = Some("p".into());
+        session.config.model_pool_selection_revision = 1;
+        assert!(!facts.matches(&session));
     }
 }

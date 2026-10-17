@@ -90,8 +90,10 @@ only that pending annotation from the composer or queue and close the dialog.
 The first ordinary side question forks the parent on send. Model and reasoning
 choices stay in its draft until that request; its Agent mode is inherited.
 Its permission control reads the parent and becomes editable after submission.
-Peers advertise `btw_initial_model_selection_v1` before showing those draft
-settings as editable. Older hosts retain inherited settings and readable quotes.
+Peers advertise `btw_initial_model_selection_v1` for legacy fixed-model draft
+settings, and `btw_model_pool_selection_v1` for typed model/pool choices. Inherited
+pools send no scalar override and retain the parent's current binding under both
+routing strategies. Older hosts retain inherited settings and readable quotes.
 
 For completed-turn image export, check both option cards in light/dark and
 high-contrast themes: hover, press, and keyboard focus change the neutral fill

@@ -41,6 +41,32 @@ describe('public Select product integration', () => {
     act(() => root.unmount());
     host.remove();
     vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('shows option help on hover without changing selection or preventing a click', () => {
+    vi.useFakeTimers();
+    render({ options: [
+      { label: 'Ask', value: 'ask', tooltip: 'Ask before making changes.' },
+      { label: 'Agent', value: 'agent', tooltip: 'Apply changes directly.' },
+    ] });
+    act(() => trigger().dispatchEvent(new MouseEvent('mouseenter')));
+    act(() => vi.advanceTimersByTime(500));
+    act(() => vi.advanceTimersByTime(20));
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('Ask before making changes.');
+    act(() => trigger().dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: document.body })));
+    act(() => vi.advanceTimersByTime(500));
+    act(() => trigger().click());
+    const option = document.querySelector<HTMLElement>('[role="option"][aria-label="Agent"]')!;
+    act(() => option.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    act(() => vi.advanceTimersByTime(500));
+    act(() => vi.advanceTimersByTime(20));
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('Apply changes directly.');
+    expect(change).not.toHaveBeenCalled();
+    act(() => option.click());
+    expect(change).toHaveBeenCalledWith('agent');
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
   });
 
   it('opens a grouped portalled listbox with a selected row and check indicator', () => {

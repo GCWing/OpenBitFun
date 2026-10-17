@@ -1,5 +1,7 @@
+import { modelSelectionsConfigPath } from '@/infrastructure/config/services/modelSelections';
 import '@/app/scenes/settings/pages/ai/ModelSettingsPage.scss';
 import { ModelDiscoveryPicker, type ModelDiscoveryOption } from './ModelDiscoveryPicker';
+import { ModelPoolsSection } from './ModelPoolsSection';
 import { ModelPoolCardActions } from './ModelPoolCardActions';
 import { aiApi, systemAPI } from '@/infrastructure/api';
 import type {
@@ -2095,7 +2097,7 @@ const ModelSettingsPage: React.FC = () => {
     const [defaultModels, taskModels, agentModelDefaults] = await Promise.all([
       configManager.getConfig<unknown>('ai.default_models'),
       configManager.getConfig<unknown>('ai.task_models'),
-      configManager.getConfig<unknown>('ai.agent_model_defaults'),
+      configManager.getConfig<unknown>(modelSelectionsConfigPath()),
     ]);
     const ids = new Set(modelIds);
     return [defaultModels, taskModels, agentModelDefaults]
@@ -4152,10 +4154,10 @@ const ModelSettingsPage: React.FC = () => {
           <ConfigPageRow className="openbitfun-model-settings__mode-row" label={t('selectionModes.smart')} description={t('selectionModes.smartHint')} align="center">
             <StatusPill tone="neutral">{t('selectionModes.unavailable')}</StatusPill>
           </ConfigPageRow>
-          <ConfigPageRow className="openbitfun-model-settings__mode-row" label={t('selectionModes.battery')} description={t('selectionModes.batteryHint')} align="center">
-            <StatusPill tone="neutral">{t('selectionModes.unavailable')}</StatusPill>
-          </ConfigPageRow>
+
         </ConfigPageSection>
+
+        <ModelPoolsSection models={aiModels} />
 
         <div>
           <ConfigPageSection title={t('sections.pool')} bodySurface={false}

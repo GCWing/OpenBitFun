@@ -1,3 +1,6 @@
+import { modelPoolAPI, supportsModelPools } from '@/infrastructure/api/service-api/ModelPoolAPI';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { sessionWorkspaceId, sessionProjectWorkspacePath } from '../../utils/sessionWorkspace';
 /**
  * Event handling module
  * Initializes event listeners and handles various Agentic events
@@ -2442,6 +2445,22 @@ function handleModelRoundComplete(context: FlowChatContext, event: ModelRoundCom
   if (!round) {
     log.debug('Model round not found (model round complete)', { sessionId, turnId, roundId });
     return;
+  }
+
+  if (session?.config.modelPoolId && supportsModelPools()) {
+    const scope = getActiveSurfaceScope();
+    const selectionConfig = session.config;
+    void modelPoolAPI.target({ sessionId, workspaceId: sessionWorkspaceId(session),
+      workspacePath: sessionProjectWorkspacePath(session), remoteConnectionId: session.remoteConnectionId,
+      remoteSshHost: session.remoteSshHost, includeInternal: session.sessionKind === 'subagent' })
+      .then(target => {
+        if (!scope.isCurrent() || store.getState().sessions.get(sessionId)?.config !== selectionConfig) return;
+        if (target.selection.kind === 'pool') store.updateSessionModelPool(sessionId, target.selection.pool_id, target.binding);
+        else {
+          store.updateSessionModelPool(sessionId, undefined);
+          store.updateSessionModelName(sessionId, target.selection.model_ref);
+        }
+      }).catch(error => { if (scope.isCurrent()) log.warn('Failed to refresh accepted pool binding', { sessionId, error }); });
   }
 
   const durationMs = optionalNumber(event.durationMs ?? (event as any).duration_ms);

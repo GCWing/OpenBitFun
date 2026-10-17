@@ -1,4 +1,5 @@
 import { agentAPI, btwAPI } from '@/infrastructure/api';
+import type { BtwInitialModelTarget } from '@/infrastructure/api/service-api/BtwAPI';
 import { i18nService } from '@/infrastructure/i18n';
 import { notificationService } from '@/shared/notification-system';
 import { flowChatStore } from '../store/FlowChatStore';
@@ -287,6 +288,12 @@ export function createBtwSessionPlaceholder(params: {
     flowChatStore.updateSessionModelName(childSessionId, parentSession.config.modelName);
   }
   flowChatStore.updateSessionReasoningPreset(childSessionId, parentSession.config.reasoningPreset);
+  if (parentSession.config.modelPoolId) {
+    // Mirror inherited intent for the selector, but let the host snapshot its
+    // current binding at first submission. This is not an explicit pool change.
+    flowChatStore.updateSessionModelPool(childSessionId, parentSession.config.modelPoolId,
+      parentSession.config.modelPoolBinding);
+  }
 
   return { childSessionId, parentDialogTurnId, parentTurnIndex };
 }
@@ -302,6 +309,7 @@ export async function sendMessageToBtwSession(params: {
   parentTurnIndex?: number;
   userMessageMetadata?: Record<string, unknown>;
   initialModelSelection?: { modelId: string; reasoningPreset?: string };
+  initialModelTarget?: BtwInitialModelTarget;
   requestId?: string;
 }): Promise<{ requestId: string }> {
   const question = params.question.trim();
@@ -339,7 +347,17 @@ export async function sendMessageToBtwSession(params: {
     imageContexts: params.imagePayload?.imageContexts,
     ...(params.userMessageMetadata ? { userMessageMetadata: params.userMessageMetadata } : {}),
     ...(params.initialModelSelection ? { initialModelSelection: params.initialModelSelection } : {}),
+    ...(params.initialModelTarget ? { initialModelTarget: params.initialModelTarget } : {}),
   }));
+  if (scope.isCurrent() && params.initialModelTarget?.selection.kind === 'pool') {
+    const current = flowChatStore.getState().sessions.get(params.childSessionId);
+    if (current?.config.modelPoolId === params.initialModelTarget.selection.pool_id) {
+      // The first turn already committed this choice. Follow-ups must not reset
+      // the accepted member by replaying the draft selection.
+      flowChatStore.updateSessionModelPool(params.childSessionId, current.config.modelPoolId,
+        current.config.modelPoolBinding);
+    }
+  }
   if (modelId && scope.isCurrent()) {
     flowChatStore.updateSessionModelName(params.childSessionId, modelId);
   }

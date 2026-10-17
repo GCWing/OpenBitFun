@@ -1095,6 +1095,9 @@ pub struct AIConfig {
     /// All configured models.
     pub models: Vec<AIModelConfig>,
 
+    #[serde(default)]
+    pub model_pools: crate::model_pool::ModelPoolDocument,
+
     /// Model selectors for product-owned AI tasks.
     #[serde(default, skip_serializing_if = "TaskModelsConfig::is_default")]
     pub task_models: TaskModelsConfig,
@@ -1106,6 +1109,16 @@ pub struct AIConfig {
     /// Default selectors for future mode and delegated-subagent sessions.
     #[serde(default)]
     pub agent_model_defaults: AgentModelDefaultsConfig,
+
+    /// Authoritative defaults for Agent model selections.
+    /// Introduced to support typed model/pool selections without changing the legacy agent_model_defaults format.
+    /// Legacy agent_model_defaults is migration input only.
+    #[serde(
+        default,
+        deserialize_with = "crate::model_pool::deserialize_model_selections",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub agent_model_selections: Option<serde_json::Value>,
 
     /// Shared agent-profile configuration.
     /// profile_id -> AgentProfileConfig
@@ -2062,10 +2075,12 @@ impl Default for WorkspaceConfig {
 impl Default for AIConfig {
     fn default() -> Self {
         Self {
+            model_pools: crate::model_pool::ModelPoolDocument::default(),
             models: vec![],
             task_models: TaskModelsConfig::default(),
             default_models: DefaultModelsConfig::default(),
             agent_model_defaults: AgentModelDefaultsConfig::default(),
+            agent_model_selections: None,
             agent_profiles: std::collections::HashMap::new(),
             skill_settings: SkillSettingsConfig::default(),
             review_teams: default_review_team_configs(),

@@ -33,6 +33,7 @@ export const agentRuntimeRootPublicModules = [
   'event_source',
   'events',
   'evidence_ledger',
+  'model_pool',
   'review_read_receipt',
   'native_hooks',
   'permission',

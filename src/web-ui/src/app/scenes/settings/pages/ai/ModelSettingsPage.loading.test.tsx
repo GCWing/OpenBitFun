@@ -167,13 +167,13 @@ describe('ModelSettingsPage loading and provider actions', () => {
         return updated;
       });
       reads.set('ai.task_models', deferred());
-      reads.set('ai.agent_model_defaults', deferred());
+      reads.set('ai.agent_model_selections', deferred());
       await act(async () => root.render(<ModelSettingsPage />));
       await act(async () => {
         reads.get('ai.models')!.resolve(savedModels);
         reads.get('ai.default_models')!.resolve({ primary: model.id });
         reads.get('ai.task_models')!.resolve({});
-        reads.get('ai.agent_model_defaults')!.resolve({});
+        reads.get('ai.agent_model_selections')!.resolve({});
       });
 
       const deleteButton = [...container.querySelectorAll<HTMLButtonElement>('.openbitfun-model-settings__source-pill-delete')]

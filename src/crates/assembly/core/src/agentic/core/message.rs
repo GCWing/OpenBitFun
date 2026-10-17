@@ -82,6 +82,9 @@ pub struct MessageMetadata {
     pub activated_instruction_sources: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_response_replay: Option<ModelResponseReplay>,
+    /// Execution identity for provider-private replay data produced by a pool member.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_pool_replay_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -627,6 +630,11 @@ impl Message {
 
     pub fn with_memory_citation(mut self, memory_citation: Option<MemoryCitation>) -> Self {
         self.metadata.memory_citation = memory_citation;
+        self
+    }
+
+    pub fn with_model_pool_replay_fingerprint(mut self, fingerprint: Option<String>) -> Self {
+        self.metadata.model_pool_replay_fingerprint = fingerprint;
         self
     }
 

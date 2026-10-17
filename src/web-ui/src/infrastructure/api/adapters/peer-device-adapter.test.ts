@@ -20,6 +20,48 @@ import {
 import { TauriTransportAdapter } from './tauri-adapter';
 import { isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 
+describe('model pool capability negotiation', () => {
+  const commands = ['get_model_pools', 'save_model_pool', 'delete_model_pool', 'get_model_pool_status',
+    'get_session_model_target', 'update_session_model_target', 'retry_model_pool_member'];
+  it.each(commands)('rejects %s on old hosts before RPC', async command => {
+    const rpc = vi.fn();
+    const adapter = new PeerDeviceTransportAdapter('peer', rpc);
+    await expect(adapter.request(command, { request: {} })).rejects.toThrow('model_pool_selection_v1');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+  it('forwards typed selection only while the capability is advertised', async () => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: {} }));
+    const adapter = new PeerDeviceTransportAdapter('peer', rpc, { supportsModelPoolSelectionV1: true });
+    const args = { request: { sessionId: 'session', selection: { kind: 'pool', pool_id: 'pool' } } };
+    await adapter.request('update_session_model_target', args);
+    expect(JSON.parse(rpc.mock.calls[0][1])).toMatchObject({ command: 'update_session_model_target', args });
+    adapter.setHostCapabilities({ supportsModelPoolSelectionV1: false });
+    await expect(adapter.request('update_session_model_target', args)).rejects.toThrow('model_pool_selection_v1');
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('BTW model pool capability', () => {
+  const args = { request: { initialModelTarget: { selection: { kind: 'pool', pool_id: 'pool' } } } };
+  it.each([{}, { supportsModelPoolSelectionV1: true }])('rejects typed BTW choices on older hosts: %j', async caps => {
+    const rpc = vi.fn();
+    const adapter = new PeerDeviceTransportAdapter('peer', rpc, caps);
+    await expect(adapter.request('btw_ask_stream', args)).rejects.toThrow('btw_model_pool_selection_v1');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+  it('forwards inherited requests and negotiates explicit choices including capability withdrawal', async () => {
+    const rpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: {} }));
+    const adapter = new PeerDeviceTransportAdapter('peer', rpc);
+    await adapter.request('btw_ask_stream', { request: { question: 'Inherited' } });
+    adapter.setHostCapabilities({ supportsModelPoolSelectionV1: true, supportsBtwModelPoolSelectionV1: true });
+    await adapter.request('btw_ask_stream', args);
+    expect(JSON.parse(rpc.mock.calls[1][1])).toMatchObject({ command: 'btw_ask_stream', args });
+    adapter.setHostCapabilities({ supportsBtwModelPoolSelectionV1: false });
+    await expect(adapter.request('btw_ask_stream', args)).rejects.toThrow('btw_model_pool_selection_v1');
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('whole-session copy capability', () => {
   it('rejects copying before RPC on a host without the new request contract', async () => {
     const deviceRpc = vi.fn();

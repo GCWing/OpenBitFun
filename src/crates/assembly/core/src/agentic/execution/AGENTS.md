@@ -22,6 +22,18 @@ For model retry admission and recovery, use:
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::execution::round_executor::tests
 ```
 
+For pool context budgets, host-resolved member limits, and member failover, use:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib model_pool
+```
+
+The pool window and input limit are independent minima across valid, enabled
+text members. Resolve limits with the AI client configuration conversion. Health,
+request-specific image/tool filtering, and attempted-member exclusions never
+increase the common budget. Refresh it for each model round; invalidate speculative
+compression when it changes. Manual compaction uses the same pool budget.
+
 For complete shell constraint checks, use:
 
 ```bash

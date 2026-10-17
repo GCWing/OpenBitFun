@@ -3340,7 +3340,7 @@
       "mode": "Mode",
       "currentModel": "Current model",
       "poolConnections": "Battery connections",
-      "modelPool": "Model pool"
+      "modelList": "Model list"
     },
     "modes": {
       "selection": "Select mode",
@@ -3388,9 +3388,11 @@
       "targetModelUnavailable": "Target model unavailable"
     },
     "tooltip": {
+      "currentModel": "Current model",
       "configName": "Configuration",
       "modelName": "Model name",
       "contextWindow": "Context window",
+      "poolContextWindow": "Pool context window",
       "compressionTrigger": "Compression trigger",
       "longContextWarning": "This model's configured context window exceeds 400K. Very long context can reduce model quality; consider setting it to around 300K."
     },
@@ -3399,6 +3401,22 @@
       "agentPromptLabel": "Last request prompt",
       "acpContext": "ACP reported context: {{usage}}",
       "acpContextLabel": "ACP reported context"
+    },
+    "pools": {
+      "title": "Model pools",
+      "loadError": "Unable to load model pools. Reopen the menu to retry.",
+      "surfaceUnsupported": "Model pools are not supported for this session surface. Select a concrete model.",
+      "actual": "Current model: {{model}}",
+      "unassigned": "Assigned on the first request",
+      "choose": "Choose model pool",
+      "empty": "No model pools configured",
+      "missing": "This model pool no longer exists",
+      "unavailable": "No available models",
+      "ordered": "Ordered",
+      "balanced": "Balanced",
+      "members": "{{strategy}} · Models: {{total}}",
+      "orderedDescription": "Uses the first available member when assigning a model; keeps the current healthy binding.",
+      "balancedDescription": "Distributes new session bindings across members; keeps the current healthy binding."
     }
   },
   "reasoningEffort": {

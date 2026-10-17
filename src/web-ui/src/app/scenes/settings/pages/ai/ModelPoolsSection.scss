@@ -1,0 +1,79 @@
+.openbitfun-model-pools__empty {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--openbitfun-control-height-sm);
+  color: var(--openbitfun-color-content-secondary);
+}
+
+.openbitfun-model-pools__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  min-width: 0;
+}
+
+.openbitfun-model-pools__name {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.openbitfun-model-pools__summary > [data-openbitfun-component='status-pill'] {
+  flex-shrink: 0;
+}
+
+.openbitfun-model-pools__actions,
+.openbitfun-model-pools__member-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--openbitfun-space-1);
+}
+
+// Keep the row geometry stable and the controls reachable by keyboard or touch.
+@media (hover: hover) and (pointer: fine) {
+  .openbitfun-model-pools__actions,
+  .openbitfun-model-pools__member-actions {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .openbitfun-model-pools__pool:hover .openbitfun-model-pools__actions,
+  .openbitfun-model-pools__pool:focus-within .openbitfun-model-pools__actions,
+  .openbitfun-model-pools__member:hover .openbitfun-model-pools__member-actions,
+  .openbitfun-model-pools__member:focus-within .openbitfun-model-pools__member-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.openbitfun-model-pools__members {
+  list-style: none;
+  margin: var(--openbitfun-space-2) 0 0;
+  padding: var(--openbitfun-space-1);
+  border: 1px solid var(--openbitfun-color-border-subtle);
+  border-radius: var(--openbitfun-radius-base);
+  background: var(--openbitfun-color-surface-subtle);
+}
+
+.openbitfun-model-pools__member {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  min-block-size: var(--openbitfun-control-height-sm);
+  padding: var(--openbitfun-space-2) var(--openbitfun-space-3);
+  color: var(--openbitfun-color-content-primary);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+}
+
+.openbitfun-model-pools__member + .openbitfun-model-pools__member {
+  border-block-start: 1px solid var(--openbitfun-color-border-subtle);
+}
+
+.openbitfun-model-pools__member > .openbitfun-model-pools__summary {
+  flex: 1;
+}
+
+.openbitfun-model-pools__member-actions {
+  flex-shrink: 0;
+}

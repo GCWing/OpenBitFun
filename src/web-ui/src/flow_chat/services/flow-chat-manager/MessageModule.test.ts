@@ -1220,6 +1220,11 @@ describe('MessageModule immediate follow-ups', () => {
     vi.resetAllMocks();
     activateSurface(LOCAL_SURFACE_ID);
     mockHostQueueSupported.mockReturnValue(false);
+    mockGetConfigs.mockResolvedValue({
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'primary' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
+      'ai.models': [{ id: 'model-a', name: 'Model A', model_name: 'model-a', provider: 'openai', enabled: true, category: 'general_chat' }],
+      'ai.default_models': { primary: 'model-a' },
+    });
     mockGetCurrentState.mockReturnValue('processing');
     mockTransition.mockResolvedValue(true);
     mockPendingList.mockReturnValue([]);
@@ -1320,7 +1325,7 @@ describe('MessageModule model synchronization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetConfigs.mockResolvedValue({
-      'ai.agent_model_defaults': { mode: 'model-b' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'model-b' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
       'ai.models': [
         { id: 'primary-model', enabled: true, context_window: 32000 },
         { id: 'model-b', enabled: true, context_window: 64000 },

@@ -25,6 +25,9 @@ pub enum SessionModelBindingPolicy {
     #[default]
     Mutable,
     ApprovedImmutable,
+    /// Selection is owned by the model-pool contract. Older runtimes must reject
+    /// this policy rather than execute the legacy model projection.
+    Pool,
 }
 
 /// Durable owner of the session's logical main-agent route.

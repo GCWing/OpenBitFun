@@ -65,3 +65,5 @@ pub mod workspace_activation;
 pub mod worktree_api;
 
 pub use app_state::{AppState, AppStatistics, HealthStatus, RemoteWorkspace};
+
+pub mod model_pool_api;

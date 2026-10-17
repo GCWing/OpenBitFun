@@ -1628,7 +1628,10 @@ impl StartupPage {
                         }
                     };
                 if let Err(error) = config_service
-                    .set_config("ai.agent_model_defaults.mode", &selected_id)
+                    .set_config(
+                        "ai.agent_model_selections.mode",
+                        serde_json::json!({"kind":"model", "model_ref": &selected_id}),
+                    )
                     .await
                 {
                     tracing::error!("Failed to set future mode model: {error}");

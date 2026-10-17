@@ -487,19 +487,19 @@ describe('ConfigManager', () => {
   it('reloads startup config paths through one batch call', async () => {
     configApiMocks.getConfigs.mockResolvedValueOnce({
       'ai.models': [],
-      'ai.agent_model_defaults': {
-        mode: 'primary',
+      'ai.agent_model_selections': {
+        mode: { kind: 'model', model_ref: 'primary' },
         subagents: {
-          default: { kind: 'fixed', model_id: 'fast' },
+          default: { kind: 'model', model_ref: 'fast' },
           builtin: {
-            GeneralPurpose: { kind: 'fixed', model_id: 'primary' },
+            GeneralPurpose: { kind: 'model', model_ref: 'primary' },
           },
           fork: { kind: 'inherit' },
         },
       },
       'ai.task_models': {
-        session_title: { kind: 'fixed', model_id: 'gpt-5-mini' },
-        git_commit: { kind: 'fixed', model_id: 'fast' },
+        session_title: { kind: 'model', model_ref: 'gpt-5-mini' },
+        git_commit: { kind: 'model', model_ref: 'fast' },
       },
       'ai.default_models': { chat: 'gpt-5' },
     });
@@ -509,14 +509,14 @@ describe('ConfigManager', () => {
     expect(configApiMocks.getConfigs).toHaveBeenCalledTimes(1);
     expect(configApiMocks.getConfigs).toHaveBeenCalledWith([
       'ai.models',
-      'ai.agent_model_defaults',
+      'ai.agent_model_selections',
       'ai.task_models',
       'ai.default_models',
     ]);
     expect(configApiMocks.getConfig).not.toHaveBeenCalled();
     expect(configManager.get('ai.default_models')).toEqual({ chat: 'gpt-5' });
-    expect(configManager.get('ai.agent_model_defaults').subagents.builtin).toEqual({
-      GeneralPurpose: { kind: 'fixed', model_id: 'primary' },
+    expect(configManager.get('ai.agent_model_selections').subagents.builtin).toEqual({
+      GeneralPurpose: { kind: 'model', model_ref: 'primary' },
     });
   });
 

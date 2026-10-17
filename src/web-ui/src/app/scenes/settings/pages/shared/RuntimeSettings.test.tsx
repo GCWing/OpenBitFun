@@ -25,7 +25,7 @@ vi.mock('@/infrastructure/i18n', () => ({
 vi.mock('@/infrastructure/api/service-api/ApiClient', () => ({ api: { invoke: mocks.invoke } }));
 vi.mock('@/infrastructure/api/service-api/SystemAPI', () => ({ systemAPI: { getSystemInfo: async () => ({ platform: 'macos' }) } }));
 vi.mock('../../../../../infrastructure/config/services/ConfigManager', () => ({ configManager: { hasCachedConfig: () => false, getCachedConfig: () => undefined,
-  getConfig: mocks.getConfig, getOptionalConfig: async () => true, setConfig: mocks.setConfig,
+  getConfig: mocks.getConfig, getOptionalConfig: async (path: string) => path === 'ai.agent_model_selections' ? { mode: { kind: 'model', model_ref: 'primary' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } } : true, setConfig: mocks.setConfig,
 } }));
 vi.mock('../../../../../infrastructure/config/hooks/useComputerUseEnabled', () => ({ useComputerUseEnabled: () => ({ computerUseEnabled: false, setComputerUseEnabled: mocks.setEnabled }) }));
 vi.mock('../../../../../infrastructure/config/services/AIExperienceConfigService', () => ({ aiExperienceConfigService: { getCachedSettings: () => null, getSettingsAsync: async () => ({ enable_workspace_search: true }) } }));

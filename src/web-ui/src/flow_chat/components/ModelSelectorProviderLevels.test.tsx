@@ -18,6 +18,33 @@ import type { AIModelConfig, DefaultModelsConfig } from '@/infrastructure/config
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
+const poolApiMocks = vi.hoisted(() => ({
+  supported: false,
+  btwSupported: true,
+  select: vi.fn(),
+  target: vi.fn(),
+  list: vi.fn(),
+  status: vi.fn(),
+}));
+vi.mock('@/infrastructure/api/service-api/ModelPoolAPI', async importOriginal => ({
+  ...await importOriginal<typeof import('@/infrastructure/api/service-api/ModelPoolAPI')>(),
+  supportsModelPools: () => poolApiMocks.supported,
+  supportsBtwModelPools: () => poolApiMocks.supported && poolApiMocks.btwSupported,
+  modelPoolAPI: { list: poolApiMocks.list, status: poolApiMocks.status, select: poolApiMocks.select, target: poolApiMocks.target },
+}));
+beforeEach(() => {
+  poolApiMocks.supported = false;
+  poolApiMocks.btwSupported = true;
+  poolApiMocks.target.mockReset().mockResolvedValue({ selection: { kind: 'model', model_ref: 'acme-fast' } });
+  poolApiMocks.select.mockReset().mockImplementation(async (_request, selection) => {
+    const target = { selection };
+    poolApiMocks.target.mockResolvedValue(target);
+    return target;
+  });
+  poolApiMocks.list.mockResolvedValue({ version: 1, pools: [] });
+  poolApiMocks.status.mockResolvedValue([]);
+});
+
 const aiApiMocks = vi.hoisted(() => ({
   getModelCatalog: vi.fn(),
   onModelCatalogUpdated: vi.fn(),
@@ -25,7 +52,13 @@ const aiApiMocks = vi.hoisted(() => ({
 
 const flowChatStoreMocks = vi.hoisted(() => {
   type TestSession = {
-    config: { agentType?: string; modelName?: string; reasoningPreset?: string };
+    sessionId?: string;
+    sessionKind?: string;
+    agentBackedTransient?: boolean;
+    isTransient?: boolean;
+    dialogTurns?: unknown[];
+    config: { agentType?: string; modelName?: string; reasoningPreset?: string;
+      modelPoolId?: string; modelPoolSelectionPending?: boolean };
   };
   const sessions = new Map<string, TestSession>();
   const subscribers = new Set<() => void>();
@@ -36,6 +69,7 @@ const flowChatStoreMocks = vi.hoisted(() => {
       subscribers.add(callback);
       return () => subscribers.delete(callback);
     }),
+    updateSessionModelPool: vi.fn(),
     updateSessionModelName: vi.fn(),
     updateSessionReasoningPreset: vi.fn(),
     updateSessionMaxContextTokens: vi.fn(),
@@ -212,7 +246,7 @@ describe('ModelSelector provider levels', () => {
     vi.mocked(configManager.getConfigs).mockResolvedValue({
       'ai.models': models,
       'ai.default_models': defaultModels,
-      'ai.agent_model_defaults': { mode: modeModel },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: modeModel }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
     });
 
     await act(async () => {
@@ -236,9 +270,16 @@ describe('ModelSelector provider levels', () => {
       return update(config['ai.models']);
     });
     aiApiMocks.getModelCatalog.mockReset();
-    vi.mocked(agentAPI.updateSessionModel).mockReset().mockResolvedValue(undefined);
+    vi.mocked(agentAPI.updateSessionModel).mockReset().mockImplementation(async request => {
+      poolApiMocks.target.mockResolvedValue({ selection: { kind: 'model', model_ref: request.modelName } });
+    });
     notificationStore.clearActiveNotifications();
     notificationStore.clearHistory();
+    flowChatStoreMocks.store.updateSessionModelPool.mockReset().mockImplementation((sessionId: string, poolId?: string, _binding?: unknown, pending = false) => {
+      const session = flowChatStoreMocks.sessions.get(sessionId);
+      if (session) Object.assign(session.config, { modelPoolId: poolId, modelPoolSelectionPending: pending });
+      flowChatStoreMocks.subscribers.forEach(callback => callback());
+    });
     flowChatStoreMocks.sessions.clear();
     flowChatStoreMocks.subscribers.clear();
     flowChatStoreMocks.configChangeListeners.clear();
@@ -339,7 +380,7 @@ describe('ModelSelector provider levels', () => {
     await act(async () => modelOption('acme-deep')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true })));
     expect(document.activeElement).toBe(searchInput());
     await act(async () => searchInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
-    expect(configManager.setConfig).toHaveBeenCalledExactlyOnceWith('ai.agent_model_defaults.mode', 'acme-deep');
+    expect(configManager.setConfig).toHaveBeenCalledExactlyOnceWith('ai.agent_model_selections.mode', { kind: 'model', model_ref: 'acme-deep' });
     expect(document.body.querySelector('[data-testid="chat-model-selector-search-input"]')).toBeNull();
     expect(document.activeElement).toBe(document.body.querySelector('[data-testid="chat-model-selector-settings-model"]'));
     expect(container.querySelector('[data-testid="chat-model-selector-btn"]')?.getAttribute('aria-expanded')).toBe('true');
@@ -506,7 +547,7 @@ describe('ModelSelector provider levels', () => {
     await act(async () => resolveConfig({
       'ai.models': CATALOG_MODELS,
       'ai.default_models': { primary: 'acme-fast' },
-      'ai.agent_model_defaults': { mode: 'primary' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'primary' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
     }));
     expect(aiApiMocks.getModelCatalog).toHaveBeenCalledTimes(1);
     expect(loadingState()).not.toBeNull();
@@ -802,7 +843,7 @@ describe('ModelSelector provider levels', () => {
     expect(agentAPI.updateSessionModel).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 'session-a', modelName: modelId,
     }));
-    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_defaults.mode', modelId);
+    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_selections.mode', { kind: 'model', model_ref: modelId });
     expect(flowChatStoreMocks.sessions.get('session-a')?.config.modelName).toBe(modelId);
     expect(optionsPanel()).toBeNull();
     const defaultIcon = container.querySelector('[data-testid="chat-model-selector-default-icon"]');
@@ -825,7 +866,7 @@ describe('ModelSelector provider levels', () => {
     expect(modelOption('fast')?.disabled).toBe(false);
     expect(modelOption('fast')?.dataset.modelName).toBe('acme-fast-native');
     await act(async () => modelOption('fast')!.click());
-    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_defaults.mode', 'fast');
+    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_selections.mode', { kind: 'model', model_ref: 'fast' });
     expect(document.body.querySelector('[data-testid="chat-model-selector-settings-model"]')?.textContent)
       .toContain('acme-fast-native');
     await act(async () => document.body.querySelector<HTMLButtonElement>(
@@ -844,15 +885,17 @@ describe('ModelSelector provider levels', () => {
     }
     for (const mode of ['pool', 'smart'] as const) {
       expect(modeAction(mode)?.disabled).toBe(true);
-      expect(modeAction(mode)?.dataset.tooltip).toContain('modelSelector.modes.primaryRequired');
+      expect(modeAction(mode)?.dataset.tooltip).toContain(mode === 'pool' ? 'modelSelector.pools.surfaceUnsupported' : 'modelSelector.modes.primaryRequired');
       await act(async () => modeAction(mode)!.click());
     }
     expect(configManager.setConfig).not.toHaveBeenCalled();
     await act(async () => modelOption('acme-fast')!.click());
-    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_defaults.mode', 'acme-fast');
+    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_selections.mode', { kind: 'model', model_ref: 'acme-fast' });
   });
 
   it.each(['pool', 'smart'] as const)('switches to %s from the model-list actions and back through a model shortcut', async mode => {
+    poolApiMocks.supported = true;
+    poolApiMocks.list.mockResolvedValue({ version: 1, pools: [{ id: 'daily', name: 'Daily pool', strategy: 'ordered', member_model_ids: ['acme-fast'] }] });
     flowChatStoreMocks.sessions.set('session-a', {
       config: { agentType: 'Standard', modelName: 'umbra-main', reasoningPreset: 'high' },
     });
@@ -860,18 +903,23 @@ describe('ModelSelector provider levels', () => {
     await openModelList();
     const action = modeAction(mode)!;
     expect(action.getAttribute('aria-label')).toBe(`modelSelector.modes.${mode}`);
-    expect(action.dataset.tooltip).toBe(`modelSelector.modes.${mode} · modelSelector.modes.comingSoon`);
+    expect(action.dataset.tooltip).toBe(`modelSelector.modes.${mode} · ${mode === 'pool' ? 'modelSelector.pools.choose' : 'modelSelector.modes.comingSoon'}`);
     expect(action.getAttribute('aria-pressed')).toBe('false');
     expect(action.querySelector(mode === 'smart' ? '.lucide-galaxy' : '.lucide-battery-full')).not.toBeNull();
     await act(async () => action.click());
 
-    expect(agentAPI.updateSessionModel).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-      sessionId: 'session-a', modelName: 'primary', reasoningPreset: null,
-    }));
+    if (mode === 'pool') {
+      expect(poolApiMocks.select).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-a' }), { kind: 'pool', pool_id: 'daily' });
+      expect(agentAPI.updateSessionModel).not.toHaveBeenCalled();
+    } else {
+      expect(agentAPI.updateSessionModel).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        sessionId: 'session-a', modelName: 'primary', reasoningPreset: null,
+      }));
+    }
     expect(optionsPanel()).toBeNull();
     expect(document.activeElement).toBe(modeTrigger());
     expect(container.querySelector('[data-testid="chat-model-selector-mode-icon"]')?.getAttribute('data-model-mode')).toBe(mode);
-    expect(notificationStore.getState().notificationHistory.filter(notice => notice.type === 'info')).toHaveLength(1);
+    expect(notificationStore.getState().notificationHistory.filter(notice => notice.type === 'info')).toHaveLength(mode === 'pool' ? 0 : 1);
 
     await reopenModelList();
     expect(modeAction(mode)?.getAttribute('aria-pressed')).toBe('true');
@@ -887,8 +935,8 @@ describe('ModelSelector provider levels', () => {
     expect(modelOption('primary')?.textContent).toBe('');
     await act(async () => modeAction(mode)!.click());
     expect(optionsPanel()).toBeNull();
-    expect(agentAPI.updateSessionModel).toHaveBeenCalledTimes(1);
-    expect(notificationStore.getState().notificationHistory.filter(notice => notice.type === 'info')).toHaveLength(1);
+    expect(agentAPI.updateSessionModel).toHaveBeenCalledTimes(mode === 'pool' ? 0 : 1);
+    expect(notificationStore.getState().notificationHistory.filter(notice => notice.type === 'info')).toHaveLength(mode === 'pool' ? 0 : 1);
 
     await reopenModelList();
     await act(async () => modelOption('fast')!.click());
@@ -905,83 +953,57 @@ describe('ModelSelector provider levels', () => {
     expect(modelOption('umbra-main')?.getAttribute('aria-checked')).toBe('true');
   });
 
-  it('keeps the battery mode below model information and opens its connections from the live pool count', async () => {
-    const models = [
-      ...CATALOG_MODELS,
-      { ...model('disabled-chat', 'Acme', 'provider-acme', 'https://acme.test'), enabled: false },
-      { ...model('speech-model', 'Acme', 'provider-acme', 'https://acme.test'), capabilities: ['speech_recognition'] },
-      { ...model('image-only', 'Acme', 'provider-acme', 'https://acme.test'), capabilities: ['image_understanding'] },
-      { ...model('legacy-chat', 'Acme', 'provider-acme', 'https://acme.test'), category: 'general_chat', capabilities: undefined },
-    ];
-    await renderSelector(models);
+  it('shows the selected named pool in the new settings rows and returns focus after browsing pools', async () => {
+    poolApiMocks.supported = true;
+    poolApiMocks.list.mockResolvedValue({ version: 1, pools: [
+      { id: 'daily', name: 'Daily pool', strategy: 'ordered', member_model_ids: ['acme-fast'] },
+      { id: 'batch', name: 'Batch pool', strategy: 'balanced', member_model_ids: ['umbra-main'] },
+    ] });
+    await renderSelector();
     await openModelList();
     await act(async () => modeAction('pool')!.click());
-
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[data-pool-id="daily"]')!.click());
     const homepage = () => document.body.querySelector('[data-testid="chat-model-selector-settings"]')!;
-    const countRow = () => homepage().querySelector<HTMLButtonElement>('[data-testid="chat-model-selector-settings-pool"]')!;
-    const modeRow = () => homepage().querySelector<HTMLButtonElement>('[data-testid="chat-model-selector-settings-model"]')!;
+    const poolRow = () => homepage().querySelector<HTMLButtonElement>('[data-testid="chat-model-selector-settings-pool"]')!;
     expect(homepage().querySelector('[data-testid="chat-model-selector-settings-context"]')).toBeNull();
     expect(homepage().querySelector('[data-testid="chat-model-selector-context-input"]')).toBeNull();
-    expect(homepage().querySelector('[data-testid="chat-model-selector-settings-current-model"]')?.textContent)
-      .toBe('modelSelector.home.currentModelacme-fast-native');
-    expect(modeRow().getAttribute('aria-label')).toBe('modelSelector.home.mode: modelSelector.modes.pool');
-    expect(countRow().getAttribute('aria-label')).toBe('modelSelector.home.availablePoolModels: 4');
+    expect(homepage().querySelector('[data-testid="chat-model-selector-pool-current"]')?.textContent).toBe('modelSelector.pools.unassigned');
+    expect(poolRow().getAttribute('aria-label')).toBe('modelSelector.pools.title: Daily pool');
     expect(Array.from(homepage().querySelectorAll('[data-testid]')).map(row => row.getAttribute('data-testid'))
       .filter(id => ['chat-model-selector-settings-current-model', 'chat-model-selector-settings-pool', 'chat-model-selector-settings-model'].includes(id!)))
       .toEqual(['chat-model-selector-settings-current-model', 'chat-model-selector-settings-pool', 'chat-model-selector-settings-model']);
-
-    vi.mocked(configManager.getConfigs).mockResolvedValue({
-      'ai.models': models.map(model => model.id === 'legacy-chat' ? { ...model, enabled: false } : model),
-      'ai.default_models': { primary: 'acme-fast', fast: 'umbra-main' },
-      'ai.agent_model_defaults': { mode: 'primary' },
-    });
-    await act(async () => {
-      flowChatStoreMocks.configChangeListeners.forEach(listener => listener('ai.models'));
-    });
-    expect(countRow().getAttribute('aria-label')).toBe('modelSelector.home.availablePoolModels: 3');
     const writesBeforeViewing = vi.mocked(configManager.setConfig).mock.calls.length;
-    await act(async () => countRow().click());
-    const connections = document.body.querySelector('[data-testid="chat-model-selector-pool-connections"]')!;
-    expect(connections).not.toBeNull();
-    expect(Array.from(connections.querySelectorAll('[data-testid="chat-model-selector-pool-model"]'))
-      .map(model => model.getAttribute('data-model-id'))).toEqual(['acme-fast', 'acme-deep', 'umbra-main']);
-    expect(Array.from(connections.querySelectorAll('[data-openbitfun-part="heading-label"]'))
-      .map(heading => heading.textContent)).toEqual(['Acme', 'Umbra']);
-    expect(connections.querySelector('[role="menuitemradio"]')).toBeNull();
-    expect(document.body.querySelector('[data-testid="chat-model-selector-actions"]')).toBeNull();
-    expect(document.activeElement).toBe(document.body.querySelector('[data-testid="chat-model-selector-pool-back"]'));
+    await act(async () => poolRow().click());
+    expect(optionsPanel()?.dataset.panelKind).toBe('pools');
+    expect(document.body.querySelector('[data-pool-id="daily"]')?.getAttribute('aria-checked')).toBe('true');
     await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
-    expect(document.activeElement).toBe(countRow());
-    await act(async () => countRow().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
-    expect(document.body.querySelector('[data-testid="chat-model-selector-pool-connections"]')).not.toBeNull();
-    await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="chat-model-selector-pool-back"]')!.click());
-    expect(document.activeElement).toBe(countRow());
+    expect(document.activeElement).toBe(poolRow());
+    await act(async () => poolRow().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
+    expect(optionsPanel()?.dataset.panelKind).toBe('pools');
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[data-testid="chat-model-selector-summary-back"]')!.click());
+    expect(document.activeElement).toBe(poolRow());
     expect(vi.mocked(configManager.setConfig).mock.calls).toHaveLength(writesBeforeViewing);
-    expect(agentAPI.updateSessionModel).not.toHaveBeenCalled();
-    await act(async () => modeRow().click());
-    expect(document.body.querySelector('[data-testid="chat-model-selector-pool-connections"]')).toBeNull();
-    expect(document.body.querySelectorAll('[data-testid="chat-model-selector-option"]')).toHaveLength(3);
-    expect(document.activeElement).toBe(modelOption('acme-fast'));
+    await openModelList();
     await act(async () => modelOption('primary')!.click());
     expect(homepage().querySelector('[data-testid="chat-model-selector-settings-current-model"]')).toBeNull();
     expect(homepage().querySelector('[data-testid="chat-model-selector-settings-pool"]')).toBeNull();
     expect(homepage().querySelector('[data-testid="chat-model-selector-settings-context"]')).not.toBeNull();
   });
 
-  it('opens the smart model pool from the homepage instead of editing a fallback model context', async () => {
+  it('opens the smart model list from the homepage instead of editing a fallback model context', async () => {
     await renderSelector();
     await openModelList();
     await act(async () => modeAction('smart')!.click());
     const homepage = () => document.body.querySelector('[data-testid="chat-model-selector-settings"]')!;
     const poolRow = () => homepage().querySelector<HTMLButtonElement>('[data-testid="chat-model-selector-settings-pool"]')!;
     expect(homepage().querySelector('[data-testid="chat-model-selector-settings-context"]')).toBeNull();
-    expect(poolRow().getAttribute('aria-label')).toBe('modelSelector.home.modelPool: 3');
+    expect(poolRow().getAttribute('aria-label')).toBe('modelSelector.home.modelList: 3');
     expect(homepage().querySelector('[data-testid="chat-model-selector-settings-model"]')?.getAttribute('aria-label'))
       .toBe('modelSelector.home.mode: modelSelector.modes.smart');
     const writesBeforeViewing = vi.mocked(configManager.setConfig).mock.calls.length;
     await act(async () => poolRow().click());
     const connections = document.body.querySelector('[data-testid="chat-model-selector-pool-connections"]')!;
-    expect(connections.querySelector('[role="region"]')?.getAttribute('aria-label')).toBe('modelSelector.home.modelPool');
+    expect(connections.querySelector('[role="region"]')?.getAttribute('aria-label')).toBe('modelSelector.home.modelList');
     expect(Array.from(connections.querySelectorAll('[data-testid="chat-model-selector-pool-model"]'))
       .map(model => model.getAttribute('data-model-id'))).toEqual(['acme-fast', 'acme-deep', 'umbra-main']);
     expect(connections.querySelector('[role="menuitemradio"]')).toBeNull();
@@ -1010,6 +1032,8 @@ describe('ModelSelector provider levels', () => {
   });
 
   it('preserves the model list and focuses a failed mode action for retry', async () => {
+    poolApiMocks.supported = true;
+    poolApiMocks.list.mockResolvedValue({ version: 1, pools: [{ id: 'daily', name: 'Daily pool', strategy: 'ordered', member_model_ids: ['acme-fast'] }] });
     await renderSelector(CATALOG_MODELS, 'umbra-main');
     await openModelList();
     vi.mocked(configManager.setConfig).mockRejectedValueOnce(new Error('Settings unavailable'));
@@ -1046,6 +1070,7 @@ describe('ModelSelector provider levels', () => {
     expect(modelOption('fast')?.dataset.modelName).toBe('peer-model-native');
     expect(document.body.textContent).not.toContain('acme-fast-native');
     await act(async () => modelOption('fast')!.click());
+    // This peer advertises only the legacy config shape; preserve its write contract.
     expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_defaults.mode', 'fast');
   });
 
@@ -1140,6 +1165,59 @@ describe('ModelSelector provider levels', () => {
     )?.textContent).toContain('reasoningSelector.levels.high');
   });
 
+  it.each([false, true])('allows Battery mode in BTW and updates the appropriate owner (started=%s)', async started => {
+    poolApiMocks.supported = true;
+    poolApiMocks.list.mockResolvedValue({ version: 1, pools: [
+      { id: 'daily', name: 'Daily pool', strategy: 'ordered', member_model_ids: ['acme-fast'] },
+      { id: 'batch', name: 'Batch pool', strategy: 'balanced', member_model_ids: ['umbra-main'] },
+    ] });
+    flowChatStoreMocks.sessions.set('side', { sessionId: 'side', sessionKind: 'btw',
+      agentBackedTransient: true, isTransient: true, dialogTurns: started ? [{}] : [],
+      config: { modelName: 'acme-fast' } });
+    await renderSelector(CATALOG_MODELS, 'primary', 'side');
+    await openModeMenu();
+    await act(async () => modeOption('pool')!.click());
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[data-pool-id="daily"]')!.click());
+    expect(flowChatStoreMocks.sessions.get('side')?.config.modelPoolId).toBe('daily');
+    if (started) {
+      expect(poolApiMocks.select).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'side', includeInternal: true }),
+        { kind: 'pool', pool_id: 'daily' });
+    } else {
+      expect(poolApiMocks.select).not.toHaveBeenCalled();
+      expect(flowChatStoreMocks.sessions.get('side')?.config.modelPoolSelectionPending).toBe(true);
+    }
+    expect(agentAPI.updateSessionModel).not.toHaveBeenCalled();
+  });
+
+  it('keeps pools inside battery mode and commits only after choosing a pool', async () => {
+    poolApiMocks.supported = true;
+    poolApiMocks.list.mockResolvedValue({ version: 1, pools: [
+      { id: 'daily', name: 'Daily pool', strategy: 'ordered', member_model_ids: ['acme-fast'] },
+      { id: 'batch', name: 'Batch pool', strategy: 'balanced', member_model_ids: ['umbra-main'] },
+    ] });
+    await renderSelector(CATALOG_MODELS, 'umbra-main');
+    await openModeMenu();
+    await act(async () => modeOption('pool')!.click());
+    expect(optionsPanel()?.dataset.panelKind).toBe('pools');
+    expect(document.body.querySelectorAll('[data-testid="chat-model-selector-option"]')).toHaveLength(0);
+    expect(configManager.setConfig).not.toHaveBeenCalled();
+    await act(async () => document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="chat-model-selector-summary-back"]',
+    )!.click());
+    expect(modeTrigger().textContent).toContain('umbra-main-native');
+    await act(async () => modeTrigger().click());
+    await act(async () => modeOption('pool')!.click());
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[data-pool-id="daily"]')!.click());
+    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_selections.mode', {
+      kind: 'pool', pool_id: 'daily',
+    });
+    expect(modeTrigger().textContent).toContain('modelSelector.modes.pool');
+    expect(document.body.querySelector('[data-testid="chat-model-selector-settings-pool"]')?.textContent).toContain('Daily pool');
+    expect(document.body.querySelector('[data-testid="chat-model-selector-pool-current"]')?.textContent).toBe('modelSelector.pools.unassigned');
+    expect(document.body.querySelector('[data-testid="chat-model-selector-settings-reasoning"]')).toBeNull();
+    expect(notificationStore.getState().notificationHistory.some(notice => notice.message === 'modelSelector.modes.developmentNotice')).toBe(false);
+  });
+
   it('selects the advertised levels inline and keeps Auto separate from Off without closing the card', async () => {
     aiApiMocks.getModelCatalog.mockResolvedValue({
       version: 1,
@@ -1220,7 +1298,7 @@ describe('ModelSelector provider levels', () => {
     expect(agentAPI.updateSessionModel).toHaveBeenCalledTimes(1);
     expect(configManager.setConfig).not.toHaveBeenCalled();
     await act(async () => commitSession());
-    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_defaults.mode', 'acme-deep');
+    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_selections.mode', { kind: 'model', model_ref: 'acme-deep' });
     expect(optionsPanel()).toBeNull();
     expect(container.querySelector<HTMLButtonElement>('[data-testid="chat-model-selector-btn"]')!.disabled).toBe(false);
     expect(flowChatStoreMocks.sessions.get('session-a')?.config.modelName).toBe('acme-deep');
@@ -1239,14 +1317,14 @@ describe('ModelSelector provider levels', () => {
     expect(optionsPanel()).toBeNull();
   });
 
-  it('skips an identical model and preset but clears a preset when entering an automatic selection mode', async () => {
+  it('skips an identical session update while remembering the default and clears a preset in automatic mode', async () => {
     flowChatStoreMocks.sessions.set('session-a', { config: { modelName: 'acme-fast' } });
     await renderSelector(CATALOG_MODELS, 'acme-fast', 'session-a');
     await openMenu();
     await openProvider('provider-acme');
     await act(async () => modelOption('acme-fast')!.click());
     expect(agentAPI.updateSessionModel).not.toHaveBeenCalled();
-    expect(configManager.setConfig).not.toHaveBeenCalled();
+    expect(configManager.setConfig).toHaveBeenCalledWith('ai.agent_model_selections.mode', { kind: 'model', model_ref: 'acme-fast' });
     flowChatStoreMocks.sessions.get('session-a')!.config.modelName = 'primary';
     flowChatStoreMocks.sessions.get('session-a')!.config.reasoningPreset = 'high';
     await act(async () => flowChatStoreMocks.subscribers.forEach(callback => callback()));
@@ -1298,8 +1376,7 @@ describe('ModelSelector provider levels', () => {
     await act(async () => { finishSave(); });
 
     expect(configManager.setConfig).toHaveBeenCalledWith(
-      'ai.agent_model_defaults.mode',
-      'acme-deep',
+      'ai.agent_model_selections.mode', { kind: 'model', model_ref: 'acme-deep' },
     );
     expect(container.querySelector('[data-testid="chat-model-selector-btn"]')?.getAttribute('aria-expanded')).toBe('true');
     expect(document.body.querySelector('[data-testid="chat-model-selector-menu"]')).toBe(card);
@@ -1317,7 +1394,7 @@ describe('ModelSelector provider levels', () => {
     vi.mocked(configManager.getConfigs).mockResolvedValue({
       'ai.models': [],
       'ai.default_models': {},
-      'ai.agent_model_defaults': { mode: 'primary' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'primary' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
     });
     await act(async () => {
       root.render(
@@ -1356,7 +1433,7 @@ describe('ModelSelector provider levels', () => {
     vi.mocked(configManager.getConfigs).mockResolvedValue({
       'ai.models': CATALOG_MODELS,
       'ai.default_models': { primary: 'acme-fast' },
-      'ai.agent_model_defaults': { mode: 'primary' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'primary' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
     });
     await act(async () => {
       root.render(<ModelSelector currentMode="Standard" sessionId="missing-model-session"
@@ -1379,7 +1456,7 @@ describe('ModelSelector provider levels', () => {
         enabled: false,
       }],
       'ai.default_models': { primary: 'disabled-model' },
-      'ai.agent_model_defaults': { mode: 'primary' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'primary' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
     });
     await act(async () => {
       root.render(
@@ -1411,7 +1488,7 @@ describe('ModelSelector provider levels', () => {
       capabilities: [],
       }],
       'ai.default_models': { primary: 'legacy-chat' },
-      'ai.agent_model_defaults': { mode: 'legacy-chat' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'legacy-chat' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
     });
 
     await act(async () => {
@@ -1439,7 +1516,7 @@ describe('ModelSelector provider levels', () => {
     vi.mocked(configManager.getConfigs).mockResolvedValue({
       'ai.models': CATALOG_MODELS,
       'ai.default_models': { primary: 'acme-fast', fast: 'umbra-main' },
-      'ai.agent_model_defaults': { mode: 'acme-fast' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'acme-fast' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
     });
     aiApiMocks.getModelCatalog.mockRejectedValueOnce(new Error('catalog unavailable'));
 
@@ -1473,12 +1550,12 @@ describe('ModelSelector provider levels', () => {
       .mockResolvedValueOnce({
         'ai.models': [firstModel],
         'ai.default_models': { primary: 'first-model' },
-        'ai.agent_model_defaults': { mode: 'first-model' },
+        'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'first-model' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
       })
       .mockResolvedValueOnce({
         'ai.models': [secondModel],
         'ai.default_models': { primary: 'second-model' },
-        'ai.agent_model_defaults': { mode: 'second-model' },
+        'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'second-model' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
       });
 
     await act(async () => {

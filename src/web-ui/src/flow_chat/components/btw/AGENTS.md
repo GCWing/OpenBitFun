@@ -33,6 +33,13 @@ For BTW creation, model selection, and explicit closure, run:
 pnpm --dir src/web-ui run test:run src/flow_chat/services/BtwThreadService.test.ts src/flow_chat/services/BtwSessionLifecycle.test.ts src/flow_chat/components/ModelSelectorExternal.test.tsx src/app/components/panels/content-canvas/hooks/useTabLifecycle.btw.test.tsx
 ```
 
+For pool inheritance, first-send choices, and internal-session model synchronization,
+also run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/hooks/useMessageSender.test.tsx src/flow_chat/components/ModelSelectorProviderLevels.test.tsx src/flow_chat/utils/modelPoolSync.test.ts src/infrastructure/api/adapters/peer-device-adapter.test.ts
+```
+
 For transcript windowing, scrolling, or review integration changes, run:
 
 ```bash

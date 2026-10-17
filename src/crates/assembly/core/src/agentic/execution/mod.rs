@@ -6,9 +6,11 @@ pub(crate) mod background_delivery;
 pub(super) mod compression_request;
 #[cfg(feature = "agent-runtime")]
 pub(crate) mod conditional_instructions;
+mod context_budget;
 pub mod edit_constraint_guard;
 pub mod execution_engine;
 pub(crate) mod model_exchange_trace;
+pub mod model_pool;
 mod prompt_suggestion;
 pub mod round_executor;
 pub mod stream_processor;

@@ -141,6 +141,21 @@ $model-mode-dust-sizes: ();
     overflow-wrap: anywhere;
   }
 
+  &__tooltip-section {
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    margin-block: var(--openbitfun-space-1);
+    color: var(--openbitfun-color-content-muted);
+
+    &::before,
+    &::after {
+      content: '';
+      flex: 1;
+      border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    }
+  }
+
   &__tooltip-warning {
     margin-top: 3px;
     padding-top: 6px;
@@ -540,14 +555,14 @@ $model-mode-dust-sizes: ();
     margin: 0;
 
     > dt {
-      flex: 1;
-      min-inline-size: 0;
+      flex: 0 0 auto;
     }
 
     > dd {
+      flex: 0 1 auto;
       min-inline-size: 0;
-      max-inline-size: 65%;
       margin: 0;
+      margin-inline-start: auto;
       color: var(--openbitfun-color-content-secondary);
     }
   }

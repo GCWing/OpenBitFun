@@ -169,7 +169,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
       phrase('settings/models', 'sections.selectionModes'),
       phrase('settings/models', 'sections.pool'),
       phrase('settings/models', 'selectionModes.smart'),
-      phrase('settings/models', 'selectionModes.battery'),
+      phrase('settings/models', 'pools.title'),
       phrase('settings/models', 'pool.tagsLabel'),
       phrase('settings/default-model', 'sections.defaults'),
       phrase('settings/default-model', 'sections.providers'),

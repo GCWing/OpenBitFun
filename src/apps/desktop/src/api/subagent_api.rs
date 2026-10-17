@@ -6,7 +6,7 @@ use openbitfun_core::agentic::agents::{
     AgentInfo, CustomSubagent, CustomSubagentDetail, CustomSubagentKind, SubAgentSource,
     SubagentListScope, SubagentQueryContext,
 };
-use openbitfun_core::service::config::SubagentModelSelection;
+use openbitfun_core::service::config::model_pool::AgentModelSelection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use tauri::State;
@@ -615,11 +615,13 @@ pub async fn update_subagent_config(
         let config_service = &state.config_service;
 
         if request.clear_model_override || request.model.is_some() {
-            let mut builtin_models: std::collections::HashMap<String, SubagentModelSelection> =
-                config_service
-                    .get_config(Some("ai.agent_model_defaults.subagents.builtin"))
-                    .await
-                    .unwrap_or_default();
+            let mut builtin_models: std::collections::HashMap<
+                String,
+                openbitfun_core::service::config::model_pool::AgentModelSelection,
+            > = config_service
+                .get_config(Some("ai.agent_model_selections.subagents.builtin"))
+                .await
+                .map_err(|e| format!("Failed to read model selections: {e}"))?;
             if request.clear_model_override {
                 builtin_models.remove(subagent_id);
             } else {
@@ -629,14 +631,19 @@ pub async fn update_subagent_config(
                     .expect("model checked above")
                     .trim();
                 let selection = if model == "inherit" {
-                    SubagentModelSelection::Inherit
+                    AgentModelSelection::Inherit
                 } else {
-                    SubagentModelSelection::fixed(model)
+                    AgentModelSelection::Model {
+                        model_ref: model.to_string(),
+                    }
                 };
                 builtin_models.insert(subagent_id.clone(), selection);
             }
             config_service
-                .set_config("ai.agent_model_defaults.subagents.builtin", &builtin_models)
+                .set_config(
+                    "ai.agent_model_selections.subagents.builtin",
+                    &builtin_models,
+                )
                 .await
                 .map_err(|e| format!("Failed to update model configuration: {}", e))?;
             model_updated = true;

@@ -142,6 +142,9 @@ impl PersistenceManager {
         let target_agent_type = source_session.agent_type.clone();
 
         let mut target_config = source_session.config.clone();
+        // A copied chat retains intent but obtains its own affinity and cursor assignment.
+        target_config.model_pool_binding = None;
+        target_config.model_pool_selection_revision = 0;
         target_config.prompt_cache_lineage_id = Some(
             source_session
                 .effective_prompt_cache_lineage_id()

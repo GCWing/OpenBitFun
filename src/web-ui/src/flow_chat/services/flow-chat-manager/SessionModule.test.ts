@@ -78,7 +78,11 @@ vi.mock('@/infrastructure/api/service-api/ConfigAPI', () => ({
 }));
 
 vi.mock('@/infrastructure/config/services/ConfigManager', () => ({
-  configManager: configManagerMocks,
+  configManager: { ...configManagerMocks, getOptionalConfig: async (path: string) => {
+    const values = await configManagerMocks.getConfigs([path]);
+    if (path === 'ai.agent_model_defaults') return values?.[path] ?? { mode: 'primary' };
+    return values?.[path] ?? { mode: { kind: 'model', model_ref: 'primary' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } };
+  } },
 }));
 
 vi.mock('@/infrastructure/api/service-api/SessionAPI', () => ({
@@ -448,11 +452,11 @@ describe('createChatSession', () => {
 
   it('projects the runtime-resolved model for a newly created session', async () => {
     configManagerMocks.getConfigs.mockImplementation(async (paths: string[]) => {
-      if (paths.length === 1 && paths[0] === 'ai.agent_model_defaults') {
-        return { 'ai.agent_model_defaults': { mode: 'model-b' } };
+      if (paths.length === 1 && paths[0] === 'ai.agent_model_selections') {
+        return { 'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'model-b' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } } };
       }
       return {
-        'ai.agent_model_defaults': { mode: 'model-b' },
+        'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'model-b' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
         'ai.models': [{ id: 'model-b', enabled: true, context_window: 64000 }],
         'ai.default_models': { primary: 'model-b' },
       };
@@ -469,7 +473,7 @@ describe('createChatSession', () => {
 
     expect(agentApiMocks.createSession).toHaveBeenCalledWith(expect.objectContaining({
       config: expect.objectContaining({
-        modelName: undefined,
+        modelName: 'model-b',
       }),
     }));
     expect(flowChatStore.createSession).toHaveBeenCalledWith(
@@ -488,7 +492,7 @@ describe('createChatSession', () => {
 
   it('preserves an explicit session model instead of applying the mode default', async () => {
     configManagerMocks.getConfigs.mockResolvedValue({
-      'ai.agent_model_defaults': { mode: 'model-b' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'model-b' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
       'ai.models': [
         { id: 'model-a', enabled: true, context_window: 32000 },
         { id: 'model-b', enabled: true, context_window: 64000 },

@@ -919,6 +919,16 @@ pub struct CoreAgentRuntimeCompatibility {
 }
 
 impl CoreAgentRuntimeCompatibility {
+    pub async fn retry_model_pool_member(&self, model_id: &str) -> OpenBitFunResult<()> {
+        self.coordinator.retry_model_pool_member(model_id).await
+    }
+
+    pub async fn model_pool_statuses(
+        &self,
+        pool_id: &str,
+    ) -> OpenBitFunResult<Vec<openbitfun_core_types::model_pool::ModelPoolMemberStatus>> {
+        self.coordinator.model_pool_statuses(pool_id).await
+    }
     pub async fn ensure_control_conversation(
         &self,
     ) -> OpenBitFunResult<crate::agentic::coordination::ControlConversation> {

@@ -839,9 +839,10 @@ class ConfigManagerImpl implements IConfigManager {
     try {
       this.clearCache();
 
+      const { modelSelectionsConfigPath } = await import('./modelSelections');
       await this.getConfigs([
         'ai.models',
-        'ai.agent_model_defaults',
+        modelSelectionsConfigPath(),
         'ai.task_models',
         'ai.default_models',
       ]);

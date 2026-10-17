@@ -315,15 +315,19 @@ async fn gather_product_facts(
             // model selection must not invalidate an external-source choice.
             (None, _) => "main-agent-profile".to_string(),
             (Some(_), Some(ai_config)) => {
-                let model_selection = registry
+                match registry
                     .get_explicit_subagent_model_selection(&info.id, workspace_id)
+                    .map(openbitfun_config_contracts::model_pool::AgentModelSelection::from)
+                    .map(Ok)
                     .unwrap_or_else(|| {
                         ai_config
-                            .agent_model_defaults
-                            .builtin_subagent_selection(&info.id)
-                    });
-                serde_json::to_string(&model_selection)
-                    .unwrap_or_else(|_| "unavailable".to_string())
+                            .effective_model_selections()
+                            .map(|defaults| defaults.builtin(&info.id))
+                    }) {
+                    Ok(selection) => serde_json::to_string(&selection)
+                        .unwrap_or_else(|_| "unavailable".to_string()),
+                    Err(_) => "configuration-unavailable".to_string(),
+                }
             }
             (Some(_), None) => "configuration-unavailable".to_string(),
         };
@@ -1492,7 +1496,7 @@ fn stable_digest(parts: impl IntoIterator<Item = impl AsRef<str>>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::service::config::SubagentModelSelection;
+    use openbitfun_config_contracts::model_pool::{AgentModelSelection, AgentModelSelections};
 
     fn test_active_ecosystems() -> &'static BTreeSet<EcosystemId> {
         static ECOSYSTEMS: std::sync::OnceLock<BTreeSet<EcosystemId>> = std::sync::OnceLock::new();
@@ -1608,6 +1612,7 @@ mod tests {
             ..AIConfig::default()
         };
         ai_config.default_models.fast = Some("model_fast".to_string());
+        ai_config.set_model_selections(Default::default()).unwrap();
         ProductFacts {
             ai_config: Some(ai_config),
             models_dev: None,
@@ -1914,13 +1919,16 @@ mod tests {
     #[test]
     fn omitted_external_model_inherits_without_consulting_local_subagent_defaults() {
         let mut product_facts = facts();
+        let mut selections = AgentModelSelections::default();
+        selections.subagents.default = AgentModelSelection::Model {
+            model_ref: "model_fast".into(),
+        };
         product_facts
             .ai_config
             .as_mut()
             .expect("test AI config")
-            .agent_model_defaults
-            .subagents
-            .default_selection = SubagentModelSelection::fixed("model_fast");
+            .set_model_selections(selections)
+            .unwrap();
         let empty_set = BTreeSet::new();
         let empty_map = BTreeMap::new();
 
@@ -2696,13 +2704,14 @@ mod tests {
         let empty_set = BTreeSet::new();
         let empty_map = BTreeMap::new();
         let mut unavailable_facts = facts();
+        let mut selections = AgentModelSelections::default();
+        selections.subagents.default = AgentModelSelection::Inherit;
         unavailable_facts
             .ai_config
             .as_mut()
             .unwrap()
-            .agent_model_defaults
-            .subagents
-            .default_selection = SubagentModelSelection::Inherit;
+            .set_model_selections(selections)
+            .unwrap();
 
         let state = reconcile_with_facts(
             Some("workspace-1"),

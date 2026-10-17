@@ -343,36 +343,41 @@ impl ConfigProvider for AIConfigProvider {
                 crate::service::config::types::TaskModelSelection::Fixed { .. } => {}
             }
 
-            let validate_agent_selection = |path: &str,
-                                            selection: &SubagentModelSelection|
-             -> OpenBitFunResult<()> {
-                if selection
-                    .fixed_model_id()
-                    .is_some_and(|model_id| !valid_task_model(model_id))
-                {
-                    return Err(OpenBitFunError::validation(format!(
+            if ai_config.agent_model_selections.is_none() {
+                let validate_agent_selection = |path: &str,
+                                                selection: &SubagentModelSelection|
+                 -> OpenBitFunResult<()> {
+                    if selection
+                        .fixed_model_id()
+                        .is_some_and(|model_id| !valid_task_model(model_id))
+                    {
+                        return Err(OpenBitFunError::validation(format!(
                             "ai.agent_model_defaults.{path} references unavailable or incapable model '{}'",
                             selection.fixed_model_id().expect("checked above")
                         )));
-                }
-                Ok(())
-            };
-            if !valid_task_model(&ai_config.agent_model_defaults.mode) {
-                return Err(OpenBitFunError::validation(format!(
+                    }
+                    Ok(())
+                };
+                if !valid_task_model(&ai_config.agent_model_defaults.mode) {
+                    return Err(OpenBitFunError::validation(format!(
                     "ai.agent_model_defaults.mode references unavailable or incapable model '{}'",
                     ai_config.agent_model_defaults.mode
                 )));
-            }
-            validate_agent_selection(
-                "subagents.default",
-                &ai_config.agent_model_defaults.subagents.default_selection,
-            )?;
-            validate_agent_selection(
-                "subagents.fork",
-                &ai_config.agent_model_defaults.subagents.fork,
-            )?;
-            for (subagent_id, selection) in &ai_config.agent_model_defaults.subagents.builtin {
-                validate_agent_selection(&format!("subagents.builtin.{subagent_id}"), selection)?;
+                }
+                validate_agent_selection(
+                    "subagents.default",
+                    &ai_config.agent_model_defaults.subagents.default_selection,
+                )?;
+                validate_agent_selection(
+                    "subagents.fork",
+                    &ai_config.agent_model_defaults.subagents.fork,
+                )?;
+                for (subagent_id, selection) in &ai_config.agent_model_defaults.subagents.builtin {
+                    validate_agent_selection(
+                        &format!("subagents.builtin.{subagent_id}"),
+                        selection,
+                    )?;
+                }
             }
         } else {
             return Err(OpenBitFunError::validation(

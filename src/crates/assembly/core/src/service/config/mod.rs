@@ -10,6 +10,7 @@ pub mod global;
 pub mod manager;
 #[cfg(feature = "agent-runtime")]
 pub mod mode_config_canonicalizer;
+pub mod model_pool_store;
 pub mod model_projection;
 pub mod normalization;
 pub mod project_permission_store;

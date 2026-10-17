@@ -16,6 +16,12 @@ const { mockCreateSession, mockStartAcpDialogTurn, mockStartAgenticDialogTurn, m
   mockUpdateMode: vi.fn(),
 }));
 
+const poolMocks = vi.hoisted(() => ({ list: vi.fn(), supported: vi.fn(() => false), read: vi.fn() }));
+vi.mock('@/infrastructure/config/services/modelSelections', () => ({ readModelSelections: poolMocks.read }));
+vi.mock('@/infrastructure/api/service-api/ModelPoolAPI', () => ({
+  modelPoolAPI: { list: poolMocks.list }, supportsModelPools: poolMocks.supported,
+}));
+
 vi.mock('@/infrastructure/api/service-api/ACPClientAPI', () => ({
   ACPClientAPI: { startDialogTurn: mockStartAcpDialogTurn },
 }));
@@ -75,6 +81,8 @@ describe('localSessionDriver conversation creation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCreateSession.mockResolvedValue({ sessionId: 'host-session', workspaceId: 'project' });
+    poolMocks.supported.mockReturnValue(false);
+    poolMocks.read.mockResolvedValue({ mode: { kind: 'model', model_ref: 'primary' } });
   });
 
   function seed(agentType = 'Standard') {
@@ -99,6 +107,35 @@ describe('localSessionDriver conversation creation', () => {
     expect(createSession.mock.calls[0].at(-1)).toEqual({
       workspaceId: 'project', phase: 'editing', turnId: expect.any(String),
     });
+  });
+
+  it('stores the default pool as pending intent until a draft is materialized', async () => {
+    poolMocks.supported.mockReturnValue(true);
+    poolMocks.read.mockResolvedValue({ mode: { kind: 'pool', pool_id: 'pool-1' } });
+    const createSession = vi.fn();
+    await localSessionDriver.createSession({ flowChatStore: { createSession } } as any, { ...seed(), config: {} });
+    expect(createSession.mock.calls[0][1]).toMatchObject({
+      modelPoolId: 'pool-1', modelPoolSelectionPending: true, reasoningPreset: undefined,
+    });
+    expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
+  it('preserves an explicit single-model choice even when a default pool exists', async () => {
+    poolMocks.supported.mockReturnValue(true);
+    const createSession = vi.fn();
+    await localSessionDriver.createSession({ flowChatStore: { createSession } } as any, seed());
+    expect(poolMocks.read).not.toHaveBeenCalled();
+    expect(createSession.mock.calls[0][1].modelName).toBe('selected-model');
+  });
+
+  it('does not fall back to a primary model when reading the default target fails', async () => {
+    poolMocks.supported.mockReturnValue(true);
+    poolMocks.read.mockRejectedValue(new Error('config unreadable'));
+    const createSession = vi.fn();
+    await expect(localSessionDriver.createSession({ flowChatStore: { createSession } } as any,
+      { ...seed(), config: {} })).rejects.toThrow('config unreadable');
+    expect(createSession).not.toHaveBeenCalled();
+    expect(mockCreateSession).not.toHaveBeenCalled();
   });
 
   it('keeps assistant bootstrap on the existing immediate creation path', async () => {

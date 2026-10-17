@@ -5,6 +5,7 @@ mod dialog;
 mod external_sources;
 mod filesystem;
 mod git;
+mod model_pools;
 mod models;
 mod permission;
 mod product_control;
@@ -35,6 +36,12 @@ pub(crate) fn dispatch<'a>(
         "get_session_permission_mode" => Box::pin(permission::session_permission_mode(state, args, false, false)),
         "update_session_permission_mode" => Box::pin(permission::session_permission_mode(state, args, true, false)),
         "update_active_turn_permission_mode" => Box::pin(permission::session_permission_mode(state, args, true, true)),
+        "retry_model_pool_member" | "get_model_pools" => Box::pin(model_pools::dispatch(command, state, args)),
+        "save_model_pool" => Box::pin(model_pools::dispatch(command, state, args)),
+        "delete_model_pool" => Box::pin(model_pools::dispatch(command, state, args)),
+        "get_model_pool_status" => Box::pin(model_pools::dispatch(command, state, args)),
+        "get_session_model_target" => Box::pin(model_pools::dispatch(command, state, args)),
+        "update_session_model_target" => Box::pin(model_pools::dispatch(command, state, args)),
         "get_ai_model_catalog" => Box::pin(models::get_ai_model_catalog()),
         "project_ai_model_reasoning_catalog" => Box::pin(models::project_ai_model_reasoning_catalog(args)),
         "get_model_configs" => Box::pin(models::get_model_configs()),
@@ -248,6 +255,13 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "get_models_dev_catalog_status",
     "get_model_configs",
     "project_ai_model_reasoning_catalog",
+    "retry_model_pool_member",
+    "get_model_pools",
+    "save_model_pool",
+    "delete_model_pool",
+    "get_model_pool_status",
+    "get_session_model_target",
+    "update_session_model_target",
     "get_ai_model_catalog",
     "update_active_turn_permission_mode",
     "update_session_permission_mode",

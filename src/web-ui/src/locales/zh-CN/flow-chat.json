@@ -3338,9 +3338,9 @@
       "contextSaveFailed": "保存失败，请重试。",
       "availablePoolModels": "模型池可用模型",
       "mode": "模式",
-      "currentModel": "当前使用模型",
+      "currentModel": "当前模型",
       "poolConnections": "电池接入列表",
-      "modelPool": "模型池列表"
+      "modelList": "模型列表"
     },
     "modes": {
       "selection": "选择模式",
@@ -3388,9 +3388,11 @@
       "targetModelUnavailable": "目标模型不可用"
     },
     "tooltip": {
+      "currentModel": "当前模型",
       "configName": "配置名",
       "modelName": "模型名",
       "contextWindow": "上下文窗口",
+      "poolContextWindow": "池上下文窗口",
       "compressionTrigger": "压缩触发线",
       "longContextWarning": "当前模型配置的上下文窗口超过 400K。超长上下文可能降低模型效果，建议将其调整到 300K 左右。"
     },
@@ -3399,6 +3401,22 @@
       "agentPromptLabel": "上次请求输入上下文",
       "acpContext": "ACP 上报上下文: {{usage}}",
       "acpContextLabel": "ACP 上报上下文"
+    },
+    "pools": {
+      "title": "模型池",
+      "loadError": "模型池加载失败，请重新打开菜单重试。",
+      "surfaceUnsupported": "此会话入口暂不支持模型池，请选择具体模型。",
+      "actual": "当前模型：{{model}}",
+      "unassigned": "首次请求时分配",
+      "choose": "选择模型池",
+      "empty": "尚未配置模型池",
+      "missing": "此模型池已不存在",
+      "unavailable": "暂无可用模型",
+      "ordered": "按顺序",
+      "balanced": "负载均衡",
+      "members": "{{strategy}} · {{total}} 个模型",
+      "orderedDescription": "分配时选择首个可用模型，当前模型可用时保持绑定。",
+      "balancedDescription": "将不同会话分配给各个模型，当前模型可用时保持绑定。"
     }
   },
   "reasoningEffort": {
