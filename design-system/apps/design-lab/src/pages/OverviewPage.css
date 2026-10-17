@@ -36,6 +36,30 @@
   align-items: center;
   gap: var(--openbitfun-space-12);
   padding: 0;
+  position: relative;
+  /* The wash is painted by a negative-z layer, and the shell paints an opaque canvas behind the page:
+     without a stacking context of its own the wash would be painted under that canvas and never seen.
+     isolate keeps the layer inside the hero, above everything painted before the hero. */
+  isolation: isolate;
+}
+
+/* The top of the page opens on a wash: a soft, full-bleed gradient that starts under the topbar (the
+   bar is opaque and sticky, so the wash cannot run behind it), peaks behind the headline and the
+   figure, and is gone before the picture — the picture keeps the bare canvas it was designed on. The
+   tint is the page's own ink rather than a colour of its own: a mix toward content primary greys down
+   in light mode and lifts in dark, so one expression covers both schemes. Both ends of the gradient
+   are transparent and the layer reaches past the hero into the air above and below it, so the wash
+   has no edge anywhere: what shows is the middle of a gradient, not a rectangle. */
+.design-home-hero::before {
+  --_lab-hero-wash: color-mix(in srgb, var(--openbitfun-color-content-primary) 6%, var(--openbitfun-color-surface-canvas));
+
+  content: "";
+  position: absolute;
+  inset-block: calc(var(--openbitfun-space-8) * -1) calc(var(--openbitfun-space-12) * -1);
+  inset-inline: calc(50% - 50vw);
+  background: linear-gradient(to bottom, transparent, var(--_lab-hero-wash) 34%, transparent);
+  pointer-events: none;
+  z-index: -1;
 }
 
 .design-home-heading {
