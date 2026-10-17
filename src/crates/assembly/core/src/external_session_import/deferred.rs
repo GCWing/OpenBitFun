@@ -115,7 +115,7 @@ async fn read_index(root: &Path) -> OpenBitFunResult<Arc<Index>> {
             return Ok(index.clone());
         }
     }
-    let index: Index = JsonFileStore
+    let mut index: Index = JsonFileStore
         .read_optional(&path)
         .await
         .map_err(index_error)?
@@ -124,6 +124,10 @@ async fn read_index(root: &Path) -> OpenBitFunResult<Arc<Index>> {
         return Err(index_error(
             "This external history index requires a newer OpenBitFun host",
         ));
+    }
+    // Read compatibility must not rewrite the user's index or frozen history.
+    for entry in index.entries.values_mut() {
+        entry.metadata.normalize_legacy_imported_agent_type();
     }
     let index = Arc::new(index);
     cache.insert(path, (stamp, index.clone()));
@@ -443,7 +447,7 @@ pub(crate) async fn register(
                         .title
                         .clone()
                         .unwrap_or_else(|| "Imported session".into()),
-                    "primary".into(),
+                    "Standard".into(),
                     "primary".into(),
                 );
                 metadata.workspace_id = Some(workspace.id.clone());

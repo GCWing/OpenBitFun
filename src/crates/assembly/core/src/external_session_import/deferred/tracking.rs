@@ -99,6 +99,7 @@ fn validate_snapshot(
 }
 
 fn overlay_view_metadata(metadata: &mut SessionMetadata, entry: &Reference) {
+    metadata.normalize_legacy_imported_agent_type();
     // Names and archive state belong to the local view, not to a frozen version.
     metadata.session_name = entry.metadata.session_name.clone();
     metadata.tags = entry.metadata.tags.clone();
@@ -687,6 +688,89 @@ mod tests {
         );
         assert!(!root.join(SNAPSHOTS).exists());
         assert!(!root.join(&entry.metadata.session_id).exists());
+    }
+
+    #[tokio::test]
+    async fn legacy_primary_source_snapshots_fork_with_a_valid_mode_without_rewriting_history() {
+        let (_temp, workspace, root, manager) = fixture();
+        let entry = create_source(&root, &workspace).await;
+        assert_eq!(entry.metadata.agent_type, "Standard");
+        assert_eq!(entry.metadata.model_name, "primary");
+        let id = &entry.metadata.session_id;
+        publish(
+            &root,
+            &workspace,
+            &entry,
+            document(candidate("codex", "source-1", &workspace.root_path)),
+        )
+        .await;
+        let current = reference(&root, id).await.unwrap().unwrap();
+        let version = content_version(&current.metadata).unwrap();
+        let path = snapshot_path(&root, id, version).unwrap();
+        let mut frozen: Snapshot = JsonFileStore.read_optional(&path).await.unwrap().unwrap();
+        // A previous host wrote the model selector into both metadata and turns.
+        frozen.bundle.metadata.agent_type = "primary".into();
+        frozen.bundle.turns[0].agent_type = Some("primary".into());
+        JsonFileStore
+            .write_atomic_strict(&path, &frozen)
+            .await
+            .unwrap();
+        update_index(&root, |index| {
+            index.entries.get_mut(id).unwrap().metadata.agent_type = "primary".into();
+            ((), true)
+        })
+        .await
+        .unwrap();
+        let original_history = std::fs::read(&path).unwrap();
+        let original_index = std::fs::read(root.join(INDEX_FILE)).unwrap();
+
+        assert_eq!(
+            metadata(&root, id).await.unwrap().unwrap().agent_type,
+            "Standard"
+        );
+        assert_eq!(
+            merge_metadata(&root, vec![]).await.unwrap()[0].agent_type,
+            "Standard"
+        );
+        let viewed = snapshot(&root, id, false).await.unwrap().unwrap();
+        assert_eq!(viewed.metadata.agent_type, "Standard");
+        assert_eq!(viewed.metadata.model_name, "primary");
+        assert_eq!(viewed.turns[0].agent_type.as_deref(), Some("primary"));
+        let branch_source = manager
+            .external_history_branch_source(
+                &workspace.root_path,
+                id,
+                Some(&viewed.turns[0].turn_id),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        let branch = manager
+            .branch_transient_session(
+                &workspace.root_path,
+                &SessionBranchRequest {
+                    source_session_id: id.clone(),
+                    source_turn_id: viewed.turns[0].turn_id.clone(),
+                    boundary: SessionBranchBoundary::ThroughTurn,
+                },
+                branch_source,
+            )
+            .await
+            .unwrap();
+        assert_eq!(branch.agent_type, "Standard");
+        let native = OfflineSessionImportStore::new(&root)
+            .load_bundle(&branch.session_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(native.metadata.agent_type, "Standard");
+        assert_eq!(native.turns[0].agent_type.as_deref(), Some("primary"));
+        assert_eq!(native.turns[0].user_message.content, "Saved question");
+        assert_eq!(std::fs::read(&path).unwrap(), original_history);
+        assert_eq!(
+            std::fs::read(root.join(INDEX_FILE)).unwrap(),
+            original_index
+        );
     }
 
     #[tokio::test]

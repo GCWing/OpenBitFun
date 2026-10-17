@@ -590,6 +590,35 @@ describe('forkChatSession', () => {
     vi.clearAllMocks();
   });
 
+  it('uses the host fork mode when a legacy external source still carries primary', async () => {
+    const source = createSession({
+      sessionId: 'legacy-source', mode: 'primary', config: { agentType: 'primary', modelName: 'primary' },
+      externalHistory: { mode: 'follow' },
+    });
+    const { context, flowChatStore } = createContext(source);
+    sessionApiMocks.forkSession.mockResolvedValueOnce({ sessionId: 'branch', sessionName: 'Branch', agentType: 'Standard' });
+
+    await forkChatSession(context, source.sessionId, 'viewed-turn');
+
+    expect(flowChatStore.getState().sessions.get('branch')).toMatchObject({
+      mode: 'Standard', config: { agentType: 'Standard' },
+    });
+    expect(flowChatStore.createSession.mock.calls[0][1]).toMatchObject({ agentType: 'Standard', modelName: 'primary' });
+    expect(source.mode).toBe('primary');
+  });
+
+  it('retains the selected source mode when an older host omits the fork mode', async () => {
+    const source = createSession({ sessionId: 'source', mode: 'Minimal', config: { agentType: 'Minimal' } });
+    const { context, flowChatStore } = createContext(source);
+    sessionApiMocks.forkSession.mockResolvedValueOnce({ sessionId: 'branch', sessionName: 'Branch' });
+
+    await forkChatSession(context, source.sessionId, 'viewed-turn');
+
+    expect(flowChatStore.getState().sessions.get('branch')).toMatchObject({
+      mode: 'Minimal', config: { agentType: 'Minimal' },
+    });
+  });
+
   it('applies a source composer permission selection only to the created native branch', async () => {
     const source = createSession({ sessionId: 'source', externalHistory: { mode: 'follow' }, externalContinuationPermissionMode: 'auto_approve' });
     const { context } = createContext(source);

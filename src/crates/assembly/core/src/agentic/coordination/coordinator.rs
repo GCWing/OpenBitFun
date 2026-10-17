@@ -16527,6 +16527,110 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn legacy_imported_primary_branches_resolve_real_turn_modes() {
+        use crate::agentic::persistence::SessionBranchRequest;
+        use openbitfun_services_core::session::{
+            DialogTurnData, DialogTurnKind, OfflineSessionBundle, OfflineSessionImportStore,
+            SessionBranchBoundary, SessionMetadata, TurnStatus, UserMessageData,
+        };
+
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let workspace =
+            crate::service::workspace::legacy_compat::register_local_fixture_blocking(&project);
+        let paths = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().join("user"),
+        ));
+        let root = paths.project_sessions_dir(&workspace.root_path);
+        let persistence = PersistenceManager::new(paths).unwrap();
+        let store = OfflineSessionImportStore::new(&root);
+        for ecosystem in ["codex", "zcode"] {
+            let id = format!("legacy-{ecosystem}-branch");
+            let turn_id = format!("{id}-turn-0");
+            let metadata: SessionMetadata = serde_json::from_value(serde_json::json!({
+                "session_id": id, "session_name": "Existing native branch", "agent_type": "primary", "model_name": "primary",
+                "created_at": 1, "last_active_at": 2, "turn_count": 1, "message_count": 1, "tool_call_count": 0, "status": "completed",
+                "workspace_id": workspace.id, "workspace_path": workspace.root_path,
+                "project_workspace_id": workspace.id, "project_workspace_path": workspace.root_path,
+                "custom_metadata": {"externalBranchOf": {"sessionId": "source-view", "ecosystemId": ecosystem, "sourceSessionId": "source", "contentVersion": "pinned"}}
+            })).unwrap();
+            let mut turn = DialogTurnData::new_with_kind(
+                DialogTurnKind::UserDialog,
+                turn_id.clone(),
+                0,
+                id.clone(),
+                Some("primary".into()),
+                UserMessageData {
+                    id: format!("{id}-user"),
+                    content: "Preserved imported question".into(),
+                    timestamp: 1,
+                    metadata: None,
+                },
+            );
+            turn.status = TurnStatus::Completed;
+            store
+                .write_bundle_atomic(&OfflineSessionBundle {
+                    metadata,
+                    turns: vec![turn],
+                })
+                .await
+                .unwrap();
+            let metadata_path = root.join(&id).join("metadata.json");
+            let before = std::fs::read(&metadata_path).unwrap();
+            let restored = persistence
+                .load_session(&workspace.root_path, &id)
+                .await
+                .unwrap();
+
+            let admitted = ConversationCoordinator::resolve_session_agent_for_turn(
+                &restored,
+                &restored.agent_type,
+                &None,
+            )
+            .await
+            .expect("legacy native branches must pass the same mode admission as a message send");
+            assert_eq!(admitted.runtime_agent_key, "Standard");
+            assert_eq!(restored.config.model_id.as_deref(), Some("primary"));
+            assert_eq!(std::fs::read(&metadata_path).unwrap(), before);
+
+            let branch = persistence
+                .branch_session(
+                    &workspace.root_path,
+                    &SessionBranchRequest {
+                        source_session_id: id.clone(),
+                        source_turn_id: turn_id,
+                        boundary: SessionBranchBoundary::ThroughTurn,
+                    },
+                )
+                .await
+                .unwrap();
+            let continued = persistence
+                .load_session(&workspace.root_path, &branch.session_id)
+                .await
+                .unwrap();
+            let admitted = ConversationCoordinator::resolve_session_agent_for_turn(
+                &continued,
+                &continued.agent_type,
+                &None,
+            )
+            .await
+            .expect("forking an existing legacy branch must retain a valid runtime mode");
+            assert_eq!(admitted.runtime_agent_key, "Standard");
+            let copied = store
+                .load_bundle(&branch.session_id)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                copied.turns[0].user_message.content,
+                "Preserved imported question"
+            );
+            assert_eq!(copied.turns[0].agent_type.as_deref(), Some("primary"));
+        }
+    }
+
+    #[tokio::test]
     async fn subagent_conversation_resolves_legacy_children_on_local_and_remote_workspaces() {
         for agent_type in ["GeneralPurpose", "Explore", "Standard"] {
             let mut child = crate::agentic::core::Session::new(

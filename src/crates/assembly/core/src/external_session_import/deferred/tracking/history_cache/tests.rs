@@ -148,19 +148,32 @@ async fn history_cache_keeps_legacy_snapshot_and_window_shapes_readable() {
         .await
         .unwrap();
     update_index(&root, |index| {
-        index
-            .entries
-            .get_mut(id)
-            .unwrap()
-            .metadata
-            .custom_metadata
-            .as_mut()
-            .unwrap()[VERSION] = json!(version);
+        let metadata = &mut index.entries.get_mut(id).unwrap().metadata;
+        metadata.agent_type = "primary".into();
+        metadata.custom_metadata.as_mut().unwrap()[VERSION] = json!(version);
         ((), true)
     })
     .await
     .unwrap();
     let bytes = std::fs::read(&path).unwrap();
+    let index_bytes = std::fs::read(root.join(INDEX_FILE)).unwrap();
+    assert_eq!(
+        metadata(&root, id).await.unwrap().unwrap().agent_type,
+        "Standard"
+    );
+    assert_eq!(
+        merge_metadata(&root, vec![]).await.unwrap()[0].agent_type,
+        "Standard"
+    );
+    let probe = probes::Probe::new(&root);
+    let cold = snapshot_shared(&root, id, false).await.unwrap().unwrap();
+    let warm = snapshot_shared(&root, id, false).await.unwrap().unwrap();
+    for snapshot in [&cold, &warm] {
+        assert_eq!(snapshot.metadata.agent_type, "Standard");
+        assert_eq!(snapshot.metadata.model_name, "primary");
+    }
+    assert!(Arc::ptr_eq(&cold.history, &warm.history));
+    assert_eq!(probe.take().snapshot_reads, 1);
     let request = SessionTurnWindowRequest {
         workspace_path: workspace.root_path.clone(),
         session_id: id.clone(),
@@ -217,6 +230,7 @@ async fn history_cache_keeps_legacy_snapshot_and_window_shapes_readable() {
     assert!(
         matches!(missing, SessionTurnWindowResponse::NotFound { catalog } if catalog.total_turn_count == 1)
     );
+    assert_eq!(std::fs::read(root.join(INDEX_FILE)).unwrap(), index_bytes);
 }
 
 #[tokio::test]

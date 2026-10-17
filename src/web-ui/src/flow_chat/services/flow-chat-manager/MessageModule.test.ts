@@ -294,6 +294,55 @@ describe('MessageModule session writer conflict', () => {
     expect(context.flowChatStore.addDialogTurn).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['primary', 'primary', 'Standard'],
+    ['primary', undefined, 'Standard'],
+    ['primary', 'Creative', 'Creative'],
+    ['Creative', 'Creative', 'Creative'],
+  ])('submits the native fork mode instead of an inherited source placeholder (%s, %s)', async (sourceMode, requestedMode, expectedMode) => {
+    const { context, session } = conflictContext('legacy-external-source');
+    Object.assign(session, {
+      mode: sourceMode,
+      historyState: 'ready', externalHistory: { mode: 'follow' },
+      dialogTurns: [{ id: 'viewed-turn', userMessage: { metadata: { externalContentVersion: 'viewed-version' } } }],
+    });
+    const branch = { ...session, sessionId: 'native-branch', mode: 'Standard', externalHistory: undefined, dialogTurns: [...session.dialogTurns] };
+    const sessions = new Map([[session.sessionId, session], [branch.sessionId, branch]]);
+    context.flowChatStore.getState = () => ({ sessions, activeSessionId: branch.sessionId });
+    context.flowChatStore.addDialogTurn.mockImplementation((id: string, turn: any) => sessions.get(id)!.dialogTurns.push(turn));
+    mockForkChatSession.mockResolvedValue(branch.sessionId);
+    mockEnsureBackendSession.mockResolvedValue(undefined);
+    mockGetConfigs.mockResolvedValue({});
+    mockStartDialogTurn.mockImplementation(async ({ agentType }: { agentType: string }) => {
+      if (agentType === 'primary') throw new Error('Unknown session mode: primary');
+    });
+
+    await sendMessage(context, 'Continue here', session.sessionId, undefined, requestedMode);
+
+    expect(mockStartDialogTurn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      sessionId: branch.sessionId, agentType: expectedMode, userInput: 'Continue here',
+    }));
+    expect(session.mode).toBe(sourceMode);
+    expect(session.dialogTurns).toHaveLength(1);
+  });
+
+  it.each(['codex', 'zcode', undefined])('retries an old queued mode using the repaired native branch (%s)', async ecosystemId => {
+    const { context, session } = conflictContext('existing-branch');
+    if (ecosystemId) Object.assign(session, {
+      externalBranchOf: { sessionId: 'source', ecosystemId, sourceSessionId: 'original', contentVersion: 'pinned' },
+    });
+    mockEnsureBackendSession.mockResolvedValue(undefined);
+    mockGetConfigs.mockResolvedValue({});
+
+    // Failed queue entries retain the mode from before the metadata migration.
+    await sendMessage(context, 'Retry retained draft', session.sessionId, undefined, 'primary', undefined, { bypassPendingQueue: true });
+
+    expect(mockStartDialogTurn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      sessionId: session.sessionId, agentType: ecosystemId ? 'Standard' : 'primary', userInput: 'Retry retained draft',
+    }));
+    expect(mockForkChatSession).not.toHaveBeenCalled();
+  });
+
   it('does not fork an archived source before rejecting submission', async () => {
     const { context, session } = conflictContext('archived-source');
     Object.assign(session, {

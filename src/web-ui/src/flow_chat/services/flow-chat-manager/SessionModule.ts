@@ -840,10 +840,12 @@ export async function forkChatSession(
 
   const currentState = context.flowChatStore.getState();
   if (!currentState.sessions.has(response.sessionId)) {
+    const branchMode = response.agentType?.trim() || sourceSession.mode || sourceSession.config.agentType || 'Standard';
     context.flowChatStore.createSession(
       response.sessionId,
       {
         ...sourceSession.config,
+        agentType: branchMode,
         workspacePath: executionWorkspacePath,
         projectWorkspacePath,
         workspaceId: sourceSession.workspaceId,
@@ -853,7 +855,7 @@ export async function forkChatSession(
       undefined,
       response.sessionName,
       sourceSession.maxContextTokens,
-      sourceSession.mode,
+      branchMode,
       executionWorkspacePath,
       sourceSession.remoteConnectionId,
       sourceSession.remoteSshHost,

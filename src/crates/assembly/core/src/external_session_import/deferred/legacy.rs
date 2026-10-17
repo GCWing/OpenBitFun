@@ -135,8 +135,18 @@ fn unedited_prefix(
     if before.metadata.status == SessionStatus::Active || before.turns.len() > after.turns.len() {
         return Ok(false);
     }
+    let mut compatible = before.metadata.clone();
+    compatible.normalize_legacy_imported_agent_type();
     for (old, new) in before.turns.iter().zip(&after.turns) {
         let mut old = old.clone();
+        // The retired imported placeholder and its corrected native mode are
+        // equivalent for comparison only. Keep the persisted history intact,
+        // and still detect any other mode or content edit as a local change.
+        if old.agent_type.as_deref() == Some(before.metadata.agent_type.as_str())
+            && new.agent_type.as_deref() == Some(compatible.agent_type.as_str())
+        {
+            old.agent_type = new.agent_type.clone();
+        }
         // A downgraded host may retain a view's versioned turn identity.
         if old.turn_id
             == format!(
@@ -170,6 +180,51 @@ fn unedited_prefix(
         }
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::tests::fixture;
+    use super::*;
+    use crate::external_session_import::auto_discovery::tests::{candidate, document};
+
+    #[tokio::test]
+    async fn legacy_mode_comparison_preserves_history_and_detects_real_edits() {
+        let (_temp, workspace, _root, _manager) = fixture();
+        for ecosystem in ["codex", "zcode"] {
+            let source = document(candidate(ecosystem, "source-1", &workspace.root_path));
+            let convert = |mode| {
+                convert_document(
+                    "legacy",
+                    &workspace,
+                    &workspace,
+                    mode,
+                    "Old import",
+                    &source,
+                    true,
+                    true,
+                )
+                .unwrap()
+            };
+            let before = convert("primary");
+            let after = convert("Standard");
+            let original = serde_json::to_value(&before).unwrap();
+            assert!(unedited_prefix(&before, &after).unwrap());
+            assert_eq!(serde_json::to_value(&before).unwrap(), original);
+
+            let mut edited = before.clone();
+            edited.turns[0].agent_type = Some("Creative".into());
+            assert!(!unedited_prefix(&edited, &after).unwrap());
+
+            let mut edited = before.clone();
+            edited.turns[0].user_message.content = "Local prompt edit".into();
+            assert!(!unedited_prefix(&edited, &after).unwrap());
+
+            let mut unknown = before;
+            unknown.metadata.custom_metadata = None;
+            assert!(!unedited_prefix(&unknown, &after).unwrap());
+        }
+    }
 }
 
 /// Called only when opening one source, never while discovering/listing it.

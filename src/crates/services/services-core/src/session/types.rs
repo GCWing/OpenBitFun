@@ -1142,6 +1142,41 @@ pub struct SessionLastTurn {
 }
 
 impl SessionMetadata {
+    /// Early external-history indexes used the model selector as the native
+    /// session mode. Project only that known imported shape; `primary` is not
+    /// a general alias for custom agents or external runtime bindings.
+    pub fn normalize_legacy_imported_agent_type(&mut self) {
+        if self.agent_type != "primary" || self.session_kind != SessionKind::Standard {
+            return;
+        }
+        let Some(custom) = self.custom_metadata.as_ref() else {
+            return;
+        };
+        if custom
+            .get(openbitfun_core_types::SESSION_PROVIDER_METADATA_KEY)
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|provider| !provider.is_empty())
+        {
+            return;
+        }
+        let has_import_identity = |value: &serde_json::Value, ecosystem_key: &str| {
+            matches!(
+                value.get(ecosystem_key).and_then(serde_json::Value::as_str),
+                Some("codex" | "zcode")
+            ) && value
+                .get("sourceSessionId")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|id| !id.is_empty())
+        };
+        if has_import_identity(custom, "importedFrom")
+            || custom
+                .get("externalBranchOf")
+                .is_some_and(|source| has_import_identity(source, "ecosystemId"))
+        {
+            self.agent_type = "Standard".to_string();
+        }
+    }
+
     /// Translate the retired native selector without changing external agents' IDs.
     pub fn compatible_model_selector<'a>(&self, selector: &'a str) -> &'a str {
         let external_provider = self

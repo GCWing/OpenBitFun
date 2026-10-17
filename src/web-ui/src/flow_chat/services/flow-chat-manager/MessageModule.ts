@@ -277,10 +277,23 @@ async function sendMessageInternal(
       const branchId = await fork;
       surfaceScopeAtSend.assertCurrent('continue external history in native branch');
       options?.onSessionForked?.(sessionId, branchId);
-      return await sendMessageInternal(context, message, branchId, displayMessage, agentType, switchToMode, options);
+      // Do not replay the retired source placeholder over the host's corrected
+      // branch mode. Keep valid composer selections, even when stored locally.
+      const continuationAgentType = agentType?.trim() === 'primary'
+        && (session.mode || session.config.agentType)?.trim() === 'primary'
+        ? undefined : agentType;
+      return await sendMessageInternal(context, message, branchId, displayMessage, continuationAgentType, switchToMode, options);
     } finally {
       if (externalForks.get(key) === fork) externalForks.delete(key);
     }
+  }
+  // A failed queue entry can retain the old source placeholder after the host
+  // has repaired its native branch. Retry with the branch's current mode.
+  const importedSource = session.externalBranchOf?.ecosystemId ?? session.importedSource;
+  if ((importedSource === 'codex' || importedSource === 'zcode')
+    && (!session.sessionKind || session.sessionKind === 'normal')
+    && agentType?.trim() === 'primary' && session.mode && session.mode !== 'primary') {
+    agentType = session.mode;
   }
   if (session.sessionKind === 'subagent'
     && getSessionConversationCapability(sessionId, session).reason === 'metadata_pending') {

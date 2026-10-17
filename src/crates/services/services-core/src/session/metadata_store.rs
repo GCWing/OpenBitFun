@@ -537,7 +537,8 @@ impl SessionMetadataStore {
         let _guard = lock.lock().await;
         let _file_guard = self.lock_index_file().await?;
         let metadata_file_created = !metadata_path.exists();
-        let mut metadata = compatible_metadata(metadata.clone());
+        // Read projections must not mutate an offline bundle or repair journal.
+        let mut metadata = compatible_stored_metadata(metadata.clone());
         self.assign_workspace_session_number_locked(&mut metadata)
             .await?;
         let file = StoredSessionMetadataFile::new(metadata.clone());
@@ -656,6 +657,11 @@ impl SessionMetadataStore {
 }
 
 fn compatible_metadata(mut metadata: SessionMetadata) -> SessionMetadata {
+    metadata.normalize_legacy_imported_agent_type();
+    compatible_stored_metadata(metadata)
+}
+
+fn compatible_stored_metadata(mut metadata: SessionMetadata) -> SessionMetadata {
     metadata.normalize_legacy_model_selector();
     super::naming::migrate_legacy_default_title(&mut metadata);
     metadata
@@ -663,6 +669,7 @@ fn compatible_metadata(mut metadata: SessionMetadata) -> SessionMetadata {
 
 fn compatible_metadata_list(mut metadata: Vec<SessionMetadata>) -> Vec<SessionMetadata> {
     for entry in &mut metadata {
+        entry.normalize_legacy_imported_agent_type();
         entry.normalize_legacy_model_selector();
         super::naming::migrate_legacy_default_title(entry);
     }
@@ -784,6 +791,101 @@ mod tests {
             )
             .unwrap();
             assert_eq!(round_trip.metadata.model_name, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_imported_primary_mode_reads_preserve_files_and_unrelated_agents() {
+        for (id, agent, custom, expected) in [
+            (
+                "codex",
+                "primary",
+                serde_json::json!({"importedFrom": "codex", "sourceSessionId": "source", "externalHistoryMode": "follow"}),
+                "Standard",
+            ),
+            (
+                "zcode",
+                "primary",
+                serde_json::json!({"importedFrom": "zcode", "sourceSessionId": "source", "continuationMode": "openbitfun_local"}),
+                "Standard",
+            ),
+            (
+                "branch",
+                "primary",
+                serde_json::json!({"externalBranchOf": {"ecosystemId": "codex", "sourceSessionId": "source", "contentVersion": "retained"}}),
+                "Standard",
+            ),
+            (
+                "zcode-branch",
+                "primary",
+                serde_json::json!({"externalBranchOf": {"ecosystemId": "zcode", "sourceSessionId": "source"}}),
+                "Standard",
+            ),
+            ("native", "primary", serde_json::json!({}), "primary"),
+            (
+                "other-source",
+                "primary",
+                serde_json::json!({"importedFrom": "custom", "sourceSessionId": "source"}),
+                "primary",
+            ),
+            (
+                "missing-identity",
+                "primary",
+                serde_json::json!({"importedFrom": "codex"}),
+                "primary",
+            ),
+            (
+                "external-provider",
+                "primary",
+                serde_json::json!({"provider": "acp", "importedFrom": "codex", "sourceSessionId": "source"}),
+                "primary",
+            ),
+            (
+                "selected-mode",
+                "Creative",
+                serde_json::json!({"externalBranchOf": {"ecosystemId": "codex", "sourceSessionId": "source"}}),
+                "Creative",
+            ),
+            (
+                "custom-mode",
+                "custom-primary",
+                serde_json::json!({"importedFrom": "codex", "sourceSessionId": "source"}),
+                "custom-primary",
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let store = SessionMetadataStore::new(root.path());
+            // Old snake-case payload with absent optional fields must remain readable.
+            let record: SessionMetadata = serde_json::from_value(serde_json::json!({
+                "session_id": id, "session_name": "Kept title", "agent_type": agent,
+                "model_name": "primary", "created_at": 1, "last_active_at": 2,
+                "turn_count": 0, "message_count": 0, "tool_call_count": 0,
+                "status": "completed", "workspace_id": "main", "custom_metadata": custom,
+            }))
+            .unwrap();
+            store.save_metadata(&record).await.unwrap();
+            let original = fs::read(store.metadata_path(id)).await.unwrap();
+            let stored: StoredSessionMetadataFile = serde_json::from_slice(&original).unwrap();
+            assert_eq!(stored.metadata.agent_type, agent);
+            let index = fs::read(store.index_path()).await.unwrap();
+            for records in [
+                vec![store.load_metadata(id).await.unwrap().unwrap()],
+                store.list_metadata().await.unwrap(),
+                store.list_metadata_page(None, 5).await.unwrap().sessions,
+                store.metadata_by_ids(&[id.to_string()]).await.unwrap(),
+                store.list_metadata_including_internal().await.unwrap(),
+            ] {
+                let returned = records.iter().find(|entry| entry.session_id == id).unwrap();
+                assert_eq!(returned.agent_type, expected, "{id}");
+                assert_eq!(returned.model_name, "primary");
+                assert_eq!(returned.custom_metadata, record.custom_metadata);
+                let round_trip: SessionMetadata =
+                    serde_json::from_slice(&serde_json::to_vec(returned).unwrap()).unwrap();
+                assert_eq!(round_trip.agent_type, expected);
+                assert_eq!(round_trip.custom_metadata, record.custom_metadata);
+            }
+            assert_eq!(fs::read(store.metadata_path(id)).await.unwrap(), original);
+            assert_eq!(fs::read(store.index_path()).await.unwrap(), index);
         }
     }
 
