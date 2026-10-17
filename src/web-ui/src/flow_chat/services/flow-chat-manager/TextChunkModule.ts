@@ -290,7 +290,7 @@ export function completeActiveTextItems(
   if (sessionActiveTextItems && sessionActiveTextItems.size > 0) {
     const itemsToComplete = Array.from(sessionActiveTextItems.entries());
     const batchUpdates = itemsToComplete
-      .map(([_roundId, itemId]) => ({
+      .map(([_streamKey, itemId]) => ({
         itemId,
         changes: {
           isStreaming: false,
@@ -300,6 +300,18 @@ export function completeActiveTextItems(
     
     if (batchUpdates.length > 0) {
       context.flowChatStore.batchUpdateModelRoundItems(sessionId, turnId, batchUpdates);
+    }
+
+    // A finalized segment must release its accumulated text together with its
+    // item registration. Keeping the buffer made the next chunk of the same
+    // stream key create a second item seeded with everything already painted
+    // (issue 2778). The item stays the source of truth for its own content, so
+    // a genuine late chunk still continues it through the reuse path.
+    const sessionContentBuffer = context.contentBuffers.get(sessionId);
+    if (sessionContentBuffer) {
+      for (const [streamKey] of itemsToComplete) {
+        sessionContentBuffer.delete(streamKey);
+      }
     }
     
     sessionActiveTextItems.clear();

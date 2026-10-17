@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { AnyFlowItem, DialogTurn, FlowToolItem, ModelRound, Session } from '../../types/flow-chat';
-import { processNormalTextChunkInternal, processThinkingChunkInternal } from './TextChunkModule';
+import {
+  completeActiveTextItems,
+  processNormalTextChunkInternal,
+  processThinkingChunkInternal,
+} from './TextChunkModule';
 
 function makeContext(session: Session): any {
   return {
@@ -31,7 +35,20 @@ function makeContext(session: Session): any {
           }
         }
       },
-      batchUpdateModelRoundItems: () => {},
+      batchUpdateModelRoundItems: (
+        _sessionId: string,
+        _turnId: string,
+        updates: Array<{ itemId: string; changes: Partial<AnyFlowItem> }>,
+      ) => {
+        for (const round of session.dialogTurns[0].modelRounds) {
+          for (const update of updates) {
+            const item = round.items.find(candidate => candidate.id === update.itemId);
+            if (item) {
+              Object.assign(item, update.changes);
+            }
+          }
+        }
+      },
       updateDialogTurn: (
         _sessionId: string,
         _turnId: string,
@@ -308,5 +325,40 @@ describe('processNormalTextChunkInternal', () => {
       'reasoning',
       'summary',
     ]);
+  });
+
+  // Issue 2778: the same assistant sentence was painted several times in a long
+  // turn. Finalizing active text items at a round boundary drops the item
+  // registration but keeps the accumulated text buffer, so the next chunk in
+  // that round finds no reusable item and creates a second item seeded with the
+  // whole buffer. Painting must not repeat text an earlier item already shows.
+  it('does not repaint already shown text when a round continues after active text items were finalized', () => {
+    const session = makeSession();
+    const context = makeContext(session);
+
+    processNormalTextChunkInternal(
+      context,
+      'session-1',
+      'turn-1',
+      'round-1',
+      '看来只有 part3 入队成功，',
+    );
+
+    // Exactly what the model-round-start handler does before building a round.
+    completeActiveTextItems(context, 'session-1', 'turn-1');
+
+    processNormalTextChunkInternal(context, 'session-1', 'turn-1', 'round-1', '补上 part1/2。');
+
+    const painted = session.dialogTurns[0].modelRounds[0].items
+      .filter(item => item.type === 'text')
+      .map(item => (item as any).content as string);
+
+    const firstSegment = painted[0];
+    const repaintedSegments = painted
+      .slice(1)
+      .filter(text => text.includes(firstSegment));
+
+    expect(repaintedSegments).toEqual([]);
+    expect(painted.join('')).toBe('看来只有 part3 入队成功，补上 part1/2。');
   });
 });
