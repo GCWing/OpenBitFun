@@ -1,10 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import {
   preferredSubscriptionLoginMethod,
+  subscriptionLoginMethodsForSurface,
   settleSubscriptionLoginStart,
   subscriptionLoginRequiresLocalDevice,
   SubscriptionLoginCoordinator,
 } from './subscriptionLoginCoordinator';
+
+describe('subscriptionLoginMethodsForSurface', () => {
+  it('exposes both advertised Codex methods locally and device login through a peer', () => {
+    expect(subscriptionLoginMethodsForSurface('codex', ['browser', 'device'], true))
+      .toEqual(['browser', 'device']);
+    expect(subscriptionLoginMethodsForSurface('codex', ['browser', 'device'], false))
+      .toEqual(['device']);
+  });
+
+  it('preserves the device-only providers and browser-only Antigravity contract', () => {
+    for (const provider of ['opencode', 'grok', 'hermes'] as const) {
+      expect(subscriptionLoginMethodsForSurface(provider, ['device'], true)).toEqual(['device']);
+      expect(subscriptionLoginMethodsForSurface(provider, ['device'], false)).toEqual(['device']);
+    }
+    expect(subscriptionLoginMethodsForSurface('antigravity', ['browser'], true)).toEqual(['browser']);
+  });
+
+  it('keeps legacy backends on default login without inventing unadvertised capabilities', () => {
+    expect(subscriptionLoginMethodsForSurface('codex', undefined, true)).toEqual([]);
+    expect(subscriptionLoginMethodsForSurface('codex', [], false)).toEqual([]);
+    expect(subscriptionLoginMethodsForSurface('codex', ['browser'], true)).toEqual(['browser']);
+  });
+});
 
 describe('preferredSubscriptionLoginMethod', () => {
   it('uses Codex device authorization when the callback browser is not local', () => {
