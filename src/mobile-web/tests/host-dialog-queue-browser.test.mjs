@@ -43,6 +43,9 @@ test('mobile running composer keeps send and stop independently available alongs
    window.queueFixture=mountHostQueueFixture();
   });
   await page.waitForSelector('.host-message-queue li');
+  assert.ok(await page.$eval('.chat-msg__assistant-content .katex', el => !!el), 'katex renders inside assistant message');
+  assert.ok(await page.$eval('.chat-msg__assistant-content .katex-display', el => !!el), 'katex block display renders');
+  assert.ok((await page.$eval('.code-block-wrapper', el => el.textContent)).includes('echo $$ $1 $&'), 'code blocks preserve special dollar patterns');
   assert.ok(await page.$eval('.host-message-queue',el=>el.getBoundingClientRect().height<=100),'one queued message stays compact');
   const actions=await page.$$eval('.chat-page__send-btn', buttons=>buttons.map(button=>({disabled:button.disabled,stop:button.classList.contains('is-stop')})));
   assert.deepEqual(actions,[{disabled:false,stop:false},{disabled:false,stop:true}]);

@@ -322,6 +322,55 @@ test('mobile transcript keeps one user bubble and projects file cards outside ma
   assert.match(markdownStyles, /\.file-card\s*\{[\s\S]*?inline-size:\s*100%;/);
 });
 
+test('mobile chat markdown configures math plugins and mobile katex display styles', async () => {
+  const markdown = await readFile(path.join(sourceDirectory, 'components/ChatMarkdown.tsx'), 'utf8');
+  const markdownStyles = await readFile(path.join(sourceDirectory, 'styles/components/markdown.scss'), 'utf8');
+
+  assert.match(markdown, /import remarkMath from 'remark-math';/);
+  assert.match(markdown, /import rehypeKatex from 'rehype-katex';/);
+  assert.match(markdown, /import 'katex\/dist\/katex\.min\.css';/);
+  assert.match(markdown, /remarkPlugins=\{\[remarkGfm,\s*remarkMath\]\}/);
+  assert.match(markdown, /rehypePlugins=\{\[\[rehypeKatex,\s*\{\s*strict:\s*false,\s*throwOnError:\s*false\s*\}\]\]\}/);
+  assert.match(markdown, /normalizeMathDelimiters/);
+
+  assert.match(markdownStyles, /\.katex-display\s*\{[\s\S]*?overflow-x:\s*auto;/);
+  assert.match(markdownStyles, /\.katex-display\s*\{[\s\S]*?-webkit-overflow-scrolling:\s*touch;/);
+  assert.match(markdownStyles, /\.katex\s*\{[\s\S]*?font-size:\s*1\.05em;/);
+});
+
+test('normalizeMathDelimiters protects code blocks and normalizes LaTeX delimiters', async () => {
+  const markdown = await readFile(path.join(sourceDirectory, 'components/ChatMarkdown.tsx'), 'utf8');
+  const fnMatch = markdown.match(/export function normalizeMathDelimiters[\s\S]*?\n\}/);
+  assert.ok(fnMatch, 'normalizeMathDelimiters function must be present');
+  const code = ts.transpileModule(fnMatch[0], { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText;
+  const { normalizeMathDelimiters: normalize } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+
+  // Empty or plain text without math brackets or raw dollar blocks
+  assert.equal(normalize(''), '');
+  assert.equal(normalize('plain text with $10 and $20'), 'plain text with $10 and $20');
+
+  // Inline bracket \( ... \) to $ ... $
+  assert.equal(normalize('Inline \\( a + b = c \\) math'), 'Inline $a + b = c$ math');
+
+  // Block bracket \[ ... \] to $$ ... $$
+  assert.match(normalize('Block \\[\\frac{1}{2}\\] math'), /\$\$\s*\n\\frac\{1\}\{2\}\n\s*\$\$/);
+
+  // Single line $$...$$ to multi-line $$...$$
+  assert.match(normalize('$$E=mc^2$$'), /\$\$\s*\nE=mc\^2\n\s*\$\$/);
+
+  // Code fence with special replacement patterns ($$, $&, $1) and escaped characters must not be corrupted
+  const codeFenceSample = 'Formula \\(x\\)\n```bash\necho $$ $1 $&\n```\nDone';
+  const codeFenceNormalized = normalize(codeFenceSample);
+  assert.ok(codeFenceNormalized.includes('echo $$ $1 $&'), 'code blocks must preserve literal $$ and $& without replace corruption');
+  assert.ok(codeFenceNormalized.includes('$x$'), 'formula outside code fence must be normalized');
+
+  // Multi-backtick inline code with internal backtick or brackets
+  const multiBacktickSample = 'Look at ``code ` with \\[index\\] inside`` and \\(y\\)';
+  const multiBacktickNormalized = normalize(multiBacktickSample);
+  assert.ok(multiBacktickNormalized.includes('``code ` with \\[index\\] inside``'), 'multi-backtick inline code must be preserved verbatim');
+  assert.ok(multiBacktickNormalized.includes('$y$'), 'formula outside inline code must be normalized');
+});
+
 test('mobile file card failures stay readable and repeatable', async () => {
   const markdown = await readFile(path.join(sourceDirectory, 'components/ChatMarkdown.tsx'), 'utf8');
   const markdownStyles = await readFile(path.join(sourceDirectory, 'styles/components/markdown.scss'), 'utf8');

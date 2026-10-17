@@ -2,6 +2,9 @@ import { Check as LucideCheck, Copy as LucideCopy, FileText as LucideFileText } 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
@@ -359,6 +362,50 @@ const FileCard: React.FC<FileCardProps> = ({ path, onGetFileInfo, onDownload }) 
     </MobileButton>
   );
 };
+export function normalizeMathDelimiters(content: string): string {
+  if (!content) return content;
+  const hasDisplayBracket = content.includes('\\[');
+  const hasInlineBracket = content.includes('\\(');
+  const hasRawBlockDollars = /(^|[^\\])\$\$[^\n]+?\$\$/.test(content);
+  if (!hasDisplayBracket && !hasInlineBracket && !hasRawBlockDollars) {
+    return content;
+  }
+
+  const codeBlocks: { key: string; content: string }[] = [];
+  let placeholderIndex = 0;
+
+  // Protect code fences
+  let transformed = content.replace(/(^|\n)[ \t]{0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n[ \t]{0,3}\2[^\n]*(?=\n|$)|$)/g, (match) => {
+    const key = `@@MATH_CODE_BLOCK_${placeholderIndex++}@@`;
+    codeBlocks.push({ key, content: match });
+    return key;
+  });
+
+  // Protect inline code spans
+  transformed = transformed.replace(/(`+)((?:[^\n`]|(?!\1)`)*?)\1/g, (match) => {
+    const key = `@@MATH_CODE_INLINE_${placeholderIndex++}@@`;
+    codeBlocks.push({ key, content: match });
+    return key;
+  });
+
+  // Normalize single-line $$...$$ to multi-line $$ \n ... \n $$ so remark-math recognises block math
+  transformed = transformed.replace(/(^|[^\\])\$\$([^\n]+?)\$\$/g, (_, prefix, math) => `${prefix}\n\n$$\n${math.trim()}\n$$\n\n`);
+
+  // Normalize \[ ... \] to block math $$ ... $$
+  transformed = transformed.replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => `\n\n$$\n${math.trim()}\n$$\n\n`);
+
+  // Normalize \( ... \) to inline math $ ... $
+  transformed = transformed.replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => `$${math.trim()}$`);
+
+  // Restore protected code blocks using function replacer to avoid special replacement patterns ($$, $&, $', etc.)
+  for (let i = codeBlocks.length - 1; i >= 0; i--) {
+    const { key, content: code } = codeBlocks[i];
+    transformed = transformed.replace(key, () => code);
+  }
+
+  return transformed;
+}
+
 interface MarkdownContentProps {
   content: string;
   onFileDownload?: (path: string, onProgress?: (downloaded: number, total: number) => void) => Promise<void>;
@@ -368,6 +415,7 @@ interface MarkdownContentProps {
 export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, onFileDownload, onGetFileInfo }) => {
   const { isDark } = useTheme();
   const syntaxTheme = isDark ? vscDarkPlus : vs;
+  const normalizedContent = useMemo(() => normalizeMathDelimiters(content), [content]);
   const fileReferences = useMemo(
     () => onFileDownload && onGetFileInfo ? projectFileReferences(content) : [],
     [content, onFileDownload, onGetFileInfo],
@@ -480,7 +528,8 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, onFil
   return (
     <>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
         components={components}
         urlTransform={(url, key) => {
           if (key === 'src' && /^data:image\/(?:png|jpeg|gif|webp|bmp|svg\+xml|avif);base64,/i.test(url)) return url;
@@ -495,7 +544,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, onFil
           return '';
         }}
       >
-        {content}
+        {normalizedContent}
       </ReactMarkdown>
       {fileReferences.length > 0 && onGetFileInfo && onFileDownload && (
         <div className="message-file-cards">
