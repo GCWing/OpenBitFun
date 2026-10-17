@@ -22,7 +22,7 @@ const log = createLogger('DefaultModelConfig');
 const normalizeSelectValue = (value: string | number | (string | number)[]): string | number =>
   Array.isArray(value) ? (value[0] ?? '') : value;
 
-type DefaultModelSlot = 'primary' | 'fast' | 'image_understanding' | 'speech_recognition';
+type DefaultModelSlot = 'primary' | 'fast' | 'image_understanding' | 'image_generation' | 'speech_recognition';
 
 interface DefaultModelConfigProps {
   compact?: boolean;
@@ -82,6 +82,8 @@ export const DefaultModelConfig: React.FC<DefaultModelConfigProps> = ({
         return t('core.fast.label');
       case 'image_understanding':
         return t('optional.capabilities.image_understanding.label');
+      case 'image_generation':
+        return t('optional.capabilities.image_generation.label');
       case 'speech_recognition':
         return t('optional.capabilities.speech_recognition.label');
       default: {
@@ -132,6 +134,9 @@ export const DefaultModelConfig: React.FC<DefaultModelConfigProps> = ({
   const enabledModels = filterSelectableTextChatModels(models);
   const imageUnderstandingModels = models.filter(model => (
     isSelectableModelForCapability(model, 'image_understanding')
+  ));
+  const imageGenerationModels = models.filter(model => (
+    isSelectableModelForCapability(model, 'image_generation')
   ));
   const speechRecognitionModels = models.filter(model => (
     isSelectableModelForCapability(model, 'speech_recognition')
@@ -200,6 +205,29 @@ export const DefaultModelConfig: React.FC<DefaultModelConfigProps> = ({
             { label: t('optional.notSet'), value: '' },
             ...imageUnderstandingModels.map(buildModelOption),
           ]}
+          size="sm"
+        />
+      </ConfigPageRow>
+
+      <ConfigPageRow
+        label={renderSlotLabel(
+          t('optional.capabilities.image_generation.label'),
+          t('optional.capabilities.image_generation.description'),
+        )}
+        multiline={compact}
+        align="center"
+      >
+        <Combobox
+          aria-label={t('optional.capabilities.image_generation.label')}
+          value={defaultModels.image_generation || ''}
+          onValueChange={(value) => handleDefaultModelChange('image_generation', normalizeSelectValue(value))}
+          placeholder={pendingPlaceholder ?? t('optional.notSet')}
+          options={[
+            { label: t('optional.notSet'), value: '' },
+            ...imageGenerationModels.map(buildModelOption),
+          ]}
+          className="default-model-config__model-select"
+          disabled={controlsDisabled || imageGenerationModels.length === 0}
           size="sm"
         />
       </ConfigPageRow>
