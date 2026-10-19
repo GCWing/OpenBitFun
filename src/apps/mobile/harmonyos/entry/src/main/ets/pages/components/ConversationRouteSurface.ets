@@ -35,6 +35,11 @@ export struct ConversationRouteSurface {
   @Param showSidebarRestoreButton: boolean = false;
   @Param useWidePresentation: boolean = false;
   @Param hoverOperateMode: boolean = false;
+  /**
+   * Set where the page's chrome is the platform's title bar. The compact
+   * conversation route passes true; the wide pane leaves it false.
+   */
+  @Param platformBar: boolean = false;
   @Param fullTextSheetPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UserMessageFullText);
   @Event onRestoreSidebar: () => void = () => {};
@@ -67,6 +72,7 @@ export struct ConversationRouteSurface {
           composerPresentation: this.composerPresentation(),
           composerInputId: 'conversation-composer-input',
           hoverOperateMode: this.hoverOperateMode,
+          platformBar: this.platformBar,
           fullTextSheetPlacement: this.fullTextSheetPlacement,
           onRestoreSidebar: this.onRestoreSidebar,
           onIntent: (intent: ConversationIntent) => this.dispatchConversationIntent(intent)

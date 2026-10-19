@@ -22,6 +22,7 @@ export struct ConversationViewHost {
   @Param hoverOperateMode: boolean = false;
   @Param fullTextSheetPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UserMessageFullText);
+  @Param platformBar: boolean = false;
   @Param onRestoreSidebar: () => void = () => {};
   @Param onIntent: (intent: ConversationIntent) => void = (_intent: ConversationIntent) => {};
 
@@ -45,6 +46,7 @@ export struct ConversationViewHost {
     options.composerInputId = this.composerInputId;
     options.hoverOperateMode = this.hoverOperateMode;
     options.fullTextSheetPlacement = this.fullTextSheetPlacement;
+    options.platformBar = this.platformBar;
     return options;
   }
 

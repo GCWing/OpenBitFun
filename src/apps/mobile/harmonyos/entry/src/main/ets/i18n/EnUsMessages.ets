@@ -469,6 +469,7 @@ export const EN_US_MESSAGES: [string, string][] = [
   ['chat.remoteSession', 'Remote session'],
   ['chat.sessionTitle', 'Session title'],
   ['chat.sessionSection', 'Session'],
+  ['chat.rename', 'Rename'],
   ['chat.pin', 'Pin'],
   ['chat.unpin', 'Unpin'],
   ['chat.uploadedFiles', 'Uploaded files'],

@@ -1829,6 +1829,10 @@
       "value": "会话"
     },
     {
+      "name": "chat_rename",
+      "value": "重命名"
+    },
+    {
       "name": "chat_pin",
       "value": "置顶"
     },

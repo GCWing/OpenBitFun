@@ -95,6 +95,17 @@ export class RemotePageState {
    */
   @Trace rollbackOutcome: string = '';
   @Trace rollbackOutcomeSeq: number = 0;
+  /**
+   * The conversation's own more-menu was asked to open, by sequence.
+   *
+   * The compact conversation's menu trigger is in the platform title bar, which
+   * is the app root's chrome, while the menu's rows and the rename editor they
+   * open belong to the pane: the trigger can only report the request, and this is
+   * the page-level channel it reports it through. The pane consumes it by
+   * sequence, the same way it consumes a rollback outcome above, so two opens are
+   * two requests and an unrelated rebuild never opens one.
+   */
+  @Trace conversationHeaderMenuSeq: number = 0;
   /** Changes even when navigation leaves a session and later returns to it. */
   @Trace sessionContextRevision: number = 0;
   // Deliberately untraced: the memo behind visibleSessions(), not state anything
@@ -120,6 +131,16 @@ export class RemotePageState {
 
   setQuery(query: string): void {
     this.sessionQuery = query;
+  }
+
+  /**
+   * The platform title bar's menu trigger was used.
+   *
+   * Monotonic rather than a boolean: an open that was already consumed must not
+   * be consumed again by a rebuild, and the same trigger twice is two opens.
+   */
+  requestConversationHeaderMenu(): void {
+    this.conversationHeaderMenuSeq += 1;
   }
 
   setFilter(filter: string): void {

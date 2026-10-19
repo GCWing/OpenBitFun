@@ -8,7 +8,7 @@ import { RemoteUiState } from '../../services/RemoteUiState';
 import { AppShell } from './AppShell';
 import { FilePreviewSurface } from './FilePreviewSurface';
 import { PAGE_BG } from './Theme';
-import { AppRoute } from '../navigation/AppRouteContract';
+import { AppRoute, AppRouteContract } from '../navigation/AppRouteContract';
 import {
   AppRootPresentationActions,
   emptyAppRootPresentationActions
@@ -29,6 +29,13 @@ import {
 import { AdaptiveSheetOptions } from './AdaptiveSheetOptions';
 import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
 import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
+import {
+  ConversationHeaderPolicy,
+  ConversationHeaderPresentation
+} from '../policy/ConversationHeaderPolicy';
+import { ConversationViewState } from '../state/ConversationViewState';
+import { ConversationViewContract } from './ConversationViewContract';
+import { HdsTitleBarContentParams, HdsTitleBarSupport } from './HdsTitleBarSupport';
 import { i18n } from '@kit.LocalizationKit';
 import { HdsNavigation, HdsNavDestination } from '@kit.UIDesignKit';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
@@ -211,10 +218,62 @@ export struct AppRootPresentation {
     .height('100%')
   }
 
+  /**
+   * One pushed route. Only the compact conversation hands its chrome to the
+   * platform: its header band becomes the destination's own title bar, which is
+   * what gives the band the platform's gradient blur and — from API 23 on — the
+   * immersive material. Every other destination keeps `hideTitleBar(true)` and
+   * draws its own header, and the wide layout is not a destination at all (see
+   * `WideRouteContent`), so it never reaches this builder's title bar branch.
+   */
   @Builder
   NavigationDestination(name: string) {
-    HdsNavDestination() { this.RouteContent(name as AppRoute) }.hideTitleBar(true).backgroundColor(PAGE_BG)
-      .onBackPressed(() => this.actions.onNavigationBack(name as AppRoute))
+    if (AppRouteContract.isSessionRoute(name as AppRoute) && !this.isWideLayout()) {
+      HdsNavDestination() { this.RouteContent(name as AppRoute) }
+        // The band's own back control: the conversation is a pushed page, and
+        // leaving it is what the app's return asset means. The drawer is on the
+        // home screen this returns to.
+        .titleBar(HdsTitleBarSupport.options(this.conversationTitleBarParams(name as AppRoute)))
+        .hideBackButton(false)
+        .backgroundColor(PAGE_BG)
+        .onBackPressed(() => this.actions.onNavigationBack(name as AppRoute))
+    } else {
+      HdsNavDestination() { this.RouteContent(name as AppRoute) }.hideTitleBar(true).backgroundColor(PAGE_BG)
+        .onBackPressed(() => this.actions.onNavigationBack(name as AppRoute))
+    }
+  }
+
+  /**
+   * What the compact conversation's title bar says and what its controls do.
+   *
+   * The header's text is the same projection the pane's own header used, read
+   * through the same policy, so the band cannot name the conversation something
+   * the content area disagrees with. The menu trigger only reports the request:
+   * the menu's rows belong to the conversation, which is where their state is.
+   */
+  private conversationTitleBarParams(route: AppRoute): HdsTitleBarContentParams {
+    const viewState: ConversationViewState = ConversationViewState.project(
+      route,
+      this.remotePageState,
+      this.generalPageState,
+      this.actions.generalStatus()
+    );
+    const presentation: ConversationHeaderPresentation = ConversationHeaderPolicy.present(
+      viewState.surface,
+      viewState.activeSession.title,
+      viewState.desktopName,
+      viewState.workspaceBranch,
+      ConversationViewContract.hasRealTimelineItem(viewState.timelineItems)
+    );
+    return HdsTitleBarSupport.conversationParams(presentation, {
+      showBack: true,
+      onBack: (): void => {
+        this.actions.onNavigationBack(route);
+      },
+      onMenu: (): void => {
+        this.remotePageState.requestConversationHeaderMenu();
+      }
+    });
   }
 
   /**
@@ -286,7 +345,10 @@ export struct AppRootPresentation {
         showSidebarButton: true,
         // Compact conversations own the drawer, not a back control: Local and
         // Remote both open the sidebar over the chat instead of leaving it.
+        // Where the platform draws the title bar this header is not rendered at
+        // all, and the bar's back control is the pushed page's way out.
         showBackButton: false,
+        platformBar: AppRouteContract.isSessionRoute(route),
         hoverOperateMode: this.isHoverLayout(),
         fullTextSheetPlacement: this.fullTextPlacement,
         onRestoreSidebar: () => this.restoreWideMasterPane()

@@ -1,7 +1,7 @@
 import { InteractionMailboxPanel } from './InteractionMailboxPanel';
 import { InteractionMailboxAction } from '../../model/InteractionMailbox';
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
-import { KeyboardAvoidMode } from '@kit.ArkUI';
+import { ComponentContent, KeyboardAvoidMode, UIContext } from '@kit.ArkUI';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { ChatTimelineItem, ChatTimelineRevisionTracker, ObservableChatTimelineItem } from '../../model/ChatTimelineModels';
 import { ConnectionStatusPresenter } from '../../services/ConnectionStatusPresenter';
@@ -47,19 +47,26 @@ import {
 } from '../state/ConversationUiModels';
 import { ComposerBar, ComposerPresentation } from './ComposerBar';
 import { ConversationHeader } from './ConversationHeader';
-import { ConversationHeaderPolicy, ConversationHeaderPresentation } from '../policy/ConversationHeaderPolicy';
 import {
-  INK,
-  LINE,
+  ConversationHeaderMenuAction,
+  ConversationHeaderMenuItem,
+  ConversationHeaderPolicy,
+  ConversationHeaderPresentation
+} from '../policy/ConversationHeaderPolicy';
+import { HdsTitleBarPolicy, HdsTitleBarScene } from '../policy/HdsTitleBarPolicy';
+import {
+  CONVERSATION_HEADER_MENU_ANCHOR_ID,
+  ConversationHeaderMenu,
+  ConversationHeaderMenuParams,
+  conversationHeaderMenuBuilder
+} from './ConversationHeaderMenu';
+import {
   MUTED,
   PAGE_BG,
   PAGE_BG_FADE,
   PAGE_BG_OVERLAY,
-  SHADOW_SUBTLE,
-  SOFT,
   STATUS_DANGER,
   STATUS_SUCCESS,
-  TRANSPARENT,
 } from './Theme';
 
 @ComponentV2
@@ -69,6 +76,24 @@ export struct ConversationView {
   @Event onIntent: (intent: ConversationIntent) => void = (_intent: ConversationIntent) => {};
   @Event onRestoreSidebar: () => void = () => {};
   @Local showHeaderActions: boolean = false;
+  /**
+   * How many times the menu has been asked for from outside this pane.
+   *
+   * The compact conversation's menu trigger is in the platform title bar, which
+   * is not this component, so the pane cannot see the tap: the root reports it
+   * through projected state (`state.conversationHeaderMenuSeq`) and this is the
+   * count of reports already opened, so a rebuild never reopens one.
+   */
+  @Local handledMenuSeq: number = 0;
+  /** Counts the pane's own requests for the rename editor, which the header holds. */
+  @Local renameRequest: number = 0;
+  /**
+   * The node behind an open platform menu, so a chosen row can dismiss it.
+   *
+   * `closeMenu` takes the same content node `openMenu` was given, and an item
+   * that opens the rename editor has to close the menu it was chosen from.
+   */
+  private platformMenuContent: ComponentContent<ConversationHeaderMenuParams> | undefined = undefined;
   /**
    * The user message whose full text is open, as a panel over the conversation.
    *
@@ -256,6 +281,65 @@ export struct ConversationView {
   @Builder
   private TopOverlay() {
     Column() {
+      if (this.platformBar) {
+        this.PlatformTopBand()
+      } else {
+        this.SelfDrawnTopBand()
+      }
+    }
+    .width('100%')
+    // Named so a layout dump can be read against the pixels, the way the bottom
+    // fade is: this box is what says where the page's top edge sits and how far
+    // the transcript's content starts below it, and the side padding the band
+    // carries is only visible in a dump as an offset between the box and its
+    // first child. The name sits on the wrapper rather than on either band
+    // because both bands are the same box, and two nodes may not share one id.
+    .id('conversation-top-band')
+    .onAreaChange((_oldArea: Area, newArea: Area) => {
+      this.topInset = newArea.height as number;
+    })
+  }
+
+  /**
+   * The band under the platform's own title bar.
+   *
+   * Where the chrome is the platform's — the compact conversation route — this
+   * band paints nothing at all. Painting the page's overlay colour and blurring
+   * here would be the second glass over the title bar's own material, which is
+   * what the plan forbids outright; the platform's gradient blur is the
+   * compensating mechanism instead, and it needs the transcript to run *under*
+   * the band rather than below it.
+   *
+   * What is left is the band's own box, which is still the transcript's content
+   * start offset and still carries the window's side strips. Its top padding is
+   * the platform bar's height: that is what keeps the rename row (and only the
+   * rename row, which is this band's only content here) out from under the
+   * chrome, while the transcript itself scrolls up into it. The status bar needs
+   * no reservation of its own any more — the title bar reaches the top of the
+   * window and the platform places its content inside it.
+   */
+  @Builder
+  private PlatformTopBand() {
+    Column() {
+      this.Header()
+      this.Mailbox()
+    }
+    .width('100%')
+    .padding({
+      left: this.insets.leftPadding(0),
+      right: this.insets.rightPadding(0),
+      top: this.topBandOffset()
+    })
+  }
+
+  /**
+   * The band a host that draws its own header gets: the page's overlay colour,
+   * the platform's thin blur and the fade that carries both into the transcript.
+   * The wide pane and the design preview still use it.
+   */
+  @Builder
+  private SelfDrawnTopBand() {
+    Column() {
       Column() {
         this.Header()
         this.Mailbox()
@@ -278,17 +362,9 @@ export struct ConversationView {
       .padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topSafeInset })
       .backgroundColor(PAGE_BG_OVERLAY)
       .backgroundBlurStyle(BlurStyle.Thin)
-      // Named so a layout dump can be read against the pixels, the way the
-      // bottom fade is: this band's own box is what says where the page's top
-      // edge sits, and the side padding it carries is only visible in a dump as
-      // an offset between the box and its first child.
-      .id('conversation-top-band')
       this.TopEdgeFade()
     }
     .width('100%')
-    .onAreaChange((_oldArea: Area, newArea: Area) => {
-      this.topInset = newArea.height as number;
-    })
   }
 
   @Builder
@@ -422,6 +498,10 @@ export struct ConversationView {
   Header() {
     ConversationHeader({
       translucent: true,
+      // Where the platform owns the top edge this header is only the rename
+      // row; its title, its back control and its menu are the title bar's.
+      platformBar: this.platformBar,
+      renameRequest: this.renameRequest,
       title: this.headerTitle(),
       subtitle: this.headerSubtitle(),
       titleFallback: this.headerFallback(),
@@ -432,7 +512,7 @@ export struct ConversationView {
       showSidebarRestoreButton: this.showSidebarRestoreButton,
       showActionsMenu: this.showHeaderActions,
       actionsMenu: () => {
-        this.HeaderActionsPopover();
+        this.HeaderActionsMenu();
       },
       onOpenSidebar: () => {
         this.onOpenSidebar();
@@ -590,81 +670,127 @@ export struct ConversationView {
     .width('100%')
   }
 
+  /**
+   * The conversation's menu where this pane still owns the trigger.
+   *
+   * The wide pane draws its own header, so its overflow control anchors a popup
+   * and the popover bubble carries the material — the menu root then paints the
+   * fallback card the same way every other self-presented surface does. Where
+   * the platform title bar owns the trigger (`openTitleBarMenu` below) the same
+   * rows are handed to `promptAction.openMenu` instead, and only the paint
+   * differs: one menu, two presentations, no second set of rows.
+   */
   @Builder
-  HeaderActionsPopover() {
-    Column() {
-      this.HeaderActionsContent()
-    }
-    .width(292)
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-    // The popover bubble carries the material when the surface adopts one, so the
-    // content root stops painting the card and its own edge over it. The fallback
-    // colours come from the float scene's recipe, so a contract change moves this
-    // popover too.
-    .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.FLOATING_MENU))
-    .border(ImmersiveSurfaceSupport.surfaceBorder(ImmersiveSurfaceScene.FLOATING_MENU, { width: 0.5 }))
-    .borderRadius(16)
-    .shadow(ImmersiveSurfaceSupport.surfaceShadow(ImmersiveSurfaceScene.FLOATING_MENU,
-      { radius: 18, color: SHADOW_SUBTLE, offsetY: 7 }))
-    .transition(TransitionEffect.translate({ x: 8, y: -8 })
-      .combine(TransitionEffect.opacity(0))
-      .animation({ duration: 180, curve: Curve.EaseOut }))
-  }
-
-  @Builder
-  HeaderActionsContent() {
-    Text(RemoteI18n.t('chat.sessionSection'))
-      .fontSize(MobileDesignTypography.bodySmall.size).fontWeight(FontWeight.Medium).fontColor(MUTED)
-      .width('100%').height(28).padding({ left: 8 })
-    if (this.surface === ChatSurface.General) {
-      this.RemoteStyleMenuItem('remote_actions_check',
-        this.isSessionPinned ? RemoteI18n.t('chat.unpin') : RemoteI18n.t('chat.pin'),
-        () => this.onTogglePinSession(), this.isSessionPinned)
-    }
-    this.RemoteStyleMenuItem('remote_actions_cloud', RemoteI18n.t('chat.uploadedFiles'),
-      () => this.onShowUploadedFiles())
-    if (this.surface === ChatSurface.General) {
-      Divider().strokeWidth(1).color(LINE).margin({ top: 8, bottom: 8 })
-      this.RemoteStyleMenuItem('remote_actions_folder', RemoteI18n.t('sidebar.archive'),
-        () => this.onArchiveSession())
-      this.RemoteStyleMenuItem('remote_actions_settings', RemoteI18n.t('common.delete'),
-        () => this.onDeleteSession())
-    } else if (this.canStop && this.connectionState === 'connected') {
-      Divider().strokeWidth(1).color(LINE).margin({ top: 8, bottom: 8 })
-      this.RemoteStyleMenuItem('remote_actions_settings', RemoteI18n.t('chat.stop'), () => this.onStop())
-    }
-  }
-
-  @Builder
-  RemoteStyleMenuItem(icon: string, label: string, action: () => void, selected: boolean = false) {
-    Row({ space: 10 }) {
-      this.MenuIcon(icon)
-      Text(label)
-        .fontSize(MobileDesignTypography.titleSmall.size).fontColor(INK).layoutWeight(1)
-        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-    }
-    .width('100%').height(48)
-    .padding({ left: 8, right: 8 })
-    .borderRadius(10)
-    .backgroundColor(selected ? SOFT : TRANSPARENT)
-    .onClick(() => {
-      action()
-      this.showHeaderActions = false
+  HeaderActionsMenu() {
+    ConversationHeaderMenu({
+      items: this.menuItems(),
+      sectionLabel: RemoteI18n.t('chat.sessionSection'),
+      paintsOwnCard: true,
+      onSelect: (id: string) => {
+        this.onHeaderMenuSelect(id);
+      }
     })
   }
 
-  @Builder
-  MenuIcon(icon: string) {
-    if (icon === 'remote_actions_link') {
-      SymbolGlyph($r('sys.symbol.link')).fontSize(20).fontColor([MUTED]).width(23).height(23)
-    } else if (icon === 'remote_actions_check') {
-      SymbolGlyph($r('sys.symbol.checkmark_circle')).fontSize(20).fontColor([MUTED]).width(23).height(23)
-    } else if (icon === 'remote_actions_folder') {
-      SymbolGlyph($r('sys.symbol.folder')).fontSize(20).fontColor([MUTED]).width(23).height(23)
-    } else if (icon === 'remote_actions_cloud') {
-      SymbolGlyph($r('sys.symbol.cloud')).fontSize(20).fontColor([MUTED]).width(23).height(23)
-    } else {
-      SymbolGlyph($r('sys.symbol.gearshape')).fontSize(20).fontColor([MUTED]).width(23).height(23)
+  private menuItems(): ConversationHeaderMenuItem[] {
+    return ConversationHeaderPolicy.menu(
+      this.surface,
+      this.isSessionPinned,
+      this.canStop,
+      this.connectionState === 'connected'
+    );
+  }
+
+  /**
+   * One chosen row, whichever chrome presented the menu.
+   *
+   * Rename is the row the header's own title used to carry: the title is the
+   * platform's text now and tapping it is not a control the platform offers, so
+   * the row asks the content area's editor to open instead. Everything else is
+   * the intent this menu has always sent.
+   */
+  private onHeaderMenuSelect(id: string): void {
+    this.closePlatformMenu();
+    this.showHeaderActions = false;
+    if (id === ConversationHeaderMenuAction.Rename) {
+      this.renameRequest += 1;
+      return;
+    }
+    if (id === ConversationHeaderMenuAction.Pin) {
+      this.onTogglePinSession();
+      return;
+    }
+    if (id === ConversationHeaderMenuAction.UploadedFiles) {
+      this.onShowUploadedFiles();
+      return;
+    }
+    if (id === ConversationHeaderMenuAction.Archive) {
+      this.onArchiveSession();
+      return;
+    }
+    if (id === ConversationHeaderMenuAction.Delete) {
+      this.onDeleteSession();
+      return;
+    }
+    if (id === ConversationHeaderMenuAction.Stop) {
+      this.onStop();
+    }
+  }
+
+  /**
+   * Opens the conversation's menu against the platform title bar's trigger.
+   *
+   * The trigger is the bar's own icon, so it cannot be a `bindPopup` anchor: the
+   * platform's `openMenu` is the API for exactly this, and it takes the node the
+   * menu renders plus the id the bar gave that icon. The menu's own background
+   * and material come from the shared floating-menu options, so this path and the
+   * popover path resolve the material the same way.
+   */
+  private openTitleBarMenu(): void {
+    this.showHeaderActions = false;
+    const uiContext: UIContext = this.getUIContext();
+    const params = new ConversationHeaderMenuParams(
+      this.menuItems(),
+      RemoteI18n.t('chat.sessionSection'),
+      (id: string): void => {
+        this.onHeaderMenuSelect(id);
+      }
+    );
+    try {
+      const content = new ComponentContent<ConversationHeaderMenuParams>(
+        uiContext,
+        wrapBuilder<[ConversationHeaderMenuParams]>(conversationHeaderMenuBuilder),
+        params
+      );
+      this.platformMenuContent = content;
+      uiContext.getPromptAction().openMenu(
+        content,
+        { id: CONVERSATION_HEADER_MENU_ANCHOR_ID },
+        ImmersiveSurfaceSupport.menuOptions(ImmersiveSurfaceScene.FLOATING_MENU)
+      );
+    } catch (err) {
+      this.platformMenuContent = undefined;
+      RemoteLogger.error(`Conversation menu open failed: ${err}`);
+    }
+  }
+
+  /**
+   * Takes the platform's menu down, if this pane opened one.
+   *
+   * A row that opens something else — the rename editor — must not leave the
+   * menu standing over it, and `closeMenu` needs the node `openMenu` was given,
+   * which is why the node is kept rather than rebuilt.
+   */
+  private closePlatformMenu(): void {
+    const content: ComponentContent<ConversationHeaderMenuParams> | undefined = this.platformMenuContent;
+    if (content === undefined) {
+      return;
+    }
+    this.platformMenuContent = undefined;
+    try {
+      this.getUIContext().getPromptAction().closeMenu(content);
+    } catch (err) {
+      RemoteLogger.error(`Conversation menu close failed: ${err}`);
     }
   }
 
@@ -846,8 +972,13 @@ export struct ConversationView {
       this.fullTextTurnId = '';
       this.showHeaderActions = false;
       this.handledRollbackOutcomeSeq = this.state.rollbackOutcomeSeq;
+      // The menu belongs to the session that asked for it: a trigger another
+      // session never pressed must not open this one's menu.
+      this.handledMenuSeq = this.state.conversationHeaderMenuSeq;
+      this.closePlatformMenu();
       return;
     }
+    this.consumePlatformMenuRequest();
     const sequence = this.state.rollbackOutcomeSeq;
     if (sequence <= this.handledRollbackOutcomeSeq) {
       return;
@@ -859,6 +990,25 @@ export struct ConversationView {
     }
     if (this.state.rollbackOutcome === SessionRollbackEventType.RollbackFailed) {
       this.applyRollbackEvent({ type: SessionRollbackEventType.RollbackFailed });
+    }
+  }
+
+  /**
+   * Opens the menu for a trigger this pane cannot see.
+   *
+   * The platform title bar's overflow control is the app root's chrome, so the
+   * tap reaches this pane as a projected sequence and is consumed exactly once,
+   * the same way a rollback outcome is: an unrelated rebuild carries the same
+   * number and must not reopen anything.
+   */
+  private consumePlatformMenuRequest(): void {
+    const sequence = this.state.conversationHeaderMenuSeq;
+    if (sequence <= this.handledMenuSeq) {
+      return;
+    }
+    this.handledMenuSeq = sequence;
+    if (this.platformBar) {
+      this.openTitleBarMenu();
     }
   }
 
@@ -950,6 +1100,28 @@ export struct ConversationView {
   private get composerInputId(): string { return this.options.composerInputId; }
   private get hoverOperateMode(): boolean { return this.options.hoverOperateMode; }
   private get fullTextSheetPlacement(): SettingsPlacement { return this.options.fullTextSheetPlacement; }
+  /**
+   * Whether the platform's title bar owns this pane's top edge.
+   *
+   * True only on the compact conversation route, where the app root hands the
+   * band to `HdsNavDestination.titleBar`. Everything else — the wide pane, the
+   * design preview — keeps the header this pane draws, and this is the one flag
+   * the two shapes are separated by, so neither can drift into painting the
+   * other's chrome.
+   */
+  private get platformBar(): boolean { return this.options.platformBar; }
+
+  /**
+   * The top the band's content starts at.
+   *
+   * Under the platform's bar that is the bar's own height, because the bar
+   * overlays the page: it is what keeps the rename row out from under the chrome
+   * while the transcript still scrolls up into it. Where this pane draws its own
+   * band, it is the status bar strip the band has to reach.
+   */
+  private topBandOffset(): number {
+    return this.platformBar ? HdsTitleBarPolicy.barHeight(HdsTitleBarScene.Conversation) : this.topSafeInset;
+  }
   private onOpenSidebar(): void { this.dispatchSimple(ConversationIntentType.OpenSidebar); }
   private onBack(): void { this.dispatchSimple(ConversationIntentType.Back); }
   private onTogglePinSession(): void { this.dispatchSimple(ConversationIntentType.TogglePin); }

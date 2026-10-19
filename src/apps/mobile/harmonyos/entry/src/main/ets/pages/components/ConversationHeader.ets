@@ -37,6 +37,25 @@ export struct ConversationHeader {
    * cover both.
    */
   @Param translucent: boolean = false;
+  /**
+   * Set where the platform's title bar owns the top edge of the page.
+   *
+   * Then this header is not a header at all: the bar carries the title, the back
+   * control and the menu, and what is left here is the one thing the platform has
+   * no control for — the session's rename row, which opens in the content area
+   * under the bar. The row band, its leading control and its own overflow control
+   * are all suppressed rather than drawn under a bar that already shows them.
+   */
+  @Param platformBar: boolean = false;
+  /**
+   * How many times something outside this header asked for the rename row.
+   *
+   * The row is the header's own, and where the platform draws the chrome the
+   * request arrives from the title bar's menu, which is a different component:
+   * a counter is the whole handover, so the second request opens the row again
+   * while an unrelated rebuild does not.
+   */
+  @Param renameRequest: number = 0;
   @Param showSidebarRestoreButton: boolean = false;
   @Param showActionsMenu: boolean = false;
   @BuilderParam actionsMenu: () => void = this.EmptyBuilder;
@@ -49,15 +68,32 @@ export struct ConversationHeader {
   @Local showTitleEditor: boolean = false;
   @Local renameTitle: string = '';
 
+  /**
+   * The rename row was asked for by whoever owns the menu.
+   *
+   * A request is not a state: the row closes when its own save or cancel is used
+   * and stays closed until the next request, so the counter is compared against
+   * the header's own memory of it rather than mirrored into a boolean.
+   */
+  @Monitor('renameRequest')
+  onRenameRequested(): void {
+    if (this.platformBar && this.allowRename) {
+      this.renameTitle = this.title;
+      this.showTitleEditor = true;
+    }
+  }
+
   build() {
     Column() {
-      this.HeaderRow()
+      if (!this.platformBar) {
+        this.HeaderRow()
+      }
       if (this.showTitleEditor) {
         this.TitleEditor()
       }
     }
     .width('100%')
-    .backgroundColor(this.translucent ? TRANSPARENT : PAGE_BG)
+    .backgroundColor((this.translucent || this.platformBar) ? TRANSPARENT : PAGE_BG)
   }
 
   @Builder

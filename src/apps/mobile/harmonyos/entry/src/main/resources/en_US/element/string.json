@@ -1829,6 +1829,10 @@
       "value": "Session"
     },
     {
+      "name": "chat_rename",
+      "value": "Rename"
+    },
+    {
       "name": "chat_pin",
       "value": "Pin"
     },

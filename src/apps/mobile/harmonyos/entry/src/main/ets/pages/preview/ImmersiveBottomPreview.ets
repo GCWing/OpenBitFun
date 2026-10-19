@@ -37,9 +37,14 @@ import {
   emptyAppRootPresentationActions
 } from '../actions/AppRootPresentationActions';
 import { ComposerPresentation } from '../components/ComposerBar';
-import { ConversationViewOptions } from '../components/ConversationViewContract';
+import { ConversationViewContract, ConversationViewOptions } from '../components/ConversationViewContract';
 import { ConversationViewState } from '../state/ConversationViewState';
 import { ConversationIntent } from '../actions/ConversationIntent';
+import { HdsNavigation, HdsNavDestination } from '@kit.UIDesignKit';
+import { AppRoute } from '../navigation/AppRouteContract';
+import { ConversationHeaderPolicy, ConversationHeaderPresentation } from '../policy/ConversationHeaderPolicy';
+import { HdsTitleBarContentParams, HdsTitleBarSupport } from '../components/HdsTitleBarSupport';
+import { PAGE_BG } from '../components/Theme';
 
 /** Turns in the transcript. Long enough that the list has to scroll to reach the end. */
 const TRANSCRIPT_TURNS: number = 16;
@@ -306,6 +311,25 @@ export struct ImmersiveBottomPreview {
    * device list has no fixture that mounts it.
    */
   @Local connectAuthed: boolean = false;
+  /**
+   * The platform title bar scenario: the compact conversation's chrome handed to
+   * an `HdsNavDestination` instead of drawn by the pane. See `TitleBarLayout`.
+   */
+  @Local hdsTitleBar: boolean = false;
+  /**
+   * The fixture's own menu-open requests, by sequence.
+   *
+   * The production trigger reports into `RemotePageState`; this scenario carries
+   * its own number because its conversation state is built here rather than
+   * projected from the page's, and the pane consumes a sequence either way.
+   */
+  @Local previewMenuSeq: number = 0;
+  /**
+   * The stack the title bar scenario pushes its conversation onto. A title bar
+   * only exists inside a `Navigation`, so the scenario mounts the smallest one
+   * that can carry the production band.
+   */
+  private pageStack: NavPathStack = new NavPathStack();
   @Local remoteSurfaceState: RemoteSurfaceState = new RemoteSurfaceState();
   /**
    * The placements the app root would resolve for this window, one per sheet the
@@ -337,6 +361,7 @@ export struct ImmersiveBottomPreview {
     this.viewSettings = scenarioId.endsWith('-view-settings');
     this.showViewSettingsSheet = this.viewSettings;
     this.connectAuthed = scenarioId.endsWith('-connect-authed');
+    this.hdsTitleBar = scenarioId.endsWith('-hds-titlebar') || scenarioId.endsWith('-hds-titlebar-dark');
     // The shell's own surfaces have to be open before the first frame, and the
     // scenario id is only known once the page is appearing, so the flags are
     // applied here rather than in the field initialisers.
@@ -347,6 +372,12 @@ export struct ImmersiveBottomPreview {
       this.shellState.settingsMode = 'account';
     }
     this.seedRemoteState(scenarioId);
+    if (this.hdsTitleBar) {
+      // Pushed before the first frame, the way the app root arrives with a
+      // session already open: the destination is the surface under test, and the
+      // home step behind it exists only so the push has somewhere to come from.
+      this.pageStack.pushPath({ name: AppRoute.RemoteChat });
+    }
   }  private initialState(): ConversationViewState {
     const state = new ConversationViewState();
     state.surface = ChatSurface.Remote;
@@ -488,6 +519,7 @@ export struct ImmersiveBottomPreview {
     const options = new ConversationViewOptions();
     options.showSidebarButton = true;
     options.showBackButton = false;
+    options.platformBar = this.hdsTitleBar;
     options.composerPresentation =
       this.floating ? ComposerPresentation.Floating : ComposerPresentation.Compact;
     return options;
@@ -499,6 +531,8 @@ export struct ImmersiveBottomPreview {
         MiniAppSurface({ state: this.miniAppState })
       } else if (this.viewSettings) {
         this.ViewSettingsLayout()
+      } else if (this.hdsTitleBar) {
+        this.TitleBarLayout()
       } else if (this.drawer || this.settings || this.cover || this.wideShell ||
         this.shellState.showConnectSheet) {
         this.ShellLayout()
@@ -533,6 +567,85 @@ export struct ImmersiveBottomPreview {
       this.viewSettingsPlacement,
       RemoteI18n.t('viewSettings.title'),
       RemoteI18n.t('viewSettings.subtitle')))
+  }
+
+  /**
+   * The compact conversation's chrome as the app root assembles it.
+   *
+   * The platform title bar only exists inside a `Navigation`, so this scenario
+   * mounts the smallest stack that reaches one — a home step the scenario never
+   * shows, and the pushed conversation — and hands its band to the production
+   * `HdsTitleBarSupport`, which is the same call `AppRootPresentation` makes.
+   * The fixture imports the policy and the support class rather than restating
+   * their parameters, so a device-level change cannot leave this capture and the
+   * app describing two different bars.
+   */
+  @Builder
+  private TitleBarLayout() {
+    HdsNavigation(this.pageStack) {
+      Column() {}.width('100%').height('100%').backgroundColor(PAGE_BG)
+    }
+    .id('hds-titlebar-navigation')
+    .width('100%')
+    .height('100%')
+    .hideTitleBar(true)
+    .mode(NavigationMode.Stack)
+    .navBarWidth('100%')
+    .minContentWidth(0)
+    .navDestination(this.TitleBarDestination)
+  }
+
+  @Builder
+  private TitleBarDestination(_name: string) {
+    HdsNavDestination() { this.Conversation() }
+      .titleBar(HdsTitleBarSupport.options(this.titleBarParams()))
+      .hideBackButton(false)
+      .backgroundColor(PAGE_BG)
+      .onBackPressed(() => {
+        this.pageStack.pop();
+        // The destination handled it, the way the app root's own handler answers.
+        return true;
+      })
+  }
+
+  /**
+   * The band's content, from the projection the pane's own header reads: the
+   * fixture has one conversation and the bar has to name it the same way.
+   */
+  private titleBarParams(): HdsTitleBarContentParams {
+    const presentation: ConversationHeaderPresentation = ConversationHeaderPolicy.present(
+      this.state.surface,
+      this.state.activeSession.title,
+      this.state.desktopName,
+      this.state.workspaceBranch,
+      ConversationViewContract.hasRealTimelineItem(this.state.timelineItems)
+    );
+    return HdsTitleBarSupport.conversationParams(presentation, {
+      showBack: true,
+      onBack: (): void => {
+        this.pageStack.pop();
+      },
+      onMenu: (): void => {
+        this.requestPreviewMenu();
+      }
+    });
+  }
+
+  /**
+   * The bar's menu trigger, answered the way the app root answers it.
+   *
+   * Production reports the request into `RemotePageState` and lets the pane
+   * consume it from projected state; this fixture carries its own sequence
+   * because its conversation state is built here rather than projected from the
+   * page's. `ConversationViewState` is not an observed class, so the request
+   * reaches the pane as a new object — which is exactly the shape a projection
+   * arrives in, and why the pane consumes a sequence rather than a flag.
+   */
+  private requestPreviewMenu(): void {
+    this.previewMenuSeq += 1;
+    const next = this.initialState();
+    next.conversationHeaderMenuSeq = this.previewMenuSeq;
+    this.state = next;
   }
 
   @Builder

@@ -70,6 +70,14 @@ export class ConversationViewState {
   rollbackOutcome: string = '';
   /** Monotonic id of that outcome, so two identical failures are two outcomes. */
   rollbackOutcomeSeq: number = 0;
+  /**
+   * The last menu open the platform title bar's trigger asked for, by sequence.
+   *
+   * Projected like the rollback outcome above and for the same reason: the
+   * trigger lives in the app root's chrome and the menu lives here, so the
+   * request travels down as state and the pane consumes each value once.
+   */
+  conversationHeaderMenuSeq: number = 0;
   /** Identity generation for a reused pane; a resize alone does not change it. */
   sessionContextRevision: number = 0;
 
@@ -117,6 +125,7 @@ export class ConversationViewState {
     state.rollbackNotice = remote.rollbackNotice;
     state.rollbackOutcome = remote.rollbackOutcome;
     state.rollbackOutcomeSeq = remote.rollbackOutcomeSeq;
+    state.conversationHeaderMenuSeq = remote.conversationHeaderMenuSeq;
     state.sessionContextRevision = remote.sessionContextRevision;
     return state;
   }

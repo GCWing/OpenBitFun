@@ -27,6 +27,15 @@ export class ConversationViewOptions {
    */
   fullTextSheetPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UserMessageFullText);
+  /**
+   * Whether the platform's title bar owns this pane's top edge.
+   *
+   * Set by the compact conversation route alone, which hands the band to
+   * `HdsNavDestination.titleBar`: the pane then paints no top band of its own and
+   * its header keeps only the rename row. Every other host — the wide pane, the
+   * design preview — leaves this false and keeps the header it draws.
+   */
+  platformBar: boolean = false;
 }
 
 export class ConversationViewContract {

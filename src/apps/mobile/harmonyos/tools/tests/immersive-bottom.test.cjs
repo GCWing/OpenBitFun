@@ -23,6 +23,14 @@ function source(relativePath) {
 
 const entryAbility = source('entry/src/main/ets/entryability/EntryAbility.ets');
 const conversationView = source('entry/src/main/ets/pages/components/ConversationView.ets');
+const conversationRouteSurface = source('entry/src/main/ets/pages/components/ConversationRouteSurface.ets');
+const conversationHeader = source('entry/src/main/ets/pages/components/ConversationHeader.ets');
+const conversationHeaderPolicy = source('entry/src/main/ets/pages/policy/ConversationHeaderPolicy.ets');
+const conversationHeaderMenu = source('entry/src/main/ets/pages/components/ConversationHeaderMenu.ets');
+const hdsTitleBarSupport = source('entry/src/main/ets/pages/components/HdsTitleBarSupport.ets');
+const hdsTitleBarPolicy = source('entry/src/main/ets/pages/policy/HdsTitleBarPolicy.ets');
+const hdsTitleBarMaterialService = source('entry/src/main/ets/services/HdsTitleBarMaterialService.ets');
+const immersiveBottomPreview = source('entry/src/main/ets/pages/preview/ImmersiveBottomPreview.ets');
 const windowService = source('entry/src/main/ets/services/WindowSystemBarService.ets');
 const moduleConfig = source('entry/src/main/module.json5');
 const appShell = source('entry/src/main/ets/pages/components/AppShell.ets');
@@ -379,9 +387,15 @@ test('the bands a layout dump has to read are named', () => {
   // chat page's bottom fade already is: the chat page's top band, and the wide
   // home header band whose box is the window in one parent and the wide detail
   // pane in the other, which is the question its side padding turns on.
+  //
+  // The chat page's name sits on the box both of its bands are, not on either
+  // band: the platform-owned one and the self-drawn one are the same box, and two
+  // nodes may not share one id. A dump reads the same either way.
   const top = builderBody(conversationView, 'TopOverlay');
   assert.equal(call(top, 'id'), ".id('conversation-top-band')",
     'the chat page top band must stay named so a dump can read its box against its first child');
+  assert.equal(occurrences(conversationView, ".id('conversation-top-band')"), 1,
+    'the top band has one box: a second node claiming the name makes the dump ambiguous');
   assert.match(normalize(remoteSurfaceHost), /\.id\('remote-wide-home-band'\)/,
     'the wide home header band must stay named: whether its box is the window or the detail pane is ' +
     'exactly what decides whether its side padding clears a cutout or only indents its content');
@@ -418,18 +432,68 @@ test('the chat page bottom layer reaches the screen edge and its composer does n
     'the transcript inset must keep following the layer it is measured from');
 });
 
-test('the chat page header band reserves the status bar itself', () => {
-  // The shell is immersive, so the page draws from the top of the window and the
-  // band is what has to keep the header out of the status bar. Its own box is
-  // the transcript's content start offset, so the two stay in step. The band is
-  // the window's full width as well, which is what makes its sides the sides the
-  // camera cutout rotates onto; the header's own gutter is inside it and is not
-  // restated here.
-  const top = builderBody(conversationView, 'TopOverlay');
-  assert.equal(call(top, 'padding'),
-    '.padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topSafeInset })');
-  assert.match(top, /\.backgroundColor\(PAGE_BG_OVERLAY\)/,
-    'the band that carries the inset must stay the one that paints the header');
+test('the compact conversation hands its top band to the platform, and paints none of its own', () => {
+  // The shell is still immersive, so the app's top edge is still the window's —
+  // but on the compact conversation it is the *destination's* band now, not the
+  // page's. `titleBar` overlays the content, so what the page keeps is the band's
+  // box: its measured height, which is the transcript's content start offset, and
+  // the window's side strips, because the band is still the window's full width
+  // and the header's own gutter lives inside it.
+  //
+  // What it may not keep is a fill or a blur. A page band painting the overlay
+  // colour and blurring behind a bar that has its own material is the second
+  // glass over the first, which is what the plan forbids outright: the platform's
+  // gradient blur is the compensating mechanism, and it needs the transcript to
+  // run *under* the band rather than below it.
+  const platform = builderBody(conversationView, 'PlatformTopBand');
+  assert.equal(call(platform, 'padding'),
+    '.padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topBandOffset() })',
+    'the platform-owned band still reserves the window\'s side strips, and its top padding is the bar\'s height');
+  assert.equal(platform.includes('backgroundColor('), false,
+    'the platform-owned band must paint no fill of its own: a second fill under the bar is glass over glass');
+  assert.equal(platform.includes('backgroundBlurStyle'), false,
+    'the platform-owned band must not blur: the bar\'s own material would be blurring a blur');
+  assert.equal(platform.includes('TopEdgeFade'), false,
+    'the platform-owned band must not carry the self-drawn edge fade: the bar\'s gradient blur is that edge');
+  assert.match(normalize(platform), /this\.Header\(\) this\.Mailbox\(\)/,
+    'the platform-owned band is still where the rename row and the mailbox live');
+  // The offset it reserves is the platform bar's own height, read from the policy
+  // rather than restated here: the page cannot measure a bar it does not draw.
+  assert.match(normalize(conversationView),
+    /private topBandOffset\(\): number \{ return this\.platformBar \? HdsTitleBarPolicy\.barHeight\(HdsTitleBarScene\.Conversation\) : this\.topSafeInset; \}/,
+    'the band\'s top offset must be the platform bar\'s height wherever the platform owns the band');
+
+  // The two bands are one branch each, and the self-drawn one is the only place
+  // the page's own fill and blur still live — the wide pane and the design
+  // preview draw it, and neither is a `Navigation` destination.
+  assert.match(normalize(conversationView),
+    /if \(this\.platformBar\) \{ this\.PlatformTopBand\(\) \} else \{ this\.SelfDrawnTopBand\(\) \}/,
+    'the band the page draws must be selected by who owns the chrome, not by a second condition');
+  const selfDrawn = builderBody(conversationView, 'SelfDrawnTopBand');
+  assert.equal(call(selfDrawn, 'padding'),
+    '.padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topSafeInset })',
+    'the self-drawn band is the one that reserves the status bar itself, because it is the page\'s own top edge');
+  assert.equal(call(selfDrawn, 'backgroundColor'), '.backgroundColor(PAGE_BG_OVERLAY)',
+    'the self-drawn band must stay a theme-following page colour: it is the page\'s top edge');
+  assert.equal(call(selfDrawn, 'backgroundBlurStyle'), '.backgroundBlurStyle(BlurStyle.Thin)',
+    'the self-drawn band keeps its thin blur: nothing above it is drawing one');
+
+  // And the destination is what carries the band: the session route hands the bar
+  // its options, and every other destination keeps the page's own header.
+  const destination = appRootPresentation.slice(
+    appRootPresentation.indexOf('NavigationDestination(name: string) {'));
+  assert.equal(occurrences(destination, '.titleBar('), 1,
+    'exactly one destination draws the platform title bar');
+  assert.match(normalize(destination),
+    /if \(AppRouteContract\.isSessionRoute\(name as AppRoute\) && !this\.isWideLayout\(\)\) \{ HdsNavDestination\(\) \{ this\.RouteContent\(name as AppRoute\) \}/,
+    'the bar belongs to the compact conversation route alone, and never to the wide composition');
+  assert.match(normalize(destination),
+    /\.titleBar\(HdsTitleBarSupport\.options\(this\.conversationTitleBarParams\(name as AppRoute\)\)\) \.hideBackButton\(false\)/,
+    'the session route must hand its band to the production support class: a second options object here ' +
+    'would be a second tier table');
+  assert.match(normalize(destination),
+    /\} else \{ HdsNavDestination\(\) \{ this\.RouteContent\(name as AppRoute\) \}\.hideTitleBar\(true\)/,
+    'every other destination must keep `hideTitleBar(true)` and draw its own header');
 });
 
 test('every surface whose top edge is the screen edge reserves the status bar', () => {
@@ -881,41 +945,65 @@ test('every top band the status bar shows through is a theme-following page colo
   // colour — and this test is what turns that from a coincidence into a contract.
   //
   // Each entry names the band that owns the window's top edge and the semantic
-  // colour it paints with. A band that becomes media chrome (`MEDIA_BACKGROUND` /
-  // `MEDIA_SCRIM`, dark in both appearances) or a hard-coded colour puts the
-  // light-mode ink on a dark band, and the clock and the status icons stop being
-  // readable against it.
+  // colour it paints with, and then answers the one question this file cannot
+  // measure: whether that band hands its fill to a material. A band that becomes
+  // media chrome (`MEDIA_BACKGROUND` / `MEDIA_SCRIM`, dark in both appearances) or
+  // a hard-coded colour puts the light-mode ink on a dark band, and the clock and
+  // the status icons stop being readable against it.
   //
   // The overlay sheets are deliberately absent. They used to appear here — the
   // connect sheet's root was the one band allowed to hand its fill to the
   // immersive material — but a sheet's band is the platform's background now, and
   // a sheet content root that paints one is a second background over the sheet's
-  // own (see the sheet-chrome tests below). The fourth element of each entry is
-  // therefore gone with the last band that used it, and the count guard below
-  // keeps a band from quietly growing a material switch of its own again: whether
-  // the clock stays legible over a material is the platform's answer, and this
-  // file can no longer measure a colour it does not paint.
+  // own (see the sheet-chrome tests below). The material column is what keeps
+  // that from growing back silently: it is stated per row rather than left as a
+  // comment, so the count below can actually fail — whether the clock stays
+  // legible over a material is the platform's answer, and this file can no longer
+  // measure a colour it does not paint.
+  //
+  // The compact conversation's own band is the platform's now (see the title bar
+  // tests below), which is why its row names the box the page still owns and
+  // carries no colour of its own: a token of `null` is that answer.
   const bands = [
-    ['the drawer panel', builderBody(appSidebar, 'SidebarContent'), 'SIDEBAR_BG'],
-    ['the chat header band', builderBody(conversationView, 'TopOverlay'), 'PAGE_BG_OVERLAY'],
-    ['the gallery root', buildChain(miniAppSurface), 'PAGE_BG'],
-    ['the file preview root', buildChain(filePreviewSurface), 'PAGE_BG'],
-    ['the compact home root', builderBody(remoteSurfaceHost, 'CompactHomeContent'), 'PAGE_BG'],
-    ['the wide home root', builderBody(remoteSurfaceHost, 'FlowPlaceholder'), 'PAGE_BG'],
-    ['the wide home pane', builderBody(wideConversationHost, 'RemoteHomeContent'), 'PAGE_BG'],
-    ['the wide home detail', builderBody(wideConversationHost, 'RemoteHomeDetail'), 'PAGE_BG'],
-    ['the wide chat pane', builderBody(wideConversationHost, 'RemoteChatContent'), 'PAGE_BG'],
-    ['the welcome page', buildChain(welcomeHome), 'WELCOME_PAGE_BG']
+    ['the drawer panel', builderBody(appSidebar, 'SidebarContent'), 'SIDEBAR_BG', false],
+    ['the chat page self-drawn band', builderBody(conversationView, 'SelfDrawnTopBand'), 'PAGE_BG_OVERLAY', false],
+    ['the chat page platform band', builderBody(conversationView, 'PlatformTopBand'), null, false],
+    ['the gallery root', buildChain(miniAppSurface), 'PAGE_BG', false],
+    ['the file preview root', buildChain(filePreviewSurface), 'PAGE_BG', false],
+    ['the compact home root', builderBody(remoteSurfaceHost, 'CompactHomeContent'), 'PAGE_BG', false],
+    ['the wide home root', builderBody(remoteSurfaceHost, 'FlowPlaceholder'), 'PAGE_BG', false],
+    ['the wide home pane', builderBody(wideConversationHost, 'RemoteHomeContent'), 'PAGE_BG', false],
+    ['the wide home detail', builderBody(wideConversationHost, 'RemoteHomeDetail'), 'PAGE_BG', false],
+    ['the wide chat pane', builderBody(wideConversationHost, 'RemoteChatContent'), 'PAGE_BG', false],
+    ['the welcome page', buildChain(welcomeHome), 'WELCOME_PAGE_BG', false]
   ];
   const unreadable = 'the status bar icons are drawn in the colour-mode ink, so a top band that is dark in ' +
     'that same appearance makes them unreadable: handle the band and the system bar content colour together ' +
     '(see `updateSystemBars` in EntryAbility) instead of repainting the band on its own';
+  // The guard is only a guard while every row states its material answer, so the
+  // column is asserted before it is counted: a row that drops the column is a row
+  // whose band nobody has answered for.
+  for (const [name, , , material] of bands) {
+    assert.equal(typeof material, 'boolean',
+      `${name} must state whether its band hands its fill to a material: that column is the one this test ` +
+      'cannot read off the source, so it has to be answered here');
+  }
   assert.equal(bands.filter((band) => band[3] === true).length, 0,
-    'no page band hands its fill to a material any more: the bands that did were sheets, and a sheet\'s band ' +
-    'is the platform\'s. A new switch here is a band whose colour this test can no longer read');
+    'no page band hands its fill to a material: the bands that did were sheets, whose band is the platform\'s, ' +
+    'and the compact conversation\'s band is the platform\'s title bar now. A new switch here is a band whose ' +
+    'colour this test can no longer read');
   for (const [name, slice, token] of bands) {
-    assert.match(normalize(slice), new RegExp(`\\.backgroundColor\\(${token}\\)`),
-      `${name} must paint its top band with the theme-following ${token}`);
+    if (token === null) {
+      // The platform owns this band's paint, so the tooth is the reverse one: the
+      // page may not add a fill or a blur over the platform's own material.
+      assert.equal(slice.includes('backgroundColor('), false,
+        `${name} is the platform's band: the page may not paint a fill under it`);
+      assert.equal(slice.includes('backgroundBlurStyle'), false,
+        `${name} is the platform's band: the page may not blur behind its material`);
+    } else {
+      assert.match(normalize(slice), new RegExp(`\\.backgroundColor\\(${token}\\)`),
+        `${name} must paint its top band with the theme-following ${token}`);
+    }
     for (const forbidden of ['MEDIA_BACKGROUND', 'MEDIA_SCRIM']) {
       assert.equal(slice.includes(forbidden), false,
         `${name} must not paint its top band with ${forbidden} (dark in both appearances): ${unreadable}`);
@@ -1371,4 +1459,264 @@ test('the binding and the broadcast keep the lifecycle branches their state depe
   assert.match(broadcast, /private close\(\): void \{ this\.opened = false;/,
     'close must clear opened: left true, the broadcast believes it is still open, so after the last surface ' +
     'closes and a new one opens the window listener is never rebuilt and the insets never update again');
+});
+
+// The platform title bar's own contract.
+//
+// `HdsNavDestination.titleBar` starts at 5.1.0(18) and the app's
+// compatibleSdkVersion is 6.0.1(21), so the band itself is available everywhere —
+// but `ScrollEffectType.IMMERSIVE_GRADIENT_BLUR`, `systemMaterialEffect` and every
+// `hdsMaterial` member start at 6.1.0(23), and a member that does not exist is not
+// a value the platform can ignore. The tier table therefore lives in a pure policy,
+// the two platform spellings live in one support class, and each of them sits
+// behind a gate the assertions below read as an *order*: a gate that is a flag
+// beside a member is the same bug as no gate at all.
+
+// A source slice with its comments taken out, so an assertion reads what the file
+// names rather than what it explains: every file here names the platform members
+// in its comments, and only one of them may name them in code.
+function codeOf(sourceText) {
+  return sourceText.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+}
+
+// One static method of a class, read from its own signature to its own closing
+// brace: a method's body ends with a two-space `}`, which no nested block reaches,
+// so an assertion is about this method rather than about the next one.
+function staticBody(sourceText, signature) {
+  const start = sourceText.indexOf(signature);
+  assert.notEqual(start, -1, `${signature} must stay a member of its class`);
+  const end = sourceText.indexOf('\n  }\n', start + signature.length);
+  return sourceText.slice(start, end === -1 ? sourceText.length : end + 4);
+}
+
+test('the title bar\'s 23+ members are reachable only through the gate', () => {
+  // The gate is a return *before* the member. Both of the support class's mapping
+  // methods start with it, which is what makes the policy's own vocabulary the
+  // only thing a caller can hand them: below API 23 the answer is the plain
+  // gradient blur and no material at all.
+  const gated = (slice, member, gate) => {
+    const memberAt = slice.indexOf(member);
+    assert.notEqual(memberAt, -1, `${member} must stay in the method that maps the decision`);
+    const gateAt = slice.indexOf(gate);
+    assert.notEqual(gateAt, -1, `the capability gate must stay in front of ${member}`);
+    assert.ok(gateAt < memberAt, `${member} must be named after the gate, never before it`);
+  };
+  gated(staticBody(hdsTitleBarSupport, 'static scrollEffectType('),
+    'ScrollEffectType.IMMERSIVE_GRADIENT_BLUR', 'if (!decision.immersiveBlur) {');
+  // `systemMaterial` names no platform member itself: it answers with the gated
+  // call into the two mappers that do, so the call is what the gate has to sit in
+  // front of, and the mappers are reached from nowhere else.
+  gated(staticBody(hdsTitleBarSupport, 'static systemMaterial('),
+    'HdsTitleBarSupport.materialTypeFor(decision)', 'if (!decision.materialAttached) {');
+  const classBody = codeOf(hdsTitleBarSupport).slice(
+    codeOf(hdsTitleBarSupport).indexOf('export class HdsTitleBarSupport'));
+  const materialGateAt = classBody.indexOf('if (!decision.materialAttached) {');
+  for (const mapper of ['materialTypeFor', 'materialLevelFor']) {
+    assert.equal(occurrences(classBody, `${mapper}(`), 2,
+      `${mapper} must be declared once and called once: a second caller is a route around the gate`);
+    const callAt = classBody.indexOf(`HdsTitleBarSupport.${mapper}(decision)`);
+    assert.ok(callAt > classBody.indexOf('static systemMaterial('),
+      `${mapper} must be called by the gated answer`);
+    assert.ok(callAt > materialGateAt, `${mapper} must be called after the gate, never before it`);
+    assert.ok(callAt < classBody.indexOf(`private static ${mapper}(`),
+      `${mapper} must be called from the gated answer rather than from its own declaration`);
+  }
+
+  // The field itself is attached from that gated answer and from nothing else: a
+  // literal in `style()` would be a 23+ member handed to a 21/22 device.
+  const style = normalize(staticBody(hdsTitleBarSupport, 'static style('));
+  assert.match(style,
+    /const material: SystemMaterialParams \| undefined = HdsTitleBarSupport\.systemMaterial\(decision\); if \(material !== undefined\) \{ style\.systemMaterialEffect = material; \}/,
+    'the material effect may only be attached from the gated answer');
+  assert.match(style, /scrollEffectType: HdsTitleBarSupport\.scrollEffectType\(decision\)/,
+    'the blur type may only come from the gated answer');
+
+  // And the platform spellings are named in that one file. A call site that passed
+  // one of them straight into a `titleBar` would bypass the gate on every device
+  // the app supports, and no single-file assertion here could see it; the service
+  // may read `hdsMaterial` because its own 26+ gate is asserted by
+  // `hds-titlebar-policy.test.cjs` against a stub that records every member read.
+  const gatedMembers = ['ScrollEffectType.IMMERSIVE_GRADIENT_BLUR', 'systemMaterialEffect', 'hdsMaterial.'];
+  for (const [relative, text] of etsTree('entry/src/main/ets')) {
+    const body = codeOf(text);
+    for (const member of gatedMembers) {
+      const owner = member === 'hdsMaterial.' ? 'services/HdsTitleBarMaterialService.ets' :
+        'pages/components/HdsTitleBarSupport.ets';
+      if (relative === 'pages/components/HdsTitleBarSupport.ets' || relative === owner) {
+        continue;
+      }
+      assert.equal(body.includes(member), false,
+        `${relative} must not name ${member}: the 23+ members are named inside the support class's gate, ` +
+        'and a call site that names one passes it to every device the app supports');
+    }
+  }
+});
+
+test('the platform band is themed, and its two ends are two ends of one gradient', () => {
+  // Both ends of the scroll effect are always configured, and they differ in
+  // exactly one place: the floor is transparent while the content is at the top
+  // and the page's overlay colour once the transcript has scrolled under it. That
+  // is the gradient blur's two ends, and it is also the dynamic inversion's
+  // evidence — the platform can only follow a resource colour it was given.
+  const style = normalize(staticBody(hdsTitleBarSupport, 'static style('));
+  assert.match(style,
+    /originalStyle: HdsTitleBarSupport\.barStyle\(false\), scrollEffectStyle: HdsTitleBarSupport\.barStyle\(true\)/,
+    'both ends of the scroll effect must be configured, and configured as two different ends');
+  const barStyle = normalize(staticBody(hdsTitleBarSupport, 'private static barStyle('));
+  assert.match(barStyle, /backgroundColor: scrolledUnder \? PAGE_BG_OVERLAY : TRANSPARENT/,
+    'the two ends must differ in the floor they paint: the same colour twice is a band that never changes');
+
+  // Every colour is a Theme token, and the keys are the closed vocabulary the
+  // title bar's style has: a literal here is a band that stops following the
+  // appearance, which is the one thing the theme cannot fix for it.
+  const themeImport = /import \{([^}]+)\} from '\.\/Theme';/.exec(hdsTitleBarSupport);
+  assert.notEqual(themeImport, null, 'the support class must read its colours from the theme');
+  const tokens = themeImport[1].split(',').map((token) => token.trim());
+  const values = [...barStyle.matchAll(
+    /(?:backgroundColor|mainTitleColor|subTitleColor|iconColor):\s*(?:[A-Za-z0-9_]+ \? )?([A-Za-z0-9_]+)(?: : ([A-Za-z0-9_]+))?/g)]
+    .flatMap((match) => [match[1], match[2]].filter((value) => value !== undefined));
+  const distinct = [...new Set(values)].sort();
+  assert.deepEqual(distinct, ['CARD', 'INK', 'MUTED', 'PAGE_BG_OVERLAY', 'TRANSPARENT'],
+    'the band states a colour for its floor, its two lines and its two controls, and nothing else');
+  for (const value of distinct) {
+    assert.ok(tokens.includes(value),
+      `${value} must be a Theme token imported by the support class: a literal colour stops following the appearance`);
+  }
+  const keys = [...barStyle.matchAll(
+    /\b(backgroundStyle|contentStyle|titleStyle|menuStyle|backIconStyle|backgroundColor|iconColor|mainTitleColor|subTitleColor)\b/g)]
+    .map((match) => match[1]);
+  assert.deepEqual([...new Set(keys)].sort(), ['backIconStyle', 'backgroundColor', 'contentStyle', 'iconColor',
+    'mainTitleColor', 'menuStyle', 'subTitleColor', 'titleStyle', 'backgroundStyle'].sort(),
+    'the band may only answer the style keys the title bar has, and every one of its parts has to answer its own');
+  for (const [name, text] of [['HdsTitleBarSupport', hdsTitleBarSupport], ['HdsTitleBarPolicy', hdsTitleBarPolicy],
+    ['HdsTitleBarMaterialService', hdsTitleBarMaterialService], ['ConversationHeaderMenu', conversationHeaderMenu]]) {
+    assert.equal(/0x[0-9a-fA-F]|'#/.test(codeOf(text)), false,
+      `${name} must not carry a bare colour: the one place a band's colour is decided is the theme`);
+  }
+});
+
+test('the band\'s controls carry the app\'s own assets, and a surface wears one material', () => {
+  // Both controls are the app's approved assets, and the two are the whole list:
+  // a title bar is not a place to introduce a third glyph, and a screenshot cannot
+  // tell a copied icon from an approved one.
+  const content = normalize(staticBody(hdsTitleBarSupport, 'static conversationParams('));
+  assert.match(content, /backIcon: \$r\('app\.media\.remote_ref_back'\), backLabel: RemoteI18n\.t\('common\.back'\)/,
+    'the back control must carry the app\'s return asset and a label');
+  assert.match(content, /menuIcon: \$r\('app\.media\.remote_ref_more'\), menuLabel: RemoteI18n\.t\('sidebar\.more'\)/,
+    'the menu trigger must carry the app\'s overflow asset and a label');
+  assert.match(content, /menuAnchorId: CONVERSATION_HEADER_MENU_ANCHOR_ID/,
+    'the trigger must hand the conversation the id its menu opens against');
+  const assets = [...new Set([...normalize(hdsTitleBarSupport).matchAll(/\$r\('app\.media\.([a-z_]+)'\)/g)]
+    .map((match) => match[1]))].sort();
+  assert.deepEqual(assets, ['remote_ref_back', 'remote_ref_more'],
+    'the band draws the app\'s return and overflow assets and nothing else');
+  for (const asset of assets) {
+    assert.ok(fs.existsSync(path.join(__dirname, '../../entry/src/main/resources/base/media', `${asset}.png`)),
+      `${asset} must exist: the asset is not new, and a missing one is a blank control`);
+  }
+
+  // One material channel per surface. The band's channel is the platform's own
+  // field; the app's `systemMaterial` option is the *other* channel and belongs to
+  // the surfaces that adopt `ImmersiveMaterial` (the anchored menu among them), so
+  // a band that answered both would be two materials on one box.
+  assert.equal(codeOf(hdsTitleBarSupport).includes('uiMaterial'), false,
+    'the band must not adopt the app\'s own immersive material: the platform draws this one');
+  assert.equal(/systemMaterial\s*[:=]/.test(codeOf(hdsTitleBarSupport)), false,
+    'the band must not answer the app\'s `systemMaterial` option as well');
+  for (const [name, text] of [['ConversationView', conversationView], ['AppRootPresentation', appRootPresentation],
+    ['ConversationRouteSurface', conversationRouteSurface]]) {
+    const body = codeOf(text);
+    assert.equal(body.includes('systemMaterialEffect'), false,
+      `${name} must not write the platform field itself: the band's material comes from the support class`);
+    assert.equal(body.includes('uiMaterial'), false,
+      `${name} must not put the app's own material on the platform's band`);
+  }
+
+  // The menu the trigger opens is the app's floating menu, material included: it
+  // is the same shared options object every other menu in the app uses, anchored
+  // by the id the band handed its icon.
+  assert.match(normalize(conversationView),
+    /getPromptAction\(\)\.openMenu\( content, \{ id: CONVERSATION_HEADER_MENU_ANCHOR_ID \}, ImmersiveSurfaceSupport\.menuOptions\(ImmersiveSurfaceScene\.FLOATING_MENU\) \)/,
+    'the anchored menu must open against the band\'s anchor with the shared floating-menu material');
+  assert.match(normalize(conversationView),
+    /const content = new ComponentContent<ConversationHeaderMenuParams>\( uiContext, wrapBuilder<\[ConversationHeaderMenuParams\]>\(conversationHeaderMenuBuilder\), params \)/,
+    'the menu must render the shared builder: a member method reference here crashes across the layer');
+  assert.match(normalize(conversationView),
+    /getPromptAction\(\)\.closeMenu\(content\)/,
+    'the menu must be closed by the node it was opened with, so the row that opens the editor is not left under it');
+});
+
+test('the rename moved into the menu, and the title is not a control under the platform bar', () => {
+  // The platform's title is text: it has no tap handler, so the entry that used to
+  // live on the title is a menu row now, and the row opens the editor in the
+  // content area under the bar rather than in the chrome.
+  const menu = normalize(conversationHeaderPolicy.slice(conversationHeaderPolicy.indexOf('static menu(')));
+  assert.match(menu,
+    /items\.push\(new ConversationHeaderMenuItem\( ConversationHeaderMenuAction\.Rename, 'chat\.rename', 'remote_actions_rename' \)\)/,
+    'the menu must offer the rename row, and offer it the same way on both surfaces that migrate');
+  // The row's label is a real catalog entry in both locales, like every other key
+  // that reaches the platform as text.
+  for (const [locale, names] of [['en_US', enUsResourceNames], ['zh_CN', zhCnResourceNames]]) {
+    assert.ok(names.has('chat_rename'), `chat.rename must exist in ${locale}: the row is a label, not a literal`);
+  }
+  // Where the platform owns the band the header draws no row at all, which is what
+  // removes the tap target: the gesture lives on the title inside `HeaderRow`.
+  assert.match(normalize(conversationHeader),
+    /if \(!this\.platformBar\) \{ this\.HeaderRow\(\) \} if \(this\.showTitleEditor\) \{ this\.TitleEditor\(\) \}/,
+    'the header must drop its own row where the platform owns the band, and keep only the rename editor');
+  assert.match(normalize(conversationHeader), /backgroundColor\(\(this\.translucent \|\| this\.platformBar\) \? TRANSPARENT : PAGE_BG\)/,
+    'the header may not paint a fill under the platform\'s bar: that is the second glass again');
+  assert.match(normalize(conversationHeader),
+    /@Monitor\('renameRequest'\) onRenameRequested\(\): void \{ if \(this\.platformBar && this\.allowRename\) \{/,
+    'the request must only open the row where the platform owns the trigger');
+  assert.match(normalize(conversationView),
+    /if \(id === ConversationHeaderMenuAction\.Rename\) \{ this\.renameRequest \+= 1; return; \}/,
+    'the row must ask the content area to open its editor');
+  assert.match(normalize(conversationView),
+    /private get platformBar\(\): boolean \{ return this\.options\.platformBar; \}/,
+    'the pane must read the platform-bar flag from its options, not from a second source');
+});
+
+test('the preview drives the real band rather than a second copy of its parameters', () => {
+  // The platform title bar only exists inside a `Navigation`, and the app's root
+  // is the only other place one is built: a fixture that restated the band's
+  // parameters would be a second tier table, and the capture would stop describing
+  // the app the day one of the two moved.
+  const preview = normalize(immersiveBottomPreview);
+  assert.match(preview, /this\.hdsTitleBar = scenarioId\.endsWith\('-hds-titlebar'\) \|\| scenarioId\.endsWith\('-hds-titlebar-dark'\);/,
+    'the scenario must be recognised by name');
+  assert.match(preview, /HdsNavigation\(this\.pageStack\)/, 'the fixture must mount the platform container');
+  assert.match(preview, /\.navDestination\(this\.TitleBarDestination\)/,
+    'the fixture must reach the band through a destination: a nav bar has no title bar of its own here');
+  assert.match(preview, /\.titleBar\(HdsTitleBarSupport\.options\(this\.titleBarParams\(\)\)\)/,
+    'the fixture must build its band from the production support class');
+  assert.match(preview,
+    /import \{ HdsTitleBarContentParams, HdsTitleBarSupport \} from '\.\.\/components\/HdsTitleBarSupport';/,
+    'the fixture must import the production class rather than copy its parameters');
+  assert.match(preview,
+    /import \{ ConversationHeaderPolicy, ConversationHeaderPresentation \} from '\.\.\/policy\/ConversationHeaderPolicy';/,
+    'the fixture\'s title must come from the header policy the pane itself reads');
+  assert.match(preview, /HdsTitleBarSupport\.conversationParams\(presentation, \{/,
+    'the fixture must let the support class assemble the content, so its assets and labels are the app\'s');
+  assert.match(preview, /options\.platformBar = this\.hdsTitleBar;/,
+    'the pane under the bar must be told who owns its top edge');
+  for (const literal of ['GRADIENT_BLUR', 'systemMaterialEffect', 'hdsMaterial', 'remote_ref_']) {
+    assert.equal(preview.includes(literal), false,
+      `the fixture must not restate ${literal}: the tier table and the assets belong to production`);
+  }
+  // The trigger's request travels the way the app root's does — as state the pane
+  // consumes by sequence — because the pane is not the component that was tapped.
+  assert.match(preview, /this\.previewMenuSeq \+= 1;/,
+    'the fixture\'s trigger must raise a sequence');
+  assert.match(preview, /next\.conversationHeaderMenuSeq = this\.previewMenuSeq;/,
+    'the request must reach the pane through the projected state it monitors');
+  // And the ability opens it: a scenario that is not in the whitelist loads the
+  // real app instead of the fixture, silently.
+  for (const id of ['immersive-bottom-hds-titlebar', 'immersive-bottom-hds-titlebar-dark']) {
+    assert.ok(entryAbility.includes(`scenarioId === '${id}'`),
+      `${id} must be registered in the ability's preview whitelist`);
+  }
+  assert.ok(entryAbility.includes("scenarioId === 'immersive-bottom-hds-titlebar-dark'") &&
+    entryAbility.includes('COLOR_MODE_DARK'),
+    'the dark scenario must be able to ask for the dark appearance');
 });

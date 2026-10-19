@@ -149,29 +149,52 @@ function method(name) {
 }
 const monitor = method('onViewStateChanged');
 test('a reused wide pane discards A staging and panels without restoring A draft into B', () => {
-  const pane = {state: {surface: 'remote', activeSession: {sessionId: 'B'}, sessionContextRevision: 2, rollbackOutcomeSeq: 0, rollbackOutcome: ''},
+  const closed = [];
+  const pane = {state: {surface: 'remote', activeSession: {sessionId: 'B'}, sessionContextRevision: 2, rollbackOutcomeSeq: 0, rollbackOutcome: '', conversationHeaderMenuSeq: 4},
     rollbackContextIdentity: 'remote:A:1', stagingTargetTurnId: 'turn-A', stagingTargetText: 'A prompt',
     composerSnapshot: 'A draft', handledRollbackOutcomeSeq: 3, showFullText: true, fullTextMessage: 'A text',
-    fullTextTurnId: 'turn-A', showHeaderActions: true, applyRollbackEvent() {throw Error('must not restore A composer');}};
+    fullTextTurnId: 'turn-A', showHeaderActions: true,
+    // The pane's other two collaborators on this branch: the menu the previous
+    // session opened is dropped with the rest of its state, and the request the
+    // platform title bar raised for *this* session is not consumed from a stale one.
+    closePlatformMenu() { closed.push('close'); },
+    consumePlatformMenuRequest() { throw Error('must not consume A menu request into B'); },
+    applyRollbackEvent() {throw Error('must not restore A composer');}};
   monitor.call(pane);
   assert.equal(pane.stagingTargetTurnId, '');
   assert.equal(pane.stagingTargetText, '');
   assert.equal(pane.composerSnapshot, '');
   assert.equal(pane.showFullText, false);
   assert.equal(pane.handledRollbackOutcomeSeq, 0);
+  assert.deepEqual(closed, ['close'],
+    'a reused pane must drop the platform menu the previous session opened: the menu belongs to the session whose ' +
+    'trigger asked for it, and A\'s is standing over B');
+  assert.equal(pane.handledMenuSeq, 4,
+    'the menu sequence must be taken from the new session, so a request raised for B is not consumed as A\'s');
 });
 test('resizing a reused pane preserves staging; a new session consumes its own failures once', () => {
   const effects = [];
-  const pane = {state: {surface: 'remote', activeSession: {sessionId: 'A'}, sessionContextRevision: 1, rollbackOutcomeSeq: 0},
+  const calls = [];
+  const pane = {state: {surface: 'remote', activeSession: {sessionId: 'A'}, sessionContextRevision: 1, rollbackOutcomeSeq: 0, conversationHeaderMenuSeq: 0},
     rollbackContextIdentity: 'remote:A:1', stagingTargetTurnId: 'turn-A', composerSnapshot: 'A draft',
-    handledRollbackOutcomeSeq: 0, applyRollbackEvent: event => effects.push(event.type)};
+    handledRollbackOutcomeSeq: 0, handledMenuSeq: 0,
+    closePlatformMenu() { calls.push('close'); },
+    consumePlatformMenuRequest() { calls.push('consume'); },
+    applyRollbackEvent: event => effects.push(event.type)};
   monitor.call(pane);
   assert.equal(pane.stagingTargetTurnId, 'turn-A');
   assert.equal(pane.composerSnapshot, 'A draft');
-  pane.state = {surface: 'remote', activeSession: {sessionId: 'B'}, sessionContextRevision: 2, rollbackOutcomeSeq: 0};
+  pane.state = {surface: 'remote', activeSession: {sessionId: 'B'}, sessionContextRevision: 2, rollbackOutcomeSeq: 0, conversationHeaderMenuSeq: 0};
   monitor.call(pane);
   pane.state.rollbackOutcomeSeq = 1;
   pane.state.rollbackOutcome = SessionRollbackEventType.RollbackFailed;
   monitor.call(pane); monitor.call(pane);
   assert.deepEqual(effects, [SessionRollbackEventType.RollbackFailed]);
+  // The same rebuild is where the platform title bar's menu request is consumed, and
+  // the session change is the one rebuild that must not consume it: the two are read
+  // from one handler, so they are asserted against one sequence.
+  assert.equal(calls.filter((call) => call === 'consume').length, 3,
+    'a same-identity rebuild is where a request from the platform title bar is consumed');
+  assert.equal(calls.filter((call) => call === 'close').length, 1,
+    'the session change is the one rebuild that drops the previous session\'s menu instead');
 });

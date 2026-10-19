@@ -469,6 +469,7 @@ export const ZH_CN_MESSAGES: [string, string][] = [
   ['chat.remoteSession', '远程会话'],
   ['chat.sessionTitle', '会话标题'],
   ['chat.sessionSection', '会话'],
+  ['chat.rename', '重命名'],
   ['chat.pin', '置顶'],
   ['chat.unpin', '取消置顶'],
   ['chat.uploadedFiles', '已上传的文件'],
