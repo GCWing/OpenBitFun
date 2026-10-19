@@ -7,7 +7,8 @@
  * the one place that asks the two questions behind that handover and turns the
  * answers into platform values:
  *
- * 1. *What can this device name?* — `HdsTitleBarPolicy.decide()` against the facts
+ * 1. *What can this device name?* — `HdsTitleBarSupport.decide()`, which resolves
+ *    the pure policy (`resolveHdsTitleBar`) against the facts
  *    `HdsTitleBarMaterialService` read. The policy answers in its own names; the
  *    three guarded methods below are where a platform enum member is named, and
  *    each of them names a 23+ member only inside its own gate. Below API 23 the

@@ -78,6 +78,7 @@ function decision(apiLevel, immersiveMaterialSupported, scene) {
 // `getSystemMaterialTypes` answers the list the device reports.
 function serviceHarness(options) {
   const accesses = [];
+  const apiReads = [];
   const logs = [];
   const apiLevel = options.apiLevel;
   const types = options.types === undefined ? [2] : options.types;
@@ -116,7 +117,10 @@ function serviceHarness(options) {
         return { hdsMaterial: hdsMaterial };
       }
       if (specifier === './DeviceApiLevelService') {
-        return { DeviceApiLevelService: { sdkApiVersion: () => apiLevel } };
+        return { DeviceApiLevelService: { sdkApiVersion: () => {
+          apiReads.push('sdkApiVersion');
+          return apiLevel;
+        } } };
       }
       if (specifier === './RemoteLogger') {
         return {
@@ -130,7 +134,12 @@ function serviceHarness(options) {
       throw new Error(`the service must not import ${specifier}`);
     },
     exported);
-  return { Service: exported.HdsTitleBarMaterialService, accesses: accesses, logs: logs };
+  return {
+    Service: exported.HdsTitleBarMaterialService,
+    accesses: accesses,
+    apiReads: apiReads,
+    logs: logs
+  };
 }
 
 test('the policy stays pure so the tier table runs on the host', () => {
@@ -242,11 +251,11 @@ test('the blur family follows the scene, and the gate outranks it', () => {
     'a surface the table does not know must not claim the immersive blur');
 });
 
-test('the service reads no 23+ member below the level that ships it', () => {
+test('the 26+ read is held back by the service, the 23 gate is the policy\'s alone', () => {
   // The order is the point: the level first, then the member. Below 26 the read is
   // never attempted — not attempted-and-caught — and the answer is `false`, which
   // is the SMOOTH tier rather than a title bar that never appears.
-  for (const apiLevel of [21, 22, 25, 0, undefined, NaN]) {
+  for (const apiLevel of [21, 22, 23, 25, 0, undefined, NaN]) {
     const harness = serviceHarness({ apiLevel: apiLevel });
     assert.equal(harness.Service.immersiveMaterialSupported(), false,
       `api ${apiLevel} must not report the immersive material`);
@@ -254,16 +263,18 @@ test('the service reads no 23+ member below the level that ships it', () => {
       `api ${apiLevel} must not look at a single \`hdsMaterial\` member`);
     assert.deepEqual(harness.logs, [], `api ${apiLevel} must not log a failure it never had`);
   }
+  // The 23 gate is not a second question on the service: it is one entry in the
+  // policy's table, and what a caller gets from it is the answer asserted here,
+  // with the material answer held at both values around the level.
   for (const apiLevel of [23, 25]) {
-    const harness = serviceHarness({ apiLevel: apiLevel });
-    assert.equal(harness.Service.immersiveBlurSupported(), true,
-      `api ${apiLevel} ships the immersive blur and may name it`);
+    assert.equal(decision(apiLevel, false).immersiveBlur, true,
+      `api ${apiLevel} ships the immersive blur and the policy must name it`);
   }
   for (const apiLevel of [21, 22, 0, undefined, NaN]) {
-    const harness = serviceHarness({ apiLevel: apiLevel });
-    assert.equal(harness.Service.immersiveBlurSupported(), false,
-      `api ${apiLevel} must not claim the 23+ blur`);
-    assert.deepEqual(harness.accesses, [], `api ${apiLevel} must not read the material table either`);
+    assert.equal(decision(apiLevel, true).immersiveBlur, false,
+      `api ${apiLevel} must not claim the 23+ blur, whatever the material answer is`);
+    assert.equal(decision(apiLevel, true).materialAttached, false,
+      `api ${apiLevel} must not attach a field it cannot name`);
   }
 });
 
@@ -302,6 +313,35 @@ test('the snapshot reports the two facts the policy resolves from, in one answer
   assert.deepEqual(old.accesses, []);
 });
 
+test('the snapshot is read once per process, however often the route rebuilds', () => {
+  // The conversation route rebuilds its destination — and so asks for a decision —
+  // on every navigation back to it, while the two facts cannot change until the
+  // process does. The first answer is therefore the answer: the second question
+  // must be answered from it rather than from the platform again.
+  const harness = serviceHarness({ apiLevel: 26, types: [2] });
+  const first = harness.Service.snapshot();
+  assert.deepEqual(first, { apiLevel: 26, immersiveMaterialSupported: true });
+  assert.deepEqual(harness.accesses, ['getSystemMaterialTypes', 'MaterialType', 'MaterialType.IMMERSIVE'],
+    'the first snapshot is the one that asks the device');
+  const readsAfterFirst = harness.apiReads.length;
+  assert.ok(readsAfterFirst > 0, 'the first snapshot reads the device level');
+  for (let rebuild = 0; rebuild < 3; rebuild++) {
+    assert.deepEqual(harness.Service.snapshot(), first, 'a rebuild is answered from the answer already read');
+  }
+  assert.equal(harness.accesses.filter((access) => access === 'getSystemMaterialTypes').length, 1,
+    'the material table is asked once per process, not once per rebuild');
+  assert.equal(harness.apiReads.length, readsAfterFirst,
+    'a rebuild does not go back to the platform for the level either');
+  // The degrade path is held the same way, and is held without ever touching a
+  // member: a device below 26 is not re-measured on every rebuild either.
+  const old = serviceHarness({ apiLevel: 21 });
+  assert.deepEqual(old.Service.snapshot(), { apiLevel: 21, immersiveMaterialSupported: false });
+  const oldReads = old.apiReads.length;
+  assert.deepEqual(old.Service.snapshot(), { apiLevel: 21, immersiveMaterialSupported: false });
+  assert.equal(old.apiReads.length, oldReads, 'a device below 26 is not measured again');
+  assert.deepEqual(old.accesses, [], 'and it is never asked a material question at all');
+});
+
 test('the gate is written as an order, not as a flag beside the member', () => {
   // The behavioural assertions above hold the read; this one holds the shape that
   // makes the read impossible to reach: the level is read before the table, and
@@ -322,8 +362,9 @@ test('the gate is written as an order, not as a flag beside the member', () => {
 test('the two declarations of the device facts are one contract', () => {
   // A service must not import a page module and the policy must not import a
   // platform kit, so the snapshot is declared twice — and the policy is the one
-  // that resolves from it. The two files also keep the same two levels, because a
-  // gate that only one side moves is a decision the other side silently ignores.
+  // that resolves from it. The level the two files share is the material one,
+  // because that is the question the service asks; the blur level is an entry in
+  // the policy's own table, and the assertion below keeps it at one declaration.
   const fieldsOf = (sourceText, name) => {
     const start = sourceText.indexOf(`export interface ${name} {`);
     assert.notEqual(start, -1, `${name} must stay a declared interface`);
@@ -343,13 +384,17 @@ test('the two declarations of the device facts are one contract', () => {
     'the snapshot the service fills must be the contract the policy resolves from');
 
   const service = serviceHarness({ apiLevel: 21 }).Service;
-  for (const level of ['IMMERSIVE_BLUR_API_LEVEL', 'IMMERSIVE_MATERIAL_API_LEVEL']) {
-    assert.equal(service[level], Policy[level],
-      `${level} must be the same number in the service and in the policy: a gate that moves on one side ` +
-      'is a decision the other side silently ignores');
-  }
-  assert.equal(service.IMMERSIVE_BLUR_API_LEVEL, 23,
-    'the blur and the material effect are one platform release, and the number has to be the release');
+  assert.equal(service.IMMERSIVE_MATERIAL_API_LEVEL, Policy.IMMERSIVE_MATERIAL_API_LEVEL,
+    'IMMERSIVE_MATERIAL_API_LEVEL must be the same number in the service and in the policy: a gate that moves ' +
+    'on one side is a decision the other side silently ignores');
+  assert.equal(Policy.IMMERSIVE_MATERIAL_API_LEVEL, 26,
+    'the material effect is one platform release, and the number has to be the release');
+  // The blur level has one declaration. The service answers the 26+ material
+  // question and nothing else, so a blur level restated on it would be a gate no
+  // production caller reads; the tier the policy resolves is what picks the blur.
+  assert.equal(service.IMMERSIVE_BLUR_API_LEVEL, undefined,
+    'the 23 blur gate must stay the policy\'s single declaration');
+  assert.equal(Policy.IMMERSIVE_BLUR_API_LEVEL, 23);
 });
 
 test('the support class resolves from the service and answers in platform values', () => {

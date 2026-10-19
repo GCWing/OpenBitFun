@@ -35,16 +35,21 @@ export interface HdsTitleBarSnapshot {
  * level instead of dropping the band.
  */
 export class HdsTitleBarMaterialService {
-  /** First API level that ships the immersive blur type and `systemMaterialEffect`. */
-  static readonly IMMERSIVE_BLUR_API_LEVEL: number = 23;
   /** First API level that ships `hdsMaterial`, and so the read below. */
   static readonly IMMERSIVE_MATERIAL_API_LEVEL: number = 26;
 
-  /** Whether the level is high enough to name the 23+ title bar members. */
-  static immersiveBlurSupported(): boolean {
-    const apiLevel = DeviceApiLevelService.sdkApiVersion();
-    return Number.isFinite(apiLevel) && apiLevel >= HdsTitleBarMaterialService.IMMERSIVE_BLUR_API_LEVEL;
-  }
+  /**
+   * The facts this service resolved, read once per process.
+   *
+   * Both facts are fixed for the life of the process, while the conversation
+   * route rebuilds its destination — and so asks for a decision — on every
+   * navigation back to it. Caching them here keeps that rebuild from repeating a
+   * platform read, the same discipline `ImmersiveSurfaceSupport` uses for the
+   * device facts behind its surfaces. Only the *snapshot* is cached:
+   * `immersiveMaterialSupported` stays a direct question, so a caller that wants
+   * the platform read can still make it.
+   */
+  private static device: HdsTitleBarSnapshot | undefined = undefined;
 
   /**
    * Whether this device reports the IMMERSIVE material type.
@@ -69,15 +74,21 @@ export class HdsTitleBarMaterialService {
     }
   }
 
-  /** The device facts one decision is resolved from, in one read. */
+  /** The device facts one decision is resolved from, read once per process. */
   static snapshot(): HdsTitleBarSnapshot {
-    const apiLevel = DeviceApiLevelService.sdkApiVersion();
-    return {
+    const cached: HdsTitleBarSnapshot | undefined = HdsTitleBarMaterialService.device;
+    if (cached !== undefined) {
+      return cached;
+    }
+    const apiLevel: number = DeviceApiLevelService.sdkApiVersion();
+    const facts: HdsTitleBarSnapshot = {
       apiLevel: apiLevel,
       // Only asked where it can be answered: `immersiveMaterialSupported` reads
       // the level itself first, so this stays two platform reads at most and
       // never touches `hdsMaterial` below 26.
       immersiveMaterialSupported: HdsTitleBarMaterialService.immersiveMaterialSupported()
     };
+    HdsTitleBarMaterialService.device = facts;
+    return facts;
   }
 }
