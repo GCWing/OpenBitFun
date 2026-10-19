@@ -598,8 +598,14 @@ const ModelSettingsPage: React.FC = () => {
   const [storedSubscriptionAccounts, setSubscriptionAccounts] = useState<SubscriptionAccount[]>([]);
   const [storedAccountInstances, setAccountInstances] = useState<SubscriptionAccountInstance[]>([]);
   const accountDataCurrent = accountDataKey === accountSurface.key('subscription-accounts');
-  const subscriptionAccounts = accountDataCurrent ? storedSubscriptionAccounts : [];
-  const accountInstances = accountDataCurrent ? storedAccountInstances : [];
+  const subscriptionAccounts = useMemo(
+    () => accountDataCurrent ? storedSubscriptionAccounts : [],
+    [accountDataCurrent, storedSubscriptionAccounts],
+  );
+  const accountInstances = useMemo(
+    () => accountDataCurrent ? storedAccountInstances : [],
+    [accountDataCurrent, storedAccountInstances],
+  );
   const [quotaRefreshVersions, setQuotaRefreshVersions] = useState<Partial<Record<SubscriptionProvider, number>>>({});
   const canQuerySubscriptionQuota = canQuerySubscriptionQuotaOnSurface(
     Boolean(peerDevice?.peerMode.active), peerDevice?.currentPeerCapabilities ?? null,
@@ -3023,7 +3029,7 @@ const ModelSettingsPage: React.FC = () => {
       );
     };
 
-    const renderChannelRoutingRows = (draft: SelectedModelDraft, savedModelId?: string) => {
+    function renderChannelRoutingRows(draft: SelectedModelDraft, savedModelId?: string) {
       const routing = draft.channelRouting;
       const fallbackIds = routing?.fallback_model_ids ?? [];
       const updateRouting = (next: { fallback_model_ids?: string[]; manual_channel?: string | null }) => {
@@ -3151,7 +3157,7 @@ const ModelSettingsPage: React.FC = () => {
           )}
         </>
       );
-    };
+    }
 
     const renderSelectedModelRows = () => {
       return (

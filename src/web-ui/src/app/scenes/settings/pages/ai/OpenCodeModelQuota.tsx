@@ -21,7 +21,7 @@ export function OpenCodeModelQuota({ draft, saved, active, supported }: {
 }) {
   const { t } = useI18n('settings/models');
   // An opaque presentation epoch, never a credential value in state or DOM.
-  const identity = useMemo(() => `model-quota-${++observationEpoch}`, [saved?.api_key, saved?.base_url, saved?.auth, saved?.custom_headers]);
+  const identity = useMemo(() => saved ? `model-quota-${++observationEpoch}` : 'model-quota-unsaved', [saved]);
   if (!isOpenCodeApiKeyConfig(draft)) return null;
   const zen = isOpenCodeZenApiKeyConfig(draft);
   if (!zen && canReadSavedOpenCodeQuota(draft, saved)) {

@@ -47,7 +47,7 @@ export function useSubscriptionQuota(provider: SubscriptionProvider, accountId: 
     pending.current = false;
     if (active && supported) void load(refreshVersion > 0);
     return () => { generation.current += 1; pending.current = false; };
-  }, [load, refreshVersion]);
+  }, [active, supported, load, refreshVersion]);
 
   useEffect(() => {
     if (!active || !supported) return;
