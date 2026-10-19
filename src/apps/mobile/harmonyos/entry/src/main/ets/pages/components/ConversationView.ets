@@ -471,6 +471,16 @@ export struct ConversationView {
     // sheet between the transcript and the glass, and the material can only be made
     // of what is behind it. Below the material every stop is the colour this layer
     // has always painted.
+    //
+    // One consequence is accepted rather than fixed. Where the pill is glass this
+    // layer paints nothing, so the status line above the pill and the strip below it
+    // stand on no backing at all: the transcript's last line arrives under them at
+    // full contrast instead of being dimmed by a sheet. That is the price of the
+    // surface being made of what is behind it — a backing here would be the second
+    // pane of glass again — and whether it still reads well is a question for a
+    // device rather than for this note. If a legibility floor is ever needed back,
+    // the smaller answer is a backing on the status line itself, not this layer's
+    // gradient returning.
     .linearGradient({
       angle: 180,
       colors: [

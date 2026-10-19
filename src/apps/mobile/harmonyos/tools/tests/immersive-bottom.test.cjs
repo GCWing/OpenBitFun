@@ -142,6 +142,13 @@ function composerPillChain() {
 // `if (usesMaterial(scene)) { …material… } else { …fallback… }` is the only shape
 // that is safe below the attribute's floor, so the assertions read the two bodies by
 // themselves: one posture, the other, and the question they branch on.
+//
+// The anchor below is deliberately this exactly. A refactor that spells the same
+// question another way — a local alias, an extracted helper, a reversed condition —
+// goes red here, and that is the intended trade: a false red on a legal rewrite is
+// cheap, while a missed bare read of the attribute is a start-up crash on every device
+// below its floor (see the wide band's own test). Do not loosen the anchor to make a
+// rewrite pass; move the call sites into the shape the contract names instead.
 function posturesOf(sourceText, scene = 'BOTTOM_CHROME') {
   const marker = `if (ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.${scene})) {`;
   const start = sourceText.indexOf(marker);
@@ -649,7 +656,9 @@ test('the wide band keeps its material a branch, so a device below it is never h
 
   // Both postures take every decoration from the shared recipe, so neither can be edited
   // into a surface no recipe declared — and the fallback's token is pinned inside the
-  // call rather than left as a bare colour.
+  // call rather than left as a bare colour. The edge is read as a call form here, the
+  // same way the capsule's is: the hairline's geometry is owned by
+  // `immersive-surface-support.test.cjs`.
   for (const [where, text] of [['material', posture.material], ['fallback', posture.fallback]]) {
     assert.equal(call(text, 'backgroundColor'),
       '.backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.TOP_CHROME, PAGE_BG_OVERLAY))',
@@ -822,7 +831,10 @@ test('the bottom chrome takes the material on the component channel and keeps th
   assert.equal(/(^|[^a-zA-Z.])BlurStyle\./.test(normalize(codeOf(composerPill))), false,
     'the pill may not name a BlurStyle: the recipe answers the blur, and the material path has none');
   // The capsule's edge is the band's posture instead: it never had a border, so the
-  // support's "no edge below the material" is exactly the surface it shipped.
+  // support's "no edge below the material" is exactly the surface it shipped. What is
+  // asserted here is the call form alone; the hairline's *geometry* — one bottom edge,
+  // no sides — is held by `immersive-surface-support.test.cjs`, so a change to the edge
+  // itself belongs there rather than being read as a hole in this file.
   assert.equal(call(rollbackCapsule, 'border'),
     '.border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.BOTTOM_CHROME, ' +
     'ROLLBACK_BAR_HAIRLINE_WIDTH))',
