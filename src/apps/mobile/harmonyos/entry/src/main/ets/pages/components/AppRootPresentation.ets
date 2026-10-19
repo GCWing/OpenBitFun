@@ -30,6 +30,7 @@ import { AdaptiveSheetOptions } from './AdaptiveSheetOptions';
 import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
 import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 import { i18n } from '@kit.LocalizationKit';
+import { HdsNavigation, HdsNavDestination } from '@kit.UIDesignKit';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { GeneralChatPageState } from '../state/GeneralChatPageState';
 import { DeviceDirectoryState } from '../state/DeviceDirectoryState';
@@ -186,7 +187,7 @@ export struct AppRootPresentation {
   @Builder
   NavigationContent() {
     Stack() {
-      Navigation(this.navigationStack) { this.RouteContent(AppRoute.RemoteHome) }
+      HdsNavigation(this.navigationStack) { this.RouteContent(AppRoute.RemoteHome) }
         .id('openbitfunHomeNavigation')
         .width('100%').height('100%').hideTitleBar(true)
         .mode(NavigationMode.Stack)
@@ -212,7 +213,7 @@ export struct AppRootPresentation {
 
   @Builder
   NavigationDestination(name: string) {
-    NavDestination() { this.RouteContent(name as AppRoute) }.hideTitleBar(true).backgroundColor(PAGE_BG)
+    HdsNavDestination() { this.RouteContent(name as AppRoute) }.hideTitleBar(true).backgroundColor(PAGE_BG)
       .onBackPressed(() => this.actions.onNavigationBack(name as AppRoute))
   }
 
