@@ -219,7 +219,12 @@ export struct WideConversationHost {
         REMOTE_CAPABILITY_HARNESS_PROFILES_V1),
       workspacePickerPlacement: this.sessionDetailsPlacement,
       workspaceToolsPlacement: this.workspaceToolsPlacement,
+      sessionDetailsPlacement: this.sessionDetailsPlacement,
       onOpenSession: this.actions.onRemoteHome.openSessionInPlace,
+      // The wide master pane carries the same rows as the compact drawer, so it
+      // wires the same runtime action: a session row's menu must mean the same
+      // thing in both postures.
+      onDeleteSession: this.actions.onSidebar.deleteSession,
       onCreateInWorkspace: (deviceId: string, path: string, agentType: string, connectionId?: string, sshHost?: string,
         workspaceId?: string) => {
         this.actions.onRemoteHome.createInWorkspaceInPlace(path, agentType, deviceId, connectionId, sshHost, workspaceId);

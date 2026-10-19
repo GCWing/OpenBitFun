@@ -60,7 +60,22 @@ struct SidebarWorkspaceGroup {
   @Event onCreateInWorkspace: (path: string, agentType: string, connectionId?: string, sshHost?: string, workspaceId?: string) => void =
     (_path: string, _agentType: string) => {};
   @Event onOpenSession: (session: RemoteSession) => void = (_session: RemoteSession) => {};
-  @Event onSessionActions: (session: RemoteSession) => void = (_session: RemoteSession) => {};
+  /**
+   * The business action behind the row's action menu: the session the user
+   * confirmed deleting. The menu itself belongs to the section that owns the
+   * rows' overlay — this event reports the choice, not the presentation.
+   */
+  @Event onDeleteSession: (session: RemoteSession) => void = (_session: RemoteSession) => {};
+  /**
+   * The row's action menu, in the shape the session list's rows already use: the
+   * row anchors a popup and the host that owns the surface supplies its content,
+   * so the drawer's rows and the session list's rows open the same surface
+   * without either file knowing what an action is.
+   */
+  @Param actionSessionKey: string = '';
+  @Event onOpenSessionActions: (session: RemoteSession) => void = (_session: RemoteSession) => {};
+  @Event onCloseSessionActions: () => void = () => {};
+  @BuilderParam actionsPopup: () => void = this.EmptyPopup;
   @Local visibleSessionCount: number = SidebarDirectoryPreviewPolicy.PREVIEW_COUNT;
   @Local showCreateMenu: boolean = false;
 
@@ -270,19 +285,74 @@ struct SidebarWorkspaceGroup {
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .wordBreak(WordBreak.BREAK_ALL)
+        .hitTestBehavior(HitTestMode.None)
+      this.SessionActionsButton(row)
     }
     .width('100%')
     .height(44)
-    .padding({ left: this.bodyIndent + 34, right: 10 })
+    .padding({ left: this.bodyIndent + 34, right: 4 })
     .alignItems(VerticalAlign.Center)
     .backgroundColor(this.currentSession(row).id === this.selectedSessionId ? SIDEBAR_SELECTION : TRANSPARENT)
     .borderRadius(10)
     .onClick(() => {
       this.onOpenSession(this.currentSession(row));
     })
+    // The long press and the row's own button are the same intent, and both are
+    // what the row contributes to the menu: which session it is about. The
+    // surface that answers belongs to the section above, so this row neither
+    // decides what an action is nor what it does.
     .gesture(LongPressGesture({ repeat: false }).onAction(() => {
-      this.onSessionActions(this.currentSession(row));
+      this.onOpenSessionActions(this.currentSession(row));
     }))
+    // A lightweight anchored menu, not a sheet: the session's actions are two
+    // rows and an inline confirmation, so the platform popup is what carries
+    // them, anchored to the row they are about. Its bubble is the immersive
+    // material's own surface where the material is available, which is why the
+    // popup colour stays transparent and the surface drops its own card.
+    .bindPopup(this.showActionMenu(row),
+      ImmersiveSurfaceSupport.popupOptions(ImmersiveSurfaceScene.FLOATING_MENU, {
+        builder: () => { this.actionsPopup() },
+        placement: Placement.Right,
+        popupColor: TRANSPARENT,
+        enableArrow: false,
+        autoCancel: true,
+        mask: false,
+        targetSpace: 6,
+        onStateChange: (event) => {
+          if (!event.isVisible) {
+            this.onCloseSessionActions();
+          }
+        }
+      }))
+  }
+
+  /** Whether this row is the one whose action menu is open. */
+  private showActionMenu(row: RemoteSession): boolean {
+    const item = this.currentSession(row);
+    return this.actionSessionKey.length > 0 &&
+      this.actionSessionKey === `${item.deviceId || this.deviceId}:${item.id}`;
+  }
+
+  @Builder
+  private SessionActionsButton(row: RemoteSession) {
+    Stack({ alignContent: Alignment.Center }) {
+      Row({ space: 3 }) {
+        Text('').width(3.5).height(3.5).backgroundColor(SIDEBAR_MUTED).borderRadius(2)
+        Text('').width(3.5).height(3.5).backgroundColor(SIDEBAR_MUTED).borderRadius(2)
+        Text('').width(3.5).height(3.5).backgroundColor(SIDEBAR_MUTED).borderRadius(2)
+      }
+      .height(8)
+      .alignItems(VerticalAlign.Center)
+    }
+    .width(34)
+    .height(40)
+    .opacity(0.62)
+    .accessibilityText(RemoteI18n.t('session.actions'))
+    .onClick(() => this.onOpenSessionActions(this.currentSession(row)))
+  }
+
+  @Builder
+  private EmptyPopup() {
   }
 
   @Builder
@@ -392,7 +462,11 @@ export struct SidebarDeviceGroup {
   @Param supportsHarnessProfiles: boolean = false;
   @Event onRetry: () => void = () => {};
   @Event onOpenSession: (session: RemoteSession) => void = (_session: RemoteSession) => {};
-  @Event onSessionActions: (session: RemoteSession) => void = (_session: RemoteSession) => {};
+  @Event onDeleteSession: (session: RemoteSession) => void = (_session: RemoteSession) => {};
+  @Param actionSessionKey: string = '';
+  @Event onOpenSessionActions: (session: RemoteSession) => void = (_session: RemoteSession) => {};
+  @Event onCloseSessionActions: () => void = () => {};
+  @BuilderParam sessionActionsPopup: () => void = this.EmptyPopup;
   @Event onCreateInWorkspace: (path: string, agentType: string, connectionId?: string, sshHost?: string, workspaceId?: string) => void =
     (_path: string, _agentType: string) => {};
   @Event onOpenWorkspace: (path: string, connectionId?: string, sshHost?: string, workspaceId?: string) => void = (_path: string) => {};
@@ -465,7 +539,15 @@ export struct SidebarDeviceGroup {
               this.onWorkspaceExpandedChange(path, expanded, this.currentWorkspace(row).remoteConnectionId, this.currentWorkspace(row).remoteSshHost, this.currentWorkspace(row).workspaceId),
             onCreateInWorkspace: this.onCreateInWorkspace,
             onOpenSession: this.onOpenSession,
-            onSessionActions: this.onSessionActions
+            onDeleteSession: this.onDeleteSession,
+            actionSessionKey: this.actionSessionKey,
+            onOpenSessionActions: this.onOpenSessionActions,
+            onCloseSessionActions: this.onCloseSessionActions,
+            // Every workspace group is handed the same content: only the row
+            // whose key matches the section's open session ever shows it. The
+            // arrow keeps this struct as the owner of the call — a method
+            // reference here would arrive bound to the workspace group.
+            actionsPopup: () => { this.SessionActionsPopup() }
           })
         }, (entry: RecentWorkspaceEntry): string => `${this.device.deviceId}:${remoteWorkspaceKey(entry)}`)
         if (this.hiddenWorkspaceCount() > 0) {
@@ -547,6 +629,25 @@ export struct SidebarDeviceGroup {
         this.workspaceEntries().length
       );
     })
+  }
+
+  /** The empty answer a host that wires no action menu still compiles with. */
+  @Builder
+  private EmptyPopup() {
+  }
+
+  /**
+   * The section's surface, handed on to each workspace group.
+   *
+   * The call lands here, on the struct the surface was handed to, because a
+   * `@BuilderParam` is called with the caller's binding: a method reference
+   * passed further down arrives owned by the struct that receives it, and
+   * reading this parameter there is the crash measured on device. Each hop
+   * therefore hands an arrow over its own builder — see the section's own note.
+   */
+  @Builder
+  private SessionActionsPopup() {
+    this.sessionActionsPopup()
   }
 
   private projection(): SessionListProjection {

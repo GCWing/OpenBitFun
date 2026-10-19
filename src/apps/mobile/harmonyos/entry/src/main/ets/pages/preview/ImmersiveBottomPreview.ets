@@ -411,7 +411,11 @@ export struct ImmersiveBottomPreview {
       this.remotePageState.setPairingInput('https://pair.example/openbitfun/legacy', 'user-1', false);
       return;
     }
-    if (this.drawer || this.viewSettings) {
+    // The wide shell carries the same directory the drawer does, as its master
+    // pane instead of a drawer: the rows a capture has to read — a session row's
+    // action menu among them — are the same rows, in the posture the wide window
+    // shows them.
+    if (this.drawer || this.viewSettings || this.wideShell) {
       const desktop: DeviceDirectoryEntry = emptyDeviceDirectoryEntry('fixture-desktop', 'Studio', true);
       desktop.status = 'ready';
       desktop.workspaces = sidebarWorkspaces();

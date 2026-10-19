@@ -92,7 +92,14 @@ export struct AppSidebarSurface {
         REMOTE_CAPABILITY_HARNESS_PROFILES_V1),
       workspacePickerPlacement: this.sessionDetailsPlacement,
       workspaceToolsPlacement: this.workspaceToolsPlacement,
+      sessionDetailsPlacement: this.sessionDetailsPlacement,
       onOpenSession: this.actions.onSidebar.openSession,
+      // The drawer's session rows reach the runtime through the sidebar's own
+      // delete action. Earlier this event had no host at all, so the rows' long
+      // press and menu button reached an empty implementation; the member and
+      // its runtime implementation (the visible session delete flow) already
+      // existed — only the wiring was missing.
+      onDeleteSession: this.actions.onSidebar.deleteSession,
       onCreateInWorkspace: (deviceId: string, path: string, agentType: string, connectionId?: string, sshHost?: string,
         workspaceId?: string) => {
         this.actions.onSidebar.close();

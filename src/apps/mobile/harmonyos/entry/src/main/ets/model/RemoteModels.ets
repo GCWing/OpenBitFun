@@ -68,6 +68,18 @@ export interface RemoteSession {
   deviceId?: string;
 }
 
+/**
+ * The session a surface holds before one is chosen.
+ *
+ * A surface that owns "the session this overlay is about" keeps the slot filled
+ * rather than optional, so every read of it stays total and the empty answer is
+ * one value instead of a branch per field. An empty `id` is the "no session"
+ * answer; a real session always carries one.
+ */
+export function emptyRemoteSession(): RemoteSession {
+  return { id: '', title: '', agentType: '', status: '', updatedAt: '', createdAt: '', messageCount: 0 };
+}
+
 export interface ChatMessage {
   id: string;
   role: string;

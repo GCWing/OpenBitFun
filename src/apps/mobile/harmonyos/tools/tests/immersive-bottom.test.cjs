@@ -43,6 +43,8 @@ const wideConversationHost = source('entry/src/main/ets/pages/components/WideCon
 const adaptiveSheetOptions = source('entry/src/main/ets/pages/components/AdaptiveSheetOptions.ets');
 const userMessageFullTextSheet = source('entry/src/main/ets/pages/components/UserMessageFullTextSheet.ets');
 const sidebarWorkspaceSection = source('entry/src/main/ets/pages/components/SidebarWorkspaceSection.ets');
+const sidebarDeviceGroup = source('entry/src/main/ets/pages/components/SidebarDeviceGroup.ets');
+const appRootOverlaySurfaces = source('entry/src/main/ets/pages/components/AppRootOverlaySurfaces.ets');
 const appRootPresentation = source('entry/src/main/ets/pages/components/AppRootPresentation.ets');
 const connectAccountDevicePage = source('entry/src/main/ets/pages/components/ConnectAccountDevicePage.ets');
 const presentationActions = source('entry/src/main/ets/pages/actions/AppRootPresentationActions.ets');
@@ -629,6 +631,100 @@ test('the session sheets each bind on their own node', () => {
     'the action sheet must bind on its own carrier node');
   assert.match(build, /\.alignItems\(HorizontalAlign\.Start\) \.bindSheet\(\$\$this\.showSessionDetails/,
     'the details sheet must be the root chain\'s only sheet');
+  // The sidebar's section carries the tools sheet and the session details sheet
+  // its rows' action menu opens: one carrier each, and the workspace picker keeps
+  // the root chain's single sheet.
+  const section = normalize(sidebarWorkspaceSection);
+  assert.match(section,
+    /Row\(\) \{\}\.height\(0\) \.bindSheet\(\$\$this\.workspaceTools\.visible, this\.WorkspaceTools\(\), this\.workspaceToolsSheetOptions\(\)\) Row\(\) \{\}\.height\(0\) \.bindSheet\(\$\$this\.showSessionDetails, this\.SessionDetailsSheet\(\), this\.sessionDetailsSheetOptions\(\)\)/,
+    'the tools sheet and the rows\' details sheet must each bind on their own carrier node');
+  assert.match(section,
+    /\.margin\(\{ top: 10 \}\) \.bindSheet\(\$\$this\.showWorkspacePicker/,
+    'the workspace picker must stay the root chain\'s only sheet');
+});
+
+test('the drawer\'s session rows reach the runtime through the host chain', () => {
+  // The drawer's session rows had an entry point that led nowhere: the row raised
+  // a session-actions event, no host in the production tree consumed it, and the
+  // long press — the only way in — was a no-op. A chain like this one is what a
+  // single unit test cannot see, because every link is a different file that its
+  // neighbour can drop without any other test noticing, so the whole path is
+  // pinned here: the row's two entry points and the popup they open, the surface
+  // the section builds, the placement and the delete both hosts wire, and the
+  // runtime member at the far end.
+  const row = normalize(sidebarDeviceGroup);
+  const section = normalize(sidebarWorkspaceSection);
+
+  // The row contributes the intent and the anchor. The intent is the session, so
+  // the host never has to look one up in a list it may not hold (a row of a
+  // device that is not the active one has no entry there).
+  assert.match(row,
+    /LongPressGesture\(\{ repeat: false \}\)\.onAction\(\(\) => \{ this\.onOpenSessionActions\(this\.currentSession\(row\)\); \}\)/,
+    'the long press must report the session its menu is about');
+  assert.match(row, /\.onClick\(\(\) => this\.onOpenSessionActions\(this\.currentSession\(row\)\)\)/,
+    'the row must also carry a visible entry point: a long press alone is undiscoverable');
+  assert.match(row, /accessibilityText\(RemoteI18n\.t\('session\.actions'\)\)/,
+    'the row\'s entry point must be labelled like the session list\'s');
+  assert.match(row,
+    /bindPopup\(this\.showActionMenu\(row\), ImmersiveSurfaceSupport\.popupOptions\(ImmersiveSurfaceScene\.FLOATING_MENU, \{ builder: \(\) => \{ this\.actionsPopup\(\) \}, placement: Placement\.Right/,
+    'the row must anchor the menu on the floating-menu popup, so the bubble carries the material');
+  assert.match(row, /onStateChange: \(event\) => \{ if \(!event\.isVisible\) \{ this\.onCloseSessionActions\(\); \} \}/,
+    'every dismissal — an outside tap, a chosen action, an anchor that went away — must release the session');
+  assert.match(row, /actionSessionKey: this\.actionSessionKey,/, 'the device group must forward the open key');
+  assert.match(row, /onDeleteSession: this\.onDeleteSession,/, 'the device group must forward the delete');
+  assert.match(row,
+    /@Builder private SessionActionsPopup\(\) \{ this\.sessionActionsPopup\(\) \}/,
+    'the device group must hand the section\'s surface on through a builder of its own');
+  assert.match(row, /actionsPopup: \(\) => \{ this\.SessionActionsPopup\(\) \}/,
+    'the pass-through must stay an arrow: a method reference arrives bound to the workspace group');
+
+  // The section owns the surface: the shared policy's answer for a remote session,
+  // in the popover presentation the row anchors, with the material the popup
+  // bubble supplies instead of a card of its own.
+  assert.match(section, /presentation: SessionActionPresentation\.Popover,/,
+    'the menu must stay the anchored popover the row binds, not a sheet');
+  assert.match(section,
+    /immersiveMaterial: ImmersiveSurfaceSupport\.usesMaterial\(ImmersiveSurfaceScene\.FLOATING_MENU\)/,
+    'the popover must adopt the floating-menu material the session list\'s rows adopt');
+  assert.match(section,
+    /canViewDetails: this\.actionCapabilities\(\)\.canViewDetails, canDelete: this\.actionCapabilities\(\)\.canDelete/,
+    'the menu must offer what the session list offers for the same rows');
+  assert.match(section,
+    /return SessionActionPolicy\.resolve\(SessionActionScope\.Remote, this\.actionSession\.agentType, false\);/,
+    'the capabilities must come from the shared policy, not from a second answer here');
+  assert.match(section, /onViewDetails: \(\) => this\.openActionSessionDetails\(\),/,
+    'the detail action must open the details sheet this section hosts');
+  assert.match(section,
+    /private deleteActionSession\(\): void \{ const session = this\.actionSession; this\.closeSessionActions\(\); this\.onDeleteSession\(session\); \}/,
+    'the delete action must reset the menu and then report the session to the host');
+  assert.match(section, /private closeSessionActions\(\): void \{ this\.actionSession = emptyRemoteSession\(\); \}/,
+    'closing must release the session the menu was about');
+  assert.match(section, /actionSessionKey: this\.actionSessionKey\(\),/, 'the section must pass the open key down');
+  assert.match(section, /sessionActionsPopup: \(\) => \{ this\.SessionActionsPopup\(\) \},/,
+    'the section must hand the rows the surface to render, as an arrow over its own builder');
+
+  // Both hosts — the compact drawer and the wide master pane, which carry the same
+  // rows — wire that event to the runtime action and place the details sheet.
+  const hosts = [
+    ['the compact drawer', appRootOverlaySurfaces],
+    ['the wide master pane', wideConversationHost]
+  ];
+  for (const [name, text] of hosts) {
+    assert.match(normalize(text), /sessionDetailsPlacement: this\.sessionDetailsPlacement,/,
+      `${name} must hand the section the placement its details sheet lands in`);
+    assert.match(normalize(text), /onDeleteSession: this\.actions\.onSidebar\.deleteSession,/,
+      `${name} must wire the rows' delete to the sidebar action, not to the empty one`);
+  }
+
+  // The far end: the member each host names is implemented by the runtime, and the
+  // empty actions a fixture mounts still answer it so every host compiles.
+  const actions = normalize(runtimeComposition);
+  const onSidebar = actions.slice(actions.indexOf('onSidebar: {'), actions.indexOf('onSettings: {'));
+  assert.match(onSidebar,
+    /deleteSession: \(session: RemoteSession\): void => \{ this\.conversationController\.deleteHomeSession\(session\); \}/,
+    'the sidebar delete action must reach the runtime delete flow');
+  assert.match(normalize(presentationActions), /openSession: \(\) => \{\}, deleteSession: \(\) => \{\}/,
+    'the empty actions must keep answering the member');
 });
 
 test('the full-height sheets keep their fixed bottom controls out of the bar', () => {
@@ -949,6 +1045,8 @@ test('the sheet name travels into the platform title bar through the catalog', (
       "title: { title: RemoteI18n.t('workspaceTools.title') }"],
     ['the workspace picker sheet', sidebarWorkspaceSection,
       "AdaptiveSheetOptions.fromPlacement( this.workspacePickerPlacement, RemoteI18n.t('sidebar.selectWorkspace'), this.workspacePickerSubtitle() )"],
+    ['the drawer session details sheet', sidebarWorkspaceSection,
+      "AdaptiveSheetOptions.fromPlacement( this.sessionDetailsPlacement, RemoteI18n.t('session.details'), this.detailsSession.title || RemoteI18n.t('sidebar.untitled') )"],
     ['the view settings preview', source('entry/src/main/ets/pages/preview/ImmersiveBottomPreview.ets'),
       "AdaptiveSheetOptions.fromPlacement( this.viewSettingsPlacement, RemoteI18n.t('viewSettings.title'), RemoteI18n.t('viewSettings.subtitle'))"],
     ['the nested file action form', workspaceToolsPanel,

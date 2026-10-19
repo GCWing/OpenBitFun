@@ -1,7 +1,12 @@
 import { WorkspaceToolsPanel } from './WorkspaceToolsPanel';
 import { WorkspaceToolsState, WorkspaceToolsIntent } from '../state/WorkspaceToolsState';
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
-import { SavedRuntimeConnection, RecentWorkspaceEntry, RemoteSession } from '../../model/RemoteModels';
+import {
+  SavedRuntimeConnection,
+  RecentWorkspaceEntry,
+  RemoteSession,
+  emptyRemoteSession
+} from '../../model/RemoteModels';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import {
   DeviceDirectoryEntry,
@@ -19,6 +24,9 @@ import {
 import { AdaptiveSheetOptions } from './AdaptiveSheetOptions';
 import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
 import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
+import { SessionActionPresentation, SessionActionSurface } from './SessionActionSurface';
+import { SessionActionCapabilities, SessionActionPolicy, SessionActionScope } from '../policy/SessionActionPolicy';
+import { SessionDetailsView } from './SessionDetailsView';
 import {
   SIDEBAR_INK,
   SIDEBAR_MUTED,
@@ -74,8 +82,20 @@ export struct SidebarWorkspaceSection {
    */
   @Param workspaceToolsPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.WorkspaceTools);
+  /**
+   * Where the drawer's own session details sheet lands — the placement the app
+   * root resolves for it, the same one the session list's details sheet takes.
+   */
+  @Param sessionDetailsPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SessionDetails);
   @Event onOpenSession: (session: RemoteSession) => void = (_session: RemoteSession) => {};
-  @Event onSessionActions: (session: RemoteSession) => void = (_session: RemoteSession) => {};
+  /**
+   * The business action the rows' action menu reached: the session the user
+   * confirmed deleting. It travels to the runtime through the presentation
+   * actions (`onSidebar.deleteSession`), which is the only owner of what a
+   * delete means; this section only reports the choice.
+   */
+  @Event onDeleteSession: (session: RemoteSession) => void = (_session: RemoteSession) => {};
   @Event onCreateInWorkspace: (deviceId: string, path: string, agentType: string, connectionId?: string, sshHost?: string,
     workspaceId?: string) => void = (_deviceId: string, _path: string, _agentType: string) => {};
   @Event onOpenWorkspace: (deviceId: string, path: string, connectionId?: string, sshHost?: string, workspaceId?: string) => void =
@@ -91,7 +111,37 @@ export struct SidebarWorkspaceSection {
   @Local visibleDeviceCount: number = SidebarDirectoryPreviewPolicy.PREVIEW_COUNT;
   @Local showWorkspacePicker: boolean = false;
   @Local workspacePickerDeviceId: string = '';
+  /**
+   * The session the rows' action menu is about, and the one its details sheet
+   * shows.
+   *
+   * The menu is anchored to a row but owned here: the row knows which session it
+   * is, the surface needs the session's own fields and the same capabilities the
+   * session list resolves, and only this section can host the details sheet the
+   * menu's detail action opens. Storing the object the row handed over — rather
+   * than an id to look up — is what lets a row of a device that is not the active
+   * one open its own menu, because this section's session list only carries the
+   * active device's.
+   *
+   * An empty `id` is the closed state, so every dismissal path lands on the same
+   * value: the popup's own dismissal, a chosen action, and a host that changed
+   * underneath the menu.
+   */
+  @Local actionSession: RemoteSession = emptyRemoteSession();
+  @Local detailsSession: RemoteSession = emptyRemoteSession();
+  @Local showSessionDetails: boolean = false;
   private readonly transientEntry: DeviceDirectoryEntry = emptyDeviceDirectoryEntry('', '', false);
+
+  /**
+   * A device change releases the menu: the row it was anchored to is gone with
+   * the tree, and the session it named belongs to the device that just stopped
+   * being shown. The same key on another device's row would otherwise reopen a
+   * menu nobody asked for.
+   */
+  @Monitor('directoryState.selectedDeviceId')
+  onSelectedDeviceChanged(): void {
+    this.closeSessionActions();
+  }
 
   build() {
     Column() {
@@ -106,6 +156,11 @@ export struct SidebarWorkspaceSection {
       }
       Row() {}.height(0)
         .bindSheet($$this.workspaceTools.visible, this.WorkspaceTools(), this.workspaceToolsSheetOptions())
+      // A node carries at most one bindSheet, so the details sheet the row
+      // actions can open gets a carrier of its own beside the tools sheet —
+      // the same pattern the session list uses for its pair of sheets.
+      Row() {}.height(0)
+        .bindSheet($$this.showSessionDetails, this.SessionDetailsSheet(), this.sessionDetailsSheetOptions())
       if (this.deviceEntries().length > 0) {
         ForEach(this.visibleDeviceEntries(), (entry: DeviceDirectoryEntry) => {
           this.DeviceRow(entry)
@@ -165,6 +220,96 @@ export struct SidebarWorkspaceSection {
     };
     options.onDisappear = () => this.onWorkspaceTools({ type: 'close' });
     return ImmersiveSurfaceSupport.sheetOptions(ImmersiveSurfaceScene.MODAL_SHEET, options);
+  }
+
+  /**
+   * The session rows' action menu, in the popover the rows anchor.
+   *
+   * A session's actions are a lightweight anchored menu — two rows and an inline
+   * delete confirmation — so the platform popup anchored to the row is what
+   * carries them, not a bottom sheet. The same surface the session list renders
+   * is reused here, in its popover presentation: the card it paints is the
+   * fallback path, and on the material path the popup bubble's own material is
+   * the surface. The bottom padding stays the design's plain value because a
+   * popover hangs at its anchor rather than at the screen edge.
+   */
+  @Builder
+  private SessionActionsPopup() {
+    SessionActionSurface({
+      presentation: SessionActionPresentation.Popover,
+      immersiveMaterial: ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.FLOATING_MENU),
+      sessionTitle: this.actionSession.title,
+      bottomPadding: 18,
+      canViewDetails: this.actionCapabilities().canViewDetails,
+      canDelete: this.actionCapabilities().canDelete,
+      onViewDetails: () => this.openActionSessionDetails(),
+      onDelete: () => this.deleteActionSession(),
+      onClose: () => this.closeSessionActions()
+    })
+  }
+
+  /** The session details sheet the menu's detail action opens. */
+  @Builder
+  private SessionDetailsSheet() {
+    SessionDetailsView({
+      session: this.detailsSession
+    })
+  }
+
+  private sessionDetailsSheetOptions(): SheetOptions {
+    const options = AdaptiveSheetOptions.fromPlacement(
+      this.sessionDetailsPlacement,
+      RemoteI18n.t('session.details'),
+      this.detailsSession.title || RemoteI18n.t('sidebar.untitled')
+    );
+    options.onWillDismiss = (action: DismissSheetAction): void => {
+      this.closeSessionDetails();
+      action.dismiss();
+    };
+    return ImmersiveSurfaceSupport.sheetOptions(ImmersiveSurfaceScene.MODAL_SHEET, options);
+  }
+
+  /** The key of the row whose menu is open; empty while every menu is closed. */
+  private actionSessionKey(): string {
+    return this.actionSession.id.length > 0 ?
+      `${this.actionSession.deviceId || ''}:${this.actionSession.id}` : '';
+  }
+
+  private openSessionActions(session: RemoteSession): void {
+    if (session.id.length === 0) {
+      return;
+    }
+    this.actionSession = session;
+  }
+
+  private closeSessionActions(): void {
+    this.actionSession = emptyRemoteSession();
+  }
+
+  private actionCapabilities(): SessionActionCapabilities {
+    // The remote scope's answer, the one the session list resolves for the same
+    // rows: view the session's details, or delete it. Whether either is allowed
+    // right now is the runtime's question — it refuses and reports when the host
+    // is busy or away — so the menu does not answer it a second time here.
+    return SessionActionPolicy.resolve(SessionActionScope.Remote, this.actionSession.agentType, false);
+  }
+
+  private deleteActionSession(): void {
+    const session = this.actionSession;
+    this.closeSessionActions();
+    this.onDeleteSession(session);
+  }
+
+  private openActionSessionDetails(): void {
+    const session = this.actionSession;
+    this.closeSessionActions();
+    this.detailsSession = session;
+    this.showSessionDetails = true;
+  }
+
+  private closeSessionDetails(): void {
+    this.showSessionDetails = false;
+    this.detailsSession = emptyRemoteSession();
   }
 
   @Builder
@@ -323,7 +468,15 @@ export struct SidebarWorkspaceSection {
           }
         },
         onOpenSession: this.onOpenSession,
-        onSessionActions: this.onSessionActions,
+        onDeleteSession: this.onDeleteSession,
+        actionSessionKey: this.actionSessionKey(),
+        onOpenSessionActions: (session: RemoteSession): void => this.openSessionActions(session),
+        onCloseSessionActions: (): void => this.closeSessionActions(),
+        // The arrow is what carries this section's identity across: a builder
+        // handed on as a method reference is re-bound to the struct that
+        // receives it, so the row's popup would call the surface on the wrong
+        // owner (measured on device: "cannot read property bind of undefined").
+        sessionActionsPopup: () => { this.SessionActionsPopup() },
         onCreateInWorkspace: (path: string, agentType: string, connectionId?: string, sshHost?: string, workspaceId?: string) => {
           this.onCreateInWorkspace(entry.deviceId, path, agentType, connectionId, sshHost, workspaceId);
         },
