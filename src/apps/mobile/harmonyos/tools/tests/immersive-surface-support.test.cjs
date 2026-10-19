@@ -38,6 +38,12 @@ const CARD = THEME.CARD;
 const LINE = THEME.LINE;
 const SHADOW_SUBTLE = THEME.SHADOW_SUBTLE;
 
+// `BlurStyle` is an ArkUI global, the way the enums a component names are: the
+// support maps a recipe's `fallbackBlur` onto it, so the harness gives it the
+// members that mapping reaches and one more, so a mix-up is a failed identity check
+// rather than a value that happens to match.
+const BLUR_STYLE = { NONE: 0, Thin: 1, Regular: 2, Thick: 3 };
+
 function transpile(source) {
   return ts.transpileModule(source, { compilerOptions: {
     target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS
@@ -89,7 +95,7 @@ function supportHarness(options) {
     }
   };
   const exported = {};
-  new Function('require', 'exports', transpile(fs.readFileSync(SUPPORT, 'utf8')))(
+  new Function('require', 'exports', 'BlurStyle', transpile(fs.readFileSync(SUPPORT, 'utf8')))(
     (specifier) => {
       if (specifier === '@kit.ArkUI') {
         return { promptAction: {} };
@@ -111,7 +117,8 @@ function supportHarness(options) {
       }
       throw new Error(`the wiring helper must not import ${specifier}`);
     },
-    exported);
+    exported,
+    BLUR_STYLE);
   return { Support: exported.ImmersiveSurfaceSupport, built, plans, reads, motionReads, motion };
 }
 
@@ -159,9 +166,24 @@ test('below API 26 every surface keeps the options the caller wrote', () => {
     assert.equal(harness.Support.surfaceShadow(scene, shadow), shadow);
     assert.deepEqual(shadow, { radius: 18, color: SHADOW_SUBTLE, offsetY: 7 },
       `${scene} must keep its fallback shadow`);
+    // The band's own edge is not drawn at all here: it is what the material path
+    // adds, not what the shipped fallback gained.
+    assert.deepEqual(harness.Support.surfaceHairline(scene, 0.5), { width: 0, color: TRANSPARENT },
+      `${scene} must draw no edge on the fallback path: a border it never had is a new edge on every old device`);
   }
 
   assert.deepEqual(harness.built, [], 'the fallback path must not build a material');
+  // One scene at a time: the blur mapping is per recipe, so the two thinnest floors
+  // are told apart from the ones that ask for none.
+  for (const scene of SCENES) {
+    const recipe = policy.ImmersiveSurfaceRecipes.recipeFor(scene);
+    const expected = recipe.fallbackBlur === 'thin' ? BLUR_STYLE.Thin :
+      recipe.fallbackBlur === 'thick' ? BLUR_STYLE.Thick : BLUR_STYLE.NONE;
+    assert.equal(harness.Support.surfaceBlur(scene), expected,
+      `${scene} must paint the blur its recipe states (${recipe.fallbackBlur})`);
+  }
+  assert.equal(harness.Support.surfaceBlur(Scene.TOP_CHROME), BLUR_STYLE.Thin,
+    'the top chrome\'s fallback is the thin blur the wide band shipped with');
 });
 
 test('API 26 injects one material and makes the conflicting decoration transparent', () => {
@@ -205,6 +227,21 @@ test('API 26 injects one material and makes the conflicting decoration transpare
     { width: 0, color: TRANSPARENT }, 'the hairline must be dropped');
   assert.deepEqual(harness.Support.surfaceShadow(Scene.MODAL_SHEET, { radius: 18, color: SHADOW_SUBTLE, offsetY: 7 }),
     { radius: 0, color: TRANSPARENT, offsetY: 7 }, 'the shadow must be dropped, the offset kept');
+  // The material is the blurring, so the surface paints none of its own — on every
+  // scene, whatever its recipe retains for the fallback.
+  for (const scene of SCENES) {
+    assert.equal(harness.Support.surfaceBlur(scene), BLUR_STYLE.NONE,
+      `${scene} must paint no blur over the material: a component blur under it is the second glass`);
+  }
+  // The wide band's own half-pixel edge is the one decoration the material path
+  // *adds*: the band is the surface, not a root inside one, and the line is part of
+  // what it is designed as. Its colour is the recipe's, its width stays the caller's.
+  assert.deepEqual(harness.Support.surfaceHairline(Scene.TOP_CHROME, 0.5),
+    { width: { bottom: 0.5 }, color: LINE },
+    'the wide band must keep its own bottom hairline over the material, in the recipe\'s line colour');
+  assert.deepEqual(harness.Support.surfaceHairline(Scene.TOP_CHROME, 1),
+    { width: { bottom: 1 }, color: LINE },
+    'the hairline width is geometry and stays the caller\'s');
 });
 
 test('the device is read once and each scene builds at most one material', () => {

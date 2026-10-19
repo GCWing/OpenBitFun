@@ -490,9 +490,9 @@ test('the compact conversation hands its top band to the platform, and paints no
     `enableComponentSafeArea starts at 6.0.0(20) and the app is compatible with API ${compatible[1]}: below that ` +
     'floor the field would need the same gate the 23+ members have');
 
-  // The two bands are one branch each, and the self-drawn one is the only place
-  // the page's own fill and blur still live — the wide pane and the design
-  // preview draw it, and neither is a `Navigation` destination.
+  // The two bands are one branch each, and the self-drawn one is where the page's
+  // own glass lives — the wide pane and the design preview draw it, and neither is a
+  // `Navigation` destination.
   assert.match(normalize(conversationView),
     /if \(this\.platformBar\) \{ this\.PlatformTopBand\(\) \} else \{ this\.SelfDrawnTopBand\(\) \}/,
     'the band the page draws must be selected by who owns the chrome, not by a second condition');
@@ -500,10 +500,36 @@ test('the compact conversation hands its top band to the platform, and paints no
   assert.equal(call(selfDrawn, 'padding'),
     '.padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topSafeInset })',
     'the self-drawn band is the one that reserves the status bar itself, because it is the page\'s own top edge');
-  assert.equal(call(selfDrawn, 'backgroundColor'), '.backgroundColor(PAGE_BG_OVERLAY)',
-    'the self-drawn band must stay a theme-following page colour: it is the page\'s top edge');
-  assert.equal(call(selfDrawn, 'backgroundBlurStyle'), '.backgroundBlurStyle(BlurStyle.Thin)',
-    'the self-drawn band keeps its thin blur: nothing above it is drawing one');
+  // The wide band is a *content* surface rather than a navigation bar: it is not a
+  // destination's `titleBar`, so it answers its material on the ordinary component
+  // channel, and every decoration of its surface comes from the shared recipe so
+  // neither path can be edited into a look no recipe declared.
+  assert.equal(call(selfDrawn, 'backgroundColor'),
+    '.backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.TOP_CHROME, PAGE_BG_OVERLAY))',
+    'the wide band\'s floor is the top-chrome recipe\'s, and its fallback is the page overlay colour it shipped with');
+  assert.equal(call(selfDrawn, 'backgroundBlurStyle'),
+    '.backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.TOP_CHROME))',
+    'the band\'s blur is the recipe\'s fallback blur, and it resolves to no blur where the material is drawn');
+  assert.equal(call(selfDrawn, 'border'),
+    '.border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.TOP_CHROME, TOP_BAND_HAIRLINE_WIDTH))',
+    'the band\'s own half-pixel edge is the one it draws itself, and only where the material is: ' +
+    'the shipped fallback never had a border');
+  assert.equal(call(selfDrawn, 'systemMaterial'),
+    '.systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.TOP_CHROME))',
+    'the wide band must adopt the material from the shared support, on the component channel');
+  const chain = normalize(codeOf(selfDrawn));
+  assert.ok(chain.indexOf('.systemMaterial(') > chain.indexOf('.border(') &&
+    chain.indexOf('.systemMaterial(') > chain.indexOf('.backgroundBlurStyle('),
+    'the material must be the last decoration on the node: adopting one settles the floor, the edge and the blur');
+  // And the material path may not carry the decorations it replaces: the support
+  // already answers transparent for the fill and no blur for the surface, so a
+  // literal here is a second answer on the same box.
+  assert.equal(chain.includes('systemMaterialEffect'), false,
+    'the wide band must not name the platform band\'s field: that is the other channel, and one surface has one');
+  assert.equal(chain.includes('.backgroundColor(PAGE_BG_OVERLAY)'), false,
+    'the band may not paint the page overlay colour itself: the support answers it, and transparent where the material is');
+  assert.equal(/(^|[^a-zA-Z.])BlurStyle\./.test(chain), false,
+    'the band may not name a BlurStyle: the recipe answers the blur, and the material path has none');
 
   // And the destination is what carries the band: the session route hands the bar
   // its options, and every other destination keeps the page's own header.
@@ -963,13 +989,14 @@ test('every surface that owns a bottom edge reads the shared binding, not a cons
   }
 });
 
-test('every top band the status bar shows through is a theme-following page colour', () => {
+test('every top band the status bar shows through is a theme-following page colour, or a material that answers for it', () => {
   // The window's status-bar content colour is one value for the whole window and
   // follows the colour mode alone (see `updateSystemBars` in EntryAbility): the
   // light ink on a light band, the dark ink on a dark one. That single value is
   // correct for every page shipped today for one reason only — every top band the
   // window shows through the transparent status bar is a theme-following page
-  // colour — and this test is what turns that from a coincidence into a contract.
+  // colour, or a surface the platform's material answers for — and this test is
+  // what turns that from a coincidence into a contract.
   //
   // Each entry names the band that owns the window's top edge and the semantic
   // colour it paints with, and then answers the one question this file cannot
@@ -991,9 +1018,15 @@ test('every top band the status bar shows through is a theme-following page colo
   // The compact conversation's own band is the platform's now (see the title bar
   // tests below), which is why its row names the box the page still owns and
   // carries no colour of its own: a token of `null` is that answer.
+  //
+  // The wide band is the one row whose fill is *conditional*: a device that renders
+  // the immersive material paints no colour at all there, and every other device
+  // paints the token this row names. That is why it is the one row marked as handing
+  // its fill to a material, and why the token still has to be stated — it is what
+  // the fallback, which is a shipped form rather than an error, is pinned to.
   const bands = [
     ['the drawer panel', builderBody(appSidebar, 'SidebarContent'), 'SIDEBAR_BG', false],
-    ['the chat page self-drawn band', builderBody(conversationView, 'SelfDrawnTopBand'), 'PAGE_BG_OVERLAY', false],
+    ['the wide chat page top band', builderBody(conversationView, 'SelfDrawnTopBand'), 'PAGE_BG_OVERLAY', true],
     ['the chat page platform band', builderBody(conversationView, 'PlatformTopBand'), null, false],
     ['the gallery root', buildChain(miniAppSurface), 'PAGE_BG', false],
     ['the file preview root', buildChain(filePreviewSurface), 'PAGE_BG', false],
@@ -1015,11 +1048,15 @@ test('every top band the status bar shows through is a theme-following page colo
       `${name} must state whether its band hands its fill to a material: that column is the one this test ` +
       'cannot read off the source, so it has to be answered here');
   }
-  assert.equal(bands.filter((band) => band[3] === true).length, 0,
-    'no page band hands its fill to a material: the bands that did were sheets, whose band is the platform\'s, ' +
-    'and the compact conversation\'s band is the platform\'s title bar now. A new switch here is a band whose ' +
-    'colour this test can no longer read');
-  for (const [name, slice, token] of bands) {
+  // Exactly one band hands its fill to a material, and it is the wide chat page's
+  // own top band. The count is a set, not a number: a second row marked true is a
+  // band whose colour this test can no longer read, and a missing row is the wide
+  // band quietly going back to a fixed fill.
+  assert.deepEqual(bands.filter((band) => band[3] === true).map((band) => band[0]),
+    ['the wide chat page top band'],
+    'the wide chat page top band is the one band whose floor a material may replace: every other top band ' +
+    'paints the theme-following colour its row names, in every appearance');
+  for (const [name, slice, token, material] of bands) {
     if (token === null) {
       // The platform owns this band's paint, so the tooth is the reverse one: the
       // page may not add a fill or a blur over the platform's own material.
@@ -1027,6 +1064,20 @@ test('every top band the status bar shows through is a theme-following page colo
         `${name} is the platform's band: the page may not paint a fill under it`);
       assert.equal(slice.includes('backgroundBlurStyle'), false,
         `${name} is the platform's band: the page may not blur behind its material`);
+    } else if (material) {
+      // A conditional band hands its floor to the support, which answers the
+      // transparent material path or the recipe's own fallback colour — the one this
+      // row still pins, so the token is asserted inside the call rather than as a
+      // bare `.backgroundColor(...)`.
+      assert.equal(call(slice, 'backgroundColor'),
+        `.backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.TOP_CHROME, ${token}))`,
+        `${name} must take its floor from the shared recipe, with ${token} as the fallback it shipped with`);
+      assert.match(normalize(slice),
+        /\.systemMaterial\(ImmersiveSurfaceSupport\.materialFor\(ImmersiveSurfaceScene\.TOP_CHROME\)\)/,
+        `${name} must adopt the material from the shared support rather than answering one itself`);
+      assert.equal(codeOf(slice).includes('systemMaterialEffect'), false,
+        `${name} is a content surface: the platform band's field is the other channel and belongs to the ` +
+        'compact route alone');
     } else {
       assert.match(normalize(slice), new RegExp(`\\.backgroundColor\\(${token}\\)`),
         `${name} must paint its top band with the theme-following ${token}`);
@@ -1642,14 +1693,25 @@ test('the band\'s controls carry the app\'s own assets, and a surface wears one 
       `${asset} must exist: the asset is not new, and a missing one is a blank control`);
   }
 
-  // One material channel per surface. The band's channel is the platform's own
-  // field; the app's `systemMaterial` option is the *other* channel and belongs to
-  // the surfaces that adopt `ImmersiveMaterial` (the anchored menu among them), so
-  // a band that answered both would be two materials on one box.
+  // One material channel per surface. The compact route's band is a navigation bar,
+  // and its channel is the platform's own field; the wide band is a *content*
+  // surface and its channel is the app's component material. Each names only its own,
+  // so a band that answered both would be two materials on one box — and the wide
+  // band's own material is the app's, adopted from the shared support, because the
+  // page is the thing that decides what its own top edge is made of.
   assert.equal(codeOf(hdsTitleBarSupport).includes('uiMaterial'), false,
     'the band must not adopt the app\'s own immersive material: the platform draws this one');
   assert.equal(/systemMaterial\s*[:=]/.test(codeOf(hdsTitleBarSupport)), false,
     'the band must not answer the app\'s `systemMaterial` option as well');
+  assert.equal(codeOf(builderBody(conversationView, 'PlatformTopBand')).includes('systemMaterial'), false,
+    'the platform band is a navigation bar: its material arrives through the options the support builds, and ' +
+    'adopting the app\'s component material on the same box would be a second one');
+  const wideBand = builderBody(conversationView, 'SelfDrawnTopBand');
+  assert.match(normalize(wideBand),
+    /\.systemMaterial\(ImmersiveSurfaceSupport\.materialFor\(ImmersiveSurfaceScene\.TOP_CHROME\)\)/,
+    'the wide band is a content surface and keeps the component channel, resolved by the shared support');
+  assert.equal(codeOf(wideBand).includes('systemMaterialEffect'), false,
+    'the wide band may not name the platform band\'s field: its surface is not the platform\'s to draw');
   for (const [name, text] of [['ConversationView', conversationView], ['AppRootPresentation', appRootPresentation],
     ['ConversationRouteSurface', conversationRouteSurface]]) {
     const body = codeOf(text);

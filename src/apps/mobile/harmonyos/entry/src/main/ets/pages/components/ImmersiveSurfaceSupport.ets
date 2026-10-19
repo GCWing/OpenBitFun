@@ -25,7 +25,9 @@
  * - on the material path the merge returns the caller's option object with the
  *   material injected and the conflicting fill transparent; on the fallback path
  *   it returns the caller's option object with only the geometry the caller owns
- *   left as it was.
+ *   left as it was. The two surfaces that decorate a *component* rather than an
+ *   option object — the blur and the hairline — resolve the same way, as values
+ *   the caller's single node binds with.
  *
  * This is also the one place the two declarations of the material contract meet.
  * The policy must not import a service and the service must not import a page, so
@@ -264,6 +266,62 @@ export class ImmersiveSurfaceSupport {
     options.radius = 0;
     options.color = TRANSPARENT;
     return options;
+  }
+
+  /**
+   * The blur a surface paints where it draws its own glass.
+   *
+   * The two paths cannot both blur. Where the material is drawn the answer is no
+   * blur at all: the material is the blurring, and a component blur under it is
+   * the second glass the platform's material guidance rules out. Where it is not
+   * drawn, the answer is the recipe's `fallbackBlur` — the field the contract
+   * states for exactly this surface, and which had no consumer until the wide top
+   * band became the first self-drawn band to ask for one.
+   *
+   * A recipe value with no material spelling resolves to no blur rather than to an
+   * invented thickness: the surface then paints its floor alone, which is legible,
+   * while a guessed blur would be a look no recipe asked for.
+   */
+  static surfaceBlur(scene: ImmersiveSurfaceScene): BlurStyle {
+    if (ImmersiveSurfaceSupport.usesMaterial(scene)) {
+      return BlurStyle.NONE;
+    }
+    const recipe: ImmersiveSurfaceRecipe = ImmersiveSurfaceRecipes.recipeFor(scene);
+    switch (recipe.fallbackBlur) {
+      case 'thin':
+        return BlurStyle.Thin;
+      case 'thick':
+        return BlurStyle.Thick;
+      default:
+        return BlurStyle.NONE;
+    }
+  }
+
+  /**
+   * The hairline the surface itself draws over the material it adopted.
+   *
+   * `surfaceBorder` answers the other posture: a content root inside a component
+   * that already carries a material, where any edge the root draws is a second edge
+   * the material did not ask for. A self-drawn band is that component, not a root
+   * inside one, and its own edge is part of what it is designed as — the wide top
+   * band's half-pixel line along the bottom of the band's box. So the line is drawn
+   * *on* the material path, and the painted fallback is left exactly as it shipped:
+   * a border it never had would be a new edge on every device below the material.
+   *
+   * The width is geometry and stays the caller's; the colour is a contract colour
+   * and comes from the recipe.
+   */
+  static surfaceHairline(scene: ImmersiveSurfaceScene, width: number): BorderOptions {
+    if (!ImmersiveSurfaceSupport.usesMaterial(scene)) {
+      const none: BorderOptions = { width: 0, color: TRANSPARENT };
+      return none;
+    }
+    const recipe: ImmersiveSurfaceRecipe = ImmersiveSurfaceRecipes.recipeFor(scene);
+    const edge: BorderOptions = {
+      width: { bottom: width },
+      color: ImmersiveSurfaceSupport.hairlineColor(recipe.hairlineColor)
+    };
+    return edge;
   }
 
   /**

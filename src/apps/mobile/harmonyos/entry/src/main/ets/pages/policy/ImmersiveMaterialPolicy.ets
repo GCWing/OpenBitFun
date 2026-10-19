@@ -30,9 +30,10 @@
  * - `floorColor` and `hairlineColor` are consumed from this batch on by the
  *   surface resolver in `ImmersiveSurfaceSupport`, which turns the two names into
  *   the `$r('app.color.*')` tokens a component paints with;
- * - `fallbackBlur` is still a target rather than a consumed field: nothing reads
- *   it yet, and it belongs to the main chrome's self-drawn glass, which is a later
- *   stage than these surfaces.
+ * - `fallbackBlur` is the blur a self-drawn surface keeps where no material is
+ *   drawn, mapped to a `BlurStyle` by `ImmersiveSurfaceSupport.surfaceBlur`. Its
+ *   first consumer is the wide top band, which draws its own glass on every device
+ *   below the material's API level.
  */
 
 /** One floating surface that can carry the immersive material. */
@@ -165,7 +166,7 @@ export interface ImmersiveMaterialSnapshot {
  * what `ImmersiveMaterialService` builds the platform object from, and only that
  * service's answer decides whether a material is really drawn; the recipe fields
  * name the surface painted without one, `floorColor` and `hairlineColor` through
- * `ImmersiveSurfaceSupport` and `fallbackBlur` still unread. Both halves are
+ * `ImmersiveSurfaceSupport` and `fallbackBlur` through `surfaceBlur`. Both halves are
  * always filled, so the degradation path never depends on a decision being taken.
  */
 export interface ImmersiveMaterialDecision {
@@ -179,7 +180,7 @@ export interface ImmersiveMaterialDecision {
   interactive: boolean;
   /** Whether the material may answer with its light feedback. */
   lightEffect: boolean;
-  /** The blur retained for a surface that draws its own glass; no runtime consumer reads it yet. */
+  /** The blur retained for a surface that draws its own glass, mapped by `surfaceBlur`. */
   fallbackBlur: string;
   /** The fallback surface's floor colour, as a `Theme.ets` resource name. */
   floorColor: string;

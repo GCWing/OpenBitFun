@@ -69,6 +69,17 @@ import {
   STATUS_SUCCESS,
 } from './Theme';
 
+/**
+ * The half-pixel line along the bottom of the self-drawn top band.
+ *
+ * Geometry, not a colour: the design draft for the wide band draws it as an inset
+ * half-pixel edge on the band's own box (`artifacts/ui-drafts/wide-topband/option-b.html`,
+ * `.topband-b__surface`), which is the boundary between the band and the fade that
+ * carries it into the transcript. It is drawn only where the band adopts the
+ * platform material — see `ImmersiveSurfaceSupport.surfaceHairline`.
+ */
+const TOP_BAND_HAIRLINE_WIDTH: number = 0.5;
+
 @ComponentV2
 export struct ConversationView {
   @Param state: ConversationViewState = new ConversationViewState();
@@ -333,9 +344,29 @@ export struct ConversationView {
   }
 
   /**
-   * The band a host that draws its own header gets: the page's overlay colour,
-   * the platform's thin blur and the fade that carries both into the transcript.
-   * The wide pane and the design preview still use it.
+   * The band a host that draws its own header gets.
+   *
+   * This is the wide composition's top band — the page's own top edge, and a
+   * *content* surface rather than a navigation bar: it is not a destination's
+   * `titleBar`, and the app is the thing that decides what it is made of. Two
+   * answers, one per device, and both come from the shared surface support so a
+   * recipe change moves them together:
+   *
+   * - where `ImmersiveMaterial` is available the band adopts it on the ordinary
+   *   component channel (`systemMaterial`), which is the *other* channel from the
+   *   platform band's `systemMaterialEffect` field — one surface, one channel. The
+   *   material is the band's floor, edge and blurring then, so the fill resolves to
+   *   transparent, the blur resolves to none (a component blur under a material is
+   *   the second glass) and the band's own half-pixel hairline is the one edge it
+   *   still draws itself;
+   * - below API 26 the band paints the surface it always painted: the page overlay
+   *   colour, the recipe's thin blur, no border. That path is a shipped form, not an
+   *   error, and it is deliberately left looking exactly as it does today.
+   *
+   * The band carries the page's overlay colour, the platform's thin blur and the
+   * fade that carries both into the transcript; the design draft for this posture
+   * (`artifacts/ui-drafts/wide-topband/option-b.html`) is what the two paths and
+   * the hairline were read from.
    */
   @Builder
   private SelfDrawnTopBand() {
@@ -360,8 +391,13 @@ export struct ConversationView {
       // in RemoteSurfaceHost — the padding model cannot drop one side per edge,
       // and dropping both would put the compact header back under the cutout).
       .padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topSafeInset })
-      .backgroundColor(PAGE_BG_OVERLAY)
-      .backgroundBlurStyle(BlurStyle.Thin)
+      .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.TOP_CHROME, PAGE_BG_OVERLAY))
+      .backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.TOP_CHROME))
+      .border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.TOP_CHROME, TOP_BAND_HAIRLINE_WIDTH))
+      // Last on the node, and the only material the band will take: adopting one
+      // means the platform supplies the floor, the edge and the blurring, so a
+      // decoration after it would be a second answer to the same question.
+      .systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.TOP_CHROME))
       this.TopEdgeFade()
     }
     .width('100%')

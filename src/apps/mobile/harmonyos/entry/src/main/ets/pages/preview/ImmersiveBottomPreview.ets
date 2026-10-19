@@ -356,8 +356,9 @@ export struct ImmersiveBottomPreview {
     this.cover = scenarioId.endsWith('-cover');
     this.galleryVisible = scenarioId.endsWith('-miniapps');
     // The wide shell keeps the same session list as a master pane instead of a
-    // drawer, so its bottom edge is the same bottom edge.
-    this.wideShell = scenarioId.endsWith('-wide-shell');
+    // drawer, so its bottom edge is the same bottom edge. Matched as a prefix so the
+    // dark appearance of the same shell is the same shell.
+    this.wideShell = scenarioId.includes('immersive-bottom-wide-shell');
     this.viewSettings = scenarioId.endsWith('-view-settings');
     this.showViewSettingsSheet = this.viewSettings;
     this.connectAuthed = scenarioId.endsWith('-connect-authed');
