@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { getModelEditorRequestSettings, updateModelEditorRequestSettings } from './modelEditorRequestSettings';
+import { getModelEditorRequestSettings, prepareModelEditorRequestSettingsForSave, updateModelEditorRequestSettings } from './modelEditorRequestSettings';
 
 describe('model editor request drafts', () => {
+  it.each(['', ' \n\t '])('clears a previously saved custom body when the editor contains %j', body => {
+    const persisted = { custom_request_body: '{"temperature":0.2}', custom_request_body_mode: 'trim' as const };
+    const drafts = [{ key: 'model', requestSettings: getModelEditorRequestSettings(persisted) }];
+    const [edited] = updateModelEditorRequestSettings(drafts, { custom_request_body: body }, 'model');
+    const saved = { ...persisted, ...prepareModelEditorRequestSettingsForSave(edited.requestSettings) };
+    const reloaded = JSON.parse(JSON.stringify(saved));
+
+    expect(reloaded).not.toHaveProperty('custom_request_body');
+    expect(reloaded.custom_request_body_mode).toBe('trim');
+    expect(getModelEditorRequestSettings(reloaded).custom_request_body).toBeUndefined();
+    expect(edited.requestSettings.custom_request_body).toBe(body);
+    expect(persisted.custom_request_body).toBe('{"temperature":0.2}');
+  });
+
+  it('preserves non-empty custom JSON verbatim on save', () => {
+    const body = ' \n{"temperature":0.2}\n ';
+    expect(prepareModelEditorRequestSettingsForSave(getModelEditorRequestSettings({
+      custom_request_body: body,
+    })).custom_request_body).toBe(body);
+  });
+
   it('accepts older configurations with no optional request settings and isolates header edits', () => {
     expect(getModelEditorRequestSettings()).toMatchObject({
       inline_think_in_text: true,

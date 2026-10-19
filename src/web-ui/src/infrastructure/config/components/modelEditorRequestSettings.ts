@@ -20,6 +20,13 @@ export function getModelEditorRequestSettings(config: Partial<AIModelConfig> = {
   };
 }
 
+export function prepareModelEditorRequestSettingsForSave(settings: ModelEditorRequestSettings): ModelEditorRequestSettings {
+  return {
+    ...settings,
+    custom_request_body: settings.custom_request_body?.trim() ? settings.custom_request_body : undefined,
+  };
+}
+
 export function updateModelEditorRequestSettings<T extends { key: string; requestSettings: ModelEditorRequestSettings }>(
   drafts: T[],
   updates: Partial<ModelEditorRequestSettings>,
