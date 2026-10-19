@@ -213,6 +213,26 @@ test('the band\'s height is the bar mode the app asks for, not the device', () =
     'reserving a bar nobody draws');
 });
 
+test('the reserved offset is the band plus the strip the band covers', () => {
+  // The band is the component-level safe area (`enableComponentSafeArea`), so its
+  // box reaches the top of the window and covers the status bar strip; everything
+  // that has to sit below it — the pane's rename row, and the transcript's content
+  // start — reserves the strip and the bar. The strip is a device measurement and
+  // the bar is this table's, so the sum is resolved here rather than at a call site.
+  assert.equal(Policy.reservedBandHeight(Scene.Conversation, 44), 100,
+    'the strip the band covers must be reserved as well as the bar under it');
+  assert.equal(Policy.reservedBandHeight(Scene.Conversation, 0), Policy.TITLE_BAR_HEIGHT_MINI,
+    'the bar half is the one that must never be dropped');
+  // A measurement that is not one reserves nothing extra, the same rule the tier
+  // table applies to an unmeasurable API level.
+  for (const unmeasured of [undefined, null, NaN, -1, Infinity, '44']) {
+    assert.equal(Policy.reservedBandHeight(Scene.Conversation, unmeasured), Policy.TITLE_BAR_HEIGHT_MINI,
+      `${unmeasured} is not a measured strip and must not grow the reserved offset`);
+  }
+  assert.equal(Policy.reservedBandHeight('not_a_scene', 44), 44,
+    'a scene with no bar reserves the strip alone, which is what a page at the window\'s top edge already did');
+});
+
 test('the blur family follows the scene, and the gate outranks it', () => {
   assert.equal(Policy.blurFor(Scene.Conversation, false), 'gradient_blur',
     'a device below 23 gets the plain gradient blur on every scene');

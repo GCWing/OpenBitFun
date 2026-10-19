@@ -315,8 +315,8 @@ export struct ConversationView {
    * the platform bar's height: that is what keeps the rename row (and only the
    * rename row, which is this band's only content here) out from under the
    * chrome, while the transcript itself scrolls up into it. The status bar needs
-   * no reservation of its own any more — the title bar reaches the top of the
-   * window and the platform places its content inside it.
+   * no reservation of its own: the platform band avoids the strip, so the band's
+   * content and this pane's content both start below it.
    */
   @Builder
   private PlatformTopBand() {
@@ -1114,13 +1114,19 @@ export struct ConversationView {
   /**
    * The top the band's content starts at.
    *
-   * Under the platform's bar that is the bar's own height, because the bar
-   * overlays the page: it is what keeps the rename row out from under the chrome
-   * while the transcript still scrolls up into it. Where this pane draws its own
-   * band, it is the status bar strip the band has to reach.
+   * Under the platform's bar that is the bar plus the system strip above it: the bar
+   * avoids the strip (`HdsTitleBarSupport` asks the platform for that), so the pane
+   * below has to start below both. The bar overlays the page, so this offset is what
+   * keeps the rename row out from under the chrome while the transcript still scrolls
+   * up into it. Where this pane draws its own band, it is the status bar strip the
+   * band has to reach.
+   *
+   * The strip comes from the shared binding, which is the app's one measurement
+   * point; the table adds the bar's own height to it.
    */
   private topBandOffset(): number {
-    return this.platformBar ? HdsTitleBarPolicy.barHeight(HdsTitleBarScene.Conversation) : this.topSafeInset;
+    return this.platformBar ?
+      HdsTitleBarPolicy.reservedBandHeight(HdsTitleBarScene.Conversation, this.topSafeInset) : this.topSafeInset;
   }
   private onOpenSidebar(): void { this.dispatchSimple(ConversationIntentType.OpenSidebar); }
   private onBack(): void { this.dispatchSimple(ConversationIntentType.Back); }

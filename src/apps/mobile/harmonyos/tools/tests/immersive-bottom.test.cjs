@@ -457,11 +457,38 @@ test('the compact conversation hands its top band to the platform, and paints no
     'the platform-owned band must not carry the self-drawn edge fade: the bar\'s gradient blur is that edge');
   assert.match(normalize(platform), /this\.Header\(\) this\.Mailbox\(\)/,
     'the platform-owned band is still where the rename row and the mailbox live');
-  // The offset it reserves is the platform bar's own height, read from the policy
-  // rather than restated here: the page cannot measure a bar it does not draw.
+  // The offset it reserves is the platform bar's own height *plus the system strip
+  // the bar covers*, read from the policy and from the shared binding rather than
+  // restated here: the page cannot measure a bar it does not draw, and the app has
+  // one measurement point for the strip.
   assert.match(normalize(conversationView),
-    /private topBandOffset\(\): number \{ return this\.platformBar \? HdsTitleBarPolicy\.barHeight\(HdsTitleBarScene\.Conversation\) : this\.topSafeInset; \}/,
-    'the band\'s top offset must be the platform bar\'s height wherever the platform owns the band');
+    /private topBandOffset\(\): number \{ return this\.platformBar \? HdsTitleBarPolicy\.reservedBandHeight\(HdsTitleBarScene\.Conversation, this\.topSafeInset\) : this\.topSafeInset; \}/,
+    'the band\'s top offset must be the platform bar plus the strip it covers, from the policy and the binding');
+
+  // The band clears the status bar on the platform's side, which is the defect this
+  // pair exists for: an immersive window draws the platform band from the top of the
+  // window, so without it the title, the back control and the menu sit on the clock
+  // and the indicators. Both halves are asserted together because either one alone
+  // leaves the band in the status bar: the platform moves the band below the strip,
+  // and the reserved offset is what keeps this pane's rename row below the band.
+  const options = staticBody(hdsTitleBarSupport, 'static options(');
+  assert.match(normalize(options), /avoidLayoutSafeArea: true,/,
+    'the platform band must be told to avoid the safe area: an immersive window draws it from the top of the ' +
+    'window, so its title and controls otherwise land in the status bar');
+  assert.equal(normalize(options).includes('enableComponentSafeArea'),
+    false,
+    'the band must not be asked to absorb the strip as a component-level safe area: that option was measured ' +
+    'inert in this window (the band\'s content stayed on the strip), so relying on it is how the defect returns');
+  // The flag is not device-gated, so it may be unconditional: it starts at 6.0.0(20)
+  // and the app's compatibleSdkVersion is 6.0.1(21). A gate here would be a second
+  // tier table for something every supported device can name.
+  const buildProfile = source('build-profile.json5');
+  const compatible = /"compatibleSdkVersion"\s*:\s*"[^"]*\((\d+)\)"/.exec(buildProfile);
+  assert.notEqual(compatible, null,
+    'the root project must state the API level it is compatible with, in the SDK version\'s own `6.0.1(21)` form');
+  assert.ok(Number(compatible[1]) >= 20,
+    `enableComponentSafeArea starts at 6.0.0(20) and the app is compatible with API ${compatible[1]}: below that ` +
+    'floor the field would need the same gate the 23+ members have');
 
   // The two bands are one branch each, and the self-drawn one is the only place
   // the page's own fill and blur still live — the wide pane and the design

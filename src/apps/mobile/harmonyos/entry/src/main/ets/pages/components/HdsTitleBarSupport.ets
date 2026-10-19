@@ -134,6 +134,27 @@ export class HdsTitleBarSupport {
   /** The band's content and style, ready for `titleBar()`. */
   static options(params: HdsTitleBarContentParams): HdsNavigationTitleBarOptions {
     return {
+      // The band avoids the system area itself: it is laid out below the status bar
+      // strip instead of being painted over it.
+      //
+      // The app runs its window full-screen, so without this the platform draws the
+      // band from the top of the window and its own content — the title, the back
+      // control, the menu — lands on the status bar's clock and indicators, which is
+      // what every device this was measured on showed. The pair of options this
+      // belongs to reads as: `avoidLayoutSafeArea` "whether the title bar actively
+      // avoids the safe area", `enableComponentSafeArea` "whether the title bar is
+      // set as a component-level safe area". The second one is about the band
+      // absorbing the area into its own padding, and it was measured inert in this
+      // window (the band's content stayed on the strip), so the one that matches the
+      // posture is this one: the band yields the strip and the page keeps it.
+      //
+      // The strip the band yields is not free space: the pane below still has to
+      // start below the band, so it reserves the strip as well as the band
+      // (`HdsTitleBarPolicy.reservedBandHeight`), from the one measurement point.
+      //
+      // Not gated by capability: the option starts at 6.0.0(20) and the app's
+      // compatibleSdkVersion is 6.0.1(21), so every device the app supports names it.
+      avoidLayoutSafeArea: true,
       content: {
         title: {
           mainTitle: params.mainTitle,

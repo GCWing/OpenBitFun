@@ -163,6 +163,30 @@ export class HdsTitleBarPolicy {
   static barHeight(scene: HdsTitleBarScene): number {
     return scene === HdsTitleBarScene.Conversation ? HdsTitleBarPolicy.TITLE_BAR_HEIGHT_MINI : 0;
   }
+
+  /**
+   * The top offset a page below the platform band reserves, in vp.
+   *
+   * The band avoids the system area (`avoidLayoutSafeArea`, set by the support
+   * class), so it is laid out below the status bar strip and its own content — the
+   * title, the back control, the menu — is clear of the clock and the indicators.
+   * What the band yields is not free space for the page either: the pane below
+   * still starts under the band, so it reserves the bar *and* the strip above it.
+   *
+   * Both numbers come from the one measurement the app has: `WindowInsetsBinding`
+   * for the strip, this table for the bar. No second measurement is taken here and
+   * none is taken at the call site. A strip that cannot be measured reserves nothing
+   * extra — the bar's own height is still reserved, which is the half that must
+   * never be dropped.
+   */
+  static reservedBandHeight(scene: HdsTitleBarScene, topStrip: number): number {
+    return HdsTitleBarPolicy.barHeight(scene) + HdsTitleBarPolicy.measuredLength(topStrip);
+  }
+
+  /** A measured length, or `0` when the measurement is not one. */
+  private static measuredLength(value: number): number {
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
 }
 
 /**
