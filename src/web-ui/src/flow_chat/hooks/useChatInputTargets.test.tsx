@@ -15,10 +15,10 @@ describe('composer target lifecycle through production stores', () => {
   let root: Root;
   let container: HTMLDivElement;
   let target: ReturnType<typeof useChatInputTargets>;
-  function Probe() {
+  function Probe({ sessions }: { sessions?: ReadonlyMap<string, Session> }) {
     const state = flowChatStore.getState();
     target = useChatInputTargets({ currentSessionId: state.activeSessionId,
-      sessions: state.sessions, auxiliaryEnabled: true,
+      sessions: sessions ?? state.sessions, auxiliaryEnabled: true,
       activeChild: selectActiveBtwSessionTab(useAgentCanvasStore.getState())?.content.data as BtwSessionPanelData | undefined });
     return null;
   }
@@ -59,6 +59,24 @@ describe('composer target lifecycle through production stores', () => {
     act(() => target.selectTargetSession('a'));
     expect(target.effectiveSessionId).toBe('main');
     expect(target.isTargetCurrent('a')).toBe(false);
+  });
+
+  it('keeps an explicit side-question target while the composer session snapshot catches up', () => {
+    render();
+    const previousSessions = flowChatStore.getState().sessions;
+    setSession('draft', { sessionKind: 'btw', parentSessionId: 'main',
+      isTransient: true, agentBackedTransient: true });
+    act(() => {
+      useAgentCanvasStore.getState().addTab(buildBtwSessionPanelContent('draft', 'main', {}), 'active');
+      target.selectTargetSession('draft');
+      root.render(<Probe sessions={previousSessions} />);
+    });
+    expect(target.isTargetCurrent('draft')).toBe(true);
+    expect(target.isTargetCurrent('main')).toBe(false);
+
+    render();
+    expect(target.effectiveSessionId).toBe('draft');
+    expect(target.inputTarget).toBe('btw');
   });
 
   it('does not transfer selection to a newly opened sibling or revive old selection', () => {
