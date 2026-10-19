@@ -4,6 +4,7 @@ import { switchAgentCanvasScope, useAgentCanvasStore } from '@/app/components/pa
 import type { CanvasTab } from '@/app/components/panels/content-canvas/types';
 import { expandSessionAuxPane } from '@/app/scenes/session/sessionPanelLayout';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import type { SessionRelationshipKind } from '@/shared/types/session-history';
 import { createLogger } from '@/shared/utils/logger';
 import { flowChatStore } from '../store/FlowChatStore';
 import type { Session } from '../types/flow-chat';
@@ -16,7 +17,7 @@ export const BTW_SESSION_PANEL_TYPE = 'btw-session' as const;
 
 export type BtwSessionViewKind = 'review-check';
 
-export interface BtwSessionPanelData {
+export interface BtwSessionPanelData extends BtwSessionPanelChildIdentity {
   childSessionId: string;
   parentSessionId: string;
   /** Workspace that owns the parent session; the identity used for routing. */
@@ -29,6 +30,22 @@ export interface BtwSessionPanelData {
   displayTitle?: string;
 }
 
+/**
+ * What a tab knows about the child session it was opened for.
+ *
+ * The record can be gone later — session removal (delete, archive, rollback,
+ * workspace reset) drops it while the tab stays — and only the tab still knows
+ * which child this was. A re-hydration rebuilds the record from these fields, so
+ * a healed subagent tab keeps its kind, launch tool call and agent type instead
+ * of becoming a plain side thread.
+ */
+export interface BtwSessionPanelChildIdentity {
+  sessionKind?: SessionRelationshipKind;
+  sessionTitle?: string;
+  parentToolCallId?: string;
+  subagentType?: string;
+}
+
 export interface BtwSessionPanelMetadata {
   duplicateCheckKey: string;
   childSessionId: string;
@@ -37,16 +54,12 @@ export interface BtwSessionPanelMetadata {
   discardSessionOnClose: boolean;
 }
 
-export interface EnsureBtwSessionAvailableParams {
+export interface EnsureBtwSessionAvailableParams extends BtwSessionPanelChildIdentity {
   childSessionId: string;
   parentSessionId: string;
   workspaceId?: string;
   workspacePath?: string;
-  sessionKind?: 'btw' | 'review' | 'deep_review' | 'miniapp' | 'subagent';
-  sessionTitle?: string;
   agentType?: string;
-  parentToolCallId?: string;
-  subagentType?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
   includeInternal?: boolean;
@@ -107,29 +120,39 @@ export const buildBtwSessionPanelContent = (
   workspace: BtwSessionPanelWorkspace,
   viewKind?: BtwSessionViewKind,
   displayTitle?: string,
-): PanelContent => ({
-  type: BTW_SESSION_PANEL_TYPE,
-  title: displayTitle?.trim() || resolveBtwSessionTitle(childSessionId),
-  data: {
-    childSessionId,
-    parentSessionId,
-    ...(workspace.workspaceId ? { workspaceId: workspace.workspaceId } : {}),
-    ...(workspace.projectWorkspaceId ? { projectWorkspaceId: workspace.projectWorkspaceId } : {}),
-    workspacePath: workspace.workspacePath,
-    ...(viewKind ? { viewKind } : {}),
-    ...(displayTitle?.trim() ? { displayTitle: displayTitle.trim() } : {}),
-  } satisfies BtwSessionPanelData,
-  metadata: {
-    duplicateCheckKey: getBtwSessionDuplicateKey(childSessionId),
-    childSessionId,
-    parentSessionId,
-    contentRole: 'btw-session',
-    discardSessionOnClose: (() => {
-      const session = flowChatStore.getState().sessions.get(childSessionId);
-      return session?.sessionKind === 'btw' && session.isTransient === true;
-    })(),
-  } satisfies BtwSessionPanelMetadata,
-});
+  identity?: BtwSessionPanelChildIdentity,
+): PanelContent => {
+  const trimmedTitle = displayTitle?.trim();
+  // The title the tab already shows is the best record title the tab knows.
+  const sessionTitle = identity?.sessionTitle?.trim() || trimmedTitle;
+  return {
+    type: BTW_SESSION_PANEL_TYPE,
+    title: trimmedTitle || resolveBtwSessionTitle(childSessionId),
+    data: {
+      childSessionId,
+      parentSessionId,
+      ...(workspace.workspaceId ? { workspaceId: workspace.workspaceId } : {}),
+      ...(workspace.projectWorkspaceId ? { projectWorkspaceId: workspace.projectWorkspaceId } : {}),
+      workspacePath: workspace.workspacePath,
+      ...(viewKind ? { viewKind } : {}),
+      ...(trimmedTitle ? { displayTitle: trimmedTitle } : {}),
+      ...(identity?.sessionKind ? { sessionKind: identity.sessionKind } : {}),
+      ...(sessionTitle ? { sessionTitle } : {}),
+      ...(identity?.parentToolCallId ? { parentToolCallId: identity.parentToolCallId } : {}),
+      ...(identity?.subagentType ? { subagentType: identity.subagentType } : {}),
+    } satisfies BtwSessionPanelData,
+    metadata: {
+      duplicateCheckKey: getBtwSessionDuplicateKey(childSessionId),
+      childSessionId,
+      parentSessionId,
+      contentRole: 'btw-session',
+      discardSessionOnClose: (() => {
+        const session = flowChatStore.getState().sessions.get(childSessionId);
+        return session?.sessionKind === 'btw' && session.isTransient === true;
+      })(),
+    } satisfies BtwSessionPanelMetadata,
+  };
+};
 
 export const selectActiveAgentTab = (state: AgentCanvasState) => {
   const activeGroup = state.activeGroupId === 'primary'
@@ -203,6 +226,11 @@ export async function loadBtwSessionHistory(params: LoadBtwSessionHistoryParams)
 
 interface EnsureBtwSessionAvailableResult {
   historyLoadRequested: boolean;
+  /**
+   * The history load this call started. Every caller settles it: awaiting it is
+   * how the pane renders a failure, and the fire-and-forget callers swallow it.
+   */
+  historyLoad?: Promise<void>;
 }
 
 const isSessionHistoryComplete = (session: Session | undefined): boolean =>
@@ -279,14 +307,46 @@ function ensureBtwSessionAvailableInternal(
     void ensureBtwSessionMetadata(params).catch(() => undefined);
     return { historyLoadRequested: false };
   }
-  void loadBtwSessionHistory({
+  const historyLoad = loadBtwSessionHistory({
     childSessionId: params.childSessionId, parentSessionId: params.parentSessionId,
-  }).catch(() => undefined);
-  return { historyLoadRequested: true };
+  });
+  return { historyLoadRequested: true, historyLoad };
 }
 
+/**
+ * Fire-and-forget entry point for callers that only need the child record to
+ * exist and be hydrated. The load outcome stays unobserved; a caller that has
+ * to render the failure awaits `ensureBtwSessionAvailableAndSettle` instead.
+ */
 export function ensureBtwSessionAvailable(params: EnsureBtwSessionAvailableParams): void {
-  ensureBtwSessionAvailableInternal(params);
+  void ensureBtwSessionAvailableInternal(params).historyLoad?.catch(() => undefined);
+}
+
+/**
+ * The same entry point as `ensureBtwSessionAvailable`, settled.
+ *
+ * An auxiliary-pane tab can outlive its child session record. Only `ensure`
+ * recreates the record (`addExternalSession`) and reads its history, so a panel
+ * that heals a tab awaits it: the rejection is what tells the pane to show an
+ * actionable failure instead of its generic empty copy.
+ *
+ * A previous failed heal leaves an empty shell record, which `ensure` treats as
+ * a complete session. Reading that record's history is the panel's own load
+ * path, so it is the second branch here.
+ */
+export async function ensureBtwSessionAvailableAndSettle(
+  params: EnsureBtwSessionAvailableParams,
+): Promise<void> {
+  const recordPresent = flowChatStore.getState().sessions.has(params.childSessionId);
+  const { historyLoad } = ensureBtwSessionAvailableInternal(params);
+  if (historyLoad) {
+    await historyLoad;
+    return;
+  }
+  if (!recordPresent) return;
+  await loadBtwSessionHistory({
+    childSessionId: params.childSessionId, parentSessionId: params.parentSessionId,
+  });
 }
 
 export function openBtwSessionInAuxPane(params: {
@@ -295,7 +355,7 @@ export function openBtwSessionInAuxPane(params: {
   workspaceId?: string;
   workspacePath?: string;
   expand?: boolean;
-  sessionKind?: 'btw' | 'review' | 'deep_review' | 'miniapp' | 'subagent';
+  sessionKind?: SessionRelationshipKind;
   sessionTitle?: string;
   agentType?: string;
   parentToolCallId?: string;
@@ -306,6 +366,9 @@ export function openBtwSessionInAuxPane(params: {
   viewKind?: BtwSessionViewKind;
 }): void {
   const ensureResult = ensureBtwSessionAvailableInternal(params);
+  // Opening a tab renders nothing per load: this path stays fire-and-forget,
+  // and only the pane that has to explain a failure awaits the outcome.
+  void ensureResult.historyLoad?.catch(() => undefined);
   const childSession = flowChatStore.getState().sessions.get(params.childSessionId);
   const isSubagentSession =
     params.sessionKind === 'subagent' || childSession?.sessionKind === 'subagent';
@@ -325,6 +388,14 @@ export function openBtwSessionInAuxPane(params: {
     resolveBtwSessionPanelWorkspace(params.parentSessionId, params),
     params.viewKind,
     params.sessionTitle,
+    // The tab records which child it holds, so a later heal can rebuild it as
+    // the same kind of session instead of a plain side thread.
+    {
+      sessionKind: params.sessionKind,
+      sessionTitle: params.sessionTitle,
+      parentToolCallId: params.parentToolCallId,
+      subagentType: params.subagentType,
+    },
   );
 
   const surface = getActiveSurfaceScope();
@@ -359,6 +430,18 @@ export function openBtwSessionInAuxPane(params: {
       });
     });
   }
+}
+
+/**
+ * Whether this child currently owns an auxiliary-pane tab.
+ *
+ * A pane is not always a tab: the MiniApp customize chat embeds the panel
+ * directly, so closing it is not something the pane can offer there.
+ */
+export function hasBtwSessionAuxPaneTab(childSessionId: string): boolean {
+  return Boolean(useAgentCanvasStore.getState().findTabByMetadata({
+    duplicateCheckKey: getBtwSessionDuplicateKey(childSessionId),
+  }));
 }
 
 export function closeBtwSessionInAuxPane(childSessionId: string): boolean {
