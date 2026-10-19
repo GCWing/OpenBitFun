@@ -29,6 +29,7 @@ const conversationHeaderPolicy = source('entry/src/main/ets/pages/policy/Convers
 const conversationHeaderMenu = source('entry/src/main/ets/pages/components/ConversationHeaderMenu.ets');
 const composerBar = source('entry/src/main/ets/pages/components/ComposerBar.ets');
 const rollbackStagingBar = source('entry/src/main/ets/pages/components/RollbackStagingBar.ets');
+const immersiveSurfaceSupport = source('entry/src/main/ets/pages/components/ImmersiveSurfaceSupport.ets');
 const hdsTitleBarSupport = source('entry/src/main/ets/pages/components/HdsTitleBarSupport.ets');
 const hdsTitleBarPolicy = source('entry/src/main/ets/pages/policy/HdsTitleBarPolicy.ets');
 const hdsTitleBarMaterialService = source('entry/src/main/ets/services/HdsTitleBarMaterialService.ets');
@@ -141,11 +142,11 @@ function composerPillChain() {
 // `if (usesMaterial(scene)) { …material… } else { …fallback… }` is the only shape
 // that is safe below the attribute's floor, so the assertions read the two bodies by
 // themselves: one posture, the other, and the question they branch on.
-function posturesOf(sourceText) {
-  const marker = 'if (ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.BOTTOM_CHROME)) {';
+function posturesOf(sourceText, scene = 'BOTTOM_CHROME') {
+  const marker = `if (ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.${scene})) {`;
   const start = sourceText.indexOf(marker);
   assert.notEqual(start, -1,
-    'the surface must branch on the bottom-chrome material question rather than calling the attribute from a ' +
+    `the surface must branch on the ${scene} material question rather than calling the attribute from a ` +
     'chain a device below its floor also reaches');
   const body = (from) => {
     // The scan starts *inside* the block, so its own braces are already open: the
@@ -206,6 +207,16 @@ function call(sourceText, name) {
 // rather than only about whether it exists at all.
 function occurrences(sourceText, needle) {
   return sourceText.split(needle).length - 1;
+}
+
+// Counts the component material *attribute* — the chained call on a component, not the
+// support class's own mapping method and not an option object's field. Both of those
+// carry the same name without being the attribute: `HdsTitleBarSupport.systemMaterial(…)`
+// is a static method, and `options.systemMaterial = …` is a field write on a value. The
+// pattern excludes a preceding identifier character for exactly that reason, so a
+// tree-wide assertion is about adopters of the attribute rather than about the name.
+function componentMaterialCalls(sourceText) {
+  return [...sourceText.matchAll(/(^|[^A-Za-z0-9_$.])\.systemMaterial\(/g)].length;
 }
 
 // Every `.ets` source in the entry module's `ets` tree. Some of these contracts
@@ -604,6 +615,120 @@ test('the compact conversation hands its top band to the platform, and paints no
   assert.match(normalize(destination),
     /\} else \{ HdsNavDestination\(\) \{ this\.RouteContent\(name as AppRoute\) \}\.hideTitleBar\(true\)/,
     'every other destination must keep `hideTitleBar(true)` and draw its own header');
+});
+
+test('the wide band keeps its material a branch, so a device below it is never handed the call', () => {
+  // The wide band's material has the same floor as the bottom chrome's, and the same
+  // rule follows from it: the attribute does not exist below the API level that ships
+  // it, so a chain a device below that level also reaches must not name it at all.
+  // Measured on API 22, the unconditional call this band used to make was `undefined is
+  // not callable` at start-up — a crash rather than a degradation, and one that took
+  // the whole app down before a single frame was drawn.
+  //
+  // The band is also the one content surface whose edge is conditional: it draws its
+  // own half-pixel hairline where the material is, and no edge at all below it, because
+  // it never had one. That is the recipe's answer, not a second look.
+  const band = builderBody(conversationView, 'SelfDrawnTopBand');
+  const posture = posturesOf(band, 'TOP_CHROME');
+  const material = normalize(codeOf(posture.material));
+  const below = normalize(codeOf(posture.fallback));
+
+  // The crash tooth, and the one this branch exists for: an old device must not be
+  // handed a member that is not there, however its argument would have resolved.
+  assert.equal(below.includes('systemMaterial'), false,
+    'the wide band must not name the material attribute in the posture an old device takes: the member does not ' +
+    'exist there, so calling it is a crash rather than a fallback');
+  assert.equal(below.includes('systemMaterialEffect'), false,
+    'the posture an old device takes must not name the platform band\'s 23+ field either');
+  const materialAt = material.indexOf('.systemMaterial(');
+  assert.notEqual(materialAt, -1, 'the material posture is the one that adopts the material');
+  for (const after of ['.backgroundColor(', '.backgroundBlurStyle(', '.border(']) {
+    assert.equal(material.indexOf(after, materialAt), -1,
+      `the wide band must not paint ${after.slice(1)} over the material it adopted`);
+  }
+
+  // Both postures take every decoration from the shared recipe, so neither can be edited
+  // into a surface no recipe declared — and the fallback's token is pinned inside the
+  // call rather than left as a bare colour.
+  for (const [where, text] of [['material', posture.material], ['fallback', posture.fallback]]) {
+    assert.equal(call(text, 'backgroundColor'),
+      '.backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.TOP_CHROME, PAGE_BG_OVERLAY))',
+      `the wide band's ${where} posture must take its floor from the top-chrome recipe, with PAGE_BG_OVERLAY as ` +
+      'the colour the band shipped with');
+    assert.equal(call(text, 'backgroundBlurStyle'),
+      '.backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.TOP_CHROME))',
+      `the wide band's ${where} posture must take its blur from the top-chrome recipe: the fallback blur below ` +
+      'the material, and none on it');
+    assert.equal(call(text, 'border'),
+      '.border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.TOP_CHROME, TOP_BAND_HAIRLINE_WIDTH))',
+      `the wide band's ${where} posture must ask for the edge: the hairline where the band is the floor, no edge ` +
+      'below it, which is what it always had');
+  }
+
+  // One chain, one call different: the two postures are the same box with the same
+  // decorations, so the fallback cannot drift into a band nobody designed.
+  const chainOf = (text) => text
+    .replace(/\.systemMaterial\(ImmersiveSurfaceSupport\.materialFor\(ImmersiveSurfaceScene\.TOP_CHROME\)\)/g, '')
+    .trim();
+  assert.equal(chainOf(material), chainOf(below),
+    'the wide band\'s two postures must be the same chain: the material is the only call that may differ between them');
+
+  // And the contents are stated once for both of them: a split into postures may not grow
+  // a second copy of the header, because that copy is the one that would go stale.
+  assert.equal(occurrences(normalize(codeOf(band)), 'this.TopBandContent()'), 2,
+    'both postures must mount the shared band contents, and only the two of them');
+  assert.match(normalize(builderBody(conversationView, 'TopBandContent')),
+    /this\.Header\(\) this\.Mailbox\(\)/,
+    'the shared band contents are where the header and the mailbox live');
+
+  // The whole tree, not just this band: a component that adopts the attribute must be a
+  // component that asks the question, and each call must sit behind its own answer. This
+  // is the count that makes the next unconditional call fail here rather than on the one
+  // device nobody re-reads.
+  const adopters = etsTree('entry/src/main/ets')
+    .filter(([, text]) => componentMaterialCalls(codeOf(text)) > 0)
+    .map(([file]) => file)
+    .sort();
+  assert.deepEqual(adopters, ['pages/components/ComposerBar.ets', 'pages/components/ConversationView.ets',
+    'pages/components/RollbackStagingBar.ets'],
+    'these three are the surfaces that adopt the component material; a fourth one needs the same branch, and a ' +
+    'surface that drops out of this list has stopped taking its surface from the shared recipe');
+  for (const [file, text] of etsTree('entry/src/main/ets')) {
+    const body = codeOf(text);
+    const calls = componentMaterialCalls(body);
+    if (calls === 0) {
+      continue;
+    }
+    const questions = occurrences(body, 'usesMaterial(');
+    assert.ok(questions >= calls,
+      `${file} names the component material attribute ${calls} time(s) but asks the material question ` +
+      `${questions} time(s): the attribute does not exist below its floor, so every call site needs a branch of ` +
+      'its own rather than a shared or unconditional one');
+  }
+});
+
+test('the option channels only name the material when there is one to name', () => {
+  // The other way the material reaches a surface is an option object — a sheet, a popup,
+  // a menu, a toast — and that channel is a field write on a value rather than a call on
+  // a component, so it cannot crash a device below the attribute's floor. What it can do
+  // is answer for a surface the platform is already drawing, which is a second material
+  // on one box. Every merge method therefore returns the caller's options *before* it
+  // names anything, and this is the guard those four have in common.
+  const merges = ['static sheetOptions(', 'static popupOptions(', 'static menuOptions(', 'static toastOptions('];
+  for (const signature of merges) {
+    const body = staticBody(immersiveSurfaceSupport, signature);
+    const guard = body.indexOf('material === undefined');
+    const assignment = body.indexOf('.systemMaterial =');
+    assert.notEqual(guard, -1,
+      `${signature} must ask whether there is a material before it names one`);
+    assert.notEqual(assignment, -1,
+      `${signature} must still be the place the material is merged in`);
+    assert.ok(guard < assignment,
+      `${signature} must return the caller's options before it writes the material: a device with no material ` +
+      'gets the surface it shipped, and the option object never carries the field');
+    assert.ok(/return options;|return boundary;/.test(body.slice(guard, assignment)),
+      `${signature} must return the caller's options unchanged on the path that has no material`);
+  }
 });
 
 test('the bottom chrome takes the material on the component channel and keeps the surface each control shipped', () => {

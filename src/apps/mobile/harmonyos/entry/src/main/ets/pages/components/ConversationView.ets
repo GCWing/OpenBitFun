@@ -371,36 +371,69 @@ export struct ConversationView {
   @Builder
   private SelfDrawnTopBand() {
     Column() {
-      Column() {
-        this.Header()
-        this.Mailbox()
+      // The band's two postures are two branches rather than one chain whose material
+      // argument resolves to `undefined`, because the material attribute itself does not
+      // exist below the API level that ships it: measured on API 22, taking it on a
+      // content surface is `undefined is not callable` — a crash rather than a
+      // degradation, and one that takes the whole app down before a frame is drawn. So
+      // the branch asks the same question every decoration of the band already answers,
+      // and the posture an old device takes names no material at all.
+      if (ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.TOP_CHROME)) {
+        Column() {
+          this.TopBandContent()
+        }
+        .width('100%')
+        // Carried by the band that owns the background, not by the wrapper: the
+        // band is what has to reach the status bar, and its measured height is
+        // what the transcript borrows as its content start offset. Its sides are
+        // the window's wherever this page *is* the window — the compact layout,
+        // and the wide compositions that put it flush against an edge — so it
+        // reserves the side strips as well; the header's own gutter lives inside
+        // it and is not restated here.
+        //
+        // In the usual wide layout this page is the detail pane instead, and then
+        // only its right edge is the window's: the left one is the master pane's.
+        // A layout dump of that posture reads the left strip as a 21.14vp indent
+        // on a band that never touches that edge (see the note on `FlowPlaceholder`
+        // in RemoteSurfaceHost — the padding model cannot drop one side per edge,
+        // and dropping both would put the compact header back under the cutout).
+        .padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topSafeInset })
+        .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.TOP_CHROME, PAGE_BG_OVERLAY))
+        .backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.TOP_CHROME))
+        .border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.TOP_CHROME, TOP_BAND_HAIRLINE_WIDTH))
+        // Last on the node, and the only material the band will take: adopting one
+        // means the platform supplies the floor, the edge and the blurring, so a
+        // decoration after it would be a second answer to the same question.
+        .systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.TOP_CHROME))
+      } else {
+        // The same box and the same decorations, with the one call this device cannot
+        // make left out. Every value here is the recipe's own fallback, so the band is
+        // the one it shipped as: no border below the material, because it never had one.
+        Column() {
+          this.TopBandContent()
+        }
+        .width('100%')
+        .padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topSafeInset })
+        .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.TOP_CHROME, PAGE_BG_OVERLAY))
+        .backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.TOP_CHROME))
+        .border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.TOP_CHROME, TOP_BAND_HAIRLINE_WIDTH))
       }
-      .width('100%')
-      // Carried by the band that owns the background, not by the wrapper: the
-      // band is what has to reach the status bar, and its measured height is
-      // what the transcript borrows as its content start offset. Its sides are
-      // the window's wherever this page *is* the window — the compact layout,
-      // and the wide compositions that put it flush against an edge — so it
-      // reserves the side strips as well; the header's own gutter lives inside
-      // it and is not restated here.
-      //
-      // In the usual wide layout this page is the detail pane instead, and then
-      // only its right edge is the window's: the left one is the master pane's.
-      // A layout dump of that posture reads the left strip as a 21.14vp indent
-      // on a band that never touches that edge (see the note on `FlowPlaceholder`
-      // in RemoteSurfaceHost — the padding model cannot drop one side per edge,
-      // and dropping both would put the compact header back under the cutout).
-      .padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topSafeInset })
-      .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.TOP_CHROME, PAGE_BG_OVERLAY))
-      .backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.TOP_CHROME))
-      .border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.TOP_CHROME, TOP_BAND_HAIRLINE_WIDTH))
-      // Last on the node, and the only material the band will take: adopting one
-      // means the platform supplies the floor, the edge and the blurring, so a
-      // decoration after it would be a second answer to the same question.
-      .systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.TOP_CHROME))
       this.TopEdgeFade()
     }
     .width('100%')
+  }
+
+  /**
+   * The band's contents, mounted by both of its postures.
+   *
+   * The material is a property of the band's *surface*, not of what sits on it, so the
+   * two branches above differ in their decoration alone: the header and the mailbox are
+   * stated once, here, and a change to either reaches every device.
+   */
+  @Builder
+  private TopBandContent() {
+    this.Header()
+    this.Mailbox()
   }
 
   @Builder
