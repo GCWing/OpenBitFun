@@ -205,6 +205,7 @@ function mergeParamsPartialEventData(
 }
 
 export const __test_only__ = {
+  handleSessionDeleted,
   resolveDialogTurnDisplayContent,
   mergeParamsPartialEventData,
   findSubagentParentInfoByRound,
@@ -1564,7 +1565,10 @@ function handleSessionDeleted(context: FlowChatContext, event: any): void {
   
   const store = FlowChatStore.getInstance();
   const removedSessionIds = store.getCascadeSessionIds(sessionId);
-  if (removedSessionIds.length === 0) return;
+  if (removedSessionIds.length === 0) {
+    store.removeDeletedSession(sessionId);
+    return;
+  }
 
   removedSessionIds.forEach(removedSessionId => {
     clearRecentHistorySessionOpenIntent(removedSessionId);
@@ -1582,7 +1586,7 @@ function handleSessionDeleted(context: FlowChatContext, event: any): void {
     cleanupSaveState(context, id);
     cleanupSessionBuffers(context, id);
   });
-  store.removeSession(sessionId);
+  store.removeDeletedSession(sessionId);
 }
 
 /**

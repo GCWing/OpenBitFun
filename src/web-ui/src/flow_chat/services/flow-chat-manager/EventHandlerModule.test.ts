@@ -27,6 +27,7 @@ import { localSessionDriver } from '../../session-drivers/local/LocalSessionDriv
 import { chatInputSessionSubscriptionKey } from '../../utils/chatInputSessionSubscription';
 import { selectInterruptedTurnRecovery } from '../../utils/interruptedTurnRecovery';
 import { promptSuggestionKey, usePromptSuggestionStore } from '../../store/promptSuggestionStore';
+import { clearAgentCanvasForPeerSwitch, switchAgentCanvasScope, useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores';
 
 const {
   buildBuiltInBrowserTabOptions,
@@ -45,6 +46,29 @@ vi.mock('../../../shared/notification-system/services/NotificationService', () =
 describe('isAppWindowFocused', () => {
   it('returns true when no document is available', () => {
     expect(isAppWindowFocused()).toBe(true);
+  });
+});
+
+describe('host session deletion', () => {
+  beforeEach(() => { resetFlowChatStore(); clearAgentCanvasForPeerSwitch(); });
+  afterEach(() => { resetFlowChatStore(); clearAgentCanvasForPeerSwitch(); });
+
+  it.each([true, false])('retires an AgentControl-deleted child tab even when its record is present=%s', recordPresent => {
+    createSessionWithTurn(createFinishingTurn());
+    const store = FlowChatStore.getInstance();
+    store.updateSessionRelationship('session-1', { parentSessionId: 'parent', sessionKind: 'subagent' });
+    switchAgentCanvasScope('parent');
+    useAgentCanvasStore.getState().addTab({
+      type: 'btw-session', title: 'Subagent', data: { childSessionId: 'session-1', parentSessionId: 'parent' },
+    }, 'active');
+    if (!recordPresent) store.removeSession('session-1');
+    const context = createFlowChatContext();
+    __test_only__.handleSessionDeleted(context, { sessionId: 'session-1' });
+    __test_only__.handleSessionDeleted(context, { sessionId: 'session-1' });
+    expect(store.getState().sessions.has('session-1')).toBe(false);
+    expect(useAgentCanvasStore.getState().primaryGroup.tabs).toEqual([]);
+    expect(useAgentCanvasStore.getState().closedTabs).toEqual([]);
+    expect(context.processingManager.clearSessionStatus).toHaveBeenCalledTimes(recordPresent ? 1 : 0);
   });
 });
 

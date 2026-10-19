@@ -702,7 +702,7 @@ export class FlowChatManager {
   }
 
   public discardLocalSession(sessionId: string): string[] {
-    const removedSessionIds = this.context.flowChatStore.removeSession(sessionId);
+    const removedSessionIds = this.context.flowChatStore.removeDeletedSession(sessionId);
     removedSessionIds.forEach(id => {
       stateMachineManager.delete(id);
       this.context.processingManager.clearSessionStatus(id);

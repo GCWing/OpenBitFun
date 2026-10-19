@@ -59,7 +59,7 @@ const resolvePlacement = (
 /**
  * Keeps a portalled popover attached to its trigger while escaping ancestor
  * clipping. Position is refreshed for nested scrolling, viewport resize and
- * content/anchor resize, and is clamped to the visible viewport.
+ * content/anchor/ancestor resize, and is clamped to the visible viewport.
  */
 export function useAnchoredPopoverPosition({
   open,
@@ -160,7 +160,11 @@ export function useAnchoredPopoverPosition({
     const resizeObserver = typeof ResizeObserver === 'undefined'
       ? null
       : new ResizeObserver(schedulePositionUpdate);
-    if (anchorRef.current) resizeObserver?.observe(anchorRef.current);
+    // Pane resizing moves fixed-size triggers without resizing the triggers
+    // themselves. Their layout ancestors supply the missing invalidation.
+    for (let anchor = anchorRef.current; anchor; anchor = anchor.parentElement) {
+      resizeObserver?.observe(anchor);
+    }
     if (popoverRef.current) resizeObserver?.observe(popoverRef.current);
 
     return () => {
