@@ -1390,6 +1390,39 @@
     gap: var(--openbitfun-space-2);
   }
 
+  &__account-pool,
+  &__channel-route {
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-3);
+    min-width: 0;
+    width: 100%;
+  }
+
+  &__account-pool-item {
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    min-width: 0;
+    min-height: 32px;
+  }
+
+  &__account-pool-choice {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    min-width: 0;
+    cursor: pointer;
+  }
+
+  &__channel-route-index {
+    flex: none;
+    color: var(--openbitfun-color-content-secondary);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    font-variant-numeric: tabular-nums;
+  }
+
   &__subscription-management {
     padding-inline: var(--openbitfun-space-6);
   }

@@ -1,0 +1,9 @@
+.group {
+  margin-block-end: var(--openbitfun-space-4);
+  border: 1px solid var(--openbitfun-color-border-subtle);
+  border-radius: var(--openbitfun-radius-base);
+  background: inherit;
+  overflow: hidden;
+}
+.accounts { display: grid; min-inline-size: 0; }
+.account { min-inline-size: 0; border-block-start: 1px solid var(--openbitfun-color-border-subtle); }

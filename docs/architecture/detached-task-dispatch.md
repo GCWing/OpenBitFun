@@ -225,6 +225,26 @@ version equality is not evidence of this behavior. Version 6 adds the immutable
 product identity is rejected before workspace preparation; protocol equality
 cannot make two product data spaces compatible.
 
+SSH model-directory sync uses the existing protected configuration export for
+explicit subscription accounts. Before writing a directory that contains an
+explicit account binding, the controller requires the optional target capability
+`subscription_account_bindings_v1`; an account pool also requires
+`subscription_account_failover_v1`. The CLI dispatch probe advertises its native
+runtime support separately from account-management handlers. These capabilities
+are not new requirements for ordinary API-key or legacy-default-account jobs,
+and do not change protocol version 6. Submit-time repair reuses its existing
+probe; explicit sync probes only when these account semantics need negotiation.
+Unsupported capability or unknown account-guard versions fail before target
+configuration writes and remain explicit preflight errors, with the existing
+model-sync audit retaining the cause. Account-bearing sync also validates the
+existing product identity, data namespace and protocol contract; capability
+flags alone cannot authorize a write into another product's data space. OAuth
+credentials are not copied: account slots must be authorized on the executing
+host. Protected records retain their
+original binding and policy revision for a capable target to restore, while an
+older reader cannot turn the new account fields into its default OAuth login.
+
+
 `probe` is read-only and never installs software. Immediately before SSH
 provisioning, submission probes again and automatically installs or upgrades a
 compatible latest prebuilt `openbitfun` release when needed. Release resolution

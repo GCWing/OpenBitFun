@@ -3,7 +3,7 @@
 import { agentRuntimeRootPublicModules } from './public-api-rules.mjs';
 
 const agentRuntimeRootUnexpectedLine = new RegExp(
-  `^(?!(?:[ \\t]*|[ \\t]*\\/\\/!.*|[ \\t]*#\\[cfg\\(feature = "(?:agent-runtime|deep-research|native-hook-settings)"\\)\\][ \\t]*|[ \\t]*#\\[cfg\\(any\\(feature = "agent-runtime", feature = "definition-contracts"\\)\\)\\][ \\t]*|[ \\t]*pub mod (?:${agentRuntimeRootPublicModules.join('|')});[ \\t]*)\\r?$).+$`,
+  `^(?!(?:[ \\t]*|[ \\t]*\\/\\/!.*|[ \\t]*#\\[cfg\\(feature = "(?:agent-runtime|account-routing|deep-research|native-hook-settings)"\\)\\][ \\t]*|[ \\t]*#\\[cfg\\(any\\(feature = "agent-runtime", feature = "definition-contracts"\\)\\)\\][ \\t]*|[ \\t]*pub mod (?:${agentRuntimeRootPublicModules.join('|')});[ \\t]*)\\r?$).+$`,
   'm',
 );
 

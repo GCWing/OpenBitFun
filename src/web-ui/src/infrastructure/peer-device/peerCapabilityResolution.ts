@@ -70,3 +70,33 @@ export function canSubmitUserQuestionsOnSurface(
   }
   return capabilities.hostKind !== 'cli';
 }
+
+/**
+ * Older peer hosts reject or ignore pool auth and channel routes, so the
+ * model editor only offers them when the rendered host advertised support.
+ */
+export function canEditAccountPoolsOnSurface(
+  peerActive: boolean,
+  capabilities: PeerHostCapabilities | null,
+): boolean {
+  return !peerActive || capabilities?.subscriptionAccountPoolsV1 === true;
+}
+
+export function canQuerySubscriptionQuotaOnSurface(
+  peerActive: boolean,
+  capabilities: PeerHostCapabilities | null,
+): boolean {
+  return !peerActive || capabilities?.subscriptionQuotaV1 === true;
+}
+
+export function canEditChannelRoutingOnSurface(
+  peerActive: boolean,
+  capabilities: PeerHostCapabilities | null,
+): boolean {
+  return !peerActive || capabilities?.modelChannelRoutingV1 === true;
+}
+
+/** A model-scoped request must never be sent to an older account-only quota host. */
+export function canQueryModelQuotaOnSurface(peerActive: boolean, capabilities: PeerHostCapabilities | null): boolean {
+  return !peerActive || capabilities?.subscriptionModelQuotaV1 === true;
+}

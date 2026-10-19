@@ -8,6 +8,10 @@ use super::types::*;
 use crate::infrastructure::{try_get_path_manager_arc, PathManager};
 use crate::util::errors::*;
 use log::{debug, info, warn};
+use openbitfun_config_contracts::protected_account_models::{
+    account_guard_sources, preserve_account_guard_sources, protect_account_models,
+    restore_account_models,
+};
 use openbitfun_core_types::{
     installer_config_handoff::{
         InstallerConfigHandoff, InstallerModelHandoff, INSTALLER_CONFIG_HANDOFF_FILE_NAME,
@@ -18,6 +22,7 @@ use openbitfun_services_core::json_store::JsonFileStore;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::fs;
@@ -94,6 +99,7 @@ fn config_value_for_persistence(config: &GlobalConfig) -> OpenBitFunResult<Value
     }
     prune_default_memories_config(&mut value)?;
     prune_default_web_search_config(&mut value)?;
+    protect_account_models(&mut value);
     Ok(value)
 }
 
@@ -208,6 +214,13 @@ pub struct ConfigManager {
     path_manager: Arc<PathManager>,
     backup_count: usize,
     load_diagnostics: Vec<ConfigDiagnostic>,
+    account_guard_sources: HashMap<String, Value>,
+}
+
+struct ConfigCandidate {
+    config: GlobalConfig,
+    guard_sources: HashMap<String, Value>,
+    diagnostics: Vec<ConfigDiagnostic>,
 }
 
 /// Configuration manager settings.
@@ -252,6 +265,7 @@ impl ConfigManager {
             path_manager,
             backup_count,
             load_diagnostics: Vec::new(),
+            account_guard_sources: HashMap::new(),
         };
 
         manager.load_or_create_config().await?;
@@ -408,16 +422,19 @@ impl ConfigManager {
             return Err(contract_error);
         }
 
-        let mut config: GlobalConfig =
-            serde_json::from_value(config_value.clone()).map_err(|error| {
-                OpenBitFunError::config(format!("Failed to deserialize config file: {error}"))
-            })?;
+        let guard_sources = account_guard_sources(&config_value);
+        let mut restored_value = config_value.clone();
+        let mut diagnostics = restore_account_models(&mut restored_value);
+        let mut config: GlobalConfig = serde_json::from_value(restored_value).map_err(|error| {
+            OpenBitFunError::config(format!("Failed to deserialize config file: {error}"))
+        })?;
         let migrated_selections = config
             .ai
             .migrate_model_selections()
             .map_err(OpenBitFunError::validation)?;
-        let mut diagnostics =
-            openbitfun_config_contracts::normalization::recover_persisted_config(&mut config);
+        diagnostics.extend(
+            openbitfun_config_contracts::normalization::recover_persisted_config(&mut config),
+        );
         let validation_result = self
             .validate_recovered_config(&mut config, &mut diagnostics)
             .await?;
@@ -445,6 +462,7 @@ impl ConfigManager {
         }
         self.config = config;
         self.load_diagnostics = diagnostics;
+        self.account_guard_sources = guard_sources;
         debug!("Loaded OpenBitFun config from file");
         Ok(())
     }
@@ -557,11 +575,21 @@ impl ConfigManager {
 
     /// Saves the configuration file.
     async fn save_config(&self) -> OpenBitFunResult<()> {
-        self.persist_config(&self.config).await
+        self.persist_config(&self.config).await.map(|_| ())
     }
 
-    async fn persist_config(&self, config: &GlobalConfig) -> OpenBitFunResult<()> {
-        let content = serde_json::to_string_pretty(&config_value_for_persistence(config)?)
+    fn persistence_value(&self, config: &GlobalConfig) -> OpenBitFunResult<Value> {
+        let mut value = config_value_for_persistence(config)?;
+        preserve_account_guard_sources(&mut value, &self.account_guard_sources);
+        Ok(value)
+    }
+
+    async fn persist_config(
+        &self,
+        config: &GlobalConfig,
+    ) -> OpenBitFunResult<HashMap<String, Value>> {
+        let value = self.persistence_value(config)?;
+        let content = serde_json::to_string_pretty(&value)
             .map_err(|e| OpenBitFunError::config(format!("Config serialization failed: {}", e)))?;
 
         if let Some(parent) = self.config_file.parent() {
@@ -584,7 +612,7 @@ impl ConfigManager {
                     self.config_file, e
                 ))
             })?;
-        Ok(())
+        Ok(account_guard_sources(&value))
     }
 
     async fn backup_raw_config(&self, content: &str, reason: &str) -> OpenBitFunResult<PathBuf> {
@@ -732,9 +760,19 @@ impl ConfigManager {
                 .ai
                 .set_model_selections(typed)
                 .map_err(OpenBitFunError::validation)?;
-            return self.commit_config(config, Some(path)).await;
+            return self
+                .commit_candidate(
+                    ConfigCandidate {
+                        config,
+                        guard_sources: self.account_guard_sources.clone(),
+                        diagnostics: vec![],
+                    },
+                    Some(path),
+                )
+                .await;
         }
-        let mut config = self.config_with_value(path, json_value)?;
+        let mut candidate = self.config_with_value(path, json_value)?;
+        let config = &mut candidate.config;
         // Whole-document/AI replacements are ingestion boundaries, like import.
         // Ordinary field updates must not perform legacy migration.
         if path.is_empty() || path == "ai" {
@@ -745,7 +783,7 @@ impl ConfigManager {
         }
         // Apply capability-driven canonicalization before validation and persistence.
         // Speech/embedding/image-only models must never carry text-generation sentinels.
-        normalize_typed_config(&mut config);
+        normalize_typed_config(config);
         if path.is_empty()
             || path == "ai"
             || path.starts_with("ai.models")
@@ -753,10 +791,10 @@ impl ConfigManager {
             || path.starts_with("ai.agent_model_defaults")
             || path.starts_with("ai.task_models")
         {
-            reconcile_model_references(&mut config);
+            reconcile_model_references(config);
         }
 
-        let validation_result = self.providers.validate_config(&config).await?;
+        let validation_result = self.providers.validate_config(config).await?;
         if !validation_result.valid {
             return Err(invalid_config_error(
                 "Invalid configuration update",
@@ -764,7 +802,7 @@ impl ConfigManager {
             ));
         }
 
-        self.commit_config(config, Some(path)).await
+        self.commit_candidate(candidate, Some(path)).await
     }
 
     /// Resets configuration (supports dot-paths).
@@ -774,7 +812,7 @@ impl ConfigManager {
             .ai
             .set_model_selections(Default::default())
             .map_err(OpenBitFunError::validation)?;
-        let config = if let Some(path) = path {
+        let candidate = if let Some(path) = path {
             reject_protected_metadata_path(path)?;
             if path == "ai.agent_model_defaults" || path.starts_with("ai.agent_model_defaults.") {
                 return Err(OpenBitFunError::validation(
@@ -784,10 +822,14 @@ impl ConfigManager {
             let default_value = self.get_value_by_path_from_config(&default_config, path)?;
             self.config_with_value(path, default_value)?
         } else {
-            default_config
+            ConfigCandidate {
+                config: default_config,
+                guard_sources: HashMap::new(),
+                diagnostics: vec![],
+            }
         };
 
-        let validation_result = self.providers.validate_config(&config).await?;
+        let validation_result = self.providers.validate_config(&candidate.config).await?;
         if !validation_result.valid {
             return Err(invalid_config_error(
                 "Invalid configuration reset",
@@ -795,7 +837,38 @@ impl ConfigManager {
             ));
         }
 
-        self.commit_config(config, path).await
+        self.commit_candidate(candidate, path).await
+    }
+
+    async fn commit_candidate(
+        &mut self,
+        mut candidate: ConfigCandidate,
+        path: Option<&str>,
+    ) -> OpenBitFunResult<()> {
+        openbitfun_config_contracts::channel_routing::validate_channel_routes(
+            &candidate.config.ai.models,
+        )
+        .map_err(OpenBitFunError::config)?;
+        openbitfun_config_contracts::account_pool::reconcile_account_pool_revisions(
+            &self.config.ai.models,
+            &mut candidate.config.ai.models,
+            path.is_some(),
+        )
+        .map_err(OpenBitFunError::config)?;
+        let previous_sources =
+            std::mem::replace(&mut self.account_guard_sources, candidate.guard_sources);
+        if let Err(error) = self.commit_config(candidate.config, path).await {
+            self.account_guard_sources = previous_sources;
+            return Err(error);
+        }
+        self.load_diagnostics
+            .retain(|diagnostic| diagnostic.code != "SUBSCRIPTION_ACCOUNT_BINDING_UNSUPPORTED");
+        for diagnostic in candidate.diagnostics {
+            if !self.load_diagnostics.contains(&diagnostic) {
+                self.load_diagnostics.push(diagnostic);
+            }
+        }
+        Ok(())
     }
 
     /// Publish only a configuration that has reached disk. Failed writes must
@@ -809,7 +882,8 @@ impl ConfigManager {
         config.schema_version = CURRENT_CONFIG_SCHEMA_VERSION;
         config.version = env!("CARGO_PKG_VERSION").to_string();
         config.last_modified = chrono::Utc::now();
-        self.persist_config(&config).await?;
+        let guard_sources = self.persist_config(&config).await?;
+        self.account_guard_sources = guard_sources;
         let old_config = std::mem::replace(&mut self.config, config);
         let paths = match path.filter(|path| !path.is_empty()) {
             Some(path) => vec![path.to_string()],
@@ -844,13 +918,21 @@ impl ConfigManager {
 
     /// Exports configuration.
     pub fn export_config(&self) -> OpenBitFunResult<serde_json::Value> {
-        serde_json::to_value(&self.config)
-            .map_err(|e| OpenBitFunError::config(format!("Failed to export config: {}", e)))
+        let mut value = serde_json::to_value(&self.config)
+            .map_err(|e| OpenBitFunError::config(format!("Failed to export config: {}", e)))?;
+        protect_account_models(&mut value);
+        preserve_account_guard_sources(&mut value, &self.account_guard_sources);
+        Ok(value)
     }
 
     /// Imports configuration.
-    pub async fn import_config(&mut self, config_data: serde_json::Value) -> OpenBitFunResult<()> {
+    pub async fn import_config(
+        &mut self,
+        mut config_data: serde_json::Value,
+    ) -> OpenBitFunResult<()> {
         validate_current_config_value(&config_data, "Imported configuration")?;
+        let imported_sources = account_guard_sources(&config_data);
+        let diagnostics = restore_account_models(&mut config_data);
         let mut imported_config: GlobalConfig =
             serde_json::from_value(config_data).map_err(|e| {
                 OpenBitFunError::config(format!("Failed to parse imported config: {}", e))
@@ -876,8 +958,16 @@ impl ConfigManager {
         self.backup_raw_config(&previous_content, "pre-import")
             .await?;
 
-        self.commit_config(imported_config, None).await?;
-        self.load_diagnostics.clear();
+        self.commit_candidate(
+            ConfigCandidate {
+                config: imported_config,
+                guard_sources: imported_sources,
+                diagnostics: diagnostics.clone(),
+            },
+            None,
+        )
+        .await?;
+        self.load_diagnostics = diagnostics;
 
         info!("Successfully imported configuration");
         Ok(())
@@ -900,7 +990,7 @@ impl ConfigManager {
             uuid::Uuid::new_v4().simple()
         ));
 
-        let content = serde_json::to_string_pretty(&config_value_for_persistence(&self.config)?)
+        let content = serde_json::to_string_pretty(&self.persistence_value(&self.config)?)
             .map_err(|e| OpenBitFunError::config(format!("Failed to serialize backup: {}", e)))?;
 
         JsonFileStore
@@ -963,11 +1053,9 @@ impl ConfigManager {
         &self,
         path: &str,
         value: serde_json::Value,
-    ) -> OpenBitFunResult<GlobalConfig> {
+    ) -> OpenBitFunResult<ConfigCandidate> {
         if path.is_empty() {
-            return serde_json::from_value(value).map_err(|e| {
-                OpenBitFunError::config(format!("Failed to deserialize config: {}", e))
-            });
+            return self.parse_candidate(value);
         }
 
         let mut config_value = serde_json::to_value(&self.config)
@@ -975,9 +1063,7 @@ impl ConfigManager {
 
         let keys: Vec<&str> = path.split('.').filter(|k| !k.is_empty()).collect();
         if keys.is_empty() {
-            return serde_json::from_value(value).map_err(|e| {
-                OpenBitFunError::config(format!("Failed to deserialize config: {}", e))
-            });
+            return self.parse_candidate(value);
         }
 
         let last_key = keys.last().ok_or_else(|| {
@@ -1001,8 +1087,20 @@ impl ConfigManager {
             )));
         }
 
-        serde_json::from_value(config_value).map_err(|e| {
-            OpenBitFunError::config(format!("Failed to deserialize updated config: {}", e))
+        self.parse_candidate(config_value)
+    }
+
+    fn parse_candidate(&self, mut value: Value) -> OpenBitFunResult<ConfigCandidate> {
+        let mut sources = self.account_guard_sources.clone();
+        sources.extend(account_guard_sources(&value));
+        let diagnostics = restore_account_models(&mut value);
+        let config = serde_json::from_value(value).map_err(|e| {
+            OpenBitFunError::config(format!("Failed to deserialize updated config: {e}"))
+        })?;
+        Ok(ConfigCandidate {
+            config,
+            guard_sources: sources,
+            diagnostics,
         })
     }
 
@@ -1218,6 +1316,210 @@ mod tests {
             );
             assert!(!handoff_path.exists());
         }
+    }
+
+    #[tokio::test]
+    async fn account_pool_edits_advance_on_disk_and_reject_stale_writes() {
+        use openbitfun_config_contracts::{
+            AIModelConfig, AuthConfig, ModelCapability, SubscriptionProvider,
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let paths = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().join("pool"),
+        ));
+        let mut manager = ConfigManager::new(manager_settings(paths.clone()))
+            .await
+            .unwrap();
+        let pool = AIModelConfig {
+            id: "pool-model".into(),
+            name: "Codex pool".into(),
+            provider: "responses".into(),
+            model_name: "fixture-model".into(),
+            base_url: "https://chatgpt.com/backend-api/codex".into(),
+            enabled: true,
+            capabilities: vec![ModelCapability::TextChat],
+            auth: AuthConfig::SubscriptionPool {
+                provider: SubscriptionProvider::Codex,
+                accounts: vec!["codex".into(), "backup".into()],
+                revision: 0,
+            },
+            ..Default::default()
+        };
+        manager.set("ai.models", vec![pool.clone()]).await.unwrap();
+        let original_export = manager.export_config().unwrap();
+        let mut edited = pool.clone();
+        if let AuthConfig::SubscriptionPool { accounts, .. } = &mut edited.auth {
+            accounts.reverse();
+        }
+        manager
+            .set("ai.models", vec![edited.clone()])
+            .await
+            .unwrap();
+        assert!(matches!(
+            manager.get_config().ai.models[0].auth,
+            AuthConfig::SubscriptionPool { revision: 1, .. }
+        ));
+        let mut restored = ConfigManager::new(manager_settings(paths)).await.unwrap();
+        assert!(matches!(
+            restored.get_config().ai.models[0].auth,
+            AuthConfig::SubscriptionPool { revision: 1, .. }
+        ));
+        let before = tokio::fs::read(&restored.config_file).await.unwrap();
+        assert!(restored
+            .set("ai.models", vec![pool])
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("SUBSCRIPTION_ACCOUNT_POOL_CONFLICT"));
+        assert_eq!(
+            tokio::fs::read(&restored.config_file).await.unwrap(),
+            before
+        );
+        if let AuthConfig::SubscriptionPool { revision, .. } = &mut edited.auth {
+            *revision = 1;
+        }
+        if let AuthConfig::SubscriptionPool { accounts, .. } = &mut edited.auth {
+            accounts.push("third".into());
+        }
+        restored.set("ai.models", vec![edited]).await.unwrap();
+        assert!(matches!(
+            restored.get_config().ai.models[0].auth,
+            AuthConfig::SubscriptionPool { revision: 2, .. }
+        ));
+        restored.import_config(original_export).await.unwrap();
+        assert!(
+            matches!(&restored.get_config().ai.models[0].auth, AuthConfig::SubscriptionPool { accounts, revision: 3, .. } if accounts == &vec!["codex".to_string(), "backup".to_string()])
+        );
+        let backup = restored.create_backup().await.unwrap();
+        let serialized: serde_json::Value =
+            serde_json::from_slice(&tokio::fs::read(backup).await.unwrap()).unwrap();
+        assert_eq!(
+            serialized["ai"]["models"][0]["metadata"]["openbitfun_subscription_account_binding"]
+                ["model"]["auth"]["revision"],
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn account_guard_survives_restart_export_import_and_legacy_settings_writes() {
+        use openbitfun_config_contracts::protected_account_models::{
+            ACCOUNT_MODEL_GUARD_KEY, ACCOUNT_MODEL_GUARD_URL,
+        };
+        use openbitfun_config_contracts::{
+            AIModelConfig, AuthConfig, ModelCapability, SubscriptionProvider,
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().join("guard"),
+        ));
+        let mut manager = ConfigManager::new(manager_settings(path_manager.clone()))
+            .await
+            .unwrap();
+        let named = AIModelConfig {
+            id: "protected-model".into(),
+            name: "Protected model".into(),
+            provider: "responses".into(),
+            model_name: "fixture-model".into(),
+            base_url: "https://chatgpt.com/backend-api/codex".into(),
+            enabled: true,
+            capabilities: vec![ModelCapability::TextChat],
+            auth: AuthConfig::Subscription {
+                provider: SubscriptionProvider::Codex,
+                plan: None,
+                account_id: Some("codex-account-58134808-15a6-45db-ae33-2ad7d85cc570".into()),
+            },
+            ..AIModelConfig::default()
+        };
+        let mut config = manager.config.clone();
+        config.ai.models = vec![named.clone()];
+        config.ai.default_models.primary = Some(named.id.clone());
+        manager
+            .commit_config(config, Some("ai.models"))
+            .await
+            .unwrap();
+        let file = path_manager.app_config_file();
+        let persisted: serde_json::Value =
+            serde_json::from_slice(&tokio::fs::read(&file).await.unwrap()).unwrap();
+        assert_eq!(
+            persisted["ai"]["models"][0]["base_url"],
+            ACCOUNT_MODEL_GUARD_URL
+        );
+        let legacy: GlobalConfig = serde_json::from_value(persisted).unwrap();
+        assert!(matches!(legacy.ai.models[0].auth, AuthConfig::ApiKey));
+        assert!(legacy.ai.models[0].enabled);
+        // The legacy struct's opaque metadata preserves the nested source, even
+        // while an unrelated settings write reserializes the entire document.
+        let mut legacy_value = serde_json::to_value(legacy).unwrap();
+        legacy_value["app"]["auto_update"] = serde_json::json!(false);
+        let guard = &mut legacy_value["ai"]["models"][0]["metadata"][ACCOUNT_MODEL_GUARD_KEY];
+        guard["future_envelope_field"] = serde_json::json!({"keep":true});
+        guard["model"]["future_model_option"] = serde_json::json!({"keep":42});
+        guard["model"]["auth"]["plan"] = serde_json::Value::Null;
+        guard["model"]["auth"]["future_auth_hint"] = serde_json::json!("keep");
+        tokio::fs::write(&file, serde_json::to_vec(&legacy_value).unwrap())
+            .await
+            .unwrap();
+        let before_read = tokio::fs::read(&file).await.unwrap();
+        let mut loaded = ConfigManager::new(manager_settings(path_manager.clone()))
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&loaded.config.ai.models[0]).unwrap(),
+            serde_json::to_value(&named).unwrap()
+        );
+        assert_eq!(
+            loaded.config.ai.default_models.primary.as_deref(),
+            Some(named.id.as_str())
+        );
+        assert!(!loaded.config.app.auto_update);
+        assert_eq!(tokio::fs::read(&file).await.unwrap(), before_read);
+        loaded.set("app.auto_update", true).await.unwrap();
+        let exported = loaded.export_config().unwrap();
+        let guard = &exported["ai"]["models"][0]["metadata"][ACCOUNT_MODEL_GUARD_KEY];
+        assert_eq!(
+            guard["future_envelope_field"],
+            serde_json::json!({"keep":true})
+        );
+        assert_eq!(
+            guard["model"]["future_model_option"],
+            serde_json::json!({"keep":42})
+        );
+        assert_eq!(guard["model"]["auth"]["future_auth_hint"], "keep");
+        loaded
+            .set("ai.models", exported["ai"]["models"].clone())
+            .await
+            .unwrap();
+        assert_eq!(loaded.config.ai.models[0].auth, named.auth);
+        loaded.import_config(exported).await.unwrap();
+        assert_eq!(loaded.config.ai.models[0].auth, named.auth);
+        let backup = loaded.create_backup().await.unwrap();
+        let backed_up: serde_json::Value =
+            serde_json::from_slice(&tokio::fs::read(backup).await.unwrap()).unwrap();
+        assert_eq!(
+            backed_up["ai"]["models"][0]["metadata"][ACCOUNT_MODEL_GUARD_KEY]
+                ["future_envelope_field"],
+            serde_json::json!({"keep":true})
+        );
+        // A failed candidate must not leak either its account selection or its
+        // opaque source fields into a later, otherwise unrelated save.
+        let mut rejected = loaded.export_config().unwrap()["ai"]["models"].clone();
+        let source = &mut rejected[0]["metadata"][ACCOUNT_MODEL_GUARD_KEY];
+        source["model"]["auth"]["account_id"] =
+            serde_json::json!("codex-account-28134808-15a6-45db-ae33-2ad7d85cc570");
+        source["future_envelope_field"] = serde_json::json!({"keep":false});
+        let blocked_path = temp.path().join("blocked-config");
+        tokio::fs::create_dir(&blocked_path).await.unwrap();
+        loaded.config_file = blocked_path;
+        assert!(loaded.set("ai.models", rejected).await.is_err());
+        loaded.config_file = file.clone();
+        assert_eq!(loaded.config.ai.models[0].auth, named.auth);
+        loaded.set("editor.font_size", 18).await.unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_slice(&tokio::fs::read(file).await.unwrap()).unwrap();
+        assert_eq!(
+            saved["ai"]["models"][0]["metadata"][ACCOUNT_MODEL_GUARD_KEY]["future_envelope_field"],
+            serde_json::json!({"keep":true})
+        );
     }
 
     #[tokio::test]

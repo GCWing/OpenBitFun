@@ -321,7 +321,7 @@ pub(crate) async fn send_stream(
     let (instructions, response_input) =
         OpenAIMessageConverter::convert_messages_to_responses_input(messages);
     let openai_tools = common::convert_tools_flat(tools);
-    let request_body = try_build_request_body_with_context(
+    let mut request_body = try_build_request_body_with_context(
         client,
         instructions,
         response_input,
@@ -333,7 +333,10 @@ pub(crate) async fn send_stream(
     let idle_timeout = client.stream_options.idle_timeout;
     let ttft_timeout = client.stream_options.ttft_timeout;
 
+    let compatibility = crate::providers::opencode::FreeTools::prepare(client, &mut request_body)?;
+
     execute_sse_request(
+        Some(client),
         "Responses API",
         &url,
         &request_body,
@@ -360,6 +363,7 @@ pub(crate) async fn send_stream(
         },
     )
     .await
+    .map(|response| compatibility.wrap(response))
 }
 
 #[cfg(test)]

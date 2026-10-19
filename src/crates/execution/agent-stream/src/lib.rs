@@ -263,6 +263,7 @@ pub struct StreamResult {
     pub tool_calls: Vec<ToolCall>,
     /// Token usage statistics (from model response)
     pub usage: Option<UnifiedTokenUsage>,
+    pub response_model: Option<String>,
     /// Provider-specific metadata captured from the stream tail.
     pub provider_metadata: Option<Value>,
     /// Complete provider response layout and opaque state eligible for replay.
@@ -284,13 +285,23 @@ pub struct StreamResult {
 pub struct StreamProcessError {
     pub error: StreamProcessorError,
     pub has_effective_output: bool,
+    /// Preserve provider-reported usage even when no recoverable output exists.
+    pub usage: Option<UnifiedTokenUsage>,
+    pub response_model: Option<String>,
 }
 
 impl StreamProcessError {
-    fn new(error: StreamProcessorError, has_effective_output: bool) -> Self {
+    fn new(
+        error: StreamProcessorError,
+        has_effective_output: bool,
+        usage: Option<UnifiedTokenUsage>,
+        response_model: Option<String>,
+    ) -> Self {
         Self {
             error,
             has_effective_output,
+            usage,
+            response_model,
         }
     }
 }
@@ -327,6 +338,7 @@ struct StreamContext {
     hidden_text_parser: HiddenTextStreamParser,
     tool_calls: Vec<ToolCall>,
     usage: Option<UnifiedTokenUsage>,
+    response_model: Option<String>,
     provider_metadata: Option<Value>,
     model_response_replay: Option<ModelResponseReplayCapture>,
 
@@ -376,6 +388,7 @@ impl StreamContext {
             hidden_text_parser: HiddenTextStreamParser::new(options.hidden_text_tags.clone()),
             tool_calls: Vec::new(),
             usage: None,
+            response_model: None,
             provider_metadata: None,
             model_response_replay: None,
             pending_tool_calls: PendingToolCalls::new(),
@@ -418,6 +431,7 @@ impl StreamContext {
             hidden_text_blocks: self.hidden_text_blocks,
             tool_calls: self.tool_calls,
             usage: self.usage,
+            response_model: self.response_model,
             provider_metadata: self.provider_metadata,
             model_response_replay: self.model_response_replay,
             has_effective_output: self.has_effective_output,
@@ -640,6 +654,8 @@ impl StreamProcessor {
             Some(Err(StreamProcessError::new(
                 StreamProcessorError::Cancelled("Stream processing cancelled".to_string()),
                 ctx.has_effective_output,
+                ctx.usage.clone(),
+                ctx.response_model.clone(),
             )))
         } else {
             None
@@ -1114,6 +1130,8 @@ impl StreamProcessor {
                     return Err(StreamProcessError::new(
                         StreamProcessorError::Cancelled("Stream processing cancelled".to_string()),
                         ctx.has_effective_output,
+                        ctx.usage.clone(),
+                        ctx.response_model.clone(),
                     ));
                 }
 
@@ -1129,8 +1147,12 @@ impl StreamProcessor {
                             let provider_error = e.downcast_ref::<AiProviderError>().cloned();
                             let error_msg = format!("Stream processing error: {}", e);
                             error!("{}", error_msg);
+                            // Partial assembly must not erase a deterministic
+                            // provider rejection and turn it into a generic
+                            // retryable result at the caller.
                             let non_recoverable_stream_error =
-                                error_msg.contains("SSE Parsing Error");
+                                error_msg.contains("SSE Parsing Error")
+                                    || provider_error.as_ref().is_some_and(|error| !retry::should_retry(&error.category));
                             if !non_recoverable_stream_error && ctx.can_recover_as_partial_result()
                             {
                                 flush_sse_on_error(&sse_collector, &error_msg).await;
@@ -1148,6 +1170,8 @@ impl StreamProcessor {
                                     .map(StreamProcessorError::AiProvider)
                                     .unwrap_or(StreamProcessorError::AiClient(error_msg)),
                                 ctx.has_effective_output,
+                                ctx.usage.clone(),
+                                ctx.response_model.clone(),
                             ));
                         }
                         TimedStreamItem::TimedOut => {
@@ -1174,11 +1198,14 @@ impl StreamProcessor {
                             return Err(StreamProcessError::new(
                                 StreamProcessorError::AiClient(error_msg),
                                 ctx.has_effective_output,
+                                ctx.usage.clone(),
+                                ctx.response_model.clone(),
                             ));
                         }
                     };
 
                     let UnifiedResponse {
+                        response_model,
                         text,
                         reasoning_content,
                         reasoning_content_kind,
@@ -1191,6 +1218,9 @@ impl StreamProcessor {
                         model_response_replay,
                     } = response;
                     ctx.mark_first_stream_chunk();
+                    if let Some(model) = response_model.filter(|model| !model.trim().is_empty()) {
+                        ctx.response_model = Some(model);
+                    }
 
                     // Handle thinking_signature
                     if let Some(signature) = thinking_signature {
@@ -1344,6 +1374,174 @@ mod tests {
 
     fn build_processor() -> StreamProcessor {
         StreamProcessor::new(Arc::new(NoopEventSink))
+    }
+
+    #[test]
+    fn legacy_stream_observation_defaults_model_to_unknown() {
+        let legacy = json!({"text":"answer", "usage":null});
+        let response: UnifiedResponse = serde_json::from_value(legacy).unwrap();
+        assert!(response.response_model.is_none());
+        assert!(serde_json::to_value(&response)
+            .unwrap()
+            .get("response_model")
+            .is_none());
+        let reported = UnifiedResponse {
+            response_model: Some("reported-snapshot".into()),
+            ..Default::default()
+        };
+        let restored: UnifiedResponse =
+            serde_json::from_value(serde_json::to_value(reported).unwrap()).unwrap();
+        assert_eq!(
+            restored.response_model.as_deref(),
+            Some("reported-snapshot")
+        );
+    }
+
+    #[tokio::test]
+    async fn observed_model_survives_failure_without_becoming_effective_output_or_usage() {
+        let processor = build_processor();
+        let stream = iter(vec![
+            Ok(UnifiedResponse {
+                response_model: Some("reported-failed-model".into()),
+                ..Default::default()
+            }),
+            Err(anyhow::Error::new(AiProviderError::classified(
+                "Quota exhausted".into(),
+                ErrorCategory::ProviderQuota,
+            ))),
+        ])
+        .boxed();
+        let failed = processor
+            .process_stream(
+                stream,
+                None,
+                None,
+                "session".into(),
+                "turn".into(),
+                "round".into(),
+                "attempt".into(),
+                1,
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+        assert!(!failed.has_effective_output);
+        assert!(failed.usage.is_none());
+        assert_eq!(
+            failed.response_model.as_deref(),
+            Some("reported-failed-model")
+        );
+        let next = processor
+            .process_stream(
+                iter(vec![Ok(UnifiedResponse {
+                    text: Some("Recovered".into()),
+                    ..Default::default()
+                })])
+                .boxed(),
+                None,
+                None,
+                "session".into(),
+                "turn".into(),
+                "next-round".into(),
+                "next-attempt".into(),
+                2,
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            next.response_model, None,
+            "a later attempt must not inherit an earlier response model"
+        );
+    }
+
+    #[tokio::test]
+    async fn observed_model_is_preserved_on_cancel_before_visible_output() {
+        let processor = build_processor();
+        let ready = Arc::new(tokio::sync::Notify::new());
+        let observed = ready.clone();
+        let stream = iter(vec![Ok(UnifiedResponse {
+            response_model: Some("reported-before-cancel".into()),
+            ..Default::default()
+        })])
+        .chain(futures::stream::once(async move {
+            observed.notify_one();
+            futures::future::pending::<anyhow::Result<UnifiedResponse>>().await
+        }))
+        .boxed();
+        let cancellation = CancellationToken::new();
+        let processing = processor.process_stream(
+            stream,
+            None,
+            None,
+            "session".into(),
+            "turn".into(),
+            "round".into(),
+            "attempt".into(),
+            1,
+            &cancellation,
+        );
+        let cancel = async {
+            ready.notified().await;
+            cancellation.cancel();
+        };
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::join!(processing, cancel)
+        })
+        .await
+        .unwrap();
+        let cancelled = result.unwrap_err();
+        assert!(!cancelled.has_effective_output);
+        assert!(cancelled.usage.is_none());
+        assert_eq!(
+            cancelled.response_model.as_deref(),
+            Some("reported-before-cancel")
+        );
+    }
+
+    #[tokio::test]
+    async fn partial_output_does_not_hide_nonretryable_provider_rejections() {
+        for category in [
+            ErrorCategory::Auth,
+            ErrorCategory::Permission,
+            ErrorCategory::ProviderQuota,
+            ErrorCategory::ProviderBilling,
+            ErrorCategory::InvalidRequest,
+            ErrorCategory::ContentPolicy,
+            ErrorCategory::ContextOverflow,
+        ] {
+            let mut provider_error =
+                AiProviderError::classified("Rejected after partial text".into(), category);
+            provider_error.provider_code = Some("fixture-rejection".into());
+            let expected = provider_error.clone();
+            let error = build_processor()
+                .process_stream(
+                    iter(vec![
+                        Ok(UnifiedResponse {
+                            text: Some("Partial text".into()),
+                            response_model: Some("reported-snapshot".into()),
+                            usage: Some(sample_usage(9)),
+                            ..Default::default()
+                        }),
+                        Err(anyhow::Error::new(provider_error)),
+                    ])
+                    .boxed(),
+                    None,
+                    None,
+                    "session".into(),
+                    "turn".into(),
+                    "round".into(),
+                    "attempt".into(),
+                    1,
+                    &CancellationToken::new(),
+                )
+                .await
+                .expect_err("deterministic rejection must remain a typed error after output");
+            assert!(error.has_effective_output);
+            assert_eq!(error.usage.unwrap().total_token_count, 9);
+            assert_eq!(error.response_model.as_deref(), Some("reported-snapshot"));
+            assert_eq!(error.error, StreamProcessorError::AiProvider(expected));
+        }
     }
 
     #[tokio::test]

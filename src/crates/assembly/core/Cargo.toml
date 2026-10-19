@@ -411,6 +411,9 @@ opencode-plugin-host = [
 ]
 ai-adapter-runtime = [
     "dep:openbitfun-ai-adapters",
+    "dep:openbitfun-agent-runtime",
+    "openbitfun-agent-runtime/account-routing",
+    "openbitfun-services-core/routing-state",
 ]
 product-capabilities = ["dep:openbitfun-product-capabilities"]
 plugin-source = [

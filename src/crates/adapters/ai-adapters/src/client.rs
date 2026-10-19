@@ -25,10 +25,17 @@ use log::warn;
 use openbitfun_core_types::errors::AiProviderError;
 use reqwest::Client;
 use std::time::Duration;
+use std::{fmt, future::Future, pin::Pin, sync::Arc};
 use tokio::sync::mpsc;
 
 const SEND_MESSAGE_STREAM_ATTEMPTS: usize = openbitfun_agent_stream::retry::MAX_MODEL_ATTEMPTS;
 const TEST_CONNECTION_STREAM_ATTEMPTS: usize = 5;
+
+/// The host owns approved configuration and supplies this check. The adapter
+/// calls it after transport admission and before every actual HTTP send.
+pub trait ModelRequestAuthorization: fmt::Debug + Send + Sync {
+    fn validate(&self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+}
 
 /// Streamed response result with the parsed stream and optional raw SSE receiver.
 pub struct StreamResponse {
@@ -57,15 +64,22 @@ pub struct AIClient {
     pub(crate) stream_options: StreamOptions,
     pub(crate) model_reasoning_preset: Option<ReasoningPresetDescriptor>,
     pub(crate) selected_reasoning_preset: Option<ReasoningPresetDescriptor>,
+    pub(crate) request_authorization: Option<Arc<dyn ModelRequestAuthorization>>,
     #[cfg(feature = "subscription-auth")]
     subscription_provider: Option<crate::subscription_auth::SubscriptionProvider>,
+    #[cfg(feature = "subscription-auth")]
+    pub(crate) account_identity:
+        Option<crate::subscription_auth::request_identity::AccountRequestIdentity>,
 }
 
 impl AIClient {
     pub(crate) const TEST_IMAGE_EXPECTED_CODE: &'static str = "BYGR";
     pub(crate) const TEST_IMAGE_PNG_BASE64: &'static str =
         "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAACBklEQVR42u3ZsREAIAwDMYf9dw4txwJupI7Wua+YZEPBfO91h4ZjAgQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABIAAQAAgABAACAAEAAIAAYAAQAAgABAACAAEAAIAAYAAQAAgABAAAAAAAEDRZI3QGf7jDvEPAAIAAYAAQAAgABAACAAEAAIAAYAAQAAgABAACAAEAAIAAYAAQAAgABAACAABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAACAAEAAIAAQAAgABgABAAAjABAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQAAgABAACAAGAAEAAIAAQALwuLkoG8OSfau4AAAAASUVORK5CYII=";
-    pub(crate) const STREAM_CONNECT_TIMEOUT_SECS: u64 = 10;
+    // This includes the proxy tunnel and TLS handshake. A working proxy may
+    // need more than 10s before HTTP starts; the per-call TTFT budget still
+    // bounds the complete send and first effective output.
+    pub(crate) const STREAM_CONNECT_TIMEOUT_SECS: u64 = 30;
     pub(crate) const HTTP_POOL_IDLE_TIMEOUT_SECS: u64 = 30;
     pub(crate) const HTTP_TCP_KEEPALIVE_SECS: u64 = 60;
 
@@ -92,9 +106,20 @@ impl AIClient {
             stream_options,
             model_reasoning_preset: None,
             selected_reasoning_preset: None,
+            request_authorization: None,
             #[cfg(feature = "subscription-auth")]
             subscription_provider: None,
+            #[cfg(feature = "subscription-auth")]
+            account_identity: None,
         }
+    }
+
+    pub fn with_request_authorization(
+        mut self,
+        authorization: Arc<dyn ModelRequestAuthorization>,
+    ) -> Self {
+        self.request_authorization = Some(authorization);
+        self
     }
 
     /// Enable provider policy only after resolving an explicit subscription login.
@@ -105,6 +130,45 @@ impl AIClient {
         provider: crate::subscription_auth::SubscriptionProvider,
     ) -> Self {
         self.subscription_provider = Some(provider);
+        self.account_identity = None;
+        self
+    }
+
+    /// Attach a stable slot only after resolving its credential. Live identity
+    /// is checked before each send and is never inferred from a request URL.
+    #[cfg(feature = "subscription-auth")]
+    pub fn with_subscription_account(
+        mut self,
+        provider: crate::subscription_auth::SubscriptionProvider,
+        account_id: &str,
+    ) -> Self {
+        self.subscription_provider = Some(provider);
+        self.account_identity = (provider == crate::subscription_auth::SubscriptionProvider::Codex)
+            .then(|| {
+                crate::subscription_auth::request_identity::AccountRequestIdentity::bind(
+                    &self, account_id,
+                )
+            });
+        self
+    }
+
+    /// Explicit subscription identity; ordinary API-key clients return None.
+    #[cfg(feature = "subscription-auth")]
+    pub(crate) fn with_resolved_subscription_account(
+        mut self,
+        provider: crate::subscription_auth::SubscriptionProvider,
+        account_id: &str,
+        upstream_account_id: Option<String>,
+    ) -> Self {
+        self.subscription_provider = Some(provider);
+        self.account_identity = Some(
+            crate::subscription_auth::request_identity::AccountRequestIdentity::bind_resolved(
+                &self,
+                provider,
+                account_id,
+                upstream_account_id,
+            ),
+        );
         self
     }
 
@@ -118,6 +182,64 @@ impl AIClient {
         {
             None
         }
+    }
+
+    /// Identity for replaying signed/opaque history, never a serialized secret.
+    /// Codex has stable seat provenance and may rotate its access token. Other
+    /// credentials lack that proof, so rotation conservatively needs a new chat.
+    pub fn channel_replay_fingerprint(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut headers = self
+            .config
+            .custom_headers
+            .as_ref()
+            .map(|headers| headers.iter().collect::<Vec<_>>())
+            .unwrap_or_default();
+        headers.sort_by(|left, right| left.0.cmp(right.0));
+        let credential = (self.subscription_provider_key() != Some("codex"))
+            .then_some(self.config.api_key.as_str());
+        let bytes = serde_json::to_vec(&(
+            &self.config.format,
+            &self.config.model,
+            &self.config.base_url,
+            &self.config.request_url,
+            credential,
+            headers,
+            &self.config.custom_request_body,
+            &self.config.custom_request_body_mode,
+        ))
+        .expect("channel request identity serializes");
+        format!("{:x}", Sha256::digest(bytes))
+    }
+
+    /// Provenance of the credential already attached to this client. Provider
+    /// account headers are interpreted here, never by runtime orchestration.
+    pub fn subscription_account_origin(
+        &self,
+        account_id: &str,
+    ) -> Option<openbitfun_core_types::ModelAccountOrigin> {
+        let provider = self.subscription_provider_key()?;
+        #[cfg(feature = "subscription-auth")]
+        if provider != "codex" {
+            if let Some(identity) = &self.account_identity {
+                return identity.origin(account_id);
+            }
+        }
+        let upstream_account_id = match provider {
+            "codex" => self.config.custom_headers.as_ref().and_then(|headers| {
+                headers
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case("chatgpt-account-id"))
+                    .map(|(_, value)| value.clone())
+                    .filter(|value| !value.trim().is_empty())
+            }),
+            _ => None,
+        };
+        Some(openbitfun_core_types::ModelAccountOrigin {
+            provider: provider.into(),
+            account_id: account_id.into(),
+            upstream_account_id,
+        })
     }
 
     /// Returns the configured idle timeout between streamed chunks, if any.
@@ -575,6 +697,34 @@ impl AIClient {
         if let Some(plan) = crate::opencode_catalog::api_key_plan(&self.config.base_url) {
             return crate::opencode_catalog::api_key_models(&self.client, plan).await;
         }
+        #[cfg(feature = "subscription-auth")]
+        if let Some(provider) = self.subscription_provider {
+            use crate::subscription_auth::SubscriptionProvider;
+            if matches!(
+                provider,
+                SubscriptionProvider::Grok
+                    | SubscriptionProvider::Workbuddy
+                    | SubscriptionProvider::WorkbuddyAi
+                    | SubscriptionProvider::Zcode
+                    | SubscriptionProvider::ZcodeCn
+            ) {
+                if let Some(authorization) = &self.request_authorization {
+                    authorization.validate().await?;
+                }
+                if let Some(identity) = &self.account_identity {
+                    identity.validate(self).await?;
+                }
+                return match provider {
+                    SubscriptionProvider::Grok => {
+                        crate::subscription_auth::grok::list_models(self).await
+                    }
+                    SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
+                        crate::subscription_auth::workbuddy::list_models(self, provider).await
+                    }
+                    _ => crate::subscription_auth::zcode::list_models(self, provider).await,
+                };
+            }
+        }
         match ApiFormat::parse(&self.config.format)? {
             ApiFormat::OpenAIChat | ApiFormat::OpenAIResponses => {
                 openai::common::list_models(self).await
@@ -695,6 +845,23 @@ mod tests {
         };
 
         ([(CONTENT_TYPE, "text/event-stream")], payload)
+    }
+
+    #[cfg(feature = "subscription-auth")]
+    #[test]
+    fn subscription_account_provenance_requires_explicit_provider_identity() {
+        let mut client = make_test_client("responses", None);
+        client.config.custom_headers = Some(std::collections::HashMap::from([(
+            "chatgpt-account-id".into(),
+            "seat-1".into(),
+        )]));
+        assert!(client.subscription_account_origin("slot-1").is_none());
+        let client = client
+            .with_subscription_provider(crate::subscription_auth::SubscriptionProvider::Codex);
+        let origin = client.subscription_account_origin("slot-1").unwrap();
+        assert_eq!(origin.provider, "codex");
+        assert_eq!(origin.account_id, "slot-1");
+        assert_eq!(origin.upstream_account_id.as_deref(), Some("seat-1"));
     }
 
     fn make_test_client(format: &str, custom_request_body: Option<Value>) -> AIClient {

@@ -318,6 +318,28 @@
       }
     },
     {
+      "id": "opencode-zen",
+      "display_order": 130,
+      "region": "global",
+      "name": "OpenCode Zen",
+      "description": "OpenCode models with free access and pay-as-you-go API keys.",
+      "help_url": "https://opencode.ai/console",
+      "requires_api_key": false,
+      "catalog_provider_ids": [],
+      "endpoints": [
+        {
+          "id": "default",
+          "base_url": "https://opencode.ai/zen/v1",
+          "api_format": "openai",
+          "label": "default",
+          "is_default": true,
+          "trusted_for_auto_detection": true,
+          "catalog_provider_ids": []
+        }
+      ],
+      "model_policy": { "mode": "curated", "curated_models": [], "additional_models": [] }
+    },
+    {
       "region": "any",
       "requires_api_key": true,
       "display_order": 140,

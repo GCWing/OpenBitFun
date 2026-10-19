@@ -549,6 +549,32 @@ mod tests {
     };
 
     #[test]
+    fn turn_failure_projects_recovery_constraint_with_original_provider_facts() {
+        let mut detail = openbitfun_core_types::errors::AiProviderError::from_parts(
+            "Quota exhausted; request_id=original-request".into(),
+            Some("codex".into()),
+            Some("insufficient_quota".into()),
+            Some(402),
+        )
+        .detail();
+        detail.recovery_constraint = Some("account_bound_replay".into());
+        let projected = project_agentic_frontend_event(AgenticEvent::DialogTurnFailed {
+            session_id: "session-1".into(),
+            turn_id: "turn-1".into(),
+            error: "Quota exhausted".into(),
+            error_category: Some(openbitfun_core_types::errors::ErrorCategory::ProviderQuota),
+            error_detail: Some(detail),
+        })
+        .unwrap();
+        let detail = &projected.payload["errorDetail"];
+        assert_eq!(detail["recoveryConstraint"], "account_bound_replay");
+        assert_eq!(detail["category"], "provider_quota");
+        assert_eq!(detail["providerCode"], "insufficient_quota");
+        assert_eq!(detail["httpStatus"], 402);
+        assert_eq!(detail["requestId"], "original-request");
+    }
+
+    #[test]
     fn session_created_projects_worktree_binding_fields() {
         let projected = project_agentic_frontend_event(AgenticEvent::SessionCreated {
             session_id: "session-1".to_string(),

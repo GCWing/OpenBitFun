@@ -52,6 +52,13 @@ export interface PeerHostCapabilities {
   /** MiniApp Agent runs accept immutable virtual context-file snapshots. */
   readonly miniAppAgentContextFilesV1: boolean;
   readonly wslWorkspacesV1?: boolean;
+  /** Host stores ordered subscription account pools on model configs. */
+  readonly subscriptionAccountPoolsV1?: boolean;
+  /** Host-owned read-only subscription allowance query. */
+  readonly subscriptionQuotaV1?: boolean;
+  readonly subscriptionModelQuotaV1?: boolean;
+  /** Host routes a model to its configured backup channels. */
+  readonly modelChannelRoutingV1?: boolean;
   readonly wholeSessionCopyV1?: boolean;
   readonly modelPoolSelectionV1?: boolean;
   readonly computerUseSharingV1?: boolean;
@@ -181,6 +188,10 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   tokenUsageStatistics: false,
   miniAppAgentContextFilesV1: false,
   wslWorkspacesV1: false,
+  subscriptionAccountPoolsV1: false,
+  subscriptionQuotaV1: false,
+  subscriptionModelQuotaV1: false,
+  modelChannelRoutingV1: false,
   wholeSessionCopyV1: false,
   modelPoolSelectionV1: false,
   computerUseSharingV1: false,
@@ -528,6 +539,10 @@ export class PeerConnectionManager {
       tokenUsageStatistics: caps?.token_usage_statistics === true,
       miniAppAgentContextFilesV1: caps?.miniapp_agent_context_files_v1 === true,
       wslWorkspacesV1: caps?.wsl_workspaces_v1 === true,
+      subscriptionAccountPoolsV1: caps?.subscription_account_pools_v1 === true,
+      subscriptionQuotaV1: caps?.subscription_quota_v1 === true,
+      subscriptionModelQuotaV1: caps?.subscription_model_quota_v1 === true,
+      modelChannelRoutingV1: caps?.model_channel_routing_v1 === true,
       wholeSessionCopyV1: caps?.whole_session_copy_v1 === true,
       modelPoolSelectionV1: caps?.model_pool_selection_v1 === true,
       computerUseSharingV1: caps?.computer_use_sharing_v1 === true,
@@ -775,6 +790,10 @@ function capabilitiesEqual(
     a.tokenUsageStatistics === b.tokenUsageStatistics &&
     a.miniAppAgentContextFilesV1 === b.miniAppAgentContextFilesV1 &&
     a.wslWorkspacesV1 === b.wslWorkspacesV1 &&
+    a.subscriptionAccountPoolsV1 === b.subscriptionAccountPoolsV1 &&
+    a.subscriptionQuotaV1 === b.subscriptionQuotaV1 &&
+    a.subscriptionModelQuotaV1 === b.subscriptionModelQuotaV1 &&
+    a.modelChannelRoutingV1 === b.modelChannelRoutingV1 &&
     a.wholeSessionCopyV1 === b.wholeSessionCopyV1 &&
     a.modelPoolSelectionV1 === b.modelPoolSelectionV1 &&
     a.computerUseSharingV1 === b.computerUseSharingV1 &&

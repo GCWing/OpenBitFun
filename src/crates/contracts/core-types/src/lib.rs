@@ -15,23 +15,25 @@ pub mod product_identity;
 pub mod session;
 pub mod session_usage;
 pub mod speech;
+pub mod subscription;
 pub mod surface;
 pub mod tool_image_attachment;
 pub mod worktree;
 
 pub use ai::{
-    AIConfig, ConnectionTestMessageCode, ConnectionTestResult, Message, ModelReasoningSummaryPart,
-    ModelRequestContext, ModelResponseReplay, ModelResponseReplayItem, ModelsDevCatalogSource,
-    ModelsDevCatalogStatus, ModelsDevReasoningCatalog, ModelsDevReasoningModel,
-    ModelsDevReasoningProvider, ModelsDevRefreshResult, ModelsDevRefreshStatus, ProviderCatalog,
-    ProviderCatalogEndpoint, ProviderCatalogModel, ProviderCatalogModelCapabilities,
-    ProviderCatalogModelLimits, ProviderCatalogModelPricing, ProviderCatalogModelSource,
-    ProviderCatalogProvider, ProviderCatalogSource, ProviderCatalogUpstreamProvider, ProxyConfig,
-    ReasoningCapabilityStatus, ReasoningCatalogBinding, ReasoningCatalogProjection,
-    ReasoningCatalogProjectionRequest, ReasoningConfig, ReasoningContentKind, ReasoningPreset,
-    ReasoningPresetAction, ReasoningPresetDescriptor, ReasoningPresetSource, RemoteModelInfo,
-    RemoteModelRouting, ToolCall, ToolCallConfirmationDetails, ToolCallRequestInfo,
-    ToolCallResponseInfo, ToolDefinition,
+    AIConfig, ConnectionTestMessageCode, ConnectionTestResult, Message, ModelAccountOrigin,
+    ModelReasoningSummaryPart, ModelRequestContext, ModelResponseReplay, ModelResponseReplayItem,
+    ModelsDevCatalogSource, ModelsDevCatalogStatus, ModelsDevReasoningCatalog,
+    ModelsDevReasoningModel, ModelsDevReasoningProvider, ModelsDevRefreshResult,
+    ModelsDevRefreshStatus, ProviderCatalog, ProviderCatalogEndpoint, ProviderCatalogModel,
+    ProviderCatalogModelCapabilities, ProviderCatalogModelLimits, ProviderCatalogModelPricing,
+    ProviderCatalogModelSource, ProviderCatalogProvider, ProviderCatalogSource,
+    ProviderCatalogUpstreamProvider, ProxyConfig, ReasoningCapabilityStatus,
+    ReasoningCatalogBinding, ReasoningCatalogProjection, ReasoningCatalogProjectionRequest,
+    ReasoningConfig, ReasoningContentKind, ReasoningPreset, ReasoningPresetAction,
+    ReasoningPresetDescriptor, ReasoningPresetSource, RemoteModelInfo, RemoteModelRouting,
+    ToolCall, ToolCallConfirmationDetails, ToolCallRequestInfo, ToolCallResponseInfo,
+    ToolDefinition,
 };
 pub use errors::{AiErrorDetail, ErrorCategory};
 pub use model::{

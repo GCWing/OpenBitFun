@@ -2,12 +2,12 @@
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
   "catalogDigest": "05afb29f354928738ed26d4275819bbe3c165c7878bb24996b5169639ba03330",
-  "commandCount": 692,
+  "commandCount": 698,
   "coverage": {
-    "commandCount": 692,
+    "commandCount": 698,
     "documentedCommandCount": 642,
-    "implementationCommandCount": 50,
-    "implementationDigest": "1dc90be1a699f521e7faee78c128d6332ef0806daccb389b288fbe2fa3fd3c2c"
+    "implementationCommandCount": 56,
+    "implementationDigest": "a3b798bfb8715535a1220fdebd3fdbfb0f1bd2f71daebed8264d8d026c58e28f"
   },
   "commands": [
     {
@@ -4278,6 +4278,20 @@
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
+      "id": "get_subscription_account_quota",
+      "moduleId": "commands",
+      "capabilityId": "feature.projects",
+      "capabilityIds": [
+        "feature.projects"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "get_subscription_account_quota",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn get_subscription_account_quota( state: State<'_, AppState>, request: SubscriptionAccountQuotaRequest, ) -> Result<openbitfun_core_types::subscription::SubscriptionQuotaSnapshot, String>",
+      "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
       "id": "get_subscription_login_status",
       "moduleId": "commands",
       "capabilityId": "setting.ai.models",
@@ -5568,6 +5582,20 @@
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
+      "id": "list_subscription_account_instances",
+      "moduleId": "commands",
+      "capabilityId": "feature.projects",
+      "capabilityIds": [
+        "feature.projects"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "list_subscription_account_instances",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn list_subscription_account_instances() -> Result< Vec<openbitfun_core::infrastructure::subscription_auth::SubscriptionAccountInstance>, String, >",
+      "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
       "id": "list_subscription_accounts",
       "moduleId": "commands",
       "capabilityId": "setting.ai.models",
@@ -5787,6 +5815,20 @@
       "rustPath": "logout_subscription_account",
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
       "signature": "fn logout_subscription_account( request: SubscriptionProviderRequest, ) -> Result<openbitfun_core::infrastructure::subscription_auth::SubscriptionLogoutResult, String>",
+      "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
+      "id": "logout_subscription_account_instance",
+      "moduleId": "commands",
+      "capabilityId": "feature.projects",
+      "capabilityIds": [
+        "feature.projects"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "logout_subscription_account_instance",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn logout_subscription_account_instance( request: SubscriptionAccountInstanceRequest, ) -> Result<openbitfun_core::infrastructure::subscription_auth::SubscriptionLogoutResult, String>",
       "remoteWorkspacePolicy": "LocalOnly"
     },
     {
@@ -7214,6 +7256,20 @@
       "rustPath": "refresh_subscription_account",
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
       "signature": "fn refresh_subscription_account( state: State<'_, AppState>, request: SubscriptionProviderRequest, ) -> Result<openbitfun_core::infrastructure::subscription_auth::SubscriptionAccount, String>",
+      "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
+      "id": "refresh_subscription_account_instance",
+      "moduleId": "commands",
+      "capabilityId": "feature.projects",
+      "capabilityIds": [
+        "feature.projects"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "refresh_subscription_account_instance",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn refresh_subscription_account_instance( state: State<'_, AppState>, request: SubscriptionAccountInstanceRequest, ) -> Result<openbitfun_core::infrastructure::subscription_auth::SubscriptionAccountInstance, String>",
       "remoteWorkspacePolicy": "LocalOnly"
     },
     {
@@ -9356,6 +9412,20 @@
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
+      "id": "set_subscription_account_enabled",
+      "moduleId": "commands",
+      "capabilityId": "feature.projects",
+      "capabilityIds": [
+        "feature.projects"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "set_subscription_account_enabled",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn set_subscription_account_enabled( request: SubscriptionAccountEnabledRequest, ) -> Result<openbitfun_core::infrastructure::subscription_auth::SubscriptionAccountInstance, String>",
+      "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
       "id": "set_tray_unread_count",
       "moduleId": "system",
       "capabilityId": "setting.application.general",
@@ -10095,6 +10165,20 @@
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
       "signature": "fn start_search_filenames_stream( app_handle: AppHandle, state: State<'_, AppState>, mut request: SearchFilenamesRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
+    },
+    {
+      "id": "start_subscription_account_login",
+      "moduleId": "commands",
+      "capabilityId": "feature.projects",
+      "capabilityIds": [
+        "feature.projects"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "start_subscription_account_login",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn start_subscription_account_login( state: State<'_, AppState>, request: SubscriptionAccountLoginRequest, ) -> Result<openbitfun_core::infrastructure::subscription_auth::LoginStartResult, String>",
+      "remoteWorkspacePolicy": "LocalOnly"
     },
     {
       "id": "start_subscription_login",

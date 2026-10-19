@@ -50,6 +50,9 @@ pub fn model_summary(model: &AIModelConfig) -> ModelSummary {
             AuthConfig::Subscription { provider, .. } => {
                 format!("subscription:{provider:?}").to_ascii_lowercase()
             }
+            AuthConfig::SubscriptionPool { provider, .. } => {
+                format!("subscription_pool:{provider:?}").to_ascii_lowercase()
+            }
         }),
     }
 }

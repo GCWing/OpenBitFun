@@ -173,6 +173,11 @@ impl ConfigService {
         })
     }
 
+    /// Storage root selected by this executing host's configuration manager.
+    pub(crate) async fn user_data_dir(&self) -> std::path::PathBuf {
+        self.manager.read().await.path_manager().user_data_dir()
+    }
+
     /// Gets a configuration value (supports dot-paths).
     pub async fn get_config<T>(&self, path: Option<&str>) -> OpenBitFunResult<T>
     where

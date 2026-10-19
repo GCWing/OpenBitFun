@@ -188,28 +188,64 @@ fn rate_limit_retry_delay_ms(attempt: usize) -> u64 {
         .min(MAX_RETRY_AFTER_DELAY_MS)
 }
 
-fn retry_after_delay_ms(headers: &HeaderMap) -> Option<u64> {
+/// Upper bound for a provider recovery hint used as routing cooldown. Written
+/// allowance resets beyond a week are treated as malformed, not as fact.
+const MAX_PROVIDER_RECOVERY_HINT_MS: u64 = 8 * 24 * 60 * 60 * 1000;
+
+/// Structured `Retry-After`, uncapped by the per-sleep limit so routing can
+/// keep an exhausted account cooled until the provider says it recovers.
+fn retry_after_hint_ms(headers: &HeaderMap) -> Option<u64> {
     let value = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
 
     if let Ok(seconds) = value.parse::<u64>() {
-        return Some(seconds.saturating_mul(1000).min(MAX_RETRY_AFTER_DELAY_MS));
+        return Some(
+            seconds
+                .saturating_mul(1000)
+                .min(MAX_PROVIDER_RECOVERY_HINT_MS),
+        );
     }
 
     let retry_at = DateTime::parse_from_rfc2822(value)
         .ok()?
         .with_timezone(&Utc);
-    let now = Utc::now();
-    if retry_at <= now {
-        return Some(0);
-    }
+    Some(delay_until_ms(retry_at.timestamp(), Utc::now().timestamp()))
+}
 
-    Some(
-        retry_at
-            .signed_duration_since(now)
-            .num_milliseconds()
-            .max(0) as u64,
-    )
-    .map(|delay| delay.min(MAX_RETRY_AFTER_DELAY_MS))
+fn delay_until_ms(at: i64, now: i64) -> u64 {
+    u64::try_from(at.saturating_sub(now).max(0))
+        .unwrap_or(0)
+        .saturating_mul(1000)
+        .min(MAX_PROVIDER_RECOVERY_HINT_MS)
+}
+
+/// Allowance resets reported in the error body, e.g. ChatGPT's
+/// `usage_limit_reached` carries `resets_at` (unix seconds) or
+/// `resets_in_seconds`.
+fn body_recovery_hint_ms(body: &str, now: i64) -> Option<u64> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let error = value.get("error").unwrap_or(&value);
+    if let Some(at) = error.get("resets_at").and_then(serde_json::Value::as_i64) {
+        return (at > now).then(|| delay_until_ms(at, now));
+    }
+    error
+        .get("resets_in_seconds")
+        .and_then(serde_json::Value::as_u64)
+        .filter(|seconds| *seconds > 0)
+        .map(|seconds| {
+            seconds
+                .saturating_mul(1000)
+                .min(MAX_PROVIDER_RECOVERY_HINT_MS)
+        })
+}
+
+fn provider_recovery_hint_ms(headers: &HeaderMap, body: &str) -> Option<u64> {
+    let header = retry_after_hint_ms(headers);
+    let body = body_recovery_hint_ms(body, Utc::now().timestamp());
+    header.max(body)
+}
+
+fn retry_after_delay_ms(headers: &HeaderMap) -> Option<u64> {
+    retry_after_hint_ms(headers).map(|delay| delay.min(MAX_RETRY_AFTER_DELAY_MS))
 }
 
 fn retry_delay_ms(attempt: usize, headers: &HeaderMap, status: StatusCode) -> u64 {
@@ -310,6 +346,7 @@ impl Drop for ManagedResponseStream {
 }
 
 pub(crate) async fn execute_sse_request<BuildRequest, BuildHandler, HandlerFuture>(
+    account_client: Option<&crate::client::AIClient>,
     label: &str,
     url: &str,
     request_body: &serde_json::Value,
@@ -337,10 +374,27 @@ where
         // the first-output timeout or another transport attempt.
         let queue_started_at = std::time::Instant::now();
         let mut request_permit = capacity.acquire().await;
+        if let Some(authorization) =
+            account_client.and_then(|client| client.request_authorization.as_ref())
+        {
+            authorization.validate().await?;
+        }
+        #[cfg(feature = "subscription-auth")]
+        if let Some((client, identity)) = account_client.and_then(|client| {
+            client
+                .account_identity
+                .as_ref()
+                .map(|identity| (client, identity))
+        }) {
+            // Queueing may outlive logout, disable, refresh or seat replacement.
+            identity.validate(client).await?;
+        }
+        #[cfg(not(feature = "subscription-auth"))]
+        let _ = account_client;
         let queue_wait_ms = elapsed_ms_u64(queue_started_at);
         if queue_wait_ms > 0 {
             debug!(
-                "{} provider capacity queue released: queue_wait_ms={}",
+                "{} request admission queue released: queue_wait_ms={}",
                 label, queue_wait_ms
             );
         }
@@ -427,7 +481,7 @@ where
                         status,
                         &error_text,
                         error_kind,
-                        retry_after_delay_ms(&headers),
+                        provider_recovery_hint_ms(&headers, &error_text),
                     );
                     if error_body_timed_out {
                         // Keep the HTTP status, but do not report a partially
@@ -607,6 +661,7 @@ mod tests {
         let url = format!("http://{address}/timeout/invalid_request_error/v1/messages");
         let client = crate::client::http::create_http_client(None, false);
         let result = execute_sse_request(
+            None,
             "Anthropic Streaming API",
             &url,
             &serde_json::json!({"model": "test"}),
@@ -928,6 +983,7 @@ mod tests {
         let body = serde_json::json!({"model": "fixture"});
         let open = || {
             execute_sse_request(
+                None,
                 "OpenAI Streaming API",
                 &url,
                 &body,
@@ -987,6 +1043,7 @@ mod tests {
         let body = serde_json::json!({"model": "fixture"});
 
         let error = execute_sse_request(
+            None,
             "OpenAI Streaming API",
             &url,
             &body,
@@ -1008,6 +1065,7 @@ mod tests {
         // The provider cooldown is longer than TTFT. It must be spent before
         // the request timer starts, not turn a queued request into a timeout.
         let held = execute_sse_request(
+            None,
             "OpenAI Streaming API",
             &url,
             &body,
@@ -1020,6 +1078,7 @@ mod tests {
         .await
         .expect("queued request must get its own TTFT budget");
         let mut next = Box::pin(execute_sse_request(
+            None,
             "OpenAI Streaming API",
             &url,
             &body,
@@ -1063,6 +1122,7 @@ mod tests {
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let client = crate::client::http::create_http_client(None, false);
         let error = execute_sse_request(
+            None,
             "OpenAI Streaming API",
             &url,
             &serde_json::json!({}),
@@ -1078,6 +1138,58 @@ mod tests {
         assert!(error.to_string().contains("TTFT timeout"));
         assert!(!error.to_string().contains("after 1 attempts"));
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn short_ttft_still_cancels_stalled_proxy_tls_setup() {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (ready_tx, mut ready_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio::io::BufReader::new(socket);
+            loop {
+                let mut line = String::new();
+                if socket.read_line(&mut line).await.unwrap() == 0 {
+                    return;
+                }
+                if line == "\r\n" {
+                    break;
+                }
+            }
+            socket
+                .get_mut()
+                .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                .await
+                .unwrap();
+            let _ = ready_tx.send(());
+            // A real proxy may finish CONNECT before TLS becomes ready.
+            // Keep this tunnel open without answering the TLS ClientHello.
+            std::future::pending::<()>().await;
+        });
+        let client = crate::client::http::create_http_client(
+            Some(crate::types::ProxyConfig {
+                enabled: true,
+                url: format!("http://{address}"),
+                username: None,
+                password: None,
+            }),
+            false,
+        );
+        let outcome = send_stream_request(
+            client.post("https://transport-budget.invalid/v1/chat/completions"),
+            &serde_json::json!({}),
+            Some(Duration::from_millis(100)),
+        )
+        .await;
+        server.abort();
+        let _ = server.await;
+        assert!(
+            ready_rx.try_recv().is_ok(),
+            "the proxy tunnel must have opened"
+        );
+        assert!(matches!(outcome, StreamSendOutcome::TtftTimeout));
     }
 
     #[tokio::test]
@@ -1110,6 +1222,7 @@ mod tests {
         let body = serde_json::json!({});
         let open = || {
             execute_sse_request(
+                None,
                 "OpenAI Streaming API",
                 &url,
                 &body,
@@ -1238,6 +1351,7 @@ mod tests {
         let request_body = serde_json::json!({"model": "configured-model"});
 
         let result = execute_sse_request(
+            None,
             "OpenAI Streaming API",
             &url,
             &request_body,
@@ -1260,6 +1374,127 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn host_authorization_is_checked_after_queueing_and_before_each_http_retry() {
+        #[derive(Debug)]
+        struct Authorization {
+            checks: AtomicUsize,
+            allowed_checks: AtomicUsize,
+        }
+        impl crate::client::ModelRequestAuthorization for Authorization {
+            fn validate(&self) -> std::pin::Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+                Box::pin(async move {
+                    if self.checks.fetch_add(1, Ordering::SeqCst)
+                        >= self.allowed_checks.load(Ordering::SeqCst)
+                    {
+                        return Err(AiProviderError::classified(
+                            "Fixture model authorization was revoked".into(),
+                            ErrorCategory::InvalidRequest,
+                        )
+                        .into());
+                    }
+                    Ok(())
+                })
+            }
+        }
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let app = Router::new()
+            .route("/chat/completions", post(bad_requests_then_success))
+            .with_state(RetryFixtureState {
+                attempts: attempts.clone(),
+            });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/chat/completions", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let http = crate::client::http::create_http_client(None, false);
+        let body = serde_json::json!({"model":"configured-model"});
+        for queued in [true, false] {
+            attempts.store(0, Ordering::SeqCst);
+            let authorization = Arc::new(Authorization {
+                checks: AtomicUsize::new(0),
+                allowed_checks: AtomicUsize::new(1),
+            });
+            let client = crate::client::AIClient::new(crate::types::AIConfig {
+                name: "guard fixture".into(),
+                base_url: url.clone(),
+                request_url: url.clone(),
+                api_key: "synthetic-guard-key".into(),
+                model: "configured-model".into(),
+                format: "openai".into(),
+                context_window: 4096,
+                max_tokens: None,
+                temperature: None,
+                top_p: None,
+                inline_think_in_text: false,
+                custom_headers: None,
+                custom_headers_mode: None,
+                skip_ssl_verify: false,
+                custom_request_body: None,
+                custom_request_body_mode: None,
+            })
+            .with_request_authorization(authorization.clone());
+            let scope =
+                RequestCapacity::for_request(&http.post(&url).bearer_auth("synthetic-guard-key"))
+                    .unwrap();
+            let held = if queued {
+                let held = scope.acquire().await;
+                held.concurrency_rejected(Duration::ZERO);
+                Some(held)
+            } else {
+                None
+            };
+            let request = execute_sse_request(
+                Some(&client),
+                "guard fixture",
+                &url,
+                &body,
+                3,
+                None,
+                None,
+                || {
+                    http.post(&url)
+                        .bearer_auth("synthetic-guard-key")
+                        .json(&body)
+                },
+                |_response, tx, _, _| async move {
+                    drop(tx);
+                },
+            );
+            tokio::pin!(request);
+            if queued {
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(20), &mut request)
+                        .await
+                        .is_err()
+                );
+                assert_eq!(
+                    authorization.checks.load(Ordering::SeqCst),
+                    0,
+                    "authorization must run after the queue"
+                );
+                authorization.allowed_checks.store(0, Ordering::SeqCst);
+            }
+            drop(held);
+            let error = request
+                .await
+                .err()
+                .expect("revoked authorization must stop before the next HTTP send");
+            assert_eq!(
+                error.downcast_ref::<AiProviderError>().unwrap().category,
+                ErrorCategory::InvalidRequest
+            );
+            assert_eq!(attempts.load(Ordering::SeqCst), usize::from(!queued));
+            assert_eq!(
+                authorization.checks.load(Ordering::SeqCst),
+                if queued { 1 } else { 2 }
+            );
+            let _released = tokio::time::timeout(Duration::from_millis(100), scope.acquire())
+                .await
+                .unwrap();
+        }
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn single_attempt_preserves_retry_after_metadata_for_outer_budget() {
         let app = Router::new().route("/chat/completions", post(forbidden_with_retry_after));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -1276,6 +1511,7 @@ mod tests {
         let request_body = serde_json::json!({"model": "configured-model"});
 
         let result = execute_sse_request(
+            None,
             "OpenAI Streaming API",
             &url,
             &request_body,
@@ -1310,6 +1546,41 @@ mod tests {
             retry_after_delay_ms(&headers),
             Some(MAX_RETRY_AFTER_DELAY_MS)
         );
+    }
+
+    #[test]
+    fn recovery_hint_is_not_shortened_to_the_sleep_cap() {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, HeaderValue::from_static("7200"));
+        assert_eq!(provider_recovery_hint_ms(&headers, ""), Some(7_200_000));
+        assert_eq!(
+            retry_after_delay_ms(&headers),
+            Some(MAX_RETRY_AFTER_DELAY_MS)
+        );
+    }
+
+    #[test]
+    fn usage_limit_body_supplies_the_allowance_reset() {
+        let body = r#"{"error":{"type":"usage_limit_reached","resets_at":1600}}"#;
+        assert_eq!(body_recovery_hint_ms(body, 1000), Some(600_000));
+        assert_eq!(body_recovery_hint_ms(body, 2000), None);
+        let body = r#"{"error":{"type":"usage_limit_reached","resets_in_seconds":90}}"#;
+        assert_eq!(body_recovery_hint_ms(body, 1000), Some(90_000));
+        let far = r#"{"error":{"resets_in_seconds":99999999}}"#;
+        assert_eq!(
+            body_recovery_hint_ms(far, 1000),
+            Some(MAX_PROVIDER_RECOVERY_HINT_MS)
+        );
+        assert_eq!(body_recovery_hint_ms("not json", 1000), None);
+        let error = http_provider_error(
+            "OpenAI Responses API",
+            StatusCode::TOO_MANY_REQUESTS,
+            r#"{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","resets_in_seconds":90}}"#,
+            "client error",
+            provider_recovery_hint_ms(&HeaderMap::new(), r#"{"error":{"resets_in_seconds":90}}"#),
+        );
+        assert_eq!(error.category, ErrorCategory::ProviderQuota);
+        assert_eq!(error.retry_after_ms, Some(90_000));
     }
 
     #[test]

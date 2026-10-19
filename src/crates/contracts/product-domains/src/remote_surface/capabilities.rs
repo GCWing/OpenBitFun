@@ -43,6 +43,23 @@ pub enum PeerHostCapability {
     TargetedSessionRollback,
     /// `get_token_usage_statistics` is implemented.
     TokenUsageStatistics,
+    /// Explicit subscription slots and account-aware management are implemented.
+    SubscriptionAccountsV1,
+    /// Independent slots/pools for Antigravity, OpenCode Zen, Grok and Hermes.
+    SubscriptionProviderAccountsV1,
+    /// Account-scoped vendor allowance snapshots are implemented.
+    SubscriptionQuotaV1,
+    /// The quota command can read a saved API-key model by model_id.
+    SubscriptionModelQuotaV1,
+    /// Model configs support ordered pools and atomic `set_config.expectedModels`
+    /// comparisons for editors of those bindings.
+    SubscriptionAccountPoolsV1,
+    /// Native model rounds can safely switch accounts within one attempt budget.
+    SubscriptionAccountFailoverV1,
+    /// Explicit cross-provider model channels and native failover are supported.
+    ModelChannelRoutingV1,
+    /// Account eligibility is independent of login and survives sign-out.
+    SubscriptionAccountManagementV1,
     /// `miniapp_agent_run` accepts non-empty `contextFiles`.
     MiniappAgentContextFilesV1,
     /// WSL profiles and discovery are understood; availability is probed on the host.
@@ -85,6 +102,14 @@ impl PeerHostCapability {
         Self::ControlConversationResetV1,
         Self::TargetedSessionRollback,
         Self::TokenUsageStatistics,
+        Self::SubscriptionAccountsV1,
+        Self::SubscriptionProviderAccountsV1,
+        Self::SubscriptionQuotaV1,
+        Self::SubscriptionModelQuotaV1,
+        Self::SubscriptionAccountPoolsV1,
+        Self::SubscriptionAccountFailoverV1,
+        Self::ModelChannelRoutingV1,
+        Self::SubscriptionAccountManagementV1,
         Self::MiniappAgentContextFilesV1,
         Self::WslWorkspacesV1,
         Self::ComputerUseSharingV1,
@@ -114,6 +139,14 @@ impl PeerHostCapability {
             Self::BtwModelPoolSelectionV1 => "btw_model_pool_selection_v1",
             Self::TargetedSessionRollback => "targeted_session_rollback",
             Self::TokenUsageStatistics => "token_usage_statistics",
+            Self::SubscriptionAccountsV1 => "subscription_accounts_v1",
+            Self::SubscriptionProviderAccountsV1 => "subscription_provider_accounts_v1",
+            Self::SubscriptionQuotaV1 => "subscription_quota_v1",
+            Self::SubscriptionModelQuotaV1 => "subscription_model_quota_v1",
+            Self::SubscriptionAccountPoolsV1 => "subscription_account_pools_v1",
+            Self::SubscriptionAccountFailoverV1 => "subscription_account_failover_v1",
+            Self::ModelChannelRoutingV1 => "model_channel_routing_v1",
+            Self::SubscriptionAccountManagementV1 => "subscription_account_management_v1",
             Self::MiniappAgentContextFilesV1 => "miniapp_agent_context_files_v1",
             Self::WslWorkspacesV1 => "wsl_workspaces_v1",
             Self::ComputerUseSharingV1 => "computer_use_sharing_v1",
@@ -150,6 +183,7 @@ const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::InlineImageAttachmentsV1,
     PeerHostCapability::TargetedSessionRollback,
     PeerHostCapability::TokenUsageStatistics,
+    PeerHostCapability::ModelChannelRoutingV1,
     PeerHostCapability::ProductControlV1,
     PeerHostCapability::CancelTool,
     PeerHostCapability::ToolCatalog,

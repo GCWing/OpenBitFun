@@ -4,6 +4,7 @@ import {
   canCopySessionsOnSurface,
   canQueryToolCatalogOnSurface,
   canSubmitUserQuestionsOnSurface,
+  canQuerySubscriptionQuotaOnSurface,
 } from './peerCapabilityResolution';
 import type { PeerHostCapabilities } from './PeerConnectionManager';
 
@@ -20,6 +21,14 @@ function caps(overrides: Partial<PeerHostCapabilities>): PeerHostCapabilities {
     ...overrides,
   };
 }
+
+it('requires explicit host allowance-query capability and never falls back to controller credentials', () => {
+  expect(canQuerySubscriptionQuotaOnSurface(false, null)).toBe(true);
+  expect(canQuerySubscriptionQuotaOnSurface(true, null)).toBe(false);
+  expect(canQuerySubscriptionQuotaOnSurface(true, caps({ hostKind: 'desktop' }))).toBe(false);
+  expect(canQuerySubscriptionQuotaOnSurface(true, caps({ hostKind: 'cli' }))).toBe(false);
+  expect(canQuerySubscriptionQuotaOnSurface(true, caps({ subscriptionQuotaV1: true }))).toBe(true);
+});
 
 describe('canCopySessionsOnSurface', () => {
   it('requires explicit peer support even for older Desktop hosts', () => {
@@ -84,4 +93,12 @@ describe('canSubmitUserQuestionsOnSurface', () => {
       caps({ hostKind: 'cli', userQuestionResponse: true }),
     )).toBe(true);
   });
+});
+
+import { canQueryModelQuotaOnSurface } from './peerCapabilityResolution';
+it('requires the model-scoped quota capability instead of inferring it from account quota support', () => {
+  expect(canQueryModelQuotaOnSurface(false, null)).toBe(true);
+  expect(canQueryModelQuotaOnSurface(true, null)).toBe(false);
+  expect(canQueryModelQuotaOnSurface(true, { subscriptionQuotaV1: true } as PeerHostCapabilities)).toBe(false);
+  expect(canQueryModelQuotaOnSurface(true, { subscriptionModelQuotaV1: true } as PeerHostCapabilities)).toBe(true);
 });

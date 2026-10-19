@@ -19,6 +19,10 @@ export const publicApiContractSlices = [
 ];
 
 export const agentRuntimeRootPublicModules = [
+  // Portable account eligibility/switch decisions; no credential or provider IO.
+  // Owner contract: docs/architecture/subscription-account-routing-design.md.
+  'account_routing',
+  'channel_routing',
   'agents',
   'checkpoint',
   'compression_prefetch',

@@ -544,6 +544,7 @@ pub(crate) async fn send_stream(
     let ttft_timeout = client.stream_options.ttft_timeout;
 
     execute_sse_request(
+        Some(client),
         "Gemini Streaming API",
         &url,
         &request_body,

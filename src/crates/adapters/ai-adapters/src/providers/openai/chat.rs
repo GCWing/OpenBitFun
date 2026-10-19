@@ -202,7 +202,7 @@ pub(crate) async fn send_stream(
 
     let openai_messages = OpenAIMessageConverter::convert_messages(messages);
     let openai_tools = OpenAIMessageConverter::convert_tools(tools);
-    let request_body = try_build_request_body_with_context(
+    let mut request_body = try_build_request_body_with_context(
         client,
         &url,
         openai_messages,
@@ -214,7 +214,12 @@ pub(crate) async fn send_stream(
     let idle_timeout = client.stream_options.idle_timeout;
     let ttft_timeout = client.stream_options.ttft_timeout;
 
+    let compatibility = crate::providers::opencode::FreeTools::prepare(client, &mut request_body)?;
+    #[cfg(feature = "subscription-auth")]
+    let workbuddy_tools = crate::providers::workbuddy::Tools::prepare(client, &mut request_body);
+
     execute_sse_request(
+        Some(client),
         "OpenAI Streaming API",
         &url,
         &request_body,
@@ -222,12 +227,20 @@ pub(crate) async fn send_stream(
         ttft_timeout,
         trace,
         || {
-            shared::apply_affinity_headers(
+            let builder = shared::apply_affinity_headers(
                 client,
                 common::apply_headers(client, client.client.post(&url)),
                 &url,
                 request_context.as_ref(),
-            )
+            );
+            #[cfg(feature = "subscription-auth")]
+            let builder = crate::providers::workbuddy::headers(
+                client,
+                builder,
+                &request_body,
+                request_context.as_ref(),
+            );
+            builder
         },
         move |response, tx, tx_raw, remaining_ttft_timeout| {
             handle_openai_stream(
@@ -241,4 +254,9 @@ pub(crate) async fn send_stream(
         },
     )
     .await
+    .map(|response| {
+        #[cfg(feature = "subscription-auth")]
+        let response = workbuddy_tools.wrap(response);
+        compatibility.wrap(response)
+    })
 }

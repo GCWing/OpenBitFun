@@ -3,8 +3,12 @@
 //! This crate owns runtime decisions that can be built and tested without
 //! depending on `openbitfun-core` concrete session or scheduler lifecycle.
 
+#[cfg(feature = "account-routing")]
+pub mod account_routing;
 #[cfg(feature = "agent-runtime")]
 pub mod agents;
+#[cfg(feature = "account-routing")]
+pub mod channel_routing;
 #[cfg(feature = "agent-runtime")]
 pub mod checkpoint;
 #[cfg(feature = "agent-runtime")]

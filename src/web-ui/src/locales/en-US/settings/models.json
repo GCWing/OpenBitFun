@@ -49,7 +49,7 @@
   },
   "subscriptionAuth": {
     "sectionTitle": "Subscription accounts",
-    "sectionDescription": "Connect Codex, Antigravity, OpenCode Console (Zen), xAI, or Hermes accounts",
+    "sectionDescription": "Connect Codex, Antigravity, OpenCode, xAI, Hermes, WorkBuddy, or ZCode subscriptions",
     "rescan": "Refresh status",
     "import": "Use as model",
     "login": "Sign in",
@@ -58,8 +58,8 @@
     "cancel": "Cancel",
     "loginCancelled": "Sign-in cancelled",
     "logout": "Sign out",
-    "refresh": "Refresh token",
-    "refreshSuccess": "Token refreshed",
+    "refresh": "Refresh status",
+    "refreshSuccess": "Status updated",
     "refreshFailed": "Refresh failed: {{error}}",
     "loginSuccess": "Signed in",
     "loginFailed": "Sign-in failed: {{error}}",
@@ -69,17 +69,47 @@
     "logoutFailed": "Sign-out failed: {{error}}",
     "userCodeHint": "Enter this code in the browser: {{code}}",
     "openUrlManually": "Could not open the browser automatically. Open this URL manually: {{url}}",
-    "expiresAt": "Token valid until {{time}}",
-    "tokenValid": "Token ready",
+    "expiresAt": "Authorization valid until {{time}}",
+    "tokenValid": "Connected",
     "notSignedIn": "Not signed in",
     "label": "Authentication",
+    "chooseRegion": "Choose region",
+    "chooseRegionHint": "Select the platform where you have a Coding Plan subscription.",
+    "products": {
+      "codex": "Codex",
+      "antigravity": "Antigravity",
+      "opencode": "OpenCode",
+      "grok": "Grok",
+      "hermes": "Hermes",
+      "workbuddy": "WorkBuddy",
+      "workbuddy_ai": "WorkBuddy AI",
+      "zcode": "ZCode"
+    },
+    "details": {
+      "codex": "ChatGPT subscription",
+      "antigravity": "Google subscription",
+      "opencode": "Console · Zen",
+      "grok": "SuperGrok subscription",
+      "hermes": "Nous Portal subscription",
+      "workbuddy": "CodeBuddy · China",
+      "workbuddy_ai": "International",
+      "zcode": "GLM Coding Plan"
+    },
+    "regions": {
+      "zai": "Z.ai",
+      "bigmodel": "BigModel (China)"
+    },
     "options": {
-      "opencode": "OpenCode Console (Zen)",
+      "opencode": "OpenCode",
       "apiKey": "API Key",
-      "codex": "Codex (ChatGPT subscription)",
-      "antigravity": "Antigravity (Google subscription)",
-      "grok": "xAI (SuperGrok subscription)",
-      "hermes": "Hermes (Nous Portal subscription)"
+      "codex": "Codex",
+      "antigravity": "Antigravity",
+      "grok": "Grok",
+      "hermes": "Hermes",
+      "workbuddy": "WorkBuddy",
+      "workbuddy_ai": "WorkBuddy AI",
+      "zcode": "ZCode",
+      "zcode_cn": "ZCode · BigModel (China)"
     },
     "useFormat": "Use {{format}}",
     "useFormatWithCount": "Use {{format}} ({{modelCount}})",
@@ -130,7 +160,21 @@
       "reauthenticationRequired": "Sign-in required",
       "refreshRequired": "Refresh required",
       "connected": "Signed in"
-    }
+    },
+    "pool": {
+      "label": "Accounts",
+      "defaultAccount": "Default account",
+      "disabled": "Disabled",
+      "missing": "Account removed",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "addAccount": "Add account",
+      "rotationHint": "Used in order; when an account runs out of quota or fails, the next one is used.",
+      "singleHint": "Select several accounts to switch automatically in order when one runs out of quota or fails."
+    },
+    "accountMarker": "Account · {{marker}}",
+    "accountsCount": "{{count}} accounts",
+    "newAccount": "New account"
   },
   "providerSelection": {
     "modelRoutingPending": "Refresh the model list to show protocols and endpoints. Models outside the catalog can be configured manually.",
@@ -184,6 +228,10 @@
     "formatHint": "Automatically selected based on provider, usually no need to change"
   },
   "providers": {
+    "opencode-zen": {
+      "name": "OpenCode Zen",
+      "description": "OpenCode models with free access and pay-as-you-go API keys."
+    },
     "opencode-go": {
       "name": "OpenCode Go",
       "description": "A model subscription plan from OpenCode."
@@ -338,6 +386,7 @@
     "resolvedUrlLabel": "Request URL: ",
     "forceUrlHint": "Append # to force use the exact URL you entered",
     "apiKey": "API Key",
+    "openCodeZenApiKeyPlaceholder": "Optional for free models; enter your Zen API key for paid models",
     "apiKeyPlaceholder": "Enter your API Key",
     "provider": "Request Format",
     "providerPlaceholder": "Select request format",
@@ -755,5 +804,59 @@
     },
     "retry": "Allow retry",
     "invalidRecords": "Some pool records cannot be read by this version. They have been preserved."
+  },
+  "quota": {
+    "title": "Subscription allowance",
+    "hostUnsupported": "This host does not support allowance queries.",
+    "unsupported": "This channel does not provide allowance information yet.",
+    "refreshFailedRetained": "Could not refresh. The last observation is shown below.",
+    "queryFailed": "Could not read the allowance. Check account authorization and the connection, then retry.",
+    "loading": "Reading allowance…",
+    "unknown": "The provider has not reported an allowance.",
+    "stale": "Last observation",
+    "refresh": "Refresh allowance",
+    "mcp": "MCP calls",
+    "weekly": "Weekly",
+    "monthly": "Monthly",
+    "hours": "{{count}}h window",
+    "days": "{{count}}d window",
+    "credits": "Credits",
+    "allowance": "Allowance",
+    "remaining": "Remaining",
+    "unlimited": "Unlimited",
+    "noValue": "—",
+    "creditsUnit": "credits",
+    "requestsUnit": "calls",
+    "remainingFor": "{{name}} remaining",
+    "usedOf": "{{used}} used of {{total}}",
+    "usedPercent": "{{value}} used",
+    "resetsAt": "Resets {{time}}",
+    "expiresAt": "Credits expire {{time}}",
+    "unlimitedCredits": "Additional credits are unlimited.",
+    "updatedAt": "Updated {{time}}",
+    "planUntil": "Plan renews or ends {{time}}",
+    "minutes": "{{count}}min window",
+    "opencodePublic": "Free model access. OpenCode does not expose remaining free usage or its reset time.",
+    "opencodeBalanceUnavailable": "OpenCode has no public balance API yet. View your workspace balance in the console.",
+    "opencodeGoKeyRequired": "Use an API key belonging to your OpenCode Go subscription to query allowance.",
+    "opencodeKeyRejected": "OpenCode rejected this API key. Check the saved key and workspace.",
+    "opencodeGoRequired": "This key has no Go subscription. Use a key created by the subscribing member in that workspace.",
+    "opencodeCustomAuth": "Allowance lookup does not support custom authentication headers. View usage in the console.",
+    "openConsole": "Open console",
+    "saveBeforeQuery": "Save this connection to query its OpenCode Go allowance."
+  },
+  "channelRouting": {
+    "label": "Backup channels",
+    "hint": "Used in order when this channel runs out of quota or fails. Only models with at least this context window and these capabilities are listed.",
+    "isBackupOf": "Already a backup channel of {{names}}, so it cannot have backups of its own.",
+    "missing": "Model deleted",
+    "auto": "Switch automatically",
+    "fixedSelf": "Always use: this channel",
+    "fixed": "Always use: {{name}}",
+    "remove": "Remove",
+    "add": "Add backup channel",
+    "noCandidates": "No eligible backup models",
+    "mode": "Routing",
+    "modeHint": "Automatic switching tries the backups in order after a failure; a fixed choice only uses that channel and never switches."
   }
 }

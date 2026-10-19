@@ -138,7 +138,7 @@ pub(crate) fn apply_affinity_headers(
     } else if uses_opencode_affinity(client, url) {
         &["x-opencode-session"]
     } else if client.subscription_provider_key() == Some("grok")
-        && is_https_endpoint(url, "api.x.ai", "/v1/responses")
+        && is_https_endpoint(url, "cli-chat-proxy.grok.com", "/v1/responses")
     {
         &["x-grok-conv-id"]
     } else {
@@ -157,7 +157,8 @@ pub(crate) fn apply_affinity_headers(
             )
         })
         .collect();
-    builder.headers(headers)
+    let builder = builder.headers(headers);
+    super::opencode::headers(client, builder, url, key)
 }
 
 pub(crate) fn apply_header_policy<F>(
@@ -195,6 +196,11 @@ pub(crate) fn apply_custom_headers(
     if let Some(custom_headers) = &client.config.custom_headers {
         if !custom_headers.is_empty() {
             for (key, value) in custom_headers {
+                if super::opencode::uses_free_zen(client)
+                    && key.eq_ignore_ascii_case("x-opencode-request")
+                {
+                    continue;
+                }
                 builder = builder.header(key.as_str(), value.as_str());
             }
         }
@@ -615,6 +621,7 @@ mod tests {
             "https://opencode.ai/zen/go/v1/models",
             "https://chatgpt.com/backend-api/codex/responses",
             "https://api.x.ai/v1/responses",
+            "https://cli-chat-proxy.grok.com/v1/responses",
             "https://inference-api.nousresearch.com/v1/chat/completions",
         ] {
             for mode in ["merge", "replace"] {
@@ -906,7 +913,7 @@ mod tests {
                 ),
                 (
                     SubscriptionProvider::Grok,
-                    "https://api.x.ai/v1/responses",
+                    "https://cli-chat-proxy.grok.com/v1/responses",
                     vec!["x-grok-conv-id"],
                 ),
                 (
@@ -983,6 +990,9 @@ mod tests {
                     "https://opencode.ai/zen-other/v1/messages",
                     "https://opencode.ai.evil.test/zen/v1/messages",
                     "https://api.x.ai/v1/chat/completions",
+                    "https://api.x.ai/v1/responses",
+                    "https://cli-chat-proxy.grok.com.evil.test/v1/responses",
+                    "http://cli-chat-proxy.grok.com/v1/responses",
                 ] {
                     let client = request_client(url).with_subscription_provider(provider);
                     assert!(prepare_request_context(&client, None).is_none());

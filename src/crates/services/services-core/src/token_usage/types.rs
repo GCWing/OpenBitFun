@@ -4,6 +4,101 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+/// Kept in the legacy opaque token-details field so older usage readers and
+/// writers retain attribution instead of dropping new top-level fields.
+pub const MODEL_REQUEST_CONTEXT_KEY: &str = "openbitfunModelRequest";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelRequestOutcome {
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageAuthenticationKind {
+    ApiKey,
+    Subscription,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRequestUsageContext {
+    pub version: u8,
+    pub round_id: String,
+    pub attempt_id: String,
+    pub attempt_index: u32,
+    pub started_at: DateTime<Utc>,
+    pub authentication: UsageAuthenticationKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<openbitfun_core_types::ModelAccountOrigin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel: Option<ModelRequestChannel>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_revision: Option<u64>,
+    pub requested_model: String,
+    /// Absent when the adapter did not report the response model. Never infer
+    /// an actual model from a current setting or silently copy the request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_model: Option<String>,
+    pub outcome: ModelRequestOutcome,
+    pub usage_known: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_reason: Option<openbitfun_core_types::errors::ErrorCategory>,
+    /// Nonfatal routing observations from the executing host. Open strings keep
+    /// future observations readable by older statistics and replay consumers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routing_warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRequestChannel {
+    pub model_config_id: String,
+    pub name: String,
+    pub protocol: String,
+    pub binding_fingerprint: String,
+}
+
+pub fn model_request_context(
+    details: Option<&serde_json::Value>,
+) -> Result<Option<ModelRequestUsageContext>, String> {
+    let Some(value) = details.and_then(|details| details.get(MODEL_REQUEST_CONTEXT_KEY)) else {
+        return Ok(None);
+    };
+    let context: ModelRequestUsageContext =
+        serde_json::from_value(value.clone()).map_err(|_| {
+            "Unreadable model request usage context; existing records were preserved".to_string()
+        })?;
+    if context.version != 1
+        || context.attempt_id.trim().is_empty()
+        || context.round_id.trim().is_empty()
+        || context.attempt_index == 0
+    {
+        return Err(
+            "Unsupported model request usage context; existing records were preserved".into(),
+        );
+    }
+    Ok(Some(context))
+}
+
+pub fn with_model_request_context(
+    details: Option<serde_json::Value>,
+    context: &ModelRequestUsageContext,
+) -> Result<serde_json::Value, String> {
+    let mut details = details.unwrap_or_else(|| serde_json::json!({}));
+    let object = details
+        .as_object_mut()
+        .ok_or_else(|| "Token usage details must be an object".to_string())?;
+    object.insert(
+        MODEL_REQUEST_CONTEXT_KEY.into(),
+        serde_json::to_value(context).map_err(|error| error.to_string())?,
+    );
+    Ok(details)
+}
+
 /// Single token usage record for a specific API call
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenUsageRecord {
@@ -31,6 +126,24 @@ pub struct TokenUsageRecord {
     /// Whether this record is from a subagent call
     #[serde(default)]
     pub is_subagent: bool,
+}
+
+impl TokenUsageRecord {
+    pub fn request_context(&self) -> Option<ModelRequestUsageContext> {
+        model_request_context(self.token_details.as_ref())
+            .ok()
+            .flatten()
+    }
+
+    /// Legacy records explicitly supplied their required counters. An opaque
+    /// future/invalid context is unknown, never a fabricated zero observation.
+    pub fn usage_is_known(&self) -> bool {
+        match model_request_context(self.token_details.as_ref()) {
+            Ok(Some(context)) => context.usage_known,
+            Ok(None) => true,
+            Err(_) => false,
+        }
+    }
 }
 
 /// Aggregated token statistics for a model

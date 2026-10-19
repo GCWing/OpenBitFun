@@ -1748,11 +1748,15 @@ pub struct AIModelConfig {
     pub custom_request_body_mode: Option<String>,
 
     /// Authentication source for this model. Defaults to a static API key;
-    /// selecting a CLI source causes the AI client
-    /// factory to look up `~/.codex/auth.json` or `~/.gemini/...` at request
-    /// time and inject the resolved Bearer token / extra headers.
+    /// subscription credentials come from OpenBitFun's in-app OAuth store
+    /// and are resolved at request time, never from third-party CLI files.
     #[serde(default)]
     pub auth: AuthConfig,
+
+    /// Explicit fallback channels, each referring to an independently configured
+    /// model endpoint and credential source. Absent keeps fixed-channel behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_routing: Option<crate::channel_routing::ModelChannelRouting>,
 }
 
 /// Stable identity of the runtime-affecting parts of a concrete model config.
@@ -1802,6 +1806,26 @@ pub enum SubscriptionProvider {
     Opencode,
     Grok,
     Hermes,
+    Workbuddy,
+    WorkbuddyAi,
+    Zcode,
+    ZcodeCn,
+}
+
+impl SubscriptionProvider {
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::Codex => "codex",
+            Self::Antigravity => "antigravity",
+            Self::Opencode => "opencode",
+            Self::Grok => "grok",
+            Self::Hermes => "hermes",
+            Self::Workbuddy => "workbuddy",
+            Self::WorkbuddyAi => "workbuddy_ai",
+            Self::Zcode => "zcode",
+            Self::ZcodeCn => "zcode_cn",
+        }
+    }
 }
 
 /// OpenCode API product selected for a subscription-authenticated model.
@@ -1831,6 +1855,19 @@ pub enum AuthConfig {
         provider: SubscriptionProvider,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         plan: Option<OpenCodePlan>,
+        /// Explicit host-local credential slot. Absent preserves the legacy
+        /// provider-default account; unsupported hosts must not receive it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        account_id: Option<String>,
+    },
+    /// Ordered accounts for one unchanged provider/model. Older readers reject
+    /// this distinct tag instead of ignoring routing fields and using default.
+    SubscriptionPool {
+        provider: SubscriptionProvider,
+        #[serde(default)]
+        accounts: Vec<String>,
+        #[serde(default)]
+        revision: u64,
     },
 }
 
@@ -2162,6 +2199,7 @@ impl Default for AIModelConfig {
             custom_request_body: None,
             custom_request_body_mode: None,
             auth: AuthConfig::ApiKey,
+            channel_routing: None,
         }
     }
 }
@@ -2487,6 +2525,7 @@ mod tests {
             AuthConfig::Subscription {
                 provider: SubscriptionProvider::Opencode,
                 plan: None,
+                account_id: None,
             }
         );
         assert_eq!(
@@ -2500,6 +2539,7 @@ mod tests {
         let go = AuthConfig::Subscription {
             provider: SubscriptionProvider::Opencode,
             plan: Some(OpenCodePlan::Go),
+            account_id: None,
         };
         let serialized = serde_json::to_value(&go).expect("Go auth should serialize");
         assert_eq!(serialized["plan"], "go");
@@ -2510,10 +2550,30 @@ mod tests {
     }
 
     #[test]
+    fn explicit_subscription_account_roundtrips_without_changing_legacy_bindings() {
+        let legacy_payload = serde_json::json!({"type":"subscription","provider":"codex"});
+        let legacy: AuthConfig = serde_json::from_value(legacy_payload.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&legacy).unwrap(), legacy_payload);
+        let mut model = AIModelConfig::default();
+        model.auth = legacy;
+        let before = super::model_runtime_binding_fingerprint(&model);
+        let legacy_model_payload = serde_json::to_value(&model).unwrap();
+        assert!(legacy_model_payload["auth"].get("account_id").is_none());
+        let restored: AIModelConfig = serde_json::from_value(legacy_model_payload).unwrap();
+        assert_eq!(before, super::model_runtime_binding_fingerprint(&restored));
+
+        let explicit_payload = serde_json::json!({"type":"subscription","provider":"codex","account_id":"codex-account-58134808-15a6-45db-ae33-2ad7d85cc570"});
+        model.auth = serde_json::from_value(explicit_payload.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&model.auth).unwrap(), explicit_payload);
+        assert_ne!(before, super::model_runtime_binding_fingerprint(&model));
+    }
+
+    #[test]
     fn grok_subscription_auth_roundtrips_without_opencode_plan() {
         let grok = AuthConfig::Subscription {
             provider: SubscriptionProvider::Grok,
             plan: None,
+            account_id: None,
         };
         let serialized = serde_json::to_value(&grok).expect("Grok auth should serialize");
         assert_eq!(
@@ -2534,6 +2594,7 @@ mod tests {
         let hermes = AuthConfig::Subscription {
             provider: SubscriptionProvider::Hermes,
             plan: None,
+            account_id: None,
         };
         let serialized = serde_json::to_value(&hermes).expect("Hermes auth should serialize");
         assert_eq!(

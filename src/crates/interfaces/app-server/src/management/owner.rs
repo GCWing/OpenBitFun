@@ -456,6 +456,7 @@ fn model_from_mutation(
         custom_request_body,
         custom_request_body_mode: current.custom_request_body_mode,
         auth: current.auth,
+        channel_routing: current.channel_routing,
     })
 }
 
@@ -1271,12 +1272,34 @@ impl AppManagementService {
         request: UpdateModelRequest,
     ) -> AppManagementResult<UpdateModelResponse> {
         validate_model_update_identity(&request.model_id, &request.model)?;
-        let existing = self.model_config(&request.model_id).await?;
-        let model = model_from_mutation(request.model, Some(existing))?;
-        self.config
-            .update_ai_model(&request.model_id, model)
+        // Older mutation DTOs cannot express account/channel routing. Merge
+        // against the current model under the owner write lock, so a concurrent
+        // policy edit is not replaced by a stale preservation snapshot.
+        let outcome = self
+            .config
+            .update_config(
+                "ai.models",
+                |models: &mut Vec<openbitfun_core::service::config::AIModelConfig>| {
+                    let Some(existing) =
+                        models.iter_mut().find(|model| model.id == request.model_id)
+                    else {
+                        return Ok(Err(AppManagementError::not_found(format!(
+                            "AI model '{}' was not found",
+                            request.model_id
+                        ))));
+                    };
+                    match model_from_mutation(request.model, Some(existing.clone())) {
+                        Ok(model) => {
+                            *existing = model;
+                            Ok(Ok(()))
+                        }
+                        Err(error) => Ok(Err(error)),
+                    }
+                },
+            )
             .await
             .map_err(core_error)?;
+        outcome?;
         Ok(UpdateModelResponse {})
     }
 
@@ -1873,6 +1896,12 @@ mod tests {
                 "existing-header".to_string(),
             )])),
             custom_request_body: Some("existing-body".to_string()),
+            channel_routing: Some(
+                serde_json::from_value(serde_json::json!({
+                    "version": 1, "fallback_model_ids": ["backup"], "manual_channel": "backup"
+                }))
+                .unwrap(),
+            ),
             ..Default::default()
         };
 
@@ -1881,11 +1910,16 @@ mod tests {
         assert_eq!(preserved.api_key, "existing-key");
         assert_eq!(preserved.custom_headers, existing.custom_headers);
         assert_eq!(
+            preserved.channel_routing, existing.channel_routing,
+            "an older management payload must preserve the channel selection it cannot express"
+        );
+        assert_eq!(
             preserved.custom_request_body.as_deref(),
             Some("existing-body")
         );
 
         let mut replacement = mutation();
+        let original_route = existing.channel_routing.clone();
         replacement.api_key = Some(SecretUpdate::Replace("new-key".to_string()));
         replacement.custom_headers = Some(SecretUpdate::Clear);
         replacement.custom_request_body = Some(SecretUpdate::Replace("new-body".to_string()));
@@ -1894,6 +1928,7 @@ mod tests {
         assert_eq!(replaced.api_key, "new-key");
         assert!(replaced.custom_headers.is_none());
         assert_eq!(replaced.custom_request_body.as_deref(), Some("new-body"));
+        assert_eq!(replaced.channel_routing, original_route);
     }
 
     #[test]

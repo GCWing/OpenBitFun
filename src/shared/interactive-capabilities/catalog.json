@@ -271,6 +271,14 @@
       "account_subscribe_session",
       "account_unsubscribe_session",
       "get_session_interaction_mailbox"
+    ],
+    "subscriptionAccountBackend": [
+      "get_subscription_account_quota",
+      "list_subscription_account_instances",
+      "logout_subscription_account_instance",
+      "refresh_subscription_account_instance",
+      "set_subscription_account_enabled",
+      "start_subscription_account_login"
     ]
   },
   "capabilities": [

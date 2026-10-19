@@ -9,6 +9,10 @@ port-backed `sdk` / `AgentRuntime` facade that can be built and tested without
 
 ## Feature Boundaries
 
+- `account-routing` selects pure account decisions plus core-types, without
+  session lifecycle, tools, processes or concrete provider clients.
+- `agent-runtime` includes `account-routing` for model-round orchestration.
+
 - `definition-contracts` includes pure `native-hook-settings` validation for
   skill frontmatter. Discovery does not select process execution or Tokio.
 
@@ -96,6 +100,37 @@ in `config-contracts`. Focused verification:
 
 ```bash
 cargo test --locked -p openbitfun-agent-runtime --no-default-features --features agent-runtime --lib model_pool
+
+`account_routing` owns pure fixed/ordered account selection and switch admission.
+Assembly injects immutable membership, host/model/policy/cache scope, current
+eligibility, provider-interpreted model quota conclusions and the existing attempt budget. It performs no
+credential, config, provider or persistence IO. Fixed selection never falls
+back; output, tool effects, replay incompatibility and deterministic request
+rejections block account switching. Core injects request-scoped account clients
+into its existing round executor and consumes switch admission within the same
+attempt budget; provider IO and tool execution remain in their current owners. Routed core rounds report history as
+replay-compatible because they degrade signed state to portable history before
+switching; the policy itself still rejects incompatible replay when told so.
+Core attempts account-scoped authentication recovery before admitting an auth
+switch, within the same model-attempt budget. Core now injects durable
+model/policy/lineage affinity and credential-epoch-scoped cooldown facts. The
+pure cooldown deadline helper consumes a structured category and supplied
+backoff/hint; it never parses error strings, sleeps or reads persistence.
+Expired health permits a probe rather than asserting restored allowance.
+Runtime validates quota identity, credential revision, exact model and freshness;
+provider billing windows, credits and spend-control interpretation live in the
+subscription adapter. Qualification is computed in memory from existing
+snapshots; no new persisted quota schema is required.
+Cross-process account capacity is a separate optional future delivery, not a prerequisite for ordered failover.
+`channel_routing` owns provider-neutral cross-channel admission under the same
+`account-routing` feature. It consumes the existing budget, output, replay and
+cancellation facts; concrete channels, credentials, persistence and protocol
+translation stay in their existing owners. Run the focused module filter
+`channel_routing` with the command below when changing that admission.
+Focused check:
+
+```bash
+cargo test --locked -p openbitfun-agent-runtime --no-default-features --features account-routing --lib account_routing
 ```
 
 ## Test Target Layout

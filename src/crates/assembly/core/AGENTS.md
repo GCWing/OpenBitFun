@@ -421,6 +421,11 @@ External-subagent model inheritance uses the same owner feature:
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,git,external-sources --lib external_subagents::tests::omitted_external_model
 ```
 
+Detached Dispatch model sync must use the protected config export and negotiate
+explicit-account binding/pool runtime capabilities before remote writes. Do not
+copy OAuth credentials or downgrade an unsupported binding to a generic model
+readiness failure. API-key and legacy-default sync retain their existing path.
+
 Detached Dispatch controller, target query compatibility, and managed-baseline checks:
 
 ```bash

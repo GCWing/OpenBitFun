@@ -26,6 +26,21 @@ const STORE_FILE_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(25);
 // Leave headroom for platform-store implementations and split every logical
 // secret so a long JWT or refresh token remains portable across all hosts.
 const SECRET_CHUNK_BYTES: usize = 2_048;
+const ACCOUNT_MANAGEMENT_KEY: &str = "openbitfun_account_management";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AccountManagement {
+    version: u8,
+    enabled: bool,
+    requires_reauthentication: bool,
+}
+
+/// Non-secret facts remain available after logout or vault unavailability.
+pub(crate) struct AccountMetadata {
+    pub enabled: bool,
+    pub upstream_account_id: Option<String>,
+    pub display_account: Option<String>,
+}
 
 /// A single credential assembled in memory after its secret material has been
 /// read from the credential vault.
@@ -95,6 +110,119 @@ fn secret_part_count(secret: &str) -> u32 {
 }
 
 impl CredentialMetadata {
+    fn metadata(&self) -> Option<&serde_json::Value> {
+        match self {
+            Self::Oauth { metadata, .. } | Self::Api { metadata, .. } => metadata.as_ref(),
+        }
+    }
+
+    fn management(&self) -> Result<AccountManagement> {
+        let Some(value) = self
+            .metadata()
+            .and_then(|metadata| metadata.get(ACCOUNT_MANAGEMENT_KEY))
+        else {
+            return Ok(AccountManagement {
+                version: 1,
+                enabled: true,
+                requires_reauthentication: self.needs_reauthentication(),
+            });
+        };
+        let state: AccountManagement = serde_json::from_value(value.clone())
+            .context("parse subscription account management state")?;
+        if state.version != 1 {
+            return Err(anyhow!(
+                "Unsupported subscription account management version; existing data was preserved"
+            ));
+        }
+        Ok(state)
+    }
+
+    fn set_management(&mut self, state: &AccountManagement) -> Result<()> {
+        let (metadata, needs_reauthentication) = match self {
+            Self::Oauth {
+                metadata,
+                needs_reauthentication,
+                ..
+            }
+            | Self::Api {
+                metadata,
+                needs_reauthentication,
+                ..
+            } => (metadata, needs_reauthentication),
+        };
+        let value = metadata.get_or_insert_with(|| serde_json::json!({}));
+        let object = value.as_object_mut().ok_or_else(|| anyhow!("Subscription account metadata cannot store management state; existing data was preserved"))?;
+        let retained = object
+            .entry(ACCOUNT_MANAGEMENT_KEY)
+            .or_insert_with(|| serde_json::json!({}));
+        let retained = retained.as_object_mut().ok_or_else(|| {
+            anyhow!(
+                "Subscription account management record is invalid; existing data was preserved"
+            )
+        })?;
+        if let serde_json::Value::Object(fields) = serde_json::to_value(state)? {
+            retained.extend(fields);
+        }
+        // Existing v2 readers cannot ignore disable and authenticate this slot.
+        *needs_reauthentication = state.requires_reauthentication || !state.enabled;
+        Ok(())
+    }
+
+    fn account_metadata(&self) -> Result<AccountMetadata> {
+        let upstream_account_id = match self {
+            Self::Oauth { account_id, .. } => account_id.clone(),
+            _ => None,
+        };
+        let display_account = self
+            .metadata()
+            .and_then(|metadata| metadata.get("email"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+            .or_else(|| upstream_account_id.clone());
+        Ok(AccountMetadata {
+            enabled: self.management()?.enabled,
+            upstream_account_id,
+            display_account,
+        })
+    }
+
+    fn without_secrets(mut self) -> Result<Self> {
+        let mut state = self.management()?;
+        state.requires_reauthentication = true;
+        match &mut self {
+            Self::Oauth {
+                secret_set_id,
+                refresh_parts,
+                access_parts,
+                needs_reauthentication,
+                ..
+            } => {
+                *secret_set_id = None;
+                *refresh_parts = 0;
+                *access_parts = 0;
+                *needs_reauthentication = true;
+            }
+            Self::Api {
+                secret_set_id,
+                key_parts,
+                needs_reauthentication,
+                ..
+            } => {
+                *secret_set_id = None;
+                *key_parts = 0;
+                *needs_reauthentication = true;
+            }
+        }
+        if self
+            .metadata()
+            .and_then(|metadata| metadata.get(ACCOUNT_MANAGEMENT_KEY))
+            .is_some()
+        {
+            self.set_management(&state)?;
+        }
+        Ok(self)
+    }
+
     fn from_credential(credential: &StoredCredential) -> Self {
         match credential {
             StoredCredential::Oauth {
@@ -163,9 +291,8 @@ impl CredentialMetadata {
     }
 
     fn vault_entries(&self, provider: &str) -> Vec<String> {
-        if self.needs_reauthentication() {
-            return Vec::new();
-        }
+        // Disabled slots keep their committed chunks for re-enabling. Any
+        // referenced set stays protected even while authentication is gated.
         match self {
             Self::Oauth {
                 secret_set_id: Some(set_id),
@@ -287,6 +414,7 @@ pub(crate) struct LoadState {
     /// locked/unavailable. This is retryable and must not be shown as lost.
     pub vault_unavailable: HashSet<String>,
     pub provider_revisions: HashMap<String, u64>,
+    pub account_metadata: HashMap<String, AccountMetadata>,
 }
 
 /// One credential and the durable provider epoch observed in the same store
@@ -311,8 +439,14 @@ pub(crate) enum RemoveOutcome {
     CleanupPending(String),
 }
 
-fn store_path_override() -> &'static RwLock<Option<PathBuf>> {
-    static OVERRIDE: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
+#[derive(Clone)]
+struct TestStoreOverride {
+    path: PathBuf,
+    persistent_vault: bool,
+}
+
+fn store_path_override() -> &'static RwLock<Option<TestStoreOverride>> {
+    static OVERRIDE: OnceLock<RwLock<Option<TestStoreOverride>>> = OnceLock::new();
     OVERRIDE.get_or_init(|| RwLock::new(None))
 }
 
@@ -641,7 +775,23 @@ pub(crate) async fn acquire_provider_refresh_lease(provider: &str) -> Result<Pro
 /// persistence to the process-local test vault above.
 pub fn set_store_path_for_test(path: PathBuf) {
     if let Ok(mut guard) = store_path_override().write() {
-        *guard = Some(path);
+        *guard = Some(TestStoreOverride {
+            path,
+            persistent_vault: false,
+        });
+    }
+}
+
+/// Overrides both metadata and encrypted file-vault storage for isolated
+/// subprocess tests. Callers must supply their own temporary directory.
+/// No native OS credential store is used, including on Windows and Linux.
+#[doc(hidden)]
+pub fn set_store_path_and_file_vault_for_test(path: PathBuf) {
+    if let Ok(mut guard) = store_path_override().write() {
+        *guard = Some(TestStoreOverride {
+            path,
+            persistent_vault: true,
+        });
     }
 }
 
@@ -801,10 +951,19 @@ fn overridden_store_path() -> Option<PathBuf> {
     store_path_override()
         .read()
         .ok()
-        .and_then(|guard| guard.clone())
+        .and_then(|guard| guard.as_ref().map(|override_| override_.path.clone()))
 }
 
-fn store_path() -> Result<PathBuf> {
+fn overridden_file_vault() -> Option<openbitfun_services_core::credential_vault::CredentialVault> {
+    store_path_override().read().ok().and_then(|guard| {
+        guard
+            .as_ref()
+            .filter(|override_| override_.persistent_vault)
+            .map(|override_| file_credential_vault(&override_.path))
+    })
+}
+
+pub(super) fn store_path() -> Result<PathBuf> {
     if let Some(path) = overridden_store_path() {
         return Ok(path);
     }
@@ -941,8 +1100,7 @@ fn open_native_keyring_entry(entry_name: &str) -> std::result::Result<keyring_co
         .map_err(|error| format!("open system credential entry: {error}"))
 }
 
-#[cfg(target_os = "macos")]
-fn macos_credential_vault(
+fn file_credential_vault(
     metadata_path: &Path,
 ) -> openbitfun_services_core::credential_vault::CredentialVault {
     let parent = metadata_path.parent().unwrap_or_else(|| Path::new("."));
@@ -956,6 +1114,12 @@ async fn get_secret_bytes(entry_name: &str) -> Result<Option<Vec<u8>>> {
     if let Some(path) = overridden_store_path() {
         if test_vault_is_unavailable(&path) {
             return Err(vault_unavailable("subscription test vault unavailable"));
+        }
+        if let Some(vault) = overridden_file_vault() {
+            return vault
+                .get(entry_name)
+                .await
+                .map_err(|error| vault_unavailable(error.to_string()));
         }
         return test_secrets()
             .lock()
@@ -971,7 +1135,7 @@ async fn get_secret_bytes(entry_name: &str) -> Result<Option<Vec<u8>>> {
     #[cfg(target_os = "macos")]
     {
         let path = store_path()?;
-        return macos_credential_vault(&path)
+        return file_credential_vault(&path)
             .get(entry_name)
             .await
             .map_err(|error| vault_unavailable(error.to_string()));
@@ -1012,6 +1176,12 @@ async fn set_secret_bytes(entry_name: &str, secret: Vec<u8>) -> Result<()> {
                 "injected subscription test vault write failure",
             ));
         }
+        if let Some(vault) = overridden_file_vault() {
+            return vault
+                .set(entry_name, &secret)
+                .await
+                .map_err(|error| vault_unavailable(error.to_string()));
+        }
         let mut vault = test_secrets()
             .lock()
             .map_err(|_| anyhow!("subscription test vault lock poisoned"))?;
@@ -1025,7 +1195,7 @@ async fn set_secret_bytes(entry_name: &str, secret: Vec<u8>) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
         let path = store_path()?;
-        return macos_credential_vault(&path)
+        return file_credential_vault(&path)
             .set(entry_name, &secret)
             .await
             .map_err(|error| vault_unavailable(error.to_string()));
@@ -1058,6 +1228,12 @@ async fn delete_secret_entry(entry_name: &str) -> Result<()> {
                 "injected subscription test vault delete failure",
             ));
         }
+        if let Some(vault) = overridden_file_vault() {
+            return vault
+                .remove(entry_name)
+                .await
+                .map_err(|error| vault_unavailable(error.to_string()));
+        }
         if let Ok(mut vault) = test_secrets().lock() {
             if let Some(items) = vault.get_mut(&path) {
                 items.remove(entry_name);
@@ -1069,7 +1245,7 @@ async fn delete_secret_entry(entry_name: &str) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
         let path = store_path()?;
-        return macos_credential_vault(&path)
+        return file_credential_vault(&path)
             .remove(entry_name)
             .await
             .map_err(|error| vault_unavailable(error.to_string()));
@@ -1330,10 +1506,19 @@ async fn load_with_state_unlocked(path: &Path) -> Result<LoadState> {
             requires_reauthentication: HashSet::new(),
             vault_unavailable: HashSet::new(),
             provider_revisions: HashMap::new(),
+            account_metadata: HashMap::new(),
         });
     };
 
     let secure = parse_secure_file(&bytes, path)?;
+
+    // Validate management before reconciling vault cleanup or interpreting
+    // credentials. Unknown versions remain intact and fail explicitly.
+    let account_metadata = secure
+        .accounts
+        .iter()
+        .map(|(id, metadata)| Ok((id.clone(), metadata.account_metadata()?)))
+        .collect::<Result<HashMap<_, _>>>()?;
 
     let active_entries = secure.active_vault_entries();
     let provider_revisions = secure.provider_revisions.clone();
@@ -1345,7 +1530,7 @@ async fn load_with_state_unlocked(path: &Path) -> Result<LoadState> {
     let mut requires_reauthentication = HashSet::new();
     let mut vault_unavailable = HashSet::new();
     for (provider, metadata) in secure.accounts {
-        if metadata.needs_reauthentication() {
+        if metadata.management()?.requires_reauthentication {
             requires_reauthentication.insert(provider);
             continue;
         }
@@ -1374,6 +1559,7 @@ async fn load_with_state_unlocked(path: &Path) -> Result<LoadState> {
         requires_reauthentication,
         vault_unavailable,
         provider_revisions,
+        account_metadata,
     })
 }
 
@@ -1399,6 +1585,15 @@ pub async fn load_entry(provider: &str) -> Result<Option<StoredCredential>> {
 /// metadata/vault snapshot.
 pub(crate) async fn load_entry_with_revision(provider: &str) -> Result<VersionedCredential> {
     let mut state = load_with_state().await?;
+    if state
+        .account_metadata
+        .get(provider)
+        .is_some_and(|metadata| !metadata.enabled)
+    {
+        return Err(anyhow!(
+            "Subscription account is disabled; enable it before making model requests"
+        ));
+    }
     if state.vault_unavailable.contains(provider) {
         return Err(anyhow!(
             "credential vault is locked or unavailable; retry after the storage issue is resolved"
@@ -1418,6 +1613,129 @@ pub(crate) async fn credential_revision(provider: &str) -> Result<u64> {
     // or opportunistic vault cleanup on every model call.
     let file = read_secure_file(&path).await?;
     Ok(file.provider_revisions.get(provider).copied().unwrap_or(0))
+}
+
+/// Reads the committed non-secret identity even when vault material is missing.
+/// Reauthentication must not rebind an existing slot to a different seat merely
+/// because its old tokens are unavailable.
+pub(crate) async fn oauth_account_identity(slot: &str) -> Result<Option<Option<String>>> {
+    let (path, _transaction) = acquire_store_transaction().await?;
+    let file = read_secure_file(&path).await?;
+    match file.accounts.get(slot) {
+        None => Ok(None),
+        Some(CredentialMetadata::Oauth { account_id, .. }) => Ok(Some(account_id.clone())),
+        Some(CredentialMetadata::Api { .. }) => {
+            Err(anyhow!("Subscription account slot is not an OAuth login"))
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct QuotaStoreFile {
+    version: u8,
+    #[serde(default)]
+    accounts: HashMap<String, serde_json::Value>,
+    #[serde(flatten)]
+    extra: serde_json::Map<String, serde_json::Value>,
+}
+
+async fn read_quota_file(path: &Path) -> Result<QuotaStoreFile> {
+    let Some(bytes) = read_bytes(path).await? else {
+        return Ok(QuotaStoreFile {
+            version: 1,
+            accounts: HashMap::new(),
+            extra: serde_json::Map::new(),
+        });
+    };
+    let file: QuotaStoreFile =
+        serde_json::from_slice(&bytes).context("parse subscription quota cache")?;
+    if file.version != 1 {
+        return Err(anyhow!(
+            "Unsupported subscription quota cache version; existing data was preserved"
+        ));
+    }
+    Ok(file)
+}
+
+fn validate_quota_details(value: &serde_json::Value) -> Result<()> {
+    if value.get("display").is_some_and(|display| {
+        !display.is_null() && display.get("version").and_then(serde_json::Value::as_u64) != Some(1)
+    }) {
+        return Err(anyhow!(
+            "Unsupported subscription quota display version; existing data was preserved"
+        ));
+    }
+
+    if value.get("details").is_some_and(|details| {
+        !details.is_null() && details.get("version").and_then(serde_json::Value::as_u64) != Some(1)
+    }) {
+        return Err(anyhow!(
+            "Unsupported subscription quota details version; existing data was preserved"
+        ));
+    }
+    Ok(())
+}
+
+/// Read a snapshot and its current credential revision under the same OS lock.
+/// Cache entries from a previous login or logout epoch are never reused.
+pub(super) async fn load_account_quota(
+    slot: &str,
+) -> Result<(
+    u64,
+    Option<openbitfun_core_types::subscription::SubscriptionQuotaSnapshot>,
+)> {
+    let (path, _transaction) = acquire_store_transaction().await?;
+    let revision = read_secure_file(&path).await?.provider_revision(slot);
+    let file = read_quota_file(&path.with_extension("quotas.json")).await?;
+    let snapshot = file
+        .accounts
+        .get(slot)
+        .map(|value| {
+            validate_quota_details(value)?;
+            serde_json::from_value::<
+                    openbitfun_core_types::subscription::SubscriptionQuotaSnapshot,
+                >(value.clone()).map_err(anyhow::Error::from)
+        })
+        .transpose()?;
+    Ok((
+        revision,
+        snapshot.filter(|snapshot| {
+            snapshot.account_id == slot && snapshot.credential_revision == revision
+        }),
+    ))
+}
+
+/// Compare the observed credential epoch before publishing a quota result. A
+/// request started before logout/re-login must not write a new account's cache.
+pub(super) async fn save_account_quota(
+    snapshot: &openbitfun_core_types::subscription::SubscriptionQuotaSnapshot,
+) -> Result<bool> {
+    let (path, _transaction) = acquire_store_transaction().await?;
+    let revision = read_secure_file(&path)
+        .await?
+        .provider_revision(&snapshot.account_id);
+    if revision != snapshot.credential_revision {
+        return Ok(false);
+    }
+    let quota_path = path.with_extension("quotas.json");
+    let mut file = read_quota_file(&quota_path).await?;
+    if let Some(previous) = file.accounts.get(&snapshot.account_id) {
+        validate_quota_details(previous)?;
+    }
+    if snapshot
+        .details
+        .as_ref()
+        .is_some_and(|details| details.version != 1)
+    {
+        return Err(anyhow!(
+            "Unsupported subscription quota details version; existing data was preserved"
+        ));
+    }
+    let value = serde_json::to_value(snapshot)?;
+    validate_quota_details(&value)?;
+    file.accounts.insert(snapshot.account_id.clone(), value);
+    write_atomic(&quota_path, &serde_json::to_vec_pretty(&file)?).await?;
+    Ok(true)
 }
 
 /// Inserts or replaces a provider credential. Secret material is committed to
@@ -1458,7 +1776,35 @@ async fn upsert_internal(
     let next_revision = file.advance_provider_revision(provider)?;
     let active_before = file.active_vault_entries();
     let previous = file.accounts.get(provider).cloned();
-    let metadata = CredentialMetadata::from_credential(&credential);
+    let mut metadata = CredentialMetadata::from_credential(&credential);
+    if let Some(previous) = &previous {
+        let mut management = previous.management()?;
+        if previous
+            .metadata()
+            .and_then(|value| value.get(ACCOUNT_MANAGEMENT_KEY))
+            .is_some()
+        {
+            // Keep same-version extension fields across provider token refresh.
+            let retained = previous
+                .metadata()
+                .and_then(|value| value.get(ACCOUNT_MANAGEMENT_KEY))
+                .cloned()
+                .unwrap();
+            let target = match &mut metadata {
+                CredentialMetadata::Oauth { metadata, .. }
+                | CredentialMetadata::Api { metadata, .. } => metadata,
+            };
+            target
+                .get_or_insert_with(|| serde_json::json!({}))
+                .as_object_mut()
+                .ok_or_else(|| {
+                    anyhow!("Subscription account metadata is invalid; existing data was preserved")
+                })?
+                .insert(ACCOUNT_MANAGEMENT_KEY.into(), retained);
+            management.requires_reauthentication = false;
+            metadata.set_management(&management)?;
+        }
+    }
     let mut cleanup_entries = metadata.vault_entries(provider);
     let mut previous_entries = previous
         .as_ref()
@@ -1499,6 +1845,14 @@ async fn upsert_internal(
 
 /// Removes one provider from both the credential vault and metadata index.
 pub(crate) async fn remove(provider: &str) -> Result<RemoveOutcome> {
+    remove_internal(provider, false).await
+}
+
+pub(crate) async fn sign_out_account(provider: &str) -> Result<RemoveOutcome> {
+    remove_internal(provider, true).await
+}
+
+async fn remove_internal(provider: &str, retain_metadata: bool) -> Result<RemoveOutcome> {
     let (path, _transaction) = acquire_store_transaction().await?;
     let _ = load_with_state_unlocked(&path).await?;
     let mut file = read_secure_file(&path).await?;
@@ -1518,7 +1872,14 @@ pub(crate) async fn remove(provider: &str) -> Result<RemoveOutcome> {
     // Persist cleanup intent before metadata can stop referencing the vault
     // entries. Reconciliation protects them if the metadata commit fails.
     schedule_cleanup(&path, cleanup_entries).await?;
-    file.accounts.remove(provider);
+    if retain_metadata {
+        if let Some(previous) = previous {
+            file.accounts
+                .insert(provider.into(), previous.without_secrets()?);
+        }
+    } else {
+        file.accounts.remove(provider);
+    }
     if let Err(error) = write_secure_file(&path, &file).await {
         if let Err(cleanup_error) = reconcile_cleanup_journal(&path, &active_before).await {
             log::warn!(
@@ -1533,6 +1894,55 @@ pub(crate) async fn remove(provider: &str) -> Result<RemoveOutcome> {
         )));
     }
     Ok(RemoveOutcome::Removed)
+}
+
+/// Account policy and its credential epoch commit under the same host lock.
+/// No secrets are deleted, and a failed write leaves both facts unchanged.
+pub(crate) async fn set_account_enabled(slot: &str, enabled: bool) -> Result<()> {
+    let (path, _transaction) = acquire_store_transaction().await?;
+    let _ = load_with_state_unlocked(&path).await?;
+    let mut file = read_secure_file(&path).await?;
+    let metadata = file
+        .accounts
+        .get_mut(slot)
+        .ok_or_else(|| anyhow!("Subscription account does not exist; sign in first"))?;
+    let mut state = metadata.management()?;
+    if state.enabled == enabled {
+        return Ok(());
+    }
+    state.enabled = enabled;
+    metadata.set_management(&state)?;
+    file.advance_provider_revision(slot)?;
+    write_secure_file(&path, &file).await
+}
+
+/// Keep identity and vault references when the provider permanently rejects a
+/// refresh grant. An older failure cannot invalidate a newer login/refresh.
+pub(crate) async fn require_reauthentication_if_revision(
+    slot: &str,
+    expected_revision: u64,
+) -> Result<ConditionalCommitOutcome> {
+    let (path, _transaction) = acquire_store_transaction().await?;
+    let mut file = read_secure_file(&path).await?;
+    let current_revision = file.provider_revision(slot);
+    if current_revision != expected_revision {
+        return Ok(ConditionalCommitOutcome::Conflict { current_revision });
+    }
+    let metadata = file
+        .accounts
+        .get_mut(slot)
+        .ok_or_else(|| anyhow!("Subscription account no longer exists"))?;
+    let mut state = metadata.management()?;
+    if state.requires_reauthentication {
+        return Ok(ConditionalCommitOutcome::Committed {
+            revision: current_revision,
+        });
+    }
+    state.requires_reauthentication = true;
+    metadata.set_management(&state)?;
+    let revision = file.advance_provider_revision(slot)?;
+    write_secure_file(&path, &file).await?;
+    Ok(ConditionalCommitOutcome::Committed { revision })
 }
 
 /// Persists all supplied credentials. Kept for compatibility with focused
@@ -1660,6 +2070,52 @@ pub(crate) async fn replace_metadata_file_windows(tmp: &Path, path: &Path) -> Re
 #[cfg(test)]
 mod file_lock_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn persistent_test_vault_is_encrypted_and_requires_explicit_opt_in() {
+        let _guard = super::super::tests::test_lock().lock().await;
+        let path = temporary_metadata_path("file-vault");
+        set_store_path_and_file_vault_for_test(path.clone());
+        let credential = StoredCredential::Oauth {
+            access: "synthetic-persistent-access".into(),
+            refresh: "synthetic-persistent-refresh".into(),
+            expires: chrono::Utc::now().timestamp_millis() + 3_600_000,
+            account_id: Some("synthetic-seat".into()),
+            metadata: None,
+        };
+        upsert("codex", credential.clone()).await.unwrap();
+        let metadata = std::fs::read(&path).unwrap();
+        let secure: SecureStoreFile = serde_json::from_slice(&metadata).unwrap();
+        let ciphertext =
+            std::fs::read(path.parent().unwrap().join("subscription_auth_vault.json")).unwrap();
+        for secret in [
+            "synthetic-persistent-access",
+            "synthetic-persistent-refresh",
+        ] {
+            assert!(!String::from_utf8_lossy(&metadata).contains(secret));
+            assert!(!String::from_utf8_lossy(&ciphertext).contains(secret));
+        }
+        // Ordinary tests remain memory-only even when a file vault exists at
+        // their override path; switching must not silently read its secrets.
+        set_store_path_for_test(path.clone());
+        assert!(load_entry("codex").await.unwrap().is_none());
+        assert_eq!(std::fs::read(&path).unwrap(), metadata);
+        set_store_path_and_file_vault_for_test(path.clone());
+        assert_eq!(
+            serde_json::to_value(load_entry("codex").await.unwrap().unwrap()).unwrap(),
+            serde_json::to_value(credential).unwrap()
+        );
+        remove("codex").await.unwrap();
+        for entry in secure.active_vault_entries() {
+            assert!(file_credential_vault(&path)
+                .get(&entry)
+                .await
+                .unwrap()
+                .is_none());
+        }
+        set_store_path_for_test(path.clone());
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
 
     const LOCK_CHILD_METADATA_ENV: &str = "OPENBITFUN_SUBAUTH_LOCK_CHILD_METADATA";
     const LOCK_CHILD_STARTED_ENV: &str = "OPENBITFUN_SUBAUTH_LOCK_CHILD_STARTED";

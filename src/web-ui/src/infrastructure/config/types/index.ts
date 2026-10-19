@@ -305,10 +305,20 @@ export interface AIModelConfig {
   inline_think_in_text?: boolean;
   /** Authentication source. Defaults to inline `api_key`. */
   auth?: AuthConfig;
+  /** Ordered backup channels (other model configs). Absent keeps one channel. */
+  channel_routing?: ModelChannelRouting;
+}
+
+/** Explicit failover route; members are other model configuration IDs. */
+export interface ModelChannelRouting {
+  version: number;
+  fallback_model_ids: string[];
+  /** Fixed member chosen by the user. Absent enables automatic failover. */
+  manual_channel?: string;
 }
 
 /** Subscription provider for in-app OAuth auth. */
-export type SubscriptionProvider = 'codex' | 'antigravity' | 'opencode' | 'grok' | 'hermes';
+export type SubscriptionProvider = 'codex' | 'antigravity' | 'opencode' | 'grok' | 'hermes' | 'workbuddy' | 'workbuddy_ai' | 'zcode' | 'zcode_cn';
 
 /** OpenCode billing/API product. Both plans reuse the same signed-in account. */
 export type OpenCodePlan = 'zen' | 'go';
@@ -321,6 +331,16 @@ export type AuthConfig =
       provider: SubscriptionProvider;
       /** Absent on legacy OpenCode configs, which continue to use Zen. */
       plan?: OpenCodePlan;
+      /** Explicit account slot. Absent keeps the provider's default account. */
+      account_id?: string;
+    }
+  | {
+      /** Ordered accounts of one provider, tried in order on quota/errors. */
+      type: 'subscription_pool';
+      provider: SubscriptionProvider;
+      accounts: string[];
+      /** Host-owned edit generation; send back the value that was read. */
+      revision: number;
     };
 
 export interface ProxyConfig {

@@ -12,6 +12,12 @@ read:
 
 ## Ownership
 
+Model-edit compatibility has a focused check:
+`cargo test --locked -p openbitfun-cli --bin openbitfun model_selection::tests`.
+Older mutation DTOs preserve account/channel policy. Merge write-only credentials
+and unexpressed routing fields against the current model inside the existing
+config write lock, so a concurrent settings edit cannot be overwritten.
+
 CLI owns only surface concerns:
 
 - Clap entrypoints and CLI-local configuration

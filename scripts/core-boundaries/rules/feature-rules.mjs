@@ -46,7 +46,7 @@ export const optionalDependencyFeatureOwnerRules = [
     dependencies: [
       { depName: 'image', ownerFeatures: ['pet-packages'] },
       { depName: 'zip', ownerFeatures: ['pet-packages'] },
-      { depName: 'uuid', ownerFeatures: ['pet-packages'] },
+      { depName: 'uuid', ownerFeatures: ['pet-packages', 'resource-capacity'] },
       { depName: 'aes-gcm', ownerFeatures: ['credential-vault'] },
       { depName: 'anyhow', ownerFeatures: ['credential-vault', 'dispatch-workspace', 'workspace-runtime', 'workspace-transfer', 'session-recovery'] },
       { depName: 'async-trait', ownerFeatures: ['permission', 'workspace-runtime'] },
@@ -88,6 +88,8 @@ export const optionalDependencyFeatureOwnerRules = [
           'filesystem',
           'local-storage',
           'runtime-ownership',
+          'routing-state',
+          'resource-capacity',
           'workspace-identity',
           'workspace-transfer',
         ],
@@ -137,7 +139,7 @@ export const optionalDependencyFeatureOwnerRules = [
       { depName: 'async-trait', ownerFeatures: ['agent-runtime', 'native-hook-runtime'] },
       { depName: 'openbitfun-agent-stream', ownerFeatures: ['agent-runtime'] },
       { depName: 'openbitfun-agent-tools', ownerFeatures: ['agent-runtime'] },
-      { depName: 'openbitfun-core-types', ownerFeatures: ['agent-runtime', 'definition-contracts'] },
+      { depName: 'openbitfun-core-types', ownerFeatures: ['agent-runtime', 'definition-contracts', 'account-routing'] },
       { depName: 'openbitfun-events', ownerFeatures: ['agent-runtime'] },
       { depName: 'openbitfun-runtime-ports', ownerFeatures: ['agent-runtime'] },
       { depName: 'openbitfun-runtime-services', ownerFeatures: ['agent-runtime'] },
@@ -166,7 +168,7 @@ export const optionalDependencyFeatureOwnerRules = [
         depName: 'openbitfun-ai-adapters',
         ownerFeatures: ['ai-adapter-runtime', 'subscription-auth'],
       },
-      { depName: 'openbitfun-agent-runtime', ownerFeatures: ['agent-runtime'] },
+      { depName: 'openbitfun-agent-runtime', ownerFeatures: ['agent-runtime', 'ai-adapter-runtime'] },
       { depName: 'openbitfun-agent-workflows', ownerFeatures: ['deep-research'] },
       { depName: 'openbitfun-agent-stream', ownerFeatures: ['agent-runtime'] },
       { depName: 'openbitfun-agent-tools', ownerFeatures: ['agent-runtime', 'local-storage', 'mcp-runtime'] },
@@ -604,6 +606,7 @@ export const capabilityContractDependencyRules = [
     manifestPath: 'src/crates/execution/agent-runtime/Cargo.toml',
     featureProfiles: {
       default: [],
+      'account-routing': ['dep:openbitfun-core-types'],
       'definition-contracts': [
         // Skill declarations reuse pure hook validation without process support.
         'native-hook-settings',
@@ -632,6 +635,7 @@ export const capabilityContractDependencyRules = [
         'tokio/time',
       ],
       'agent-runtime': [
+        'account-routing',
         'definition-contracts',
         'native-hook-runtime',
         'dep:async-trait',
@@ -676,9 +680,10 @@ export const capabilityContractDependencyRules = [
         [capabilityEdge([], { optional: true })],
         [
           capabilityForwarder('agent-runtime', 'agent-runtime'),
+          capabilityForwarder('ai-adapter-runtime', 'account-routing'),
         ],
-        ['agent-runtime'],
-        ['external-sources', 'mcp-runtime', 'opencode-plugin-host', 'plugin-runtime', 'product-search', 'product-full', 'remote-connect', 'tools-mcp'],
+        ['agent-runtime', 'ai-adapter-runtime'],
+        ['external-sources', 'function-agents', 'model-catalog', 'mcp-runtime', 'opencode-plugin-host', 'plugin-runtime', 'product-search', 'product-full', 'remote-connect', 'tools-mcp'],
       )],
       ['openbitfun-desktop', capabilityConsumer([
         capabilityEdge(['agent-runtime']),
@@ -1253,7 +1258,7 @@ export const coreClosedFeatureProfileRules = [
   {
     manifestPath: 'src/crates/assembly/core/Cargo.toml',
     featureName: 'ai-adapter-runtime',
-    requiredFeatureRefs: ['dep:openbitfun-ai-adapters'],
+    requiredFeatureRefs: ['dep:openbitfun-ai-adapters', 'dep:openbitfun-agent-runtime', 'openbitfun-agent-runtime/account-routing', 'openbitfun-services-core/routing-state'],
     exact: true,
     reason:
       'ai-adapter-runtime must own provider protocol clients without implicitly enabling local subscription credentials',
@@ -1438,6 +1443,20 @@ export const coreClosedFeatureProfileRules = [
     requiredFeatureRefs: ['dep:regex'],
     exact: true,
     reason: 'services-core diagnostics must own only deterministic diagnostic-log redaction',
+  },
+  {
+    manifestPath: 'src/crates/services/services-core/Cargo.toml',
+    featureName: 'routing-state',
+    requiredFeatureRefs: ['json-io', 'dep:sha2'],
+    exact: true,
+    reason: 'services-core routing-state owns scoped versioned facts and atomic IO without selecting routing policy',
+  },
+  {
+    manifestPath: 'src/crates/services/services-core/Cargo.toml',
+    featureName: 'resource-capacity',
+    requiredFeatureRefs: ['json-io', 'dep:sha2', 'dep:uuid'],
+    exact: true,
+    reason: 'services-core resource-capacity owns cooperative OS leases and atomic capacity registration without account policy',
   },
   {
     manifestPath: 'src/crates/services/services-core/Cargo.toml',

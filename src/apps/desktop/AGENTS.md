@@ -119,6 +119,22 @@ and recording in the signed app on macOS. Ad-hoc fixture tests do not prove TCC 
 cargo check -p openbitfun-desktop && cargo test -p openbitfun-desktop
 ```
 
+Token-usage bootstrap must construct and register the host's service before
+`RoundExecutor::new`; that constructor captures the service for direct attempt
+records. The subscriber and AppState must reuse the same authority. An unknown
+usage failure/cancellation emits no TokenUsageUpdated event, so subscribing to
+events alone cannot record it. For this wiring, run the Desktop check above and
+the [Core factory-backed acceptance paths](../../crates/assembly/core/src/agentic/execution/AGENTS.md),
+whose process fixture uses the production round constructor and host service
+registration rather than assigning the executor's private usage field.
+
+Guarded E2E startup also isolates subscription metadata and secrets under
+the guarded PathManager user-data root, using the existing encrypted fixture
+vault instead of any native credential store. Debug-only subscription mock TLS
+may add the CA from `OPENBITFUN_E2E_SUBSCRIPTION_CA_FILE` under that same guard;
+it does not turn off certificate verification. The native application fixture
+is `node tests/e2e/scripts/run-subscription-pool.mjs` (see its E2E guide).
+
 For session storage directory access, run
 `cargo test -p openbitfun-desktop --lib api::session_storage_directory::tests`
 for session storage directory resolution (these tests do not launch a file manager),
@@ -282,3 +298,10 @@ The harness has its own main-thread CFRunLoop and exercises the production
 main-queue dispatcher; do not run this test through libtest or bypass that
 dispatcher. It requires local Accessibility and Screen Recording permission.
 To reuse the compiled harness, set `OPENBITFUN_TEST_BINARY` to its absolute path.
+
+For the additive saved-model quota request and legacy account-request round trip:
+`cargo test --locked -p openbitfun-desktop --lib quota_request_compatibility_tests`.
+The host resolves the saved model, rejects non-API authentication and custom auth,
+and rechecks its authorization binding before publishing the result. Model-scoped
+requests require the separately advertised `subscription_model_quota_v1` capability;
+legacy requests retain the exact account-slot path. These tests do not contact billing.

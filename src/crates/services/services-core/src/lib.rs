@@ -15,9 +15,17 @@ pub mod diff;
 pub mod dispatch_contract;
 #[cfg(feature = "dispatch-workspace")]
 pub mod dispatch_workspace;
-#[cfg(any(feature = "local-storage", feature = "runtime-ownership"))]
+#[cfg(any(
+    feature = "local-storage",
+    feature = "runtime-ownership",
+    feature = "resource-capacity"
+))]
 pub mod exclusive_file_lease;
-#[cfg(any(feature = "local-storage", feature = "runtime-ownership"))]
+#[cfg(any(
+    feature = "local-storage",
+    feature = "runtime-ownership",
+    feature = "resource-capacity"
+))]
 mod file_lock;
 #[cfg(any(feature = "filesystem", feature = "workspace-transfer"))]
 pub mod file_write_lock;
@@ -47,6 +55,10 @@ pub mod pet_packages;
 pub mod process_manager;
 #[cfg(feature = "process-runtime")]
 pub mod process_tree;
+#[cfg(feature = "resource-capacity")]
+pub mod resource_capacity;
+#[cfg(feature = "routing-state")]
+pub mod routing_state;
 #[cfg(feature = "session-event-format")]
 pub mod session_projection_format;
 pub mod storage_error;

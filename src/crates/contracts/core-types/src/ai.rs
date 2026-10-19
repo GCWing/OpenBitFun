@@ -664,8 +664,25 @@ pub struct ModelRequestContext {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelResponseReplay {
     pub protocol: String,
+    /// Concrete host-local channel that produced nonportable continuation state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_origin: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_fingerprint: Option<String>,
+    /// Native subscription account that produced opaque continuation state.
+    /// Legacy replay without provenance cannot authorize an account switch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_origin: Option<ModelAccountOrigin>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub items: Vec<ModelResponseReplayItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelAccountOrigin {
+    pub provider: String,
+    pub account_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -900,6 +917,31 @@ mod remote_model_routing_compatibility {
             serde_json::from_value(serialized).unwrap();
         assert_eq!(restored, enriched);
         assert_eq!(restored.id, "medium");
+    }
+
+    #[test]
+    fn legacy_model_replay_round_trips_without_account_provenance() {
+        let old = serde_json::json!({"protocol":"openai_responses", "items":[{"kind":"opaque_reasoning", "opaque_state":"legacy-state"}]});
+        let replay: super::ModelResponseReplay = serde_json::from_value(old.clone()).unwrap();
+        assert!(replay.account_origin.is_none());
+        assert!(replay.channel_origin.is_none());
+        assert!(replay.channel_fingerprint.is_none());
+        assert_eq!(serde_json::to_value(&replay).unwrap(), old);
+        let mut attributed = replay;
+        attributed.channel_origin = Some("recorded-channel".into());
+        attributed.channel_fingerprint = Some("recorded-fingerprint".into());
+        attributed.account_origin = Some(super::ModelAccountOrigin {
+            provider: "codex".into(),
+            account_id: "slot-1".into(),
+            upstream_account_id: Some("seat-1".into()),
+        });
+        assert_eq!(
+            serde_json::from_value::<super::ModelResponseReplay>(
+                serde_json::to_value(&attributed).unwrap()
+            )
+            .unwrap(),
+            attributed
+        );
     }
 
     #[test]

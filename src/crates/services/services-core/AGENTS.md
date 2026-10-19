@@ -28,7 +28,11 @@ crate.
   (declarative instruction discovery). Consumers enable those or the narrower
   `workspace-runtime`, `workspace-identity`, `runtime-ownership`, `tls-provider`,
   `permission`, `dispatch-workspace`, `markdown`, `session-git`, and
-  `workspace-text-runtime` extensions only for behavior they use. Products
+  `workspace-text-runtime` extensions only for behavior they use. `routing-state`
+  composes only `json-io` and hashing for opaque scoped routing facts; it does
+  not select accounts, retry delays, cooldown applicability or capacity policy.
+  `resource-capacity` composes JSON IO, hashing and lease IDs for cooperative
+  resource admission; it has no account, model or credential policy. Products
   needing IANA time-zone ranges and dashboard aggregation additionally select
   `token-usage-statistics` and `memory-store`. In particular, session metadata consumers must
   not compile libgit2 unless they use the memory-workspace baseline/diff API.
@@ -101,6 +105,9 @@ cargo test -p openbitfun-services-core --no-default-features --features local-st
 cargo test -p openbitfun-services-core --no-default-features --features local-storage --test exclusive_file_lease_contracts
 cargo test -p openbitfun-services-core --no-default-features --features memory-store --lib memory_store::tests::
 cargo test -p openbitfun-services-core --no-default-features --features token-usage-statistics --lib token_usage::
+cargo test --locked -p openbitfun-services-core --no-default-features --lib dispatch_contract::tests
+cargo test -p openbitfun-services-core --no-default-features --features routing-state --lib routing_state::
+cargo test --locked -p openbitfun-services-core --no-default-features --features resource-capacity --lib resource_capacity::
 cargo test -p openbitfun-services-core --no-default-features --features process-runtime --test process_runtime_contracts
 cargo test -p openbitfun-services-core --no-default-features --features process-runtime --lib process_tree::tests::
 cargo test --locked -p openbitfun-services-core --no-default-features --features tls-provider --lib tls_provider::tests
@@ -148,6 +155,51 @@ App hosts must stop data writers before calling its mutation entry points.
 ```bash
 cargo test -p openbitfun-services-core --no-default-features --features session-recovery --lib session_recovery
 ```
+
+`routing_state` stores versioned resource bindings and cooldown observations
+under caller-injected opaque scope keys. Reads do not initialize files. Updates
+reload under the JSON OS lock and strictly replace atomically, preserving
+unknown root and nested fields. Same-resource binding epochs never regress;
+cooldown writes keep the longest same-epoch deadline and reject older epochs.
+Unknown versions and malformed state stay intact and return an error. Resource
+eligibility, scope/lineage selection, expiry interpretation and execution leases
+remain outside this fact store.
+
+`resource_capacity` serializes policy compare-and-exchange and owner registration
+under the same JSON transaction lock. Each live owner holds a separate OS lease;
+file existence, PID and timestamps never prove ownership. Unlimited admission
+still registers holders so lowering a limit cannot ignore in-flight work. A
+policy update never terminates existing holders. Dropping an admission waiter
+does not interrupt an accepted file transaction: it finishes under its lock and
+the unclaimed result releases its OS guard. Crashes release guards through the
+OS; subsequent admission removes stale registrations. Reads do not initialize
+missing state; unknown fields are retained and malformed or unsupported state
+returns an error without reset. Snapshot counts are observations, not slot
+reservations. Consumers choose stable resource scope, qualification checks,
+queue policy and remote capability semantics.
+
+`token_usage` keeps model-attempt attribution in the existing opaque
+`token_details.openbitfunModelRequest` object so legacy serializers retain
+the fact. Account identity is captured by the request producer, not reconstructed
+from current credentials. Native attempts commit first to the versioned
+`records/model-attempts/YYYY-MM-DD.json` authority, then project to the legacy
+daily batch. Old cached daily writers cannot erase this authority. Updates
+reload under the JSON OS lock, deduplicate immutable attempt IDs, preserve
+unknown fields, and replace strictly atomically. Queries merge both sources,
+prefer authority before scope filters and pagination, and never create or repair
+files. Same-day pre-authority native rows are promoted on a native write; there
+is no read-triggered history migration. Explicit clear-all covers both sources.
+Projection failure is logged without undoing an accepted attempt; unreadable
+data and unsupported authority versions remain explicit query errors, never
+empty replacements or fallback to stale projections.
+The owned writer completes accepted records after a caller stops awaiting it.
+Optional `routingWarnings` in the attempt context retain open-string preference
+observations supplied by the request producer. Legacy records default to an
+empty list; preserve unknown codes through ledger and statistics round trips.
+Do not infer warnings from current files or turn them into usage counters.
+Unknown usage is counted separately from known zero; account dashboard totals
+derive from ledger records. Existing per-instance model/session caches do not
+constitute a new cross-process aggregation guarantee.
 
 workspace-persistence owns workspace records and registry validation;
 coordination-store owns the durable coordination SQLite schema;

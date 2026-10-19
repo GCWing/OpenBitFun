@@ -606,7 +606,7 @@ mod tests {
     #[test]
     fn overlay_is_valid_and_keeps_product_endpoint_decisions() {
         let overlay = parse_overlay().expect("valid overlay");
-        assert_eq!(overlay.providers.len(), 15);
+        assert_eq!(overlay.providers.len(), 16);
         let go = overlay
             .providers
             .iter()
@@ -618,10 +618,16 @@ mod tests {
         assert_eq!(go.endpoints.len(), 1);
         assert_eq!(go.endpoints[0].base_url, "https://opencode.ai/zen/go/v1");
         assert!(go.endpoints[0].is_default);
-        assert!(!overlay
+        let zen = overlay
             .providers
             .iter()
-            .any(|provider| provider.id == "opencode-zen" || provider.id == "opencode"));
+            .find(|provider| provider.id == "opencode-zen")
+            .expect("Zen preset");
+        assert!(!zen.requires_api_key);
+        // Zen's account-independent model list and wire routes come from the
+        // live OpenCode catalog rather than the bundled models.dev subset.
+        assert!(zen.catalog_provider_ids.is_empty());
+        assert_eq!(zen.endpoints[0].base_url, "https://opencode.ai/zen/v1");
         let openbitfun = overlay
             .providers
             .iter()
@@ -843,7 +849,7 @@ mod tests {
             "bundle".to_string(),
             ProviderCatalogSource::Bundle,
         );
-        assert_eq!(resolved.providers.len(), 15);
+        assert_eq!(resolved.providers.len(), 16);
         let go = resolved
             .providers
             .iter()
@@ -853,10 +859,15 @@ mod tests {
             !go.models.is_empty(),
             "Go must have an offline model catalog"
         );
-        assert!(!resolved
+        let zen = resolved
             .providers
             .iter()
-            .any(|provider| provider.id == "opencode-zen" || provider.id == "opencode"));
+            .find(|provider| provider.id == "opencode-zen")
+            .expect("bundled Zen provider");
+        assert!(
+            zen.models.is_empty(),
+            "Zen models require live route discovery"
+        );
         assert!(resolved
             .providers
             .iter()

@@ -430,6 +430,36 @@ fn get_startup_native_trace(
 /// Tauri application entry point
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub async fn run() {
+    // E2E profiles must isolate authentication as well as ordinary config.
+    // Use the existing encrypted fixture vault on every platform, before any
+    // account discovery or background refresh can touch the normal profile.
+    if e2e_storage_guard_enabled() {
+        let paths = match openbitfun_core::infrastructure::PathManager::new() {
+            Ok(paths) => paths,
+            Err(error) => {
+                eprintln!("Failed to initialize isolated E2E authentication storage: {error}");
+                return;
+            }
+        };
+        openbitfun_core::infrastructure::subscription_auth::store::set_store_path_and_file_vault_for_test(
+            paths.user_data_dir().join("subscription_auth.json"),
+        );
+        #[cfg(not(debug_assertions))]
+        if std::env::var_os("OPENBITFUN_E2E_SUBSCRIPTION_CA_FILE").is_some() {
+            eprintln!("Isolated subscription mock TLS requires a debug build");
+            return;
+        }
+        #[cfg(debug_assertions)]
+        if let Some(certificate_path) = std::env::var_os("OPENBITFUN_E2E_SUBSCRIPTION_CA_FILE") {
+            let result = std::fs::read(certificate_path)
+                .map_err(|error| error.to_string())
+                .and_then(|pem| openbitfun_core::infrastructure::subscription_auth::set_isolated_http_root_certificate_for_test(&pem).map_err(|error| error.to_string()));
+            if let Err(error) = result {
+                eprintln!("Failed to initialize isolated E2E subscription TLS: {error}");
+                return;
+            }
+        }
+    }
     match miniapp_desktop::launch_manifest() {
         Ok(Some(manifest)) => {
             if let Err(error) = miniapp_desktop::run_shell(manifest) {
@@ -1462,6 +1492,12 @@ pub async fn run() {
             test_ai_config_connection,
             list_ai_models_by_config,
             list_subscription_accounts,
+            list_subscription_account_instances,
+            get_subscription_account_quota,
+            start_subscription_account_login,
+            logout_subscription_account_instance,
+            set_subscription_account_enabled,
+            refresh_subscription_account_instance,
             start_subscription_login,
             get_subscription_login_status,
             cancel_subscription_login,
@@ -2098,6 +2134,16 @@ async fn init_agentic_system() -> anyhow::Result<(
 
     let path_manager = try_get_path_manager_arc()?;
     let persistence_manager = Arc::new(persistence::PersistenceManager::new(path_manager.clone())?);
+    // The round executor captures this service at construction so failed or
+    // cancelled attempts with unknown usage persist without a usage event.
+    let token_usage_service = Arc::new(
+        openbitfun_core::service::token_usage::TokenUsageService::new(path_manager.clone())
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to initialize token usage service: {}", e))?,
+    );
+    openbitfun_core::service::token_usage::set_global_token_usage_service(
+        token_usage_service.clone(),
+    );
 
     let context_store = Arc::new(session::SessionContextStore::new());
     let context_compressor = Arc::new(session::ContextCompressor::new());
@@ -2167,12 +2213,8 @@ async fn init_agentic_system() -> anyhow::Result<(
 
     coordination::ConversationCoordinator::set_global(coordinator.clone());
 
-    // Initialize token usage service and register subscriber
-    let token_usage_service = Arc::new(
-        openbitfun_core::service::token_usage::TokenUsageService::new(path_manager.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to initialize token usage service: {}", e))?,
-    );
+    // The subscriber reuses the round executor's authority. Known-usage events
+    // deduplicate by attempt ID; unknown usage is recorded directly by the round.
     let token_usage_subscriber = Arc::new(
         openbitfun_core::service::token_usage::TokenUsageSubscriber::new(
             token_usage_service.clone(),

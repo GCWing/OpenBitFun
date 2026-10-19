@@ -301,33 +301,19 @@ pub async fn install_cli_cancel(
     dispatch_ssh::install_cli_cancel(manager, request.connection_id.trim()).await
 }
 
-/// Copy this controller's model configuration (catalog, credentials, and
-/// default-model selections) onto the SSH target so its CLI can resolve a
-/// ready model.
-///
-/// Credential-bearing: this writes the controller's API keys into the target
-/// user's OpenBitFun configuration. Callers are the explicit UI command and the
-/// automatic submit-time repair in [`ensure_target_model_config`]; both leave
-/// a durable record of having done it.
-pub(super) async fn push_model_config(
-    manager: &SSHConnectionManager,
-    connection_id: &str,
-) -> anyhow::Result<()> {
-    crate::service::config::initialize_global_config()
-        .await
-        .map_err(|error| anyhow::anyhow!("initialize controller configuration: {error}"))?;
-    let config_service = crate::service::config::get_global_config_service()
-        .await
-        .map_err(|error| anyhow::anyhow!("read controller configuration: {error}"))?;
-    let config: crate::service::config::GlobalConfig = config_service
-        .get_config(None)
-        .await
-        .map_err(|error| anyhow::anyhow!("load controller configuration: {error}"))?;
-    if !config.ai.models.iter().any(|model| model.enabled) {
-        anyhow::bail!("no enabled AI model is configured on this device to sync");
-    }
-    let ai = serde_json::to_value(&config.ai)
-        .map_err(|error| anyhow::anyhow!("encode controller model configuration: {error}"))?;
+#[derive(Debug, thiserror::Error)]
+#[error("{reason}")]
+struct SubscriptionModelSyncUnsupported {
+    reason: String,
+}
+
+fn protected_model_sync_payload(config: &Value) -> anyhow::Result<Value> {
+    let mut protected = config.clone();
+    openbitfun_config_contracts::protected_account_models::protect_account_models(&mut protected);
+    let ai = protected
+        .get("ai")
+        .and_then(Value::as_object)
+        .ok_or_else(|| anyhow::anyhow!("exported model configuration has no AI section"))?;
     let mut payload = serde_json::Map::new();
     for key in [
         "models",
@@ -340,14 +326,198 @@ pub(super) async fn push_model_config(
             payload.insert(key.to_string(), value.clone());
         }
     }
-    dispatch_ssh::sync_model_config(manager, connection_id, &Value::Object(payload)).await
+    Ok(Value::Object(payload))
+}
+
+fn subscription_model_sync_requirements(
+    payload: &Value,
+) -> Result<Vec<&'static str>, SubscriptionModelSyncUnsupported> {
+    use crate::service::config::AuthConfig;
+    use openbitfun_services_core::dispatch_contract::{
+        DISPATCH_SUBSCRIPTION_ACCOUNT_BINDINGS_CAPABILITY,
+        DISPATCH_SUBSCRIPTION_ACCOUNT_FAILOVER_CAPABILITY,
+    };
+    // The codec owns guard versions and opaque-source restoration. Inspect its
+    // supported live auth facts instead of duplicating version rules here.
+    let mut provider_accounts = false;
+    let mut restored = json!({"ai":payload});
+    if !openbitfun_config_contracts::protected_account_models::restore_account_models(&mut restored)
+        .is_empty()
+    {
+        return Err(SubscriptionModelSyncUnsupported {
+            reason: "The controller has an unsupported subscription binding version or invalid record; the source and target configurations were preserved. Update OpenBitFun before syncing this model.".into(),
+        });
+    }
+    let mut bindings = false;
+    let mut failover = false;
+    let mut channels = false;
+    for model in restored
+        .pointer("/ai/models")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(route) = model
+            .get("channel_routing")
+            .filter(|value| !value.is_null())
+        {
+            let route: openbitfun_config_contracts::channel_routing::ModelChannelRouting =
+                serde_json::from_value(route.clone()).map_err(|_| {
+                    SubscriptionModelSyncUnsupported {
+                        reason: "Unsupported channel routing record; configuration was preserved"
+                            .into(),
+                    }
+                })?;
+            if route.version != 1 {
+                return Err(SubscriptionModelSyncUnsupported {
+                    reason: "Unsupported channel routing version; configuration was preserved"
+                        .into(),
+                });
+            }
+            channels = true;
+        }
+        let auth = match model.get("auth") {
+            Some(auth) => serde_json::from_value::<AuthConfig>(auth.clone()).map_err(|_| {
+                SubscriptionModelSyncUnsupported {
+                    reason: "The controller has unsupported model authentication; its configuration was preserved and no model sync was attempted.".into(),
+                }
+            })?,
+            None => AuthConfig::ApiKey,
+        };
+        match auth {
+            AuthConfig::SubscriptionPool { provider, .. } => {
+                provider_accounts |=
+                    provider != crate::service::config::types::SubscriptionProvider::Codex;
+                bindings = true;
+                failover = true;
+            }
+            AuthConfig::Subscription {
+                provider,
+                account_id: Some(_),
+                ..
+            } => {
+                bindings = true;
+                provider_accounts |=
+                    provider != crate::service::config::types::SubscriptionProvider::Codex;
+            }
+            _ => {}
+        }
+    }
+    let mut required = Vec::new();
+    if provider_accounts {
+        required.push(openbitfun_services_core::dispatch_contract::DISPATCH_SUBSCRIPTION_PROVIDER_ACCOUNTS_CAPABILITY);
+    }
+    if channels {
+        required.push(
+            openbitfun_services_core::dispatch_contract::DISPATCH_MODEL_CHANNEL_ROUTING_CAPABILITY,
+        );
+    }
+    if bindings {
+        required.push(DISPATCH_SUBSCRIPTION_ACCOUNT_BINDINGS_CAPABILITY);
+    }
+    if failover {
+        required.push(DISPATCH_SUBSCRIPTION_ACCOUNT_FAILOVER_CAPABILITY);
+    }
+    Ok(required)
+}
+
+fn validate_subscription_model_sync(
+    payload: &Value,
+    protocol: Option<&Value>,
+) -> Result<(), SubscriptionModelSyncUnsupported> {
+    let required = subscription_model_sync_requirements(payload)?;
+    let needs_routing_support = !required.is_empty();
+    let advertised = protocol
+        .and_then(|protocol| protocol.get("capabilities"))
+        .and_then(Value::as_array);
+    let missing: Vec<_> = required
+        .into_iter()
+        .filter(|required| {
+            !advertised.is_some_and(|capabilities| {
+                capabilities
+                    .iter()
+                    .any(|capability| capability.as_str() == Some(required))
+            })
+        })
+        .collect();
+    if !missing.is_empty() {
+        return Err(SubscriptionModelSyncUnsupported {
+            reason: format!(
+                "The target OpenBitFun host does not support the configured model routing (missing {}). Update the target before syncing; OAuth credentials are not transferred and must be authorized on the executing host.",
+                missing.join(", "),
+            ),
+        });
+    }
+    if needs_routing_support {
+        let protocol = protocol.ok_or_else(|| SubscriptionModelSyncUnsupported {
+            reason: "The target returned no dispatch protocol for routed model sync".into(),
+        })?;
+        dispatch_ssh::validate_dispatch_protocol(protocol, None).map_err(|error| {
+            SubscriptionModelSyncUnsupported {
+                reason: format!(
+                    "The target is incompatible with routed model configuration sync: {error}"
+                ),
+            }
+        })?;
+    }
+    Ok(())
+}
+
+/// Copy this controller's model configuration (catalog, credentials, and
+/// default-model selections) onto the SSH target so its CLI can resolve a
+/// ready model.
+///
+/// Credential-bearing: this writes the controller's API keys into the target
+/// user's OpenBitFun configuration. Callers are the explicit UI command and the
+/// automatic submit-time repair in [`ensure_target_model_config`]; both leave
+/// a durable record of having done it.
+/// Explicit account bindings use the protected export codec and require the
+/// target's runtime capability before any model config is written. OAuth
+/// credentials are not included; referenced slots belong to the executing host.
+pub(super) async fn push_model_config(
+    manager: &SSHConnectionManager,
+    connection_id: &str,
+    target_protocol: Option<&Value>,
+) -> anyhow::Result<()> {
+    crate::service::config::initialize_global_config()
+        .await
+        .map_err(|error| anyhow::anyhow!("initialize controller configuration: {error}"))?;
+    let config_service = crate::service::config::get_global_config_service()
+        .await
+        .map_err(|error| anyhow::anyhow!("read controller configuration: {error}"))?;
+    // Use the existing export codec, including retained opaque compatible-source
+    // fields. A raw serialization can rebind an old target to its default slot.
+    let export = config_service
+        .export_config()
+        .await
+        .map_err(|error| anyhow::anyhow!("export controller model configuration: {error}"))?;
+    if !export.config.ai.models.iter().any(|model| model.enabled) {
+        anyhow::bail!("no enabled AI model is configured on this device to sync");
+    }
+    let payload = protected_model_sync_payload(
+        &serde_json::to_value(export.config)
+            .map_err(|error| anyhow::anyhow!("encode controller model configuration: {error}"))?,
+    )?;
+    let needs_routing_support = !subscription_model_sync_requirements(&payload)?.is_empty();
+    // Reuse the submit-time probe. Explicit sync probes only when the new
+    // routing semantics require negotiation; ordinary fixed API-key sync stays unchanged.
+    let probe = if needs_routing_support && target_protocol.is_none() {
+        Some(dispatch_ssh::probe(manager, connection_id, None).await?)
+    } else {
+        None
+    };
+    validate_subscription_model_sync(
+        &payload,
+        target_protocol.or_else(|| probe.as_ref().and_then(|probe| probe.protocol.as_ref())),
+    )?;
+    dispatch_ssh::sync_model_config(manager, connection_id, &payload).await
 }
 
 pub async fn sync_model_config(
     manager: &SSHConnectionManager,
     request: DispatchConnectionRequest,
 ) -> anyhow::Result<()> {
-    push_model_config(manager, request.connection_id.trim()).await
+    push_model_config(manager, request.connection_id.trim(), None).await
 }
 
 pub async fn submit(
@@ -743,7 +913,7 @@ async fn ensure_target_model_config(
     .await
     .map_err(|error| anyhow::anyhow!("persist the model sync started audit event: {error}"))?;
 
-    if let Err(error) = push_model_config(manager, connection_id).await {
+    if let Err(error) = push_model_config(manager, connection_id, probe.protocol.as_ref()).await {
         log::warn!("Dispatch SSH model sync failed: connection_id={connection_id} error={error}");
         append_model_sync_audit(
             store,
@@ -754,6 +924,14 @@ async fn ensure_target_model_config(
             json!({ "error": bounded_audit_detail(&error) }),
         )
         .await?;
+        // A known unsupported binding is actionable preflight failure, not a
+        // transport repair miss that can fall back to a generic readiness error.
+        if error
+            .downcast_ref::<SubscriptionModelSyncUnsupported>()
+            .is_some()
+        {
+            return Err(error);
+        }
         return Ok(probe);
     }
 
@@ -1736,6 +1914,299 @@ fn nonempty(value: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn subscription_sync_protocol(extra: &[&str]) -> Value {
+        let mut capabilities: Vec<_> =
+            openbitfun_services_core::dispatch_contract::dispatch_required_target_capabilities()
+                .collect();
+        capabilities.extend_from_slice(extra);
+        json!({"productId":openbitfun_services_core::product_identity::product_id(),
+            "dataNamespace":openbitfun_services_core::product_identity::data_namespace(),
+            "protocolVersion":DISPATCH_PROTOCOL_VERSION,"capabilities":capabilities})
+    }
+
+    fn subscription_sync_fixture(auth: crate::service::config::AuthConfig) -> Value {
+        let mut config = crate::service::config::GlobalConfig::default();
+        config.ai.models = vec![crate::service::config::AIModelConfig {
+            id: "sync-model".into(),
+            name: "Sync fixture".into(),
+            model_name: "fixture-model".into(),
+            provider: "responses".into(),
+            base_url: "https://fixture.invalid/v1".into(),
+            enabled: true,
+            api_key: "synthetic-static-key".into(),
+            auth,
+            ..Default::default()
+        }];
+        config.ai.default_models.primary = Some("sync-model".into());
+        serde_json::to_value(config).unwrap()
+    }
+
+    #[test]
+    fn subscription_model_sync_uses_guarded_export_and_restores_the_exact_binding() {
+        use crate::service::config::{AuthConfig, SubscriptionProvider};
+        use openbitfun_config_contracts::protected_account_models::{
+            restore_account_models, ACCOUNT_MODEL_GUARD_KEY, ACCOUNT_MODEL_GUARD_URL,
+        };
+        for auth in [
+            AuthConfig::Subscription {
+                provider: SubscriptionProvider::Codex,
+                plan: None,
+                account_id: Some("codex-account-58134808-15a6-45db-ae33-2ad7d85cc570".into()),
+            },
+            AuthConfig::SubscriptionPool {
+                provider: SubscriptionProvider::Codex,
+                accounts: vec![
+                    "codex".into(),
+                    "codex-account-58134808-15a6-45db-ae33-2ad7d85cc570".into(),
+                ],
+                revision: 7,
+            },
+        ] {
+            let original = subscription_sync_fixture(auth);
+            let mut payload = protected_model_sync_payload(&original).unwrap();
+            assert_eq!(
+                payload.as_object().unwrap().len(),
+                3,
+                "sync must not carry unrelated host settings"
+            );
+            assert_eq!(payload["models"][0]["auth"]["type"], "api_key");
+            assert_eq!(payload["models"][0]["base_url"], ACCOUNT_MODEL_GUARD_URL);
+            assert_eq!(
+                payload["models"][0]["metadata"][ACCOUNT_MODEL_GUARD_KEY]["model"]["auth"],
+                original["ai"]["models"][0]["auth"]
+            );
+            payload["models"][0]["metadata"][ACCOUNT_MODEL_GUARD_KEY]["model"]
+                ["future_source_field"] = json!({"retained":true});
+            let mut target = json!({"ai":payload});
+            let repeated = protected_model_sync_payload(&target).unwrap();
+            assert_eq!(
+                repeated["models"][0]["metadata"][ACCOUNT_MODEL_GUARD_KEY]["model"]
+                    ["future_source_field"],
+                json!({"retained":true})
+            );
+            assert!(restore_account_models(&mut target).is_empty());
+            assert_eq!(
+                target["ai"]["models"][0]["auth"],
+                original["ai"]["models"][0]["auth"]
+            );
+            assert_eq!(
+                target["ai"]["default_models"],
+                original["ai"]["default_models"]
+            );
+        }
+    }
+
+    #[test]
+    fn channel_model_sync_negotiates_channels_independently_and_preserves_unsupported_records() {
+        use crate::service::config::AuthConfig;
+        use openbitfun_services_core::dispatch_contract::DISPATCH_MODEL_CHANNEL_ROUTING_CAPABILITY as CHANNELS;
+        let mut original = subscription_sync_fixture(AuthConfig::ApiKey);
+        let mut backup = original["ai"]["models"][0].clone();
+        backup["id"] = json!("sync-backup");
+        backup["api_key"] = json!("synthetic-backup-key");
+        backup["base_url"] = json!("https://backup.invalid/v1");
+        original["ai"]["models"]
+            .as_array_mut()
+            .unwrap()
+            .push(backup);
+        original["ai"]["models"][0]["channel_routing"] = json!({"version":1,"fallback_model_ids":["sync-backup"],"manual_channel":"sync-backup"});
+        let payload = protected_model_sync_payload(&original).unwrap();
+        assert_eq!(
+            subscription_model_sync_requirements(&payload).unwrap(),
+            vec![CHANNELS]
+        );
+        assert!(
+            validate_subscription_model_sync(&payload, Some(&subscription_sync_protocol(&[])))
+                .unwrap_err()
+                .to_string()
+                .contains(CHANNELS)
+        );
+        assert!(
+            validate_subscription_model_sync(
+                &payload,
+                Some(&subscription_sync_protocol(&[CHANNELS]))
+            )
+            .is_ok(),
+            "API-key channels must not require subscription-account capabilities"
+        );
+        let before = payload.clone();
+        assert!(validate_subscription_model_sync(&payload, None).is_err());
+        assert_eq!(
+            payload, before,
+            "unsupported targets cannot rewrite or downgrade the protected source"
+        );
+        original["ai"]["models"][0]["channel_routing"]["version"] = json!(99);
+        let future = protected_model_sync_payload(&original).unwrap();
+        assert!(validate_subscription_model_sync(
+            &future,
+            Some(&subscription_sync_protocol(&[CHANNELS]))
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn other_provider_model_sync_requires_explicit_support_before_any_remote_write() {
+        use crate::service::config::{AuthConfig, SubscriptionProvider};
+        use openbitfun_services_core::dispatch_contract::{
+            DISPATCH_SUBSCRIPTION_ACCOUNT_BINDINGS_CAPABILITY as BINDINGS,
+            DISPATCH_SUBSCRIPTION_ACCOUNT_FAILOVER_CAPABILITY as FAILOVER,
+            DISPATCH_SUBSCRIPTION_PROVIDER_ACCOUNTS_CAPABILITY as PROVIDERS,
+        };
+        for provider in [
+            SubscriptionProvider::Antigravity,
+            SubscriptionProvider::Opencode,
+            SubscriptionProvider::Grok,
+            SubscriptionProvider::Hermes,
+        ] {
+            let source = subscription_sync_fixture(AuthConfig::SubscriptionPool {
+                provider,
+                accounts: vec![provider.key().into()],
+                revision: 1,
+            });
+            let payload = protected_model_sync_payload(&source).unwrap();
+            let before = payload.clone();
+            assert!(validate_subscription_model_sync(
+                &payload,
+                Some(&subscription_sync_protocol(&[BINDINGS, FAILOVER]))
+            )
+            .unwrap_err()
+            .to_string()
+            .contains(PROVIDERS));
+            assert_eq!(payload, before);
+            assert!(validate_subscription_model_sync(
+                &payload,
+                Some(&subscription_sync_protocol(&[
+                    BINDINGS, FAILOVER, PROVIDERS
+                ]))
+            )
+            .is_ok());
+        }
+    }
+
+    #[test]
+    fn subscription_model_sync_requires_runtime_bindings_and_failover_independently() {
+        use crate::service::config::{AuthConfig, SubscriptionProvider};
+        use openbitfun_services_core::dispatch_contract::{
+            DISPATCH_SUBSCRIPTION_ACCOUNT_BINDINGS_CAPABILITY as BINDINGS,
+            DISPATCH_SUBSCRIPTION_ACCOUNT_FAILOVER_CAPABILITY as FAILOVER,
+        };
+        let fixed =
+            protected_model_sync_payload(&subscription_sync_fixture(AuthConfig::Subscription {
+                provider: SubscriptionProvider::Codex,
+                plan: None,
+                account_id: Some("codex".into()),
+            }))
+            .unwrap();
+        let pool = protected_model_sync_payload(&subscription_sync_fixture(
+            AuthConfig::SubscriptionPool {
+                provider: SubscriptionProvider::Codex,
+                accounts: vec!["codex".into()],
+                revision: 1,
+            },
+        ))
+        .unwrap();
+        let fixed_only = subscription_sync_protocol(&[BINDINGS]);
+        assert!(validate_subscription_model_sync(&fixed, Some(&fixed_only)).is_ok());
+        assert!(validate_subscription_model_sync(&pool, Some(&fixed_only))
+            .unwrap_err()
+            .to_string()
+            .contains(FAILOVER));
+        assert!(validate_subscription_model_sync(
+            &pool,
+            Some(&subscription_sync_protocol(&[FAILOVER]))
+        )
+        .unwrap_err()
+        .to_string()
+        .contains(BINDINGS));
+        assert!(validate_subscription_model_sync(
+            &pool,
+            Some(&subscription_sync_protocol(&[BINDINGS, FAILOVER]))
+        )
+        .is_ok());
+        for unsupported in [
+            None,
+            Some(
+                json!({"protocolVersion":DISPATCH_PROTOCOL_VERSION,"capabilities":["subscription_account_management_v1"]}),
+            ),
+            Some(json!({"capabilities":[]})),
+        ] {
+            let error = validate_subscription_model_sync(&pool, unsupported.as_ref()).unwrap_err();
+            let wrapped = anyhow::Error::new(error);
+            assert!(wrapped
+                .downcast_ref::<SubscriptionModelSyncUnsupported>()
+                .is_some());
+            assert!(!wrapped.to_string().contains("synthetic-static-key"));
+        }
+    }
+
+    #[test]
+    fn subscription_model_sync_rejects_incompatible_data_spaces_even_with_runtime_flags() {
+        use crate::service::config::{AuthConfig, SubscriptionProvider};
+        let payload =
+            protected_model_sync_payload(&subscription_sync_fixture(AuthConfig::Subscription {
+                provider: SubscriptionProvider::Codex,
+                plan: None,
+                account_id: Some("codex".into()),
+            }))
+            .unwrap();
+        let valid = subscription_sync_protocol(
+            openbitfun_services_core::dispatch_contract::DISPATCH_SUBSCRIPTION_ACCOUNT_CAPABILITIES,
+        );
+        assert!(validate_subscription_model_sync(&payload, Some(&valid)).is_ok());
+        for (field, value) in [
+            ("productId", json!("another-product")),
+            ("dataNamespace", json!("another-data-space")),
+            ("protocolVersion", json!(0)),
+        ] {
+            let mut incompatible = valid.clone();
+            incompatible[field] = value;
+            let error =
+                validate_subscription_model_sync(&payload, Some(&incompatible)).unwrap_err();
+            assert!(error.to_string().contains("incompatible"));
+        }
+    }
+
+    #[test]
+    fn subscription_model_sync_keeps_api_key_and_legacy_default_sync_compatible() {
+        use crate::service::config::{AuthConfig, SubscriptionProvider};
+        for auth in [
+            AuthConfig::ApiKey,
+            AuthConfig::Subscription {
+                provider: SubscriptionProvider::Codex,
+                plan: None,
+                account_id: None,
+            },
+        ] {
+            let original = subscription_sync_fixture(auth);
+            let payload = protected_model_sync_payload(&original).unwrap();
+            assert_eq!(payload["models"], original["ai"]["models"]);
+            assert!(subscription_model_sync_requirements(&payload)
+                .unwrap()
+                .is_empty());
+            assert!(validate_subscription_model_sync(&payload, None).is_ok());
+        }
+    }
+
+    #[test]
+    fn subscription_model_sync_preserves_but_rejects_future_guards_before_transport() {
+        use crate::service::config::{AuthConfig, SubscriptionProvider};
+        use openbitfun_config_contracts::protected_account_models::ACCOUNT_MODEL_GUARD_KEY;
+        let mut payload =
+            protected_model_sync_payload(&subscription_sync_fixture(AuthConfig::Subscription {
+                provider: SubscriptionProvider::Codex,
+                plan: None,
+                account_id: Some("codex".into()),
+            }))
+            .unwrap();
+        payload["models"][0]["metadata"][ACCOUNT_MODEL_GUARD_KEY]["version"] = json!(99);
+        let original = payload.clone();
+        assert!(validate_subscription_model_sync(&payload, None)
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported subscription binding version"));
+        assert_eq!(payload, original);
+    }
 
     #[test]
     fn legacy_query_payload_is_unchanged_and_file_preview_is_optional() {

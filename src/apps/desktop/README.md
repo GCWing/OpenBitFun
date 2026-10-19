@@ -154,6 +154,102 @@ Independent presentation is unavailable for remote workspaces, Peer Device Mode,
 mobile/bot control, and detached CLI jobs. These entry points do not silently
 launch a local copy. App content control is reserved but not yet advertised.
 
+## OpenCode model services
+
+In **Settings → Models**, add **OpenCode Zen** for free models or pay-as-you-go
+access, or **OpenCode Go** with your Go API key. Zen uses the public key when
+the API key field is empty; paid models require your own key. Fetch the model
+list to select each model's Chat Completions, Responses, or Messages route.
+
+Free-model requests include OpenCode gateway headers and map the session's Bash
+and Read tools to the gateway's lowercase names. If the model requests a tool
+that the session does not provide, the request ends with an explicit error.
+The public free-model route uses matching session headers and excludes the old
+request header. This compatibility applies to the public Zen API-key connection;
+it does not reroute Console OAuth credentials. To use a free model on this path,
+choose OpenCode Zen with API-key authentication and leave the key empty (or use
+the literal `public`).
+Console OAuth remains a separate Zen authentication option; existing account
+credentials and saved model configurations are retained.
+
+## WorkBuddy and ZCode subscriptions
+
+In **Settings → Models → Subscription accounts**, sign in to **WorkBuddy**
+(China), **WorkBuddy AI** (international), or **ZCode**. ZCode asks you to choose
+**Z.ai** or **BigModel** when you start sign-in. Connected regional accounts
+stay visible separately under ZCode so each can be imported or signed out.
+Finish sign-in in the browser, return to OpenBitFun, choose **Use as model**,
+then select models from the live catalog. Authorization runs on the model host;
+the verification page can be opened on another device. Credentials are kept in
+OpenBitFun's vault.
+
+WorkBuddy uses renewable account tokens and its Chat Completions gateway.
+ZCode browser sign-in reuses or creates the selected project's `zcode-api-key`
+(a team's `zcode-team-api-key`) and uses the Coding Plan Messages endpoint.
+Personal subscriptions and assigned team seats are supported. ZCode Start/gift
+plans are separate routes and are not imported by this channel. A missing plan
+or unavailable catalog returns an error instead of selecting another plan.
+
+The real authorization-init endpoints were exercised on 2026-10-19. Completing
+sign-in and model inference require the user's account; initialization alone
+does not verify subscription eligibility or model availability.
+
+## Subscription allowance
+
+Subscription accounts are grouped by service. Each account has its own identity,
+status, allowance and actions; identical email addresses retain distinct account
+markers. **Add account** starts a new slot on hosts that advertise support.
+Refreshing, importing and signing out target that exact slot; sign-out confirmation
+lists only models and pools which reference it. ZCode keeps one service heading
+with Z.ai/BigModel labels on its account rows.
+
+Connected accounts show allowance in **Settings → Models → Subscription accounts**
+and beside selected accounts in the model editor. Codex shows its reported rate
+windows and additional model limits. WorkBuddy and WorkBuddy AI show remaining
+credits, including enterprise usage; ZCode (Z.ai and BigModel) shows its reported
+Coding Plan windows, with MCP calls shown separately. Totals, reset times and plan
+expiry appear only when the provider reports them. Other channels explicitly show
+that allowance lookup is unsupported.
+
+OpenBitFun reads allowance from the account's host, supports manual refresh, and
+refreshes visible active panels once per minute. A failed refresh retains the last
+observation with a stale indicator. Unknown amounts stay unknown; zero and
+unlimited are distinct. These WorkBuddy/ZCode observations are informational and
+do not change model routing. Older peers without the quota capability show an
+unsupported-host state.
+
+OpenCode Go API-key models show 5-hour, weekly and monthly usage in their connection
+editor after the connection is saved. Keys stay on the configuration's host, and
+older peers require the separate `subscription_model_quota_v1` capability before
+receiving model-scoped requests. Invalid keys and keys without Go entitlement show
+distinct messages. Idle windows do not show placeholder reset dates. This endpoint
+does not report monetary balances. Zen/Console balance lookup is unavailable while
+[the upstream balance API request](https://github.com/anomalyco/opencode/issues/10448)
+remains open; use **Open console**. Public free-model access explicitly states that
+remaining free usage and reset times are not exposed. Console OAuth is never sent
+to Go's API-key billing endpoint. Local HTTP/DOM fixtures cover these paths; live account
+billing and physical remote hosts have not been verified.
+
+## Subscription routing status
+
+The Models settings frontend was restored to upstream/main on 2026-10-16.
+That rollback withdrew the earlier account cards, quota panels, account/channel
+editors, enhanced usage displays, chat diagnostics and account-aware frontend
+API/Peer wiring. The current subscription sign-in and allowance panels are
+described above.
+Existing account credentials and configurations are retained; this UI rollback
+does not enable, disable or clear account pools.
+
+The native backend still supports provider-scoped account slots, credential
+isolation and explicit account/channel failover. See the
+[architecture and current limitations](../../../docs/architecture/subscription-account-routing-design.md).
+Earlier full Desktop mock results refer to the withdrawn UI version and do not
+prove integration of these controls in the current Models page. Real providers
+and physical remote hosts remain unverified.
+
+The backend retains account/channel usage attribution; the frontend has its
+original statistics display.
+
 ## Session storage directories
 
 The workspace and session action menus include **Open session storage directory**.

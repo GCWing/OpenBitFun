@@ -12,8 +12,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use openbitfun_core::agentic::tools::openbitfun_control_config::{
-    apply_legacy_config_mutation, config_handler_path, configure_config_backed_option,
-    exact_config_binding, read_config_backed_option, ProductConfigBinding,
+    apply_legacy_config_mutation, apply_legacy_config_mutation_with_model_snapshot,
+    config_handler_path, configure_config_backed_option, exact_config_binding,
+    read_config_backed_option, ProductConfigBinding,
 };
 use openbitfun_core::agentic::tools::openbitfun_control_host::{
     set_openbitfun_control_port, OpenBitFunControlHostRequest, ProductControlAction,
@@ -699,7 +700,11 @@ pub(crate) async fn set_config_from_gui(
     app: &AppHandle,
     path: &str,
     value: Value,
+    expected_models: Option<Value>,
 ) -> Result<Value, String> {
+    if expected_models.is_some() && path != "ai.models" {
+        return Err("A model snapshot requires the ai.models array path".into());
+    }
     if let Some((capability, option)) = exact_config_binding(path)? {
         return configure_option_transaction(app, &capability.id, &option.id, &value).await;
     }
@@ -707,7 +712,13 @@ pub(crate) async fn set_config_from_gui(
     let _transaction = product_control_transaction().lock().await;
     let state = app.state::<AppState>();
     let previous_value = state.config_service.get_config(Some(path)).await.ok();
-    let applied = apply_legacy_config_mutation(&state.config_service, path, value).await?;
+    let applied = apply_legacy_config_mutation_with_model_snapshot(
+        &state.config_service,
+        path,
+        value,
+        expected_models,
+    )
+    .await?;
     if !applied.changed {
         return Ok(json!({
             "catalogDigest": openbitfun_product_domains::product_control::catalog()?.digest.clone(),

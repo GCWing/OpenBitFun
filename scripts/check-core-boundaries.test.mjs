@@ -319,6 +319,7 @@ test('Agent Runtime leaf capabilities have one managed feature and source contra
   );
   assert.ok(rule, 'openbitfun-agent-runtime must be a managed capability target');
   assert.deepEqual(Object.keys(rule.featureProfiles).sort(), [
+    'account-routing',
     'agent-runtime',
     'default',
     'definition-contracts',
@@ -354,6 +355,16 @@ test('Agent Runtime leaf capabilities have one managed feature and source contra
     'utf8',
   );
   assert.equal(flatRootRule.patterns[0].regex.test(rootSource), false);
+  const channelRule = requiredContentRules.find(
+    (sourceRule) => sourceRule.path === 'src/crates/execution/agent-runtime/src/lib.rs'
+      && sourceRule.reason.includes('leaf capability modules'),
+  ).patterns.find((pattern) => pattern.message.startsWith('channel_routing '));
+  assert.ok(channelRule, 'channel admission must have an exact pure owner gate');
+  assert.equal(channelRule.regex.test(rootSource), true);
+  assert.equal(channelRule.regex.test(rootSource.replace(
+    '#[cfg(feature = "account-routing")]\npub mod channel_routing;',
+    '#[cfg(feature = "agent-runtime")]\npub mod channel_routing;',
+  )), false);
   for (const mutation of [
     '#[doc(hidden)] pub mod accidental_feature_free_api;',
     'pub union AccidentalFeatureFreeApi { value: u64 }',
@@ -1445,6 +1456,9 @@ test('Core optional document and subscription capabilities have independent modi
   ]);
   assert.deepEqual(ruleByFeature.get('ai-adapter-runtime')?.requiredFeatureRefs, [
     'dep:openbitfun-ai-adapters',
+    'dep:openbitfun-agent-runtime',
+    'openbitfun-agent-runtime/account-routing',
+    'openbitfun-services-core/routing-state',
   ]);
   assert.ok(
     !ruleByFeature.get('tools-basic')?.requiredFeatureRefs.includes('tool-runtime/document-read'),
@@ -4230,6 +4244,8 @@ test('Services Core accepts only the reviewed feature-owned Tokio runtime graph'
       diff: ['dep:tokio', 'tokio/rt', 'tokio/time'],
       filesystem: ['dep:tokio', 'tokio/fs', 'tokio/rt', 'tokio/sync'],
       'json-io': ['dep:tokio', 'tokio/fs', 'tokio/rt', 'tokio/sync', 'tokio/time'],
+      'routing-state': ['json-io'],
+      'resource-capacity': ['json-io'],
       'local-storage': [
         'dep:tokio',
         'tokio/fs',

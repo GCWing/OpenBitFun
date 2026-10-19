@@ -419,6 +419,8 @@ fn try_build_request_body_with_context(
         });
     }
 
+    suspend_thinking_for_unsigned_tool_loop(&mut request_body, &model_name);
+
     shared::log_request_body(
         "ai::anthropic_stream_request",
         "Anthropic stream request body (excluding tools):",
@@ -440,6 +442,64 @@ fn try_build_request_body_with_context(
     }
 
     Ok(request_body)
+}
+
+/// With thinking on, Anthropic requires the final assistant tool turn to
+/// start with its signed thinking block. History continued from another
+/// account or provider has no such block, so this request runs without
+/// thinking; the next user turn starts a fresh signed loop.
+fn suspend_thinking_for_unsigned_tool_loop(request_body: &mut serde_json::Value, model_name: &str) {
+    let thinking_on = request_body["thinking"]["type"]
+        .as_str()
+        .is_some_and(|kind| kind != "disabled");
+    if !thinking_on {
+        return;
+    }
+    let Some(last_assistant) = request_body["messages"].as_array().and_then(|messages| {
+        messages
+            .iter()
+            .rev()
+            .find(|message| message["role"] == "assistant")
+    }) else {
+        return;
+    };
+    let blocks = last_assistant["content"].as_array();
+    let has_tool_use =
+        blocks.is_some_and(|blocks| blocks.iter().any(|block| block["type"] == "tool_use"));
+    let signed_start = blocks
+        .and_then(|blocks| blocks.first())
+        .is_some_and(|block| {
+            matches!(
+                block["type"].as_str(),
+                Some("thinking" | "redacted_thinking")
+            ) && block["signature"]
+                .as_str()
+                .is_some_and(|signature| !signature.is_empty())
+                || block["type"] == "redacted_thinking"
+        });
+    if !has_tool_use || signed_start {
+        return;
+    }
+    let Some(body) = request_body.as_object_mut() else {
+        return;
+    };
+    if anthropic_thinking_capability(model_name)
+        == AnthropicThinkingCapability::AdaptiveDefaultNoDisabled
+    {
+        // These models reject an explicit disabled value; omit the request.
+        body.remove("thinking");
+    } else {
+        body.insert("thinking".into(), serde_json::json!({ "type": "disabled" }));
+    }
+    if let Some(output) = body
+        .get_mut("output_config")
+        .and_then(|value| value.as_object_mut())
+    {
+        output.remove("effort");
+        if output.is_empty() {
+            body.remove("output_config");
+        }
+    }
 }
 
 pub(crate) fn try_build_request_body(
@@ -522,7 +582,7 @@ pub(crate) async fn send_stream(
     let (system_message, anthropic_messages) =
         AnthropicMessageConverter::convert_messages(messages);
     let anthropic_tools = AnthropicMessageConverter::convert_tools(tools);
-    let request_body = try_build_request_body_with_context(
+    let mut request_body = try_build_request_body_with_context(
         client,
         &url,
         system_message,
@@ -535,7 +595,10 @@ pub(crate) async fn send_stream(
     let idle_timeout = client.stream_options.idle_timeout;
     let ttft_timeout = client.stream_options.ttft_timeout;
 
+    let compatibility = crate::providers::opencode::FreeTools::prepare(client, &mut request_body)?;
+
     execute_sse_request(
+        Some(client),
         "Anthropic Streaming API",
         &url,
         &request_body,
@@ -562,11 +625,54 @@ pub(crate) async fn send_stream(
         },
     )
     .await
+    .map(|response| compatibility.wrap(response))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unsigned_tool_loop_runs_without_thinking_but_signed_loops_keep_it() {
+        let body = |assistant: serde_json::Value| {
+            serde_json::json!({
+                "thinking": {"type": "enabled", "budget_tokens": 1024},
+                "output_config": {"effort": "high"},
+                "messages": [
+                    {"role": "user", "content": [{"type": "text", "text": "go"}]},
+                    assistant,
+                    {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]}
+                ]
+            })
+        };
+        let tool_use =
+            serde_json::json!({"type": "tool_use", "id": "t1", "name": "read", "input": {}});
+        let mut unsigned =
+            body(serde_json::json!({"role": "assistant", "content": [tool_use.clone()]}));
+        suspend_thinking_for_unsigned_tool_loop(&mut unsigned, "claude-sonnet-4-5");
+        assert_eq!(
+            unsigned["thinking"],
+            serde_json::json!({"type": "disabled"})
+        );
+        assert!(unsigned.get("output_config").is_none());
+
+        let mut adaptive_only =
+            body(serde_json::json!({"role": "assistant", "content": [tool_use.clone()]}));
+        suspend_thinking_for_unsigned_tool_loop(&mut adaptive_only, "claude-fable-5");
+        assert!(adaptive_only.get("thinking").is_none());
+
+        let mut signed = body(serde_json::json!({"role": "assistant", "content": [
+            {"type": "thinking", "thinking": "plan", "signature": "sig"}, tool_use.clone()
+        ]}));
+        suspend_thinking_for_unsigned_tool_loop(&mut signed, "claude-sonnet-4-5");
+        assert_eq!(signed["thinking"]["type"], "enabled");
+
+        let mut plain = body(
+            serde_json::json!({"role": "assistant", "content": [{"type": "text", "text": "done"}]}),
+        );
+        suspend_thinking_for_unsigned_tool_loop(&mut plain, "claude-sonnet-4-5");
+        assert_eq!(plain["thinking"]["type"], "enabled");
+    }
 
     #[test]
     fn xiaomi_mimo_headers_use_bearer_for_messages_and_discovery() {

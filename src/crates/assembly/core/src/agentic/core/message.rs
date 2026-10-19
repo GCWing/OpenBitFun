@@ -852,6 +852,9 @@ mod tests {
         let message = Message::assistant("done".to_string()).with_model_response_replay(Some(
             ModelResponseReplay {
                 protocol: "openai_responses".to_string(),
+                channel_origin: None,
+                channel_fingerprint: None,
+                account_origin: None,
                 items: vec![ModelResponseReplayItem::OpaqueReasoning {
                     item_id: Some("rs_1".to_string()),
                     summary: vec![],
@@ -893,6 +896,9 @@ mod tests {
         let message = Message::assistant("done".to_string()).with_model_response_replay(Some(
             ModelResponseReplay {
                 protocol: "openai_responses".to_string(),
+                channel_origin: None,
+                channel_fingerprint: None,
+                account_origin: None,
                 items: vec![ModelResponseReplayItem::AssistantMessage],
             },
         ));

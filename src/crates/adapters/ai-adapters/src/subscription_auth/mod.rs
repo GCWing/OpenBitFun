@@ -8,18 +8,64 @@
 //!
 //! There is no upgrade path for the previous Codex/Gemini CLI disk-scan import.
 
+mod accounts;
 mod antigravity;
+mod browser_poll;
 mod codex;
 mod device_flow;
-mod grok;
+pub(crate) mod grok;
 mod hermes;
 mod jwt;
 mod oauth_server;
 mod opencode;
+pub mod opencode_quota;
 mod pkce;
+mod quota;
+pub(crate) mod request_identity;
 pub mod store;
+mod vendor_quota;
+pub(crate) mod workbuddy;
+pub(crate) mod zcode;
 
+pub use accounts::{
+    account_credential_revision, bind_resolved_account_identity, list_account_instances,
+    logout_account, recover_rejected_account_with_options, refresh_account_instance_with_options,
+    resolve_account_with_options, set_account_instance_enabled, start_account_login_with_options,
+    SubscriptionAccountInstance,
+};
+pub use quota::{cached_account_quota, model_quota_observation, read_account_quota_with_options};
 pub use store::{set_store_path_for_test, StoredCredential};
+
+/// Prepare provider-owned protocol/endpoint facts without reading credentials
+/// or performing IO. This does not authorize a client to send a request.
+pub fn prepare_account_request_route(
+    provider: SubscriptionProvider,
+    config: &mut crate::types::AIConfig,
+) -> anyhow::Result<()> {
+    let (format, base_url, request_url) = match provider {
+        SubscriptionProvider::Codex => codex::request_route(),
+        SubscriptionProvider::Grok => grok::request_route(),
+        SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
+            let (format, base, _) = workbuddy::suggested(provider);
+            (format, base, workbuddy::inference_url(provider))
+        }
+        SubscriptionProvider::Zcode | SubscriptionProvider::ZcodeCn => {
+            let (format, base, _) = zcode::suggested(provider);
+            (format, base, zcode::inference_url(provider))
+        }
+        _ => {
+            let (format, base_url, _) = provider.suggested();
+            (format, base_url, base_url)
+        }
+    };
+    config.format = format.into();
+    config.base_url = base_url.into();
+    config.request_url = request_url.into();
+    if let Some(model) = runtime_model_override(provider, &config.model) {
+        config.model = model.into();
+    }
+    Ok(())
+}
 
 use crate::types::ProxyConfig;
 use anyhow::{anyhow, Context, Result};
@@ -33,6 +79,21 @@ use tokio_util::sync::CancellationToken;
 
 /// Maximum lifetime of a pending login session (matches OpenCode).
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
+/// Trust only the fixture CA in addition to normal roots. This replaces the
+/// external OAuth/quota service in isolated debug application tests; it does
+/// not disable TLS verification or change provider/authentication semantics.
+#[cfg(debug_assertions)]
+static ISOLATED_TEST_HTTP_ROOT: OnceLock<reqwest::Certificate> = OnceLock::new();
+
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn set_isolated_http_root_certificate_for_test(pem: &[u8]) -> Result<()> {
+    let certificate = reqwest::Certificate::from_pem(pem).context("parse isolated fixture CA")?;
+    ISOLATED_TEST_HTTP_ROOT
+        .set(certificate)
+        .map_err(|_| anyhow!("Isolated fixture CA is already configured"))
+}
 
 /// OpenCode release whose built-in subscription protocols these adapters mirror.
 pub(crate) const OPENCODE_COMPAT_VERSION: &str = "1.18.29";
@@ -48,6 +109,10 @@ pub enum SubscriptionProvider {
     Opencode,
     Grok,
     Hermes,
+    Workbuddy,
+    WorkbuddyAi,
+    Zcode,
+    ZcodeCn,
 }
 
 /// User-visible authorization method supported by a subscription provider.
@@ -79,12 +144,16 @@ impl SubscriptionHttpOptions {
 
 impl SubscriptionProvider {
     /// All providers, in display order.
-    pub const ALL: [SubscriptionProvider; 5] = [
+    pub const ALL: [SubscriptionProvider; 9] = [
         Self::Codex,
         Self::Antigravity,
         Self::Opencode,
         Self::Grok,
         Self::Hermes,
+        Self::Workbuddy,
+        Self::WorkbuddyAi,
+        Self::Zcode,
+        Self::ZcodeCn,
     ];
 
     /// Stable store key / serde tag for this provider.
@@ -95,6 +164,10 @@ impl SubscriptionProvider {
             Self::Opencode => "opencode",
             Self::Grok => "grok",
             Self::Hermes => "hermes",
+            Self::Workbuddy => "workbuddy",
+            Self::WorkbuddyAi => "workbuddy_ai",
+            Self::Zcode => "zcode",
+            Self::ZcodeCn => "zcode_cn",
         }
     }
 
@@ -106,6 +179,11 @@ impl SubscriptionProvider {
             "opencode" => Some(Self::Opencode),
             "grok" => Some(Self::Grok),
             "hermes" => Some(Self::Hermes),
+            "workbuddy" => Some(Self::Workbuddy),
+            "workbuddy_ai" => Some(Self::WorkbuddyAi),
+            "zcode" => Some(Self::Zcode),
+            "zcode_cn" => Some(Self::ZcodeCn),
+
             _ => None,
         }
     }
@@ -117,6 +195,10 @@ impl SubscriptionProvider {
             Self::Opencode => "OpenCode Console (Zen)",
             Self::Grok => "xAI (SuperGrok)",
             Self::Hermes => "Hermes (Nous Portal)",
+            Self::Workbuddy => "WorkBuddy (CodeBuddy China)",
+            Self::WorkbuddyAi => "WorkBuddy AI (International)",
+            Self::Zcode => "ZCode (Z.ai Coding Plan)",
+            Self::ZcodeCn => "ZCode (BigModel Coding Plan)",
         }
         .to_string()
     }
@@ -128,6 +210,8 @@ impl SubscriptionProvider {
             Self::Opencode => opencode::suggested(),
             Self::Grok => grok::suggested(),
             Self::Hermes => hermes::suggested(),
+            Self::Workbuddy | Self::WorkbuddyAi => workbuddy::suggested(self),
+            Self::Zcode | Self::ZcodeCn => zcode::suggested(self),
         }
     }
 
@@ -138,7 +222,13 @@ impl SubscriptionProvider {
         match self {
             Self::Codex => &[Browser, Device],
             Self::Antigravity => &[Browser],
-            Self::Opencode | Self::Grok | Self::Hermes => &[Device],
+            Self::Opencode
+            | Self::Grok
+            | Self::Hermes
+            | Self::Workbuddy
+            | Self::WorkbuddyAi
+            | Self::Zcode
+            | Self::ZcodeCn => &[Device],
         }
     }
 
@@ -293,6 +383,12 @@ impl ResolvedCredential {
                 "x-client-request-id",
                 "x-opencode-session",
                 "x-grok-conv-id",
+                "x-user-id",
+                "x-domain",
+                "x-enterprise-id",
+                "x-tenant-id",
+                "bigmodel-organization",
+                "bigmodel-project",
             ]
             .iter()
             .any(|reserved| name.eq_ignore_ascii_case(reserved))
@@ -355,6 +451,8 @@ pub(crate) struct StartedLogin {
 struct SessionState {
     /// Client-generated UUID used to correlate start/status/cancel commands.
     session_id: String,
+    /// Explicit credential slot, absent for the legacy provider-default flow.
+    account_id: Option<String>,
     status: LoginStatus,
     method: Option<SubscriptionLoginMethod>,
     authorization_url: Option<String>,
@@ -410,11 +508,25 @@ pub(crate) fn build_http_client(
     options: &SubscriptionHttpOptions,
     provider: &str,
 ) -> Result<reqwest::Client> {
+    build_http_client_with_redirect_policy(options, provider, reqwest::redirect::Policy::default())
+}
+
+fn build_http_client_with_redirect_policy(
+    options: &SubscriptionHttpOptions,
+    provider: &str,
+    redirect: reqwest::redirect::Policy,
+) -> Result<reqwest::Client> {
     openbitfun_services_core::tls_provider::ensure_ring_crypto_provider();
     let mut builder = reqwest::Client::builder()
         .tls_backend_rustls()
+        .redirect(redirect)
         .timeout(Duration::from_secs(30))
         .danger_accept_invalid_certs(options.skip_ssl_verify);
+
+    #[cfg(debug_assertions)]
+    if let Some(certificate) = ISOLATED_TEST_HTTP_ROOT.get() {
+        builder = builder.tls_certs_merge([certificate.clone()]);
+    }
 
     if options.skip_ssl_verify {
         log::warn!(
@@ -449,12 +561,20 @@ pub(crate) fn store_lock(provider: SubscriptionProvider) -> &'static tokio::sync
     static OPENCODE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     static GROK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     static HERMES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    static WORKBUDDY: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    static WORKBUDDY_AI: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    static ZCODE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    static ZCODE_CN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     match provider {
         SubscriptionProvider::Codex => &CODEX,
         SubscriptionProvider::Antigravity => &ANTIGRAVITY,
         SubscriptionProvider::Opencode => &OPENCODE,
         SubscriptionProvider::Grok => &GROK,
         SubscriptionProvider::Hermes => &HERMES,
+        SubscriptionProvider::Workbuddy => &WORKBUDDY,
+        SubscriptionProvider::WorkbuddyAi => &WORKBUDDY_AI,
+        SubscriptionProvider::Zcode => &ZCODE,
+        SubscriptionProvider::ZcodeCn => &ZCODE_CN,
     }
 }
 
@@ -491,6 +611,17 @@ where
     persist(credential).await
 }
 
+/// A rotating refresh owns its lease and conditional commit independently of
+/// callers waiting for a model request. Dropping a waiter must not discard the
+/// replacement for a one-use refresh token; logout/disable still win by CAS.
+pub(super) async fn complete_credential_refresh<T: Send + 'static>(
+    work: impl std::future::Future<Output = Result<T>> + Send + 'static,
+) -> Result<T> {
+    tokio::spawn(work)
+        .await
+        .map_err(|_| anyhow!("Subscription credential refresh task stopped"))?
+}
+
 pub(crate) fn require_current_store_revision(
     provider: SubscriptionProvider,
     outcome: store::ConditionalCommitOutcome,
@@ -519,11 +650,12 @@ pub(crate) fn store_revision_conflict(
 /// holding the store lock. Reloading after releasing that lock gives the
 /// caller the credential that won the race, which may be safely reused when it
 /// is still valid.
-pub(crate) async fn load_current_store_after_conflict(
+pub(crate) async fn load_account_store_after_conflict(
     provider: SubscriptionProvider,
+    slot: &str,
     current_revision: u64,
 ) -> Result<store::VersionedCredential> {
-    let current = store::load_entry_with_revision(provider.key()).await?;
+    let current = store::load_entry_with_revision(slot).await?;
     log::debug!(
         "{} refresh commit lost CAS at revision {current_revision}; reloaded current revision {}",
         provider.display_label(),
@@ -554,7 +686,12 @@ fn build_account(
                 .and_then(|value| value.as_str())
                 .map(str::to_string);
             let account = email.or_else(|| account_id.clone());
-            (true, account, Some(expires / 1000), metadata.as_ref())
+            (
+                true,
+                account,
+                (*expires != i64::MAX).then_some(expires / 1000),
+                metadata.as_ref(),
+            )
         }
     };
     let api_offerings = if connected && provider == SubscriptionProvider::Opencode {
@@ -590,6 +727,7 @@ async fn account_snapshot(provider: SubscriptionProvider) -> SubscriptionAccount
             requires_reauthentication: std::collections::HashSet::new(),
             vault_unavailable: std::collections::HashSet::new(),
             provider_revisions: std::collections::HashMap::new(),
+            account_metadata: std::collections::HashMap::new(),
         }
     });
     build_account(
@@ -609,6 +747,7 @@ pub async fn list_accounts() -> Vec<SubscriptionAccount> {
             requires_reauthentication: std::collections::HashSet::new(),
             vault_unavailable: std::collections::HashSet::new(),
             provider_revisions: std::collections::HashMap::new(),
+            account_metadata: std::collections::HashMap::new(),
         }
     });
     SubscriptionProvider::ALL
@@ -650,6 +789,20 @@ pub async fn start_login_with_method_and_options(
     method: Option<SubscriptionLoginMethod>,
     options: SubscriptionHttpOptions,
 ) -> Result<LoginStartResult> {
+    start_login_in_account_slot(provider, None, session_id, method, options).await
+}
+
+async fn start_login_in_account_slot(
+    provider: SubscriptionProvider,
+    account_id: Option<String>,
+    session_id: String,
+    method: Option<SubscriptionLoginMethod>,
+    options: SubscriptionHttpOptions,
+) -> Result<LoginStartResult> {
+    let store_key = account_id
+        .clone()
+        .unwrap_or_else(|| provider.key().to_string());
+    accounts::validate_account_id(provider, &store_key)?;
     validate_session_id(&session_id)?;
     if let Some(method) = method.filter(|method| !provider.supports_login_method(*method)) {
         return Err(anyhow!(
@@ -665,7 +818,7 @@ pub async fn start_login_with_method_and_options(
     // local login can then either finish before this snapshot or observe its
     // cancellation; it cannot commit between the snapshot and replacement.
     let provider_guard = store_lock(provider).lock().await;
-    let expected_revision = store::credential_revision(provider.key()).await?;
+    let expected_revision = store::credential_revision(&store_key).await?;
     {
         let mut map = sessions()
             .lock()
@@ -674,6 +827,7 @@ pub async fn start_login_with_method_and_options(
             provider,
             SessionState {
                 session_id: session_id.clone(),
+                account_id,
                 status: LoginStatus::Pending,
                 method,
                 authorization_url: None,
@@ -696,7 +850,8 @@ pub async fn start_login_with_method_and_options(
     let begin = async move {
         match provider {
             SubscriptionProvider::Codex => {
-                codex::begin_login(
+                codex::begin_login_for_account(
+                    store_key,
                     begin_cancel.clone(),
                     expected_revision,
                     method,
@@ -705,17 +860,60 @@ pub async fn start_login_with_method_and_options(
                 .await
             }
             SubscriptionProvider::Antigravity => {
-                antigravity::begin_login(begin_cancel.clone(), expected_revision, options.clone())
-                    .await
+                antigravity::begin_login_for_account(
+                    store_key,
+                    begin_cancel.clone(),
+                    expected_revision,
+                    options.clone(),
+                )
+                .await
             }
             SubscriptionProvider::Opencode => {
-                opencode::begin_login(begin_cancel.clone(), expected_revision, options).await
+                opencode::begin_login_for_account(
+                    store_key,
+                    begin_cancel.clone(),
+                    expected_revision,
+                    options,
+                )
+                .await
             }
             SubscriptionProvider::Grok => {
-                grok::begin_login(begin_cancel.clone(), expected_revision, options).await
+                grok::begin_login_for_account(
+                    store_key,
+                    begin_cancel.clone(),
+                    expected_revision,
+                    options,
+                )
+                .await
             }
             SubscriptionProvider::Hermes => {
-                hermes::begin_login(begin_cancel.clone(), expected_revision, options).await
+                hermes::begin_login_for_account(
+                    store_key,
+                    begin_cancel.clone(),
+                    expected_revision,
+                    options,
+                )
+                .await
+            }
+            SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
+                workbuddy::begin_login_for_account(
+                    provider,
+                    store_key,
+                    begin_cancel.clone(),
+                    expected_revision,
+                    options,
+                )
+                .await
+            }
+            SubscriptionProvider::Zcode | SubscriptionProvider::ZcodeCn => {
+                zcode::begin_login_for_account(
+                    provider,
+                    store_key,
+                    begin_cancel.clone(),
+                    expected_revision,
+                    options,
+                )
+                .await
             }
         }
     };
@@ -812,17 +1010,14 @@ async fn finalize_session(
 ) {
     // A newer login for the same provider has already replaced this session;
     // the stale runner must not overwrite its state.
-    let is_current = sessions()
-        .lock()
-        .map(|map| {
-            map.get(&provider).is_some_and(|state| {
-                state.generation == generation && state.session_id == session_id
-            })
-        })
-        .unwrap_or(false);
-    if !is_current {
+    let account_id = sessions().lock().ok().and_then(|map| {
+        map.get(&provider)
+            .filter(|state| state.generation == generation && state.session_id == session_id)
+            .map(|state| state.account_id.clone())
+    });
+    let Some(account_id) = account_id else {
         return;
-    }
+    };
 
     let (status, error, account) = match outcome {
         Err(_) => (
@@ -831,8 +1026,14 @@ async fn finalize_session(
             None,
         ),
         Ok(Ok(())) => {
-            let account = account_snapshot(provider).await;
-            (LoginStatus::Authorized, None, Some(account))
+            let account = match account_id {
+                Some(id) => accounts::account_snapshot(provider, &id).await,
+                None => Ok(account_snapshot(provider).await),
+            };
+            match account {
+                Ok(account) => (LoginStatus::Authorized, None, Some(account)),
+                Err(error) => (LoginStatus::Failed, Some(format!("{error:#}")), None),
+            }
         }
         Ok(Err(err)) => {
             if cancel.is_cancelled() {
@@ -934,34 +1135,7 @@ pub async fn cancel_login(provider: SubscriptionProvider, session_id: &str) -> R
 
 /// Removes the stored credential for a provider.
 pub async fn logout(provider: SubscriptionProvider) -> Result<SubscriptionLogoutResult> {
-    // Cancel any in-flight login first so its runner cannot persist fresh
-    // tokens after the logout completes.
-    if let Ok(mut map) = sessions().lock() {
-        if let Some(state) = map.remove(&provider) {
-            state.cancel.cancel();
-        }
-    }
-    let _guard = store_lock(provider).lock().await;
-    let outcome = store::remove(provider.key()).await?;
-    drop(_guard);
-    log::info!("subscription provider {} logged out", provider.key());
-    Ok(match outcome {
-        store::RemoveOutcome::Removed => SubscriptionLogoutResult {
-            cleanup_pending: false,
-            warning: None,
-        },
-        store::RemoveOutcome::CleanupPending(warning) => {
-            log::warn!(
-                "subscription provider {} logged out with credential cleanup pending: {}",
-                provider.key(),
-                warning
-            );
-            SubscriptionLogoutResult {
-                cleanup_pending: true,
-                warning: Some(warning),
-            }
-        }
-    })
+    accounts::logout_account(provider, provider.key()).await
 }
 
 /// Resolves a runtime credential for a provider, refreshing tokens if needed.
@@ -980,6 +1154,36 @@ pub async fn resolve_with_options(
         SubscriptionProvider::Opencode => opencode::resolve(options).await,
         SubscriptionProvider::Grok => grok::resolve(options).await,
         SubscriptionProvider::Hermes => hermes::resolve(options).await,
+        SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
+            workbuddy::resolve(provider, provider.key(), options).await
+        }
+        SubscriptionProvider::Zcode | SubscriptionProvider::ZcodeCn => {
+            zcode::resolve(provider, provider.key(), options).await
+        }
+    }
+}
+
+/// Resolve the requested slot while preserving provider-specific model, plan,
+/// trusted route and account-catalog semantics.
+pub async fn resolve_account_model_with_options(
+    provider: SubscriptionProvider,
+    slot: &str,
+    plan: Option<OpenCodePlan>,
+    format: &str,
+    model: &str,
+    options: &SubscriptionHttpOptions,
+) -> Result<ResolvedCredential> {
+    accounts::validate_account_id(provider, slot)?;
+    match provider {
+        SubscriptionProvider::Opencode => {
+            opencode::resolve_account_for_model(slot, plan, format, model, options).await
+        }
+        SubscriptionProvider::Grok => grok::resolve_for_account(slot, model, options).await,
+        SubscriptionProvider::Hermes => hermes::resolve_for_account(slot, model, options).await,
+        _ if plan.is_some() => Err(anyhow!(
+            "Subscription plan is not supported by this provider"
+        )),
+        _ => accounts::resolve_account_with_options(provider, slot, options).await,
     }
 }
 
@@ -1065,6 +1269,89 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn cancelling_a_refresh_waiter_keeps_the_owned_commit_and_logout_cas_boundary() {
+        let _guard = test_lock().lock().await;
+        store::set_store_path_for_test(temp_store_path());
+        for sign_out in [false, true] {
+            let slot = format!("hermes-account-{}", uuid::Uuid::new_v4());
+            store::upsert(&slot, account_fixture("old-access", "same-subject"))
+                .await
+                .unwrap();
+            let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            let (completed_tx, completed_rx) = tokio::sync::oneshot::channel();
+            let worker_slot = slot.clone();
+            let waiter = tokio::spawn(complete_credential_refresh(async move {
+                let _lease = store::acquire_provider_refresh_lease(&worker_slot).await?;
+                let snapshot = store::load_entry_with_revision(&worker_slot).await?;
+                let _ = started_tx.send(());
+                release_rx.await?;
+                let outcome = accounts::persist_account_credential(
+                    SubscriptionProvider::Hermes,
+                    &worker_slot,
+                    snapshot.revision,
+                    account_fixture("rotated-access", "same-subject"),
+                )
+                .await?;
+                let _ = completed_tx.send(matches!(
+                    outcome,
+                    store::ConditionalCommitOutcome::Committed { .. }
+                ));
+                Ok(())
+            }));
+            started_rx.await.unwrap();
+            waiter.abort();
+            if sign_out {
+                logout_account(SubscriptionProvider::Hermes, &slot)
+                    .await
+                    .unwrap();
+            }
+            release_tx.send(()).unwrap();
+            assert_eq!(completed_rx.await.unwrap(), !sign_out);
+            let stored = store::load_entry(&slot).await.unwrap();
+            if sign_out {
+                assert!(stored.is_none());
+            } else {
+                assert!(
+                    matches!(stored, Some(StoredCredential::Oauth { access, .. }) if access == "rotated-access")
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn account_route_preparation_is_credential_free_and_does_not_authorize_api_key_clients() {
+        let mut config: crate::types::AIConfig = serde_json::from_value(serde_json::json!({
+            "name":"route-only","model":"fixture-wire","format":"openai",
+            "base_url":"https://saved.invalid","request_url":"https://saved.invalid/chat/completions",
+            "api_key":"existing-key","context_window":4096,"inline_think_in_text":false,"skip_ssl_verify":false,
+            "custom_headers":{"x-fixture":"retained"}
+        })).unwrap();
+        prepare_account_request_route(SubscriptionProvider::Codex, &mut config).unwrap();
+        assert_eq!(config.format, "responses");
+        assert_eq!(
+            config.request_url,
+            "https://chatgpt.com/backend-api/codex/responses"
+        );
+        assert_eq!(config.model, "fixture-wire");
+        assert_eq!(config.api_key, "existing-key");
+        assert_eq!(
+            config.custom_headers.as_ref().unwrap()["x-fixture"],
+            "retained"
+        );
+        assert!(crate::AIClient::new(config.clone())
+            .subscription_provider_key()
+            .is_none());
+        for provider in SubscriptionProvider::ALL {
+            prepare_account_request_route(provider, &mut config).unwrap();
+            assert_eq!(config.api_key, "existing-key");
+            assert!(crate::AIClient::new(config.clone())
+                .subscription_provider_key()
+                .is_none());
+        }
+    }
+
+    #[tokio::test]
     async fn opencode_console_routes_zen_and_preserves_rejected_go_credentials() {
         let _guard = test_lock().lock().await;
         store::set_store_path_for_test(temp_store_path());
@@ -1142,12 +1429,12 @@ mod tests {
     /// Serializes these tests against the shared on-disk store. Async-aware so
     /// the guard may be held across the awaits each test performs, matching how
     /// `store_lock` above already guards the real store.
-    fn test_lock() -> &'static tokio::sync::Mutex<()> {
+    pub(super) fn test_lock() -> &'static tokio::sync::Mutex<()> {
         static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
         &LOCK
     }
 
-    fn temp_store_path() -> std::path::PathBuf {
+    pub(super) fn temp_store_path() -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("openbitfun-subauth-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         dir.join("subscription_auth.json")
@@ -1155,6 +1442,403 @@ mod tests {
 
     fn test_session_id() -> String {
         uuid::Uuid::new_v4().to_string()
+    }
+
+    fn account_fixture(access: &str, account_id: &str) -> StoredCredential {
+        StoredCredential::Oauth {
+            refresh: format!("refresh-{access}"),
+            access: access.to_string(),
+            expires: chrono::Utc::now().timestamp_millis() + 3_600_000,
+            account_id: Some(account_id.to_string()),
+            metadata: Some(serde_json::json!({"email":"same-email@example.com"})),
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_accounts_resolve_and_logout_without_touching_default() {
+        let _guard = test_lock().lock().await;
+        let path = temp_store_path();
+        store::set_store_path_for_test(path.clone());
+        let slot = format!("codex-account-{}", uuid::Uuid::new_v4());
+        store::upsert("codex", account_fixture("default-secret", "seat-one"))
+            .await
+            .unwrap();
+        store::upsert(&slot, account_fixture("other-secret", "seat-two"))
+            .await
+            .unwrap();
+        let default_revision = credential_revision(SubscriptionProvider::Codex)
+            .await
+            .unwrap();
+        let before = account_credential_revision(SubscriptionProvider::Codex, &slot)
+            .await
+            .unwrap();
+
+        let accounts = list_account_instances().await.unwrap();
+        assert_eq!(accounts.len(), SubscriptionProvider::ALL.len() + 1);
+        let explicit = accounts
+            .iter()
+            .find(|account| account.account_id == slot)
+            .unwrap();
+        assert!(!explicit.is_default);
+        assert!(explicit.account.connected);
+        let public_json = serde_json::to_string(&accounts).unwrap();
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        for secret in [
+            "default-secret",
+            "other-secret",
+            "refresh-default-secret",
+            "refresh-other-secret",
+        ] {
+            assert!(!public_json.contains(secret));
+            assert!(!on_disk.contains(secret));
+        }
+        let resolved = resolve_account_with_options(
+            SubscriptionProvider::Codex,
+            &slot,
+            &SubscriptionHttpOptions::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resolved.api_key, "other-secret");
+        assert_eq!(resolved.extra_headers["ChatGPT-Account-ID"], "seat-two");
+        let missing = format!("codex-account-{}", uuid::Uuid::new_v4());
+        assert!(resolve_account_with_options(
+            SubscriptionProvider::Codex,
+            &missing,
+            &SubscriptionHttpOptions::default()
+        )
+        .await
+        .is_err());
+
+        logout_account(SubscriptionProvider::Codex, &slot)
+            .await
+            .unwrap();
+        assert!(store::load_entry(&slot).await.unwrap().is_none());
+        let retained = list_account_instances()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|account| account.account_id == slot)
+            .unwrap();
+        assert!(!retained.account.connected);
+        assert!(retained.account.reauthentication_required);
+        assert_eq!(retained.upstream_account_id.as_deref(), Some("seat-two"));
+        assert_eq!(
+            retained.account.account.as_deref(),
+            Some("same-email@example.com")
+        );
+        assert!(retained.enabled);
+        assert_eq!(
+            credential_revision(SubscriptionProvider::Codex)
+                .await
+                .unwrap(),
+            default_revision
+        );
+        assert_eq!(
+            resolve(SubscriptionProvider::Codex).await.unwrap().api_key,
+            "default-secret"
+        );
+        assert!(matches!(
+            store::upsert_if_revision(&slot, before, account_fixture("stale", "seat-two"))
+                .await
+                .unwrap(),
+            store::ConditionalCommitOutcome::Conflict { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn disabled_accounts_keep_credentials_but_gate_requests_and_legacy_readers() {
+        let _guard = test_lock().lock().await;
+        let path = temp_store_path();
+        store::set_store_path_for_test(path.clone());
+        let slot = format!("codex-account-{}", uuid::Uuid::new_v4());
+        store::upsert(&slot, account_fixture("managed-secret", "seat-one"))
+            .await
+            .unwrap();
+        let before = store::credential_revision(&slot).await.unwrap();
+        let disabled = set_account_instance_enabled(SubscriptionProvider::Codex, &slot, false)
+            .await
+            .unwrap();
+        assert!(!disabled.enabled);
+        assert!(
+            disabled.account.connected,
+            "disable is independent of authentication"
+        );
+        assert!(!disabled.account.reauthentication_required);
+        assert!(store::load_entry(&slot)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("disabled"));
+        let revision = store::credential_revision(&slot).await.unwrap();
+        assert!(revision > before);
+        assert!(matches!(
+            store::upsert_if_revision(&slot, before, account_fixture("late-secret", "seat-one"))
+                .await
+                .unwrap(),
+            store::ConditionalCommitOutcome::Conflict { .. }
+        ));
+        let disk: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(disk["version"], 2);
+        assert_eq!(
+            disk["accounts"][&slot]["needs_reauthentication"], true,
+            "existing v2 readers must reject disabled credentials"
+        );
+        assert!(!disk.to_string().contains("managed-secret"));
+        set_account_instance_enabled(SubscriptionProvider::Codex, &slot, false)
+            .await
+            .unwrap();
+        assert_eq!(
+            store::credential_revision(&slot).await.unwrap(),
+            revision,
+            "duplicate mutations are idempotent"
+        );
+        // A credential update does not silently enable an account.
+        store::upsert(&slot, account_fixture("renewed-secret", "seat-one"))
+            .await
+            .unwrap();
+        assert!(store::load_entry(&slot).await.is_err());
+        assert!(
+            !list_account_instances()
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|account| account.account_id == slot)
+                .unwrap()
+                .enabled
+        );
+        set_account_instance_enabled(SubscriptionProvider::Codex, &slot, true)
+            .await
+            .unwrap();
+        assert_eq!(
+            resolve_account_with_options(SubscriptionProvider::Codex, &slot, &Default::default())
+                .await
+                .unwrap()
+                .api_key,
+            "renewed-secret"
+        );
+        set_account_instance_enabled(SubscriptionProvider::Codex, &slot, false)
+            .await
+            .unwrap();
+        logout_account(SubscriptionProvider::Codex, &slot)
+            .await
+            .unwrap();
+        let retained = list_account_instances()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|account| account.account_id == slot)
+            .unwrap();
+        assert!(!retained.enabled);
+        assert!(!retained.account.connected);
+        assert_eq!(retained.upstream_account_id.as_deref(), Some("seat-one"));
+        set_account_instance_enabled(SubscriptionProvider::Codex, &slot, true)
+            .await
+            .unwrap();
+        assert!(
+            store::load_entry(&slot).await.unwrap().is_none(),
+            "enable cannot restore credentials cleared by logout"
+        );
+    }
+
+    #[tokio::test]
+    async fn management_extensions_survive_refresh_and_unknown_versions_are_preserved() {
+        let _guard = test_lock().lock().await;
+        let path = temp_store_path();
+        store::set_store_path_for_test(path.clone());
+        let slot = format!("codex-account-{}", uuid::Uuid::new_v4());
+        store::upsert(&slot, account_fixture("original-secret", "seat-one"))
+            .await
+            .unwrap();
+        set_account_instance_enabled(SubscriptionProvider::Codex, &slot, false)
+            .await
+            .unwrap();
+        let mut disk: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        disk["accounts"][&slot]["metadata"]["openbitfun_account_management"]["future_policy"] =
+            serde_json::json!({"preserve":true});
+        std::fs::write(&path, serde_json::to_vec(&disk).unwrap()).unwrap();
+        store::upsert(&slot, account_fixture("renewed-secret", "seat-one"))
+            .await
+            .unwrap();
+        set_account_instance_enabled(SubscriptionProvider::Codex, &slot, true)
+            .await
+            .unwrap();
+        let mut disk: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            disk["accounts"][&slot]["metadata"]["openbitfun_account_management"]["future_policy"]
+                ["preserve"],
+            true
+        );
+        disk["accounts"][&slot]["metadata"]["openbitfun_account_management"]["version"] =
+            serde_json::json!(99);
+        std::fs::write(&path, serde_json::to_vec(&disk).unwrap()).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        assert!(list_account_instances().await.is_err());
+        assert!(
+            set_account_instance_enabled(SubscriptionProvider::Codex, &slot, false)
+                .await
+                .is_err()
+        );
+        assert!(
+            store::upsert(&slot, account_fixture("discarded-secret", "seat-one"))
+                .await
+                .is_err()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn failed_enable_write_preserves_account_epoch_and_secrets() {
+        let _guard = test_lock().lock().await;
+        let path = temp_store_path();
+        store::set_store_path_for_test(path.clone());
+        let slot = format!("codex-account-{}", uuid::Uuid::new_v4());
+        store::upsert(&slot, account_fixture("preserved-secret", "seat-one"))
+            .await
+            .unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let revision = store::credential_revision(&slot).await.unwrap();
+        store::set_test_metadata_write_failure(true);
+        let result = set_account_instance_enabled(SubscriptionProvider::Codex, &slot, false).await;
+        store::set_test_metadata_write_failure(false);
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(store::credential_revision(&slot).await.unwrap(), revision);
+        assert_eq!(
+            resolve_account_with_options(SubscriptionProvider::Codex, &slot, &Default::default())
+                .await
+                .unwrap()
+                .api_key,
+            "preserved-secret"
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_default_writes_and_v2_roundtrip_preserve_additional_accounts() {
+        let _guard = test_lock().lock().await;
+        let path = temp_store_path();
+        store::set_store_path_for_test(path.clone());
+        let slot = format!("codex-account-{}", uuid::Uuid::new_v4());
+        store::upsert("codex", account_fixture("legacy", "seat-one"))
+            .await
+            .unwrap();
+        store::upsert(&slot, account_fixture("additional", "seat-two"))
+            .await
+            .unwrap();
+
+        // Exact pre-extension v2 envelope. There is no schema bump or new
+        // envelope field for an older writer to discard.
+        #[derive(Serialize, Deserialize)]
+        struct LegacyV2 {
+            version: u8,
+            accounts: HashMap<String, serde_json::Value>,
+            #[serde(default)]
+            provider_revisions: HashMap<String, u64>,
+        }
+        let old: LegacyV2 = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(old.version, 2);
+        assert!(old.accounts.contains_key("codex"));
+        assert!(old.accounts.contains_key(&slot));
+        std::fs::write(&path, serde_json::to_vec(&old).unwrap()).unwrap();
+        store::upsert("codex", account_fixture("legacy-refresh", "seat-one"))
+            .await
+            .unwrap();
+        logout(SubscriptionProvider::Codex).await.unwrap();
+        assert_eq!(
+            resolve_account_with_options(
+                SubscriptionProvider::Codex,
+                &slot,
+                &SubscriptionHttpOptions::default()
+            )
+            .await
+            .unwrap()
+            .api_key,
+            "additional"
+        );
+        assert!(store::load_entry("codex").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn account_listing_preserves_vault_failure_and_rejects_corrupt_store() {
+        let _guard = test_lock().lock().await;
+        let path = temp_store_path();
+        store::set_store_path_for_test(path.clone());
+        let slot = format!("codex-account-{}", uuid::Uuid::new_v4());
+        store::upsert(&slot, account_fixture("secret", "seat-two"))
+            .await
+            .unwrap();
+        store::set_test_vault_unavailable(true);
+        let rows = list_account_instances().await.unwrap();
+        let row = rows.iter().find(|row| row.account_id == slot).unwrap();
+        assert!(row.account.vault_unavailable);
+        assert!(!row.account.reauthentication_required);
+        store::set_test_vault_unavailable(false);
+        assert!(resolve_account_with_options(
+            SubscriptionProvider::Codex,
+            &slot,
+            &SubscriptionHttpOptions::default()
+        )
+        .await
+        .is_ok());
+        std::fs::write(&path, b"{invalid store").unwrap();
+        assert!(list_account_instances().await.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"{invalid store");
+    }
+
+    #[tokio::test]
+    async fn default_logout_does_not_cancel_a_named_account_login() {
+        let _guard = test_lock().lock().await;
+        store::set_store_path_for_test(temp_store_path());
+        let slot = format!("codex-account-{}", uuid::Uuid::new_v4());
+        let session_id = test_session_id();
+        let generation = next_generation();
+        let cancel = CancellationToken::new();
+        sessions().lock().unwrap().insert(
+            SubscriptionProvider::Codex,
+            SessionState {
+                session_id: session_id.clone(),
+                account_id: Some(slot.clone()),
+                status: LoginStatus::Pending,
+                method: Some(SubscriptionLoginMethod::Device),
+                authorization_url: None,
+                user_code: None,
+                instructions: None,
+                error: None,
+                account: None,
+                cancel: cancel.clone(),
+                generation,
+            },
+        );
+        logout(SubscriptionProvider::Codex).await.unwrap();
+        assert!(!cancel.is_cancelled());
+        store::upsert(&slot, account_fixture("named-login", "seat-two"))
+            .await
+            .unwrap();
+        finalize_session(
+            SubscriptionProvider::Codex,
+            &session_id,
+            generation,
+            &cancel,
+            Ok(Ok(())),
+        )
+        .await;
+        let snapshot = login_status(SubscriptionProvider::Codex, &session_id)
+            .await
+            .unwrap();
+        assert_eq!(snapshot.status, LoginStatus::Authorized);
+        assert!(snapshot.account.unwrap().connected);
+        assert!(
+            !account_snapshot(SubscriptionProvider::Codex)
+                .await
+                .connected
+        );
+        logout_account(SubscriptionProvider::Codex, &slot)
+            .await
+            .unwrap();
+        assert!(cancel.is_cancelled());
     }
 
     #[tokio::test]
@@ -2014,6 +2698,7 @@ mod tests {
                 provider,
                 SessionState {
                     session_id: current_session_id,
+                    account_id: None,
                     status: LoginStatus::Pending,
                     method: None,
                     authorization_url: None,
@@ -2140,6 +2825,7 @@ mod tests {
                 provider,
                 SessionState {
                     session_id: session_id.clone(),
+                    account_id: None,
                     status: LoginStatus::Pending,
                     method: None,
                     authorization_url: None,
@@ -2183,6 +2869,7 @@ mod tests {
                 provider,
                 SessionState {
                     session_id: session_id.clone(),
+                    account_id: None,
                     status: LoginStatus::Pending,
                     method: None,
                     authorization_url: None,
@@ -2233,6 +2920,7 @@ mod tests {
                 provider,
                 SessionState {
                     session_id: current_session_id.clone(),
+                    account_id: None,
                     status: LoginStatus::Pending,
                     method: None,
                     authorization_url: None,
@@ -2266,6 +2954,7 @@ mod tests {
                 provider,
                 SessionState {
                     session_id: session_id.clone(),
+                    account_id: None,
                     status: LoginStatus::Authorized,
                     method: None,
                     authorization_url: None,
@@ -2302,6 +2991,7 @@ mod tests {
                 provider,
                 SessionState {
                     session_id: new_session_id,
+                    account_id: None,
                     status: LoginStatus::Pending,
                     method: None,
                     authorization_url: None,

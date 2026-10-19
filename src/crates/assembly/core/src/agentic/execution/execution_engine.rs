@@ -120,21 +120,6 @@ fn runtime_context_needs_for_manifest(manifest: &ResolvedToolManifest) -> Runtim
     )
 }
 
-fn apply_agent_temperature_override(
-    agent: &dyn crate::agentic::agents::Agent,
-    client: Arc<crate::infrastructure::ai::AIClient>,
-) -> Arc<crate::infrastructure::ai::AIClient> {
-    let Some(temperature) = agent.model_temperature_override() else {
-        return client;
-    };
-    if client.config.temperature == Some(temperature) {
-        return client;
-    }
-    let mut derived = client.as_ref().clone();
-    derived.config.temperature = Some(temperature);
-    Arc::new(derived)
-}
-
 fn resolve_round_permission_mode(
     active_turn_mode: Option<PermissionMode>,
     fixed_context_mode: Option<PermissionMode>,
@@ -577,6 +562,10 @@ struct FinalizeRoundInput<'a> {
     agent_type: String,
     context: &'a ExecutionContext,
     ai_client: Arc<crate::infrastructure::ai::AIClient>,
+    account_client_source:
+        Option<Arc<dyn crate::infrastructure::ai::account_client_source::AccountClientSource>>,
+    channel_client_source:
+        Option<Arc<crate::infrastructure::ai::channel_client_source::ChannelClientSource>>,
 }
 
 #[path = "compression_job.rs"]
@@ -2138,6 +2127,9 @@ impl ExecutionEngine {
             model_config_id: input.primary_model_facts.model_id.clone(),
             effective_model_name: input.ai_client.config.model.clone(),
             model_request_context: input.model_request_context.clone(),
+            account_client_source: input.account_client_source.clone(),
+            channel_client_source: input.channel_client_source.clone(),
+            prepared_model: None,
             primary_model_facts: input.primary_model_facts.clone(),
             agent_type: input.agent_type,
             context_vars: round_context_vars,
@@ -2420,7 +2412,7 @@ impl ExecutionEngine {
                 OpenBitFunError::NotFound(format!("Agent not found: {}", context.agent_type))
             })?;
 
-        let (model_id, model_fingerprint) = self
+        let (model_id, model_binding_fingerprint) = self
             .resolve_model_id_for_turn(
                 session,
                 &context.agent_type,
@@ -2454,36 +2446,32 @@ impl ExecutionEngine {
                 None
             }
         };
-        let ai_client_result = if session.config.model_binding_policy
-            == SessionModelBindingPolicy::Pool
-        {
-            ai_client_factory
-                .get_client_by_approved_binding_with_reasoning_preset(
-                    &model_id,
-                    &model_fingerprint,
-                    None,
-                )
-                .await
-        } else if matches!(
+        let model_request_context = Self::model_request_context(
+            session.effective_prompt_cache_lineage_id(),
+            &context.context,
+        );
+        let initialization_binding = if matches!(
             session.config.model_binding_policy,
             SessionModelBindingPolicy::ApprovedImmutable
         ) {
-            ai_client_factory
-                .get_client_by_approved_binding_with_reasoning_preset(
-                    &model_id,
-                    session
-                        .config
-                        .model_binding_fingerprint
-                        .as_deref()
-                        .unwrap_or_default(),
-                    reasoning_preset.as_deref(),
-                )
-                .await
+            session
+                .config
+                .model_binding_fingerprint
+                .as_deref()
+                .unwrap_or_default()
         } else {
-            ai_client_factory
-                .get_client_resolved_with_reasoning_preset(&model_id, reasoning_preset.as_deref())
-                .await
+            model_binding_fingerprint.as_str()
         };
+        let ai_client_result = ai_client_factory
+            .prepare_native_model_client(
+                &model_id,
+                initialization_binding,
+                reasoning_preset.as_deref(),
+                model_request_context.prompt_cache_route_key.as_deref(),
+                current_agent.model_temperature_override(),
+            )
+            .await
+            .map(|(client, _)| client);
         let ai_client = match ai_client_result {
             Ok(ai_client) => ai_client,
             Err(error) => {
@@ -2503,13 +2491,8 @@ impl ExecutionEngine {
                 )));
             }
         };
-        let ai_client = apply_agent_temperature_override(current_agent.as_ref(), ai_client);
         Self::validate_frozen_model_contract(context).await?;
         Self::validate_frozen_reasoning_contract(context, ai_client.as_ref())?;
-        let model_request_context = Self::model_request_context(
-            session.effective_prompt_cache_lineage_id(),
-            &context.context,
-        );
 
         let primary_model_facts = Self::resolve_primary_model_context(
             &model_id,
@@ -3311,30 +3294,36 @@ impl ExecutionEngine {
                 }
             }
         };
-        let ai_client_result = if let Some((_, client)) = &initial_pool_attempt {
-            Ok(Arc::clone(client))
-        } else if matches!(
+        let model_request_context = Self::model_request_context(
+            session.effective_prompt_cache_lineage_id(),
+            &context.context,
+        );
+        let initialization_cancel = self.round_executor.ensure_cancel_token(&dialog_turn_id);
+        let initialization_binding = if matches!(
             session.config.model_binding_policy,
             SessionModelBindingPolicy::ApprovedImmutable
         ) {
-            ai_client_factory
-                .get_client_by_approved_binding_with_reasoning_preset(
-                    &model_id,
-                    session
-                        .config
-                        .model_binding_fingerprint
-                        .as_deref()
-                        .unwrap_or_default(),
-                    reasoning_preset.as_deref(),
-                )
-                .await
+            session
+                .config
+                .model_binding_fingerprint
+                .as_deref()
+                .unwrap_or_default()
         } else {
-            ai_client_factory
-                .get_client_resolved_with_reasoning_preset(&model_id, reasoning_preset.as_deref())
-                .await
+            model_fingerprint.as_str()
         };
-        let ai_client = match ai_client_result {
-            Ok(ai_client) => ai_client,
+        let ai_client_result = tokio::select! {
+            biased;
+            _ = initialization_cancel.cancelled() => return Err(OpenBitFunError::Cancelled("Execution cancelled during model initialization".into())),
+            result = ai_client_factory.prepare_native_routed_model_client(
+                &model_id,
+                initialization_binding,
+                reasoning_preset.as_deref(),
+                model_request_context.prompt_cache_route_key.as_deref(),
+                current_agent.model_temperature_override(),
+            ) => result,
+        };
+        let (prepared_model, mut channel_client_source) = match ai_client_result {
+            Ok(prepared) => prepared,
             Err(error) => {
                 if context
                     .context
@@ -3348,13 +3337,11 @@ impl ExecutionEngine {
                 )));
             }
         };
-        let mut ai_client = apply_agent_temperature_override(current_agent.as_ref(), ai_client);
+        let mut ai_client = prepared_model.client.clone();
+        let mut account_client_source = prepared_model.account_source.clone();
+        let mut prepared_model = Some(prepared_model);
         Self::validate_frozen_model_contract(&context).await?;
         Self::validate_frozen_reasoning_contract(&context, ai_client.as_ref())?;
-        let model_request_context = Self::model_request_context(
-            session.effective_prompt_cache_lineage_id(),
-            &context.context,
-        );
 
         // Primary model vision capability (tools + system prompt appendix; also used below for API message stripping).
         let mut primary_model_facts = Self::resolve_primary_model_context(
@@ -3651,7 +3638,7 @@ impl ExecutionEngine {
                     &messages,
                     enable_tools && available_tools.iter().any(|name| name == "analyze_image"),
                 );
-                let (attempt, next_client) = if let Some(prepared) = initial_pool_attempt.take() {
+                let (attempt, _next_client) = if let Some(prepared) = initial_pool_attempt.take() {
                     prepared
                 } else {
                     self.model_pools
@@ -3681,8 +3668,21 @@ impl ExecutionEngine {
                     compression_prefetch.take();
                     model_id = binding.model_id.clone();
                     model_fingerprint = binding.configuration_fingerprint.clone();
-                    ai_client =
-                        apply_agent_temperature_override(current_agent.as_ref(), next_client);
+                    let (next_prepared, next_channels) = tokio::select! {
+                        biased;
+                        _ = initialization_cancel.cancelled() => return Err(OpenBitFunError::Cancelled("Execution cancelled during pool model initialization".into())),
+                        result = ai_client_factory.prepare_native_routed_model_client(
+                            &model_id,
+                            &model_fingerprint,
+                            None,
+                            model_request_context.prompt_cache_route_key.as_deref(),
+                            current_agent.model_temperature_override(),
+                        ) => result.map_err(|error| OpenBitFunError::AIClient(format!("Failed to initialize model pool member: {error:#}")))?,
+                    };
+                    ai_client = next_prepared.client.clone();
+                    account_client_source = next_prepared.account_source.clone();
+                    channel_client_source = next_channels;
+                    prepared_model = Some(next_prepared);
                     primary_model_facts = Self::resolve_primary_model_context(
                         &model_id,
                         SessionModelBindingPolicy::ApprovedImmutable,
@@ -4100,6 +4100,9 @@ impl ExecutionEngine {
                 model_config_id: model_id.clone(),
                 effective_model_name: ai_client.config.model.clone(),
                 model_request_context: model_request_context.clone(),
+                account_client_source: account_client_source.clone(),
+                channel_client_source: channel_client_source.clone(),
+                prepared_model: prepared_model.take(),
                 primary_model_facts: primary_model_facts.clone(),
                 agent_type: agent_type.clone(),
                 context_vars: round_context_vars,
@@ -5012,6 +5015,8 @@ impl ExecutionEngine {
                     .run_finalize_round(FinalizeRoundInput {
                         permission_constraints: tool_policy.permission_constraints.clone(),
                         ai_client: ai_client.clone(),
+                        account_client_source: account_client_source.clone(),
+                        channel_client_source: channel_client_source.clone(),
                         context: &context,
                         agent_type: agent_type.clone(),
                         round_number: completed_rounds,
@@ -5044,6 +5049,8 @@ impl ExecutionEngine {
                         .run_finalize_round(FinalizeRoundInput {
                             permission_constraints: tool_policy.permission_constraints.clone(),
                             ai_client: ai_client.clone(),
+                            account_client_source: account_client_source.clone(),
+                            channel_client_source: channel_client_source.clone(),
                             context: &context,
                             agent_type: agent_type.clone(),
                             round_number: completed_rounds,

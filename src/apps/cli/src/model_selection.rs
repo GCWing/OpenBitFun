@@ -110,6 +110,7 @@ pub(crate) fn model_from_mutation(
         custom_request_body,
         custom_request_body_mode: current.custom_request_body_mode,
         auth: current.auth,
+        channel_routing: current.channel_routing,
     })
 }
 
@@ -185,6 +186,25 @@ mod tests {
             }
         }))
         .expect("test AI config should deserialize")
+    }
+
+    #[test]
+    fn legacy_model_mutation_preserves_channel_selection_and_credentials() {
+        let mutation: ModelMutation = serde_json::from_value(serde_json::json!({
+            "id":"model-1", "name":"Edited", "provider":"openai", "modelName":"model",
+            "baseUrl":"https://fixture.invalid/v1", "enabled":true,
+            "inlineThinkInText":false, "skipSslVerify":false
+        }))
+        .unwrap();
+        let existing = openbitfun_core::service::config::AIModelConfig {
+            api_key: "synthetic-existing".into(),
+            channel_routing: Some(serde_json::from_value(serde_json::json!({"version":1,"fallback_model_ids":["backup"],"manual_channel":"backup"})).unwrap()),
+            ..Default::default()
+        };
+        let preserved = model_from_mutation(mutation, Some(existing.clone())).unwrap();
+        assert_eq!(preserved.channel_routing, existing.channel_routing);
+        assert_eq!(preserved.api_key, existing.api_key);
+        assert_eq!(preserved.name, "Edited");
     }
 
     #[test]

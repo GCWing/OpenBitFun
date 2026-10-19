@@ -49,7 +49,7 @@
   },
   "subscriptionAuth": {
     "sectionTitle": "订阅账号",
-    "sectionDescription": "连接 Codex、Antigravity、OpenCode Console（Zen）、xAI 或 Hermes 账号",
+    "sectionDescription": "连接 Codex、Antigravity、OpenCode、xAI、Hermes、WorkBuddy 或 ZCode 订阅",
     "rescan": "刷新状态",
     "import": "导入使用",
     "login": "登录",
@@ -58,8 +58,8 @@
     "cancel": "取消",
     "loginCancelled": "已取消登录",
     "logout": "退出登录",
-    "refresh": "刷新 Token",
-    "refreshSuccess": "Token 已刷新",
+    "refresh": "刷新状态",
+    "refreshSuccess": "状态已更新",
     "refreshFailed": "刷新失败：{{error}}",
     "loginSuccess": "登录成功",
     "loginFailed": "登录失败：{{error}}",
@@ -69,17 +69,47 @@
     "logoutFailed": "退出登录失败：{{error}}",
     "userCodeHint": "请在浏览器中输入验证码：{{code}}",
     "openUrlManually": "无法自动打开浏览器，请手动访问：{{url}}",
-    "expiresAt": "Token 有效期至 {{time}}",
-    "tokenValid": "Token 已就绪",
+    "expiresAt": "授权有效期至 {{time}}",
+    "tokenValid": "已连接",
     "notSignedIn": "未登录",
     "label": "认证方式",
+    "chooseRegion": "选择订阅平台",
+    "chooseRegionHint": "选择你购买 Coding Plan 订阅的平台。",
+    "products": {
+      "codex": "Codex",
+      "antigravity": "Antigravity",
+      "opencode": "OpenCode",
+      "grok": "Grok",
+      "hermes": "Hermes",
+      "workbuddy": "WorkBuddy",
+      "workbuddy_ai": "WorkBuddy AI",
+      "zcode": "ZCode"
+    },
+    "details": {
+      "codex": "ChatGPT 订阅",
+      "antigravity": "Google 订阅",
+      "opencode": "Console · Zen",
+      "grok": "SuperGrok 订阅",
+      "hermes": "Nous Portal 订阅",
+      "workbuddy": "CodeBuddy · 国内版",
+      "workbuddy_ai": "国际版",
+      "zcode": "GLM Coding Plan"
+    },
+    "regions": {
+      "zai": "Z.ai",
+      "bigmodel": "智谱"
+    },
     "options": {
-      "opencode": "OpenCode Console（Zen）",
+      "opencode": "OpenCode",
       "apiKey": "API Key",
-      "codex": "Codex（ChatGPT 订阅）",
-      "antigravity": "Antigravity（Google 订阅）",
-      "grok": "xAI（SuperGrok 订阅）",
-      "hermes": "Hermes（Nous Portal 订阅）"
+      "codex": "Codex",
+      "antigravity": "Antigravity",
+      "grok": "Grok",
+      "hermes": "Hermes",
+      "workbuddy": "WorkBuddy",
+      "workbuddy_ai": "WorkBuddy AI",
+      "zcode": "ZCode",
+      "zcode_cn": "ZCode · 智谱"
     },
     "useFormat": "使用 {{format}}",
     "useFormatWithCount": "使用 {{format}}（{{modelCount}} 个模型）",
@@ -130,7 +160,21 @@
       "reauthenticationRequired": "需重新登录",
       "refreshRequired": "凭据待刷新",
       "connected": "已登录"
-    }
+    },
+    "pool": {
+      "label": "使用账号",
+      "defaultAccount": "默认账号",
+      "disabled": "已停用",
+      "missing": "账号已移除",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "addAccount": "添加账号",
+      "rotationHint": "按顺序使用；当前账号额度用完或出错时自动换下一个。",
+      "singleHint": "勾选多个账号后，额度用完或出错时会按顺序自动切换。"
+    },
+    "accountMarker": "账号 · {{marker}}",
+    "accountsCount": "{{count}} 个账号",
+    "newAccount": "新账号"
   },
   "providerSelection": {
     "modelRoutingPending": "刷新模型列表后显示协议和端点；目录外模型可手动配置。",
@@ -184,6 +228,10 @@
     "formatHint": "已根据提供商自动选择，通常无需修改"
   },
   "providers": {
+    "opencode-zen": {
+      "name": "OpenCode Zen",
+      "description": "OpenCode 模型服务，支持免费模型和按量付费 API Key。"
+    },
     "opencode-go": {
       "name": "OpenCode Go",
       "description": "OpenCode 推出的模型订阅套餐。"
@@ -338,6 +386,7 @@
     "resolvedUrlLabel": "实际请求地址：",
     "forceUrlHint": "以 # 结尾可强制使用输入地址",
     "apiKey": "API密钥",
+    "openCodeZenApiKeyPlaceholder": "免费模型可留空；付费模型请填写 Zen API Key",
     "apiKeyPlaceholder": "输入您的 API Key",
     "provider": "请求格式",
     "providerPlaceholder": "选择请求格式",
@@ -755,5 +804,59 @@
     },
     "retry": "允许重试",
     "invalidRecords": "当前版本无法读取部分模型池记录，这些记录已原样保留。"
+  },
+  "quota": {
+    "title": "订阅额度",
+    "hostUnsupported": "当前主机尚不支持额度查询。",
+    "unsupported": "此渠道暂未提供额度查询。",
+    "refreshFailedRetained": "刷新失败，以下保留上次查询的数据。",
+    "queryFailed": "暂时无法读取额度，请检查账号授权与网络后重试。",
+    "loading": "正在读取额度…",
+    "unknown": "服务方暂未返回额度信息。",
+    "stale": "上次数据",
+    "refresh": "刷新额度",
+    "mcp": "MCP 调用",
+    "weekly": "每周额度",
+    "monthly": "每月额度",
+    "hours": "{{count}} 小时周期",
+    "days": "{{count}} 天周期",
+    "credits": "积分额度",
+    "allowance": "可用额度",
+    "remaining": "剩余",
+    "unlimited": "不限量",
+    "noValue": "—",
+    "creditsUnit": "积分",
+    "requestsUnit": "次",
+    "remainingFor": "{{name}}剩余额度",
+    "usedOf": "已用 {{used}} / {{total}}",
+    "usedPercent": "已用 {{value}}",
+    "resetsAt": "{{time}} 重置",
+    "expiresAt": "{{time}} 积分到期",
+    "unlimitedCredits": "额外积分不限量。",
+    "updatedAt": "更新于 {{time}}",
+    "planUntil": "套餐于 {{time}} 续费或到期",
+    "minutes": "{{count}} 分钟额度",
+    "opencodePublic": "免费模型入口。OpenCode 尚未开放免费用量剩余值和重置时间查询。",
+    "opencodeBalanceUnavailable": "OpenCode 尚未提供公开余额接口，请前往控制台查看工作区余额。",
+    "opencodeGoKeyRequired": "请使用 Go 订阅对应的 API Key 查询额度。",
+    "opencodeKeyRejected": "OpenCode 拒绝了此 API Key，请检查已保存的密钥和工作区。",
+    "opencodeGoRequired": "此密钥未关联 Go 订阅，请使用订阅成员在对应工作区创建的密钥。",
+    "opencodeCustomAuth": "额度查询暂不支持自定义认证请求头，请前往控制台查看用量。",
+    "openConsole": "打开控制台",
+    "saveBeforeQuery": "保存此连接后，可查询 OpenCode Go 额度。"
+  },
+  "channelRouting": {
+    "label": "备用渠道",
+    "hint": "当前渠道额度用完或出错时，按顺序改用这些模型。只列出上下文和能力不低于本模型的配置。",
+    "isBackupOf": "已作为 {{names}} 的备用渠道，不能再设置自己的备用渠道。",
+    "missing": "模型已删除",
+    "auto": "自动切换",
+    "fixedSelf": "固定使用：本渠道",
+    "fixed": "固定使用：{{name}}",
+    "remove": "移除",
+    "add": "添加备用渠道",
+    "noCandidates": "暂无可用的备用模型",
+    "mode": "使用方式",
+    "modeHint": "自动切换会在失败时依次尝试备用渠道；固定使用只走所选渠道，失败时不切换。"
   }
 }

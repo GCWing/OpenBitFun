@@ -74,6 +74,14 @@ pub struct RoundContext {
     pub effective_model_name: String,
     /// Provider-neutral request-scoped facts resolved by the runtime owner.
     pub model_request_context: ModelRequestContext,
+    /// Exact account resolution injected by the executing host's model factory.
+    pub(crate) account_client_source:
+        Option<Arc<dyn crate::infrastructure::ai::account_client_source::AccountClientSource>>,
+    pub(crate) channel_client_source:
+        Option<Arc<crate::infrastructure::ai::channel_client_source::ChannelClientSource>>,
+    /// Initial factory selection, consumed once instead of resolving it again.
+    pub(crate) prepared_model:
+        Option<crate::infrastructure::ai::channel_client_source::PreparedChannel>,
     pub primary_model_facts: PrimaryModelFacts,
     pub agent_type: String,
     pub context_vars: HashMap<String, String>,

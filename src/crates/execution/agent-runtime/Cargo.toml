@@ -17,6 +17,7 @@ required-features = ["agent-runtime"]
 
 [features]
 default = []
+account-routing = ["dep:openbitfun-core-types"]
 definition-contracts = [
     "native-hook-settings",
     "dep:openbitfun-core-types",
@@ -43,6 +44,7 @@ native-hook-runtime = [
     "tokio/time",
 ]
 agent-runtime = [
+    "account-routing",
     "definition-contracts",
     "native-hook-runtime",
     "dep:async-trait",
