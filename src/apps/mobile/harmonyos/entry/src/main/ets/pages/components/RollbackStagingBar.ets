@@ -2,6 +2,8 @@ import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/Mo
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { RollbackBarPresentation, RollbackPresentationPolicy } from '../policy/RollbackPresentationPolicy';
 import { ComposerPresentation } from './ComposerBar';
+import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
+import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 import { INK, MUTED, SOFT } from './Theme';
 
 /**
@@ -17,6 +19,8 @@ const ROLLBACK_GLYPH_SIZE: number = 20;
 const ROLLBACK_BAR_RADIUS: number = 16;
 const ROLLBACK_BAR_LEADING_PADDING: number = 12;
 const ROLLBACK_BAR_TRAILING_PADDING: number = 4;
+/** The capsule's own edge on the material path; below it the bar draws no edge. */
+const ROLLBACK_BAR_HAIRLINE_WIDTH: number = 0.5;
 /** Gap between the label block and the controls, and between the two glyphs. */
 const ROLLBACK_BAR_ACTION_GAP: number = 4;
 const ROLLBACK_BAR_TEXT_GAP: number = 8;
@@ -48,39 +52,47 @@ export struct RollbackStagingBar {
     // occupied its gap would push the composer down for the entire session.
     if (this.bar.visible) {
       Column() {
-        Row({ space: ROLLBACK_BAR_TEXT_GAP }) {
+        // Two postures, one branch each: the material attribute does not exist below
+        // the API level that ships it, so the capsule may not call it from a chain an
+        // old device also reaches — a missing member is `undefined is not callable`,
+        // which is a crash rather than a degradation. Below the material the capsule
+        // is exactly the `SOFT` one it shipped; above it the platform supplies the
+        // surface and the capsule keeps the edge it is designed with.
+        if (ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.BOTTOM_CHROME)) {
           Row({ space: ROLLBACK_BAR_TEXT_GAP }) {
-            Text(RemoteI18n.t(this.bar.titleKey))
-              .fontSize(MobileDesignTypography.bodySmall.size)
-              .lineHeight(MobileDesignTypography.bodySmall.lineHeight)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(INK)
-              .maxLines(1)
-            Text(this.bar.preview)
-              .fontSize(MobileDesignTypography.bodySmall.size)
-              .lineHeight(MobileDesignTypography.bodySmall.lineHeight)
-              .fontColor(MUTED)
-              .layoutWeight(1)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            this.CapsuleContent()
           }
-          .layoutWeight(1)
-          .alignItems(VerticalAlign.Center)
-
-          Row({ space: ROLLBACK_BAR_ACTION_GAP }) {
-            this.ConfirmButton()
-            this.CloseButton()
+          .width('100%')
+          .height(ROLLBACK_BAR_HEIGHT)
+          .padding({ left: ROLLBACK_BAR_LEADING_PADDING, right: ROLLBACK_BAR_TRAILING_PADDING })
+          .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, SOFT))
+          .border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.BOTTOM_CHROME,
+            ROLLBACK_BAR_HAIRLINE_WIDTH))
+          .borderRadius(ROLLBACK_BAR_RADIUS)
+          .transition(TransitionEffect.translate({ x: 0, y: 8 })
+            .combine(TransitionEffect.opacity(0))
+            .animation({ duration: 180, curve: Curve.EaseOut }))
+          // Last on the node: the material owns the floor and the edge, so nothing
+          // paints over it.
+          .systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.BOTTOM_CHROME))
+        } else {
+          Row({ space: ROLLBACK_BAR_TEXT_GAP }) {
+            this.CapsuleContent()
           }
-          .alignItems(VerticalAlign.Center)
+          .width('100%')
+          .height(ROLLBACK_BAR_HEIGHT)
+          .padding({ left: ROLLBACK_BAR_LEADING_PADDING, right: ROLLBACK_BAR_TRAILING_PADDING })
+          // The same chain as the branch above, with the one call this device cannot
+          // make left out: the recipe resolves the fill to the `SOFT` capsule the bar
+          // shipped as, and the hairline resolves to no edge, which is the edge it had.
+          .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, SOFT))
+          .border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.BOTTOM_CHROME,
+            ROLLBACK_BAR_HAIRLINE_WIDTH))
+          .borderRadius(ROLLBACK_BAR_RADIUS)
+          .transition(TransitionEffect.translate({ x: 0, y: 8 })
+            .combine(TransitionEffect.opacity(0))
+            .animation({ duration: 180, curve: Curve.EaseOut }))
         }
-        .width('100%')
-        .height(ROLLBACK_BAR_HEIGHT)
-        .padding({ left: ROLLBACK_BAR_LEADING_PADDING, right: ROLLBACK_BAR_TRAILING_PADDING })
-        .backgroundColor(SOFT)
-        .borderRadius(ROLLBACK_BAR_RADIUS)
-        .transition(TransitionEffect.translate({ x: 0, y: 8 })
-          .combine(TransitionEffect.opacity(0))
-          .animation({ duration: 180, curve: Curve.EaseOut }))
       }
       .width('100%')
       .constraintSize({
@@ -95,6 +107,43 @@ export struct RollbackStagingBar {
         top: 8
       })
     }
+  }
+
+  /**
+   * The capsule's contents, mounted by both of its postures.
+   *
+   * The material is a property of the capsule's surface, so the two branches above
+   * differ in their decoration alone and both take their contents from here.
+   */
+  @Builder
+  private CapsuleContent() {
+    this.CapsuleLabels()
+    Row({ space: ROLLBACK_BAR_ACTION_GAP }) {
+      this.ConfirmButton()
+      this.CloseButton()
+    }
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  private CapsuleLabels() {
+    Row({ space: ROLLBACK_BAR_TEXT_GAP }) {
+      Text(RemoteI18n.t(this.bar.titleKey))
+        .fontSize(MobileDesignTypography.bodySmall.size)
+        .lineHeight(MobileDesignTypography.bodySmall.lineHeight)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(INK)
+        .maxLines(1)
+      Text(this.bar.preview)
+        .fontSize(MobileDesignTypography.bodySmall.size)
+        .lineHeight(MobileDesignTypography.bodySmall.lineHeight)
+        .fontColor(MUTED)
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .layoutWeight(1)
+    .alignItems(VerticalAlign.Center)
   }
 
   @Builder

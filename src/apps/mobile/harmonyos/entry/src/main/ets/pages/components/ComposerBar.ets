@@ -48,6 +48,8 @@ const COMPOSER_EXPANDED_HEIGHT: number = MobileDesignGeometry.composerExpandedHe
 const COMPOSER_COMPACT_HORIZONTAL_GUTTER: number = MobileDesignGeometry.contentGutter;
 const COMPOSER_IMAGE_CARD_SIZE: number = 64;
 const COMPOSER_IMAGE_STRIP_TOP_GAP: number = 6;
+/** The pill's own edge on the material path; the fallback keeps the border it shipped. */
+const COMPOSER_HAIRLINE_WIDTH: number = 0.5;
 /** Strip height plus its top gap and the parent Column's 2vp row spacing. */
 const COMPOSER_IMAGE_STRIP_BLOCK: number =
   COMPOSER_IMAGE_CARD_SIZE + COMPOSER_IMAGE_STRIP_TOP_GAP + 2;
@@ -167,24 +169,91 @@ export struct ComposerBar {
 
   @Builder
   AdaptiveComposer() {
-    Column({ space: 2 }) {
-      if (this.selectedImages.length > 0) {
-        this.SelectedImageStrip()
+    // The material attribute does not exist below the API level that ships it, and a
+    // call to a member that is not there is `undefined is not callable` — a hard
+    // crash, not a degradation. So the pill's two postures are two branches rather
+    // than one chain whose argument resolves to `undefined`, and the branch asks the
+    // same question every decoration of the pill already answers. Below the material
+    // the pill is the one that shipped, byte for byte; above it the platform owns the
+    // surface and the pill keeps only the edge it is designed with.
+    if (ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.BOTTOM_CHROME)) {
+      Column({ space: 2 }) {
+        this.ComposerPillContent()
       }
-      Row({ space: this.isComposerExpanded() ? 0 : 5 }) {
-        if (this.shouldShowAddButton()) {
-          Row() {
-            this.AddButton()
-          }
-          .width(this.isComposerExpanded() ? 0 : COMPOSER_ACTION_SIZE)
-          .height(COMPOSER_ACTION_SIZE)
-          .opacity(this.isComposerExpanded() ? 0 : 1)
-          .visibility(this.isComposerExpanded() ? Visibility.None : Visibility.Visible)
-          .clip(true)
-        }
-        this.InputField()
+      .width('100%')
+      .constraintSize({ minHeight: this.composerHeight() })
+      .padding({
+        left: 8,
+        right: 8,
+        top: this.isComposerExpanded() ? 4 : 0,
+        bottom: this.isComposerExpanded() ? 2 : 0
+      })
+      // The transcript runs underneath the pill, so its fill is translucent and the
+      // blur does the separating; the colour is the floor under it. Every one of
+      // those answers comes from the shared bottom-chrome recipe, because the pill is
+      // the surface that scene describes — and where the material is drawn the
+      // support answers no colour, no blur and no shadow, because the platform
+      // supplies all three.
+      .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, CARD_OVERLAY))
+      .backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.BOTTOM_CHROME))
+      .border(this.composerEdge())
+      .borderRadius(this.composerRadius())
+      .shadow(ImmersiveSurfaceSupport.surfaceShadow(ImmersiveSurfaceScene.BOTTOM_CHROME, {
+        radius: this.presentation === ComposerPresentation.Floating ? 14 : 18,
+        color: SHADOW_SUBTLE,
+        offsetY: this.presentation === ComposerPresentation.Floating ? 4 : 6
+      }))
+      .animation({ duration: MobileDesignMotion.structure, curve: Curve.EaseOut })
+      // Last on the node: the platform owns the floor, the edge, the blur and the
+      // shadow from here, so a decoration after it would be a second answer to a
+      // question that has already been answered. `animation` stays above it so the
+      // pill's geometry keeps the transition it always had.
+      .systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.BOTTOM_CHROME))
+    } else {
+      Column({ space: 2 }) {
+        this.ComposerPillContent()
+      }
+      .width('100%')
+      .constraintSize({ minHeight: this.composerHeight() })
+      .padding({
+        left: 8,
+        right: 8,
+        top: this.isComposerExpanded() ? 4 : 0,
+        bottom: this.isComposerExpanded() ? 2 : 0
+      })
+      // The same chain as the branch above, with the one call that this device
+      // cannot make left out: the recipe resolves every value to the pill this
+      // shipped as, and the platform's material is not attached at all.
+      .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, CARD_OVERLAY))
+      .backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.BOTTOM_CHROME))
+      .border(this.composerEdge())
+      .borderRadius(this.composerRadius())
+      .shadow(ImmersiveSurfaceSupport.surfaceShadow(ImmersiveSurfaceScene.BOTTOM_CHROME, {
+        radius: this.presentation === ComposerPresentation.Floating ? 14 : 18,
+        color: SHADOW_SUBTLE,
+        offsetY: this.presentation === ComposerPresentation.Floating ? 4 : 6
+      }))
+      .animation({ duration: MobileDesignMotion.structure, curve: Curve.EaseOut })
+    }
+  }
+
+  /**
+   * The pill's contents, mounted by both of its postures.
+   *
+   * The material is a property of the pill's *surface*, not of what sits on it, so
+   * the two branches above differ in their decoration alone: the attached images, the
+   * input row and the expanded action row are stated once, here, and a change to any
+   * of them reaches every device.
+   */
+  @Builder
+  ComposerPillContent() {
+    if (this.selectedImages.length > 0) {
+      this.SelectedImageStrip()
+    }
+    Row({ space: this.isComposerExpanded() ? 0 : 5 }) {
+      if (this.shouldShowAddButton()) {
         Row() {
-          this.PrimaryActionButton()
+          this.AddButton()
         }
         .width(this.isComposerExpanded() ? 0 : COMPOSER_ACTION_SIZE)
         .height(COMPOSER_ACTION_SIZE)
@@ -192,61 +261,48 @@ export struct ComposerBar {
         .visibility(this.isComposerExpanded() ? Visibility.None : Visibility.Visible)
         .clip(true)
       }
-      .width('100%')
-      .constraintSize({
-        minHeight: this.isComposerExpanded() ? MobileDesignGeometry.composerExpandedInputRowHeight :
-          this.collapsedComposerHeight(),
-        maxHeight: this.isComposerExpanded() ? COMPOSER_EXPANDED_INPUT_MAX_HEIGHT :
-          this.collapsedComposerHeight()
-      })
-
-      if (this.isComposerExpanded()) {
-        Row({ space: 6 }) {
-          if (this.shouldShowAddButton()) {
-            this.AddButton()
-          }
-          if (this.shouldShowModelControl()) {
-            this.ModelControl()
-          }
-          Blank()
-          // The draft keeps the collapsed field's one line to itself, so the
-          // supplemental slot is mounted in this row alone.
-          if (this.shouldShowSupplementalVoice()) {
-            this.SupplementalVoiceButton()
-          }
-          this.PrimaryActionButton()
-        }
-        .width('100%')
-        .height(COMPOSER_EXPANDED_ACTION_ROW_HEIGHT)
-        .padding({ left: 2, right: 0 })
-        .alignItems(VerticalAlign.Center)
-        .transition(TransitionEffect.translate({ x: 0, y: 8 })
-          .combine(TransitionEffect.opacity(0))
-          .animation({ duration: MobileDesignMotion.quick, curve: Curve.EaseOut }))
+      this.InputField()
+      Row() {
+        this.PrimaryActionButton()
       }
+      .width(this.isComposerExpanded() ? 0 : COMPOSER_ACTION_SIZE)
+      .height(COMPOSER_ACTION_SIZE)
+      .opacity(this.isComposerExpanded() ? 0 : 1)
+      .visibility(this.isComposerExpanded() ? Visibility.None : Visibility.Visible)
+      .clip(true)
     }
     .width('100%')
-    .constraintSize({ minHeight: this.composerHeight() })
-    .padding({
-      left: 8,
-      right: 8,
-      top: this.isComposerExpanded() ? 4 : 0,
-      bottom: this.isComposerExpanded() ? 2 : 0
+    .constraintSize({
+      minHeight: this.isComposerExpanded() ? MobileDesignGeometry.composerExpandedInputRowHeight :
+        this.collapsedComposerHeight(),
+      maxHeight: this.isComposerExpanded() ? COMPOSER_EXPANDED_INPUT_MAX_HEIGHT :
+        this.collapsedComposerHeight()
     })
-    // The transcript now runs underneath the pill, so the fill is translucent
-    // and the blur does the separating. The colour is the floor under it: on a
-    // device that does not land the blur the pill is still opaque enough to
-    // read against whatever text is passing behind it.
-    .backgroundColor(CARD_OVERLAY)
-    .backgroundBlurStyle(BlurStyle.Thin)
-    .border({ width: this.presentation === ComposerPresentation.Compact ? 0.5 : 1, color: LINE })
-    .borderRadius(this.composerRadius())
-    .shadow({
-      radius: this.presentation === ComposerPresentation.Floating ? 14 : 18,
-      color: SHADOW_SUBTLE,
-      offsetY: this.presentation === ComposerPresentation.Floating ? 4 : 6
-    })
-    .animation({ duration: MobileDesignMotion.structure, curve: Curve.EaseOut })
+
+    if (this.isComposerExpanded()) {
+      Row({ space: 6 }) {
+        if (this.shouldShowAddButton()) {
+          this.AddButton()
+        }
+        if (this.shouldShowModelControl()) {
+          this.ModelControl()
+        }
+        Blank()
+        // The draft keeps the collapsed field's one line to itself, so the
+        // supplemental slot is mounted in this row alone.
+        if (this.shouldShowSupplementalVoice()) {
+          this.SupplementalVoiceButton()
+        }
+        this.PrimaryActionButton()
+      }
+      .width('100%')
+      .height(COMPOSER_EXPANDED_ACTION_ROW_HEIGHT)
+      .padding({ left: 2, right: 0 })
+      .alignItems(VerticalAlign.Center)
+      .transition(TransitionEffect.translate({ x: 0, y: 8 })
+        .combine(TransitionEffect.opacity(0))
+        .animation({ duration: MobileDesignMotion.quick, curve: Curve.EaseOut }))
+    }
   }
 
   @Builder
@@ -778,6 +834,25 @@ export struct ComposerBar {
       return MobileDesignGeometry.composerExpandedRadius;
     }
     return MobileDesignGeometry.composerCollapsedRadius;
+  }
+
+  /**
+   * The pill's edge: the material's own hairline, or the border it always drew.
+   *
+   * `surfaceHairline` answers the posture this pill is in — a surface that draws
+   * its own edge *on* a material it adopted — but it returns no edge at all below
+   * the material, because the wide top band never had one. This pill shipped with a
+   * full border on every device, so its fallback keeps that border: the two paths
+   * are named here, in one place, and neither can be half-adopted.
+   */
+  private composerEdge(): BorderOptions {
+    if (ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.BOTTOM_CHROME)) {
+      return ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.BOTTOM_CHROME, COMPOSER_HAIRLINE_WIDTH);
+    }
+    return {
+      width: this.presentation === ComposerPresentation.Compact ? 0.5 : 1,
+      color: LINE
+    };
   }
 
   private isComposerExpanded(): boolean {

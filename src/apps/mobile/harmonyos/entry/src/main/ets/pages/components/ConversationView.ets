@@ -431,9 +431,20 @@ export struct ConversationView {
     // sitting crisp and legible beside the pill after it has already faded out
     // higher up. It stops short of the page colour so the pill's blur still has
     // something to work with.
+    //
+    // Every stop is asked of the bottom-chrome surface, because this layer is the
+    // backdrop the pill sits on and the two share one answer. Where the pill adopts
+    // the immersive material the overlay stands down: it is a second, near-opaque
+    // sheet between the transcript and the glass, and the material can only be made
+    // of what is behind it. Below the material every stop is the colour this layer
+    // has always painted.
     .linearGradient({
       angle: 180,
-      colors: [[PAGE_BG_FADE, 0.0], [PAGE_BG_OVERLAY, 0.45], [PAGE_BG_OVERLAY, 1.0]]
+      colors: [
+        [ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, PAGE_BG_FADE), 0.0],
+        [ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, PAGE_BG_OVERLAY), 0.45],
+        [ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, PAGE_BG_OVERLAY), 1.0]
+      ]
     })
     // This layer owns the bottom edge of the screen, so it is allowed to paint
     // into it. Where the immersive layout already puts the page area there the

@@ -105,7 +105,12 @@ test('a collapsed draft keeps the field to itself', () => {
 });
 
 test('the expanded action row keeps the supplemental microphone behind the policy', () => {
-  const composer = builderBody(composerSource, 'AdaptiveComposer');
+  // The pill's contents are stated once and mounted by both postures, so the
+  // shell must still mount them and the row itself is read where it lives.
+  assert.match(builderBody(composerSource, 'AdaptiveComposer'),
+    /this\.ComposerPillContent\(\)/,
+    'the composer shell must mount the shared pill content');
+  const composer = builderBody(composerSource, 'ComposerPillContent');
   const expanded = composer.indexOf('if (this.isComposerExpanded()) {');
   assert.notEqual(expanded, -1, 'the composer must keep its expanded action row');
   const row = composer.slice(expanded);

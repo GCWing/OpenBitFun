@@ -27,6 +27,8 @@ const conversationRouteSurface = source('entry/src/main/ets/pages/components/Con
 const conversationHeader = source('entry/src/main/ets/pages/components/ConversationHeader.ets');
 const conversationHeaderPolicy = source('entry/src/main/ets/pages/policy/ConversationHeaderPolicy.ets');
 const conversationHeaderMenu = source('entry/src/main/ets/pages/components/ConversationHeaderMenu.ets');
+const composerBar = source('entry/src/main/ets/pages/components/ComposerBar.ets');
+const rollbackStagingBar = source('entry/src/main/ets/pages/components/RollbackStagingBar.ets');
 const hdsTitleBarSupport = source('entry/src/main/ets/pages/components/HdsTitleBarSupport.ets');
 const hdsTitleBarPolicy = source('entry/src/main/ets/pages/policy/HdsTitleBarPolicy.ets');
 const hdsTitleBarMaterialService = source('entry/src/main/ets/services/HdsTitleBarMaterialService.ets');
@@ -118,6 +120,61 @@ function builderBody(sourceText, name) {
   const end = sourceText.indexOf('\n  @Builder', start);
   assert.notEqual(end, -1, `${name}() must be followed by another builder`);
   return sourceText.slice(start, end);
+}
+
+// The composer's pill chain.
+//
+// `AdaptiveComposer()` is not declared `private`, so the shared `builderBody`
+// above — which names only private builders — cannot read it. The slice is the
+// same one, taken from the declaration this file actually has, and it is what
+// carries the pill's floor, blur, edge, shadow and material.
+function composerPillChain() {
+  const start = composerBar.indexOf('AdaptiveComposer() {');
+  assert.notEqual(start, -1, 'ComposerBar must keep its AdaptiveComposer() builder');
+  const end = composerBar.indexOf('\n  @Builder', start);
+  assert.notEqual(end, -1, 'AdaptiveComposer() must be followed by another builder');
+  return composerBar.slice(start, end);
+}
+
+// The two postures of a surface whose material is a branch.
+//
+// `if (usesMaterial(scene)) { …material… } else { …fallback… }` is the only shape
+// that is safe below the attribute's floor, so the assertions read the two bodies by
+// themselves: one posture, the other, and the question they branch on.
+function posturesOf(sourceText) {
+  const marker = 'if (ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.BOTTOM_CHROME)) {';
+  const start = sourceText.indexOf(marker);
+  assert.notEqual(start, -1,
+    'the surface must branch on the bottom-chrome material question rather than calling the attribute from a ' +
+    'chain a device below its floor also reaches');
+  const body = (from) => {
+    // The scan starts *inside* the block, so its own braces are already open: the
+    // body ends where the nesting returns to one, not to zero.
+    let depth = 1;
+    let parens = 0;
+    for (let index = from; index < sourceText.length; index++) {
+      const char = sourceText[index];
+      if (char === '(') {
+        parens += 1;
+      } else if (char === ')') {
+        parens -= 1;
+      } else if (parens === 0 && char === '{') {
+        // Braces inside a call are an object literal — `Column({ space: 2 })` — and
+        // are not a block, so only the ones that are themselves in code count.
+        depth += 1;
+      } else if (parens === 0 && char === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          return sourceText.slice(from, index);
+        }
+      }
+    }
+    throw new Error('unbalanced material branch');
+  };
+  const material = body(start + marker.length);
+  const elseAt = sourceText.indexOf('} else {', start + marker.length + material.length);
+  assert.notEqual(elseAt, -1, 'the material branch must name the posture an old device takes');
+  return { material: material, fallback: body(elseAt + '} else {'.length) };
 }
 
 // Collapses a slice to one line so an assertion is about the call, not about
@@ -547,6 +604,127 @@ test('the compact conversation hands its top band to the platform, and paints no
   assert.match(normalize(destination),
     /\} else \{ HdsNavDestination\(\) \{ this\.RouteContent\(name as AppRoute\) \}\.hideTitleBar\(true\)/,
     'every other destination must keep `hideTitleBar(true)` and draw its own header');
+});
+
+test('the bottom chrome takes the material on the component channel and keeps the surface each control shipped', () => {
+  // The bottom chrome is content rather than a platform bar, so its material arrives
+  // on the ordinary component channel (`.systemMaterial`) and never on the platform
+  // band's `systemMaterialEffect` field — one surface, one channel, in both
+  // directions. What each control paints below the material is not a choice made
+  // here: every fill, blur, edge and shadow is asked of the bottom-chrome scene, so
+  // the fallback is the surface the control shipped with and the material path is
+  // the support's transparent answer.
+  //
+  // The material has to be a *branch* rather than one chain whose argument resolves
+  // to `undefined`, because the attribute itself does not exist below the API level
+  // that ships it: measured on API 22, `.systemMaterial(...)` on a content surface is
+  // `undefined is not callable` — a crash, not a degradation. So the two postures are
+  // asserted as a pair: the same chain, with the call present in exactly one of them.
+  //
+  // Whether a *component* material renders at all is the platform's answer, and the
+  // two official documents disagree about it (the development guide says every
+  // component, the best-practice page names title bars and tab bars). What this file
+  // can hold is the half that is ours: the app asks one question per surface, and
+  // answers it in one place.
+  const composerPill = composerPillChain();
+  const rollbackCapsule = buildChainOf(rollbackStagingBar, 'RollbackStagingBar');
+
+  // Each row is one control, the slice that owns its chain, and the fill it shipped.
+  const surfaces = [
+    ['the composer pill', composerPill, 'CARD_OVERLAY'],
+    ['the rollback capsule', rollbackCapsule, 'SOFT']
+  ];
+  for (const [name, slice, fallback] of surfaces) {
+    const posture = posturesOf(slice);
+    const material = normalize(codeOf(posture.material));
+    const below = normalize(codeOf(posture.fallback));
+    // Both postures paint the floor the control shipped, through the shared recipe:
+    // the fallback is pinned inside the call rather than left as a bare colour.
+    for (const [where, text] of [['material', posture.material], ['fallback', posture.fallback]]) {
+      assert.equal(call(text, 'backgroundColor'),
+        `.backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, ${fallback}))`,
+        `${name}'s ${where} posture must take its floor from the bottom-chrome recipe, with ${fallback} as the ` +
+        'fallback the control shipped with');
+    }
+    // The material is the material posture's last decoration: the support has already
+    // answered the fill, the blur, the edge and the shadow, so a decoration after it
+    // would be a second answer on the same box. `animation` and `transition` are not
+    // decorations of the surface, so they may follow it.
+    assert.equal(call(posture.material, 'systemMaterial'),
+      '.systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.BOTTOM_CHROME))',
+      `${name} must adopt the material from the shared support rather than answering one itself`);
+    const materialAt = material.indexOf('.systemMaterial(');
+    for (const after of ['.backgroundColor(', '.backgroundBlurStyle(', '.border(', '.shadow(']) {
+      assert.equal(material.indexOf(after, materialAt), -1,
+        `${name} must not paint ${after.slice(1)} over the material it adopted`);
+    }
+    // The crash tooth: a device below the attribute's floor must not be handed the
+    // call at all, however its argument would have resolved.
+    assert.equal(below.includes('systemMaterial'), false,
+      `${name} must not name the material attribute in the posture an old device takes: the member does not ` +
+      'exist there, so calling it is a crash rather than a fallback');
+    // And the two postures are one chain: whatever the material replaces is still
+    // stated, so the fallback cannot drift into a surface nobody designed.
+    const chainOf = (text) => text
+      .replace(/\.systemMaterial\(ImmersiveSurfaceSupport\.materialFor\(ImmersiveSurfaceScene\.BOTTOM_CHROME\)\)/g, '')
+      .trim();
+    assert.equal(chainOf(material), chainOf(below),
+      `${name}'s two postures must be the same chain: the material is the only call that may differ between them`);
+    assert.equal(material.includes('systemMaterialEffect') || below.includes('systemMaterialEffect'), false,
+      `${name} is a content surface: the platform band's field is the other channel, and one surface has one`);
+    for (const literal of ["backgroundColor('#", 'MEDIA_BACKGROUND', 'MEDIA_SCRIM']) {
+      assert.equal(codeOf(slice).includes(literal), false,
+        `${name} must not name ${literal}: the bottom chrome is a theme-following surface, or a material that ` +
+        'answers for it with the surface bar content colour');
+    }
+  }
+
+  // The pill's edge is the one decoration whose two paths are different *shapes*:
+  // the wide top band never had a border, this pill always had one, so the fallback
+  // keeps that border rather than taking the band's "no edge below the material".
+  assert.equal(call(composerPill, 'border'), '.border(this.composerEdge())',
+    'the pill\'s edge must be resolved in one place rather than written into the chain');
+  assert.match(normalize(composerBar),
+    /private composerEdge\(\): BorderOptions \{ if \(ImmersiveSurfaceSupport\.usesMaterial\(ImmersiveSurfaceScene\.BOTTOM_CHROME\)\) \{ return ImmersiveSurfaceSupport\.surfaceHairline\(ImmersiveSurfaceScene\.BOTTOM_CHROME, COMPOSER_HAIRLINE_WIDTH\); \} return \{ width: this\.presentation === ComposerPresentation\.Compact \? 0\.5 : 1, color: LINE \}; \}/,
+    'the pill\'s two edges must be the material hairline and the border it shipped: the same width per ' +
+    'presentation, in the same theme colour');
+  assert.equal(call(composerPill, 'backgroundBlurStyle'),
+    '.backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.BOTTOM_CHROME))',
+    'the pill\'s blur is the recipe\'s thin blur below the material, and no blur on it');
+  assert.match(normalize(call(composerPill, 'shadow')),
+    /^\.shadow\(ImmersiveSurfaceSupport\.surfaceShadow\(ImmersiveSurfaceScene\.BOTTOM_CHROME, \{ radius: this\.presentation === ComposerPresentation\.Floating \? 14 : 18, color: SHADOW_SUBTLE, offsetY: this\.presentation === ComposerPresentation\.Floating \? 4 : 6 \}\)\)$/,
+    'the pill\'s shadow is dropped on the material path and kept exactly as it was below it');
+  assert.equal(/(^|[^a-zA-Z.])BlurStyle\./.test(normalize(codeOf(composerPill))), false,
+    'the pill may not name a BlurStyle: the recipe answers the blur, and the material path has none');
+  // The capsule's edge is the band's posture instead: it never had a border, so the
+  // support's "no edge below the material" is exactly the surface it shipped.
+  assert.equal(call(rollbackCapsule, 'border'),
+    '.border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.BOTTOM_CHROME, ' +
+    'ROLLBACK_BAR_HAIRLINE_WIDTH))',
+    'the capsule draws its own hairline on the material and no edge below it, which is what it always had');
+
+  // The layer the pill sits on is part of the same answer: the fade is what the glass
+  // is made of, so on the material path it stands down, and below it every stop is
+  // the colour this layer has always painted.
+  const gradient = normalize(call(builderBody(conversationView, 'BottomOverlay'), 'linearGradient'));
+  assert.match(gradient,
+    /colors: \[\s*\[ImmersiveSurfaceSupport\.surfaceFill\(ImmersiveSurfaceScene\.BOTTOM_CHROME, PAGE_BG_FADE\), 0\.0\],\s*\[ImmersiveSurfaceSupport\.surfaceFill\(ImmersiveSurfaceScene\.BOTTOM_CHROME, PAGE_BG_OVERLAY\), 0\.45\],\s*\[ImmersiveSurfaceSupport\.surfaceFill\(ImmersiveSurfaceScene\.BOTTOM_CHROME, PAGE_BG_OVERLAY\), 1\.0\]\s*\]/,
+    'every stop of the bottom fade must come from the bottom-chrome surface: no colour where the pill is glass, ' +
+    'and exactly the three stops it shipped below it');
+  assert.equal(occurrences(gradient, 'PAGE_BG_FADE'), 1,
+    'the fade token may appear only as the fallback inside the surface answer');
+  assert.equal(occurrences(gradient, 'PAGE_BG_OVERLAY'), 2,
+    'the overlay token may appear only as the two fallbacks inside the surface answer');
+
+  // The count is a set, not a number: a control that adopts the bottom chrome without
+  // a row above is a control nobody answered for, and a row whose surface stopped
+  // asking the recipe is a surface that went back to painting its own glass.
+  const adopters = etsTree('entry/src/main/ets')
+    .filter(([, text]) => text.includes('materialFor(ImmersiveSurfaceScene.BOTTOM_CHROME)'))
+    .map(([file]) => file)
+    .sort();
+  assert.deepEqual(adopters, ['pages/components/ComposerBar.ets', 'pages/components/RollbackStagingBar.ets'],
+    'these two surfaces are the bottom chrome this contract knows; a third one needs its own row above');
 });
 
 test('every surface whose top edge is the screen edge reserves the status bar', () => {
