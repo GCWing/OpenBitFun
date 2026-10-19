@@ -9,7 +9,6 @@ import {
   INK,
   LINE,
   MUTED,
-  PAGE_BG,
   TRANSPARENT,
 } from './Theme';
 
@@ -125,34 +124,6 @@ export struct ConversationViewSettings {
 
   build() {
     Column() {
-      Row() {
-        Column({ space: 3 }) {
-          Text(RemoteI18n.t('viewSettings.title'))
-            .fontSize(MobileDesignTypography.headlineSmall.size)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(INK)
-          Text(RemoteI18n.t('viewSettings.subtitle'))
-            .fontSize(MobileDesignTypography.labelSmall.size)
-            .fontColor(MUTED)
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-        Stack({ alignContent: Alignment.Center }) {
-          SymbolGlyph($r('sys.symbol.xmark'))
-            .fontSize(17)
-            .fontColor([MUTED])
-        }
-        .width(44)
-        .height(44)
-        .accessibilityText(RemoteI18n.t('common.close'))
-        .onClick(() => this.onClose())
-      }
-      .width('100%')
-      .height(64)
-      .padding({ left: 20, right: 10 })
-
-      Divider().color(LINE)
-
       Scroll() {
         Column({ space: 0 }) {
           this.SectionTitle(RemoteI18n.t('viewSettings.grouping'))
@@ -197,8 +168,9 @@ export struct ConversationViewSettings {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(PAGE_BG)
-    .borderRadius(16)
+    // The heading, its subtitle and the close icon are the platform title bar's
+    // now, and the sheet behind this surface carries the fill and the corners:
+    // the title text travels with the sheet's options.
   }
 
   @Builder

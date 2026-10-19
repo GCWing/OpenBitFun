@@ -8,9 +8,25 @@ export enum SessionActionPresentation {
   Popover = 'popover'
 }
 
+/**
+ * One session's action list, in the two presentations that carry it.
+ *
+ * The bottom-sheet presentation is the platform sheet's content: the sheet owns
+ * the title, the close icon, the fill and the corners, so this surface adds no
+ * chrome of its own there. The popover presentation is anchored to the session
+ * row, and nothing else draws its card, its title row or its close — so it keeps
+ * them.
+ */
 @ComponentV2
 export struct SessionActionSurface {
   @Param presentation: SessionActionPresentation = SessionActionPresentation.BottomSheet;
+  /**
+   * Whether the popover is presented by a container that adopts the immersive
+   * material. The material is the bubble's background then, so the card's fill,
+   * its hairline and its shadow are dropped rather than painted over it. Row
+   * geometry is unchanged either way.
+   */
+  @Param immersiveMaterial: boolean = false;
   @Param sessionTitle: string = '';
   /**
    * Bottom padding in vp. The bottom-sheet presentation sits at the screen
@@ -32,48 +48,14 @@ export struct SessionActionSurface {
 
   build() {
     Column() {
-      if (this.presentation === SessionActionPresentation.BottomSheet) {
-        Text('')
-          .width(36)
-          .height(4)
-          .backgroundColor(LINE)
-          .borderRadius(2)
-          .margin({ bottom: 10 })
+      // The popover keeps its own header: it is anchored to the session row it
+      // belongs to, not presented by a sheet, so no platform title bar exists to
+      // carry its name and its close. In the sheet presentation both move into
+      // the sheet's own title, and the close icon is the platform's.
+      if (this.presentation === SessionActionPresentation.Popover) {
+        this.PopoverHeader()
+        Divider().color(LINE).margin({ top: 6, bottom: 8 })
       }
-
-      Row({ space: 12 }) {
-        Column({ space: 3 }) {
-          Text(RemoteI18n.t('session.actions'))
-            .width('100%')
-            .fontSize(MobileDesignTypography.bodySmall.size)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(MUTED)
-          Text(this.sessionTitle || RemoteI18n.t('sidebar.untitled'))
-            .width('100%')
-            .fontSize(MobileDesignTypography.titleSmall.size)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(INK)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-
-        Stack({ alignContent: Alignment.Center }) {
-          SymbolGlyph($r('sys.symbol.xmark'))
-            .fontSize(16)
-            .fontColor([MUTED])
-        }
-        .width(40)
-        .height(40)
-        .accessibilityText(RemoteI18n.t('common.close'))
-        .onClick(() => this.onClose())
-      }
-      .width('100%')
-      .height(52)
-      .alignItems(VerticalAlign.Center)
-
-      Divider().color(LINE).margin({ top: 6, bottom: 8 })
 
       if (this.confirmingDelete) {
         this.DeleteConfirmation()
@@ -111,15 +93,81 @@ export struct SessionActionSurface {
     // The card's fill still reaches the sheet's bottom edge; the padding is
     // what keeps the last action row out of the navigation bar's strip.
     .padding({ left: 16, right: 16, top: 10, bottom: this.bottomPadding })
-    .backgroundColor(CARD)
-    .border({ width: this.presentation === SessionActionPresentation.Popover ? 0.5 : 1, color: LINE })
-    .borderRadius(16)
-    .shadow({
-      radius: this.presentation === SessionActionPresentation.Popover ? 20 : 0,
-      color: this.presentation === SessionActionPresentation.Popover ? SHADOW_SUBTLE : TRANSPARENT,
-      offsetY: this.presentation === SessionActionPresentation.Popover ? 8 : 0
-    })
+    // Only the popover paints a surface of its own. In the sheet presentation the
+    // platform sheet is the surface — its fill, its hairline, its shadow and its
+    // corners — so this content root paints nothing over it.
+    .backgroundColor(this.paintsOwnCard() ? this.cardFill() : TRANSPARENT)
+    .border(this.cardBorder())
+    .borderRadius(this.paintsOwnCard() ? 16 : 0)
+    .shadow(this.cardShadow())
     .alignItems(HorizontalAlign.Center)
+  }
+
+  /** Whether this presentation paints its own card rather than sitting on a sheet. */
+  private paintsOwnCard(): boolean {
+    return this.presentation === SessionActionPresentation.Popover;
+  }
+
+  /** The popover's fill: the material is the card when the platform renders one. */
+  private cardFill(): ResourceColor {
+    return this.immersiveMaterial ? TRANSPARENT : CARD;
+  }
+
+  /** The popover's hairline, which a material replaces with its own edge. */
+  private cardBorder(): BorderOptions {
+    const own: boolean = this.paintsOwnCard() && !this.immersiveMaterial;
+    return { width: own ? 0.5 : 0, color: own ? LINE : TRANSPARENT };
+  }
+
+  /** The popover's lift, which a material carries instead. */
+  private cardShadow(): ShadowOptions {
+    const own: boolean = this.paintsOwnCard() && !this.immersiveMaterial;
+    return {
+      radius: own ? 20 : 0,
+      color: own ? SHADOW_SUBTLE : TRANSPARENT,
+      offsetY: own ? 8 : 0
+    };
+  }
+
+  /**
+   * The popover's own title row, with its close.
+   *
+   * It stays because nothing else can draw it: a popover is anchored to the row
+   * it opened from, and the platform's sheet title bar is not part of it.
+   */
+  @Builder
+  private PopoverHeader() {
+    Row({ space: 12 }) {
+      Column({ space: 3 }) {
+        Text(RemoteI18n.t('session.actions'))
+          .width('100%')
+          .fontSize(MobileDesignTypography.bodySmall.size)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(MUTED)
+        Text(this.sessionTitle || RemoteI18n.t('sidebar.untitled'))
+          .width('100%')
+          .fontSize(MobileDesignTypography.titleSmall.size)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(INK)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph($r('sys.symbol.xmark'))
+          .fontSize(16)
+          .fontColor([MUTED])
+      }
+      .width(40)
+      .height(40)
+      .accessibilityText(RemoteI18n.t('common.close'))
+      .onClick(() => this.onClose())
+    }
+    .width('100%')
+    .height(52)
+    .alignItems(VerticalAlign.Center)
   }
 
   @Builder

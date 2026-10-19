@@ -1,6 +1,8 @@
 import { common } from '@kit.AbilityKit';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { INK } from '../components/Theme';
+import { ImmersiveSurfaceSupport } from '../components/ImmersiveSurfaceSupport';
+import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 
 export interface AppRootHostPort {
   attach(context: Context, uiContext: UIContext): void;
@@ -34,7 +36,9 @@ export class ArkUiAppRootHostAdapter implements AppRootHostPort {
 
   showToast(message: string, duration: number): boolean {
     try {
-      this.uiContext.getPromptAction().showToast({ message, duration });
+      this.uiContext.getPromptAction().showToast(
+        ImmersiveSurfaceSupport.toastOptions(ImmersiveSurfaceScene.TOAST, { message, duration })
+      );
       return true;
     } catch (_err) {
       return false;

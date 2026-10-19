@@ -930,7 +930,6 @@ export abstract class AppRootRuntimeComposition {
       }
     },
     onConnect: {
-      back: (): void => this.appShellState.setConnectSheetVisible(false),
       openAccount: (): void => {
         this.appShellState.setConnectSheetVisible(false);
         setTimeout(() => this.appShellState.openSettings('account'), 180);

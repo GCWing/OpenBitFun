@@ -1,16 +1,22 @@
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { CloudAccountDevice } from '../../services/CloudAccountClient';
-import { ACCENT, CARD, STATUS_SUCCESS, INK, LINE, MUTED, PAGE_BG, STATUS_DANGER, SOFT } from './Theme';
+import { ACCENT, CARD, STATUS_SUCCESS, INK, LINE, MUTED, STATUS_DANGER, SOFT } from './Theme';
 import { AccountDeviceSelectionPolicy } from '../policy/AccountDeviceSelectionPolicy';
-import { NavigationBackButton } from './NavigationBackButton';
 
+/**
+ * The connect sheet's signed-in step: the account's desktops, one row each.
+ *
+ * The sheet's title bar says what the sheet is and closes it, so this step draws
+ * neither a way back nor a band of its own: its header is the section heading
+ * over the list, and the sheet the platform presents is the background the rows
+ * sit on (the material, where the platform has one).
+ */
 @ComponentV2
 export struct ConnectAccountDevicePage {
   @Param deviceId: string = '';
   @Param controlTargetDeviceId: string = '';
   @Param connectionState: string = 'idle';
-  @Event onBack: () => void = () => {};
   @Event cloudListDevices: () => Promise<CloudAccountDevice[]> =
     async (): Promise<CloudAccountDevice[]> => [];
   @Event cloudSelectDevice: (device: CloudAccountDevice) => Promise<void> =
@@ -26,23 +32,16 @@ export struct ConnectAccountDevicePage {
 
   build() {
     Column() {
-      Row({ space: 16 }) {
-        NavigationBackButton({
-          controlSize: 48,
-          onBack: (): void => this.onBack()
-        })
-        Column({ space: 4 }) {
-          Text(RemoteI18n.t('connect.accountDevicesTitle'))
-            .fontSize(MobileDesignTypography.headlineLarge.size).fontWeight(FontWeight.Bold).fontColor(INK).width('100%')
-          Text(RemoteI18n.t('connect.accountDevicesSubtitle'))
-            .fontSize(MobileDesignTypography.bodySmall.size).fontColor(MUTED).width('100%')
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
+      Column({ space: 4 }) {
+        Text(RemoteI18n.t('connect.accountDevicesTitle'))
+          .fontSize(MobileDesignTypography.headlineLarge.size).fontWeight(FontWeight.Bold).fontColor(INK).width('100%')
+        Text(RemoteI18n.t('connect.accountDevicesSubtitle'))
+          .fontSize(MobileDesignTypography.bodySmall.size).fontColor(MUTED).width('100%')
       }
-      .width('100%').height(92)
+      .width('100%')
+      .height(92)
       .padding({ left: 28, right: 28, top: 18 })
-      .alignItems(VerticalAlign.Top)
+      .alignItems(HorizontalAlign.Start)
 
       Scroll() {
         Column({ space: 18 }) {
@@ -58,7 +57,9 @@ export struct ConnectAccountDevicePage {
       .width('100%')
       .scrollBar(BarState.Off)
     }
-    .width('100%').height('100%').backgroundColor(PAGE_BG)
+    .width('100%').height('100%')
+    // No fill of its own: this page is the connect sheet's content root, and the
+    // sheet the platform presents is the band its rows sit on.
   }
 
   @Builder

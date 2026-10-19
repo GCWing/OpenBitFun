@@ -26,6 +26,8 @@ export struct AppSidebarSurface {
   @Param shellState: AppShellState = new AppShellState();
   @Param sessionDetailsPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SessionDetails);
+  @Param workspaceToolsPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.WorkspaceTools);
   @Param remotePageState: RemotePageState = new RemotePageState();
   @Param deviceDirectoryState: DeviceDirectoryState = new DeviceDirectoryState();
   @Param generalPageState: GeneralChatPageState = new GeneralChatPageState();
@@ -89,6 +91,7 @@ export struct AppSidebarSurface {
       supportsHarnessProfiles: this.remotePageState.supportsHostCapability(
         REMOTE_CAPABILITY_HARNESS_PROFILES_V1),
       workspacePickerPlacement: this.sessionDetailsPlacement,
+      workspaceToolsPlacement: this.workspaceToolsPlacement,
       onOpenSession: this.actions.onSidebar.openSession,
       onCreateInWorkspace: (deviceId: string, path: string, agentType: string, connectionId?: string, sshHost?: string,
         workspaceId?: string) => {
@@ -192,7 +195,6 @@ export struct AppConnectSurface {
       deviceId: this.deviceId,
       accountUserId: this.remotePageState.accountUserId,
       controlTargetDeviceId: this.remotePageState.controlTargetDeviceId,
-      onBack: this.actions.onConnect.back,
       onOpenAccount: this.actions.onConnect.openAccount,
       onConnect: this.actions.onConnect.connect,
       cloudListDevices: this.actions.onConnect.cloudListDevices,

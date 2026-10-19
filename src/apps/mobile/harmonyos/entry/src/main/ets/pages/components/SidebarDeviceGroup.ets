@@ -17,6 +17,8 @@ import {
 import { ConversationSessionFilterPolicy } from '../policy/ConversationSessionFilterPolicy';
 import { SidebarDirectoryPreviewPolicy } from '../policy/SidebarDirectoryPreviewPolicy';
 import { HarnessProfileMenu } from './HarnessProfileMenu';
+import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
+import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 import {
   SIDEBAR_INK,
   SIDEBAR_MUTED,
@@ -167,7 +169,7 @@ struct SidebarWorkspaceGroup {
       .width(30)
       .height(40)
       .accessibilityText(RemoteI18n.t('sidebar.newInWorkspace'))
-      .bindPopup(this.showCreateMenu, {
+      .bindPopup(this.showCreateMenu, ImmersiveSurfaceSupport.popupOptions(ImmersiveSurfaceScene.FLOATING_MENU, {
         builder: () => {
           this.CreateModeMenu()
         },
@@ -182,7 +184,7 @@ struct SidebarWorkspaceGroup {
             this.showCreateMenu = false;
           }
         }
-      })
+      }))
       .onClick(() => {
         this.showCreateMenu = !this.showCreateMenu;
       })
@@ -196,10 +198,12 @@ struct SidebarWorkspaceGroup {
 
   @Builder
   private CreateModeMenu() {
-    HarnessProfileMenu({ showTitle: false, onSelect: (agentType: string) => {
-      this.showCreateMenu = false;
-      this.onCreateInWorkspace(this.path, agentType, this.connectionId, this.sshHost, this.workspaceIdOrUndefined());
-    } })
+    HarnessProfileMenu({ showTitle: false,
+      immersiveMaterial: ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.FLOATING_MENU),
+      onSelect: (agentType: string) => {
+        this.showCreateMenu = false;
+        this.onCreateInWorkspace(this.path, agentType, this.connectionId, this.sshHost, this.workspaceIdOrUndefined());
+      } })
   }
 
   @Builder

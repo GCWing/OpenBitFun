@@ -217,3 +217,19 @@ enum MobileDesignMotion {
     static let startupBrand: CGFloat = 6800
     static let coldStartHome: CGFloat = 2400
 }
+
+struct MobileDesignSurface {
+    let level: String
+    let fallbackBlur: String
+    let floorColor: String
+    let hairlineColor: String
+}
+
+enum MobileDesignSurfaces {
+    static let topChrome = MobileDesignSurface(level: "ultra_thin", fallbackBlur: "thin", floorColor: "page_bg_overlay", hairlineColor: "line")
+    static let bottomChrome = MobileDesignSurface(level: "thin", fallbackBlur: "thin", floorColor: "card_overlay", hairlineColor: "line")
+    static let searchField = MobileDesignSurface(level: "thin", fallbackBlur: "thin", floorColor: "card_overlay", hairlineColor: "line")
+    static let floatingMenu = MobileDesignSurface(level: "thick", fallbackBlur: "thick", floorColor: "card", hairlineColor: "line")
+    static let modalSheet = MobileDesignSurface(level: "ultra_thick", fallbackBlur: "none", floorColor: "page_bg", hairlineColor: "line")
+    static let toast = MobileDesignSurface(level: "thin", fallbackBlur: "none", floorColor: "toast_background", hairlineColor: "line")
+}

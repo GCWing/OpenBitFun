@@ -1,12 +1,11 @@
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { SettingsSheetState } from '../state/SettingsSheetState';
-import { CARD, INK, LINE, MUTED, PAGE_BG } from './Theme';
+import { CARD, INK, LINE, MUTED } from './Theme';
 import { CurrentControlSection } from './CurrentControlSection';
 import { AccountProfilePanel } from './AccountProfilePanel';
 import { LanguageSettingsPanel } from './LanguageSettingsPanel';
-import { SheetCloseHeader } from './SheetCloseHeader';
-import { SHEET_HORIZONTAL_PADDING, SHEET_TOP_RADIUS } from './SheetLayout';
+import { SHEET_HORIZONTAL_PADDING } from './SheetLayout';
 import { CloudAccountDevice } from '../../services/CloudAccountClient';
 import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 import { RemotePermissionMode } from '../../model/RemoteModels';
@@ -64,27 +63,18 @@ export struct SettingsSheet {
     }
     .width('100%')
     .height('100%')
-    // The sheet's fill is the shell's bottom edge and runs to the screen edge,
-    // and so does its scrolling viewport: the rows are content, and they roll
-    // under the navigation indicator while they are still moving instead of
-    // stopping short of it above a band of bare page colour. What stops above
-    // the bar is the column's own tail padding, which brings the last row to
-    // rest there once the sheet is scrolled to its end. The framework does not
-    // inset a bottom sheet for the app while the window is immersive, so the
-    // sheet does it itself.
-    .backgroundColor(PAGE_BG)
-    .borderRadius({ topLeft: SHEET_TOP_RADIUS, topRight: SHEET_TOP_RADIUS })
+    // No fill and no top radius of its own: this surface is the Settings
+    // sheet's content, and the sheet the platform presents carries both. Its
+    // scrolling viewport still runs to the screen edge — the rows are content,
+    // and they roll under the navigation indicator while they are still moving
+    // instead of stopping short of it above a band of bare colour. What stops
+    // above the bar is the column's own tail padding, which brings the last row
+    // to rest there once the sheet is scrolled to its end.
   }
 
   @Builder
   SettingsHome() {
     Column() {
-      SheetCloseHeader({
-        title: RemoteI18n.t('settings.title'),
-        showDivider: true,
-        onClose: this.onClose
-      })
-
       Scroll() {
         Column({ space: 0 }) {
           AccountProfilePanel({

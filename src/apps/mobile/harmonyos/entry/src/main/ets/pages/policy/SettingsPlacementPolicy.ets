@@ -22,7 +22,13 @@ export enum SettingsSheetKind {
    * it is placed by the same contract: an overlay sheet that must land inside a
    * foldable's leaf, and inside the operate half of a half-folded screen.
    */
-  UserMessageFullText = 'user_message_full_text'
+  UserMessageFullText = 'user_message_full_text',
+  /**
+   * The workspace tools panel — the drawer's own full-height overlay, which the
+   * sidebar opens over itself. It is placed by the same contract as the rest:
+   * inside a leaf, inside an operate half, and in the middle of a wide window.
+   */
+  WorkspaceTools = 'workspace_tools'
 }
 
 export class SettingsPlacement {
@@ -47,49 +53,80 @@ export class SettingsPlacement {
 /**
  * Overlay-sheet placement from fold posture and creases, not a width boolean.
  * Does not import ArkUI types; callers assemble SheetOptions.
+ *
+ * Three answers, in this order, because the first two are about the hardware and
+ * the last is about the window:
+ *
+ *   a half-folded screen's operate half, and a folded screen's own leaf, keep the
+ *   sheet where the hardware leaves room for it — a centered dialog across a
+ *   physical fold, or a side sheet in a leaf that is already narrow, is worse
+ *   than the bottom sheet those postures have always had;
+ *
+ *   an expanded screen with a usable vertical crease keeps the sheet inside one
+ *   leaf, which is the same decision read from the crease instead of the width;
+ *
+ *   every other wide window gets a centered dialog. It used to get a side sheet
+ *   (docked to the trailing edge, the height of the window less its margin) or,
+ *   for Settings and profile, a full-width bottom sheet at every width — a
+ *   "bottom of the page" band on a screen whose page is not the whole window.
+ *   A wide window is a dialog-sized one: the sheet is the width the design
+ *   clamps it to and sits in the middle, with the page visible around it.
  */
 export class SettingsPlacementPolicy {
   static readonly TABLET_MIN_WIDTH: number = 400;
   static readonly TABLET_MAX_WIDTH: number = 520;
   static readonly TABLET_WIDTH_RATIO: number = 0.32;
-  static readonly CONNECT_CENTER_WIDTH_RATIO: number = 0.72;
-  static readonly LANDSCAPE_WIDTH_RATIO: number = 0.45;
   static readonly SIDE_MAX_HEIGHT: number = 760;
   static readonly SIDE_MIN_HEIGHT: number = 560;
   static readonly SIDE_VERTICAL_MARGIN: number = 80;
+  /** The gap a centered dialog keeps from the window's top and bottom edges. */
+  static readonly CENTER_VERTICAL_MARGIN: number = 40;
   static readonly SESSION_DETAILS_HEIGHT: number = 560;
   static readonly REMOTE_VIEW_SETTINGS_HEIGHT: number = 520;
+  /** The session action list: a short sheet wherever it is placed. */
+  static readonly SESSION_ACTION_HEIGHT: number = 300;
 
   static compactBottom(kind: SettingsSheetKind = SettingsSheetKind.Settings): SettingsPlacement {
     return SettingsPlacementPolicy.bottomPlacement(kind);
   }
 
   static resolve(input: AdaptiveLayoutInput, kind: SettingsSheetKind): SettingsPlacement {
-    // Settings and profile are one continuous page. Keep that workflow on a
-    // full-width bottom sheet at every width, even when it crosses a fold.
-    if (kind === SettingsSheetKind.Settings) {
-      return SettingsPlacementPolicy.bottomPlacement(kind);
-    }
-    if (kind === SettingsSheetKind.Connect &&
-      input.isExpandedFoldable &&
-      !input.isFolded &&
-      SettingsPlacementPolicy.canUseSideSheet(input)) {
-      const horizontal = SettingsPlacementPolicy.firstUsableHorizontalCrease(
-        input.viewportHeight,
-        input.horizontalCreases
-      );
-      if (input.isHoverOperate && horizontal) {
-        return SettingsPlacementPolicy.foldOperatePlacement(input, kind, horizontal);
-      }
-      return SettingsPlacementPolicy.connectCenterPlacement(input);
-    }
     if (input.isHoverOperate) {
       return SettingsPlacementPolicy.hoverPlacement(input, kind);
     }
     if (input.isFolded) {
       return SettingsPlacementPolicy.bottomPlacement(kind);
     }
-    return SettingsPlacementPolicy.creaseFreeOrSidePlacement(input, kind);
+    const usableCreases = SettingsPlacementPolicy.usableVerticalCreases(
+      input.viewportWidth,
+      input.verticalCreases
+    );
+    if (usableCreases.length > 0 && SettingsPlacementPolicy.canUseSideSheet(input)) {
+      return SettingsPlacementPolicy.creaseSidePlacement(input, kind, usableCreases);
+    }
+    if (SettingsPlacementPolicy.isWideViewport(input) &&
+      SettingsPlacementPolicy.canUseSideSheet(input)) {
+      return SettingsPlacementPolicy.centerPlacement(input, kind);
+    }
+    return SettingsPlacementPolicy.bottomPlacement(kind);
+  }
+
+  /**
+   * An overlay inside a surface that has already resolved its own placement.
+   *
+   * The session action list is not placed in its own right: it opens from the
+   * session list, and a fold postures it exactly as it postures that list. What
+   * is its own is its height — and its host's answer on a wide window, which is
+   * the same centered dialog every other overlay gets. Everywhere else it keeps
+   * the bottom sheet it has always been, because a leaf or an operate half is
+   * not a place to widen a sheet the host deliberately kept narrow.
+   */
+  static hostedOverlay(host: SettingsPlacement, height: number): SettingsPlacement {
+    if (host.mode !== SettingsPlacementMode.Center) {
+      return new SettingsPlacement(SettingsPlacementMode.Bottom, 0, height, 0);
+    }
+    const bounded = host.height > 0 ? Math.min(height, host.height) : height;
+    return new SettingsPlacement(SettingsPlacementMode.Center, host.width, bounded, 0);
   }
 
   /**
@@ -136,7 +173,16 @@ export class SettingsPlacementPolicy {
     return new SettingsPlacement(SettingsPlacementMode.Side, width, height, 0);
   }
 
-  private static tabletSidePlacement(
+  /**
+   * The wide window's answer: the design's dialog width, in the middle.
+   *
+   * The width is the same clamp the side sheet used — a ratio of the window,
+   * held between 400 and 520 vp — because that is the width the design gives
+   * these sheets; only where it sits changed. The height is the kind's own, held
+   * inside the window it is centered in: a dialog that cannot fit its window is
+   * not centered in anything.
+   */
+  private static centerPlacement(
     input: AdaptiveLayoutInput,
     kind: SettingsSheetKind
   ): SettingsPlacement {
@@ -146,33 +192,20 @@ export class SettingsPlacementPolicy {
       Math.max(SettingsPlacementPolicy.TABLET_MIN_WIDTH, ratioWidth)
     );
     const width = Math.min(input.viewportWidth, clamped);
-    const height = SettingsPlacementPolicy.kindSideHeight(input.viewportHeight, kind);
-    return new SettingsPlacement(SettingsPlacementMode.Side, width, height, 0);
-  }
-
-  private static connectCenterPlacement(input: AdaptiveLayoutInput): SettingsPlacement {
-    const ratioWidth = Math.round(
-      input.viewportWidth * SettingsPlacementPolicy.CONNECT_CENTER_WIDTH_RATIO
-    );
-    const clamped = Math.min(
-      SettingsPlacementPolicy.TABLET_MAX_WIDTH,
-      Math.max(SettingsPlacementPolicy.TABLET_MIN_WIDTH, ratioWidth)
-    );
-    const width = Math.min(input.viewportWidth, clamped);
-    const height = SettingsPlacementPolicy.kindSideHeight(
-      input.viewportHeight,
-      SettingsSheetKind.Connect
-    );
+    const height = SettingsPlacementPolicy.kindCenterHeight(input.viewportHeight, kind);
     return new SettingsPlacement(SettingsPlacementMode.Center, width, height, 0);
   }
 
-  private static landscapeSidePlacement(
-    input: AdaptiveLayoutInput,
-    kind: SettingsSheetKind
-  ): SettingsPlacement {
-    const width = Math.round(input.viewportWidth * SettingsPlacementPolicy.LANDSCAPE_WIDTH_RATIO);
-    const height = SettingsPlacementPolicy.kindSideHeight(input.viewportHeight, kind);
-    return new SettingsPlacement(SettingsPlacementMode.Side, width, height, 0);
+  private static kindCenterHeight(viewportHeight: number, kind: SettingsSheetKind): number {
+    const computed = SettingsPlacementPolicy.kindSideHeight(viewportHeight, kind);
+    if (viewportHeight <= 0) {
+      return computed;
+    }
+    const available = Math.max(
+      0,
+      viewportHeight - 2 * SettingsPlacementPolicy.CENTER_VERTICAL_MARGIN
+    );
+    return Math.min(computed, available);
   }
 
   private static hoverPlacement(
@@ -186,10 +219,18 @@ export class SettingsPlacementPolicy {
     if (horizontal) {
       return SettingsPlacementPolicy.foldOperatePlacement(input, kind, horizontal);
     }
-    return SettingsPlacementPolicy.creaseFreeOrSidePlacement(input, kind);
+    return SettingsPlacementPolicy.creaseFreeOrCenterPlacement(input, kind);
   }
 
-  private static creaseFreeOrSidePlacement(
+  /**
+   * A half-folded screen whose crease is not a usable horizontal one.
+   *
+   * Its posture is still about the hardware, so the vertical crease — when there
+   * is one — keeps deciding: the sheet lands inside a leaf rather than across the
+   * fold. With neither crease to answer to, the window's width decides, which is
+   * the same answer an unfolded screen gets.
+   */
+  private static creaseFreeOrCenterPlacement(
     input: AdaptiveLayoutInput,
     kind: SettingsSheetKind
   ): SettingsPlacement {
@@ -200,13 +241,9 @@ export class SettingsPlacementPolicy {
     if (usableCreases.length > 0 && SettingsPlacementPolicy.canUseSideSheet(input)) {
       return SettingsPlacementPolicy.creaseSidePlacement(input, kind, usableCreases);
     }
-    if (SettingsPlacementPolicy.isHeightScarceLandscape(input) &&
-      SettingsPlacementPolicy.canUseSideSheet(input)) {
-      return SettingsPlacementPolicy.landscapeSidePlacement(input, kind);
-    }
     if (SettingsPlacementPolicy.isWideViewport(input) &&
       SettingsPlacementPolicy.canUseSideSheet(input)) {
-      return SettingsPlacementPolicy.tabletSidePlacement(input, kind);
+      return SettingsPlacementPolicy.centerPlacement(input, kind);
     }
     return SettingsPlacementPolicy.bottomPlacement(kind);
   }
@@ -268,12 +305,6 @@ export class SettingsPlacementPolicy {
   private static isWideViewport(input: AdaptiveLayoutInput): boolean {
     return input.wideLayoutMatched ||
       input.viewportWidth >= ConversationLayoutPolicy.MD_MIN_WIDTH;
-  }
-
-  private static isHeightScarceLandscape(input: AdaptiveLayoutInput): boolean {
-    return input.viewportWidth > input.viewportHeight &&
-      input.viewportHeight > 0 &&
-      input.viewportHeight < ConversationLayoutPolicy.MD_MIN_WIDTH;
   }
 
   private static usableVerticalCreases(

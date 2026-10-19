@@ -3,7 +3,7 @@ import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { SavedRuntimeConnection, RecentWorkspaceEntry, RemoteWorkspaceIdentity } from '../../model/RemoteModels';
 import { remoteWorkspaceIdentityMatches, remoteWorkspaceKey } from '../../services/RemoteSessionIdentity';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
-import { CARD, CONTENT_ON_ACTION, INK, LINE, MUTED, PAGE_BG, PRIMARY_ACTION, SOFT, TRANSPARENT } from './Theme';
+import { CARD, CONTENT_ON_ACTION, INK, LINE, MUTED, PRIMARY_ACTION, SOFT, TRANSPARENT } from './Theme';
 import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 
 @ComponentV2
@@ -23,7 +23,6 @@ export struct SidebarWorkspacePicker {
   @Param selectedWorkspaceConnectionId: string = '';
   @Param selectedWorkspaceSshHost: string = '';
   @Param loading: boolean = false;
-  @Event onClose: () => void = () => {};
   /**
    * The sheet's own bottom edge, in vp. The picker is a full-height sheet and
    * its confirm button is the fixed control at that edge, so the button keeps
@@ -148,8 +147,6 @@ export struct SidebarWorkspacePicker {
 
   build() {
     Column({ space: 0 }) {
-      this.Header()
-      Divider().color(LINE)
       if (this.savedConnections.length > 0 || this.deviceName.length > 0) {
         Column({ space: 7 }) {
           Text(RemoteI18n.t('sidebar.controlledDevice')).fontColor(MUTED).fontSize(MobileDesignTypography.labelSmall.size)
@@ -215,12 +212,13 @@ export struct SidebarWorkspacePicker {
           .onClick(() => this.onSelectWorkspace(this.targetPath.trim(), this.connectionId.length > 0 ? this.connectionId : undefined))
         // The sheet's fixed confirm button: the strip, or the design's own
         // spacing where the strip is already clear, so it never sits in it.
-      }.width('100%').padding({ top: 12, bottom: this.insets.bottomPadding(16) }).backgroundColor(PAGE_BG)
+      }.width('100%').padding({ top: 12, bottom: this.insets.bottomPadding(16) })
     }
     .width('100%')
     .height('100%')
     .padding({ left: 18, right: 18, top: 10 })
-    .backgroundColor(PAGE_BG)
+    // No fill of its own: the picker is the platform sheet's content, and its
+    // heading (with the device it is choosing for) is the platform title bar's.
   }
 
   @Builder
@@ -259,41 +257,6 @@ export struct SidebarWorkspacePicker {
         if (this.tools.browseHasMore) { ListItem() { Button(RemoteI18n.t('workspaceTools.more')).onClick(() => this.onBrowse({ type: 'browse-more', path: this.tools.browsePath, text: this.connectionId })) } }
       }.height(200).enabled(!this.tools.browseBusy)
     }.width('100%')
-  }
-
-  @Builder
-  private Header() {
-    Row({ space: 12 }) {
-      Column({ space: 2 }) {
-        Text(RemoteI18n.t('sidebar.selectWorkspace'))
-          .width('100%')
-          .fontSize(MobileDesignTypography.headlineMedium.size)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(INK)
-        Text(this.deviceName)
-          .width('100%')
-          .fontSize(MobileDesignTypography.bodySmall.size)
-          .fontColor(MUTED)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-      Stack({ alignContent: Alignment.Center }) {
-        SymbolGlyph($r('sys.symbol.xmark'))
-          .fontSize(17)
-          .fontColor([MUTED])
-      }
-      .width(40)
-      .height(40)
-      .borderRadius(20)
-      .backgroundColor(SOFT)
-      .accessibilityText(RemoteI18n.t('common.close'))
-      .onClick(() => this.onClose())
-    }
-    .width('100%')
-    .height(66)
-    .alignItems(VerticalAlign.Center)
   }
 
   @Builder
@@ -339,7 +302,9 @@ export struct SidebarWorkspacePicker {
     .height(68)
     .padding({ left: 10, right: 8 })
     .borderRadius(14)
-    .backgroundColor(this.isSelected(this.currentWorkspace(row)) ? SOFT : PAGE_BG)
+    // The selected row is the only highlighted one; an unselected row is the
+    // sheet's own background, which is the platform's now.
+    .backgroundColor(this.isSelected(this.currentWorkspace(row)) ? SOFT : TRANSPARENT)
     .onClick(() => {
       const workspace = this.currentWorkspace(row);
       if (this.isRemoteRoot(workspace)) {

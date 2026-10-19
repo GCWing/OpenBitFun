@@ -13,6 +13,8 @@ import {
   ConversationUiModelRoleEntry
 } from '../policy/ConversationModelPresentationPolicy';
 import { TemplateIcon } from './TemplateIcon';
+import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
+import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 import {
   CARD,
   CARD_OVERLAY,
@@ -272,7 +274,7 @@ export struct ComposerBar {
     .padding({ left: 4, right: 4 })
     .backgroundColor(TRANSPARENT)
     .accessibilityText(`${RemoteI18n.t('chat.selectModel')} · ${this.displaySelectedModel()}`)
-    .bindPopup(this.showModelSelectorPopover, {
+    .bindPopup(this.showModelSelectorPopover, ImmersiveSurfaceSupport.popupOptions(ImmersiveSurfaceScene.FLOATING_MENU, {
       builder: () => {
         this.ModelSelector()
       },
@@ -288,7 +290,7 @@ export struct ComposerBar {
           this.restoreComposerFocusAfterModelSelection();
         }
       }
-    })
+    }))
     .onTouch((event: TouchEvent) => {
       if (event.type === TouchType.Down) {
         // Capture focus before the sheet/popover moves it away. Choosing a
@@ -332,14 +334,18 @@ export struct ComposerBar {
     }
     .width(MobileDesignGeometry.composerModelSelectorWidth)
     .padding({ left: 10, right: 10, top: 10, bottom: 10 })
-    .backgroundColor(CARD)
+    // The popover bubble carries the material when the surface adopts one, so the
+    // selector stops painting the card, the hairline and the shadow over it. The
+    // fallback colours come from the float scene's recipe, so a contract change
+    // moves this popover too.
+    .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.FLOATING_MENU))
     .borderRadius(MobileDesignGeometry.composerModelSelectorRadius)
-    .border({ width: 0.5, color: LINE })
-    .shadow({
+    .border(ImmersiveSurfaceSupport.surfaceBorder(ImmersiveSurfaceScene.FLOATING_MENU, { width: 0.5 }))
+    .shadow(ImmersiveSurfaceSupport.surfaceShadow(ImmersiveSurfaceScene.FLOATING_MENU, {
       radius: 18,
       color: SHADOW_SUBTLE,
       offsetY: 7
-    })
+    }))
   }
 
   @Builder

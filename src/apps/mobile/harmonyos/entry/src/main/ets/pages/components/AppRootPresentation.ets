@@ -27,6 +27,8 @@ import {
   SettingsSheetKind
 } from '../policy/SettingsPlacementPolicy';
 import { AdaptiveSheetOptions } from './AdaptiveSheetOptions';
+import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
+import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 import { i18n } from '@kit.LocalizationKit';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { GeneralChatPageState } from '../state/GeneralChatPageState';
@@ -100,6 +102,8 @@ export struct AppRootPresentation {
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.RemoteViewSettings);
   @Local fullTextPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UserMessageFullText);
+  @Local workspaceToolsPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.WorkspaceTools);
   private verticalCreases: ConversationLayoutCrease[] = [];
   private horizontalCreases: ConversationLayoutHorizontalCrease[] = [];
   private wideQueryListener?: mediaQuery.MediaQueryListener;
@@ -143,8 +147,7 @@ export struct AppRootPresentation {
         useWideLayout: this.isWideLayout(),
         allowSidebar: !this.showWelcomeHome(),
         settingsPlacement: this.settingsPlacement,
-        compactAccountLogin: this.shellState.settingsMode === 'account' &&
-          this.remotePageState.accountUserId.trim().length === 0,
+        compactAccountLogin: this.isCompactAccountLogin(),
         connectPlacement: this.connectPlacement,
         content: () => { this.NavigationContent(); },
         sidebar: () => { this.SidebarContent(); },
@@ -242,6 +245,7 @@ export struct AppRootPresentation {
       filePreviewLayout: this.filePreviewLayout(),
       sessionDetailsPlacement: this.sessionDetailsPlacement,
       fullTextSheetPlacement: this.fullTextPlacement,
+      workspaceToolsPlacement: this.workspaceToolsPlacement,
       wideMasterPaneWidth: this.wideMasterPaneWidth,
       wideMasterDetailGap: this.wideMasterDetailGap,
       wideDetailContentOffset: this.wideDetailContentOffset,
@@ -324,6 +328,16 @@ export struct AppRootPresentation {
   private showWelcomeHome(): boolean {
     return RemoteCompactHomePolicy.shouldShowWelcomeHome(this.remotePageState.controlTargetType,
       this.remotePageState.connectionState, this.remotePageState.accountUserId.trim().length > 0);
+  }
+
+  /**
+   * Whether Settings is rendered as the compact account-login content cover
+   * rather than as the system sheet. The two share one surface, so this is what
+   * tells them apart for anything that is sheet-only.
+   */
+  private isCompactAccountLogin(): boolean {
+    return this.shellState.settingsMode === 'account' &&
+      this.remotePageState.accountUserId.trim().length === 0;
   }
 
   private isWideLayout(): boolean {
@@ -531,6 +545,10 @@ export struct AppRootPresentation {
       input,
       SettingsSheetKind.UserMessageFullText
     );
+    this.workspaceToolsPlacement = SettingsPlacementPolicy.resolve(
+      input,
+      SettingsSheetKind.WorkspaceTools
+    );
   }
 
   private isRtlLayout(): boolean {
@@ -607,13 +625,21 @@ export struct AppRootPresentation {
   }
 
   private remoteViewSettingsSheetOptions(): SheetOptions {
-    return AdaptiveSheetOptions.fromPlacement(this.remoteViewSettingsPlacement, true);
+    return ImmersiveSurfaceSupport.sheetOptions(
+      ImmersiveSurfaceScene.MODAL_SHEET,
+      AdaptiveSheetOptions.fromPlacement(
+        this.remoteViewSettingsPlacement,
+        RemoteI18n.t('viewSettings.title'),
+        RemoteI18n.t('viewSettings.subtitle')
+      )
+    );
   }
 
   @Builder SidebarContent() {
     AppSidebarSurface({
       shellState: this.shellState,
       sessionDetailsPlacement: this.sessionDetailsPlacement,
+      workspaceToolsPlacement: this.workspaceToolsPlacement,
       remotePageState: this.remotePageState,
       deviceDirectoryState: this.deviceDirectoryState,
       generalPageState: this.generalPageState,

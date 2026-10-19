@@ -90,8 +90,13 @@ export interface SettingsPresentationActions {
   readonly setLanguage: (language: string) => Promise<void>;
 }
 
+/**
+ * The connect sheet closes through the platform's own chrome — the title bar's
+ * close icon, the scrim, the swipe down — so there is no `back` here: every one
+ * of those reaches the sheet's `onWillDismiss`, and the header control that used
+ * to call this was the same dismissal drawn a second time.
+ */
 export interface ConnectPresentationActions {
-  readonly back: () => void;
   readonly openAccount: () => void;
   readonly connect: (password?: string) => void;
   readonly clearPairing: () => void;
@@ -134,7 +139,7 @@ export function emptyAppRootPresentationActions(): AppRootPresentationActions {
       setLanguage: async () => {}
     },
     onConnect: {
-      back: () => {}, openAccount: () => {}, connect: () => {}, clearPairing: () => {},
+      openAccount: () => {}, connect: () => {}, clearPairing: () => {},
       cloudListDevices: async () => [], cloudSelectDevice: async () => {}
     },
     onFilePreview: { close: () => {}, refresh: () => {}, download: () => {}, openLink: () => {} },

@@ -1,8 +1,8 @@
-import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
+import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { AppLocale } from '../../i18n/AppLocale';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { ModelServiceSettingsPolicy } from '../policy/ModelServiceSettingsPolicy';
-import { CARD, INK } from './Theme';
+import { INK } from './Theme';
 import { SheetCloseHeader } from './SheetCloseHeader';
 
 @ComponentV2
@@ -23,11 +23,10 @@ export struct LanguageSettingsPanel {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(CARD)
-    .borderRadius({
-      topLeft: MobileDesignGeometry.sheetTopRadius,
-      topRight: MobileDesignGeometry.sheetTopRadius
-    })
+    // No fill and no top radius: this page is the Settings sheet's content while
+    // the language step is open, so the sheet the platform presents carries both.
+    // The header below stays, and it is not sheet chrome: it is this page's own
+    // back to the settings home.
   }
 
   @Builder

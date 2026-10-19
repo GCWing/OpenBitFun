@@ -12,10 +12,13 @@ import { SidebarDirectoryPreviewPolicy } from '../policy/SidebarDirectoryPreview
 import { SidebarDeviceProjectionPolicy } from '../policy/SidebarDeviceProjectionPolicy';
 import {
   SettingsPlacement,
+  SettingsPlacementMode,
   SettingsPlacementPolicy,
   SettingsSheetKind
 } from '../policy/SettingsPlacementPolicy';
 import { AdaptiveSheetOptions } from './AdaptiveSheetOptions';
+import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
+import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 import {
   SIDEBAR_INK,
   SIDEBAR_MUTED,
@@ -63,6 +66,14 @@ export struct SidebarWorkspaceSection {
   @Param supportsHarnessProfiles: boolean = false;
   @Param workspacePickerPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SessionDetails);
+  /**
+   * The sidebar's own overlay placement — the workspace tools panel, and with it
+   * the nested form that panel opens. The shell resolves it the way it resolves
+   * the picker's: bottom on a phone, inside a leaf on a foldable, the middle of
+   * the window on a wide one.
+   */
+  @Param workspaceToolsPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.WorkspaceTools);
   @Event onOpenSession: (session: RemoteSession) => void = (_session: RemoteSession) => {};
   @Event onSessionActions: (session: RemoteSession) => void = (_session: RemoteSession) => {};
   @Event onCreateInWorkspace: (deviceId: string, path: string, agentType: string, connectionId?: string, sshHost?: string,
@@ -94,10 +105,7 @@ export struct SidebarWorkspaceSection {
           .onClick(() => { void this.onRefreshDevices(); })
       }
       Row() {}.height(0)
-        .bindSheet($$this.workspaceTools.visible, this.WorkspaceTools(), { height: SheetSize.LARGE, showClose: false, onWillDismiss: (action: DismissSheetAction): void => {
-          if (this.workspaceTools.dirty) this.onWorkspaceTools({ type: 'close' });
-          else { this.onWorkspaceTools({ type: 'close' }); action.dismiss(); }
-        }, onDisappear: () => this.onWorkspaceTools({ type: 'close' }) })
+        .bindSheet($$this.workspaceTools.visible, this.WorkspaceTools(), this.workspaceToolsSheetOptions())
       if (this.deviceEntries().length > 0) {
         ForEach(this.visibleDeviceEntries(), (entry: DeviceDirectoryEntry) => {
           this.DeviceRow(entry)
@@ -122,7 +130,41 @@ export struct SidebarWorkspaceSection {
 
   @Builder
   private WorkspaceTools() {
-    WorkspaceToolsPanel({ state: this.workspaceTools, onIntent: this.onWorkspaceTools })
+    WorkspaceToolsPanel({
+      state: this.workspaceTools,
+      onIntent: this.onWorkspaceTools,
+      fileActionPlacement: this.workspaceToolsPlacement
+    })
+  }
+
+  /**
+   * The tools panel's own sheet options.
+   *
+   * The panel is the sidebar's overlay, so the sidebar's placement decides where
+   * it is: the full-height bottom sheet it has always been everywhere except a
+   * wide window, and the centered dialog every other overlay gets there. Only
+   * the placement changes — its title and its dismissal handling are the
+   * panel's in both, and the nested form inside it inherits the same answer.
+   */
+  private workspaceToolsSheetOptions(): SheetOptions {
+    let options: SheetOptions;
+    if (this.workspaceToolsPlacement.mode === SettingsPlacementMode.Center) {
+      options = AdaptiveSheetOptions.fromPlacement(
+        this.workspaceToolsPlacement,
+        RemoteI18n.t('workspaceTools.title')
+      );
+    } else {
+      options = {
+        height: SheetSize.LARGE,
+        title: { title: RemoteI18n.t('workspaceTools.title') }
+      };
+    }
+    options.onWillDismiss = (action: DismissSheetAction): void => {
+      if (this.workspaceTools.dirty) this.onWorkspaceTools({ type: 'close' });
+      else { this.onWorkspaceTools({ type: 'close' }); action.dismiss(); }
+    };
+    options.onDisappear = () => this.onWorkspaceTools({ type: 'close' });
+    return ImmersiveSurfaceSupport.sheetOptions(ImmersiveSurfaceScene.MODAL_SHEET, options);
   }
 
   @Builder
@@ -353,9 +395,6 @@ export struct SidebarWorkspaceSection {
         this.workspaceConnectionId : '',
       selectedWorkspaceSshHost: this.isActiveDevice(this.workspacePickerDevice().deviceId) ? this.workspaceSshHost : '',
       loading: this.workspacePickerDevice().status === 'loading',
-      onClose: () => {
-        this.showWorkspacePicker = false;
-      },
       onSelectWorkspace: (path: string, connectionId?: string, sshHost?: string, workspaceId?: string) => {
         const deviceId = this.workspacePickerDeviceId;
         this.showWorkspacePicker = false;
@@ -378,7 +417,26 @@ export struct SidebarWorkspaceSection {
   }
 
   private workspacePickerSheetOptions(): SheetOptions {
-    return AdaptiveSheetOptions.fromPlacement(this.workspacePickerPlacement, true);
+    return ImmersiveSurfaceSupport.sheetOptions(
+      ImmersiveSurfaceScene.MODAL_SHEET,
+      AdaptiveSheetOptions.fromPlacement(
+        this.workspacePickerPlacement,
+        RemoteI18n.t('sidebar.selectWorkspace'),
+        this.workspacePickerSubtitle()
+      )
+    );
+  }
+
+  /**
+   * The picker's second title line: the device the workspace is chosen on.
+   *
+   * The surface used to draw that line itself, so it travels with the sheet's
+   * title now. A device with no name at all has no second line rather than an
+   * empty one.
+   */
+  private workspacePickerSubtitle(): ResourceStr | undefined {
+    const deviceName = this.workspacePickerDevice().deviceName;
+    return deviceName.length > 0 ? deviceName : undefined;
   }
 
   private visibleDeviceEntries(): DeviceDirectoryEntry[] {

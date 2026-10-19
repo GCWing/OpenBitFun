@@ -253,3 +253,26 @@ export class MobileDesignMotion {
   static readonly startupBrand: number = 6800;
   static readonly coldStartHome: number = 2400;
 }
+
+export class MobileDesignSurface {
+  readonly level: string;
+  readonly fallbackBlur: string;
+  readonly floorColor: string;
+  readonly hairlineColor: string;
+
+  constructor(level: string, fallbackBlur: string, floorColor: string, hairlineColor: string) {
+    this.level = level;
+    this.fallbackBlur = fallbackBlur;
+    this.floorColor = floorColor;
+    this.hairlineColor = hairlineColor;
+  }
+}
+
+export class MobileDesignSurfaces {
+  static readonly TOP_CHROME: MobileDesignSurface = new MobileDesignSurface("ultra_thin", "thin", "page_bg_overlay", "line");
+  static readonly BOTTOM_CHROME: MobileDesignSurface = new MobileDesignSurface("thin", "thin", "card_overlay", "line");
+  static readonly SEARCH_FIELD: MobileDesignSurface = new MobileDesignSurface("thin", "thin", "card_overlay", "line");
+  static readonly FLOATING_MENU: MobileDesignSurface = new MobileDesignSurface("thick", "thick", "card", "line");
+  static readonly MODAL_SHEET: MobileDesignSurface = new MobileDesignSurface("ultra_thick", "none", "page_bg", "line");
+  static readonly TOAST: MobileDesignSurface = new MobileDesignSurface("thin", "none", "toast_background", "line");
+}

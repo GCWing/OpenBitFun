@@ -2,6 +2,8 @@ import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteSession } from '../../model/RemoteModels';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { SessionActionPresentation } from './SessionActionSurface';
+import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
+import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 import {
   INK,
   MUTED,
@@ -71,18 +73,19 @@ export struct RemoteSessionRow {
       if (!this.busy) this.onOpen(this.session);
     })
     .gesture(LongPressGesture({ repeat: false }).onAction(() => this.onOpenActions(this.session)))
-    .bindPopup(this.actionPresentation === SessionActionPresentation.Popover && this.showActionPopover, {
-      builder: () => { this.actionsPopup() },
-      placement: Placement.Right,
-      popupColor: TRANSPARENT,
-      enableArrow: false,
-      autoCancel: true,
-      mask: false,
-      targetSpace: 6,
-      onStateChange: (event) => {
-        if (!event.isVisible) this.onCloseActions();
-      }
-    })
+    .bindPopup(this.actionPresentation === SessionActionPresentation.Popover && this.showActionPopover,
+      ImmersiveSurfaceSupport.popupOptions(ImmersiveSurfaceScene.FLOATING_MENU, {
+        builder: () => { this.actionsPopup() },
+        placement: Placement.Right,
+        popupColor: TRANSPARENT,
+        enableArrow: false,
+        autoCancel: true,
+        mask: false,
+        targetSpace: 6,
+        onStateChange: (event) => {
+          if (!event.isVisible) this.onCloseActions();
+        }
+      }))
   }
 
   @Builder

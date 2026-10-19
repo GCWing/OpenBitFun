@@ -23,10 +23,15 @@ import {
   RemoteSurfaceState
 } from '../components/remote/RemoteSurfaceHost';
 import { AdaptiveSheetOptions } from '../components/AdaptiveSheetOptions';
+import { RemoteI18n } from '../../i18n/RemoteI18n';
 import {
+  SettingsPlacement,
   SettingsPlacementPolicy,
   SettingsSheetKind
 } from '../policy/SettingsPlacementPolicy';
+import { AdaptiveLayoutInput } from '../policy/AdaptiveLayoutInput';
+import { WideLayoutGeometry } from '../layout/WideLayoutGeometry';
+import { ConversationLayoutPolicy } from '../policy/ConversationLayoutPolicy';
 import {
   AppRootPresentationActions,
   emptyAppRootPresentationActions
@@ -122,6 +127,21 @@ function settingsDevices(): CloudAccountDevice[] {
     });
   }
   return devices;
+}
+
+/**
+ * The account's desktops as the connect sheet's signed-in step lists them: one
+ * online and currently controlled (the row that reads "controlling"), one
+ * offline (a row with no action), and one online but idle (the row that offers
+ * the connect action). Three rows is what the step's own card holds, so the
+ * fixture shows every state it can render without scrolling the card.
+ */
+function connectDevices(): CloudAccountDevice[] {
+  return [
+    { deviceId: 'account-desktop-1', deviceName: 'Studio desktop', online: true, lastSeenAt: 3 },
+    { deviceId: 'account-desktop-2', deviceName: 'Loft desktop', online: false, lastSeenAt: 1 },
+    { deviceId: 'account-desktop-3', deviceName: 'Cabin desktop', online: true, lastSeenAt: 2 }
+  ];
 }
 
 function sidebarWorkspaces(): RecentWorkspaceEntry[] {
@@ -221,7 +241,16 @@ function previewActionsWithDevices(devices: CloudAccountDevice[]): AppRootPresen
       setPermissionMode: base.onSettings.setPermissionMode,
       setLanguage: base.onSettings.setLanguage
     },
-    onConnect: base.onConnect,
+    onConnect: {
+      openAccount: base.onConnect.openAccount,
+      connect: base.onConnect.connect,
+      clearPairing: base.onConnect.clearPairing,
+      // The connect sheet's signed-in step lists the same account desktops the
+      // settings sheet's account panel does, so both read the fixture's devices:
+      // neither may reach the real account service from a preview.
+      cloudListDevices: async (): Promise<CloudAccountDevice[]> => devices,
+      cloudSelectDevice: base.onConnect.cloudSelectDevice
+    },
     onFilePreview: base.onFilePreview,
     generalStatus: base.generalStatus
   };
@@ -270,7 +299,30 @@ export struct ImmersiveBottomPreview {
   @Local wideShell: boolean = false;
   @Local viewSettings: boolean = false;
   @Local showViewSettingsSheet: boolean = false;
+  /**
+   * The connect sheet's other step. The signed-out step is the sheet's landing
+   * page, and the signed-in one is only reachable with an account id set, which
+   * is what this flag seeds (see `seedRemoteState`): without it the account
+   * device list has no fixture that mounts it.
+   */
+  @Local connectAuthed: boolean = false;
   @Local remoteSurfaceState: RemoteSurfaceState = new RemoteSurfaceState();
+  /**
+   * The placements the app root would resolve for this window, one per sheet the
+   * scenarios open. A fixture that pinned them would show the phone's answer on
+   * a tablet, which is exactly the surface this preview is here to judge — the
+   * same reason `CopySelectionPreview` resolves its own full-text panel.
+   */
+  @Local settingsPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.Settings);
+  @Local connectPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.Connect);
+  @Local sessionDetailsPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SessionDetails);
+  @Local workspaceToolsPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.WorkspaceTools);
+  @Local viewSettingsPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.RemoteViewSettings);
 
   aboutToAppear(): void {
     const scenarioId = AppStorage.get<string>('scenarioId') ?? '';
@@ -284,12 +336,13 @@ export struct ImmersiveBottomPreview {
     this.wideShell = scenarioId.endsWith('-wide-shell');
     this.viewSettings = scenarioId.endsWith('-view-settings');
     this.showViewSettingsSheet = this.viewSettings;
+    this.connectAuthed = scenarioId.endsWith('-connect-authed');
     // The shell's own surfaces have to be open before the first frame, and the
     // scenario id is only known once the page is appearing, so the flags are
     // applied here rather than in the field initialisers.
     this.shellState.showSidebar = this.drawer || this.wideShell;
     this.shellState.showSettings = this.settings || this.cover;
-    this.shellState.showConnectSheet = scenarioId.endsWith('-connect');
+    this.shellState.showConnectSheet = this.connectAuthed || scenarioId.endsWith('-connect');
     if (this.cover) {
       this.shellState.settingsMode = 'account';
     }
@@ -342,6 +395,18 @@ export struct ImmersiveBottomPreview {
       this.previewActions = previewActionsWithDevices(settingsDevices());
       return;
     }
+    if (this.connectAuthed) {
+      // The signed-in step: an account id is what moves the sheet off its intro
+      // page and onto the account's desktops, and the device list it loads comes
+      // from this fixture's own devices, never from the account service.
+      this.remotePageState.setAccountUserId('preview-user');
+      this.remotePageState.setAccountUsername('preview-user');
+      this.remotePageState.setControlTarget('account_device', 'account-desktop-1', 'Studio desktop');
+      this.remotePageState.setDesktopIdentity('Studio desktop', 'account-desktop-1');
+      this.remotePageState.connectionState = 'connected';
+      this.previewActions = previewActionsWithDevices(connectDevices());
+      return;
+    }
     if (scenarioId.endsWith('-connect')) {
       this.remotePageState.setPairingInput('https://pair.example/openbitfun/legacy', 'user-1', false);
       return;
@@ -382,6 +447,39 @@ export struct ImmersiveBottomPreview {
     }
   }
 
+  /**
+   * The placements the app root would resolve for this window. The fixture has
+   * no creases to offer and is not asked to reproduce a foldable, so the input
+   * carries the measured viewport and nothing else.
+   */
+  private refreshPlacements(width: number, height: number): void {
+    const input = new AdaptiveLayoutInput(
+      width,
+      height,
+      0,
+      false,
+      false,
+      false,
+      width >= ConversationLayoutPolicy.MD_MIN_WIDTH,
+      [],
+      []
+    );
+    this.settingsPlacement = SettingsPlacementPolicy.resolve(input, SettingsSheetKind.Settings);
+    this.connectPlacement = SettingsPlacementPolicy.resolve(input, SettingsSheetKind.Connect);
+    this.sessionDetailsPlacement = SettingsPlacementPolicy.resolve(
+      input,
+      SettingsSheetKind.SessionDetails
+    );
+    this.workspaceToolsPlacement = SettingsPlacementPolicy.resolve(
+      input,
+      SettingsSheetKind.WorkspaceTools
+    );
+    this.viewSettingsPlacement = SettingsPlacementPolicy.resolve(
+      input,
+      SettingsSheetKind.RemoteViewSettings
+    );
+  }
+
   private options(): ConversationViewOptions {
     const options = new ConversationViewOptions();
     options.showSidebarButton = true;
@@ -392,23 +490,33 @@ export struct ImmersiveBottomPreview {
   }
 
   build() {
-    if (this.galleryVisible) {
-      MiniAppSurface({ state: this.miniAppState })
-    } else if (this.viewSettings) {
-      this.ViewSettingsLayout()
-    } else if (this.drawer || this.settings || this.cover || this.wideShell ||
-      this.shellState.showConnectSheet) {
-      this.ShellLayout()
-    } else {
-      this.Conversation()
+    Column() {
+      if (this.galleryVisible) {
+        MiniAppSurface({ state: this.miniAppState })
+      } else if (this.viewSettings) {
+        this.ViewSettingsLayout()
+      } else if (this.drawer || this.settings || this.cover || this.wideShell ||
+        this.shellState.showConnectSheet) {
+        this.ShellLayout()
+      } else {
+        this.Conversation()
+      }
     }
+    .width('100%')
+    .height('100%')
+    .onAreaChange((_oldArea: Area, newArea: Area) => {
+      this.refreshPlacements(
+        WideLayoutGeometry.areaLength(newArea.width),
+        WideLayoutGeometry.areaLength(newArea.height)
+      );
+    })
   }
 
   /**
    * The remote view settings sheet, mounted the way the app root mounts it: a
-   * bindSheet with the compact placement's options over the conversation. The
-   * sheet is the production `RemoteSurfaceHost` in its settings mode, so the
-   * surface under test is the production component.
+   * bindSheet with the placement the app root would resolve for this window over
+   * the conversation. The sheet is the production `RemoteSurfaceHost` in its
+   * settings mode, so the surface under test is the production component.
    */
   @Builder
   private ViewSettingsLayout() {
@@ -418,7 +526,9 @@ export struct ImmersiveBottomPreview {
     .width('100%')
     .height('100%')
     .bindSheet($$this.showViewSettingsSheet, this.ViewSettingsSheet(), AdaptiveSheetOptions.fromPlacement(
-      SettingsPlacementPolicy.compactBottom(SettingsSheetKind.RemoteViewSettings), true))
+      this.viewSettingsPlacement,
+      RemoteI18n.t('viewSettings.title'),
+      RemoteI18n.t('viewSettings.subtitle')))
   }
 
   @Builder
@@ -445,6 +555,8 @@ export struct ImmersiveBottomPreview {
       shellState: this.shellState,
       useWideLayout: this.wideShell,
       allowSidebar: true,
+      settingsPlacement: this.settingsPlacement,
+      connectPlacement: this.connectPlacement,
       compactAccountLogin: this.cover,
       content: () => { this.Conversation(); },
       sidebar: () => { this.Sidebar(); },
@@ -477,6 +589,8 @@ export struct ImmersiveBottomPreview {
       shellState: this.shellState,
       remotePageState: this.remotePageState,
       deviceDirectoryState: this.directoryState,
+      sessionDetailsPlacement: this.sessionDetailsPlacement,
+      workspaceToolsPlacement: this.workspaceToolsPlacement,
       actions: emptyAppRootPresentationActions()
     })
   }

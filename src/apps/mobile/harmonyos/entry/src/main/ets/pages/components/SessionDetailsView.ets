@@ -3,10 +3,14 @@ import { RemoteSession } from '../../model/RemoteModels';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { TimeFormat } from '../../services/TimeFormat';
 import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
-import { CARD, INK, LINE, MUTED, PAGE_BG, SOFT } from './Theme';
+import { CARD, INK, LINE, MUTED } from './Theme';
 
 @ComponentV2
 export struct SessionDetailsView {
+  /**
+   * The session the sheet is about. Its title is the platform title bar's
+   * subtitle, so this surface reads the session for its rows alone.
+   */
   @Param session: RemoteSession = {
     id: '',
     title: '',
@@ -16,7 +20,6 @@ export struct SessionDetailsView {
     createdAt: '',
     messageCount: 0
   };
-  @Event onClose: () => void = () => {};
   // The sheet is a bottom sheet under the immersive shell, so the scrolling
   // column reads the strip itself and ends in a tail that rests the last row
   // above the navigation bar.
@@ -35,40 +38,6 @@ export struct SessionDetailsView {
 
   build() {
     Column() {
-      Row({ space: 12 }) {
-        Column({ space: 3 }) {
-          Text(RemoteI18n.t('session.details'))
-            .width('100%')
-            .fontSize(MobileDesignTypography.bodySmall.size)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(MUTED)
-          Text(this.session.title || RemoteI18n.t('sidebar.untitled'))
-            .width('100%')
-            .fontSize(MobileDesignTypography.headlineSmall.size)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(INK)
-            .maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-        Stack({ alignContent: Alignment.Center }) {
-          SymbolGlyph($r('sys.symbol.xmark'))
-            .fontSize(17)
-            .fontColor([MUTED])
-        }
-        .width(44)
-        .height(44)
-        .backgroundColor(SOFT)
-        .borderRadius(22)
-        .accessibilityText(RemoteI18n.t('common.close'))
-        .onClick(() => this.onClose())
-      }
-      .width('100%')
-      .padding({ left: 20, right: 16, top: 18, bottom: 16 })
-
-      Divider().color(LINE)
-
       Scroll() {
         Column() {
           this.DetailRow(RemoteI18n.t('session.agentType'), this.agentTypeLabel())
@@ -98,8 +67,9 @@ export struct SessionDetailsView {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(PAGE_BG)
-    .borderRadius(16)
+    // The heading, the session it names and the close icon are the platform
+    // title bar's now: the sheet passes both lines as its title and subtitle,
+    // and the sheet behind this surface carries the fill and the corners.
   }
 
   @Builder

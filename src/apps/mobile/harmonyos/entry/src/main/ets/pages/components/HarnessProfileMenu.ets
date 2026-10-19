@@ -9,6 +9,12 @@ export struct HarnessProfileMenu {
   @Param showTitle: boolean = true;
   @Param includeCowork: boolean = false;
   @Param menuWidth: number = 160;
+  /**
+   * Whether the enclosing popup adopts the immersive material. The material is
+   * the popup bubble's background then, so the menu drops its card fill, its
+   * hairline and its shadow rather than covering it.
+   */
+  @Param immersiveMaterial: boolean = false;
   @Event onSelect: (agentType: string) => void = (_agentType: string) => {};
 
   build() {
@@ -33,10 +39,14 @@ export struct HarnessProfileMenu {
     }
     .width(this.menuWidth)
     .padding({ top: 8, bottom: 8 })
-    .backgroundColor(CARD)
+    .backgroundColor(this.immersiveMaterial ? TRANSPARENT : CARD)
     .borderRadius(16)
-    .border({ width: 0.5, color: LINE })
-    .shadow({ radius: 20, color: SHADOW_SUBTLE, offsetY: 8 })
+    .border({ width: this.immersiveMaterial ? 0 : 0.5, color: this.immersiveMaterial ? TRANSPARENT : LINE })
+    .shadow({
+      radius: this.immersiveMaterial ? 0 : 20,
+      color: this.immersiveMaterial ? TRANSPARENT : SHADOW_SUBTLE,
+      offsetY: this.immersiveMaterial ? 0 : 8
+    })
   }
 
   @Builder

@@ -52,6 +52,8 @@ export struct WideConversationHost {
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SessionDetails);
   @Param fullTextSheetPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UserMessageFullText);
+  @Param workspaceToolsPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.WorkspaceTools);
   @Param wideMasterPaneWidth: number = 0;
   @Param wideMasterDetailGap: number = 0;
   @Param wideDetailContentOffset: number = 0;
@@ -216,6 +218,7 @@ export struct WideConversationHost {
       supportsHarnessProfiles: this.remotePageState.supportsHostCapability(
         REMOTE_CAPABILITY_HARNESS_PROFILES_V1),
       workspacePickerPlacement: this.sessionDetailsPlacement,
+      workspaceToolsPlacement: this.workspaceToolsPlacement,
       onOpenSession: this.actions.onRemoteHome.openSessionInPlace,
       onCreateInWorkspace: (deviceId: string, path: string, agentType: string, connectionId?: string, sshHost?: string,
         workspaceId?: string) => {

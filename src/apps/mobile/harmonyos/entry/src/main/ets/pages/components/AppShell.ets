@@ -3,11 +3,13 @@ import { AppShellState } from '../state/AppShellState';
 import { ConversationLayoutPolicy } from '../policy/ConversationLayoutPolicy';
 import {
   SettingsPlacement,
-  SettingsPlacementMode,
   SettingsPlacementPolicy,
   SettingsSheetKind
 } from '../policy/SettingsPlacementPolicy';
+import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { AdaptiveSheetOptions } from './AdaptiveSheetOptions';
+import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
+import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 import {
   PAGE_BG,
   SCRIM,
@@ -15,8 +17,6 @@ import {
   SIDEBAR_BG,
   TRANSPARENT,
 } from './Theme';
-
-const WIDE_SHEET_RADIUS: number = 30;
 
 @ComponentV2
 export struct AppShell {
@@ -185,6 +185,14 @@ export struct AppShell {
     .height('100%')
   }
 
+  /**
+   * The Settings sheet's content, wrapped so the shell owns what the sheet shows.
+   *
+   * The wrapper carries no chrome of its own any more: the sheet is the
+   * platform's, so its background, its rounded corners and its shadow are the
+   * platform's too. What is left is the geometry the shell decided — the sheet's
+   * own box, full width and full height.
+   */
   @Builder
   private SettingsSheetContent() {
     Column() {
@@ -192,13 +200,6 @@ export struct AppShell {
     }
     .width('100%')
     .height(this.compactAccountLogin ? undefined : '100%')
-    .borderRadius(this.usesWideSheetChrome(this.settingsPlacement) ? WIDE_SHEET_RADIUS : 0)
-    .clip(this.usesWideSheetChrome(this.settingsPlacement))
-    .shadow({
-      radius: this.usesWideSheetChrome(this.settingsPlacement) ? 30 : 0,
-      color: this.usesWideSheetChrome(this.settingsPlacement) ? SHELL_SCRIM : TRANSPARENT,
-      offsetY: this.usesWideSheetChrome(this.settingsPlacement) ? 12 : 0
-    })
   }
 
   @Builder
@@ -208,13 +209,6 @@ export struct AppShell {
     }
     .width('100%')
     .height('100%')
-    .borderRadius(this.usesWideSheetChrome(this.connectPlacement) ? WIDE_SHEET_RADIUS : 0)
-    .clip(this.usesWideSheetChrome(this.connectPlacement))
-    .shadow({
-      radius: this.usesWideSheetChrome(this.connectPlacement) ? 30 : 0,
-      color: this.usesWideSheetChrome(this.connectPlacement) ? SHELL_SCRIM : TRANSPARENT,
-      offsetY: this.usesWideSheetChrome(this.connectPlacement) ? 12 : 0
-    })
   }
 
   private sidebarWidth(): number {
@@ -228,21 +222,31 @@ export struct AppShell {
   }
 
   private settingsSheetOptions(): SheetOptions {
-    const options = AdaptiveSheetOptions.fromPlacement(this.settingsPlacement);
+    const options = AdaptiveSheetOptions.fromPlacement(
+      this.settingsPlacement,
+      RemoteI18n.t('settings.title')
+    );
     options.onWillDismiss = (action: DismissSheetAction): void => {
       this.shellState.showSettings = false;
       action.dismiss();
     };
-    return options;
+    return ImmersiveSurfaceSupport.sheetOptions(ImmersiveSurfaceScene.MODAL_SHEET, options);
   }
 
   private connectSheetOptions(): SheetOptions {
-    return AdaptiveSheetOptions.fromPlacement(this.connectPlacement);
-  }
-
-  private usesWideSheetChrome(placement: SettingsPlacement): boolean {
-    return placement.mode === SettingsPlacementMode.Side ||
-      placement.mode === SettingsPlacementMode.Center;
+    const options = AdaptiveSheetOptions.fromPlacement(
+      this.connectPlacement,
+      RemoteI18n.t('connect.chooseConnectionTitle')
+    );
+    // The platform title bar's close icon, the scrim and the swipe down are the
+    // connect sheet's whole way out now that its own header is gone, and all three
+    // reach this: the state is reset here the way the settings sheet resets its
+    // own, so a dismissed sheet is a closed one however it was dismissed.
+    options.onWillDismiss = (action: DismissSheetAction): void => {
+      this.shellState.showConnectSheet = false;
+      action.dismiss();
+    };
+    return ImmersiveSurfaceSupport.sheetOptions(ImmersiveSurfaceScene.MODAL_SHEET, options);
   }
 
   private areaLength(value: Object): number {

@@ -15,9 +15,10 @@ import { UserMessageTruncationPolicy } from '../policy/UserMessageTruncationPoli
 import { ConversationUiMessage } from '../state/ConversationUiModels';
 import { MessageImageGallery } from './ChatMessageContent';
 import { RollbackSelectionMenu } from './RollbackSelectionMenu';
+import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
+import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 import {
   ACCENT,
-  CARD,
   INK,
   LINE,
   MUTED,
@@ -297,7 +298,7 @@ export struct AssistantMessageCopyAction {
       .onClick(() => {
         this.showMenu = !this.showMenu;
       })
-      .bindPopup(this.showMenu, {
+      .bindPopup(this.showMenu, ImmersiveSurfaceSupport.popupOptions(ImmersiveSurfaceScene.FLOATING_MENU, {
         builder: () => {
           this.CopyMenu();
         },
@@ -310,7 +311,7 @@ export struct AssistantMessageCopyAction {
         onStateChange: (event: PopupStateChangeParam) => {
           this.showMenu = event.isVisible;
         }
-      })
+      }))
   }
 
   // Keep the three copy scopes compact while preserving 44vp touch targets.
@@ -333,10 +334,15 @@ export struct AssistantMessageCopyAction {
     }
     .width(196)
     .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-    .backgroundColor(CARD)
-    .border({ width: 0.5, color: LINE })
+    // The popup bubble carries the material when the surface adopts one, so the
+    // menu stops painting the card, the hairline and the shadow over it. The
+    // fallback colours come from the float scene's recipe, so a contract change
+    // moves this menu too.
+    .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.FLOATING_MENU))
+    .border(ImmersiveSurfaceSupport.surfaceBorder(ImmersiveSurfaceScene.FLOATING_MENU, { width: 0.5 }))
     .borderRadius(16)
-    .shadow({ radius: 18, color: SHADOW_SUBTLE, offsetY: 7 })
+    .shadow(ImmersiveSurfaceSupport.surfaceShadow(ImmersiveSurfaceScene.FLOATING_MENU,
+      { radius: 18, color: SHADOW_SUBTLE, offsetY: 7 }))
     .transition(TransitionEffect.opacity(0).animation({ duration: 150, curve: Curve.EaseOut }))
   }
 

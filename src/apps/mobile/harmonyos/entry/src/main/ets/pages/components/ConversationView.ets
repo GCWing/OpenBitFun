@@ -29,6 +29,8 @@ import {
 } from '../policy/SessionRollbackPolicy';
 import { RollbackStagingBar } from './RollbackStagingBar';
 import { AdaptiveSheetOptions } from './AdaptiveSheetOptions';
+import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
+import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 import { ChatTimeline } from './ChatTimeline';
 import { ConversationLoadingState } from './ConversationLoadingState';
 import { UserMessageFullTextSheet } from './UserMessageFullTextSheet';
@@ -47,7 +49,6 @@ import { ComposerBar, ComposerPresentation } from './ComposerBar';
 import { ConversationHeader } from './ConversationHeader';
 import { ConversationHeaderPolicy, ConversationHeaderPresentation } from '../policy/ConversationHeaderPolicy';
 import {
-  CARD,
   INK,
   LINE,
   MUTED,
@@ -177,9 +178,6 @@ export struct ConversationView {
   private FullTextSheet() {
     UserMessageFullTextSheet({
       text: this.fullTextMessage,
-      onClose: () => {
-        this.showFullText = false;
-      },
       onRollback: () => {
         this.onRollbackMessage(this.fullTextTurnId, this.fullTextMessage);
       }
@@ -599,10 +597,15 @@ export struct ConversationView {
     }
     .width(292)
     .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-    .backgroundColor(CARD)
-    .border({ width: 0.5, color: LINE })
+    // The popover bubble carries the material when the surface adopts one, so the
+    // content root stops painting the card and its own edge over it. The fallback
+    // colours come from the float scene's recipe, so a contract change moves this
+    // popover too.
+    .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.FLOATING_MENU))
+    .border(ImmersiveSurfaceSupport.surfaceBorder(ImmersiveSurfaceScene.FLOATING_MENU, { width: 0.5 }))
     .borderRadius(16)
-    .shadow({ radius: 18, color: SHADOW_SUBTLE, offsetY: 7 })
+    .shadow(ImmersiveSurfaceSupport.surfaceShadow(ImmersiveSurfaceScene.FLOATING_MENU,
+      { radius: 18, color: SHADOW_SUBTLE, offsetY: 7 }))
     .transition(TransitionEffect.translate({ x: 8, y: -8 })
       .combine(TransitionEffect.opacity(0))
       .animation({ duration: 180, curve: Curve.EaseOut }))
@@ -984,10 +987,13 @@ export struct ConversationView {
     this.showFullText = true;
   }
   private fullTextSheetOptions(): SheetOptions {
-    // The same adaptive contract as the other overlay sheets: the content draws
-    // the surface, the sheet supplies transparency, the scrim, and a drag bar
-    // wherever the placement resolves to a bottom sheet.
-    return AdaptiveSheetOptions.fromPlacement(this.fullTextSheetPlacement, true);
+    // The panel's own heading is the platform title bar's now, so the sheet is
+    // asked for it here: the adaptive contract supplies the placement's geometry
+    // and leaves the background, the scrim and the close icon to the platform.
+    return ImmersiveSurfaceSupport.sheetOptions(
+      ImmersiveSurfaceScene.MODAL_SHEET,
+      AdaptiveSheetOptions.fromPlacement(this.fullTextSheetPlacement, RemoteI18n.t('chat.fullText'))
+    );
   }
   private onOpenFilePreview(path: string, label: string): void {
     this.onIntent(ConversationIntents.openFilePreview(path, label));

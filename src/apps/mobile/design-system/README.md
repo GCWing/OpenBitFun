@@ -7,7 +7,8 @@ preview scenarios; it does not implement a cross-platform renderer.
 ## Ownership
 
 - `tokens/mobile-tokens.json`: the single source for semantic colors,
-  typography, shared geometry, breakpoints, and motion durations.
+  typography, shared geometry, breakpoints, motion durations, and the glass and
+  material surface recipes.
 - `components/mobile-components.json`: component anatomy, states, and the token
   roles each native implementation must consume.
 - `scenarios/mobile-preview-scenarios.json`: deterministic states rendered by
@@ -106,6 +107,32 @@ rather than assuming it — Android's `SidebarCircleButton` and
 `SignedOutConnectionActions` both expose background/border/content parameters,
 and the sheet presented from the sidebar (the workspace picker) stays on page
 roles because a sheet is not chrome.
+
+## Surfaces
+
+`surfaces` in `tokens/mobile-tokens.json` records the six glass and material
+roles all three hosts share: `top_chrome`, `bottom_chrome`, `search_field`,
+`floating_menu`, `modal_sheet`, and `toast`. Each role declares a
+platform-neutral `level`, a drawn-glass `fallback_blur` tier, and the
+`floor_color` / `hairline_color` roles it composites over.
+
+- `level` (`ultra_thin` | `thin` | `regular` | `thick` | `ultra_thick`) is the
+  host-independent material weight. HarmonyOS maps it onto
+  `uiMaterial.ImmersiveStyle` (HUAWEI ImmersiveMaterial); Android and iOS have no
+  equivalent system material and consume the same recipe with their own drawn
+  glass. The enum stays platform-neutral, so a host must not add a level only one
+  platform understands.
+- `fallback_blur` (`none` | `thin` | `thick`) selects the drawn-glass degradation
+  tier where the system material is unavailable or disabled.
+- `floor_color` and `hairline_color` are not literals: each must name a role
+  already declared in `colors`, so a surface can never introduce a color the
+  audit does not already own. A missing or unknown role fails contract
+  validation.
+
+The generated native constants (`MobileDesignSurface` / `MobileDesignSurfaces`)
+project the same recipe to HarmonyOS, Android, and iOS with each host's
+idiomatic constant naming; the color roles travel as their contract names so
+every host resolves them through its own color layer.
 
 ## Simulator captures
 

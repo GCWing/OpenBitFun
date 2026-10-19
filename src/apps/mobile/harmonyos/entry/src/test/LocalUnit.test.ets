@@ -11,12 +11,14 @@ import architectureUnitTest from './ArchitectureUnit.test';
 import i18nUnitTest from './I18nUnit.test';
 import watchProvisionUnitTest from './WatchProvisionUnit.test';
 import textScaleUnitTest from './TextScaleUnit.test';
+import immersiveMaterialPolicyUnitTest from './ImmersiveMaterialPolicy.test';
 
 export default function localUnitTest() {
   miniAppUnitTest();
   i18nUnitTest();
   watchProvisionUnitTest();
   textScaleUnitTest();
+  immersiveMaterialPolicyUnitTest();
   architectureUnitTest();
   transportAndGeneralChatUnitTest();
   conversationStateUnitTest();

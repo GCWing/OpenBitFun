@@ -2,17 +2,15 @@ import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RecentWorkspaceEntry, RemoteSession } from '../../model/RemoteModels';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import {
-  CARD,
   INK,
-  LINE,
   MUTED,
-  SCRIM,
   SHADOW_SUBTLE,
-  SOFT,
   TRANSPARENT,
 } from './Theme';
 import { SessionActionPresentation, SessionActionSurface } from './SessionActionSurface';
 import { AdaptiveSheetOptions } from './AdaptiveSheetOptions';
+import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
+import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 import {
   SettingsPlacement,
   SettingsPlacementPolicy,
@@ -331,22 +329,23 @@ export struct RemoteSessionList {
                 .width(22)
                 .height(22)
                 .opacity(0.52)
-                .bindPopup(this.createMenuKey.length > 0 && this.createMenuKey === this.sectionKey(this.currentProject(row)), {
-                  builder: () => {
-                    this.ProjectCreateMenu(row)
-                  },
-                  placement: Placement.Top,
-                  popupColor: TRANSPARENT,
-                  enableArrow: false,
-                  autoCancel: true,
-                  mask: false,
-                  targetSpace: 6,
-                  onStateChange: (event) => {
-                    if (!event.isVisible) {
-                      this.createMenuKey = '';
+                .bindPopup(this.createMenuKey.length > 0 && this.createMenuKey === this.sectionKey(this.currentProject(row)),
+                  ImmersiveSurfaceSupport.popupOptions(ImmersiveSurfaceScene.FLOATING_MENU, {
+                    builder: () => {
+                      this.ProjectCreateMenu(row)
+                    },
+                    placement: Placement.Top,
+                    popupColor: TRANSPARENT,
+                    enableArrow: false,
+                    autoCancel: true,
+                    mask: false,
+                    targetSpace: 6,
+                    onStateChange: (event) => {
+                      if (!event.isVisible) {
+                        this.createMenuKey = '';
+                      }
                     }
-                  }
-                })
+                  }))
                 .onClick(() => {
                   const key = this.sectionKey(this.currentProject(row));
                   this.createMenuKey = this.createMenuKey === key ? '' : key;
@@ -386,6 +385,7 @@ export struct RemoteSessionList {
     if (this.supportsHarnessProfiles) {
       HarnessProfileMenu({
         includeCowork: true,
+        immersiveMaterial: ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.FLOATING_MENU),
         onSelect: (agentType: string) => {
           this.createMenuKey = '';
           this.onCreateInWorkspace(this.currentProject(row).path, agentType, this.currentProject(row).remoteConnectionId, this.currentProject(row).remoteSshHost, this.currentProject(row).workspaceId);
@@ -398,10 +398,15 @@ export struct RemoteSessionList {
       }
       .width(150)
       .padding({ top: 8, bottom: 8 })
-      .backgroundColor(CARD)
+      // The popup bubble is the material's own surface on the material path, so
+      // the menu stops drawing the card, the hairline and the shadow over it. The
+      // fallback colours come from the float scene's recipe, so a contract change
+      // moves this menu too.
+      .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.FLOATING_MENU))
       .borderRadius(14)
-      .border({ width: 0.5, color: LINE })
-      .shadow({ radius: 20, color: SHADOW_SUBTLE, offsetY: 8 })
+      .border(ImmersiveSurfaceSupport.surfaceBorder(ImmersiveSurfaceScene.FLOATING_MENU, { width: 0.5 }))
+      .shadow(ImmersiveSurfaceSupport.surfaceShadow(ImmersiveSurfaceScene.FLOATING_MENU,
+        { radius: 20, color: SHADOW_SUBTLE, offsetY: 8 }))
     }
   }
 
@@ -652,6 +657,11 @@ export struct RemoteSessionList {
   private SessionActionContent(presentation: SessionActionPresentation) {
     SessionActionSurface({
       presentation,
+      // The bottom-sheet presentation floats over the page as a modal surface;
+      // the popover floats over the transcript as an anchored menu. Each has its
+      // own recipe, so each asks for its own scene.
+      immersiveMaterial: ImmersiveSurfaceSupport.usesMaterial(presentation === SessionActionPresentation.BottomSheet ?
+        ImmersiveSurfaceScene.MODAL_SHEET : ImmersiveSurfaceScene.FLOATING_MENU),
       sessionTitle: this.actionSessionTitle(),
       // Only the bottom-sheet presentation sits at the screen edge; a popover
       // floats at its anchor and keeps the plain design spacing.
@@ -668,8 +678,7 @@ export struct RemoteSessionList {
   @Builder
   private SessionDetailsSheet() {
     SessionDetailsView({
-      session: this.detailsSession(),
-      onClose: () => this.closeSessionDetails()
+      session: this.detailsSession()
     })
   }
 
@@ -764,6 +773,9 @@ export struct RemoteSessionList {
   }
 
   private closeSessionDetails(): void {
+    // The details sheet is dismissed by the platform now — its own close icon is
+    // one of the interactive dismissals this resets — so what is left is
+    // releasing the session the sheet was showing with it.
     this.showSessionDetails = false;
     this.detailsSessionId = '';
   }
@@ -776,16 +788,40 @@ export struct RemoteSessionList {
   }
 
   private sessionActionSheetOptions(): SheetOptions {
-    return {
-      height: 300,
-      backgroundColor: TRANSPARENT,
-      maskColor: SCRIM,
-      showClose: false,
-      dragBar: false
+    // The action list is short wherever it lands, and where it lands is its
+    // host's answer: the session list's own placement decides the posture — a
+    // bottom sheet on a phone, a centered dialog on a wide window, the same leaf
+    // on a foldable — and only the height is the action list's own. The session
+    // the actions belong to is the title bar's second line: the sheet used to
+    // draw both itself.
+    const options = AdaptiveSheetOptions.fromPlacement(
+      SettingsPlacementPolicy.hostedOverlay(
+        this.sessionDetailsPlacement,
+        SettingsPlacementPolicy.SESSION_ACTION_HEIGHT
+      ),
+      RemoteI18n.t('session.actions'),
+      this.actionSessionTitle() || RemoteI18n.t('sidebar.untitled')
+    );
+    // The platform's own close icon is an interactive dismissal like any other,
+    // and every one of them has to release the session the sheet was about: the
+    // hand-drawn close it replaces is no longer there to do it.
+    options.onWillDismiss = (action: DismissSheetAction): void => {
+      this.closeSessionActions();
+      action.dismiss();
     };
+    return ImmersiveSurfaceSupport.sheetOptions(ImmersiveSurfaceScene.MODAL_SHEET, options);
   }
 
   private sessionDetailsSheetOptions(): SheetOptions {
-    return AdaptiveSheetOptions.fromPlacement(this.sessionDetailsPlacement);
+    const options = AdaptiveSheetOptions.fromPlacement(
+      this.sessionDetailsPlacement,
+      RemoteI18n.t('session.details'),
+      this.detailsSession().title || RemoteI18n.t('sidebar.untitled')
+    );
+    options.onWillDismiss = (action: DismissSheetAction): void => {
+      this.closeSessionDetails();
+      action.dismiss();
+    };
+    return ImmersiveSurfaceSupport.sheetOptions(ImmersiveSurfaceScene.MODAL_SHEET, options);
   }
 }

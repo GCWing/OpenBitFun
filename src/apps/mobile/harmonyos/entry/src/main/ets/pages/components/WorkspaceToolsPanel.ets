@@ -1,17 +1,34 @@
 import { RuntimeLocationPolicy } from '../policy/RuntimeLocationPolicy';
+import { AdaptiveSheetOptions } from './AdaptiveSheetOptions';
+import { SheetActionFooter } from './SheetActionFooter';
+import { SHEET_HORIZONTAL_PADDING } from './SheetLayout';
+import {
+  SettingsPlacement,
+  SettingsPlacementPolicy,
+  SettingsSheetKind
+} from '../policy/SettingsPlacementPolicy';
 import { WorkspaceFileEditorView } from './WorkspaceFileEditorView';
 import { WorkspaceTerminalView } from './WorkspaceTerminalView';
 import { WorkspaceToolsState, WorkspaceToolsIntent, WorkspaceFileEntry, WorkspaceTerminalEntry, WorkspaceToolLocation } from '../state/WorkspaceToolsState';
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { CARD, CONTENT_ON_ACTION, INK, MEDIA_BACKGROUND, MUTED, PAGE_BG, LINE, SOFT, TRANSPARENT } from './Theme';
-import { SheetCloseButton } from './SheetCloseButton';
+import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
+import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 
 @ComponentV2
 export struct WorkspaceToolsPanel {
   @Param state: WorkspaceToolsState = new WorkspaceToolsState();
   @Event onIntent: (intent: WorkspaceToolsIntent) => void = (_intent: WorkspaceToolsIntent) => {};
+  /**
+   * The placement the panel's own sheet was resolved to. The form is a sheet
+   * inside this one, so it lands where the panel lands: the bottom edge of the
+   * phone it has always been at, the same leaf of a foldable, and — on a wide
+   * window — the middle of the screen, as a dialog of its own over the panel's.
+   */
+  @Param fileActionPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.WorkspaceTools);
   private filesScroller: Scroller = new Scroller();
   /**
    * The sheet's own bottom edge, in vp. The panel is a full-height sheet, so
@@ -38,13 +55,6 @@ export struct WorkspaceToolsPanel {
 
   build() {
     Column({ space: 0 }) {
-      Row({ space: 12 }) {
-        Blank().layoutWeight(1)
-        SheetCloseButton({ uniformGlyph: true, onClose: () => this.onIntent({ type: 'close' }) })
-      }
-      .width('100%')
-      .height(56)
-      .alignItems(VerticalAlign.Center)
       if (this.state.deviceScope) {
         Select([{ value: RemoteI18n.t('workspaceTools.runtimeLocal') }, ...this.state.locations.map((item: WorkspaceToolLocation): SelectOption => ({ value: item.name }))])
           .value(this.state.locations.find((item: WorkspaceToolLocation): boolean => item.id === this.state.connectionId)?.name || RemoteI18n.t('workspaceTools.runtimeLocal'))
@@ -64,7 +74,9 @@ export struct WorkspaceToolsPanel {
         TabContent() { this.Files() }.tabBar(new SubTabBarStyle(RemoteI18n.t('workspaceTools.files')).labelStyle({ selectedColor: INK, unselectedColor: MUTED }).indicator({ color: INK }))
         TabContent() { this.Terminal() }.tabBar(new SubTabBarStyle(RemoteI18n.t('workspaceTools.terminal')).labelStyle({ selectedColor: INK, unselectedColor: MUTED }).indicator({ color: INK }))
       }.barHeight(50).onChange((index: number) => this.onIntent({ type: 'panel', tab: index })).layoutWeight(1)
-    }.padding({ left: 16, right: 16 }).width('100%').height('100%').backgroundColor(PAGE_BG)
+    }.padding({ left: 16, right: 16 }).width('100%').height('100%')
+      // No fill and no close header of its own: the platform sheet carries both,
+      // and its title bar is where this panel's name (and its close icon) live.
   }
   @Builder
   private Files() {
@@ -83,31 +95,73 @@ export struct WorkspaceToolsPanel {
     if (this.state.fileAction === 'upload') return RemoteI18n.t('workspaceTools.upload');
     return RemoteI18n.t('workspaceTools.confirmDelete');
   }
+  /**
+   * Whether the form's one action can run yet.
+   *
+   * The name is what the action works on, except for the delete that already
+   * has its target: an empty field is nothing to create or rename, while a
+   * delete is ready the moment the sheet opens on a path. A submission in
+   * flight locks the action, the way it locked the row it used to sit in.
+   */
+  private canSubmitFileAction(): boolean {
+    return !this.state.busy && (this.state.fileAction === 'delete' || this.state.fileActionName.trim().length > 0);
+  }
+  /**
+   * The file action form's own sheet options.
+   *
+   * A nested sheet is a sheet like any other: the platform draws its title bar
+   * and its close icon, so the form has to say what it is doing here or the bar
+   * arrives nameless — which is what put the platform's close icon on top of the
+   * form's own action row — and it lands where its host landed, which a wide
+   * window answers with the middle of the screen. Every interactive dismissal
+   * (the close icon, the scrim, the swipe down) reaches `onWillDismiss`, so the
+   * action still ends the way its Cancel button did, and a submission in flight
+   * still refuses to be cancelled out from under itself.
+   */
+  private fileActionSheetOptions(): SheetOptions {
+    const options: SheetOptions = AdaptiveSheetOptions.form(
+      this.fileActionPlacement,
+      this.fileActionTitle()
+    );
+    options.onWillDismiss = (action: DismissSheetAction): void => {
+      if (!this.state.busy) { this.onIntent({ type: 'file-action-cancel' }); action.dismiss(); }
+    };
+    return ImmersiveSurfaceSupport.sheetOptions(ImmersiveSurfaceScene.MODAL_SHEET, options);
+  }
   @Builder
   private FileActionForm() {
-    Column({ space: 16 }) {
-      Row({ space: 12 }) {
-        Button(RemoteI18n.t('common.cancel'))
-          .fontColor(MUTED).backgroundColor(TRANSPARENT).height(40).borderRadius(8)
-          .onClick(() => this.onIntent({ type: 'file-action-cancel' }))
-        Text(this.fileActionTitle()).fontColor(INK).fontSize(MobileDesignTypography.titleMedium.size).fontWeight(FontWeight.Medium).layoutWeight(1).maxLines(2)
-        Button(this.fileActionTitle())
-          .fontColor(CONTENT_ON_ACTION).backgroundColor(INK).height(40).borderRadius(8)
-          .enabled(this.state.fileAction === 'delete' || this.state.fileActionName.trim().length > 0)
-          .onClick(() => this.onIntent({ type: 'file-action-submit' }))
-      }.enabled(!this.state.busy).width('100%')
-      if (this.state.fileAction === 'delete') {
-        Text(this.state.fileActionPath).fontColor(MUTED).fontSize(MobileDesignTypography.bodySmall.size).maxLines(3)
-      }
-      else {
-        TextInput({ text: this.state.fileActionName, placeholder: RemoteI18n.t('workspaceTools.fileName') })
-          .fontColor(INK).backgroundColor(SOFT).borderRadius(8).height(48).enabled(!this.state.busy)
-          .onChange((value: string) => this.onIntent({ type: 'file-action-name', text: value }))
-          .onSubmit(() => { if (!this.state.busy && this.state.fileActionName.trim()) this.onIntent({ type: 'file-action-submit' }); })
-      }
-      if (this.state.error) { Text(this.state.error).fontColor(MUTED).fontSize(MobileDesignTypography.bodySmall.size) }
-      if (this.state.busy) { LoadingProgress().width(24).height(24).color(MUTED) }
-    }.padding({ left: 20, right: 20, top: 20, bottom: this.insets.bottomPadding(24) }).width('100%').backgroundColor(CARD)
+    Column({ space: 0 }) {
+      Column({ space: 16 }) {
+        if (this.state.fileAction === 'delete') {
+          Text(this.state.fileActionPath).fontColor(MUTED).fontSize(MobileDesignTypography.bodySmall.size).maxLines(3)
+        }
+        else {
+          TextInput({ text: this.state.fileActionName, placeholder: RemoteI18n.t('workspaceTools.fileName') })
+            .fontColor(INK).backgroundColor(SOFT).borderRadius(8).height(48).enabled(!this.state.busy)
+            .onChange((value: string) => this.onIntent({ type: 'file-action-name', text: value }))
+            .onSubmit(() => { if (!this.state.busy && this.state.fileActionName.trim()) this.onIntent({ type: 'file-action-submit' }); })
+        }
+        if (this.state.error) { Text(this.state.error).fontColor(MUTED).fontSize(MobileDesignTypography.bodySmall.size) }
+        if (this.state.busy) { LoadingProgress().width(24).height(24).color(MUTED) }
+      }.padding({
+        left: SHEET_HORIZONTAL_PADDING,
+        right: SHEET_HORIZONTAL_PADDING,
+        top: 20
+      }).width('100%')
+      // What the form is doing is the platform title bar's line now, and the
+      // close icon on that bar is how it is cancelled — the same dismissal the
+      // scrim and the swipe down perform, all three of them resetting the
+      // action through `onWillDismiss`. The row that carried a Cancel button, an
+      // action name and a Submit button is therefore gone: an action name beside
+      // the name in the title bar said it twice, a Cancel button beside a close
+      // icon did too, and the Submit button is what the shared footer is.
+      SheetActionFooter({
+        label: this.fileActionTitle(),
+        primary: true,
+        isEnabled: this.canSubmitFileAction(),
+        onAction: () => this.onIntent({ type: 'file-action-submit' })
+      })
+    }.width('100%')
   }
   @Builder
   private FileDirectory() {
@@ -167,11 +221,22 @@ export struct WorkspaceToolsPanel {
               }.layoutWeight(1).constraintSize({ minHeight: 56 }).onClick(() => this.onIntent({ type: entry.isDirectory ? 'directory' : 'read', path: entry.path }))
               Button() { this.MoreGlyph() }
                 .width(40).height(40).padding(0).backgroundColor(TRANSPARENT).borderRadius(8).accessibilityText(entry.name)
+                // `menuOptions` answers `undefined` on every device that cannot
+                // render a material, so this call passes exactly what the
+                // two-argument form omits: the SDK declares that overload as
+                // `bindMenu(content: Array<MenuElement> | CustomBuilder,
+                // options?: MenuOptions): T` (`ets/component/
+                // common.d.ts`, line 21466 in the 6.0.1 SDK; the `isShow`
+                // overload at line 21480 is equally optional), where
+                // `options?` is optional, so an explicit `undefined` and the
+                // omission are the
+                // same call. The fallback path below API 26 is the only one that
+                // reaches that form, and it is unverified on hardware.
                 .bindMenu([
                   { value: RemoteI18n.t('workspaceTools.rename'), action: () => this.onIntent({ type: 'file-action', text: 'rename', path: entry.path }) },
                   { value: RemoteI18n.t('workspaceTools.delete'), action: () => this.onIntent({ type: 'file-action', text: 'delete', path: entry.path }) },
                   { value: RemoteI18n.t('workspaceTools.download'), enabled: !entry.isDirectory, action: () => this.onIntent({ type: 'download', path: entry.path }) }
-                ])
+                ], ImmersiveSurfaceSupport.menuOptions(ImmersiveSurfaceScene.FLOATING_MENU))
             }.width('100%').padding({ left: 12, right: 8 }).backgroundColor(CARD)
           }
         }, (entry: WorkspaceFileEntry) => entry.path)
@@ -197,8 +262,7 @@ export struct WorkspaceToolsPanel {
         }.width('100%').margin({ bottom: this.insets.bottomPadding(16) })
       }
       }.padding({ top: 12 }).width('100%').height('100%')
-      .bindSheet(this.state.fileAction.length > 0, this.FileActionForm(), { height: SheetSize.FIT_CONTENT, showClose: false, backgroundColor: PAGE_BG, keyboardAvoidMode: SheetKeyboardAvoidMode.TRANSLATE_AND_RESIZE,
-        onWillDismiss: (action: DismissSheetAction): void => { if (!this.state.busy) { this.onIntent({ type: 'file-action-cancel' }); action.dismiss(); } } })
+      .bindSheet(this.state.fileAction.length > 0, this.FileActionForm(), this.fileActionSheetOptions())
   }
   @Builder
   private MoreGlyph() {

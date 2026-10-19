@@ -275,3 +275,14 @@ internal object MobileDesignMotion {
     const val StartupBrand: Int = 6800
     const val ColdStartHome: Int = 2400
 }
+
+internal data class MobileDesignSurface(level: String, fallbackBlur: String, floorColor: String, hairlineColor: String)
+
+internal object MobileDesignSurfaces {
+    val TopChrome = MobileDesignSurface("ultra_thin", "thin", "page_bg_overlay", "line")
+    val BottomChrome = MobileDesignSurface("thin", "thin", "card_overlay", "line")
+    val SearchField = MobileDesignSurface("thin", "thin", "card_overlay", "line")
+    val FloatingMenu = MobileDesignSurface("thick", "thick", "card", "line")
+    val ModalSheet = MobileDesignSurface("ultra_thick", "none", "page_bg", "line")
+    val Toast = MobileDesignSurface("thin", "none", "toast_background", "line")
+}

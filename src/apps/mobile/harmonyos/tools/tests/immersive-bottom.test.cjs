@@ -11,6 +11,12 @@ const path = require('node:path');
 // visible in a unit test of a policy object, and all of it is exactly what a
 // later edit is most likely to undo by accident, so it is asserted against the
 // files that carry it.
+//
+// The overlay sheets are the other half of the same contract, and their chrome
+// has one owner: the platform. `bindSheet` draws the title bar, the close icon,
+// the background and the scrim, so a sheet that paints its own background, draws
+// its own close icon or answers `maskColor` itself is the regression — see the
+// sheet-chrome tests below.
 function source(relativePath) {
   return fs.readFileSync(path.join(__dirname, '../..', relativePath), 'utf8');
 }
@@ -34,6 +40,39 @@ const conversationViewSettings = source('entry/src/main/ets/pages/components/Con
 const welcomeHome = source('entry/src/main/ets/pages/components/WelcomeHome.ets');
 const remoteSurfaceHost = source('entry/src/main/ets/pages/components/remote/RemoteSurfaceHost.ets');
 const wideConversationHost = source('entry/src/main/ets/pages/components/WideConversationHost.ets');
+const adaptiveSheetOptions = source('entry/src/main/ets/pages/components/AdaptiveSheetOptions.ets');
+const userMessageFullTextSheet = source('entry/src/main/ets/pages/components/UserMessageFullTextSheet.ets');
+const sidebarWorkspaceSection = source('entry/src/main/ets/pages/components/SidebarWorkspaceSection.ets');
+const appRootPresentation = source('entry/src/main/ets/pages/components/AppRootPresentation.ets');
+const connectAccountDevicePage = source('entry/src/main/ets/pages/components/ConnectAccountDevicePage.ets');
+const presentationActions = source('entry/src/main/ets/pages/actions/AppRootPresentationActions.ets');
+const runtimeComposition = source('entry/src/main/ets/pages/runtime/AppRootRuntimeComposition.ets');
+
+// The sheet titles reach the platform as text, so they have to be real catalog
+// entries in both locales: `RemoteI18n.t` maps the dotted key onto a resource
+// name (`chat.fullText` -> `chat_fullText`) and asks the resource manager for it.
+const resourcesRoot = path.join(__dirname, '../../entry/src/main/resources');
+function catalogResourceNames(locale) {
+  const entries = JSON.parse(fs.readFileSync(path.join(resourcesRoot, locale, 'element/string.json'), 'utf8')).string;
+  return new Set(entries.map((entry) => entry.name));
+}
+const enUsResourceNames = catalogResourceNames('en_US');
+const zhCnResourceNames = catalogResourceNames('zh_CN');
+
+// Every chromed sheet option a file answers itself.
+//
+// `backgroundColor` is only read where a content root is under test: content
+// legitimately paints fills of its own. The other three are chrome wherever they
+// appear, so they are checked over the whole tree. Both spellings count — the
+// option-object form (`showClose: true`) and the property-assignment form
+// (`options.showClose = true`) are the same override.
+function chromeOptionsAnsweredIn(sourceText) {
+  const found = new Set();
+  for (const match of normalize(sourceText).matchAll(/\b(backgroundColor|maskColor|showClose|dragBar)\s*[:=]/g)) {
+    found.add(match[1]);
+  }
+  return [...found].sort();
+}
 
 // Reads one component's build() chain, so an assertion can name the root box a
 // page paints without reaching into the file's other builders.
@@ -43,6 +82,22 @@ function buildChain(sourceText) {
   const end = sourceText.indexOf('\n  @Builder', start);
   assert.notEqual(end, -1, 'build() must be followed by another builder');
   return sourceText.slice(start, end);
+}
+
+// Reads one component's build() chain by name.
+//
+// Two things the plain `buildChain` cannot do and this needs: a file that
+// carries more than one struct (the first `build() {` in such a file belongs to
+// whichever struct is declared first, which is not the slice a caller means), and
+// a component whose `build()` is its last member.
+function buildChainOf(sourceText, structName) {
+  const declaration = sourceText.indexOf(`export struct ${structName} {`);
+  assert.notEqual(declaration, -1, `${structName} must stay a component of its file`);
+  const body = sourceText.slice(declaration);
+  const start = body.indexOf('build() {');
+  assert.notEqual(start, -1, `${structName} must keep its build()`);
+  const nextBuilder = body.indexOf('\n  @Builder', start);
+  return nextBuilder === -1 ? body : body.slice(start, nextBuilder);
 }
 
 // Reads one @Builder out of a component, so an assertion can name the layer it
@@ -485,12 +540,48 @@ test('the workspace tools sheet scrolls under the bar and its fixed controls do 
   assert.match(normalize(workspaceToolsPanel),
     /\.margin\(\{ bottom: this\.insets\.bottomPadding\(16\) \}\)/,
     'the fixed bottom controls must keep the strip clear');
-  // The file action form is a FIT_CONTENT sheet: its buttons are the fixed
-  // controls at the screen edge, so the form's own bottom padding is what keeps
-  // them out of the strip.
+  // The file action form is a nested FIT_CONTENT sheet, and it is the card the
+  // platform floats above the navigation bar rather than a surface that runs to
+  // the screen edge: where the card sits is the platform's placement decision
+  // now, so the form no longer reserves the strip itself. What it does own is
+  // that its one action is the shared footer — the hand-drawn row it used to
+  // carry is what the platform title bar and its close icon replaced, and the
+  // close icon used to land on top of that row's Submit button.
+  const actionForm = normalize(builderBody(workspaceToolsPanel, 'FileActionForm'));
+  assert.match(actionForm, /SheetActionFooter\(\{ label: this\.fileActionTitle\(\), primary: true, isEnabled: this\.canSubmitFileAction\(\)/,
+    'the form\'s one action must be the shared footer, named after the action it submits');
+  assert.match(actionForm, /onAction: \(\) => this\.onIntent\(\{ type: 'file-action-submit' \}\)/,
+    'the footer must submit the action the form is open for');
+  assert.equal(actionForm.includes("RemoteI18n.t('common.cancel')"), false,
+    'the form must not draw a Cancel button: the platform close icon is the cancellation, and a second one ' +
+    'beside it is the row whose Submit the platform close icon covered');
+  assert.equal(actionForm.includes('.backgroundColor(INK)'), false,
+    'the submit button must not be hand-drawn inside the form: the shared footer owns that fill');
+  assert.equal(actionForm.includes('file-action-cancel'), false,
+    'the form must not carry its own cancel path: dismissals reach onWillDismiss at the host instead');
+  assert.equal(actionForm.includes('bottomPadding'), false,
+    'the form must not inset its own bottom edge: the platform floats this card above the bar');
   assert.match(normalize(workspaceToolsPanel),
-    /\.padding\(\{ left: 20, right: 20, top: 20, bottom: this\.insets\.bottomPadding\(24\) \}\)/,
-    'the file action form must keep its buttons out of the strip');
+    /private canSubmitFileAction\(\): boolean \{ return !this\.state\.busy && \(this\.state\.fileAction === 'delete' \|\| this\.state\.fileActionName\.trim\(\)\.length > 0\); \}/,
+    'the action must stay locked while a submission is in flight and while the name is empty, except for the ' +
+    'delete that already has its target');
+  assert.match(actionForm,
+    /\.padding\(\{ left: SHEET_HORIZONTAL_PADDING, right: SHEET_HORIZONTAL_PADDING, top: 20 \}\)/,
+    'the form rows must keep the sheet contract\'s own gutter');
+  // The sheet is the nested one, so its options are read here: the platform fits
+  // the card to its content and translates the keyboard the name field raises in
+  // whatever placement its host resolved — the bottom edge, or the middle of a
+  // wide window — and a dismissal still ends the action.
+  assert.match(normalize(workspaceToolsPanel),
+    /private fileActionSheetOptions\(\): SheetOptions \{ const options: SheetOptions = AdaptiveSheetOptions\.form\( this\.fileActionPlacement, this\.fileActionTitle\(\) \); options\.onWillDismiss = \(action: DismissSheetAction\): void => \{ if \(!this\.state\.busy\) \{ this\.onIntent\(\{ type: 'file-action-cancel' \}\); action\.dismiss\(\); \} \}; return ImmersiveSurfaceSupport\.sheetOptions\(ImmersiveSurfaceScene\.MODAL_SHEET, options\); \}/,
+    'the nested sheet must take the platform title bar\'s text, its host\'s placement, and keep ending its ' +
+    'action on every dismissal');
+  // The form is a sheet inside the panel's sheet, so it inherits the panel's
+  // placement rather than deciding one: the shell resolves the panel's, and the
+  // panel hands it down.
+  assert.match(normalize(sidebarWorkspaceSection),
+    /WorkspaceToolsPanel\(\{ state: this\.workspaceTools, onIntent: this\.onWorkspaceTools, fileActionPlacement: this\.workspaceToolsPlacement \}\)/,
+    'the panel must hand its own placement to the form it opens');
 });
 
 test('the workspace tools editor keeps its card above the bar', () => {
@@ -698,6 +789,16 @@ test('every top band the status bar shows through is a theme-following page colo
   // `MEDIA_SCRIM`, dark in both appearances) or a hard-coded colour puts the
   // light-mode ink on a dark band, and the clock and the status icons stop being
   // readable against it.
+  //
+  // The overlay sheets are deliberately absent. They used to appear here — the
+  // connect sheet's root was the one band allowed to hand its fill to the
+  // immersive material — but a sheet's band is the platform's background now, and
+  // a sheet content root that paints one is a second background over the sheet's
+  // own (see the sheet-chrome tests below). The fourth element of each entry is
+  // therefore gone with the last band that used it, and the count guard below
+  // keeps a band from quietly growing a material switch of its own again: whether
+  // the clock stays legible over a material is the platform's answer, and this
+  // file can no longer measure a colour it does not paint.
   const bands = [
     ['the drawer panel', builderBody(appSidebar, 'SidebarContent'), 'SIDEBAR_BG'],
     ['the chat header band', builderBody(conversationView, 'TopOverlay'), 'PAGE_BG_OVERLAY'],
@@ -708,12 +809,14 @@ test('every top band the status bar shows through is a theme-following page colo
     ['the wide home pane', builderBody(wideConversationHost, 'RemoteHomeContent'), 'PAGE_BG'],
     ['the wide home detail', builderBody(wideConversationHost, 'RemoteHomeDetail'), 'PAGE_BG'],
     ['the wide chat pane', builderBody(wideConversationHost, 'RemoteChatContent'), 'PAGE_BG'],
-    ['the connect sheet root', buildChain(connectView), 'CARD'],
     ['the welcome page', buildChain(welcomeHome), 'WELCOME_PAGE_BG']
   ];
   const unreadable = 'the status bar icons are drawn in the colour-mode ink, so a top band that is dark in ' +
     'that same appearance makes them unreadable: handle the band and the system bar content colour together ' +
     '(see `updateSystemBars` in EntryAbility) instead of repainting the band on its own';
+  assert.equal(bands.filter((band) => band[3] === true).length, 0,
+    'no page band hands its fill to a material any more: the bands that did were sheets, and a sheet\'s band ' +
+    'is the platform\'s. A new switch here is a band whose colour this test can no longer read');
   for (const [name, slice, token] of bands) {
     assert.match(normalize(slice), new RegExp(`\\.backgroundColor\\(${token}\\)`),
       `${name} must paint its top band with the theme-following ${token}`);
@@ -735,6 +838,374 @@ test('every top band the status bar shows through is a theme-following page colo
       `${name} must not paint a screen-edge fill with media chrome: ${unreadable}`);
   }
 });
+
+test('the platform draws the sheet chrome, and the shared options answer none of it', () => {
+  // A sheet's title bar, its close icon, its background and its scrim are the
+  // platform's, and `AdaptiveSheetOptions` is where that decision lives. It used
+  // to answer all four itself — a transparent sheet whose content then had to
+  // paint the fill, a hand-drawn close icon beside the platform's, the app's own
+  // scrim over the page — and every answer was one more way for a sheet to stop
+  // looking like a sheet. What is left is geometry plus the title bar's text.
+  const adaptive = normalize(adaptiveSheetOptions);
+  assert.deepEqual(chromeOptionsAnsweredIn(adaptiveSheetOptions), [],
+    'the shared options must answer none of the platform\'s chrome: every override here was a sheet that ' +
+    'stopped looking like one');
+  // The title is the one thing a call site has to supply, because only the call
+  // site knows what the sheet is; it reaches the platform as `SheetTitleOptions`,
+  // with a second line where the header it replaces carried one.
+  assert.match(adaptive,
+    /const sheetTitle: SheetTitleOptions = subtitle === undefined \? \{ title: title \} : \{ title: title, subtitle: subtitle \};/,
+    'the title must reach the platform as SheetTitleOptions, subtitle included');
+  assert.match(adaptive, /options\.title = sheetTitle;/,
+    'the title has to land on the sheet options');
+  for (const [name, signature] of [
+    ['fromPlacement', /static fromPlacement\(\n    placement: SettingsPlacement,\n    title\?: ResourceStr,\n    subtitle\?: ResourceStr\n  \): SheetOptions \{/],
+    ['form', /static form\(\n    placement: SettingsPlacement,\n    title\?: ResourceStr,\n    subtitle\?: ResourceStr\n  \): SheetOptions \{/]
+  ]) {
+    assert.match(adaptiveSheetOptions, signature,
+      `${name} must keep its geometry parameters and take the title bar's two lines`);
+  }
+
+  // `fromPlacement` is the generic path: the placement's mode is the only thing
+  // that picks a sheet type, and the placement's own geometry is the only height
+  // and width it states. A bottom placement is the fallback the other two modes
+  // are carved out of, so a window that resolved no centred or side placement
+  // keeps the band at the bottom edge.
+  assert.match(adaptive,
+    /static fromPlacement\( placement: SettingsPlacement, title\?: ResourceStr, subtitle\?: ResourceStr \): SheetOptions \{ const options: SheetOptions = \{ keyboardAvoidMode: SheetKeyboardAvoidMode\.RESIZE_ONLY \}; if \(placement\.mode === SettingsPlacementMode\.FoldOperate\) \{ options\.height = placement\.height; return AdaptiveSheetOptions\.withTitle\(options, title, subtitle\); \} if \(placement\.mode === SettingsPlacementMode\.Side\) \{ options\.height = placement\.height; options\.width = placement\.width; options\.preferType = SheetType\.SIDE; return AdaptiveSheetOptions\.withTitle\(options, title, subtitle\); \} if \(placement\.mode === SettingsPlacementMode\.Center\) \{ options\.height = placement\.height; options\.width = placement\.width; options\.preferType = SheetType\.CENTER; return AdaptiveSheetOptions\.withTitle\(options, title, subtitle\); \} options\.height = placement\.height > 0 \? placement\.height : SheetSize\.LARGE; return AdaptiveSheetOptions\.withTitle\(options, title, subtitle\); \}/,
+    'the shared placement builder must take its type and its geometry from the resolved placement: the ' +
+    'centred dialog and the side panel are the same call site answering a different window');
+
+  // The `form` builder is the nested one, and it answers less than that: the
+  // platform fits the card to the rows the form holds, and the keyboard is
+  // translated as well as resized because those rows end in the name field the
+  // keyboard is open for — only the placement's *position* is left to decide, so
+  // only a centred placement names a type. A bottom sheet that claimed FIT_CONTENT
+  // would keep the fit and gain no type, which is why the two are asserted
+  // together: the fit height, the translate-and-resize keyboard, and the centred
+  // type as the one branch.
+  assert.match(adaptive,
+    /static form\( placement: SettingsPlacement, title\?: ResourceStr, subtitle\?: ResourceStr \): SheetOptions \{ const options: SheetOptions = \{ height: SheetSize\.FIT_CONTENT, keyboardAvoidMode: SheetKeyboardAvoidMode\.TRANSLATE_AND_RESIZE \}; if \(placement\.mode === SettingsPlacementMode\.Center\) \{ options\.width = placement\.width; options\.preferType = SheetType\.CENTER; \} return AdaptiveSheetOptions\.withTitle\(options, title, subtitle\); \}/,
+    'the nested form must keep the platform-fit height, its translated keyboard and its resolved placement');
+  // The action sheet's own geometry is gone: it used to be a fixed 300vp band
+  // decided at the call site, which is exactly the phone answer a wide window
+  // should not get. Its height now arrives as `SESSION_ACTION_HEIGHT` through the
+  // host's placement, and the builder may not hold a second copy of it.
+  assert.doesNotMatch(adaptive, /fixedHeight|height: number|SheetSize\.MEDIUM/,
+    'the shared builders may not hold a sheet\'s height of their own: it arrives with the placement');
+
+  // And no call site may put the chrome answers back. `backgroundColor` is not in
+  // this list because content legitimately paints fills — what may not happen is a
+  // *sheet* answering it, which the roots test below covers one sheet at a time.
+  const tree = etsTree('entry/src/main/ets');
+  for (const override of ['maskColor', 'showClose', 'dragBar']) {
+    const files = tree
+      .filter(([, text]) => new RegExp(`\\b${override}\\s*[:=]`).test(normalize(text)))
+      .map(([name]) => name);
+    assert.deepEqual(files, [],
+      `no sheet may answer \`${override}\` any more: it is the platform's own chrome`);
+  }
+});
+
+test('every sheet in the tree is a host this contract knows and names', () => {
+  // The list is the count guard: a new `bindSheet` host is a surface whose title,
+  // whose background and whose dismissal all have to be decided, and the cheapest
+  // way to forget that is to add one somewhere convenient. The file action form
+  // inside the workspace tools sheet (`WorkspaceToolsPanel`) is a host of its own
+  // and is listed for the same reason: it is a nested sheet over another sheet,
+  // and it names itself and closes itself the way every other host here does.
+  const tree = etsTree('entry/src/main/ets');
+  const hosts = tree.filter(([, text]) => text.includes('.bindSheet(')).map(([name]) => name).sort();
+  assert.deepEqual(hosts, [
+    'pages/components/AppRootPresentation.ets',
+    'pages/components/AppShell.ets',
+    'pages/components/ConversationView.ets',
+    'pages/components/RemoteSessionList.ets',
+    'pages/components/SidebarWorkspaceSection.ets',
+    'pages/components/WorkspaceToolsPanel.ets',
+    'pages/preview/ImmersiveBottomPreview.ets'
+  ], 'a new sheet host belongs in this list, with its platform title decided');
+});
+
+test('the sheet name travels into the platform title bar through the catalog', () => {
+  // The hand-drawn header used to say what each sheet was, in the app's own words
+  // and its own layout. Removing it without moving that text into the platform
+  // title bar would leave the sheets anonymous, so every host names its sheet
+  // here — through `RemoteI18n`, never as a literal, and in both catalogs.
+  const named = [
+    ['the settings sheet', appShell,
+      "AdaptiveSheetOptions.fromPlacement( this.settingsPlacement, RemoteI18n.t('settings.title') )"],
+    ['the connect sheet', appShell,
+      "AdaptiveSheetOptions.fromPlacement( this.connectPlacement, RemoteI18n.t('connect.chooseConnectionTitle') )"],
+    ['the remote view settings sheet', appRootPresentation,
+      "AdaptiveSheetOptions.fromPlacement( this.remoteViewSettingsPlacement, RemoteI18n.t('viewSettings.title'), RemoteI18n.t('viewSettings.subtitle') )"],
+    ['the full-text sheet', conversationView,
+      "AdaptiveSheetOptions.fromPlacement(this.fullTextSheetPlacement, RemoteI18n.t('chat.fullText'))"],
+    ['the session action sheet', remoteSessionList,
+      "AdaptiveSheetOptions.fromPlacement( SettingsPlacementPolicy.hostedOverlay( this.sessionDetailsPlacement, SettingsPlacementPolicy.SESSION_ACTION_HEIGHT ), RemoteI18n.t('session.actions'), this.actionSessionTitle() || RemoteI18n.t('sidebar.untitled') )"],
+    ['the session details sheet', remoteSessionList,
+      "AdaptiveSheetOptions.fromPlacement( this.sessionDetailsPlacement, RemoteI18n.t('session.details'), this.detailsSession().title || RemoteI18n.t('sidebar.untitled') )"],
+    ['the workspace tools sheet', sidebarWorkspaceSection,
+      "title: { title: RemoteI18n.t('workspaceTools.title') }"],
+    ['the workspace picker sheet', sidebarWorkspaceSection,
+      "AdaptiveSheetOptions.fromPlacement( this.workspacePickerPlacement, RemoteI18n.t('sidebar.selectWorkspace'), this.workspacePickerSubtitle() )"],
+    ['the view settings preview', source('entry/src/main/ets/pages/preview/ImmersiveBottomPreview.ets'),
+      "AdaptiveSheetOptions.fromPlacement( this.viewSettingsPlacement, RemoteI18n.t('viewSettings.title'), RemoteI18n.t('viewSettings.subtitle'))"],
+    ['the nested file action form', workspaceToolsPanel,
+      'AdaptiveSheetOptions.form( this.fileActionPlacement, this.fileActionTitle() )']
+  ];
+  for (const [name, text, snippet] of named) {
+    assert.ok(normalize(text).includes(snippet),
+      `${name} must hand its name to the platform title bar: the header that used to show it is gone`);
+    for (const match of snippet.matchAll(/RemoteI18n\.t\('([a-zA-Z0-9_.]+)'\)/g)) {
+      const resourceName = match[1].replace(/\./g, '_');
+      assert.ok(enUsResourceNames.has(resourceName),
+        `${name}: ${match[1]} must be a catalog entry, not a literal (en_US/${resourceName} is missing)`);
+      assert.ok(zhCnResourceNames.has(resourceName),
+        `${name}: ${match[1]} must be in the Chinese catalog too: the two stay in key lockstep`);
+    }
+  }
+});
+
+test('the nested file action form names its sheet from the catalog too', () => {
+  // The form's name is not one string: it is whichever action the form is open
+  // for, so what the platform title bar receives is that resolver's answer. Every
+  // branch therefore has to be a catalog key in both locales — a literal here
+  // would put an untranslated action name in the system bar, and the system bar
+  // is now the only place the action is named — and the action set itself is
+  // pinned, because a branch that disappears is a file action that lost its name
+  // (the drawer's own buttons and its file menu read the same keys).
+  const resolver = normalize(workspaceToolsPanel.slice(
+    workspaceToolsPanel.indexOf('private fileActionTitle()'),
+    workspaceToolsPanel.indexOf('private canSubmitFileAction()')));
+  const keys = [...resolver.matchAll(/RemoteI18n\.t\('([a-zA-Z0-9_.]+)'\)/g)].map((match) => match[1]);
+  assert.deepEqual(keys, [
+    'workspaceTools.newFile',
+    'workspaceTools.mkdir',
+    'workspaceTools.rename',
+    'workspaceTools.upload',
+    'workspaceTools.confirmDelete'
+  ], 'the form must name every action it can be opened for, through the catalog');
+  for (const key of keys) {
+    const resourceName = key.replace(/\./g, '_');
+    assert.ok(enUsResourceNames.has(resourceName),
+      `${key} must be a catalog entry, not a literal (en_US/${resourceName} is missing)`);
+    assert.ok(zhCnResourceNames.has(resourceName),
+      `${key} must be in the Chinese catalog too: the two stay in key lockstep`);
+  }
+  // And the resolver's answer is what the platform title bar shows: the sheet's
+  // options are the only place the action is named now that its row is gone.
+  assert.match(normalize(workspaceToolsPanel),
+    /AdaptiveSheetOptions\.form\( this\.fileActionPlacement, this\.fileActionTitle\(\) \)/,
+    'the nested form must hand the action\'s name to the platform title bar, in its host\'s placement');
+});
+
+test('the migrated sheet roots paint no background and no heading of their own', () => {
+  // The platform sheet's background is the band every one of these surfaces sits
+  // on, and the platform title bar is the heading above them. A root that paints
+  // its own fill is a second background over the sheet's — on the material path
+  // it covers the material the sheet just adopted, and on the fallback path it
+  // puts the app's page colour inside a system sheet. The rule per surface is
+  // "the material switch, the header and the close icon are gone", and for the
+  // roots whose builder paints nothing at all it is the stronger "no fill in the
+  // builder", which is what keeps one from growing back.
+  const roots = [
+    // name, component source, its struct name, and whether its own builder paints
+    // any fill at all today (a control's fill is content, not a root band).
+    ['the connect sheet', connectView, 'ConnectView', true],
+    ['the connect sheet\'s account step', connectAccountDevicePage, 'ConnectAccountDevicePage', true],
+    ['the settings sheet', settingsSheet, 'SettingsSheet', true],
+    ['the remote view settings sheet', conversationViewSettings, 'ConversationViewSettings', true],
+    ['the session details sheet', sessionDetailsView, 'SessionDetailsView', true],
+    ['the full-text sheet', userMessageFullTextSheet, 'UserMessageFullTextSheet', true],
+    ['the workspace picker sheet', workspacePicker, 'SidebarWorkspacePicker', false],
+    ['the workspace tools sheet', workspaceToolsPanel, 'WorkspaceToolsPanel', false]
+  ];
+  for (const [name, text, structName, paintsNothing] of roots) {
+    assert.equal(text.includes('immersiveMaterial'), false,
+      `${name} must not switch a fill of its own on the material: the material belongs to the sheet container, ` +
+      'and this content root must let it through');
+    const root = normalize(buildChainOf(text, structName));
+    assert.equal(root.includes('SheetCloseHeader('), false,
+      `${name} must not draw a header: the platform title bar is the heading`);
+    assert.equal(root.includes('SheetCloseButton('), false,
+      `${name} must not draw a close icon: the platform title bar has one`);
+    if (paintsNothing) {
+      assert.equal(root.includes('.backgroundColor('), false,
+        `${name} must not paint a background: the sheet the platform presents is the band, and a root fill ` +
+        'is a second one over it (over the material on the material path)');
+    }
+  }
+
+  // The two roots that are not fill-free paint controls, not bands — so what is
+  // pinned here is the band each one used to paint: the picker's fixed confirm
+  // row and its workspace rows, and the tools panel's own fill and its form's.
+  const pickerRoot = normalize(buildChainOf(workspacePicker, 'SidebarWorkspacePicker'));
+  assert.equal(pickerRoot.includes('.backgroundColor(PAGE_BG)'), false,
+    'the picker must not paint a page band: its confirm row and its rows sit on the sheet the platform presents');
+  assert.match(normalize(workspacePicker),
+    /\.backgroundColor\(this\.isSelected\(this\.currentWorkspace\(row\)\) \? SOFT : TRANSPARENT\)/,
+    'an unselected workspace row must show the sheet through, with the selected one keeping its highlight');
+  assert.equal(normalize(buildChainOf(workspaceToolsPanel, 'WorkspaceToolsPanel')).includes('immersiveMaterial'), false,
+    'the tools panel must not paint a fill of its own: the file action form it holds is the same surface');
+
+  // The action sheet shares its component with the row's action popover, so the
+  // split is inside that component: the popover keeps the card it is anchored
+  // with, the sheet presentation paints nothing over the platform's sheet.
+  const actionSurface = normalize(sessionActionSurface);
+  assert.match(actionSurface, /\.backgroundColor\(this\.paintsOwnCard\(\) \? this\.cardFill\(\) : TRANSPARENT\)/,
+    'the action surface must paint its card only where no sheet presents it');
+  assert.match(actionSurface, /return this\.presentation === SessionActionPresentation\.Popover;/,
+    'the popover must stay the presentation that owns its card');
+  assert.equal(actionSurface.includes('SheetCloseHeader('), false,
+    'the action surface waits for its close on the platform title bar in the sheet presentation');
+
+  // The two fills left in the tree that switch on a material are the two anchored
+  // surfaces no sheet presents: the harness-profile menu and the action popover.
+  // A third is a sheet content root that went back to painting its own fill.
+  const tree = etsTree('entry/src/main/ets');
+  const selfPainted = tree
+    .filter(([, text]) => text.includes('immersiveMaterial ? TRANSPARENT :'))
+    .map(([name]) => name).sort();
+  assert.deepEqual(selfPainted, [
+    'pages/components/HarnessProfileMenu.ets',
+    'pages/components/SessionActionSurface.ets'
+  ], 'the only surfaces that still switch their own fill on the material are the ones no sheet presents');
+});
+
+test('the connect sheet fills its content area and names itself once', () => {
+  // Two things the connect sheet got wrong once the platform took its chrome, and
+  // both were the old hand-drawn header's leftovers.
+  //
+  // The heading: the platform title bar says `connect.chooseConnectionTitle`, and
+  // the page drew the same key again under it. The key may appear wherever the
+  // sheet options are assembled; it may not appear in the content.
+  assert.equal(normalize(connectView).includes("RemoteI18n.t('connect.chooseConnectionTitle')"), false,
+    'the connect content must not draw the heading the platform title bar already shows: it is the same key');
+  assert.match(normalize(appShell),
+    /AdaptiveSheetOptions\.fromPlacement\( this\.connectPlacement, RemoteI18n\.t\('connect\.chooseConnectionTitle'\) \);/,
+    'the connect sheet must keep its name on the platform title bar');
+
+  // The fill: the hero was a 36vp-rounded card standing in for the sheet's own
+  // top corners, which the platform draws now — a rounded band under a square
+  // title bar is a card inside a card, with the radius showing as a notch. It is
+  // a full-bleed band instead, anchored to the content area's own top edge, and
+  // the old negative margin that pulled the content up over it is gone with it.
+  const hero = normalize(builderBody(connectView, 'HeroWash'));
+  assert.match(hero, /\.width\('100%'\) \.height\(CONNECT_HERO_HEIGHT\) \.backgroundColor\(CONNECT_HERO_BG\) \.clip\(true\)/,
+    'the hero must be a full-bleed band the sheet\'s own background shows through under');
+  assert.equal(hero.includes('borderRadius(36)'), false,
+    'the hero must not round its own top corners: the platform sheet\'s corners are the ones on screen');
+  assert.equal(hero.includes('.position({ x: 112'), false,
+    'the wash must not be anchored to x offsets measured on one window: the sheet is a clamped dialog on a ' +
+    'tablet and the full width on a phone, so its blobs hang off its edges instead');
+  const intro = normalize(builderBody(connectView, 'IntroPairingPage'));
+  assert.equal(intro.includes('margin({ top: -'), false,
+    'the content must not be pulled up under the hero: the band owns the top of the page now');
+  assert.match(intro, /this\.HeroWash\(\)/,
+    'the intro step must open with the hero band, flush with the content area\'s top edge');
+
+  // And the way out: the sheet closes through the platform chrome alone. A header
+  // control that dismissed it was a second close icon beside the title bar's, and
+  // it is gone from both steps, from the events they expose, and from the action
+  // contract that carried it.
+  for (const [name, text] of [['the connect sheet', connectView],
+    ['the connect sheet\'s account step', connectAccountDevicePage]]) {
+    assert.equal(text.includes('NavigationBackButton'), false,
+      `${name} must not draw a return key: the platform title bar closes the sheet`);
+    assert.equal(text.includes('onBack'), false,
+      `${name} must not expose a dismissal event of its own`);
+  }
+  assert.equal(presentationActions.includes('readonly back: () => void;'), false,
+    'the connect action contract must not carry the dismissal the platform chrome performs');
+  assert.equal(normalize(presentationActions).includes('onConnect: { back: () => {}'), false,
+    'the empty connect actions must not carry it either');
+  assert.equal(runtimeComposition.includes('onConnect: {\n      back:'), false,
+    'no runtime connect action may dismiss the sheet: that is the platform title bar\'s, the scrim\'s and the ' +
+    'swipe\'s, and all three reach the sheet options');
+  const tree = etsTree('entry/src/main/ets');
+  assert.deepEqual(
+    tree.filter(([, text]) => text.includes('onConnect.back')).map(([name]) => name),
+    [],
+    'nothing may call a connect dismissal action any more');
+  // What all three of those dismissal paths land on, so the state still resets
+  // however the sheet was left: the settings sheet's own pattern.
+  assert.match(normalize(appShell),
+    /options\.onWillDismiss = \(action: DismissSheetAction\): void => \{ this\.shellState\.showConnectSheet = false; action\.dismiss\(\); \};/,
+    'the connect sheet must reset its state on every interactive dismissal');
+});
+
+test('the signed-in connect step has a preview scenario that mounts it', () => {
+  // The account device list is the connect sheet's other step, and it only mounts
+  // when the fixture seeds an account: a scenario that opens the sheet with an
+  // empty account id lands on the intro page instead and silently stops covering
+  // it. Both halves are pinned here — the sheet has to open, and the seed has to
+  // be authenticated — so a future edit cannot quietly turn this back into the
+  // intro page's scenario.
+  const preview = source('entry/src/main/ets/pages/preview/ImmersiveBottomPreview.ets');
+  const normalized = normalize(preview);
+  assert.match(normalized,
+    /this\.connectAuthed = scenarioId\.endsWith\('-connect-authed'\);/,
+    'the preview must recognise the signed-in scenario by name');
+  assert.match(normalized,
+    /this\.shellState\.showConnectSheet = this\.connectAuthed \|\| scenarioId\.endsWith\('-connect'\);/,
+    'the signed-in scenario must open the connect sheet: its id does not end in `-connect`');
+  const seed = normalized.slice(normalized.indexOf('if (this.connectAuthed) {'));
+  assert.match(seed,
+    /this\.remotePageState\.setAccountUserId\('preview-user'\);/,
+    'the signed-in scenario must seed an account id: an empty one routes the sheet to its intro page');
+  assert.match(seed,
+    /this\.previewActions = previewActionsWithDevices\(connectDevices\(\)\);/,
+    'the signed-in scenario must mount the fixture\'s own devices, never the account service');
+  // The device source itself: the connect sheet reads the same list the settings
+  // panel does, and it is the fixture's — a preview may not call the service.
+  assert.match(normalized,
+    /onConnect: \{ openAccount: base\.onConnect\.openAccount, connect: base\.onConnect\.connect, clearPairing: base\.onConnect\.clearPairing, cloudListDevices: async \(\): Promise<CloudAccountDevice\[\]> => devices,/,
+    'the connect action\'s device list must be the fixture\'s devices');
+  // Three rows, so the step renders each state it has: the controlled desktop,
+  // an offline one and an online idle one.
+  const devices = preview.slice(preview.indexOf('function connectDevices()'),
+    preview.indexOf('function sidebarWorkspaces()'));
+  assert.equal((devices.match(/deviceId: '/g) || []).length, 3,
+    'the fixture must offer exactly the three rows the step can show');
+  assert.match(normalize(devices),
+    /\{ deviceId: 'account-desktop-2', deviceName: 'Loft desktop', online: false, lastSeenAt: 1 \}/,
+    'the fixture must keep an offline row: a device list with no offline device stops covering that state');
+  assert.match(normalize(preview),
+    /this\.remotePageState\.setControlTarget\('account_device', 'account-desktop-1', 'Studio desktop'\);/,
+    'the fixture must keep a controlled desktop: the "controlling" row is one of the states under test');
+  // And the ability opens it: the scenario has to be in the preview whitelist,
+  // or `aa start` silently loads the real app instead of the fixture.
+  assert.ok(entryAbility.includes("scenarioId === 'immersive-bottom-connect-authed'"),
+    'the scenario must be registered in the ability\'s preview whitelist');
+});
+
+test('only the surfaces no sheet presents still draw their own header', () => {
+  // The hand-drawn header is gone from every `bindSheet` surface, and this is the
+  // list of what is left, with the reason each one keeps it:
+  //
+  //   LanguageSettingsPanel    the Settings sheet's own sub-page — its header
+  //                            closes the *page* (back to the settings home), it
+  //                            does not dismiss the sheet;
+  //   OpenBitFunAccountLoginPage  the same component renders inside the compact
+  //                            account content cover, where there is no platform
+  //                            sheet chrome at all;
+  //   ModelServiceSettingsPanel   the model-service panel, which no surface
+  //                            mounts today.
+  //
+  // A new file here is a surface that went back to drawing sheet chrome, and a
+  // `SheetCloseButton` outside the shared header is a second close icon.
+  const tree = etsTree('entry/src/main/ets');
+  const drawing = (needle) => tree.filter(([, text]) => text.includes(needle)).map(([name]) => name).sort();
+  assert.deepEqual(drawing('SheetCloseHeader('), [
+    'pages/components/LanguageSettingsPanel.ets',
+    'pages/components/ModelServiceSettingsPanel.ets',
+    'pages/components/OpenBitFunAccountLoginPage.ets'
+  ], 'the hand-drawn header must stay on the surfaces no sheet presents, and nowhere else');
+  assert.deepEqual(drawing('SheetCloseButton('), ['pages/components/SheetCloseHeader.ets'],
+    'the shared header must stay the only consumer of the hand-drawn close button');
+});
+
 
 test('the chat page owns the keyboard avoidance the bottom rule assumes', () => {
   // `insetsOf` hands the bottom strip to the keyboard while it is visible,

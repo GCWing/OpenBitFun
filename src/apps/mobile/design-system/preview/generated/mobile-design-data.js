@@ -437,6 +437,44 @@ export const mobileTokens = {
     "structure": 220,
     "startup_brand": 6800,
     "cold_start_home": 2400
+  },
+  "surfaces": {
+    "top_chrome": {
+      "level": "ultra_thin",
+      "fallback_blur": "thin",
+      "floor_color": "page_bg_overlay",
+      "hairline_color": "line"
+    },
+    "bottom_chrome": {
+      "level": "thin",
+      "fallback_blur": "thin",
+      "floor_color": "card_overlay",
+      "hairline_color": "line"
+    },
+    "search_field": {
+      "level": "thin",
+      "fallback_blur": "thin",
+      "floor_color": "card_overlay",
+      "hairline_color": "line"
+    },
+    "floating_menu": {
+      "level": "thick",
+      "fallback_blur": "thick",
+      "floor_color": "card",
+      "hairline_color": "line"
+    },
+    "modal_sheet": {
+      "level": "ultra_thick",
+      "fallback_blur": "none",
+      "floor_color": "page_bg",
+      "hairline_color": "line"
+    },
+    "toast": {
+      "level": "thin",
+      "fallback_blur": "none",
+      "floor_color": "toast_background",
+      "hairline_color": "line"
+    }
   }
 };
 export const mobileComponents = {

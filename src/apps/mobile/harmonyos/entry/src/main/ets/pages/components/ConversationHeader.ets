@@ -16,6 +16,8 @@ import { CompactMenuButton } from './CompactMenuButton';
 import { NavigationBackButton } from './NavigationBackButton';
 import { TemplateIcon } from './TemplateIcon';
 import { SidebarToggleButton } from './SidebarToggleButton';
+import { ImmersiveSurfaceSupport } from './ImmersiveSurfaceSupport';
+import { ImmersiveSurfaceScene } from '../policy/ImmersiveMaterialPolicy';
 
 const HEADER_ACTION_SURFACE_SIZE: number = 42;
 
@@ -165,7 +167,7 @@ export struct ConversationHeader {
       .borderRadius(MobileDesignGeometry.controlTouchSize / 2)
       .stateEffect(true)
       .accessibilityText(RemoteI18n.t('sidebar.more'))
-      .bindPopup(this.showActionsMenu, {
+      .bindPopup(this.showActionsMenu, ImmersiveSurfaceSupport.popupOptions(ImmersiveSurfaceScene.FLOATING_MENU, {
         builder: () => {
           this.actionsMenu();
         },
@@ -178,7 +180,7 @@ export struct ConversationHeader {
         onStateChange: (event) => {
           this.onActionsMenuStateChange(event.isVisible);
         }
-      })
+      }))
       .onClick(() => {
         this.showTitleEditor = false;
         this.onOpenActions();
