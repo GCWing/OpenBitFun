@@ -144,6 +144,7 @@ cargo test --locked -p openbitfun-services-integrations --no-default-features --
 cargo test -p openbitfun-services-integrations --no-default-features --features file-watch --test file_watch_contracts
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features workspace-search --test workspace_search_contracts
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features deep-research --lib deep_research::tests::
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features web-tools --lib web_tools::tests
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features review-platform --lib review_platform
 pnpm run check:core-boundaries
 ```

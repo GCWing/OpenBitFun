@@ -96,28 +96,28 @@ describe('ConfigAPI batch config reads', () => {
     });
   });
 
-  it('keeps WebSearch credentials on the dedicated secret commands', async () => {
+  it.each(['tavily', 'deepseek'])('keeps %s WebSearch credentials on the dedicated secret commands', async (provider) => {
     invokeMock
-      .mockResolvedValueOnce({ provider: 'tavily', configured: false })
-      .mockResolvedValueOnce({ provider: 'tavily', configured: true })
-      .mockResolvedValueOnce({ provider: 'tavily', configured: false });
+      .mockResolvedValueOnce({ provider, configured: false })
+      .mockResolvedValueOnce({ provider, configured: true })
+      .mockResolvedValueOnce({ provider, configured: false });
 
-    await configAPI.getWebSearchCredentialStatus('tavily');
-    await configAPI.saveWebSearchCredential('tavily', 'tvly-secret');
-    await configAPI.clearWebSearchCredential('tavily');
+    await configAPI.getWebSearchCredentialStatus(provider);
+    await configAPI.saveWebSearchCredential(provider, 'search-secret');
+    await configAPI.clearWebSearchCredential(provider);
 
     expect(invokeMock).toHaveBeenNthCalledWith(1, 'get_web_search_credential_status', {
-      request: { provider: 'tavily' },
+      request: { provider },
     });
     expect(invokeMock).toHaveBeenNthCalledWith(2, 'save_web_search_credential', {
-      request: { provider: 'tavily', secret: 'tvly-secret' },
+      request: { provider, secret: 'search-secret' },
     });
     expect(invokeMock).toHaveBeenNthCalledWith(3, 'clear_web_search_credential', {
-      request: { provider: 'tavily' },
+      request: { provider },
     });
     expect(invokeMock).not.toHaveBeenCalledWith(
       'set_config',
-      expect.objectContaining({ request: expect.objectContaining({ value: 'tvly-secret' }) }),
+      expect.objectContaining({ request: expect.objectContaining({ value: 'search-secret' }) }),
     );
   });
 

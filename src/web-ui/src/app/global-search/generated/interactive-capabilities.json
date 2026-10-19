@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "d5b8d80b7ff09050f81fab7d2dcc5125db12a0232af1ef8bf94ce571b08efd0f",
+  "digest": "27ffaabb62f18c434a4ca5691c827a2cce75f9184e03b30bff65a7384151dfd8",
   "ownerDigest": "0d90452aea46f54ca82cfe25b6d96f1f374e83b1962e2066d378c14c1cab35db",
   "searchAcceptance": [
     {
@@ -29023,6 +29023,7 @@
         "WebSearch",
         "Exa",
         "Tavily",
+        "DeepSeek",
         "搜索服务",
         "API Key",
         "自定义端点"
@@ -29032,6 +29033,7 @@
         "WebSearch",
         "Exa",
         "Tavily",
+        "DeepSeek",
         "search provider",
         "API key",
         "custom endpoint"
@@ -29049,13 +29051,13 @@
       "items": [
         {
           "id": "provider",
-          "titleZh": "在免费 Exa MCP、Exa Search API、Tavily 与 OpenBitFun Search HTTP Protocol 之间选择运行时服务",
-          "titleEn": "Choose free Exa MCP, Exa Search API, Tavily, or OpenBitFun Search HTTP Protocol as the runtime provider",
+          "titleZh": "在免费 Exa MCP、Exa Search API、Tavily、DeepSeek 与 OpenBitFun Search HTTP Protocol 之间选择运行时服务",
+          "titleEn": "Choose free Exa MCP, Exa Search API, Tavily, DeepSeek, or OpenBitFun Search HTTP Protocol as the runtime provider",
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“在免费 Exa MCP、Exa Search API、Tavily 与 OpenBitFun Search HTTP Protocol 之间选择运行时服务”与各服务的配置状态相关，目前没有一个能安全完成选择、检查和保存整个流程的单一结构化 Command；智能体会打开精确设置入口，由用户确认配置。",
-            "reasonEn": "“Choose free Exa MCP, Exa Search API, Tavily, or OpenBitFun Search HTTP Protocol as the runtime provider” depends on provider-specific configuration state, and no single structured Command can safely complete selection, validation, and saving; the Agent opens the exact settings entry for user confirmation."
+            "reasonZh": "“在免费 Exa MCP、Exa Search API、Tavily、DeepSeek 与 OpenBitFun Search HTTP Protocol 之间选择运行时服务”与各服务的配置状态相关，目前没有一个能安全完成选择、检查和保存整个流程的单一结构化 Command；智能体会打开精确设置入口，由用户确认配置。",
+            "reasonEn": "“Choose free Exa MCP, Exa Search API, Tavily, DeepSeek, or OpenBitFun Search HTTP Protocol as the runtime provider” depends on provider-specific configuration state, and no single structured Command can safely complete selection, validation, and saving; the Agent opens the exact settings entry for user confirmation."
           }
         },
         {
@@ -29125,6 +29127,7 @@
         "WebSearch",
         "Exa",
         "Tavily",
+        "DeepSeek",
         "搜索服务",
         "API Key",
         "自定义端点",
@@ -29138,8 +29141,8 @@
         "Switch the WebSearch runtime provider",
         "Store device credentials encrypted on the execution host",
         "Configure and inspect OpenBitFun Search HTTP Protocol v1",
-        "在免费 Exa MCP、Exa Search API、Tavily 与 OpenBitFun Search HTTP Protocol 之间选择运行时服务",
-        "Choose free Exa MCP, Exa Search API, Tavily, or OpenBitFun Search HTTP Protocol as the runtime provider",
+        "在免费 Exa MCP、Exa Search API、Tavily、DeepSeek 与 OpenBitFun Search HTTP Protocol 之间选择运行时服务",
+        "Choose free Exa MCP, Exa Search API, Tavily, DeepSeek, or OpenBitFun Search HTTP Protocol as the runtime provider",
         "为 OpenBitFun Search HTTP Protocol 配置端点、认证方式和受限凭据 Header",
         "Configure the endpoint, authentication mode, and restricted credential header for OpenBitFun Search HTTP Protocol",
         "查看当前执行主机的凭据状态，并保存、替换或清除 API Key/Secret",

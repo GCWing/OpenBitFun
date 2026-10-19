@@ -1212,6 +1212,10 @@ fn default_tavily_credential_id() -> String {
     "tavily-search-api".to_string()
 }
 
+fn default_deepseek_credential_id() -> String {
+    "deepseek-search-api".to_string()
+}
+
 fn default_openbitfun_search_http_credential_id() -> String {
     "openbitfun-search-http".to_string()
 }
@@ -1245,6 +1249,7 @@ impl Default for WebSearchConfig {
 pub struct WebSearchProviderConfigs {
     pub exa_search_api: WebSearchCredentialProviderConfig,
     pub tavily: WebSearchCredentialProviderConfig,
+    pub deepseek: WebSearchCredentialProviderConfig,
     pub openbitfun_search_http: OpenBitFunSearchHttpConfig,
     #[serde(flatten)]
     pub unknown: serde_json::Map<String, serde_json::Value>,
@@ -1259,6 +1264,10 @@ impl Default for WebSearchProviderConfigs {
             },
             tavily: WebSearchCredentialProviderConfig {
                 credential_id: default_tavily_credential_id(),
+                unknown: serde_json::Map::new(),
+            },
+            deepseek: WebSearchCredentialProviderConfig {
+                credential_id: default_deepseek_credential_id(),
                 unknown: serde_json::Map::new(),
             },
             openbitfun_search_http: OpenBitFunSearchHttpConfig::default(),
@@ -4006,9 +4015,45 @@ mod tests {
 
         assert_eq!(config.web_search.provider, "exa_mcp_free");
         assert_eq!(
+            config.web_search.providers.deepseek.credential_id,
+            "deepseek-search-api"
+        );
+        assert_eq!(
             config.web_search.providers.exa_search_api.credential_id,
             "exa-search-api"
         );
+    }
+
+    #[test]
+    fn web_search_deepseek_config_preserves_legacy_payload_and_unknown_options() {
+        let legacy = serde_json::json!({
+            "provider": "tavily",
+            "providers": {"tavily": {"credentialId": "existing-tavily"}},
+            "selectionRevision": 7
+        });
+        let mut config: WebSearchConfig = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(
+            config.providers.deepseek.credential_id,
+            "deepseek-search-api"
+        );
+        let round_trip = serde_json::to_value(&config).unwrap();
+        assert_eq!(round_trip["provider"], legacy["provider"]);
+        assert_eq!(
+            round_trip["providers"]["tavily"],
+            legacy["providers"]["tavily"]
+        );
+        assert_eq!(round_trip["selectionRevision"], legacy["selectionRevision"]);
+
+        config.provider = "deepseek".to_string();
+        config.providers.deepseek.credential_id = "custom-deepseek-ref".to_string();
+        config
+            .providers
+            .deepseek
+            .unknown
+            .insert("futureOption".to_string(), serde_json::json!(true));
+        let restored: WebSearchConfig =
+            serde_json::from_value(serde_json::to_value(&config).unwrap()).unwrap();
+        assert_eq!(restored, config);
     }
 
     #[test]

@@ -10,7 +10,7 @@ use openbitfun_runtime_ports::{
 };
 use openbitfun_services_core::credential_vault::CredentialVault;
 use openbitfun_services_integrations::web_tools::{
-    ExaSearchApiProvider, FreeExaMcpProvider, OpenBitFunSearchHttpAuth,
+    DeepSeekSearchProvider, ExaSearchApiProvider, FreeExaMcpProvider, OpenBitFunSearchHttpAuth,
     OpenBitFunSearchHttpProvider, TavilySearchProvider,
 };
 use serde::{Deserialize, Serialize};
@@ -137,6 +137,12 @@ async fn resolve_provider(config: &WebSearchConfig) -> Arc<dyn WebSearchProvider
                     read_credential(&vault, &config.providers.tavily.credential_id).await?;
                 Ok(Arc::new(TavilySearchProvider::new(secret)) as Arc<dyn WebSearchProvider>)
             }
+            WebSearchProviderId::DEEPSEEK => {
+                let vault = credential_vault()?;
+                let secret =
+                    read_credential(&vault, &config.providers.deepseek.credential_id).await?;
+                Ok(Arc::new(DeepSeekSearchProvider::new(secret)) as Arc<dyn WebSearchProvider>)
+            }
             WebSearchProviderId::OPENBITFUN_SEARCH_HTTP => {
                 let http = &config.providers.openbitfun_search_http;
                 if http.endpoint.trim().is_empty() {
@@ -242,6 +248,7 @@ fn credential_id_for_provider<'a>(
             Ok(config.providers.exa_search_api.credential_id.as_str())
         }
         WebSearchProviderId::TAVILY => Ok(config.providers.tavily.credential_id.as_str()),
+        WebSearchProviderId::DEEPSEEK => Ok(config.providers.deepseek.credential_id.as_str()),
         WebSearchProviderId::OPENBITFUN_SEARCH_HTTP => {
             if matches!(
                 config.providers.openbitfun_search_http.auth.mode.trim(),
@@ -477,37 +484,41 @@ mod tests {
             .expect("create WebSearch test directory");
         let vault = credential_vault_in(directory.path());
         let config = WebSearchConfig::default();
-        let credential_id =
-            credential_id_for_provider(&config, WebSearchProviderId::EXA_SEARCH_API)
-                .expect("Exa Search API credential id");
-        let secret = "exa-test-secret-that-must-not-enter-config";
+        for provider in [
+            WebSearchProviderId::EXA_SEARCH_API,
+            WebSearchProviderId::DEEPSEEK,
+        ] {
+            let credential_id =
+                credential_id_for_provider(&config, provider).expect("Search API credential id");
+            let secret = "search-test-secret-that-must-not-enter-config";
 
-        assert!(!credential_is_configured(&vault, credential_id)
-            .await
-            .expect("read empty credential status"));
-        store_credential(&vault, credential_id, secret)
-            .await
-            .expect("save credential");
-        assert!(credential_is_configured(&vault, credential_id)
-            .await
-            .expect("read configured credential status"));
-        assert_eq!(
-            read_credential(&vault, credential_id)
+            assert!(!credential_is_configured(&vault, credential_id)
                 .await
-                .expect("read saved credential"),
-            secret
-        );
+                .expect("read empty credential status"));
+            store_credential(&vault, credential_id, secret)
+                .await
+                .expect("save credential");
+            assert!(credential_is_configured(&vault, credential_id)
+                .await
+                .expect("read configured credential status"));
+            assert_eq!(
+                read_credential(&vault, credential_id)
+                    .await
+                    .expect("read saved credential"),
+                secret
+            );
 
-        let serialized = serde_json::to_string(&config).expect("serialize WebSearch config");
-        assert!(!serialized.contains(secret));
-        assert!(serialized.contains(credential_id));
+            let serialized = serde_json::to_string(&config).expect("serialize WebSearch config");
+            assert!(!serialized.contains(secret));
+            assert!(serialized.contains(credential_id));
 
-        remove_credential(&vault, credential_id)
-            .await
-            .expect("clear credential");
-        assert!(!credential_is_configured(&vault, credential_id)
-            .await
-            .expect("read cleared credential status"));
+            remove_credential(&vault, credential_id)
+                .await
+                .expect("clear credential");
+            assert!(!credential_is_configured(&vault, credential_id)
+                .await
+                .expect("read cleared credential status"));
+        }
     }
 
     #[tokio::test]
