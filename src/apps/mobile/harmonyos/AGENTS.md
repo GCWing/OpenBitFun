@@ -186,6 +186,25 @@ authenticated cold-process, signed-out, and background/foreground verification.
 - For changes to navigation controls, menus, or responsive presentation, verify compact and wide behavior, light and dark theme legibility, and capture a real-device screenshot before completion when a device is connected.
 - Run the smallest matching HarmonyOS build/check plus `pnpm run theme:color-audit:all` for theme or color-related changes.
 
+The app's own chrome is built from the HDS components in `@kit.UIDesignKit` — the
+app-root navigation and the compact conversation's platform title bar. It is the only
+platform UI kit this layer may import: the component-platform import ban in
+`scripts/check-harmonyos-architecture.mjs` names AbilityKit, IMEKit and ScanKit, and
+that set is the contract rather than a starting point to extend.
+
+- Gate every member that ships above the app's floor (API 23 and 26 ones: immersive
+  materials, HDS title-bar extensions, blur types) through the existing gates —
+  `ImmersiveMaterialService`, `ImmersiveSurfaceSupport.usesMaterial`/`materialFor`,
+  `HdsTitleBarSupport`'s decision mappers. Below its floor such a member does not exist
+  at all, so reading it is `undefined is not callable`: the process dies instead of
+  degrading. An unconditional read of the component material did exactly that at
+  start-up on API 22, which is why the inventory test below exists.
+- A component that carries a material keeps two literal postures: one branch that adopts
+  the material and one that a device below its floor takes, the second naming no material
+  member at all, with the two identical once the material call is removed. The immersive
+  contract tests hold each surface's postures and
+  `tools/tests/immersive-api-gate-inventory.test.cjs` holds the member inventory.
+
 For the bundled native file editor renderer (read-only mode, horizontal lines,
 line-number scroll alignment, and edit bridge), run from the repository root:
 
