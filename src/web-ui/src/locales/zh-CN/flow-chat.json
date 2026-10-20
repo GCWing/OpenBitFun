@@ -3450,6 +3450,7 @@
       "actual": "当前模型：{{model}}",
       "unassigned": "首次请求时分配",
       "choose": "选择模型池",
+      "configure": "配置模型池",
       "empty": "尚未配置模型池",
       "missing": "此模型池已不存在",
       "unavailable": "暂无可用模型",

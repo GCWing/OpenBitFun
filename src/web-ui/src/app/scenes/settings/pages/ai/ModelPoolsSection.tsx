@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  Button, Combobox, ConfirmDialog, Dialog, DialogBody, DialogClose, DialogFooter,
-  DialogHeader, DialogHeading, DialogTitle, Icon, IconButton, Input, OverflowText, Select, StatusPill, Tooltip,
+  Button, Capsule, Card, CardBody, CardHeader, ConfirmDialog, Dialog, DialogBody, DialogClose, DialogFooter,
+  DialogHeader, DialogHeading, DialogTitle, Icon, IconButton, Input, MenuPopover, OverflowText, Radio, StatusPill, Tooltip,
+  type MenuEntry,
 } from '@openbitfun/ui';
 import { ConfigPageRow, ConfigPageSection } from '@/infrastructure/config/components/common';
 import { useI18n } from '@/infrastructure/i18n';
@@ -9,16 +10,96 @@ import { useSettingsDraft } from '@/infrastructure/config/settingsDraftRegistry'
 import { useModelSelectPresentation } from '@/infrastructure/config/components/ModelSelectPresentation';
 import './ModelPoolsSection.scss';
 import type { AIModelConfig } from '@/infrastructure/config/types';
-import { filterSelectableTextChatModels } from '@/infrastructure/config/services/modelCategory';
+import { ModelPoolMemberPicker } from './ModelPoolMemberPicker';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { modelPoolAPI, readableModelPools, supportsModelPools,
   type ModelPoolDefinition, type ModelPoolDocument, type ModelPoolMemberStatus,
 } from '@/infrastructure/api/service-api/ModelPoolAPI';
 
+function ModelPoolStrategyPreview({ strategy }: { strategy: 'ordered' | 'balanced' }) {
+  return <div className="openbitfun-model-pools__strategy-preview" data-strategy={strategy} aria-hidden="true"
+    data-openbitfun-component="model-settings" data-openbitfun-part="poolStrategyPreview">
+    <img src="/assets/model-pools/routing-strategies-v1.png" alt="" draggable={false} decoding="async" />
+  </div>;
+}
+
+function ModelPoolMemberCapsule({ id, order, model, status, busy, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onRemove, onRetry }: {
+  id: string;
+  order: number;
+  model?: AIModelConfig;
+  status?: ModelPoolMemberStatus;
+  busy: boolean;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onRemove: () => void;
+  onRetry: () => void;
+}) {
+  const { t, formatNumber } = useI18n('settings/models');
+  const { buildModelOption } = useModelSelectPresentation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+  const option = model ? buildModelOption(model) : undefined;
+  const label = option?.label || id;
+  const orderedLabel = `${formatNumber(order)}. ${label}`;
+  const healthLabel = status ? t(`pools.health.${status.status}`) : model ? t('pools.health.unverified') : t('pools.health.missing');
+  const moreLabel = t('pool.moreActions', { model: orderedLabel });
+  const items: MenuEntry[] = [
+    { id: 'health', label: healthLabel, disabled: true },
+    ...(status && ['needs_attention', 'cooling_down'].includes(status.status)
+      ? [{ id: 'retry', label: t('pools.retry'), disabled: busy, onSelect: onRetry }] : []),
+    { id: 'up', label: t('pools.up'), icon: <Icon name="arrow-up" size="sm" />, disabled: busy || !canMoveUp, onSelect: onMoveUp },
+    { id: 'down', label: t('pools.down'), icon: <Icon name="arrow-down" size="sm" />, disabled: busy || !canMoveDown, onSelect: onMoveDown },
+  ];
+
+  return <div className="openbitfun-model-pools__member" role="listitem"
+    data-openbitfun-component="model-settings" data-openbitfun-part="poolMember">
+    <Capsule size="xs" action={(
+      <Tooltip content={t('pools.remove')}>
+        <IconButton size="xs" shape="circle" variant="quiet" disabled={busy}
+          aria-label={t('providerSelection.removeModelByName', { name: label })}
+          data-testid="settings-model-pool-member-remove" data-model-id={id}
+          icon={<Icon name="xmark" size="xs" />} onClick={onRemove} />
+      </Tooltip>
+    )}>
+      <Tooltip disabled={menuOpen} content={(
+        <div className="openbitfun-model-pools__member-summary"
+          data-openbitfun-component="model-settings" data-openbitfun-part="poolMemberSummary">
+          {option?.description && <span>{option.description}</span>}
+          <span>{healthLabel}</span>
+          {status?.reason && <span>{status.reason}</span>}
+        </div>
+      )}>
+        <Button ref={anchorRef} variant="fill" size="xs" disabled={busy}
+          className="openbitfun-model-pools__member-button"
+          leadingIcon={<span className="openbitfun-model-pools__member-order"
+            data-openbitfun-component="model-settings" data-openbitfun-part="poolMemberOrder">{formatNumber(order)}</span>}
+          data-testid="settings-model-pool-member" data-model-id={id}
+          aria-label={moreLabel} aria-haspopup="menu" aria-expanded={menuOpen}
+          aria-controls={menuOpen ? menuId : undefined} onClick={() => setMenuOpen(open => !open)}
+          onKeyDown={event => {
+            if (event.key !== 'ArrowDown') return;
+            event.preventDefault();
+            setMenuOpen(true);
+          }}>
+          {label}
+        </Button>
+      </Tooltip>
+    </Capsule>
+    <span data-openbitfun-component="model-settings" data-openbitfun-part="poolMemberActions">
+      <MenuPopover id={menuId} data-testid="settings-model-pool-member-menu" aria-label={moreLabel}
+        anchorRef={anchorRef} ownerRef={anchorRef} placement="bottom" open={menuOpen && !busy}
+        onClose={() => setMenuOpen(false)} items={items} />
+    </span>
+  </div>;
+}
+
 /** Pool records belong to the execution host and are saved in the main configuration. */
 export function ModelPoolsSection({ models }: { models: AIModelConfig[] }) {
   const { t } = useI18n('settings/models');
-  const { buildModelOption } = useModelSelectPresentation();
+  const strategyGroupId = useId();
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   const [document, setDocument] = useState<ModelPoolDocument>();
   const [draft, setDraft] = useState<ModelPoolDefinition>();
@@ -28,6 +109,10 @@ export function ModelPoolsSection({ models }: { models: AIModelConfig[] }) {
   const statusRequest = useRef(0);
   const [deleteId, setDeleteId] = useState<string>();
   const supported = supportsModelPools();
+  const strategyOptions = [
+    { value: 'ordered', label: t('pools.ordered') },
+    { value: 'balanced', label: t('pools.balanced') },
+  ] as const;
   const pools = document ? readableModelPools(document) : [];
   const load = useCallback(async () => {
     try {
@@ -166,6 +251,8 @@ export function ModelPoolsSection({ models }: { models: AIModelConfig[] }) {
       type="warning"
     />
     <Dialog open={Boolean(draft)} onOpenChange={nextOpen => { if (!nextOpen) discardDraft(); }}
+      className="openbitfun-model-pools__editor"
+      data-testid="settings-model-pool-dialog"
       size="lg" closeOnPointerOutside={false}>
       <DialogHeader>
         <DialogHeading>
@@ -176,9 +263,9 @@ export function ModelPoolsSection({ models }: { models: AIModelConfig[] }) {
       <DialogBody aria-busy={busy}>
         {errorBanner}
         {draft && <>
-          <ConfigPageRow balanced align="center" label={t('pools.name')}><Input size="sm" aria-label={t('pools.name')}
+          <ConfigPageRow className="openbitfun-model-pools__editor-row openbitfun-model-pools__name-row" wide align="center" label={t('pools.name')}><Input size="sm" aria-label={t('pools.name')}
             value={draft.name} disabled={busy} onChange={event => setDraft({ ...draft, name: event.target.value })} /></ConfigPageRow>
-          <ConfigPageRow balanced align="center" label={
+          <ConfigPageRow className="openbitfun-model-pools__editor-row" multiline label={
             <span className="openbitfun-model-pools__summary" data-openbitfun-component="model-settings" data-openbitfun-part="poolStrategyLabel">
               {t('pools.strategy')}
               <Tooltip content={t('pools.stickyHint')}>
@@ -187,14 +274,46 @@ export function ModelPoolsSection({ models }: { models: AIModelConfig[] }) {
               </Tooltip>
             </span>
           }>
-            <Select size="sm" aria-label={t('pools.strategy')} value={draft.strategy} disabled={busy}
-              options={[
-                { value: 'ordered', label: t('pools.ordered'), tooltip: t('pools.orderedHint') },
-                { value: 'balanced', label: t('pools.balanced'), tooltip: t('pools.balancedHint') },
-              ]}
-              onValueChange={value => setDraft({ ...draft, strategy: String(value) })} />
+            <div className="openbitfun-model-pools__strategies" role="radiogroup" aria-label={t('pools.strategy')}
+              data-openbitfun-component="model-settings" data-openbitfun-part="poolStrategies"
+              onKeyDown={event => {
+                if (busy) return;
+                const radios = Array.from(event.currentTarget.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+                const index = Math.max(0, radios.findIndex(radio => radio === event.target));
+                let next: number;
+                if (event.key === 'Home') next = 0;
+                else if (event.key === 'End') next = radios.length - 1;
+                else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % radios.length;
+                else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index + radios.length - 1) % radios.length;
+                else return;
+                event.preventDefault();
+                setDraft({ ...draft, strategy: radios[next].value });
+                radios[next].focus({ preventScroll: true });
+              }}>
+              {strategyOptions.map(option => (
+                <Card key={option.value} appearance="neutral" padding="none" clip
+                  className="openbitfun-model-pools__strategy-card"
+                  data-selected={draft.strategy === option.value} data-disabled={busy}
+                  onClick={event => {
+                    if (busy) return;
+                    setDraft({ ...draft, strategy: option.value });
+                    event.currentTarget.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+                  }}>
+                  <ModelPoolStrategyPreview strategy={option.value} />
+                  <CardHeader className="openbitfun-model-pools__strategy-header" actions={<Radio name={strategyGroupId} value={option.value} size="sm"
+                    checked={draft.strategy === option.value} disabled={busy}
+                    aria-label={option.label}
+                    data-testid={`settings-model-pool-strategy-${option.value}`}
+                    onCheckedChange={() => setDraft({ ...draft, strategy: option.value })} />} />
+                  <CardBody align="center" className="openbitfun-model-pools__strategy-content">
+                    <span className="openbitfun-model-pools__strategy-title"
+                      data-openbitfun-component="model-settings" data-openbitfun-part="poolStrategyTitle">{option.label}</span>
+                  </CardBody>
+                </Card>
+              ))}
+            </div>
           </ConfigPageRow>
-          <ConfigPageRow balanced align="center" label={
+          <ConfigPageRow className="openbitfun-model-pools__editor-row" balanced align="center" label={
             <span className="openbitfun-model-pools__summary" data-openbitfun-component="model-settings" data-openbitfun-part="poolAddLabel">
               {t('pools.add')}
               <Tooltip content={t('pools.addHint')}>
@@ -202,47 +321,25 @@ export function ModelPoolsSection({ models }: { models: AIModelConfig[] }) {
                   icon={<Icon name="info" size="sm" />} />
               </Tooltip>
             </span>
-          }><Combobox size="sm" aria-label={t('pools.add')} value="" disabled={busy}
-            placeholder={t('pools.add')} options={filterSelectableTextChatModels(models).filter(model => Boolean(model.id) && !draft.member_model_ids.includes(model.id!))
-              .map(buildModelOption)}
-            onValueChange={value => { if (value) setDraft({ ...draft, member_model_ids: [...draft.member_model_ids, String(value)] }); }} /></ConfigPageRow>
-          {draft.member_model_ids.length > 0 && <ul className="openbitfun-model-pools__members" role="list"
+          }><ModelPoolMemberPicker key={scope.epoch} models={models} value={draft.member_model_ids} disabled={busy}
+            onValueChange={member_model_ids => setDraft({ ...draft, member_model_ids })} /></ConfigPageRow>
+          {draft.member_model_ids.length > 0 && <div className="openbitfun-model-pools__members" role="list"
             data-openbitfun-component="model-settings" data-openbitfun-part="poolMembers">
-            {draft.member_model_ids.map((id, index) => {
-              const model = models.find(item => item.id === id);
-              const status = statuses.find(item => item.modelId === id);
-              return <li key={id} className="openbitfun-model-pools__member" data-openbitfun-component="model-settings" data-openbitfun-part="poolMember">
-                <div className="openbitfun-model-pools__summary" data-openbitfun-component="model-settings" data-openbitfun-part="poolMemberSummary">
-                  <OverflowText className="openbitfun-model-pools__name">{model ? buildModelOption(model).label : id}</OverflowText>
-                  <StatusPill tone="neutral">
-                    {status ? t(`pools.health.${status.status}`) : model ? t('pools.health.unverified') : t('pools.health.missing')}
-                  </StatusPill>
-                </div>
-                {status && ['needs_attention', 'cooling_down'].includes(status.status) && <Button size="sm" variant="outline" disabled={busy}
-                  onClick={() => {
+            {draft.member_model_ids.map((id, index) => (
+              <ModelPoolMemberCapsule key={id} id={id} order={index + 1} model={models.find(item => item.id === id)}
+                status={statuses.find(item => item.modelId === id)} busy={busy}
+                canMoveUp={index > 0} canMoveDown={index < draft.member_model_ids.length - 1}
+                onMoveUp={() => move(index, -1)} onMoveDown={() => move(index, 1)}
+                onRemove={() => setDraft({ ...draft, member_model_ids: draft.member_model_ids.filter(member => member !== id) })}
+                onRetry={() => {
                     setBusy(true);
                     void modelPoolAPI.retryMember(id).then(() => modelPoolAPI.status(draft.id))
                       .then(result => { if (scope.isCurrent()) setStatuses(result); })
                       .catch(cause => { if (scope.isCurrent()) setError(String(cause)); })
                       .finally(() => { if (scope.isCurrent()) setBusy(false); });
-                  }}>{t('pools.retry')}</Button>}
-                <div className="openbitfun-model-pools__member-actions" data-openbitfun-component="model-settings" data-openbitfun-part="poolMemberActions">
-                  <Tooltip content={t('pools.up')}>
-                    <IconButton size="sm" aria-label={t('pools.up')} icon={<Icon name="arrow-up" size="sm" />}
-                      disabled={busy || index === 0} onClick={() => move(index, -1)} />
-                  </Tooltip>
-                  <Tooltip content={t('pools.down')}>
-                    <IconButton size="sm" aria-label={t('pools.down')} icon={<Icon name="arrow-down" size="sm" />}
-                      disabled={busy || index === draft.member_model_ids.length - 1} onClick={() => move(index, 1)} />
-                  </Tooltip>
-                  <Tooltip content={t('pools.remove')}>
-                    <IconButton size="sm" tone="danger" aria-label={t('pools.remove')} icon={<Icon name="delete" size="sm" />}
-                      disabled={busy} onClick={() => setDraft({ ...draft, member_model_ids: draft.member_model_ids.filter(member => member !== id) })} />
-                  </Tooltip>
-                </div>
-              </li>;
-            })}
-          </ul>}
+                }} />
+            ))}
+          </div>}
         </>}
       </DialogBody>
       <DialogFooter appearance="floating">

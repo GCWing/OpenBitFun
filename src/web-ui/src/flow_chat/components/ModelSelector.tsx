@@ -180,7 +180,7 @@ const ModelSelectorQuickAction = React.forwardRef<HTMLButtonElement, React.Butto
       {...actionProps}
       ref={ref}
       size="xs"
-      variant="quiet"
+      variant="fill"
       leadingIcon={<Icon name="check-line" size="sm" aria-hidden className="openbitfun-model-selector__action-selected-check" />}
     >
       {label}
@@ -532,9 +532,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const pools = poolSnapshot?.scopeKey === modelSelectionScopeKey ? poolSnapshot.pools : [];
   const poolsLoading = poolSnapshot?.scopeKey !== modelSelectionScopeKey;
   const poolError = poolSnapshot?.scopeKey === modelSelectionScopeKey ? poolSnapshot.error : undefined;
+  const poolsEmpty = !poolsLoading && !poolError && pools.length === 0;
+  const poolSelectionLabel = t(poolsEmpty ? 'modelSelector.pools.configure' : 'modelSelector.pools.choose');
   const selectedPool = pools.find(pool => pool.id === poolId);
   const poolSupported = Boolean(sessionId || persistSharedModeDefault) && !externalSelection && !isAcpSession && supportsModelPools()
     && (activeSession?.sessionKind !== 'btw' || supportsBtwModelPools()) && !activeSession?.config.dispatchTarget && !activeSession?.config.dispatchJobId;
+  const poolModeDescription = poolSupported ? poolSelectionLabel : t('modelSelector.pools.surfaceUnsupported');
   const poolStatuses = poolHealth?.scopeKey === modelSelectionScopeKey && poolHealth.poolId === poolId
     ? poolHealth.statuses : undefined;
   const poolUnavailable = Boolean(poolStatuses?.length && poolStatuses.every(member =>
@@ -2586,7 +2589,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                             {(['pool', 'smart'] as const).map(mode => {
                               const label = t(mode === 'smart' ? 'modelSelector.modes.smart' : 'modelSelector.modes.pool');
                               const tooltip = `${label} · ${mode === 'pool'
-                                ? t(poolSupported ? 'modelSelector.pools.choose' : 'modelSelector.pools.surfaceUnsupported')
+                                ? poolModeDescription
                                 : t(primaryModelAvailable ? 'modelSelector.modes.comingSoon' : 'modelSelector.modes.primaryRequired')}`;
                               return (
                                 <Tooltip key={mode} content={tooltip}>
@@ -2718,6 +2721,24 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                   {acpFastModeItem}
                 </div>
               </div>
+            ) : activePanel === 'pools' && poolsEmpty ? (
+              <MenuList
+                className="openbitfun-model-selector__pool-empty"
+                data-testid="chat-model-selector-options"
+                data-panel-kind="pools"
+              >
+                <Button
+                  variant="quiet"
+                  size="sm"
+                  role="menuitem"
+                  tabIndex={-1}
+                  data-openbitfun-menu-item=""
+                  data-testid="chat-model-selector-open-settings"
+                  onClick={handleOpenModelSettings}
+                >
+                  {poolSelectionLabel}
+                </Button>
+              </MenuList>
             ) : isSelectionPanel ? (
               <div data-testid="chat-model-selector-options" data-panel-kind={activePanel}>
                 <ModelSelectorMenuLevel
@@ -2745,7 +2766,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                         )}
                         onClick={() => closePanel(true)}
                       >
-                        {activePanel === 'pools' ? t('modelSelector.pools.choose') : activePanel === 'providers'
+                        {activePanel === 'pools' ? poolSelectionLabel : activePanel === 'providers'
                           ? displayedModel?.providerName || t('modelSelector.modelSettings')
                           : t('modelSelector.model')}
                       </MenuItem>
@@ -2756,8 +2777,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     <MenuSection>
                       {poolsLoading ? <MenuItem disabled>{t('modelSelector.status.loading')}</MenuItem>
                         : poolError ? <MenuItem disabled>{t('modelSelector.pools.loadError')}</MenuItem>
-                          : pools.length === 0 ? <MenuItem disabled>{t('modelSelector.pools.empty')}</MenuItem>
-                            : pools.map(pool => (
+                          : pools.map(pool => (
                               <MenuItem key={pool.id} role="menuitemradio" checked={poolId === pool.id}
                                 data-testid="chat-model-selector-pool-option" data-pool-id={pool.id}
                                 disabled={loading || !canSelectPool(pool)}
@@ -2886,7 +2906,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                           disabled: mode.value === 'pool' ? !poolSupported : mode.value === 'smart' && !primaryModelAvailable,
                           label: (
                             <Tooltip content={mode.value === 'manual' ? manualModelLabel
-                              : mode.value === 'pool' ? t(poolSupported ? 'modelSelector.pools.choose' : 'modelSelector.pools.surfaceUnsupported')
+                              : mode.value === 'pool' ? poolModeDescription
                               : t(primaryModelAvailable ? 'modelSelector.modes.comingSoon' : 'modelSelector.modes.primaryRequired')}>
                               <OverflowText>{mode.label}</OverflowText>
                             </Tooltip>

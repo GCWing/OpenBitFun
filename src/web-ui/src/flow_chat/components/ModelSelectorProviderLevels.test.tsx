@@ -1189,6 +1189,42 @@ describe('ModelSelector provider levels', () => {
     expect(agentAPI.updateSessionModel).not.toHaveBeenCalled();
   });
 
+  it('offers only model pool configuration when battery mode has no pools', async () => {
+    poolApiMocks.supported = true;
+    const openSettings = vi.spyOn(quickActions, 'openSettings').mockImplementation(() => undefined);
+    try {
+      await renderSelector();
+      await openModeMenu();
+      expect(modeOption('pool')?.dataset.tooltip).toContain('modelSelector.pools.configure');
+      await act(async () => modeOption('pool')!.click());
+      const panel = optionsPanel()!;
+      expect(panel.dataset.panelKind).toBe('pools');
+      expect(panel.textContent).toBe('modelSelector.pools.configure');
+      expect(panel.querySelector('[data-testid="chat-model-selector-summary-back"]')).toBeNull();
+      expect(panel.querySelectorAll('[role="menuitem"]')).toHaveLength(1);
+      await act(async () => panel.querySelector<HTMLButtonElement>('[data-testid="chat-model-selector-open-settings"]')!.click());
+      expect(openSettings).toHaveBeenCalledExactlyOnceWith({ pageId: 'ai.models' });
+      expect(configManager.setConfig).not.toHaveBeenCalled();
+      expect(poolApiMocks.select).not.toHaveBeenCalled();
+    } finally {
+      openSettings.mockRestore();
+    }
+  });
+
+  it('keeps pending and failed pool reads distinct from an empty catalog', async () => {
+    poolApiMocks.supported = true;
+    let failRead!: (reason: Error) => void;
+    poolApiMocks.list.mockReturnValue(new Promise((_resolve, reject) => { failRead = reject; }));
+    await renderSelector();
+    await openModeMenu();
+    await act(async () => modeOption('pool')!.click());
+    expect(optionsPanel()?.textContent).toContain('modelSelector.status.loading');
+    expect(optionsPanel()?.textContent).not.toContain('modelSelector.pools.configure');
+    await act(async () => { failRead(new Error('Catalog unavailable')); });
+    expect(optionsPanel()?.textContent).toContain('modelSelector.pools.loadError');
+    expect(optionsPanel()?.textContent).not.toContain('modelSelector.pools.configure');
+  });
+
   it('keeps pools inside battery mode and commits only after choosing a pool', async () => {
     poolApiMocks.supported = true;
     poolApiMocks.list.mockResolvedValue({ version: 1, pools: [

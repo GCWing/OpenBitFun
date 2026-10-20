@@ -2914,7 +2914,7 @@ const ModelSettingsPage: React.FC = () => {
                   if (element) modelCapsuleRefs.current.set(draft.key, element);
                   else modelCapsuleRefs.current.delete(draft.key);
                 }}
-                variant="outline"
+                variant="fill"
                 size="xs"
                 className="openbitfun-model-settings__model-capsule-edit"
                 data-testid="settings-model-capsule-edit"

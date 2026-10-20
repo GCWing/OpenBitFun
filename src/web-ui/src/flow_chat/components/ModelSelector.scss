@@ -498,6 +498,12 @@ $model-mode-dust-sizes: ();
     max-inline-size: 60%;
   }
 
+  &__pool-empty {
+    align-items: center;
+    justify-content: center;
+    padding-block: var(--openbitfun-space-3);
+  }
+
   &__settings-card {
     position: relative;
     z-index: 2;

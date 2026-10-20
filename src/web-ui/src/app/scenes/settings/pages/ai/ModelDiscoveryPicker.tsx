@@ -137,7 +137,7 @@ export function ModelDiscoveryPicker({
                 return (
                   <Button
                     key={modelName}
-                    variant="outline"
+                    variant={isSelected ? 'fill' : 'outline'}
                     size="xs"
                     aria-pressed={isSelected}
                     title={option.description}

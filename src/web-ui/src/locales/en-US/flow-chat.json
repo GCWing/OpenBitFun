@@ -3450,6 +3450,7 @@
       "actual": "Current model: {{model}}",
       "unassigned": "Assigned on the first request",
       "choose": "Choose model pool",
+      "configure": "Configure model pools",
       "empty": "No model pools configured",
       "missing": "This model pool no longer exists",
       "unavailable": "No available models",
