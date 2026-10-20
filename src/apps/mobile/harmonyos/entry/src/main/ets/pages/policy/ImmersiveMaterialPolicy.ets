@@ -196,6 +196,59 @@ export class ImmersiveMaterialPolicy {
   static readonly MATERIAL_STATE_DISABLE: string = 'disable';
 
   /**
+   * Whether a surface this app paints itself may be handed the platform material.
+   *
+   * Two kinds of surface go through this policy. A window-level one — the modal sheet,
+   * the floating menu, the toast — is the platform's own shell: the app hands it
+   * options, and the material is what that shell is made of. A component surface —
+   * `top_chrome` (the wide top band) and `bottom_chrome` (the composer and staging
+   * capsules) — is drawn by a component of ours, which drops its own floor, blur, edge
+   * and shadow the moment it adopts a material.
+   *
+   * Measured on the API 26 emulator: the platform honours the material on the window
+   * shell and ignores it on a component. A sheet that is given a transparent background
+   * and a material has a background because of that material — take the material away
+   * and the page reads through the sheet. The composer pill with the material attribute
+   * and the same build without it differ by nothing but the status bar's clock, so on a
+   * component the material is accepted and then not drawn: the component has already
+   * given up its own glass, and the surface the user sees is bare.
+   *
+   * Hence the split, and hence this one place to change it. A real device that draws a
+   * component's material flips the answer here; every other file reads it through the
+   * decision below, so no component has to be edited again. Evidence: the immersive
+   * material render finding in the mobile artefact notes.
+   */
+  static readonly COMPONENT_SURFACES_TAKE_NO_MATERIAL: boolean = true;
+
+  /**
+   * The scenes a component of this app paints, rather than a platform shell.
+   *
+   * `search_field` is listed with the two chrome scenes for the same reason even
+   * though no surface asks for it yet: it is a field's own glass, which is the kind of
+   * surface a component draws, so a future call site inherits the correct answer
+   * instead of copying the mistake this list exists to prevent.
+   */
+  static readonly SELF_DRAWN_SCENES: string[] = [
+    ImmersiveSurfaceScene.TOP_CHROME,
+    ImmersiveSurfaceScene.BOTTOM_CHROME,
+    ImmersiveSurfaceScene.SEARCH_FIELD
+  ];
+
+  /**
+   * Whether one scene's surface may be handed to the platform material at all.
+   *
+   * Answered here rather than at each call site, so a surface cannot half-adopt a
+   * material: the window shells ask, the decision below carries the answer to the
+   * service that builds the object, and a scene that answers no never reaches it.
+   */
+  static takesPlatformMaterial(scene: string): boolean {
+    if (!ImmersiveMaterialPolicy.COMPONENT_SURFACES_TAKE_NO_MATERIAL) {
+      return true;
+    }
+    return ImmersiveMaterialPolicy.SELF_DRAWN_SCENES.indexOf(scene) === -1;
+  }
+
+  /**
    * Whether a style can adapt its content to the complementary colour of what is
    * behind it.
    *
@@ -223,10 +276,13 @@ export function resolveImmersiveMaterial(
   // Anything that is not a finite number is not evidence of API 26, and a device
   // whose level cannot be measured keeps its painted surface instead of risking a
   // call the platform would reject. A state the app has switched off is the other
-  // way a material can be forbidden outright, for every surface at once.
+  // way a material can be forbidden outright, for every surface at once. The third
+  // question is the surface's own kind: a scene this app paints keeps its own glass
+  // whatever the device supports, because there the material is not drawn at all.
   const applies = Number.isFinite(snapshot.apiLevel) &&
     snapshot.apiLevel >= ImmersiveMaterialPolicy.IMMERSIVE_MATERIAL_API_LEVEL &&
-    snapshot.materialState !== ImmersiveMaterialPolicy.MATERIAL_STATE_DISABLE;
+    snapshot.materialState !== ImmersiveMaterialPolicy.MATERIAL_STATE_DISABLE &&
+    ImmersiveMaterialPolicy.takesPlatformMaterial(scene);
   // Deformation and light feedback are motion, so the user's reduced-motion
   // preference turns both off while the material itself stays.
   const animated = applies && !snapshot.reduceMotion;

@@ -298,24 +298,24 @@ export class ImmersiveSurfaceSupport {
   }
 
   /**
-   * The hairline the surface itself draws over the material it adopted.
+   * The bottom hairline a self-drawn band wears.
    *
-   * `surfaceBorder` answers the other posture: a content root inside a component
-   * that already carries a material, where any edge the root draws is a second edge
-   * the material did not ask for. A self-drawn band is that component, not a root
+   * `surfaceBorder` answers the other posture: a content root inside a component that
+   * already carries a surface, where any edge the root draws is a second edge the
+   * surface did not ask for. A self-drawn band *is* that component rather than a root
    * inside one, and its own edge is part of what it is designed as — the wide top
-   * band's half-pixel line along the bottom of the band's box. So the line is drawn
-   * *on* the material path, and the painted fallback is left exactly as it shipped:
-   * a border it never had would be a new edge on every device below the material.
+   * band's half-pixel line along the bottom of the band's box, the capsule's edge
+   * where its design has one.
+   *
+   * The line is drawn on every device, because the component scenes take no material
+   * at all (see `ImmersiveMaterialPolicy.takesPlatformMaterial`): there is no posture
+   * left in which the platform would supply the edge instead, so an answer of "no
+   * edge" would silently drop an edge the design asks for.
    *
    * The width is geometry and stays the caller's; the colour is a contract colour
    * and comes from the recipe.
    */
   static surfaceHairline(scene: ImmersiveSurfaceScene, width: number): BorderOptions {
-    if (!ImmersiveSurfaceSupport.usesMaterial(scene)) {
-      const none: BorderOptions = { width: 0, color: TRANSPARENT };
-      return none;
-    }
     const recipe: ImmersiveSurfaceRecipe = ImmersiveSurfaceRecipes.recipeFor(scene);
     const edge: BorderOptions = {
       width: { bottom: width },

@@ -62,6 +62,13 @@ RECIPES[Scene.TOAST] =
   { level: 'thin', fallbackBlur: 'none', floorColor: 'toast_background', hairlineColor: 'line' };
 const SCENES = Object.values(Scene);
 
+// The two kinds of surface this contract separates: the scenes a component of this app
+// paints, and the scenes the platform's own shells paint. The split is what the API 26
+// emulator settled — a component's material is accepted and never drawn, so a component
+// scene keeps its own glass on whatever device it runs on.
+const COMPONENT_SCENES = [Scene.TOP_CHROME, Scene.BOTTOM_CHROME, Scene.SEARCH_FIELD];
+const WINDOW_SCENES = [Scene.MODAL_SHEET, Scene.FLOATING_MENU, Scene.TOAST];
+
 // Only these two styles can adapt their content to the complementary colour.
 const INVERTIBLE = ['thin', 'ultra_thin'];
 const LEVELS = ['ultra_thin', 'thin', 'regular', 'thick', 'ultra_thick'];
@@ -228,19 +235,35 @@ test('the API 26 boundary and the material state decide whether a material is as
     }
   }
 
-  for (const state of ['default', 'enable']) {
+  // At the material's own floor the surface's kind decides, not only the device: the
+  // window shells take the material the platform draws for them, and the scenes this app
+  // paints itself do not, because a component's material is accepted and then not drawn.
+  for (const state of ['default', 'enable', 'disable']) {
     for (const reduceMotion of [false, true]) {
-      for (const scene of SCENES) {
+      for (const scene of COMPONENT_SCENES) {
+        const resolved = decision(scene, 26, state, reduceMotion);
+        assert.equal(resolved.apply, false,
+          scene + ' is painted by a component of this app: it must never ask for a material');
+        assert.equal(resolved.colorInvert, false, scene + ' must never invert');
+        assert.equal(resolved.interactive, false, scene + ' must never deform');
+        assert.equal(resolved.lightEffect, false, scene + ' must never light up');
+      }
+      if (state === 'disable') {
+        continue;
+      }
+      for (const scene of WINDOW_SCENES) {
         const resolved = decision(scene, 26, state, reduceMotion);
         const level = RECIPES[scene].level;
-        assert.equal(resolved.apply, true, `${scene} must ask for a material at API 26 with state ${state}`);
+        assert.equal(resolved.apply, true,
+          scene + ' is a platform shell: it asks for a material at API 26 with state ' + state);
         assert.equal(resolved.colorInvert, INVERTIBLE.includes(level),
-          `${scene} inverts only if its ${level} material is thin enough`);
-        assert.equal(resolved.interactive, !reduceMotion, `${scene} deform follows reduced motion`);
-        assert.equal(resolved.lightEffect, !reduceMotion, `${scene} light feedback follows reduced motion`);
+          scene + ' inverts only if its ' + level + ' material is thin enough');
+        assert.equal(resolved.interactive, !reduceMotion, scene + ' deform follows reduced motion');
+        assert.equal(resolved.lightEffect, !reduceMotion, scene + ' light feedback follows reduced motion');
       }
     }
   }
+
 });
 
 test('the state the app switched off forbids every material at API 26', () => {
@@ -409,11 +432,12 @@ test('a device that will not render a material is reported unsupported and build
 });
 
 test('a device that will not render a material keeps the decision on its painted surface', () => {
-  // The policy cannot know the device capability — it resolves API level, the app
-  // switch and reduced motion — so `apply` stays true here on purpose. The
-  // service's answer is what the caller must gate the paint drop on.
+  // The policy resolves the API level, the app switch, reduced motion and the kind of
+  // surface — not the device's capability. A shell scene therefore still applies here
+  // while the service answers undefined, because the capability is the service's to
+  // read: the decision says what a surface may be asked for, not what will be drawn.
   const harness = serviceHarness({ apiLevel: 26, state: 1, capable: false, reduceMotion: false });
-  const resolved = resolveImmersiveMaterial(Scene.TOP_CHROME, harness.Service.snapshot());
+  const resolved = resolveImmersiveMaterial(Scene.MODAL_SHEET, harness.Service.snapshot());
   assert.equal(resolved.apply, true, 'the decision is about the API level and the app switch alone');
   assert.equal(harness.Service.materialFor(planFromDecision(resolved)), undefined,
     'the material, not the decision, is what says whether a surface may drop its own paint');
@@ -422,7 +446,21 @@ test('a device that will not render a material keeps the decision on its painted
     'the material constructor must not be reached');
   assert.equal(harness.accesses.includes('ImmersiveStyle'), false,
     'the style of a material that will not be drawn must not be resolved');
+
+  // The component scenes are refused by the policy itself, before the device is asked:
+  // a capable device does not change that answer, which is the whole point of asking
+  // the question a second time.
+  const capable = serviceHarness({ apiLevel: 26, state: 1, capable: true, reduceMotion: false });
+  for (const scene of COMPONENT_SCENES) {
+    const component = resolveImmersiveMaterial(scene, capable.Service.snapshot());
+    assert.equal(component.apply, false,
+      scene + ' must not apply a material on a capable device either');
+    assert.equal(capable.Service.materialFor(planFromDecision(component)), undefined,
+      scene + ' must resolve no material');
+  }
+  assert.deepEqual(capable.built, [], 'a component scene must not reach the material constructor');
 });
+
 
 test('a capability read that fails is treated as unsupported and logged', () => {
   const harness = serviceHarness({ apiLevel: 26, state: 0, capabilityReadFails: true, reduceMotion: false });
@@ -442,14 +480,15 @@ test('the service builds one material from the plan a decision resolves', () => 
   assert.equal(harness.Service.supported(), true, 'a capable device must report support');
   const filled = harness.Service.snapshot();
   assert.deepEqual(filled, { apiLevel: 26, materialState: 'default', reduceMotion: false });
-
-  // Exactly the wiring sequence a surface will use: one snapshot, one decision,
-  // one plan, one material.
-  const resolved = resolveImmersiveMaterial(Scene.TOP_CHROME, filled);
+  // Exactly the wiring sequence a surface will use: one snapshot, one decision, one
+  // plan, one material — through a scene the platform draws a material for. The scenes
+  // this app paints itself never reach this sequence at all; the component test above
+  // is where that answer is held.
+  const resolved = resolveImmersiveMaterial(Scene.TOAST, filled);
   const material = harness.Service.materialFor(planFromDecision(resolved));
   assert.ok(material, 'an applying plan must build a material');
   assert.deepEqual(harness.built, [{
-    style: STYLES.ultra_thin,
+    style: STYLES.thin,
     interactive: true,
     colorInvert: true,
     lightEffect: {}
@@ -464,6 +503,7 @@ test('the service builds one material from the plan a decision resolves', () => 
     lightEffect: {}
   }, 'a thick material must not claim the complementary-colour adaptation');
 });
+
 
 test('the service maps every recipe level and never guesses at a thin one', () => {
   for (const level of LEVELS) {

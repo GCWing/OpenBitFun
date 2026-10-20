@@ -48,8 +48,6 @@ const COMPOSER_EXPANDED_HEIGHT: number = MobileDesignGeometry.composerExpandedHe
 const COMPOSER_COMPACT_HORIZONTAL_GUTTER: number = MobileDesignGeometry.contentGutter;
 const COMPOSER_IMAGE_CARD_SIZE: number = 64;
 const COMPOSER_IMAGE_STRIP_TOP_GAP: number = 6;
-/** The pill's own edge on the material path; the fallback keeps the border it shipped. */
-const COMPOSER_HAIRLINE_WIDTH: number = 0.5;
 /** Strip height plus its top gap and the parent Column's 2vp row spacing. */
 const COMPOSER_IMAGE_STRIP_BLOCK: number =
   COMPOSER_IMAGE_CARD_SIZE + COMPOSER_IMAGE_STRIP_TOP_GAP + 2;
@@ -169,81 +167,45 @@ export struct ComposerBar {
 
   @Builder
   AdaptiveComposer() {
-    // The material attribute does not exist below the API level that ships it, and a
-    // call to a member that is not there is `undefined is not callable` — a hard
-    // crash, not a degradation. So the pill's two postures are two branches rather
-    // than one chain whose argument resolves to `undefined`, and the branch asks the
-    // same question every decoration of the pill already answers. Below the material
-    // the pill is the one that shipped, byte for byte; above it the platform owns the
-    // surface and the pill keeps only the edge it is designed with.
-    if (ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.BOTTOM_CHROME)) {
-      Column({ space: 2 }) {
-        this.ComposerPillContent()
-      }
-      .width('100%')
-      .constraintSize({ minHeight: this.composerHeight() })
-      .padding({
-        left: 8,
-        right: 8,
-        top: this.isComposerExpanded() ? 4 : 0,
-        bottom: this.isComposerExpanded() ? 2 : 0
-      })
-      // The transcript runs underneath the pill, so its fill is translucent and the
-      // blur does the separating; the colour is the floor under it. Every one of
-      // those answers comes from the shared bottom-chrome recipe, because the pill is
-      // the surface that scene describes — and where the material is drawn the
-      // support answers no colour, no blur and no shadow, because the platform
-      // supplies all three.
-      .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, CARD_OVERLAY))
-      .backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.BOTTOM_CHROME))
-      .border(this.composerEdge())
-      .borderRadius(this.composerRadius())
-      .shadow(ImmersiveSurfaceSupport.surfaceShadow(ImmersiveSurfaceScene.BOTTOM_CHROME, {
-        radius: this.presentation === ComposerPresentation.Floating ? 14 : 18,
-        color: SHADOW_SUBTLE,
-        offsetY: this.presentation === ComposerPresentation.Floating ? 4 : 6
-      }))
-      .animation({ duration: MobileDesignMotion.structure, curve: Curve.EaseOut })
-      // Last on the node: the platform owns the floor, the edge, the blur and the
-      // shadow from here, so a decoration after it would be a second answer to a
-      // question that has already been answered. `animation` stays above it so the
-      // pill's geometry keeps the transition it always had.
-      .systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.BOTTOM_CHROME))
-    } else {
-      Column({ space: 2 }) {
-        this.ComposerPillContent()
-      }
-      .width('100%')
-      .constraintSize({ minHeight: this.composerHeight() })
-      .padding({
-        left: 8,
-        right: 8,
-        top: this.isComposerExpanded() ? 4 : 0,
-        bottom: this.isComposerExpanded() ? 2 : 0
-      })
-      // The same chain as the branch above, with the one call that this device
-      // cannot make left out: the recipe resolves every value to the pill this
-      // shipped as, and the platform's material is not attached at all.
-      .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, CARD_OVERLAY))
-      .backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.BOTTOM_CHROME))
-      .border(this.composerEdge())
-      .borderRadius(this.composerRadius())
-      .shadow(ImmersiveSurfaceSupport.surfaceShadow(ImmersiveSurfaceScene.BOTTOM_CHROME, {
-        radius: this.presentation === ComposerPresentation.Floating ? 14 : 18,
-        color: SHADOW_SUBTLE,
-        offsetY: this.presentation === ComposerPresentation.Floating ? 4 : 6
-      }))
-      .animation({ duration: MobileDesignMotion.structure, curve: Curve.EaseOut })
+    // One chain, and it is the glass this pill paints itself. This surface is one the
+    // app draws, so the policy answers no material for it, and a component that adopts
+    // one drops its floor, blur, edge and shadow for a surface the platform never
+    // draws — the bare pill this branch replaces. The recipe still supplies every
+    // value below, so a change to the bottom-chrome glass reaches this pill through
+    // the policy rather than through an edit here.
+    Column({ space: 2 }) {
+      this.ComposerPillContent()
     }
+    .width('100%')
+    .constraintSize({ minHeight: this.composerHeight() })
+    .padding({
+      left: 8,
+      right: 8,
+      top: this.isComposerExpanded() ? 4 : 0,
+      bottom: this.isComposerExpanded() ? 2 : 0
+    })
+    // The transcript runs underneath the pill, so its fill is translucent and the
+    // blur does the separating; the colour is the floor under it. Every one of those
+    // answers comes from the shared bottom-chrome recipe, because the pill is the
+    // surface that scene describes.
+    .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, CARD_OVERLAY))
+    .backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.BOTTOM_CHROME))
+    .border(this.composerEdge())
+    .borderRadius(this.composerRadius())
+    .shadow(ImmersiveSurfaceSupport.surfaceShadow(ImmersiveSurfaceScene.BOTTOM_CHROME, {
+      radius: this.presentation === ComposerPresentation.Floating ? 14 : 18,
+      color: SHADOW_SUBTLE,
+      offsetY: this.presentation === ComposerPresentation.Floating ? 4 : 6
+    }))
+    .animation({ duration: MobileDesignMotion.structure, curve: Curve.EaseOut })
   }
 
   /**
-   * The pill's contents, mounted by both of its postures.
+   * The pill's contents, mounted by the pill's decoration chain.
    *
-   * The material is a property of the pill's *surface*, not of what sits on it, so
-   * the two branches above differ in their decoration alone: the attached images, the
-   * input row and the expanded action row are stated once, here, and a change to any
-   * of them reaches every device.
+   * The surface is a property of the pill, not of what sits on it, so the attached
+   * images, the input row and the expanded action row are stated once, here, and a
+   * change to any of them reaches every device.
    */
   @Builder
   ComposerPillContent() {
@@ -837,18 +799,13 @@ export struct ComposerBar {
   }
 
   /**
-   * The pill's edge: the material's own hairline, or the border it always drew.
+   * The pill's edge: the border it always drew, on every edge.
    *
-   * `surfaceHairline` answers the posture this pill is in — a surface that draws
-   * its own edge *on* a material it adopted — but it returns no edge at all below
-   * the material, because the wide top band never had one. This pill shipped with a
-   * full border on every device, so its fallback keeps that border: the two paths
-   * are named here, in one place, and neither can be half-adopted.
+   * A capsule is an object with an outline, and the outline is the pill's own. The
+   * pill takes no material, so there is no second posture that would swap this edge
+   * for a hairline the platform drew — one edge, named in one place.
    */
   private composerEdge(): BorderOptions {
-    if (ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.BOTTOM_CHROME)) {
-      return ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.BOTTOM_CHROME, COMPOSER_HAIRLINE_WIDTH);
-    }
     return {
       width: this.presentation === ComposerPresentation.Compact ? 0.5 : 1,
       color: LINE

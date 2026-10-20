@@ -571,41 +571,32 @@ test('the compact conversation hands its top band to the platform, and paints no
   assert.match(normalize(conversationView),
     /if \(this\.platformBar\) \{ this\.PlatformTopBand\(\) \} else \{ this\.SelfDrawnTopBand\(\) \}/,
     'the band the page draws must be selected by who owns the chrome, not by a second condition');
-  const selfDrawn = builderBody(conversationView, 'SelfDrawnTopBand');
+const selfDrawn = builderBody(conversationView, 'SelfDrawnTopBand');
   assert.equal(call(selfDrawn, 'padding'),
     '.padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topSafeInset })',
     'the self-drawn band is the one that reserves the status bar itself, because it is the page\'s own top edge');
-  // The wide band is a *content* surface rather than a navigation bar: it is not a
-  // destination's `titleBar`, so it answers its material on the ordinary component
-  // channel, and every decoration of its surface comes from the shared recipe so
-  // neither path can be edited into a look no recipe declared.
+  // The wide band is a *content* surface rather than a navigation bar, so it is not a
+  // destination's `titleBar`: the platform material never reaches it, and the band
+  // paints its own glass. Every value still comes from the shared recipe.
   assert.equal(call(selfDrawn, 'backgroundColor'),
     '.backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.TOP_CHROME, PAGE_BG_OVERLAY))',
-    'the wide band\'s floor is the top-chrome recipe\'s, and its fallback is the page overlay colour it shipped with');
+    'the wide band\'s floor is the top-chrome recipe\'s, with the page overlay colour as its fallback');
   assert.equal(call(selfDrawn, 'backgroundBlurStyle'),
     '.backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.TOP_CHROME))',
-    'the band\'s blur is the recipe\'s fallback blur, and it resolves to no blur where the material is drawn');
+    'the band\'s blur is the recipe\'s fallback blur');
   assert.equal(call(selfDrawn, 'border'),
     '.border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.TOP_CHROME, TOP_BAND_HAIRLINE_WIDTH))',
-    'the band\'s own half-pixel edge is the one it draws itself, and only where the material is: ' +
-    'the shipped fallback never had a border');
-  assert.equal(call(selfDrawn, 'systemMaterial'),
-    '.systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.TOP_CHROME))',
-    'the wide band must adopt the material from the shared support, on the component channel');
+    'the band\'s own half-pixel bottom edge is drawn on every device');
   const chain = normalize(codeOf(selfDrawn));
-  assert.ok(chain.indexOf('.systemMaterial(') > chain.indexOf('.border(') &&
-    chain.indexOf('.systemMaterial(') > chain.indexOf('.backgroundBlurStyle('),
-    'the material must be the last decoration on the node: adopting one settles the floor, the edge and the blur');
-  // And the material path may not carry the decorations it replaces: the support
-  // already answers transparent for the fill and no blur for the surface, so a
-  // literal here is a second answer on the same box.
+  assert.equal(chain.includes('.systemMaterial('), false,
+    'the wide band must not adopt the platform material: the platform does not draw it on a content surface, so ' +
+    'the band would be left with no surface at all');
   assert.equal(chain.includes('systemMaterialEffect'), false,
     'the wide band must not name the platform band\'s field: that is the other channel, and one surface has one');
   assert.equal(chain.includes('.backgroundColor(PAGE_BG_OVERLAY)'), false,
-    'the band may not paint the page overlay colour itself: the support answers it, and transparent where the material is');
+    'the band may not paint the page overlay colour itself: the support answers it');
   assert.equal(/(^|[^a-zA-Z.])BlurStyle\./.test(chain), false,
-    'the band may not name a BlurStyle: the recipe answers the blur, and the material path has none');
-
+    'the band may not name a BlurStyle: the recipe answers the blur');
   // And the destination is what carries the band: the session route hands the bar
   // its options, and every other destination keeps the page's own header.
   const destination = appRootPresentation.slice(
@@ -624,96 +615,45 @@ test('the compact conversation hands its top band to the platform, and paints no
     'every other destination must keep `hideTitleBar(true)` and draw its own header');
 });
 
-test('the wide band keeps its material a branch, so a device below it is never handed the call', () => {
-  // The wide band's material has the same floor as the bottom chrome's, and the same
-  // rule follows from it: the attribute does not exist below the API level that ships
-  // it, so a chain a device below that level also reaches must not name it at all.
-  // Measured on API 22, the unconditional call this band used to make was `undefined is
-  // not callable` at start-up — a crash rather than a degradation, and one that took
-  // the whole app down before a single frame was drawn.
-  //
-  // The band is also the one content surface whose edge is conditional: it draws its
-  // own half-pixel hairline where the material is, and no edge at all below it, because
-  // it never had one. That is the recipe's answer, not a second look.
+test('the wide band paints its own glass, and no component surface names the material', () => {
+  // The band used to carry the platform material on one of two branches. It carries
+  // none now: measured on the API 26 emulator, the platform accepts a material on a
+  // content surface and then draws nothing at all, so a band that adopted one had
+  // given up its fill, its blur and its edge for an empty box. A content surface
+  // paints its own glass and asks the shared recipe for every value of it.
   const band = builderBody(conversationView, 'SelfDrawnTopBand');
-  const posture = posturesOf(band, 'TOP_CHROME');
-  const material = normalize(codeOf(posture.material));
-  const below = normalize(codeOf(posture.fallback));
-
-  // The crash tooth, and the one this branch exists for: an old device must not be
-  // handed a member that is not there, however its argument would have resolved.
-  assert.equal(below.includes('systemMaterial'), false,
-    'the wide band must not name the material attribute in the posture an old device takes: the member does not ' +
-    'exist there, so calling it is a crash rather than a fallback');
-  assert.equal(below.includes('systemMaterialEffect'), false,
-    'the posture an old device takes must not name the platform band\'s 23+ field either');
-  const materialAt = material.indexOf('.systemMaterial(');
-  assert.notEqual(materialAt, -1, 'the material posture is the one that adopts the material');
-  for (const after of ['.backgroundColor(', '.backgroundBlurStyle(', '.border(']) {
-    assert.equal(material.indexOf(after, materialAt), -1,
-      `the wide band must not paint ${after.slice(1)} over the material it adopted`);
+  assert.equal(call(band, 'backgroundColor'),
+    '.backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.TOP_CHROME, PAGE_BG_OVERLAY))',
+    'the wide band takes its floor from the top-chrome recipe, with PAGE_BG_OVERLAY as the colour it shipped with');
+  assert.equal(call(band, 'backgroundBlurStyle'),
+    '.backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.TOP_CHROME))',
+    'the wide band takes its blur from the top-chrome recipe rather than naming a BlurStyle');
+  assert.equal(call(band, 'border'),
+    '.border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.TOP_CHROME, TOP_BAND_HAIRLINE_WIDTH))',
+    'the wide band asks the recipe for its own half-pixel bottom edge');
+  for (const member of ['systemMaterial', 'systemMaterialEffect', 'usesMaterial']) {
+    assert.equal(codeOf(band).includes(member), false,
+      'the wide band must not name ' + member + ': the platform draws no material on a content surface, so a ' +
+      'band that adopted one would paint nothing at all');
   }
-
-  // Both postures take every decoration from the shared recipe, so neither can be edited
-  // into a surface no recipe declared — and the fallback's token is pinned inside the
-  // call rather than left as a bare colour. The edge is read as a call form here, the
-  // same way the capsule's is: the hairline's geometry is owned by
-  // `immersive-surface-support.test.cjs`.
-  for (const [where, text] of [['material', posture.material], ['fallback', posture.fallback]]) {
-    assert.equal(call(text, 'backgroundColor'),
-      '.backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.TOP_CHROME, PAGE_BG_OVERLAY))',
-      `the wide band's ${where} posture must take its floor from the top-chrome recipe, with PAGE_BG_OVERLAY as ` +
-      'the colour the band shipped with');
-    assert.equal(call(text, 'backgroundBlurStyle'),
-      '.backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.TOP_CHROME))',
-      `the wide band's ${where} posture must take its blur from the top-chrome recipe: the fallback blur below ` +
-      'the material, and none on it');
-    assert.equal(call(text, 'border'),
-      '.border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.TOP_CHROME, TOP_BAND_HAIRLINE_WIDTH))',
-      `the wide band's ${where} posture must ask for the edge: the hairline where the band is the floor, no edge ` +
-      'below it, which is what it always had');
-  }
-
-  // One chain, one call different: the two postures are the same box with the same
-  // decorations, so the fallback cannot drift into a band nobody designed.
-  const chainOf = (text) => text
-    .replace(/\.systemMaterial\(ImmersiveSurfaceSupport\.materialFor\(ImmersiveSurfaceScene\.TOP_CHROME\)\)/g, '')
-    .trim();
-  assert.equal(chainOf(material), chainOf(below),
-    'the wide band\'s two postures must be the same chain: the material is the only call that may differ between them');
-
-  // And the contents are stated once for both of them: a split into postures may not grow
-  // a second copy of the header, because that copy is the one that would go stale.
-  assert.equal(occurrences(normalize(codeOf(band)), 'this.TopBandContent()'), 2,
-    'both postures must mount the shared band contents, and only the two of them');
+  assert.equal(occurrences(normalize(codeOf(band)), 'this.TopBandContent()'), 1,
+    'the band mounts its contents once: a second copy is the one that would go stale');
   assert.match(normalize(builderBody(conversationView, 'TopBandContent')),
     /this\.Header\(\) this\.Mailbox\(\)/,
     'the shared band contents are where the header and the mailbox live');
 
-  // The whole tree, not just this band: a component that adopts the attribute must be a
-  // component that asks the question, and each call must sit behind its own answer. This
-  // is the count that makes the next unconditional call fail here rather than on the one
-  // device nobody re-reads.
+  // The whole tree, not just this band: no component surface adopts the shared
+  // material anywhere. This is the count that makes the next adoption fail here
+  // rather than on the one device nobody re-reads — and it is the reverse of the
+  // branch this file used to require, because the platform draws no material on a
+  // component, so an adopter loses a surface instead of gaining one.
   const adopters = etsTree('entry/src/main/ets')
     .filter(([, text]) => componentMaterialCalls(codeOf(text)) > 0)
     .map(([file]) => file)
     .sort();
-  assert.deepEqual(adopters, ['pages/components/ComposerBar.ets', 'pages/components/ConversationView.ets',
-    'pages/components/RollbackStagingBar.ets'],
-    'these three are the surfaces that adopt the component material; a fourth one needs the same branch, and a ' +
-    'surface that drops out of this list has stopped taking its surface from the shared recipe');
-  for (const [file, text] of etsTree('entry/src/main/ets')) {
-    const body = codeOf(text);
-    const calls = componentMaterialCalls(body);
-    if (calls === 0) {
-      continue;
-    }
-    const questions = occurrences(body, 'usesMaterial(');
-    assert.ok(questions >= calls,
-      `${file} names the component material attribute ${calls} time(s) but asks the material question ` +
-      `${questions} time(s): the attribute does not exist below its floor, so every call site needs a branch of ` +
-      'its own rather than a shared or unconditional one');
-  }
+  assert.deepEqual(adopters, [],
+    'no file may call the component material attribute: the window shells answer it through their options, and a ' +
+    'content surface that calls it gives up the glass it paints');
 });
 
 test('the option channels only name the material when there is one to name', () => {
@@ -740,128 +680,80 @@ test('the option channels only name the material when there is one to name', () 
   }
 });
 
-test('the bottom chrome takes the material on the component channel and keeps the surface each control shipped', () => {
-  // The bottom chrome is content rather than a platform bar, so its material arrives
-  // on the ordinary component channel (`.systemMaterial`) and never on the platform
-  // band's `systemMaterialEffect` field — one surface, one channel, in both
-  // directions. What each control paints below the material is not a choice made
-  // here: every fill, blur, edge and shadow is asked of the bottom-chrome scene, so
-  // the fallback is the surface the control shipped with and the material path is
-  // the support's transparent answer.
-  //
-  // The material has to be a *branch* rather than one chain whose argument resolves
-  // to `undefined`, because the attribute itself does not exist below the API level
-  // that ships it: measured on API 22, `.systemMaterial(...)` on a content surface is
-  // `undefined is not callable` — a crash, not a degradation. So the two postures are
-  // asserted as a pair: the same chain, with the call present in exactly one of them.
-  //
-  // Whether a *component* material renders at all is the platform's answer, and the
-  // two official documents disagree about it (the development guide says every
-  // component, the best-practice page names title bars and tab bars). What this file
-  // can hold is the half that is ours: the app asks one question per surface, and
-  // answers it in one place.
+test('the bottom chrome paints its own glass on every device', () => {
+  // What each control paints is not a choice made here: every fill, blur, edge and
+  // shadow is asked of the bottom-chrome recipe, which is what keeps the pill and the
+  // staging capsule one glass. The platform material is not part of that answer —
+  // measured on the API 26 emulator, a component's material is accepted and not drawn,
+  // so the control that adopted one was left with no surface of its own.
   const composerPill = composerPillChain();
   const rollbackCapsule = buildChainOf(rollbackStagingBar, 'RollbackStagingBar');
 
-  // Each row is one control, the slice that owns its chain, and the fill it shipped.
   const surfaces = [
     ['the composer pill', composerPill, 'CARD_OVERLAY'],
     ['the rollback capsule', rollbackCapsule, 'SOFT']
   ];
   for (const [name, slice, fallback] of surfaces) {
-    const posture = posturesOf(slice);
-    const material = normalize(codeOf(posture.material));
-    const below = normalize(codeOf(posture.fallback));
-    // Both postures paint the floor the control shipped, through the shared recipe:
-    // the fallback is pinned inside the call rather than left as a bare colour.
-    for (const [where, text] of [['material', posture.material], ['fallback', posture.fallback]]) {
-      assert.equal(call(text, 'backgroundColor'),
-        `.backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, ${fallback}))`,
-        `${name}'s ${where} posture must take its floor from the bottom-chrome recipe, with ${fallback} as the ` +
-        'fallback the control shipped with');
-    }
-    // The material is the material posture's last decoration: the support has already
-    // answered the fill, the blur, the edge and the shadow, so a decoration after it
-    // would be a second answer on the same box. `animation` and `transition` are not
-    // decorations of the surface, so they may follow it.
-    assert.equal(call(posture.material, 'systemMaterial'),
-      '.systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.BOTTOM_CHROME))',
-      `${name} must adopt the material from the shared support rather than answering one itself`);
-    const materialAt = material.indexOf('.systemMaterial(');
-    for (const after of ['.backgroundColor(', '.backgroundBlurStyle(', '.border(', '.shadow(']) {
-      assert.equal(material.indexOf(after, materialAt), -1,
-        `${name} must not paint ${after.slice(1)} over the material it adopted`);
-    }
-    // The crash tooth: a device below the attribute's floor must not be handed the
-    // call at all, however its argument would have resolved.
-    assert.equal(below.includes('systemMaterial'), false,
-      `${name} must not name the material attribute in the posture an old device takes: the member does not ` +
-      'exist there, so calling it is a crash rather than a fallback');
-    // And the two postures are one chain: whatever the material replaces is still
-    // stated, so the fallback cannot drift into a surface nobody designed.
-    const chainOf = (text) => text
-      .replace(/\.systemMaterial\(ImmersiveSurfaceSupport\.materialFor\(ImmersiveSurfaceScene\.BOTTOM_CHROME\)\)/g, '')
-      .trim();
-    assert.equal(chainOf(material), chainOf(below),
-      `${name}'s two postures must be the same chain: the material is the only call that may differ between them`);
-    assert.equal(material.includes('systemMaterialEffect') || below.includes('systemMaterialEffect'), false,
-      `${name} is a content surface: the platform band's field is the other channel, and one surface has one`);
+    assert.equal(call(slice, 'backgroundColor'),
+      '.backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, ' + fallback + '))',
+      name + ' must take its floor from the bottom-chrome recipe, with ' + fallback + ' as the fallback it shipped with');
+    const chain = normalize(codeOf(slice));
+    assert.equal(chain.includes('systemMaterial'), false,
+      name + ' must not name the material attribute: the platform draws none on this surface, so adopting one is ' +
+      'how the surface goes transparent');
+    assert.equal(chain.includes('usesMaterial'), false,
+      name + ' must not ask the material question: its glass does not depend on the device');
+    assert.equal(chain.includes('systemMaterialEffect'), false,
+      name + ' is a content surface: the platform band field belongs to the compact route alone');
     for (const literal of ["backgroundColor('#", 'MEDIA_BACKGROUND', 'MEDIA_SCRIM']) {
       assert.equal(codeOf(slice).includes(literal), false,
-        `${name} must not name ${literal}: the bottom chrome is a theme-following surface, or a material that ` +
-        'answers for it with the surface bar content colour');
+        name + ' must not name ' + literal + ': the bottom chrome is a theme-following surface whose floor comes ' +
+        'from the recipe');
     }
   }
 
-  // The pill's edge is the one decoration whose two paths are different *shapes*:
-  // the wide top band never had a border, this pill always had one, so the fallback
-  // keeps that border rather than taking the band's "no edge below the material".
+  // The pill's edge is the border it always drew: a capsule is an object with an
+  // outline, and the outline is the pill's own rather than one a platform surface
+  // would have drawn.
   assert.equal(call(composerPill, 'border'), '.border(this.composerEdge())',
-    'the pill\'s edge must be resolved in one place rather than written into the chain');
+    'the edge must be resolved in one place rather than written into the chain');
   assert.match(normalize(composerBar),
-    /private composerEdge\(\): BorderOptions \{ if \(ImmersiveSurfaceSupport\.usesMaterial\(ImmersiveSurfaceScene\.BOTTOM_CHROME\)\) \{ return ImmersiveSurfaceSupport\.surfaceHairline\(ImmersiveSurfaceScene\.BOTTOM_CHROME, COMPOSER_HAIRLINE_WIDTH\); \} return \{ width: this\.presentation === ComposerPresentation\.Compact \? 0\.5 : 1, color: LINE \}; \}/,
-    'the pill\'s two edges must be the material hairline and the border it shipped: the same width per ' +
-    'presentation, in the same theme colour');
+    /private composerEdge\(\): BorderOptions \{ return \{ width: this\.presentation === ComposerPresentation\.Compact \? 0\.5 : 1, color: LINE \}; \}/,
+    'the pill keeps the border it shipped: the same width per presentation, in the same theme colour');
   assert.equal(call(composerPill, 'backgroundBlurStyle'),
     '.backgroundBlurStyle(ImmersiveSurfaceSupport.surfaceBlur(ImmersiveSurfaceScene.BOTTOM_CHROME))',
-    'the pill\'s blur is the recipe\'s thin blur below the material, and no blur on it');
+    'the pill paints the recipe blur rather than naming a thickness');
   assert.match(normalize(call(composerPill, 'shadow')),
     /^\.shadow\(ImmersiveSurfaceSupport\.surfaceShadow\(ImmersiveSurfaceScene\.BOTTOM_CHROME, \{ radius: this\.presentation === ComposerPresentation\.Floating \? 14 : 18, color: SHADOW_SUBTLE, offsetY: this\.presentation === ComposerPresentation\.Floating \? 4 : 6 \}\)\)$/,
-    'the pill\'s shadow is dropped on the material path and kept exactly as it was below it');
+    'the pill keeps its own shadow, offset by presentation');
   assert.equal(/(^|[^a-zA-Z.])BlurStyle\./.test(normalize(codeOf(composerPill))), false,
-    'the pill may not name a BlurStyle: the recipe answers the blur, and the material path has none');
-  // The capsule's edge is the band's posture instead: it never had a border, so the
-  // support's "no edge below the material" is exactly the surface it shipped. What is
-  // asserted here is the call form alone; the hairline's *geometry* — one bottom edge,
-  // no sides — is held by `immersive-surface-support.test.cjs`, so a change to the edge
-  // itself belongs there rather than being read as a hole in this file.
+    'the pill may not name a BlurStyle: the recipe answers the blur');
+  // The capsule's edge is the recipe hairline; the hairline's *geometry* — one bottom
+  // edge, no sides — is held by immersive-surface-support.test.cjs.
   assert.equal(call(rollbackCapsule, 'border'),
     '.border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.BOTTOM_CHROME, ' +
     'ROLLBACK_BAR_HAIRLINE_WIDTH))',
-    'the capsule draws its own hairline on the material and no edge below it, which is what it always had');
+    'the capsule asks the recipe for its own bottom hairline');
 
   // The layer the pill sits on is part of the same answer: the fade is what the glass
-  // is made of, so on the material path it stands down, and below it every stop is
-  // the colour this layer has always painted.
+  // is made of, so every stop comes from the bottom-chrome recipe.
   const gradient = normalize(call(builderBody(conversationView, 'BottomOverlay'), 'linearGradient'));
   assert.match(gradient,
     /colors: \[\s*\[ImmersiveSurfaceSupport\.surfaceFill\(ImmersiveSurfaceScene\.BOTTOM_CHROME, PAGE_BG_FADE\), 0\.0\],\s*\[ImmersiveSurfaceSupport\.surfaceFill\(ImmersiveSurfaceScene\.BOTTOM_CHROME, PAGE_BG_OVERLAY\), 0\.45\],\s*\[ImmersiveSurfaceSupport\.surfaceFill\(ImmersiveSurfaceScene\.BOTTOM_CHROME, PAGE_BG_OVERLAY\), 1\.0\]\s*\]/,
-    'every stop of the bottom fade must come from the bottom-chrome surface: no colour where the pill is glass, ' +
-    'and exactly the three stops it shipped below it');
+    'every stop of the bottom fade must come from the bottom-chrome surface, and it must be the three stops the page shipped');
   assert.equal(occurrences(gradient, 'PAGE_BG_FADE'), 1,
     'the fade token may appear only as the fallback inside the surface answer');
   assert.equal(occurrences(gradient, 'PAGE_BG_OVERLAY'), 2,
     'the overlay token may appear only as the two fallbacks inside the surface answer');
 
-  // The count is a set, not a number: a control that adopts the bottom chrome without
-  // a row above is a control nobody answered for, and a row whose surface stopped
-  // asking the recipe is a surface that went back to painting its own glass.
+  // The count is a set, not a number: no surface asks the bottom chrome for a material
+  // any more, and the next one that does needs this file read again.
   const adopters = etsTree('entry/src/main/ets')
     .filter(([, text]) => text.includes('materialFor(ImmersiveSurfaceScene.BOTTOM_CHROME)'))
     .map(([file]) => file)
     .sort();
-  assert.deepEqual(adopters, ['pages/components/ComposerBar.ets', 'pages/components/RollbackStagingBar.ets'],
-    'these two surfaces are the bottom chrome this contract knows; a third one needs its own row above');
+  assert.deepEqual(adopters, [],
+    'no surface may adopt a bottom-chrome material: both capsules paint their own glass');
 });
 
 test('every surface whose top edge is the screen edge reserves the status bar', () => {
@@ -1334,11 +1226,11 @@ test('every top band the status bar shows through is a theme-following page colo
   // tests below), which is why its row names the box the page still owns and
   // carries no colour of its own: a token of `null` is that answer.
   //
-  // The wide band is the one row whose fill is *conditional*: a device that renders
-  // the immersive material paints no colour at all there, and every other device
-  // paints the token this row names. That is why it is the one row marked as handing
-  // its fill to a material, and why the token still has to be stated — it is what
-  // the fallback, which is a shipped form rather than an error, is pinned to.
+  // The wide band is the one row whose fill does not come from a bare token: it asks
+  // the top-chrome recipe for its floor, which is what keeps the band's glass and the
+  // band's blur from being two different answers. That is why it is the one row marked
+  // as taking its floor from the shared recipe, and why the token still has to be
+  // stated — it is what the band paints, on every device.
   const bands = [
     ['the drawer panel', builderBody(appSidebar, 'SidebarContent'), 'SIDEBAR_BG', false],
     ['the wide chat page top band', builderBody(conversationView, 'SelfDrawnTopBand'), 'PAGE_BG_OVERLAY', true],
@@ -1355,23 +1247,23 @@ test('every top band the status bar shows through is a theme-following page colo
   const unreadable = 'the status bar icons are drawn in the colour-mode ink, so a top band that is dark in ' +
     'that same appearance makes them unreadable: handle the band and the system bar content colour together ' +
     '(see `updateSystemBars` in EntryAbility) instead of repainting the band on its own';
-  // The guard is only a guard while every row states its material answer, so the
-  // column is asserted before it is counted: a row that drops the column is a row
-  // whose band nobody has answered for.
-  for (const [name, , , material] of bands) {
-    assert.equal(typeof material, 'boolean',
-      `${name} must state whether its band hands its fill to a material: that column is the one this test ` +
-      'cannot read off the source, so it has to be answered here');
+  // The guard is only a guard while every row states its floor answer, so the column is
+  // asserted before it is counted: a row that drops the column is a row whose band
+  // nobody has answered for.
+  for (const [name, , , shared] of bands) {
+    assert.equal(typeof shared, 'boolean',
+      `${name} must state whether its band takes its floor from the shared recipe rather than a bare token: ` +
+      'that column is the one this test cannot read off the source, so it has to be answered here');
   }
-  // Exactly one band hands its fill to a material, and it is the wide chat page's
-  // own top band. The count is a set, not a number: a second row marked true is a
-  // band whose colour this test can no longer read, and a missing row is the wide
+  // Exactly one band takes its floor from the shared recipe, and it is the wide chat
+  // page's own top band. The count is a set, not a number: a second row marked true is
+  // a band whose colour this test can no longer read, and a missing row is the wide
   // band quietly going back to a fixed fill.
   assert.deepEqual(bands.filter((band) => band[3] === true).map((band) => band[0]),
     ['the wide chat page top band'],
-    'the wide chat page top band is the one band whose floor a material may replace: every other top band ' +
-    'paints the theme-following colour its row names, in every appearance');
-  for (const [name, slice, token, material] of bands) {
+    'the wide chat page top band is the one band whose floor comes from the shared recipe: every other top ' +
+    'band paints the theme-following colour its row names, in every appearance');
+  for (const [name, slice, token, shared] of bands) {
     if (token === null) {
       // The platform owns this band's paint, so the tooth is the reverse one: the
       // page may not add a fill or a blur over the platform's own material.
@@ -1379,17 +1271,16 @@ test('every top band the status bar shows through is a theme-following page colo
         `${name} is the platform's band: the page may not paint a fill under it`);
       assert.equal(slice.includes('backgroundBlurStyle'), false,
         `${name} is the platform's band: the page may not blur behind its material`);
-    } else if (material) {
-      // A conditional band hands its floor to the support, which answers the
-      // transparent material path or the recipe's own fallback colour — the one this
-      // row still pins, so the token is asserted inside the call rather than as a
-      // bare `.backgroundColor(...)`.
+    } else if (shared) {
+      // The band asks the support for its floor and its blur, and the support answers
+      // the recipe's own values on every device — the platform draws no material on a
+      // content surface, so the band must paint its own glass and name no material.
       assert.equal(call(slice, 'backgroundColor'),
         `.backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.TOP_CHROME, ${token}))`,
-        `${name} must take its floor from the shared recipe, with ${token} as the fallback it shipped with`);
-      assert.match(normalize(slice),
-        /\.systemMaterial\(ImmersiveSurfaceSupport\.materialFor\(ImmersiveSurfaceScene\.TOP_CHROME\)\)/,
-        `${name} must adopt the material from the shared support rather than answering one itself`);
+        `${name} must take its floor from the shared recipe, with ${token} as the colour it shipped with`);
+      assert.equal(codeOf(slice).includes('.systemMaterial('), false,
+        `${name} must not adopt a material: the platform draws none on a content surface, so the band would ` +
+        'be left with no floor, no blur and no edge at all');
       assert.equal(codeOf(slice).includes('systemMaterialEffect'), false,
         `${name} is a content surface: the platform band's field is the other channel and belongs to the ` +
         'compact route alone');
@@ -2008,12 +1899,12 @@ test('the band\'s controls carry the app\'s own assets, and a surface wears one 
       `${asset} must exist: the asset is not new, and a missing one is a blank control`);
   }
 
-  // One material channel per surface. The compact route's band is a navigation bar,
-  // and its channel is the platform's own field; the wide band is a *content*
-  // surface and its channel is the app's component material. Each names only its own,
-  // so a band that answered both would be two materials on one box — and the wide
-  // band's own material is the app's, adopted from the shared support, because the
-  // page is the thing that decides what its own top edge is made of.
+  // One material channel per surface, and the two bands are on different sides of it.
+  // The compact route's band is a navigation bar: its material arrives through the
+  // platform's own options field. The wide band is a *content* surface, and a content
+  // surface paints its own glass — the platform accepts a material there and draws
+  // nothing, so a band that adopted one would have no surface at all. Each band names
+  // the channel it is on, and neither names the other one.
   assert.equal(codeOf(hdsTitleBarSupport).includes('uiMaterial'), false,
     'the band must not adopt the app\'s own immersive material: the platform draws this one');
   assert.equal(/systemMaterial\s*[:=]/.test(codeOf(hdsTitleBarSupport)), false,
@@ -2022,11 +1913,10 @@ test('the band\'s controls carry the app\'s own assets, and a surface wears one 
     'the platform band is a navigation bar: its material arrives through the options the support builds, and ' +
     'adopting the app\'s component material on the same box would be a second one');
   const wideBand = builderBody(conversationView, 'SelfDrawnTopBand');
-  assert.match(normalize(wideBand),
-    /\.systemMaterial\(ImmersiveSurfaceSupport\.materialFor\(ImmersiveSurfaceScene\.TOP_CHROME\)\)/,
-    'the wide band is a content surface and keeps the component channel, resolved by the shared support');
+  assert.equal(codeOf(wideBand).includes('.systemMaterial('), false,
+    'the wide band is a content surface: the platform draws no material on one, so the band paints its own glass');
   assert.equal(codeOf(wideBand).includes('systemMaterialEffect'), false,
-    'the wide band may not name the platform band\'s field: its surface is not the platform\'s to draw');
+    'the wide band may not name the platform band\'s field either: its surface is not the platform\'s to draw');
   for (const [name, text] of [['ConversationView', conversationView], ['AppRootPresentation', appRootPresentation],
     ['ConversationRouteSurface', conversationRouteSurface]]) {
     const body = codeOf(text);

@@ -60,6 +60,13 @@ const policy = loadPolicy();
 const Scene = policy.ImmersiveSurfaceScene;
 const SCENES = Object.values(Scene);
 
+// The two kinds of surface this contract separates: the scenes a component of this app
+// paints, and the scenes the platform's own shells paint. The split is what the API 26
+// emulator settled — a component's material is accepted and never drawn, so a component
+// scene keeps its own glass on whatever device it runs on.
+const COMPONENT_SCENES = [Scene.TOP_CHROME, Scene.BOTTOM_CHROME, Scene.SEARCH_FIELD];
+const WINDOW_SCENES = [Scene.MODAL_SHEET, Scene.FLOATING_MENU, Scene.TOAST];
+
 /**
  * The helper, loaded against a service that answers the way a device would.
  *
@@ -126,61 +133,59 @@ function sheetOptions(overrides) {
   return Object.assign({ height: 300, backgroundColor: PAGE_BG, maskColor: LINE }, overrides);
 }
 
-test('below API 26 every surface keeps the options the caller wrote', () => {
+test('a device below the material floor keeps the options the caller wrote', () => {
   const harness = supportHarness({ apiLevel: 21 });
 
   for (const scene of SCENES) {
-    assert.equal(harness.Support.usesMaterial(scene), false, `${scene} must not ask for a material`);
+    assert.equal(harness.Support.usesMaterial(scene), false, scene + ' must not ask for a material');
 
     const sheet = sheetOptions({});
     assert.equal(harness.Support.sheetOptions(scene, sheet), sheet,
-      `${scene} must return the sheet options unchanged, not a copy`);
-    assert.equal(sheet.backgroundColor, PAGE_BG, `${scene} must keep its own sheet fill`);
-    assert.equal(sheet.systemMaterial, undefined, `${scene} must not inject a material`);
+      scene + ' must return the sheet options unchanged, not a copy');
+    assert.equal(sheet.backgroundColor, PAGE_BG, scene + ' must keep its own sheet fill');
+    assert.equal(sheet.systemMaterial, undefined, scene + ' must not inject a material');
 
     const popup = { popupColor: TRANSPARENT, targetSpace: 8 };
     assert.equal(harness.Support.popupOptions(scene, popup), popup,
-      `${scene} must return the popup options unchanged`);
+      scene + ' must return the popup options unchanged');
     assert.equal(popup.systemMaterial, undefined);
 
     const toast = { message: 'hello', duration: 2600 };
     assert.equal(harness.Support.toastOptions(scene, toast), toast,
-      `${scene} must return the toast options unchanged`);
+      scene + ' must return the toast options unchanged');
     assert.equal(toast.systemMaterial, undefined);
 
     assert.equal(harness.Support.menuOptions(scene, undefined), undefined,
-      `${scene} must leave an options-less menu options-less`);
+      scene + ' must leave an options-less menu options-less');
 
-    // The content roots' fallback: the recipe's floor and hairline, and the
-    // caller's own shadow — the recipe table has no shadow field.
+    // The content roots' fallback: the recipe's floor and hairline, and the caller's
+    // own shadow — the recipe table has no shadow field.
     const recipe = policy.ImmersiveSurfaceRecipes.recipeFor(scene);
     assert.equal(harness.Support.surfaceFill(scene), harness.Support.floorColor(recipe.floorColor),
-      `${scene} must paint the floor colour its recipe names`);
+      scene + ' must paint the floor colour its recipe names');
     assert.equal(harness.Support.surfaceFill(scene, CARD), CARD,
-      `${scene} must keep a floor a caller overrides`);
+      scene + ' must keep a floor a caller overrides');
     const border = { width: 0.5 };
     assert.equal(harness.Support.surfaceBorder(scene, border), border);
     assert.deepEqual(border, { width: 0.5, color: LINE },
-      `${scene} must keep its width and take the recipe's hairline`);
+      scene + ' must keep its width and take the recipe\'s hairline');
     const shadow = { radius: 18, color: SHADOW_SUBTLE, offsetY: 7 };
     assert.equal(harness.Support.surfaceShadow(scene, shadow), shadow);
     assert.deepEqual(shadow, { radius: 18, color: SHADOW_SUBTLE, offsetY: 7 },
-      `${scene} must keep its fallback shadow`);
-    // The band's own edge is not drawn at all here: it is what the material path
-    // adds, not what the shipped fallback gained.
-    assert.deepEqual(harness.Support.surfaceHairline(scene, 0.5), { width: 0, color: TRANSPARENT },
-      `${scene} must draw no edge on the fallback path: a border it never had is a new edge on every old device`);
+      scene + ' must keep its fallback shadow');
+    // The band's own edge is drawn on every device: no device supplies an edge in its
+    // place, because no component scene is handed a material at all.
+    assert.deepEqual(harness.Support.surfaceHairline(scene, 0.5), { width: { bottom: 0.5 }, color: LINE },
+      scene + ' must draw its own bottom hairline on this device too');
   }
 
   assert.deepEqual(harness.built, [], 'the fallback path must not build a material');
-  // One scene at a time: the blur mapping is per recipe, so the two thinnest floors
-  // are told apart from the ones that ask for none.
   for (const scene of SCENES) {
     const recipe = policy.ImmersiveSurfaceRecipes.recipeFor(scene);
     const expected = recipe.fallbackBlur === 'thin' ? BLUR_STYLE.Thin :
       recipe.fallbackBlur === 'thick' ? BLUR_STYLE.Thick : BLUR_STYLE.NONE;
     assert.equal(harness.Support.surfaceBlur(scene), expected,
-      `${scene} must paint the blur its recipe states (${recipe.fallbackBlur})`);
+      scene + ' must paint the blur its recipe states (' + recipe.fallbackBlur + ')');
   }
   assert.equal(harness.Support.surfaceBlur(Scene.TOP_CHROME), BLUR_STYLE.Thin,
     'the top chrome\'s fallback is the thin blur the wide band shipped with');
@@ -227,22 +232,102 @@ test('API 26 injects one material and makes the conflicting decoration transpare
     { width: 0, color: TRANSPARENT }, 'the hairline must be dropped');
   assert.deepEqual(harness.Support.surfaceShadow(Scene.MODAL_SHEET, { radius: 18, color: SHADOW_SUBTLE, offsetY: 7 }),
     { radius: 0, color: TRANSPARENT, offsetY: 7 }, 'the shadow must be dropped, the offset kept');
-  // The material is the blurring, so the surface paints none of its own — on every
-  // scene, whatever its recipe retains for the fallback.
-  for (const scene of SCENES) {
+  assert.equal(harness.Support.usesMaterial(Scene.MODAL_SHEET), true);
+  assert.equal(harness.Support.surfaceFill(Scene.MODAL_SHEET), TRANSPARENT,
+    'the sheet content root must not paint over the material');
+  assert.equal(harness.Support.surfaceFill(Scene.MODAL_SHEET, CARD), TRANSPARENT,
+    'a caller override must not survive the material path either');
+  assert.deepEqual(harness.Support.surfaceBorder(Scene.MODAL_SHEET, { width: 0.5 }),
+    { width: 0, color: TRANSPARENT }, 'the hairline must be dropped inside a material');
+  assert.deepEqual(harness.Support.surfaceShadow(Scene.MODAL_SHEET, { radius: 18, color: SHADOW_SUBTLE, offsetY: 7 }),
+    { radius: 0, color: TRANSPARENT, offsetY: 7 }, 'the shadow must be dropped, the offset kept');
+  // The material is the blurring on the scenes that take one, and only on those: a
+  // component scene paints its recipe blur in the same run, because the platform draws
+  // no material there.
+  for (const scene of WINDOW_SCENES) {
     assert.equal(harness.Support.surfaceBlur(scene), BLUR_STYLE.NONE,
-      `${scene} must paint no blur over the material: a component blur under it is the second glass`);
+      scene + ' must paint no blur over the material: a component blur under it is the second glass');
   }
-  // The wide band's own half-pixel edge is the one decoration the material path
-  // *adds*: the band is the surface, not a root inside one, and the line is part of
-  // what it is designed as. Its colour is the recipe's, its width stays the caller's.
+  for (const scene of COMPONENT_SCENES) {
+    const recipe = policy.ImmersiveSurfaceRecipes.recipeFor(scene);
+    const expected = recipe.fallbackBlur === 'thin' ? BLUR_STYLE.Thin :
+      recipe.fallbackBlur === 'thick' ? BLUR_STYLE.Thick : BLUR_STYLE.NONE;
+    assert.equal(harness.Support.surfaceBlur(scene), expected,
+      scene + ' paints its own glass, so it paints its recipe blur');
+  }
+  // The self-drawn band's half-pixel edge is the one decoration no material replaces:
+  // its colour is the recipe's and its width stays the caller's.
   assert.deepEqual(harness.Support.surfaceHairline(Scene.TOP_CHROME, 0.5),
     { width: { bottom: 0.5 }, color: LINE },
-    'the wide band must keep its own bottom hairline over the material, in the recipe\'s line colour');
+    'the wide band keeps its own bottom hairline, in the recipe line colour');
   assert.deepEqual(harness.Support.surfaceHairline(Scene.TOP_CHROME, 1),
     { width: { bottom: 1 }, color: LINE },
     'the hairline width is geometry and stays the caller\'s');
+
 });
+test('a component scene is never handed a material, whatever the device reports', () => {
+  // The half of the material contract the emulator settled: the platform accepts a
+  // material on an app-drawn component and then draws nothing, so the component that
+  // adopted one had already dropped the floor, blur, edge and shadow it painted for a
+  // surface that never arrived. A scene this app paints therefore answers no to the
+  // material before the device is even asked, while the window shells — the sheet, the
+  // floating menu and the toast — keep it, because there the platform does draw one.
+  const harness = supportHarness({ apiLevel: 26 });
+  for (const scene of COMPONENT_SCENES) {
+    assert.equal(policy.ImmersiveMaterialPolicy.takesPlatformMaterial(scene), false,
+      scene + ' is painted by a component of this app, so it takes no material');
+    assert.equal(harness.Support.materialFor(scene), undefined,
+      scene + ' must not resolve a material on any device');
+    assert.equal(harness.Support.usesMaterial(scene), false,
+      scene + ' must never report that it uses a material');
+  }
+  assert.deepEqual(harness.built, [],
+    'no component scene may reach the material constructor');
+  assert.equal(harness.plans.length, COMPONENT_SCENES.length,
+    'each component scene resolves exactly one plan, and the plan is what carries the refusal to the service');
+  for (const plan of harness.plans) {
+    assert.equal(plan.apply, false,
+      'a component scene must resolve a plan that applies no material, whatever the device reports');
+  }
+  for (const scene of WINDOW_SCENES) {
+    assert.equal(policy.ImmersiveMaterialPolicy.takesPlatformMaterial(scene), true,
+      scene + ' is a platform shell, and its material is what that shell is made of');
+  }
+
+  // Every decoration of a component scene is the painted one, on the capable device
+  // too: that is what keeps the surface legible instead of bare.
+  for (const scene of COMPONENT_SCENES) {
+    const recipe = policy.ImmersiveSurfaceRecipes.recipeFor(scene);
+    assert.equal(harness.Support.surfaceFill(scene), harness.Support.floorColor(recipe.floorColor),
+      scene + ' must paint the floor colour its recipe names');
+    assert.equal(harness.Support.surfaceFill(scene, CARD), CARD,
+      scene + ' must keep a floor a caller overrides');
+    const border = { width: 0.5 };
+    harness.Support.surfaceBorder(scene, border);
+    assert.deepEqual(border, { width: 0.5, color: LINE },
+      scene + ' must keep its width and take the recipe hairline');
+    const shadow = { radius: 18, color: SHADOW_SUBTLE, offsetY: 7 };
+    harness.Support.surfaceShadow(scene, shadow);
+    assert.deepEqual(shadow, { radius: 18, color: SHADOW_SUBTLE, offsetY: 7 },
+      scene + ' must keep the shadow its caller paints');
+    const expectedBlur = recipe.fallbackBlur === 'thin' ? BLUR_STYLE.Thin :
+      recipe.fallbackBlur === 'thick' ? BLUR_STYLE.Thick : BLUR_STYLE.NONE;
+    assert.equal(harness.Support.surfaceBlur(scene), expectedBlur,
+      scene + ' must paint the blur its recipe states (' + recipe.fallbackBlur + ')');
+    assert.deepEqual(harness.Support.surfaceHairline(scene, 0.5), { width: { bottom: 0.5 }, color: LINE },
+      scene + ' must draw its own bottom hairline: no device supplies the edge for it');
+  }
+
+  // And the window shells keep theirs in the same run, so the split is visible in one
+  // harness rather than argued from two files.
+  const sheet = sheetOptions({});
+  harness.Support.sheetOptions(Scene.MODAL_SHEET, sheet);
+  assert.equal(sheet.systemMaterial, harness.built[0],
+    'the modal sheet must still carry the material the platform draws for it');
+  assert.equal(sheet.backgroundColor, TRANSPARENT,
+    'the material owns the sheet background');
+});
+
 
 test('the device is read once and each scene builds at most one material', () => {
   const harness = supportHarness({ apiLevel: 26 });

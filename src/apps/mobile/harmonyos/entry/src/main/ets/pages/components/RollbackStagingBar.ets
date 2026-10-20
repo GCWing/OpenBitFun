@@ -52,47 +52,25 @@ export struct RollbackStagingBar {
     // occupied its gap would push the composer down for the entire session.
     if (this.bar.visible) {
       Column() {
-        // Two postures, one branch each: the material attribute does not exist below
-        // the API level that ships it, so the capsule may not call it from a chain an
-        // old device also reaches — a missing member is `undefined is not callable`,
-        // which is a crash rather than a degradation. Below the material the capsule
-        // is exactly the `SOFT` one it shipped; above it the platform supplies the
-        // surface and the capsule keeps the edge it is designed with.
-        if (ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.BOTTOM_CHROME)) {
-          Row({ space: ROLLBACK_BAR_TEXT_GAP }) {
-            this.CapsuleContent()
-          }
-          .width('100%')
-          .height(ROLLBACK_BAR_HEIGHT)
-          .padding({ left: ROLLBACK_BAR_LEADING_PADDING, right: ROLLBACK_BAR_TRAILING_PADDING })
-          .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, SOFT))
-          .border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.BOTTOM_CHROME,
-            ROLLBACK_BAR_HAIRLINE_WIDTH))
-          .borderRadius(ROLLBACK_BAR_RADIUS)
-          .transition(TransitionEffect.translate({ x: 0, y: 8 })
-            .combine(TransitionEffect.opacity(0))
-            .animation({ duration: 180, curve: Curve.EaseOut }))
-          // Last on the node: the material owns the floor and the edge, so nothing
-          // paints over it.
-          .systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.BOTTOM_CHROME))
-        } else {
-          Row({ space: ROLLBACK_BAR_TEXT_GAP }) {
-            this.CapsuleContent()
-          }
-          .width('100%')
-          .height(ROLLBACK_BAR_HEIGHT)
-          .padding({ left: ROLLBACK_BAR_LEADING_PADDING, right: ROLLBACK_BAR_TRAILING_PADDING })
-          // The same chain as the branch above, with the one call this device cannot
-          // make left out: the recipe resolves the fill to the `SOFT` capsule the bar
-          // shipped as, and the hairline resolves to no edge, which is the edge it had.
-          .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, SOFT))
-          .border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.BOTTOM_CHROME,
-            ROLLBACK_BAR_HAIRLINE_WIDTH))
-          .borderRadius(ROLLBACK_BAR_RADIUS)
-          .transition(TransitionEffect.translate({ x: 0, y: 8 })
-            .combine(TransitionEffect.opacity(0))
-            .animation({ duration: 180, curve: Curve.EaseOut }))
+        // One chain, and it is the glass this capsule paints itself. The bar is a
+        // surface the app draws, so the policy answers no material for it: a capsule
+        // that adopted one would give up the floor below and the edge it is designed
+        // with for a surface the platform never draws. Every value still comes from
+        // the bottom-chrome recipe, so the glass answers to that recipe and not to
+        // this file.
+        Row({ space: ROLLBACK_BAR_TEXT_GAP }) {
+          this.CapsuleContent()
         }
+        .width('100%')
+        .height(ROLLBACK_BAR_HEIGHT)
+        .padding({ left: ROLLBACK_BAR_LEADING_PADDING, right: ROLLBACK_BAR_TRAILING_PADDING })
+        .backgroundColor(ImmersiveSurfaceSupport.surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, SOFT))
+        .border(ImmersiveSurfaceSupport.surfaceHairline(ImmersiveSurfaceScene.BOTTOM_CHROME,
+          ROLLBACK_BAR_HAIRLINE_WIDTH))
+        .borderRadius(ROLLBACK_BAR_RADIUS)
+        .transition(TransitionEffect.translate({ x: 0, y: 8 })
+          .combine(TransitionEffect.opacity(0))
+          .animation({ duration: 180, curve: Curve.EaseOut }))
       }
       .width('100%')
       .constraintSize({
