@@ -310,3 +310,12 @@ Grok OAuth billing uses `subscription_auth::vendor_quota` with the selected
 account's token and CLI headers at the pinned Build billing origin. Preserve
 unknown percentages, reset dates and revision-scoped caches; display meters do
 not gate routing. Focused check: `cargo test --locked -p openbitfun-ai-adapters --features subscription-auth --lib subscription_auth::vendor_quota`.
+
+A successful Grok billing response may include a current period/reset without
+`creditUsagePercent`. Retain the period with unknown usage instead of reporting
+a query failure or inventing zero usage. The ignored
+`subscription_auth::vendor_quota::tests::live_grok_quota_diagnostic` uses
+`OPENBITFUN_LIVE_GROK_ACCOUNT` and optional `OPENBITFUN_LIVE_SUBSCRIPTION_PROXY`
+to verify billing and the production quota read for that exact in-app slot. It
+may refresh credentials and quota cache, prints only response field names/status,
+and sends no inference request. This does not verify remote-host behavior.

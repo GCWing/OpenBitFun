@@ -93,3 +93,16 @@ it('explains Console balance unavailability and keeps the console action availab
   expect(container.querySelectorAll('button')).toHaveLength(1);
   expect(container.querySelector('button')?.textContent).toBe('Open console');
 });
+
+it('shows a successful Grok period-only response without inventing zero usage or a network failure', () => {
+  observation.value = { account_id: 'grok', provider: 'grok', state: 'known', plan: 'Grok', valid_until: Date.now() / 1000 + 60, windows: [],
+    display: { version: 1, meters: [{ id: 'period', duration_seconds: 604800, resets_at: 1800000000 }] } };
+  act(() => root.render(<SubscriptionQuotaPanel provider="grok" identity="fixture" active supported />));
+  expect(container.querySelector('section')?.dataset.state).toBe('known');
+  expect(container.textContent).toContain('has not reported a usage percentage');
+  expect(container.textContent).toContain('Resets');
+  expect(container.textContent).toContain('—');
+  expect(container.textContent).not.toContain('0%');
+  expect(container.textContent).not.toContain('Check account authorization');
+  expect(container.querySelector('[role="progressbar"]')).toBeNull();
+});

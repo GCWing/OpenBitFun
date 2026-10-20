@@ -845,7 +845,8 @@
     "opencodeCustomAuth": "额度查询暂不支持自定义认证请求头，请前往控制台查看用量。",
     "openConsole": "打开控制台",
     "saveBeforeQuery": "保存此连接后，可查询 OpenCode Go 额度。",
-    "onDemand": "按量用量"
+    "onDemand": "按量用量",
+    "usageUnreported": "Grok 已返回计费周期，但暂未提供用量百分比。仍可查看重置时间。"
   },
   "channelRouting": {
     "label": "备用渠道",

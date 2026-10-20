@@ -845,7 +845,8 @@
     "opencodeCustomAuth": "Allowance lookup does not support custom authentication headers. View usage in the console.",
     "openConsole": "Open console",
     "saveBeforeQuery": "Save this connection to query its OpenCode Go allowance.",
-    "onDemand": "On-demand usage"
+    "onDemand": "On-demand usage",
+    "usageUnreported": "Grok has returned the billing period but has not reported a usage percentage. The reset time is still available."
   },
   "channelRouting": {
     "label": "Backup channels",

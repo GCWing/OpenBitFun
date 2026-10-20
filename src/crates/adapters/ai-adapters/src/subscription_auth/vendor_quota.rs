@@ -283,19 +283,26 @@ fn parse_grok(
 ) -> Result<SubscriptionQuotaSnapshot> {
     let config = &data["config"];
     let mut meters = Vec::new();
-    if let Some(used) = number(&config["creditUsagePercent"]) {
-        let duration = match config["currentPeriod"]["type"].as_str() {
-            Some("USAGE_PERIOD_TYPE_DAILY") => Some(86400),
-            Some("USAGE_PERIOD_TYPE_WEEKLY") => Some(604800),
-            Some("USAGE_PERIOD_TYPE_MONTHLY") => Some(2592000),
-            _ => None,
-        };
+    let used_percent = number(&config["creditUsagePercent"]).map(|used| used.min(100.0));
+    let period = &config["currentPeriod"];
+    let resets_at = timestamp(&period["end"]).or_else(|| timestamp(&config["billingPeriodEnd"]));
+    let duration_seconds = match period["type"].as_str() {
+        Some("USAGE_PERIOD_TYPE_DAILY") => Some(86400),
+        Some("USAGE_PERIOD_TYPE_WEEKLY") => Some(604800),
+        Some("USAGE_PERIOD_TYPE_MONTHLY") => Some(2592000),
+        _ => timestamp(&period["start"])
+            .zip(timestamp(&period["end"]))
+            .filter(|(start, end)| end > start)
+            .map(|(start, end)| (end - start) as u64),
+    };
+    // Unified billing may report a real period without any usage percentage.
+    // Keep that partial observation; absence is neither zero usage nor failure.
+    if used_percent.is_some() || resets_at.is_some() || duration_seconds.is_some() {
         meters.push(SubscriptionQuotaMeter {
             id: "period".into(),
-            used_percent: Some(used.min(100.0)),
-            duration_seconds: duration,
-            resets_at: timestamp(&config["currentPeriod"]["end"])
-                .or_else(|| timestamp(&config["billingPeriodEnd"])),
+            used_percent,
+            duration_seconds,
+            resets_at,
             ..Default::default()
         });
     }
@@ -581,6 +588,116 @@ async fn finish(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    #[ignore = "Reads billing for an explicitly selected OpenBitFun Grok OAuth account; no inference or third-party credentials"]
+    async fn live_grok_quota_diagnostic() {
+        let slot = std::env::var("OPENBITFUN_LIVE_GROK_ACCOUNT")
+            .expect("select an exact in-app account slot");
+        accounts::validate_account_id(SubscriptionProvider::Grok, &slot).unwrap();
+        let proxy = std::env::var("OPENBITFUN_LIVE_SUBSCRIPTION_PROXY")
+            .ok()
+            .map(|url| crate::types::ProxyConfig {
+                enabled: true,
+                url,
+                username: None,
+                password: None,
+            });
+        let options = SubscriptionHttpOptions::new(proxy, false);
+        let credential =
+            accounts::resolve_account_with_options(SubscriptionProvider::Grok, &slot, &options)
+                .await
+                .expect("resolve selected Grok account");
+        let client = super::super::build_http_client_with_redirect_policy(
+            &options,
+            "Grok billing diagnostic",
+            reqwest::redirect::Policy::none(),
+        )
+        .unwrap();
+        let response = signed(
+            client.get(format!(
+                "{}/billing?format=credits",
+                billing_root(SubscriptionProvider::Grok, false).unwrap()
+            )),
+            &credential,
+            true,
+        )
+        .unwrap()
+        .send()
+        .await;
+        let response = match response {
+            Ok(response) => response,
+            Err(error) => {
+                println!(
+                    "Grok billing network_failure connect={} timeout={} body={}",
+                    error.is_connect(),
+                    error.is_timeout(),
+                    error.is_body()
+                );
+                panic!("Grok billing network request failed");
+            }
+        };
+        let status = response.status();
+        let data: Value = response
+            .json()
+            .await
+            .expect("Grok billing response must be JSON");
+        let keys = |row: &Value| {
+            row.as_object()
+                .map(|map| {
+                    map.keys()
+                        .filter(|key| {
+                            key.len() <= 64
+                                && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        println!("Grok billing status={} root_fields={:?} config_fields={:?} period_present={} usage_percent_present={} parser_ok={}", status.as_u16(), keys(&data), keys(&data["config"]), data["config"]["currentPeriod"].is_object(), data["config"].get("creditUsagePercent").is_some(), parse_grok(&slot, 0, chrono::Utc::now().timestamp(), &data).is_ok());
+        // Only protocol structure is emitted; tokens, profile and billing values are never printed.
+        assert!(status.is_success(), "Grok billing HTTP request failed");
+        let parsed = parse_grok(&slot, 0, chrono::Utc::now().timestamp(), &data)
+            .expect("parse real Grok billing payload");
+        assert_eq!(parsed.state, SubscriptionQuotaState::Known);
+        let observation = super::super::read_account_quota_with_options(
+            SubscriptionProvider::Grok,
+            &slot,
+            true,
+            &options,
+        )
+        .await
+        .expect("read real account quota through production API");
+        assert_eq!(observation.state, SubscriptionQuotaState::Known);
+        assert!(observation.error.is_none());
+        println!(
+            "Grok production quota state=known display_meters={}",
+            observation
+                .display
+                .as_ref()
+                .map_or(0, |display| display.meters.len())
+        );
+    }
+
+    #[test]
+    fn grok_period_only_payload_preserves_reset_and_unknown_usage() {
+        let data = json!({"config":{"isUnifiedBillingUser":true,"billingPeriodStart":"2026-10-19T00:00:00Z","billingPeriodEnd":"2026-10-26T00:00:00Z","currentPeriod":{"start":"2026-10-19T00:00:00Z","end":"2026-10-26T00:00:00Z"},"onDemandCap":{"val":0},"onDemandUsed":{"val":0},"prepaidBalance":{"val":0}}});
+        let q = parse_grok("grok", 3, 1000, &data).unwrap();
+        assert_eq!(q.state, SubscriptionQuotaState::Known);
+        assert!(q.error.is_none());
+        assert_eq!(q.credential_revision, 3);
+        let meters = &q.display.unwrap().meters;
+        assert_eq!(meters.len(), 1);
+        assert_eq!(meters[0].duration_seconds, Some(604800));
+        assert_eq!(
+            meters[0].resets_at,
+            timestamp(&data["config"]["currentPeriod"]["end"])
+        );
+        assert!(meters[0].used_percent.is_none() && meters[0].remaining.is_none());
+        assert!(meters[0].used.is_none() && meters[0].limit.is_none());
+        assert!(q.windows.is_empty() && q.allowed.is_none());
+    }
+
     #[test]
     fn grok_period_percent_and_on_demand_are_display_only() {
         let q = parse_grok("grok:fixture", 7, 1000, &json!({"config":{"creditUsagePercent":"42.5","currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","end":"2026-11-01T00:00:00Z"},"onDemandCap":{"val":100},"onDemandUsed":{"val":20}}})).unwrap();

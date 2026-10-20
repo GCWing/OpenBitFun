@@ -845,7 +845,8 @@
     "opencodeCustomAuth": "額度查詢暫不支援自訂認證標頭，請前往控制台查看用量。",
     "openConsole": "開啟控制台",
     "saveBeforeQuery": "儲存此連線後，可查詢 OpenCode Go 額度。",
-    "onDemand": "隨用隨付用量"
+    "onDemand": "隨用隨付用量",
+    "usageUnreported": "Grok 已傳回計費週期，但尚未提供用量百分比。仍可查看重設時間。"
   },
   "channelRouting": {
     "label": "備用通道",

@@ -42,6 +42,7 @@ export function SubscriptionQuotaPanel({ provider, accountId = provider, identit
     : reason && !meters.length ? t(reason)
     : snapshot?.state === 'unsupported' ? t('quota.unsupported')
       : query.failed ? t(meters.length ? 'quota.refreshFailedRetained' : 'quota.queryFailed')
+        : provider === 'grok' && snapshot?.state === 'known' && meters.some(meter => meter.id === 'period' && remainingPercent(meter) === undefined) ? t('quota.usageUnreported')
         : query.loading && !snapshot ? t('quota.loading')
           : !meters.length ? t('quota.unknown') : null;
   const renderMeter = (meter: SubscriptionQuotaMeter) => {
