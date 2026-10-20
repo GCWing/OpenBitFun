@@ -53,6 +53,7 @@ export interface PeerHostCapabilities {
   readonly miniAppAgentContextFilesV1: boolean;
   readonly wslWorkspacesV1?: boolean;
   readonly wholeSessionCopyV1?: boolean;
+  readonly localContextTruncationV1?: boolean;
   readonly modelPoolSelectionV1?: boolean;
   readonly computerUseSharingV1?: boolean;
   /** Typed ProductControl HostInvoke, including shared config read-back. */
@@ -182,6 +183,7 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   miniAppAgentContextFilesV1: false,
   wslWorkspacesV1: false,
   wholeSessionCopyV1: false,
+  localContextTruncationV1: false,
   modelPoolSelectionV1: false,
   computerUseSharingV1: false,
   productControlV1: false,
@@ -438,6 +440,7 @@ export class PeerConnectionManager {
       supportsMiniAppAgentContextFilesV1: entry.capabilities.miniAppAgentContextFilesV1,
       supportsWslWorkspacesV1: entry.capabilities.wslWorkspacesV1,
       supportsWholeSessionCopyV1: entry.capabilities.wholeSessionCopyV1,
+      supportsLocalContextTruncationV1: entry.capabilities.localContextTruncationV1,
       supportsModelPoolSelectionV1: entry.capabilities.modelPoolSelectionV1,
       supportsBtwModelPoolSelectionV1: entry.capabilities.btwModelPoolSelectionV1,
       supportsComputerUseSharingV1: entry.capabilities.computerUseSharingV1,
@@ -529,6 +532,7 @@ export class PeerConnectionManager {
       miniAppAgentContextFilesV1: caps?.miniapp_agent_context_files_v1 === true,
       wslWorkspacesV1: caps?.wsl_workspaces_v1 === true,
       wholeSessionCopyV1: caps?.whole_session_copy_v1 === true,
+      localContextTruncationV1: caps?.local_context_truncation_v1 === true,
       modelPoolSelectionV1: caps?.model_pool_selection_v1 === true,
       computerUseSharingV1: caps?.computer_use_sharing_v1 === true,
       productControlV1: caps?.product_control_v1 === true,
@@ -627,6 +631,7 @@ export class PeerConnectionManager {
         supportsMiniAppAgentContextFilesV1: capabilities.miniAppAgentContextFilesV1,
         supportsWslWorkspacesV1: capabilities.wslWorkspacesV1,
         supportsWholeSessionCopyV1: capabilities.wholeSessionCopyV1,
+        supportsLocalContextTruncationV1: capabilities.localContextTruncationV1,
         supportsModelPoolSelectionV1: capabilities.modelPoolSelectionV1,
         supportsBtwModelPoolSelectionV1: capabilities.btwModelPoolSelectionV1,
         supportsComputerUseSharingV1: capabilities.computerUseSharingV1,
@@ -776,6 +781,7 @@ function capabilitiesEqual(
     a.miniAppAgentContextFilesV1 === b.miniAppAgentContextFilesV1 &&
     a.wslWorkspacesV1 === b.wslWorkspacesV1 &&
     a.wholeSessionCopyV1 === b.wholeSessionCopyV1 &&
+    a.localContextTruncationV1 === b.localContextTruncationV1 &&
     a.modelPoolSelectionV1 === b.modelPoolSelectionV1 &&
     a.computerUseSharingV1 === b.computerUseSharingV1 &&
     a.cancelTool === b.cancelTool &&

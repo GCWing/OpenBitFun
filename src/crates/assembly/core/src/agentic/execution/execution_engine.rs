@@ -2679,6 +2679,8 @@ impl ExecutionEngine {
         trigger: &str,
         cancellation_token: CancellationToken,
         commit_gate: Arc<ManualCompactionCommitGate>,
+        force: bool,
+        policy: crate::service::config::types::LocalContextTruncation,
     ) -> OpenBitFunResult<ContextCompactionOutcome> {
         let mut session = self
             .session_manager
@@ -2688,50 +2690,50 @@ impl ExecutionEngine {
             })?;
         let start_time = std::time::Instant::now();
         let preparation = prepare_compression_cancellable(&cancellation_token, async {
-            let scaffold = self
-                .resolve_compression_runtime_scaffold(&session, &context)
-                .await?;
+            let local = force || policy == crate::service::config::types::LocalContextTruncation::Always;
+            // A forced local operation must also work without a usable model
+            // client. Do not resolve credentials or initialize the AI client.
+            let scaffold = if local { None } else {
+                Some(self.resolve_compression_runtime_scaffold(&session, &context).await?)
+            };
+            let model = scaffold.as_ref().map(|s| s.ai_client.config.model.clone())
+                .unwrap_or_else(|| session.config.model_id.clone().unwrap_or_default());
             native_hooks::dispatch_pre_compact(
-                Self::native_hook_facts(
-                    &session_id,
-                    &dialog_turn_id,
-                    context.workspace.as_ref(),
-                    &scaffold.ai_client.config.model,
-                ),
+                Self::native_hook_facts(&session_id, &dialog_turn_id, context.workspace.as_ref(), &model),
                 trigger,
-            )
-            .await;
-            let pool_budget =
-                if session.config.model_binding_policy == SessionModelBindingPolicy::Pool {
-                    let pool_id = session.config.model_pool_id.as_deref().ok_or_else(|| {
-                        OpenBitFunError::validation("Pool session has no model pool selection")
-                    })?;
-                    Some(self.model_pools.context_budget(pool_id).await?)
+            ).await;
+            let pool_budget = if !local && session.config.model_binding_policy == SessionModelBindingPolicy::Pool {
+                let pool_id = session.config.model_pool_id.as_deref().ok_or_else(|| {
+                    OpenBitFunError::validation("Pool session has no model pool selection")
+                })?;
+                Some(self.model_pools.context_budget(pool_id).await?)
+            } else { None };
+            let context_window = pool_budget.map(|b| b.context_window as usize)
+                .unwrap_or_else(|| scaffold.as_ref().map(|s| {
+                    (s.ai_client.config.context_window as usize).min(session.config.max_context_tokens)
+                }).unwrap_or(session.config.max_context_tokens));
+            let system_message = scaffold.as_ref().map(|s| s.system_prompt_message.clone());
+            let tools = scaffold.as_ref().and_then(|s| s.tool_definitions.clone());
+            let prepended_reminder_tokens = scaffold.as_ref().map(|s| {
+                Self::prepended_reminder_tokens_for_pressure(&s.prepended_prompt_reminders.ordered_reminders())
+            }).unwrap_or(0);
+            let compression_trigger_budget = pool_budget.map(CompressionTriggerBudget::for_pool)
+                .unwrap_or_else(|| if let Some(scaffold) = scaffold.as_ref() {
+                    Self::compression_trigger_budget(context_window, scaffold.ai_client.config.max_tokens)
                 } else {
-                    None
-                };
-            let context_window = pool_budget
-                .map(|budget| budget.context_window as usize)
-                .unwrap_or_else(|| (scaffold.ai_client.config.context_window as usize)
-                    .min(session.config.max_context_tokens));
-            let prepended_reminders = scaffold.prepended_prompt_reminders.ordered_reminders();
-            let prepended_reminder_tokens =
-                Self::prepended_reminder_tokens_for_pressure(&prepended_reminders);
-            let compression_trigger_budget = pool_budget
-                .map(CompressionTriggerBudget::for_pool)
-                .unwrap_or_else(|| Self::compression_trigger_budget(
-                    context_window,
-                    scaffold.ai_client.config.max_tokens,
-                ));
-            let mut runtime_messages = vec![scaffold.system_prompt_message.clone()];
+                    CompressionTriggerBudget { input_limit: context_window, output_reserve_tokens: 0, safety_reserve_tokens: 0 }
+                });
+            let mut runtime_messages: Vec<Message> = system_message.iter().cloned().collect();
             runtime_messages.extend(messages.clone());
             let before_pressure = Self::estimate_auto_compression_pressure(
-                &runtime_messages,
-                scaffold.tool_definitions.as_deref(),
-                context_window,
-                compression_trigger_budget,
-                prepended_reminder_tokens,
+                &runtime_messages, tools.as_deref(), context_window,
+                compression_trigger_budget, prepended_reminder_tokens,
             );
+            let truncate = || self.context_compressor.truncate_locally(
+                &runtime_messages, context_window,
+                before_pressure.tool_tokens + prepended_reminder_tokens
+                    + before_pressure.output_reserve_tokens + before_pressure.safety_reserve_tokens,
+            ).map(Some);
 
             self.emit_event(
                 AgenticEvent::ContextCompressionStarted {
@@ -2746,43 +2748,28 @@ impl ExecutionEngine {
             )
             .await;
 
-            let compression_contract = self
-                .session_manager
-                .compression_contract_for_session(&session_id, scaffold.compression_contract_limit);
-            let model_exchange_trace_dir = self
-                .session_manager
-                .persistent_model_exchange_trace_dir(&session_id)
-                .await;
-            let trace_config = prepare_model_exchange_trace_for_workspace(
-                &session_id,
-                &dialog_turn_id,
-                context.workspace.as_ref(),
-                model_exchange_trace_dir.as_deref(),
-                ModelExchangeTraceOperation {
-                    kind: "context_compression",
-                    id: &compression_id,
-                    trigger: Some(trigger),
-                },
-                scaffold.ai_client.as_ref(),
-            )
-            .await;
-            let mut planned_result = self
-                .build_planned_compression_result(
-                    &session_id,
-                    &dialog_turn_id,
-                    &runtime_messages,
-                    context_window,
-                    compression_contract,
-                    scaffold.ai_client.clone(),
-                    &scaffold.model_request_context,
-                    &scaffold.tool_definitions,
-                    &scaffold.prepended_prompt_reminders,
-                    scaffold.primary_supports_image_understanding,
-                    context.workspace.as_ref(),
-                    context.workspace_services.as_ref(),
-                    trace_config,
-                )
-                .await?;
+            let (mut planned_result, has_summary) = if let Some(scaffold) = scaffold.as_ref() {
+                let compression_contract = self.session_manager.compression_contract_for_session(
+                    &session_id, scaffold.compression_contract_limit,
+                );
+                let trace_dir = self.session_manager.persistent_model_exchange_trace_dir(&session_id).await;
+                let trace_config = prepare_model_exchange_trace_for_workspace(
+                    &session_id, &dialog_turn_id, context.workspace.as_ref(), trace_dir.as_deref(),
+                    ModelExchangeTraceOperation { kind: "context_compression", id: &compression_id, trigger: Some(trigger) },
+                    scaffold.ai_client.as_ref(),
+                ).await;
+                match self.build_planned_compression_result(
+                    &session_id, &dialog_turn_id, &runtime_messages, context_window, compression_contract,
+                    scaffold.ai_client.clone(), &scaffold.model_request_context, &scaffold.tool_definitions,
+                    &scaffold.prepended_prompt_reminders, scaffold.primary_supports_image_understanding,
+                    context.workspace.as_ref(), context.workspace_services.as_ref(), trace_config, policy,
+                ).await {
+                    Ok(result) => (result, true),
+                    Err(error) if policy == crate::service::config::types::LocalContextTruncation::OnContextOverflow
+                        && error.is_recoverable_context_overflow() => (truncate()?, false),
+                    Err(error) => return Err(error),
+                }
+            } else { (truncate()?, false) };
             if let Some(compression_result) = planned_result.as_mut() {
                 let boundary_turn_index = self
                     .session_manager
@@ -2812,10 +2799,34 @@ impl ExecutionEngine {
                     ),
                 }
             }
-            Ok((scaffold, before_pressure, planned_result))
+            if !has_summary {
+                if let Some(result) = planned_result.as_ref() {
+                    let mut preview: Vec<Message> = system_message.iter().cloned().collect();
+                    preview.extend(result.messages.clone());
+                    let pressure = Self::estimate_auto_compression_pressure(
+                        &preview, tools.as_deref(), context_window,
+                        compression_trigger_budget, prepended_reminder_tokens,
+                    );
+                    if pressure.total_tokens > pressure.input_limit
+                        || pressure.total_tokens >= before_pressure.total_tokens {
+                        return Err(OpenBitFunError::AIClient(
+                            "Local context truncation cannot reduce context within the request budget; context was not changed".into(),
+                        ));
+                    }
+                }
+            }
+            Ok((system_message, tools, prepended_reminder_tokens, model, before_pressure, planned_result, has_summary))
         })
         .await;
-        let (scaffold, before_pressure, planned_result) = match preparation {
+        let (
+            system_message,
+            tools,
+            prepended_reminder_tokens,
+            model,
+            before_pressure,
+            planned_result,
+            has_summary,
+        ) = match preparation {
             Ok(result) => result,
             Err(err) => {
                 self.emit_event(
@@ -2837,9 +2848,11 @@ impl ExecutionEngine {
             output_reserve_tokens: before_pressure.output_reserve_tokens,
             safety_reserve_tokens: before_pressure.safety_reserve_tokens,
         };
-        let prepended_reminders = scaffold.prepended_prompt_reminders.ordered_reminders();
-        let prepended_reminder_tokens =
-            Self::prepended_reminder_tokens_for_pressure(&prepended_reminders);
+        let summary_source = if has_summary {
+            "model"
+        } else {
+            "local_truncation"
+        };
         let planned_result = if commit_gate.try_begin_commit() {
             Ok(planned_result)
         } else {
@@ -2879,11 +2892,12 @@ impl ExecutionEngine {
                     .await;
 
                 let duration_ms = elapsed_ms_u64(start_time);
-                let mut compressed_runtime_messages = vec![scaffold.system_prompt_message.clone()];
+                let mut compressed_runtime_messages: Vec<Message> =
+                    system_message.into_iter().collect();
                 compressed_runtime_messages.extend(compressed_messages.clone());
                 let after_pressure = Self::estimate_auto_compression_pressure(
                     &compressed_runtime_messages,
-                    scaffold.tool_definitions.as_deref(),
+                    tools.as_deref(),
                     context_window,
                     compression_trigger_budget,
                     prepended_reminder_tokens,
@@ -2916,7 +2930,7 @@ impl ExecutionEngine {
                     after_pressure.usage_ratio,
                     compression_count,
                     duration_ms,
-                    "model"
+                    summary_source
                 );
 
                 self.emit_event(
@@ -2929,8 +2943,8 @@ impl ExecutionEngine {
                         tokens_after,
                         compression_ratio,
                         duration_ms,
-                        has_summary: true,
-                        summary_source: "model".to_string(),
+                        has_summary,
+                        summary_source: summary_source.to_string(),
                         applied: true,
                     },
                     EventPriority::Normal,
@@ -2942,7 +2956,7 @@ impl ExecutionEngine {
                         &session_id,
                         &dialog_turn_id,
                         context.workspace.as_ref(),
-                        &scaffold.ai_client.config.model,
+                        &model,
                     ),
                     trigger,
                 )
@@ -2955,8 +2969,8 @@ impl ExecutionEngine {
                     tokens_after,
                     compression_ratio,
                     duration_ms,
-                    has_summary: true,
-                    summary_source: "model".to_string(),
+                    has_summary,
+                    summary_source: summary_source.to_string(),
                     applied: true,
                 })
             }
@@ -3605,6 +3619,7 @@ impl ExecutionEngine {
                 .unwrap_or(true),
             Err(_) => true,
         };
+        let local_truncation = Self::local_context_truncation_policy().await;
         // Execution-local ownership deliberately prevents cross-turn reuse. Drop
         // cancels both pending IO and backoff on every exit path.
         let mut compression_prefetch: Option<PrefetchedCompression> = None;
@@ -3882,6 +3897,8 @@ impl ExecutionEngine {
             if !should_compress {
                 if enable_context_compression
                     && prefetch_enabled
+                    && local_truncation
+                        != openbitfun_config_contracts::LocalContextTruncation::Always
                     && compression_prefetch.is_none()
                     && openbitfun_agent_runtime::compression_prefetch::in_prefetch_window(
                         token_pressure.total_tokens,
@@ -3933,11 +3950,12 @@ impl ExecutionEngine {
                         },
                     );
                     compression_prefetch = Some(
-                        job.spawn_prefetch(
-                            &self
-                                .round_executor
-                                .ensure_cancel_token(&context.dialog_turn_id),
-                        ),
+                        job.with_local_truncation_policy(local_truncation)
+                            .spawn_prefetch(
+                                &self
+                                    .round_executor
+                                    .ensure_cancel_token(&context.dialog_turn_id),
+                            ),
                     );
                 }
                 debug!(
@@ -3980,6 +3998,7 @@ impl ExecutionEngine {
                         context.workspace.as_ref(),
                         context.workspace_services.as_ref(),
                         compression_prefetch.take(),
+                        local_truncation,
                     )
                     .await
                 {
@@ -4289,6 +4308,7 @@ impl ExecutionEngine {
                             context.workspace.as_ref(),
                             context.workspace_services.as_ref(),
                             compression_prefetch.take(),
+                            local_truncation,
                         )
                         .await
                     {

@@ -49,6 +49,16 @@ session controller leases, event delivery, connection bounds, and cleanup. It is
   rejection, frame limits, bounded queues, and backpressure must not be weakened
   for throughput.
 
+## Upgrade compatibility
+
+The v20 handshake advertises `local_context_truncation` before force compaction.
+Current clients can decode handed-off v18/v19 discovery and retain ordinary
+compaction when the capability is missing; force fails before any request.
+Production Shared TUI discovery roots and Runtime identities include the IPC
+version, so upgrading never replaces a running older host. Older clients keep
+using their matching host; restart those clients and host to use v20. Strict
+unknown-field decoding remains enabled.
+
 ## Verification
 
 ```bash

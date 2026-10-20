@@ -84,6 +84,16 @@ describe('ContextCompressionDisplay', () => {
     expect(container.textContent).not.toContain('Compression #3');
   });
 
+  it('identifies local truncation without presenting a model summary', () => {
+    act(() => root.render(<ContextCompressionDisplay compressionData={{
+      session_id: 'session-1', compression_count: 1, has_summary: false,
+      summary_source: 'local_truncation', tokens_before: 124_000, tokens_after: 12_000,
+    }} />));
+    expect(container.querySelector('[data-openbitfun-part="action"]')?.textContent).toBe('Truncate context locally:');
+    expect(container.querySelector('[data-summary-source="local_truncation"]')).not.toBeNull();
+    expect(container.textContent).toContain('124,000 → 12,000 tokens');
+  });
+
   it('shows a failure summary without opening error details', () => {
     const item: FlowToolItem = { id: 'compression', type: 'tool', toolName: 'ContextCompression',
       timestamp: 1, status: 'running', toolCall: { id: 'compression', input: {} } };

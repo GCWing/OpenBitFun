@@ -52,7 +52,7 @@ equivalent exists:
 | `/timeline` | Navigate persisted user messages without changing the session. |
 | `/fork` | Fork the full session or fork immediately before a selected prompt. |
 | `/goal <objective>` | Start a persistent goal through the shared runtime; while working, steer the active turn toward it. |
-| `/compact` or `/summarize` | Compact model context without deleting the saved transcript. |
+| `/compact [force]` or `/summarize [force]` | Compact model context without deleting the saved transcript. `force` discards older context locally without calling a model. |
 | `/undo` / `/redo` | Move the persisted session timeline backward or forward. |
 | `/diff` | Review staged, unstaged, and untracked workspace changes. |
 | `/editor` | Edit the current draft with `VISUAL`, then `EDITOR`. |
@@ -177,7 +177,9 @@ as Embedded TUI. Some local management and attachment capabilities remain
 Embedded-only and report that limitation instead of silently falling back.
 
 Exit all Shared TUI clients and wait briefly before returning to the default
-Embedded mode for the same workspace.
+Embedded mode for the same workspace. After upgrading the CLI, also restart
+Shared TUI clients and their host before using a newer private IPC version;
+running clients and their existing host retain their original version.
 
 ## Non-interactive output
 

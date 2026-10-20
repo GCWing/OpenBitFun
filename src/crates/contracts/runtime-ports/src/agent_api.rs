@@ -339,6 +339,9 @@ pub trait AgentModeCatalogPort: Send + Sync {
 pub struct AgentSessionCompactionRequest {
     pub session_id: String,
     pub turn_id: String,
+    /// Explicitly discard older context without invoking a model.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2208,6 +2211,25 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
+
+    #[test]
+    fn compaction_legacy_payload_round_trips_without_force() {
+        let legacy = serde_json::json!({"sessionId":"session-1", "turnId":"compact-1"});
+        let request: AgentSessionCompactionRequest =
+            serde_json::from_value(legacy.clone()).unwrap();
+        assert!(!request.force);
+        assert_eq!(serde_json::to_value(request).unwrap(), legacy);
+    }
+
+    #[test]
+    fn compaction_explicit_force_survives_a_wire_round_trip() {
+        let current =
+            serde_json::json!({"sessionId":"session-1", "turnId":"compact-1", "force":true});
+        let request: AgentSessionCompactionRequest =
+            serde_json::from_value(current.clone()).unwrap();
+        assert!(request.force);
+        assert_eq!(serde_json::to_value(request).unwrap(), current);
+    }
 
     #[test]
     fn workspace_binding_reads_legacy_shape_without_guessing_kind() {

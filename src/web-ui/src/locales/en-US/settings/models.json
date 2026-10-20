@@ -755,5 +755,16 @@
     },
     "retry": "Allow retry",
     "invalidRecords": "Some pool records cannot be read by this version. They have been preserved."
+  },
+  "localContextTruncation": {
+    "title": "Context compression",
+    "label": "Use local truncation",
+    "description": "Choose when to discard older context without a model summary. This global setting applies to all models on the execution host.",
+    "hint": "Local truncation keeps recent conversation and removes older context without generating a summary. /compact force always uses local truncation.",
+    "explicitOnly": "Only when explicitly requested",
+    "onContextOverflow": "When the model context limit is exceeded",
+    "always": "Always use local truncation",
+    "saveSuccess": "Local truncation setting saved",
+    "unsupported": "This host does not support local context truncation. Update the host to change this setting."
   }
 }

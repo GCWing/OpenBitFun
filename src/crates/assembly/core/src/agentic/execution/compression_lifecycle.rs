@@ -1,9 +1,21 @@
 //! Formal automatic compression lifecycle. This is the only automatic path
 //! allowed to run hooks, publish product events and commit session context.
 
+use super::compression_job::CompressionSummary;
 use super::*;
+use openbitfun_config_contracts::LocalContextTruncation;
 
 impl ExecutionEngine {
+    pub(crate) async fn local_context_truncation_policy() -> LocalContextTruncation {
+        match get_global_config_service().await {
+            Ok(service) => service
+                .get_config::<LocalContextTruncation>(Some("ai.local_context_truncation"))
+                .await
+                .unwrap_or_default(),
+            Err(_) => LocalContextTruncation::default(),
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn build_planned_compression_result(
         &self,
@@ -20,6 +32,7 @@ impl ExecutionEngine {
         workspace: Option<&WorkspaceBinding>,
         workspace_services: Option<&crate::agentic::workspace::WorkspaceServices>,
         trace_config: Option<ModelExchangeTraceConfig>,
+        local_truncation: LocalContextTruncation,
     ) -> OpenBitFunResult<Option<crate::agentic::session::CompressionResult>> {
         let job = compression_job::CompressionJob::new(
             self.context_compressor.clone(),
@@ -38,15 +51,15 @@ impl ExecutionEngine {
                 primary_supports_image_understanding,
                 trace_config,
             },
-        );
+        )
+        .with_local_truncation_policy(local_truncation);
         let candidate = job.run().await?;
+        let summary = match candidate.summary {
+            CompressionSummary::Model(summary) => summary,
+            CompressionSummary::LocalTruncation(error) => return Err(error),
+        };
         self.context_compressor
-            .compress_plan_with_contract(
-                session_id,
-                candidate.plan,
-                compression_contract,
-                candidate.summary,
-            )
+            .compress_plan_with_contract(session_id, candidate.plan, compression_contract, summary)
             .map(Some)
     }
 
@@ -70,6 +83,7 @@ impl ExecutionEngine {
         workspace: Option<&WorkspaceBinding>,
         workspace_services: Option<&crate::agentic::workspace::WorkspaceServices>,
         prefetch: Option<PrefetchedCompression>,
+        local_truncation: LocalContextTruncation,
     ) -> OpenBitFunResult<Option<(usize, Vec<Message>)>> {
         let mut session = self
             .session_manager
@@ -96,7 +110,16 @@ impl ExecutionEngine {
         let cancellation_token = self.round_executor.ensure_cancel_token(dialog_turn_id);
         // Latch the decision before hooks or any other await can change which
         // side of the formal threshold observes a published failure.
-        let claim = prefetch.map(|task| {
+        let use_local_truncation = local_truncation == LocalContextTruncation::Always
+            || (local_truncation == LocalContextTruncation::OnContextOverflow
+                && trigger == "context_overflow_recovery");
+        let local_fixed_tokens = before_pressure
+            .tool_tokens
+            .saturating_add(before_pressure.prepended_reminder_tokens)
+            .saturating_add(before_pressure.output_reserve_tokens)
+            .saturating_add(before_pressure.safety_reserve_tokens);
+        // Direct local recovery supersedes any speculative summary request.
+        let claim = prefetch.filter(|_| !use_local_truncation).map(|task| {
             task.claim(&CompressionModelSummaryInput {
                 ai_client: ai_client.clone(),
                 model_request_context,
@@ -140,6 +163,19 @@ impl ExecutionEngine {
             let compression_contract = self
                 .session_manager
                 .compression_contract_for_session(session_id, compression_contract_limit);
+            if use_local_truncation {
+                let boundary_turn_index = self.session_manager.get_turn_count(session_id).saturating_sub(1);
+                let transcript = match self.session_manager.create_compression_transcript_reference(
+                    session_id, boundary_turn_index, &compression_id, trigger,
+                ).await {
+                    Ok(reference) => reference,
+                    Err(error) => {
+                        warn!("Failed to create automatic compression transcript: session_id={}, error={}", session_id, error);
+                        None
+                    }
+                };
+                return Ok((None, false, compression_contract, None, transcript, true));
+            }
             let model_exchange_trace_dir = self
                 .session_manager
                 .persistent_model_exchange_trace_dir(session_id)
@@ -176,8 +212,9 @@ impl ExecutionEngine {
                         runtime_messages: &runtime_messages, dialog_turn_id, workspace, workspace_services,
                         tool_definitions, prepended_prompt_reminders, primary_supports_image_understanding,
                         trace_config: trace_config.clone(),
-                    }).run().await?,
+                    }).with_local_truncation_policy(local_truncation).run().await?,
             };
+            let use_local_truncation = matches!(&candidate.summary, CompressionSummary::LocalTruncation(_));
             let boundary_turn_index = self.session_manager.get_turn_count(session_id).saturating_sub(1);
             let transcript = match self.session_manager.create_compression_transcript_reference(
                 session_id, boundary_turn_index, &compression_id, trigger,
@@ -188,7 +225,7 @@ impl ExecutionEngine {
                     None
                 }
             };
-            Ok((Some(candidate), is_prefetched, compression_contract, trace_config, transcript))
+            Ok((Some(candidate), is_prefetched, compression_contract, trace_config, transcript, use_local_truncation))
         })
         .await;
         // Only the owner commits. Rebase against the latest canonical suffix
@@ -196,7 +233,14 @@ impl ExecutionEngine {
         let mut commit_guard = None;
         let planned_result = match planned_result {
             Err(error) => Err(error),
-            Ok((mut candidate, mut is_prefetched, contract, trace_config, transcript)) => {
+            Ok((
+                mut candidate,
+                mut is_prefetched,
+                contract,
+                trace_config,
+                transcript,
+                mut use_local_truncation,
+            )) => {
                 async {
                     loop {
                         let guard = self
@@ -224,41 +268,54 @@ impl ExecutionEngine {
                                     &canonical_snapshot,
                                     latest,
                                 )?;
-                                let Some(candidate) = candidate.as_ref() else {
-                                    return Ok((None, None));
-                                };
-                                let identity = CompressionJob::request_identity(
-                                    &CompressionModelSummaryInput {
-                                        ai_client: ai_client.clone(),
-                                        model_request_context,
-                                        runtime_messages: &latest_runtime,
+                                let mut result = if use_local_truncation {
+                                    self.context_compressor.truncate_locally(
+                                        &latest_runtime,
+                                        context_window,
+                                        local_fixed_tokens,
+                                    )?
+                                } else {
+                                    let Some(candidate) = candidate.as_ref() else {
+                                        return Ok((None, None));
+                                    };
+                                    let identity = CompressionJob::request_identity(
+                                        &CompressionModelSummaryInput {
+                                            ai_client: ai_client.clone(),
+                                            model_request_context,
+                                            runtime_messages: &latest_runtime,
+                                            dialog_turn_id,
+                                            workspace,
+                                            workspace_services,
+                                            tool_definitions,
+                                            prepended_prompt_reminders,
+                                            primary_supports_image_understanding,
+                                            trace_config: None,
+                                        },
+                                    );
+                                    if candidate.request_identity != identity {
+                                        return Ok((None, None));
+                                    }
+                                    let Some(plan) = self.context_compressor.rebase_plan(
+                                        candidate.plan.clone(),
+                                        &latest_runtime,
                                         dialog_turn_id,
-                                        workspace,
-                                        workspace_services,
-                                        tool_definitions,
-                                        prepended_prompt_reminders,
-                                        primary_supports_image_understanding,
-                                        trace_config: None,
-                                    },
-                                );
-                                if candidate.request_identity != identity {
-                                    return Ok((None, None));
-                                }
-                                let Some(plan) = self.context_compressor.rebase_plan(
-                                    candidate.plan.clone(),
-                                    &latest_runtime,
-                                    dialog_turn_id,
-                                )?
-                                else {
-                                    return Ok((None, None));
-                                };
-                                let mut result =
+                                    )?
+                                    else {
+                                        return Ok((None, None));
+                                    };
+                                    let CompressionSummary::Model(summary) = &candidate.summary
+                                    else {
+                                        unreachable!(
+                                            "local candidates bypass model-summary commit"
+                                        );
+                                    };
                                     self.context_compressor.compress_plan_with_contract(
                                         session_id,
                                         plan,
                                         contract.clone(),
-                                        candidate.summary.clone(),
-                                    )?;
+                                        summary.clone(),
+                                    )?
+                                };
                                 if let Some(reference) = transcript.as_ref() {
                                     self.context_compressor.append_transcript_reference(
                                         &mut result,
@@ -272,15 +329,34 @@ impl ExecutionEngine {
                                     &preview,
                                     tool_definitions.as_deref(),
                                     context_window,
-                                    Self::compression_trigger_budget(
-                                        context_window,
-                                        ai_client.config.max_tokens,
-                                    ),
+                                    if use_local_truncation {
+                                        CompressionTriggerBudget {
+                                            input_limit: before_pressure.input_limit,
+                                            output_reserve_tokens: before_pressure.output_reserve_tokens,
+                                            safety_reserve_tokens: before_pressure.safety_reserve_tokens,
+                                        }
+                                    } else {
+                                        Self::compression_trigger_budget(
+                                            context_window,
+                                            ai_client.config.max_tokens,
+                                        )
+                                    },
                                     Self::prepended_reminder_tokens_for_pressure(
                                         &prepended_prompt_reminders.ordered_reminders(),
                                     ),
                                 );
-                                if is_prefetched && pressure.total_tokens >= pressure.input_limit {
+                                if use_local_truncation
+                                    && (pressure.total_tokens >= pressure.input_limit
+                                        || pressure.total_tokens >= before_pressure.total_tokens)
+                                {
+                                    return Err(OpenBitFunError::AIClient(
+                                        "Local context truncation cannot reduce context within the request budget; context was not changed".into(),
+                                    ));
+                                }
+                                if is_prefetched
+                                    && !use_local_truncation
+                                    && pressure.total_tokens >= pressure.input_limit
+                                {
                                     return Ok((None, None));
                                 }
                                 if cancellation_token.is_cancelled() {
@@ -295,7 +371,7 @@ impl ExecutionEngine {
                             // Keep session mutations fenced through persistence
                             // and counter/cache updates.
                             commit_guard = Some(guard);
-                            return Ok(Some(result));
+                            return Ok(Some((result, use_local_truncation)));
                         }
                         drop(guard);
                         let job = CompressionJob::new(
@@ -315,10 +391,14 @@ impl ExecutionEngine {
                                 primary_supports_image_understanding,
                                 trace_config: trace_config.clone(),
                             },
-                        );
+                        )
+                        .with_local_truncation_policy(local_truncation);
                         candidate = Some(
                             prepare_compression_cancellable(&cancellation_token, job.run()).await?,
                         );
+                        use_local_truncation = candidate.as_ref().is_some_and(|candidate| {
+                            matches!(&candidate.summary, CompressionSummary::LocalTruncation(_))
+                        });
                         is_prefetched = false;
                     }
                 }
@@ -328,7 +408,7 @@ impl ExecutionEngine {
         // Once the synchronous replacement wins admission, persistence must not
         // be dropped halfway through by cancellation.
         match planned_result {
-            Ok(Some(compression_result)) => {
+            Ok(Some((compression_result, use_local_truncation))) => {
                 self.session_manager
                     .persist_compression_context(session_id, &compression_result.messages)
                     .await;
@@ -379,7 +459,11 @@ impl ExecutionEngine {
                     prepended_reminder_tokens,
                 );
                 let compressed_tokens = after_pressure.total_tokens;
-                let summary_source = "model";
+                let summary_source = if use_local_truncation {
+                    "local_truncation"
+                } else {
+                    "model"
+                };
 
                 info!(
                     "Compression completed: session_id={}, turn_id={}, messages {} -> {}, total_tokens {} -> {}, system_tokens {} -> {}, tool_tokens {} -> {}, prepended_reminder_tokens {} -> {}, conversation_tokens {} -> {}, context_window={}, input_limit={}, output_reserve={}, safety_reserve={}, usage {:.3} -> {:.3}, compression_count={}, duration_ms={}, summary_source={}",
@@ -426,7 +510,7 @@ impl ExecutionEngine {
                             (compressed_tokens as f64) / (before_pressure.total_tokens as f64)
                         },
                         duration_ms,
-                        has_summary: true,
+                        has_summary: !use_local_truncation,
                         summary_source: summary_source.to_string(),
                         applied: true,
                     },

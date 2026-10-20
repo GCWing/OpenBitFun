@@ -61,6 +61,24 @@ still wait for the current turn; Detached Dispatch sessions keep appending
 messages to the target task. In Peer Device Mode, the preference belongs to the
 active host, as do the other conversation settings.
 
+## Context compaction
+
+Use `/compact` while a native session is idle to compact its context. Use
+`/compact force` to discard older context locally without requesting a model
+summary. Saved conversation history remains available. Local truncation keeps
+the first and latest user requests and recent messages within a token budget;
+tool calls and their results are retained or removed together. If the retained
+requests cannot fit, the operation reports an error and leaves context unchanged.
+
+**Settings → Models → Use local truncation** is a global policy on the execution
+host, shared by all models. **Explicit invocation only** is the default.
+**On model context overflow** uses local truncation only after a normal model
+request or a compaction request reports a context overflow; successful requests
+keep the existing model-summary behavior. **Always use local truncation** skips
+model summaries for manual and automatic compaction. `/compact force` always
+uses local truncation. Peer and dispatch hosts must advertise support; an older
+host reports unsupported instead of silently treating force as normal compaction.
+
 ## Floating conversations
 
 The bottom-right window opens the persistent OpenBitFun control conversation in

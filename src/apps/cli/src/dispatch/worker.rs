@@ -98,9 +98,19 @@ async fn run_inner(store: &DispatchStore, job_id: &str) -> Result<()> {
         .as_ref()
         .and_then(|turn| turn.approval_policy)
         .unwrap_or(job.request.approval_policy);
-    super::ensure_selected_model_ready(effective_model.as_deref()).await?;
-    if let Some(model) = effective_model.as_deref() {
-        super::validate_reasoning_preset(model, effective_reasoning_preset.as_deref()).await?;
+    let requires_model = super::turn_requires_model(
+        pending_turn
+            .as_ref()
+            .map(|turn| turn.runtime_kind())
+            .unwrap_or_default(),
+        pending_turn.as_ref().is_some_and(|turn| turn.is_forced()),
+    )
+    .await?;
+    if requires_model {
+        super::ensure_selected_model_ready(effective_model.as_deref()).await?;
+        if let Some(model) = effective_model.as_deref() {
+            super::validate_reasoning_preset(model, effective_reasoning_preset.as_deref()).await?;
+        }
     }
 
     // Every detached worker takes the same stable lock for a canonical target
@@ -209,7 +219,7 @@ async fn run_inner(store: &DispatchStore, job_id: &str) -> Result<()> {
                 None => "create target-owned dispatch session".to_string(),
             })?;
     }
-    if let Some(model) = effective_model.clone() {
+    if let Some(model) = effective_model.clone().filter(|_| requires_model) {
         let reasoning_preset = effective_reasoning_preset
             .as_deref()
             .filter(|preset| *preset != "auto")
@@ -243,7 +253,10 @@ async fn run_inner(store: &DispatchStore, job_id: &str) -> Result<()> {
     // after the Runtime accepts the turn must never make a replacement worker
     // submit the prompt a second time.
     let follow_up = store.claim_follow_up_turn(job_id, &turn_id)?;
-    let turn_kind = follow_up.as_ref().map(|turn| turn.kind).unwrap_or_default();
+    let turn_kind = follow_up
+        .as_ref()
+        .map(|turn| turn.runtime_kind())
+        .unwrap_or_default();
     match turn_kind {
         DispatchTurnKind::Prompt => {
             let prompt = follow_up
@@ -282,7 +295,11 @@ async fn run_inner(store: &DispatchStore, job_id: &str) -> Result<()> {
             // its DialogTurn/ContextCompression events flow through the same
             // event loop and settle the job like any other turn.
             compatibility
-                .start_manual_compaction(job.request.session_id.clone(), turn_id.clone())
+                .start_manual_compaction_with_force(
+                    job.request.session_id.clone(),
+                    turn_id.clone(),
+                    follow_up.as_ref().is_some_and(|turn| turn.is_forced()),
+                )
                 .await
                 .map_err(anyhow::Error::msg)
                 .context("start dispatch manual compaction")?;

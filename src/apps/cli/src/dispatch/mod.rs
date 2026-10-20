@@ -161,6 +161,10 @@ async fn probe(request: DispatchProbeRequest) -> Result<DispatchProbeResponse> {
     capabilities.push(
         openbitfun_services_core::dispatch_contract::DISPATCH_FILE_CHUNKS_CAPABILITY.to_string(),
     );
+    capabilities.push(
+        openbitfun_services_core::dispatch_contract::DISPATCH_LOCAL_CONTEXT_TRUNCATION_CAPABILITY
+            .to_string(),
+    );
     if runner::is_supported() {
         capabilities.push(
             openbitfun_services_core::dispatch_contract::DISPATCH_DETACHED_WORKER_CAPABILITY
@@ -257,6 +261,9 @@ async fn continue_job(request: DispatchContinueRequest) -> Result<DispatchContin
     }
     match request.kind {
         DispatchTurnKind::Prompt => {
+            if request.force {
+                bail!("dispatch force is only supported for compact turns");
+            }
             if request.prompt.trim().is_empty() {
                 bail!("dispatch follow-up requires a prompt");
             }
@@ -297,16 +304,19 @@ async fn continue_job(request: DispatchContinueRequest) -> Result<DispatchContin
     } else {
         // Validate before acceptance, just as submit does. The worker still
         // revalidates in case target configuration changes before it starts.
-        let selected_model =
-            select_ready_model(request.model.as_deref().or(job.request.model.as_deref())).await?;
-        validate_reasoning_preset(
-            &selected_model,
-            request
-                .reasoning_preset
-                .as_deref()
-                .or(job.request.reasoning_preset.as_deref()),
-        )
-        .await?;
+        if turn_requires_model(request.kind, request.force).await? {
+            let selected_model =
+                select_ready_model(request.model.as_deref().or(job.request.model.as_deref()))
+                    .await?;
+            validate_reasoning_preset(
+                &selected_model,
+                request
+                    .reasoning_preset
+                    .as_deref()
+                    .or(job.request.reasoning_preset.as_deref()),
+            )
+            .await?;
+        }
         store.queue_follow_up_turn(&request)?
     };
     ensure_worker_spawned(&store, &request.job_id, state.state)?;
@@ -815,6 +825,22 @@ async fn validate_reasoning_preset(model_id: &str, preset: Option<&str>) -> Resu
     Ok(())
 }
 
+/// Admission and worker startup use the target's actual compaction policy.
+/// Explicit force never needs model configuration or client construction.
+pub(super) async fn turn_requires_model(kind: DispatchTurnKind, force: bool) -> Result<bool> {
+    if kind != DispatchTurnKind::Compact {
+        return Ok(true);
+    }
+    if force {
+        return Ok(false);
+    }
+    openbitfun_core::service::config::initialize_global_config().await?;
+    let config_service = openbitfun_core::service::config::get_global_config_service().await?;
+    let config: GlobalConfig = config_service.get_config(None).await?;
+    Ok(config.ai.local_context_truncation
+        != openbitfun_core::service::config::LocalContextTruncation::Always)
+}
+
 async fn select_ready_model(requested: Option<&str>) -> Result<String> {
     let readiness = inspect_model_readiness().await?;
     if let Some(requested) = requested.map(str::trim).filter(|model| !model.is_empty()) {
@@ -1064,6 +1090,16 @@ fn truncate_chars(value: &str, max_chars: usize) -> String {
 mod tests {
     use super::*;
     use crate::dispatch::protocol::{DispatchApprovalPolicy, DispatchSubmitRequest};
+
+    #[tokio::test]
+    async fn force_compaction_does_not_require_a_ready_target_model() {
+        assert!(!turn_requires_model(DispatchTurnKind::Compact, true)
+            .await
+            .unwrap());
+        assert!(turn_requires_model(DispatchTurnKind::Prompt, false)
+            .await
+            .unwrap());
+    }
 
     fn probe_failure(diagnostic: &str) -> Result<GitProbeOutput, GitProbeOutput> {
         Err(GitProbeOutput {

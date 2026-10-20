@@ -3,6 +3,7 @@ import '@/app/scenes/settings/pages/ai/ModelSettingsPage.scss';
 import { ModelDiscoveryPicker, type ModelDiscoveryOption } from './ModelDiscoveryPicker';
 import { ModelPoolsSection } from './ModelPoolsSection';
 import { ModelPoolCardActions } from './ModelPoolCardActions';
+import LocalContextTruncationSection from './LocalContextTruncationSection';
 import { aiApi, systemAPI } from '@/infrastructure/api';
 import type {
   SubscriptionAccount,
@@ -4239,6 +4240,8 @@ const ModelSettingsPage: React.FC = () => {
             )}
           </ConfigPageSection>
         </div>
+
+        <LocalContextTruncationSection />
 
         <Disclosure summary={t('sections.more')} className="openbitfun-model-settings__more-settings"
           contentInnerClassName="openbitfun-model-settings__more-content">

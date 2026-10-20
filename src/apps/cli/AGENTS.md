@@ -38,7 +38,7 @@ Normal interactive submissions follow:
 ChatView / StartupPage
   -> CliAgentRuntimeClient
      -> Embedded AgentRuntime typed API
-     -> Shared private Runtime IPC v18
+     -> Shared private Runtime IPC v20
   -> existing owner/service APIs
      -> ConfigService / registries / MCPService / AccountRuntime / WorktreeService
      -> External Source and Hook domain APIs
@@ -180,4 +180,10 @@ For `/goal` prompt routing (including the pending-session guard):
 ```bash
 cargo test --locked -p openbitfun-cli --bin openbitfun goal_prompts_
 cargo test --locked -p openbitfun-cli --bin openbitfun -- modes::exec::tests:: dispatch::worker::tests::
+```
+
+For `/compact [force]` parsing and detached force admission/persistence:
+
+```bash
+cargo test --locked -p openbitfun-cli --bin openbitfun -- force_compaction session_actions_reject_arguments
 ```

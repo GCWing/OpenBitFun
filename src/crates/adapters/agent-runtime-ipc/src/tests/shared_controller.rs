@@ -740,6 +740,7 @@ fn compact_operation(session_id: &str, turn_id: &str) -> RuntimeIpcOperation {
         request: AgentSessionCompactionRequest {
             session_id: session_id.to_string(),
             turn_id: turn_id.to_string(),
+            force: false,
         },
     }
 }

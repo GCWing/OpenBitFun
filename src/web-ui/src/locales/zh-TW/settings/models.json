@@ -755,5 +755,16 @@
     },
     "retry": "允許重試",
     "invalidRecords": "目前版本無法讀取部分模型池記錄，這些記錄已原樣保留。"
+  },
+  "localContextTruncation": {
+    "title": "上下文壓縮",
+    "label": "使用本機截斷",
+    "description": "選擇何時不呼叫模型，直接截斷較早的上下文。此全域設定對執行主機上的所有模型生效。",
+    "hint": "本機截斷保留近期對話並移除較早的上下文，不產生摘要。/compact force 一律使用本機截斷。",
+    "explicitOnly": "必須明確呼叫",
+    "onContextOverflow": "模型超限時",
+    "always": "一律使用本機截斷",
+    "saveSuccess": "本機截斷設定已儲存",
+    "unsupported": "此主機不支援本機截斷上下文。請更新主機後修改此設定。"
   }
 }

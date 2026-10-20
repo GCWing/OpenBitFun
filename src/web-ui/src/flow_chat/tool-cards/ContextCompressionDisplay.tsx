@@ -17,7 +17,7 @@ interface ContextCompressionDisplayProps {
     session_id: string;
     compression_count: number;
     has_summary: boolean;
-    summary_source?: 'model' | 'local_fallback' | 'none';
+    summary_source?: 'model' | 'local_fallback' | 'local_truncation' | 'none';
     tokens_before?: number;
     tokens_after?: number;
     compression_ratio?: number;
@@ -66,7 +66,9 @@ export const ContextCompressionDisplay: React.FC<ContextCompressionDisplayProps>
   const headerAction =
     isFailed
       ? t('toolCards.contextCompression.contextCompressionFailed')
-      : t('toolCards.contextCompression.contextCompression');
+      : data.summarySource === 'local_truncation'
+        ? t('toolCards.contextCompression.localTruncationHeader')
+        : t('toolCards.contextCompression.contextCompression');
 
   const interrupted = data.status === 'cancelled' || data.status === 'rejected';
   const active = ['pending', 'preparing', 'streaming', 'running', 'analyzing'].includes(data.status);

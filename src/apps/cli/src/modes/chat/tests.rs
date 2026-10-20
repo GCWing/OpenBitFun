@@ -1251,13 +1251,34 @@ mod tests {
 
     #[test]
     fn session_actions_reject_arguments_only_after_the_builtin_route_wins() {
+        for alias in ["/compact", "/summarize"] {
+            let action =
+                crate::actions::action_for_alias(alias, crate::actions::ActionContext::Chat)
+                    .unwrap();
+            assert_eq!(
+                builtin_arguments_error(CommandRoute::Builtin, action.handler, "force"),
+                None
+            );
+            assert_eq!(
+                builtin_arguments_error(CommandRoute::Builtin, action.handler, "force extra"),
+                Some("Usage: /compact [force]")
+            );
+        }
+        assert_eq!(
+            builtin_arguments_error(
+                CommandRoute::Builtin,
+                ActionHandler::CompactSession,
+                "FORCE"
+            ),
+            None
+        );
         assert_eq!(
             builtin_arguments_error(
                 CommandRoute::Builtin,
                 ActionHandler::CompactSession,
                 "unexpected"
             ),
-            Some("Usage: /compact")
+            Some("Usage: /compact [force]")
         );
         assert_eq!(
             builtin_arguments_error(CommandRoute::Builtin, ActionHandler::CompactSession, "   "),
