@@ -1459,6 +1459,10 @@ export function findProductEntrypointCoreFeatureViolations(
       ...coreCompatibilityReviewedFeatures,
       'product-search',
       'remote-connect',
+      // The CLI Peer Host answers `start_file_watch` / `stop_file_watch` for an
+      // attached controller, so it consumes the watcher owner directly instead
+      // of inheriting it from `external-sources`.
+      'file-watch',
       'plugin-runtime',
       'opencode-plugin-host',
       'ssh-remote',
