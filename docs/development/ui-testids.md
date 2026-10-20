@@ -309,10 +309,10 @@ Notes:
 | Browser panel title | `browser-panel-title` | Browser toolbar/form region. |
 | Browser URL input | `browser-url-input` | Real URL input field. Press Enter to open the typed URL. |
 | Browser page frame | `browser-page-frame` | iframe/webview host content area. |
-| Browser loading indicator | `browser-loading-indicator` | Refresh/loading icon while a URL is loading. |
+| Browser loading indicator | `browser-loading-indicator` | Address-field spinner that replaces the browser glyph while a URL is loading. |
 | Browser error message | `browser-error-message` | URL validation/connectivity/webview load failure message. |
 | Browser current URL | `browser-current-url` | Current URL display in the webview placeholder. |
-| Browser refresh button | `browser-refresh-button` | Refreshes the current browser page. |
+| Browser refresh button | `browser-refresh-button` | Refreshes the current browser page, and stops the in-flight load while loading. |
 | Browser back button | `browser-back-button` | Navigates browser history back. |
 | Browser forward button | `browser-forward-button` | Navigates browser history forward. |
 

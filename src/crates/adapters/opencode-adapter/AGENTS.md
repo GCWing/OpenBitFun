@@ -138,7 +138,29 @@ explicitly. Keep valid V1 servers named `servers` discoverable. Source disableme
 blocks direct activation, but valid declarations remain eligible for explicit
 native import; OpenBitFun source suppression and revision fencing still apply.
 
+## Session history
+
+- `session` owns the bounded, read-only OpenCode `session/message/part` SQLite
+  protocol. Discovery uses the XDG data directory (`~/.local/share/opencode`
+  by default); no CLI, provider credentials, or plugins are loaded.
+- Zcode consumes this same persisted protocol through `compatible_store` and
+  keeps its path and provenance in its own adapter. This narrow dependency avoids
+  duplicating transaction, ordering, visibility and tool-state parsing. It does
+  not make OpenCode responsible for Zcode configuration or runtime behavior.
+- Product Assembly consumes only external session DTOs. Native persistence,
+  following, removal and continuation stay in the existing session owners.
+- Pending source undo is projected without changing the source. Committed WAL
+  records are read in a single read-only transaction; optional legacy columns
+  remain optional. Unsupported schemas fail explicitly.
+
 ## Verification
+
+- `cargo test -p openbitfun-opencode-adapter --lib session::tests`
+- `cargo test -p openbitfun-zcode-adapter --lib session::tests`
+- Optional real source check: set `OPENBITFUN_TEST_OPENCODE_DATA` to the OpenCode
+  data directory, then run `cargo test -p openbitfun-opencode-adapter --lib
+  inspect_installed_opencode -- --ignored --nocapture`. A selected
+  `OPENBITFUN_TEST_OPENCODE_SESSION` checks the two-turn verification session.
 
 - `cargo test --locked -p openbitfun-opencode-adapter --lib instruction_source::tests::`
 - `cargo test -p openbitfun-opencode-adapter --test opencode_source_adapter`

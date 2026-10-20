@@ -1,19 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import girlManifest from '../../../../public/agent-companion-pets/openbitfun-girl/pet.json';
 import bitblobManifest from '../../../../public/agent-companion-pets/bitblob/pet.json';
 
 const invoke = vi.fn();
+const isTauriRuntimeMock = vi.fn(() => false);
 
 vi.mock('@/infrastructure/api/service-api/ApiClient', () => ({
   api: { invoke },
 }));
 
-vi.mock('@tauri-apps/plugin-fs', () => ({
-  readFile: vi.fn(),
-}));
-
 vi.mock('@/infrastructure/runtime', () => ({
-  isTauriRuntime: () => false,
+  isTauriRuntime: () => isTauriRuntimeMock(),
 }));
 
 describe('AgentCompanionPetService built-in presets', () => {
@@ -145,5 +142,56 @@ describe('bundled pet compatibility', () => {
     expect(invoke).toHaveBeenLastCalledWith('import_agent_companion_pet_package', {
       request: { path: '/installed/app.asar', builtinId: 'codex', expectedFingerprint: 'reviewed' },
     });
+  });
+});
+
+describe('user pet spritesheet reads', () => {
+  const userPet = {
+    id: 'pet-abc',
+    displayName: 'Imported',
+    source: 'user' as const,
+    packagePath: '/home/user/.config/openbitfun/data/agent-companions/pet-abc',
+    spritesheetPath: '/home/user/.config/openbitfun/data/agent-companions/pet-abc/spritesheet.webp',
+    spritesheetMimeType: 'image/webp',
+    spriteVersionNumber: 2,
+  };
+
+  beforeEach(() => {
+    invoke.mockReset();
+    isTauriRuntimeMock.mockReturnValue(true);
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn((_blob: Blob) => 'blob:pet-spritesheet'),
+      revokeObjectURL: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    isTauriRuntimeMock.mockReturnValue(false);
+    vi.unstubAllGlobals();
+  });
+
+  it('reads the spritesheet through the host instead of the filesystem plugin scope', async () => {
+    const { resolveAgentCompanionPetSrc } = await import('./AgentCompanionPetService');
+    invoke.mockResolvedValueOnce(new Uint8Array([1, 2, 3]).buffer);
+
+    await expect(resolveAgentCompanionPetSrc(userPet)).resolves.toBe('blob:pet-spritesheet');
+    expect(invoke).toHaveBeenCalledWith('load_agent_companion_pet_spritesheet', {
+      request: { spritesheetPath: userPet.spritesheetPath },
+    });
+  });
+
+  it('accepts a raw byte response and reuses the cached blob URL', async () => {
+    const { resolveAgentCompanionPetSrc } = await import('./AgentCompanionPetService');
+    const otherPet = {
+      ...userPet,
+      id: 'pet-def',
+      packagePath: '/home/user/.config/openbitfun/data/agent-companions/pet-def',
+      spritesheetPath: '/home/user/.config/openbitfun/data/agent-companions/pet-def/spritesheet.webp',
+    };
+    invoke.mockResolvedValueOnce(new Uint8Array([1, 2, 3]));
+
+    await expect(resolveAgentCompanionPetSrc(otherPet)).resolves.toBe('blob:pet-spritesheet');
+    await expect(resolveAgentCompanionPetSrc(otherPet)).resolves.toBe('blob:pet-spritesheet');
+    expect(invoke).toHaveBeenCalledTimes(1);
   });
 });

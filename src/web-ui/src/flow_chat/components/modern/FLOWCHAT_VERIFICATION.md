@@ -65,7 +65,7 @@ each missing what the other had.
 | `../../selection/useExcerptComposerActions.test.tsx` | main/side draft routing, focus after activation, ordinary child ownership, and stale surface rejection |
 | `../../../shared/utils/conversationExcerpt.test.ts` | quote deduplication, source-data framing, and legacy/additive presentation metadata |
 | `flowChatSearchPresentation.test.ts` | visible source highlighting and single-line marker geometry, wrapping, scrolling, and clipping |
-| `FlowChatHeader.test.tsx` | shared SearchField composition, result controls, input identity while expanding, native-view occlusion declaration for session overview, and the default active-only Agent tree toggle |
+| `FlowChatHeader.test.tsx` | shared SearchField composition, result controls, input identity while expanding, native-view occlusion declaration for session overview, overview positioning during pane resize/collapse, and the default active-only Agent tree toggle |
 | `SessionTreePopover.test.tsx` | Agent selection/cancellation/deletion menus, type-only metadata, active branch filtering with ancestor retention, restoring all agents, and the active empty state |
 | `../../services/deleteSessionTreeBranch.test.ts` | Unloaded descendant deletion in child-first order, remote location forwarding, failure retention, and device surface guards |
 

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { createOverlayPortal,
-  Button, Card, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading,
-  DialogTitle, Icon, ToolbarGroup, ToolbarSeparator, useDismissibleLayer,
+  Button, Card, Icon, ToolbarGroup, ToolbarSeparator, useDismissibleLayer,
 } from '@openbitfun/ui';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useI18n } from '@/infrastructure/i18n';
@@ -14,10 +13,11 @@ import { resolveSessionDriverId } from '../session-drivers/resolve';
 import { isAcpFlowSession } from '../utils/acpSession';
 import { captureFlowChatSelection, type CapturedFlowChatSelection } from './flowChatSelection';
 import {
-  computeSelectionBarPosition, measureSelectionBarGeometry, sameFlowChatSelection, sameSelectionBarAnchor,
+  computeSelectionBarPosition, measureExcerptEditorGeometry, measureSelectionBarGeometry,
+  sameFlowChatSelection, sameSelectionBarAnchor, type SelectionBarGeometry,
 } from './flowChatSelectionPosition';
 import { requestExcerptAction } from './excerptActions';
-import { ConversationExcerptEditor } from './ConversationExcerptEditor';
+import { ConversationExcerptFloatingEditor } from './ConversationExcerptFloatingEditor';
 import './ConversationExcerpt.scss';
 import { highlightExcerptRange } from './locateConversationExcerpt';
 import { contextMenuRegistry } from '@/shared/context-menu-system/core/ContextMenuRegistry';
@@ -39,10 +39,10 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
   autoShowToolbarRef.current = autoShowToolbar;
   const menuId = useId();
   const popupRef = useRef<HTMLDivElement>(null);
-  const editorRef = useRef<HTMLDivElement>(null);
-  const commentRef = useRef<HTMLTextAreaElement>(null);
   const [selection, setSelection] = useState<CapturedFlowChatSelection | null>(null);
   const [editing, setEditing] = useState(false);
+  const [editorGeometry, setEditorGeometry] = useState<SelectionBarGeometry | null>(null);
+  const toolbarGeometryRef = useRef<SelectionBarGeometry | null>(null);
   const [comment, setComment] = useState('');
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const lastCapturedRef = useRef<CapturedFlowChatSelection | null>(null);
@@ -50,9 +50,11 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
   editingRef.current = editing;
   const intentRef = useRef(onSelectionIntent);
   intentRef.current = onSelectionIntent;
-  const beginEditing = useCallback(() => {
-    // The transient selection toolbar can unmount while the dialog is open.
-    // Give the modal owner a durable focus target to restore after its exit.
+  const beginEditing = useCallback((captured: CapturedFlowChatSelection, geometry: SelectionBarGeometry | null) => {
+    const root = rootRef.current;
+    // Snapshot coordinates before focus or menu dismissal can replace the source DOM.
+    setEditorGeometry(geometry ?? (root && measureExcerptEditorGeometry(root, captured)));
+    // The transient selection toolbar unmounts when the editor opens.
     rootRef.current?.focus({ preventScroll: true });
     setEditing(true);
   }, [rootRef]);
@@ -61,7 +63,8 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
     if (!editingRef.current && popupRef.current?.contains(focused ?? null)) {
       rootRef.current?.focus({ preventScroll: true });
     }
-    setSelection(null); setPosition(null); setEditing(false); setComment('');
+    setSelection(null); setPosition(null); setEditing(false); setComment(''); setEditorGeometry(null);
+    toolbarGeometryRef.current = null;
   }, [rootRef]);
   const scope = getActiveSurfaceScope();
   const sourceSession = sessionId ? flowChatStore.getState().sessions.get(sessionId) : undefined;
@@ -183,12 +186,13 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
       menuBuilder: () => {
         const next = readSelection();
         if (!next) return [];
+        const geometry = measureExcerptEditorGeometry(root, next);
         clear();
         return [
           { id: `${menuId}-annotate`, label: t(parentSessionId ? 'selection.addToMain' : 'selection.annotate'),
             icon: 'Pencil', onClick: () => {
               if (!scope.isCurrent()) return;
-              setSelection(next); beginEditing(); setPosition(null);
+              setSelection(next); beginEditing(next, geometry); setPosition(null);
             } },
           { id: `${menuId}-ask`, label: t(child ? 'selection.askHere' : 'selection.askSide'),
             icon: 'MessageSquarePlus', disabled: !canAsk,
@@ -243,6 +247,7 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
       if (!geometry || !sameSelectionBarAnchor(initial, geometry) || selection.range.toString() !== selectedText) return clear();
       const next = computeSelectionBarPosition(geometry, popup.getBoundingClientRect(), placement);
       if (!next) return clear();
+      toolbarGeometryRef.current = geometry;
       placement = next.placement;
       setPosition(previous => previous?.left === next.left && previous.top === next.top ? previous : next);
     };
@@ -267,18 +272,11 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
     return highlightExcerptRange(selection.range);
   }, [editing, selection]);
 
-  useEffect(() => {
-    if (!editing || !active) return;
-    // Context menus restore their own focus when closing. Focus the visible
-    // editor after that commit as well as Dialog's initial focus placement.
-    const frame = requestAnimationFrame(() => commentRef.current?.focus({ preventScroll: true }));
-    return () => cancelAnimationFrame(frame);
-  }, [editing, active]);
-
   const submit = (action: 'annotate' | 'ask') => {
     if (!selection || !scope.isCurrent() || !sessionId) return;
     requestExcerptAction({ ...selection.excerpt, comment: comment.trim() || undefined },
       parentSessionId || sessionId, action);
+    if (editing) rootRef.current?.focus({ preventScroll: true });
     rootRef.current?.ownerDocument.getSelection()?.removeAllRanges();
     clear();
   };
@@ -289,45 +287,28 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
         <Card appearance="raised" radius="lg" data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="root"
           ref={popupRef} className="conversation-excerpt__popover" data-flowchat-selection-ignore="true" data-openbitfun-native-webview-occlusion
           style={{ left: position?.left ?? 0, top: position?.top ?? 0, visibility: position ? 'visible' : 'hidden' }}>
-          <ToolbarGroup data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="toolbar" className="conversation-excerpt__toolbar"
-            role="group" aria-label={t('selection.actions')}>
-            <Button size="sm" variant="text" className="conversation-excerpt__action"
-              data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="action"
-              leadingIcon={<Icon name="edit" />} onClick={beginEditing} aria-haspopup="dialog">
-              {t('selection.annotate')}
-            </Button>
-            <ToolbarSeparator />
-            <Button size="sm" variant="text" className="conversation-excerpt__action"
-              data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="action"
-              leadingIcon={<Icon name="side-chat" />} disabled={!canAsk}
-              title={!canAsk ? t('selection.sideUnsupported') : undefined} onClick={() => submit('ask')}>
-              {t(child ? 'selection.askHere' : 'selection.askSide')}
-            </Button>
-          </ToolbarGroup>
+          <div data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="toolbar">
+            <ToolbarGroup className="conversation-excerpt__toolbar" role="group" aria-label={t('selection.actions')}>
+              <Button size="sm" variant="text" className="conversation-excerpt__action"
+                data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="action"
+                leadingIcon={<Icon name="edit" />} onClick={() => beginEditing(selection, toolbarGeometryRef.current)} aria-haspopup="dialog">
+                {t('selection.annotate')}
+              </Button>
+              <ToolbarSeparator />
+              <Button size="sm" variant="text" className="conversation-excerpt__action"
+                data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="action"
+                leadingIcon={<Icon name="side-chat" />} disabled={!canAsk}
+                title={!canAsk ? t('selection.sideUnsupported') : undefined} onClick={() => submit('ask')}>
+                {t(child ? 'selection.askHere' : 'selection.askSide')}
+              </Button>
+            </ToolbarGroup>
+          </div>
         </Card>, getAppearanceOverlayHost(), undefined, { ownerRef: rootRef },
       )}
-      <Dialog ref={editorRef} open={!!selection && editing && active} onOpenChange={clear} size="sm" className="conversation-excerpt__dialog"
-        initialFocusRef={commentRef} data-flowchat-selection-ignore="true"
-        data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="dialog"
-        onKeyDown={event => {
-          if (event.key !== 'Escape' && event.key !== 'Tab') event.stopPropagation();
-        }}>
-        <DialogHeader>
-          <DialogHeading><DialogTitle>{t('selection.annotate')}</DialogTitle></DialogHeading>
-          <DialogClose />
-        </DialogHeader>
-        <DialogBody>
-          <div className="conversation-excerpt__editor"
-            data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="editor">
-            {selection && <ConversationExcerptEditor excerpt={selection.excerpt} comment={comment}
-              onCommentChange={setComment} inputRef={commentRef} onSubmit={() => submit('annotate')} />}
-          </div>
-        </DialogBody>
-        <DialogFooter>
-          <Button variant="fill" size="sm" onClick={clear}>{t('selection.cancel')}</Button>
-          <Button variant="primary" size="sm" onClick={() => submit('annotate')}>{t(parentSessionId ? 'selection.addToMain' : 'selection.addToSession')}</Button>
-        </DialogFooter>
-      </Dialog>
+      {selection && editing && active && <ConversationExcerptFloatingEditor rootRef={rootRef} selection={selection}
+        initialGeometry={editorGeometry}
+        comment={comment} onCommentChange={setComment} onClose={clear} onSubmit={() => submit('annotate')}
+        parentSessionId={parentSessionId} />}
     </>
   );
 }

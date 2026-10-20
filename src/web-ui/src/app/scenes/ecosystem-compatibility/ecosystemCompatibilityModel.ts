@@ -160,6 +160,7 @@ export const ECOSYSTEM_PRODUCT_SPECS: readonly EcosystemProductSpec[] = [
     name: 'Claude Code',
     ecosystemId: 'claude-code',
     acpClientId: 'claude-code',
+    sessionImport: 'claude-code',
     searchTerms: ['claude', 'anthropic', 'agent', 'mcp', 'command', 'acp'],
   },
   {
@@ -181,12 +182,14 @@ export const ECOSYSTEM_PRODUCT_SPECS: readonly EcosystemProductSpec[] = [
     id: 'pi',
     name: 'Pi',
     ecosystemId: 'pi',
+    sessionImport: 'pi',
     searchTerms: ['pi', 'agent'],
   },
   {
     id: 'dsh',
     name: 'DeepSeek Harness',
     ecosystemId: 'deepseek-harness',
+    sessionImport: 'deepseek-harness',
     acpClientId: 'dsh',
     searchTerms: ['deepseek', 'harness', 'dsh', 'agent', 'acp'],
   },
@@ -195,9 +198,10 @@ export const ECOSYSTEM_PRODUCT_SPECS: readonly EcosystemProductSpec[] = [
     name: 'OpenCode',
     ecosystemId: 'opencode',
     acpClientId: 'opencode',
+    sessionImport: 'opencode',
     searchTerms: ['open code', 'agent', 'command', 'tool', 'mcp', 'acp'],
   },
-  { id: 'cursor', name: 'Cursor', ecosystemId: 'cursor', searchTerms: ['.cursor', 'skills'] },
+  { id: 'cursor', name: 'Cursor', ecosystemId: 'cursor', sessionImport: 'cursor', searchTerms: ['.cursor', 'skills', 'sessions', 'history'] },
 ] as const;
 
 function sourcePairKey(providerId: string, sourceId: string): string {

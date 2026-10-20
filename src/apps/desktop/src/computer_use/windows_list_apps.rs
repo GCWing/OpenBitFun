@@ -126,39 +126,16 @@ fn sort_apps_by_name(apps: &mut [AppInfo]) {
     apps.sort_by_cached_key(|app| app.name.to_lowercase());
 }
 
-/// Find a visible top-level window owned by `pid`, for callers (e.g.
-/// `get_app_shortcuts`) that need an `HWND` to hand to UI Automation but
-/// only have a pid. Returns the first visible, non-minimized window found
-/// by `EnumWindows` order; does not require the window to be foreground.
-pub(super) fn find_top_window_for_pid(pid: u32) -> Option<HWND> {
-    struct FindState {
-        target_pid: u32,
-        found: Option<isize>,
-    }
-    unsafe extern "system" fn cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        // SAFETY: `lparam` is the unique `FindState` pointer supplied to the
-        // synchronous `EnumWindows` call below and remains live for the callback.
-        let state = unsafe { &mut *(lparam.0 as *mut FindState) };
-        if unsafe { IsWindowVisible(hwnd) }.0 == 0 || unsafe { IsIconic(hwnd) }.0 != 0 {
-            return TRUE;
-        }
-        let mut pid: u32 = 0;
-        unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
-        if pid == state.target_pid {
-            state.found = Some(hwnd.0 as isize);
-            return windows::Win32::Foundation::FALSE;
-        }
-        TRUE
-    }
-    let mut state = FindState {
-        target_pid: pid,
-        found: None,
-    };
-    let state_ptr = &mut state as *mut FindState as isize;
-    unsafe {
-        let _ = EnumWindows(Some(cb), LPARAM(state_ptr));
-    }
-    state.found.map(|raw| HWND(raw as *mut c_void))
+/// Choose an initial content window for a PID-only selector. Floating companions
+/// precede content in EnumWindows order, so they must not win by order alone.
+/// Explicit HWNDs and existing control bindings do not use this default.
+pub(super) fn find_default_window_for_pid(pid: u32) -> Option<HWND> {
+    use super::windows_window_target::{inspect_window, select_default_window};
+    let candidates = enumerate_windows()
+        .into_iter()
+        .filter(|window| window.pid == pid)
+        .map(|window| inspect_window(HWND(window.hwnd as *mut c_void)));
+    select_default_window(pid, candidates).map(|handle| HWND(handle as *mut c_void))
 }
 
 fn enumerate_windows() -> Vec<WindowEntry> {
@@ -248,6 +225,10 @@ fn strip_exe_suffix(basename: &str) -> String {
         basename.to_string()
     }
 }
+
+#[cfg(test)]
+#[path = "windows_window_target_tests.rs"]
+mod native_target_tests;
 
 #[cfg(test)]
 mod tests {

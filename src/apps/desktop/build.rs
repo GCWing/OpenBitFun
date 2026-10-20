@@ -1,6 +1,15 @@
 fn main() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        println!("cargo:rerun-if-changed=src/computer_use/pointer_motion.h");
+        println!("cargo:rerun-if-changed=src/computer_use/pointer_motion.c");
+        cc::Build::new()
+            .file("src/computer_use/pointer_motion.c")
+            .std("c11")
+            .compile("computer_use_pointer_motion");
+    }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         println!("cargo:rerun-if-changed=src/computer_use/macos_capture.m");
+        println!("cargo:rerun-if-changed=src/computer_use/pointer_motion.h");
         cc::Build::new()
             .file("src/computer_use/macos_capture.m")
             .flag("-fobjc-arc")

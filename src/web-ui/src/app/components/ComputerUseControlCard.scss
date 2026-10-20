@@ -36,7 +36,6 @@
     inline-size: 40px;
     block-size: 40px;
     transform: translate(-8px, -8px);
-    transition: left 100ms ease-out, top 100ms ease-out;
 
     svg {
       display: block;
@@ -65,10 +64,13 @@
     transform: translate(-50%, -50%);
   }
   &__pointer--physical {
+    left: 0;
+    top: 0;
     inline-size: 24px;
     block-size: 24px;
     transform-origin: 4.8px 4.8px;
     transition: none;
+    will-change: transform;
   }
   &__click--shared {
     inline-size: 24px;

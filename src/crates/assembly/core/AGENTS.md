@@ -247,6 +247,16 @@ cargo test --locked -p openbitfun-core --no-default-features --features agent-ru
 These fixtures cover local turn admission and SSH-workspace agent resolution;
 they do not exercise live SSH, relay, peer, or dispatch connections.
 
+For child-Agent lifecycle operations, mode-switch continuation, current-turn
+listing (including reserved IDs), parent-scoped resolution, and persisted deletion/cancellation lineage
+(ordinary subagents and Swarm):
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib -- agent_lifecycle_ agentic::coordination::coordination_store::tests agentic::tools::implementations::agent_list_tool::tests
+```
+
+These fixtures cover local execution and persistence, not live remote transports.
+
 For disk-backed history paging and legacy sessions without a catalog:
 `cargo test --locked -p openbitfun-core --no-default-features --features remote-connect,git --lib history_page_`.
 
@@ -399,6 +409,12 @@ cargo test -p openbitfun-core --no-default-features --features external-sources,
 cargo test -p openbitfun-core --no-default-features --features external-sources,git,product-search --lib agentic::persistence::session_branch::tests
 cargo test -p openbitfun-core --no-default-features --features external-sources,git,product-search --lib agentic::session::session_manager::tests::restore_session_
 ```
+
+For installed-source acceptance, set `OPENBITFUN_TEST_SESSION_ECOSYSTEM` and
+`OPENBITFUN_TEST_SESSION_ID` to a real source session, then run the same target
+with filter `inspect_installed_external_session_follow_and_fork -- --ignored --nocapture`.
+The source is read-only; native records are written only to a temporary user root.
+Set `TEMP` / `TMP` to the validation drive when testing a large local history.
 
 Optional read-only Zcode-to-temporary-native-store verification uses the same
 target with `inspect_installed_zcode_native_import -- --ignored --nocapture`.

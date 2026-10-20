@@ -458,6 +458,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("list_subscription_accounts",                                 LocalOnly,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("list_visible_subagents",                                     Routed,      Proxied,          HANDLED),
     op("load_acp_json_config",                                       Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
+    op("load_agent_companion_pet_spritesheet",                       LocalOnly,   ControllerLocal,  REFUSED),
     op("load_canvas_artifact",                                       Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
     op("load_canvas_state",                                          Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
     op("load_git_repo_history",                                      Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),

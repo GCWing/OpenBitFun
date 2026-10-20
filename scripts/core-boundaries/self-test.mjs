@@ -1635,10 +1635,10 @@ export function runManifestParserSelfTest({
   ).map((entry) => entry.symbol);
   if (
     opencodeAdapterPublicApiSymbols.join(',') !==
-    'load_opencode_package_adapter,load_opencode_config_snapshot,OpenCodeConfigSnapshot,OpenCodeConfigSnapshotError,project_plugin_config,project_plugin_tool_ref,OpenCodePluginConfigProjectionError,OpenCodeCommandProvider,OpenCodeCommandProviderOptions,OpenCodeConfiguredSkillRoot,OpenCodeSkillRootDiagnostic,OpenCodeSkillRootReport,OpenCodeSkillRootProvider,OpenCodeSkillRootProviderOptions,OpenCodeToolProvider,OpenCodeToolProviderOptions,OpenCodeSubagentProvider,OpenCodeSubagentProviderOptions,OpenCodeMcpProvider,OpenCodeMcpProviderOptions,OpenCodeHookProvider,OpenCodeHookProviderOptions,OpenCodeWorkspaceReferenceProvider,OpenCodeWorkspaceReferenceProviderOptions,load_opencode_user_instructions,OpenCodeInstructionSourceOptions'
+    'session,load_opencode_package_adapter,load_opencode_config_snapshot,OpenCodeConfigSnapshot,OpenCodeConfigSnapshotError,project_plugin_config,project_plugin_tool_ref,OpenCodePluginConfigProjectionError,OpenCodeCommandProvider,OpenCodeCommandProviderOptions,OpenCodeConfiguredSkillRoot,OpenCodeSkillRootDiagnostic,OpenCodeSkillRootReport,OpenCodeSkillRootProvider,OpenCodeSkillRootProviderOptions,OpenCodeToolProvider,OpenCodeToolProviderOptions,OpenCodeSubagentProvider,OpenCodeSubagentProviderOptions,OpenCodeMcpProvider,OpenCodeMcpProviderOptions,OpenCodeHookProvider,OpenCodeHookProviderOptions,OpenCodeWorkspaceReferenceProvider,OpenCodeWorkspaceReferenceProviderOptions,load_opencode_user_instructions,OpenCodeInstructionSourceOptions'
   ) {
     throw new Error(
-      'OpenCode adapter public API budget must stay limited to the reviewed package factory, managed Plugin Host Config projection, and capability-specific command, configured Skill root, tool, subagent, MCP, static Hook, workspace Reference, and user Instruction providers',
+      'OpenCode adapter public API budget must stay limited to the reviewed read-only session history, package factory, managed Plugin Host Config projection, and capability-specific command, configured Skill root, tool, subagent, MCP, static Hook, workspace Reference, and user Instruction providers',
     );
   }
   if (!pluginCapabilityProjectionPublicApiRule) {
@@ -1665,9 +1665,11 @@ export function runManifestParserSelfTest({
         throw new Error(`OpenCode adapter public API entry must declare ${field}: ${entry.symbol}`);
       }
     }
-    const expectedContractSlice = opencodeInstructionSymbols.has(entry.symbol)
-      ? 'user-instruction-source-boundary'
-      : 'opencode-adapter-boundary';
+    const expectedContractSlice = entry.symbol === 'session'
+      ? 'external-session-import-contract'
+      : opencodeInstructionSymbols.has(entry.symbol)
+        ? 'user-instruction-source-boundary'
+        : 'opencode-adapter-boundary';
     if (entry.contractSlice !== expectedContractSlice) {
       throw new Error(`OpenCode adapter public API entry uses wrong contractSlice: ${entry.symbol}`);
     }
@@ -1982,6 +1984,7 @@ export function runManifestParserSelfTest({
   for (const dependencyName of [
     'openbitfun-claude-code-adapter',
     'openbitfun-codex-adapter',
+    'openbitfun-cursor-adapter',
     'openbitfun-zcode-adapter',
     'openbitfun-static-hook-support',
   ]) {

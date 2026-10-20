@@ -57,6 +57,8 @@ mod windows_msaa;
 mod windows_pointer_feedback;
 #[cfg(target_os = "windows")]
 mod windows_wgc_capture;
+#[cfg(any(target_os = "windows", test))]
+mod windows_window_target;
 
 pub(crate) use desktop_host::shared_preview;
 pub(crate) use desktop_host::sharing::targets as share_targets;

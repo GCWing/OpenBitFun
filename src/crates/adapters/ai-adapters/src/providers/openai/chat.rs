@@ -80,6 +80,18 @@ fn try_build_request_body_with_context(
     }
 
     shared::restore_protected_body(&mut request_body, protected_body);
+    // Third-party Chat Completions servers may reject unknown fields, so the
+    // cache routing key is limited to OpenAI's own endpoint.
+    if shared::is_https_endpoint(url, "api.openai.com", "/v1") {
+        if let Some(prompt_cache_route_key) = request_context
+            .and_then(|context| context.prompt_cache_route_key.as_deref())
+            .map(str::trim)
+            .filter(|key| !key.is_empty())
+        {
+            request_body["prompt_cache_key"] =
+                serde_json::Value::String(prompt_cache_route_key.into());
+        }
+    }
     if let Some(preset) = client.selected_reasoning_preset.as_ref() {
         shared::reset_reasoning_fields(
             &mut request_body,

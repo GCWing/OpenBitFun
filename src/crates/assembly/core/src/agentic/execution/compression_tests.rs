@@ -6,7 +6,7 @@ use crate::agentic::execution::round_executor::tests::{
 use crate::agentic::persistence::PersistenceManager;
 use crate::agentic::session::{SessionContextStore, SessionManagerConfig};
 
-fn engine() -> (tempfile::TempDir, ExecutionEngine) {
+pub(super) fn engine() -> (tempfile::TempDir, ExecutionEngine) {
     let temp = tempfile::Builder::new()
         .prefix("compression-")
         .tempdir()

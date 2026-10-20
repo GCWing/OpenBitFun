@@ -8,7 +8,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { OverflowText, Icon, IconButton, Input } from '@openbitfun/ui';
-import { AlertTriangle, MousePointer2 } from 'lucide-react';
+import { AlertTriangle, LoaderCircle, MousePointer2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { createLogger } from '@/shared/utils/logger';
 import { useContextStore } from '@/shared/context-system';
@@ -68,6 +68,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ isActive, initialUrl, openR
     loadUrl,
     reload,
     setInputValue,
+    stopLoading,
     viewportRef,
     webviewLabel,
   } = browser;
@@ -180,12 +181,9 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ isActive, initialUrl, openR
         <IconButton
           type="button"
           size="sm"
-          onClick={reload}
-          disabled={isLoading}
-          aria-label={t('actions.refresh')}
-          icon={(
-            <Icon name="refresh" size="lg" className={isLoading ? 'browser-panel__spinning' : undefined} data-testid={isLoading ? 'browser-loading-indicator' : undefined} />
-          )}
+          onClick={isLoading ? stopLoading : reload}
+          aria-label={isLoading ? t('browserView.stopLoading') : t('actions.refresh')}
+          icon={<Icon name={isLoading ? 'xmark' : 'refresh'} size="lg" />}
           data-testid="browser-refresh-button"
         />
         <div data-openbitfun-component="browser-panel" data-openbitfun-part="address" className="browser-panel__address">
@@ -194,7 +192,9 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ isActive, initialUrl, openR
             type="text"
             value={inputValue}
             onValueChange={setInputValue}
-            leading={<Icon name="browser" size="md" />}
+            leading={isLoading
+              ? <Icon glyph={LoaderCircle} size="md" className="browser-panel__spinning" data-testid="browser-loading-indicator" />
+              : <Icon name="browser" size="md" />}
             placeholder={t('browserView.addressPlaceholder', { exampleUrl: 'https://example.com' })}
             spellCheck={false}
             data-testid="browser-url-input"

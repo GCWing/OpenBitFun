@@ -1,0 +1,23 @@
+[package]
+name = "openbitfun-cursor-adapter"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Read-only Cursor session history translation for OpenBitFun"
+
+[dependencies]
+openbitfun-product-domains = { path = "../../contracts/product-domains", features = ["external-sources"] }
+openbitfun-services-core = { path = "../../services/services-core" }
+chrono = { workspace = true }
+dirs = { workspace = true }
+hex = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

@@ -217,6 +217,7 @@ pub(crate) struct GrantStore {
 
 #[derive(Debug)]
 pub(crate) struct Persisted {
+    #[cfg(test)]
     pub backup: Option<PathBuf>,
     /// Rename completed. A durability/unlock error must not pretend it rolled back.
     pub warning: Option<String>,
@@ -281,6 +282,7 @@ impl GrantStore {
         identity.validate()?;
         if self.contains(&identity) {
             return Ok(Persisted {
+                #[cfg(test)]
                 backup: None,
                 warning: None,
             });
@@ -300,6 +302,7 @@ impl GrantStore {
         records.retain(|grant| &grant.identity != identity);
         if records.len() == self.records.len() {
             return Ok(Persisted {
+                #[cfg(test)]
                 backup: None,
                 warning: None,
             });
@@ -363,6 +366,7 @@ impl GrantStore {
             ));
         }
         Ok(Persisted {
+            #[cfg(test)]
             backup,
             warning: (!warnings.is_empty()).then(|| warnings.join("; ")),
         })

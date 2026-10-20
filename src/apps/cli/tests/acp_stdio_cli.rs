@@ -340,15 +340,34 @@ async fn acp_stdio_preserves_mode_and_history_across_restart_then_closes_active_
         !replay_updates.is_empty(),
         "session/load must replay persisted history before its success response"
     );
-    assert_eq!(duplicate_load.pointer("/error/code"), Some(&json!(-32603)));
-    assert_eq!(
-        duplicate_load.pointer("/error/data/state"),
-        Some(&json!("session_transition_in_progress"))
-    );
-    assert_eq!(
-        duplicate_load.pointer("/error/data/retryable"),
-        Some(&json!(true))
-    );
+    // Back-to-back stdio writes need not overlap inside the server: the first
+    // restore may publish before the second request claims its transition.
+    // Both schedules must reject the duplicate without replaying history twice.
+    // The ACP runtime's transition-claim test separately holds an active claim
+    // to deterministically require the retryable in-progress error.
+    match duplicate_load
+        .pointer("/error/code")
+        .and_then(Value::as_i64)
+    {
+        Some(-32603) => {
+            assert_eq!(
+                duplicate_load.pointer("/error/data/state"),
+                Some(&json!("session_transition_in_progress")),
+                "{duplicate_load}"
+            );
+            assert_eq!(
+                duplicate_load.pointer("/error/data/retryable"),
+                Some(&json!(true)),
+                "{duplicate_load}"
+            );
+        }
+        Some(-32602) => assert_eq!(
+            duplicate_load.pointer("/error/data"),
+            Some(&json!("session is already active")),
+            "{duplicate_load}"
+        ),
+        _ => panic!("unexpected duplicate session/load rejection: {duplicate_load}"),
+    }
     assert_eq!(
         replay_updates
             .iter()

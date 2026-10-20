@@ -3,14 +3,15 @@
 //! After an interactive turn completes, the host may ask the same model over
 //! the same request prefix to predict the user's next message. This module
 //! owns the provider-neutral facts: which turns qualify, the instruction that
-//! is appended at the request tail, the plain-text response contract,
-//! reasoning selection, and per-session cancellation of in-flight
-//! requests. Provider calls and event emission stay in Product Assembly.
+//! is appended at the request tail, the plain-text response contract, and
+//! per-session cancellation of in-flight requests. The request keeps the
+//! turn's reasoning settings because providers render them into the cached
+//! prompt prefix. Provider calls and event emission stay in Product Assembly.
 
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use openbitfun_core_types::{ReasoningPresetAction, ReasoningPresetDescriptor, SessionKind};
+use openbitfun_core_types::SessionKind;
 use openbitfun_runtime_ports::DialogTriggerSource;
 use tokio_util::sync::CancellationToken;
 
@@ -42,40 +43,6 @@ pub fn prompt_suggestion_text(raw: String) -> Option<String> {
         "" | "null" => None,
         _ => Some(raw),
     }
-}
-
-/// Prefer disabled reasoning, then the lowest explicit effort or token budget.
-/// Opaque custom presets use the catalog's declared order as the fallback.
-pub fn lowest_prompt_suggestion_reasoning_preset(
-    presets: &[ReasoningPresetDescriptor],
-) -> Option<&ReasoningPresetDescriptor> {
-    presets.iter().min_by_key(|preset| {
-        let rank = preset
-            .actions
-            .iter()
-            .filter_map(|action| match action {
-                ReasoningPresetAction::Toggle { enabled: false } => Some((0, 0)),
-                ReasoningPresetAction::Effort { value } => {
-                    let effort = preset.effective_effort.as_deref().unwrap_or(value);
-                    match effort {
-                        "none" => Some((0, 0)),
-                        "minimal" => Some((1, 0)),
-                        "low" => Some((1, 1)),
-                        "medium" => Some((1, 2)),
-                        "high" => Some((1, 3)),
-                        "xhigh" => Some((1, 4)),
-                        "max" => Some((1, 5)),
-                        "ultra" => Some((1, 6)),
-                        _ => None,
-                    }
-                }
-                ReasoningPresetAction::BudgetTokens { value } => Some((2, *value)),
-                _ => None,
-            })
-            .min()
-            .unwrap_or((3, 0));
-        (rank, preset.order)
-    })
 }
 
 /// Whether the submitter of a turn has a chat input that can show a suggestion.
@@ -284,127 +251,6 @@ mod tests {
         for raw in ["", " \n\t ", "null", " \nnull\t "] {
             assert_eq!(prompt_suggestion_text(raw.to_string()), None, "{raw}");
         }
-    }
-
-    fn preset(
-        id: &str,
-        order: i32,
-        actions: Vec<ReasoningPresetAction>,
-    ) -> ReasoningPresetDescriptor {
-        ReasoningPresetDescriptor {
-            id: id.to_string(),
-            label: id.to_string(),
-            order,
-            actions,
-            source: openbitfun_core_types::ReasoningPresetSource::ModelConfig,
-            effective_effort: None,
-            execution_provider: None,
-            execution_model: None,
-        }
-    }
-
-    #[test]
-    fn lowest_reasoning_prefers_off_and_orders_efforts_by_strength() {
-        let mut presets = vec![
-            preset(
-                "high",
-                0,
-                vec![ReasoningPresetAction::Effort {
-                    value: "high".into(),
-                }],
-            ),
-            preset(
-                "low",
-                1,
-                vec![ReasoningPresetAction::Effort {
-                    value: "low".into(),
-                }],
-            ),
-            preset(
-                "minimal",
-                2,
-                vec![ReasoningPresetAction::Effort {
-                    value: "minimal".into(),
-                }],
-            ),
-        ];
-        assert_eq!(
-            lowest_prompt_suggestion_reasoning_preset(&presets)
-                .unwrap()
-                .id,
-            "minimal"
-        );
-        presets.push(preset(
-            "off",
-            3,
-            vec![ReasoningPresetAction::Toggle { enabled: false }],
-        ));
-        assert_eq!(
-            lowest_prompt_suggestion_reasoning_preset(&presets)
-                .unwrap()
-                .id,
-            "off"
-        );
-        presets[3].actions = vec![ReasoningPresetAction::Effort {
-            value: "none".into(),
-        }];
-        assert_eq!(
-            lowest_prompt_suggestion_reasoning_preset(&presets)
-                .unwrap()
-                .id,
-            "off"
-        );
-    }
-
-    #[test]
-    fn lowest_reasoning_uses_effective_effort_and_smallest_budget() {
-        let mut presets = vec![
-            preset(
-                "alias",
-                0,
-                vec![ReasoningPresetAction::Effort {
-                    value: "low".into(),
-                }],
-            ),
-            preset(
-                "high",
-                1,
-                vec![ReasoningPresetAction::Effort {
-                    value: "high".into(),
-                }],
-            ),
-        ];
-        presets[0].effective_effort = Some("max".into());
-        assert_eq!(
-            lowest_prompt_suggestion_reasoning_preset(&presets)
-                .unwrap()
-                .id,
-            "high"
-        );
-        let budgets = vec![
-            preset(
-                "on",
-                0,
-                vec![ReasoningPresetAction::Toggle { enabled: true }],
-            ),
-            preset(
-                "large",
-                1,
-                vec![ReasoningPresetAction::BudgetTokens { value: 8192 }],
-            ),
-            preset(
-                "small",
-                2,
-                vec![ReasoningPresetAction::BudgetTokens { value: 1024 }],
-            ),
-        ];
-        assert_eq!(
-            lowest_prompt_suggestion_reasoning_preset(&budgets)
-                .unwrap()
-                .id,
-            "small"
-        );
-        assert!(lowest_prompt_suggestion_reasoning_preset(&[]).is_none());
     }
 
     #[test]

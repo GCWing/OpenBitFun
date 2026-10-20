@@ -978,6 +978,20 @@ fn resize_agent_companion_window(
     }
 }
 
+/// Re-asserts the pet stacking hint after the native window is mapped.
+///
+/// GTK applies keep-above on map, and a reused window may have been raised
+/// behind the main window while it was hidden, so both show paths re-apply it.
+#[cfg(target_os = "linux")]
+fn enforce_agent_companion_window_stacking(window: &tauri::WebviewWindow) {
+    if let Err(error) = window.set_always_on_top(true) {
+        warn!(
+            "Failed to re-apply Agent companion always-on-top: {}",
+            error
+        );
+    }
+}
+
 #[tauri::command]
 pub async fn show_agent_companion_desktop_pet(app: tauri::AppHandle) -> Result<(), String> {
     let started_at = Instant::now();
@@ -997,6 +1011,8 @@ pub async fn show_agent_companion_desktop_pet(app: tauri::AppHandle) -> Result<(
             error!("Failed to show Agent companion window: {}", e);
             format!("Failed to show Agent companion window: {}", e)
         })?;
+        #[cfg(target_os = "linux")]
+        enforce_agent_companion_window_stacking(&window);
         debug!(
             "Agent companion window reused: total_duration_ms={}",
             started_at.elapsed().as_millis()
@@ -1042,6 +1058,22 @@ pub async fn show_agent_companion_desktop_pet(app: tauri::AppHandle) -> Result<(
 
     builder = builder.disable_drag_drop_handler();
 
+    // Wayland compositors drop GTK's keep-above request, so the only stacking
+    // relationship the platform can still guarantee is "above its parent".
+    // Attaching the pet to the main window keeps the app's own page from covering
+    // it there, while `always_on_top` keeps floating it above other applications
+    // on X11, where the window manager honors the hint.
+    #[cfg(target_os = "linux")]
+    if let Some(main_window) = app.get_webview_window("main") {
+        match main_window.gtk_window() {
+            Ok(parent) => builder = builder.transient_for_raw(&parent),
+            Err(error) => warn!(
+                "Failed to read the main window GTK handle for Agent companion stacking: {}",
+                error
+            ),
+        }
+    }
+
     let build_started_at = Instant::now();
     let window = builder.build().map_err(|e| {
         error!(
@@ -1064,6 +1096,8 @@ pub async fn show_agent_companion_desktop_pet(app: tauri::AppHandle) -> Result<(
         error!("Failed to show Agent companion window: {}", e);
         format!("Failed to show Agent companion window: {}", e)
     })?;
+    #[cfg(target_os = "linux")]
+    enforce_agent_companion_window_stacking(&window);
     debug!(
         "Agent companion window shown: show_duration_ms={} total_duration_ms={}",
         show_started_at.elapsed().as_millis(),

@@ -271,6 +271,7 @@ dependencies = [
  "parking_lot",
  "percent-encoding",
  "windows-sys 0.60.2",
+ "wl-clipboard-rs",
  "x11rb",
 ]
 
@@ -4844,9 +4845,9 @@ dependencies = [
  "memmap2 0.7.1",
  "nix 0.26.4",
  "thiserror 1.0.69",
- "wayland-client",
- "wayland-protocols",
- "wayland-protocols-wlr",
+ "wayland-client 0.30.2",
+ "wayland-protocols 0.30.1",
+ "wayland-protocols-wlr 0.1.0",
 ]
 
 [[package]]
@@ -6108,6 +6109,7 @@ dependencies = [
 name = "openbitfun-claude-code-adapter"
 version = "1.0.6"
 dependencies = [
+ "chrono",
  "dirs 6.0.0",
  "dunce",
  "hex",
@@ -6252,6 +6254,7 @@ dependencies = [
  "openbitfun-codex-adapter",
  "openbitfun-config-contracts",
  "openbitfun-core-types",
+ "openbitfun-cursor-adapter",
  "openbitfun-dsh-adapter",
  "openbitfun-events",
  "openbitfun-external-sources",
@@ -6300,6 +6303,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "openbitfun-cursor-adapter"
+version = "1.0.6"
+dependencies = [
+ "chrono",
+ "dirs 6.0.0",
+ "hex",
+ "openbitfun-product-domains",
+ "openbitfun-services-core",
+ "rusqlite",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "url",
+]
+
+[[package]]
 name = "openbitfun-data-tools"
 version = "0.2.0"
 dependencies = [
@@ -6344,6 +6363,7 @@ dependencies = [
  "futures",
  "gstreamer",
  "gstreamer-app",
+ "gtk",
  "ignore",
  "image 0.25.10",
  "keepawake",
@@ -6385,6 +6405,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
+ "tauri-plugin-clipboard-manager",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
  "tauri-plugin-log",
@@ -6418,6 +6439,7 @@ dependencies = [
  "openbitfun-plugin-runtime-client",
  "openbitfun-product-domains",
  "openbitfun-runtime-ports",
+ "openbitfun-services-core",
  "openbitfun-static-hook-support",
  "serde",
  "serde_json",
@@ -6427,6 +6449,7 @@ dependencies = [
  "tokio",
  "url",
  "urlencoding",
+ "zstd",
 ]
 
 [[package]]
@@ -6596,6 +6619,7 @@ dependencies = [
  "openbitfun-static-hook-support",
  "oxc",
  "regex",
+ "rusqlite",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -6640,11 +6664,15 @@ dependencies = [
 name = "openbitfun-pi-adapter"
 version = "1.0.6"
 dependencies = [
+ "chrono",
  "dirs 6.0.0",
+ "hex",
  "openbitfun-product-domains",
+ "openbitfun-services-core",
  "openbitfun-static-hook-support",
  "oxc",
  "serde_json",
+ "sha2",
  "tempfile",
 ]
 
@@ -7058,11 +7086,10 @@ name = "openbitfun-zcode-adapter"
 version = "1.0.6"
 dependencies = [
  "dirs 6.0.0",
- "hex",
+ "openbitfun-opencode-adapter",
  "openbitfun-product-domains",
  "rusqlite",
  "serde_json",
- "sha2",
  "tempfile",
 ]
 
@@ -7105,6 +7132,16 @@ checksum = "9aa2b01e1d916879f73a53d01d1d6cee68adbb31d6d9177a8cfce093cced1d50"
 dependencies = [
  "futures-core",
  "pin-project-lite",
+]
+
+[[package]]
+name = "os_pipe"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7703,6 +7740,17 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "petgraph"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8701b58ea97060d5e5b155d383a69952a60943f0e6dfe30b04c287beb0b27455"
+dependencies = [
+ "fixedbitset",
+ "hashbrown 0.15.5",
+ "indexmap 2.14.0",
+]
 
 [[package]]
 name = "phf"
@@ -10616,6 +10664,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-clipboard-manager"
+version = "2.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4136fb69d967753d000423d7e5f863f89bf949efbdfbecb43a580426a01a0194"
+dependencies = [
+ "arboard",
+ "log",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "tauri-plugin-dialog"
 version = "2.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11551,6 +11614,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree_magic_mini"
+version = "3.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8765b90061cba6c22b5831f675da109ae5561588290f9fa2317adab2714d5a6"
+dependencies = [
+ "memchr",
+ "nom 8.0.0",
+ "petgraph",
+]
+
+[[package]]
 name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12056,7 +12130,20 @@ dependencies = [
  "nix 0.26.4",
  "scoped-tls",
  "smallvec",
- "wayland-sys",
+ "wayland-sys 0.30.1",
+]
+
+[[package]]
+name = "wayland-backend"
+version = "0.3.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38a91b4eaddff87b1cd1074985e3713da4af2c49742d1b356b2c01670a67a078"
+dependencies = [
+ "cc",
+ "downcast-rs",
+ "rustix 1.1.4",
+ "smallvec",
+ "wayland-sys 0.31.11",
 ]
 
 [[package]]
@@ -12067,8 +12154,20 @@ checksum = "489c9654770f674fc7e266b3c579f4053d7551df0ceb392f153adb1f9ed06ac8"
 dependencies = [
  "bitflags 1.3.2",
  "nix 0.26.4",
- "wayland-backend",
- "wayland-scanner",
+ "wayland-backend 0.1.2",
+ "wayland-scanner 0.30.1",
+]
+
+[[package]]
+name = "wayland-client"
+version = "0.31.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3c36a0f861ad76d0901f2800b46321410d9f73f2ea88aac0650d86c32688073"
+dependencies = [
+ "bitflags 2.11.1",
+ "rustix 1.1.4",
+ "wayland-backend 0.3.17",
+ "wayland-scanner 0.31.11",
 ]
 
 [[package]]
@@ -12078,9 +12177,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b28101e5ca94f70461a6c2d610f76d85ad223d042dd76585ab23d3422dd9b4d"
 dependencies = [
  "bitflags 1.3.2",
- "wayland-backend",
- "wayland-client",
- "wayland-scanner",
+ "wayland-backend 0.1.2",
+ "wayland-client 0.30.2",
+ "wayland-scanner 0.30.1",
+]
+
+[[package]]
+name = "wayland-protocols"
+version = "0.32.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23d0c813de3daa2ed6520af85a3bd49b0e722a3078506899aa9686fea58dc4b6"
+dependencies = [
+ "bitflags 2.11.1",
+ "wayland-backend 0.3.17",
+ "wayland-client 0.31.15",
+ "wayland-scanner 0.31.11",
 ]
 
 [[package]]
@@ -12090,10 +12201,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fce991093320e4a6a525876e6b629ab24da25f9baef0c2e0080ad173ec89588a"
 dependencies = [
  "bitflags 1.3.2",
- "wayland-backend",
- "wayland-client",
- "wayland-protocols",
- "wayland-scanner",
+ "wayland-backend 0.1.2",
+ "wayland-client 0.30.2",
+ "wayland-protocols 0.30.1",
+ "wayland-scanner 0.30.1",
+]
+
+[[package]]
+name = "wayland-protocols-wlr"
+version = "0.3.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb04e52f7836d7c7976c78ca0250d61e33873c34156a2a1fc9474828ec268234"
+dependencies = [
+ "bitflags 2.11.1",
+ "wayland-backend 0.3.17",
+ "wayland-client 0.31.15",
+ "wayland-protocols 0.32.13",
+ "wayland-scanner 0.31.11",
 ]
 
 [[package]]
@@ -12108,6 +12232,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wayland-scanner"
+version = "0.31.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "338e30461b3a2b67d70eb30a6d89f8e0c93a833e07d2ae89085cd070c4a00ac0"
+dependencies = [
+ "proc-macro2",
+ "quick-xml 0.41.0",
+ "quote",
+]
+
+[[package]]
 name = "wayland-sys"
 version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12115,6 +12250,15 @@ checksum = "96b2a02ac608e07132978689a6f9bf4214949c85998c247abadd4f4129b1aa06"
 dependencies = [
  "dlib",
  "log",
+ "pkg-config",
+]
+
+[[package]]
+name = "wayland-sys"
+version = "0.31.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8eab23fefc9e41f8e841df4a9c707e8a8c4ed26e944ef69297184de2785e3be"
+dependencies = [
  "pkg-config",
 ]
 
@@ -13029,6 +13173,24 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
+
+[[package]]
+name = "wl-clipboard-rs"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d7888ccd4896447b2d14d3a9350a85df2aeb6f181e2e7a31349d104ac46cac1"
+dependencies = [
+ "libc",
+ "log",
+ "os_pipe",
+ "rustix 1.1.4",
+ "thiserror 2.0.19",
+ "tree_magic_mini",
+ "wayland-backend 0.3.17",
+ "wayland-client 0.31.15",
+ "wayland-protocols 0.32.13",
+ "wayland-protocols-wlr 0.3.12",
+]
 
 [[package]]
 name = "writeable"

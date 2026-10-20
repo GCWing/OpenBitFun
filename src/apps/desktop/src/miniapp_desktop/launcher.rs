@@ -1,6 +1,7 @@
 //! Native launcher adapters. Launch records resolve the installed app by stable identity.
 use super::ipc;
 use image::{imageops, Rgba, RgbaImage};
+#[cfg(target_os = "macos")]
 use openbitfun_services_core::process_manager::create_command;
 use sha2::{Digest, Sha256};
 use std::io::Cursor;
@@ -244,6 +245,7 @@ fn launcher_destination(
     }
     Ok(target)
 }
+#[cfg(target_os = "macos")]
 fn xml(value: &str) -> String {
     value
         .replace('&', "&amp;")

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BLANK_TARGET_INTERCEPT_SCRIPT } from './browserInspectorScript';
 import { STREAM_RENDER_OPTIMIZATION_SCRIPT } from './browserStreamPerformanceScript';
+import { BROWSER_WEBVIEW_DOCUMENT_READY_EVENT, createBrowserPageLifecycleScript, type BrowserDocumentReadyPayload } from './browserPageLifecycleScript';
 import { validateUrl } from './browserUrlCheck';
 import { BrowserPreviewCache, prepareBrowserPreview, type BrowserPreviewResponse } from './browserPreviewCache';
 import { alignBrowserViewport, type BrowserViewportBounds } from './browserViewportGeometry';
@@ -14,6 +15,8 @@ const WEBVIEW_RESIZE_DEBOUNCE_MS = 160;
 const WEBVIEW_BOUNDS_WAIT_TIMEOUT_MS = 2000;
 const BROWSER_WEBVIEW_PAGE_LOAD_EVENT = 'browser-webview-page-load';
 const WEBVIEW_CREATE_RETRY_DELAYS_MS = [0, 250, 750];
+// Last-resort fallback if neither the native nor document lifecycle signal arrives.
+const WEBVIEW_PAGE_LOAD_WATCHDOG_MS = 30_000;
 
 // Webview labels are window-global in Tauri, while this hook can be mounted
 // once per cached editor tab. Keep allocation outside the hook so independent
@@ -179,6 +182,8 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
   const lastBoundsRef = useRef<WebviewBounds | null>(null);
   const webviewLabelRef = useRef<string>('');
   const pageLoadUnlistenRef = useRef<(() => void) | null>(null);
+  const pageLoadWatchdogRef = useRef<number | null>(null);
+  const pageLoadSequenceRef = useRef(0);
   const activeRef = useRef(isVisible);
   activeRef.current = isVisible;
   const mountedRef = useRef(true);
@@ -225,6 +230,30 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [webviewLabel, setWebviewLabel] = useState('');
+
+  const clearPageLoadWatchdog = useCallback(() => {
+    if (pageLoadWatchdogRef.current !== null) {
+      window.clearTimeout(pageLoadWatchdogRef.current);
+      pageLoadWatchdogRef.current = null;
+    }
+  }, []);
+
+  // Command completion says nothing about the document still loading, so the
+  // loading state follows native and document lifecycle events instead of IPC round trips.
+  const markPageLoadStarted = useCallback(() => {
+    clearPageLoadWatchdog();
+    pageLoadSequenceRef.current += 1;
+    setIsLoading(true);
+    pageLoadWatchdogRef.current = window.setTimeout(() => {
+      pageLoadWatchdogRef.current = null;
+      setIsLoading(false);
+    }, WEBVIEW_PAGE_LOAD_WATCHDOG_MS);
+  }, [clearPageLoadWatchdog]);
+
+  const markPageLoadSettled = useCallback(() => {
+    clearPageLoadWatchdog();
+    setIsLoading(false);
+  }, [clearPageLoadWatchdog]);
 
   const readViewportBounds = useCallback((): WebviewBounds | null => {
     if (!viewportRef.current) return null;
@@ -317,26 +346,56 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     pageLoadUnlistenRef.current = null;
 
     const { listen } = await import('@tauri-apps/api/event');
-    pageLoadUnlistenRef.current = await listen<BrowserWebviewPageLoadPayload>(
+    const unlistenLoad = await listen<BrowserWebviewPageLoadPayload>(
       BROWSER_WEBVIEW_PAGE_LOAD_EVENT,
       ({ payload }) => {
-        if (!payload || payload.label !== label) return;
+        if (!mountedRef.current || webviewLabelRef.current !== label || !payload || payload.label !== label) return;
         preview.invalidate();
         if (payload.event === 'started') {
-          setIsLoading(true);
+          markPageLoadStarted();
         } else {
-          setIsLoading(false);
+          markPageLoadSettled();
         }
         if (payload.url && payload.url !== currentUrlRef.current) {
           currentUrlRef.current = payload.url;
           setInputValue(payload.url);
           setCurrentUrl(payload.url);
           setError(null);
-          injectBrowserPageScripts(label).catch(() => {});
+          void injectBrowserPageScripts(label).catch(() => {});
         }
+        // Run even when the URL did not change (reload/same-URL history). A
+        // cached document can be ready without a matching native Finished.
+        // Probe only after a native commit/completion, never while a navigation
+        // command may still be showing the previous, already-complete document.
+        void evalWebview(label, createBrowserPageLifecycleScript(label, pageLoadSequenceRef.current)).catch(() => {});
       },
     );
-  }, [preview]);
+    try {
+      const unlistenReady = await listen<BrowserDocumentReadyPayload>(
+        BROWSER_WEBVIEW_DOCUMENT_READY_EVENT,
+        ({ payload }) => {
+          if (!mountedRef.current || webviewLabelRef.current !== label
+            || !payload || payload.label !== label || payload.sequence !== pageLoadSequenceRef.current) return;
+          markPageLoadSettled();
+          if (payload.url && payload.url !== currentUrlRef.current) {
+            preview.invalidate();
+            currentUrlRef.current = payload.url;
+            setInputValue(payload.url);
+            setCurrentUrl(payload.url);
+            setError(null);
+          }
+        },
+      );
+      if (!mountedRef.current || webviewLabelRef.current !== label) {
+        unlistenReady();
+        throw new Error('Browser surface disposed during page-load subscription');
+      }
+      pageLoadUnlistenRef.current = () => { unlistenLoad(); unlistenReady(); };
+    } catch (listenError) {
+      unlistenLoad();
+      throw listenError;
+    }
+  }, [markPageLoadSettled, markPageLoadStarted, preview]);
 
   const createWebview = useCallback(async (url: string) => {
     const previous = webviewRef.current;
@@ -356,6 +415,8 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
       webviewLabelRef.current = label;
       setWebviewLabel(label);
       try {
+        // Fast or cached pages can finish before the creation command returns.
+        await startPageLoadListener(label);
         const handle = await createBrowserWebview(label, url, initialBounds, openRequestId);
         if (!mountedRef.current) {
           await handle.close();
@@ -365,10 +426,11 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
         preview.setTarget(label);
         lastBoundsRef.current = initialBounds;
         await injectBrowserPageScripts(label);
-        await startPageLoadListener(label);
         return handle;
       } catch (creationError) {
         lastError = creationError;
+        pageLoadUnlistenRef.current?.();
+        pageLoadUnlistenRef.current = null;
         const staleHandle = await Webview.getByLabel(label).catch(() => null);
         await staleHandle?.close().catch(() => {});
         if (!isTransientWebviewCreationError(creationError)
@@ -415,10 +477,10 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     setCurrentUrl(nextUrl);
     currentUrlRef.current = nextUrl;
     setError(null);
-    setIsLoading(true);
+    markPageLoadStarted();
 
     if (!isTauri) {
-      setIsLoading(false);
+      markPageLoadSettled();
       return;
     }
 
@@ -442,10 +504,9 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
       const message = formatUnknownError(loadError);
       log.error('Load browser url failed', loadError);
       setError(message);
-    } finally {
-      setIsLoading(false);
+      markPageLoadSettled();
     }
-  }, [createWebview, defaultUrl, isTauri, log, navigateExistingWebview, openRequestId, preview, syncWebviewBounds, visibility]);
+  }, [createWebview, defaultUrl, isTauri, log, markPageLoadSettled, markPageLoadStarted, navigateExistingWebview, openRequestId, preview, syncWebviewBounds, visibility]);
 
   const queueSync = useCallback(() => {
     if (resizeTimerRef.current !== null) window.clearTimeout(resizeTimerRef.current);
@@ -520,6 +581,7 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
       stopObservingWindow();
       pageLoadUnlistenRef.current?.();
       pageLoadUnlistenRef.current = null;
+      clearPageLoadWatchdog();
       if (resizeTimerRef.current !== null) {
         window.clearTimeout(resizeTimerRef.current);
         resizeTimerRef.current = null;
@@ -530,7 +592,7 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
         void visibility(handle).catch(() => {}).then(() => closeWebview(handle));
       }
     };
-  }, [closeWebview, log, preview, visibility]);
+  }, [clearPageLoadWatchdog, closeWebview, log, preview, visibility]);
 
   useEffect(() => {
     if (!isTauri || !isVisible) return;
@@ -584,8 +646,27 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
   const reload = useCallback(() => {
     const label = webviewLabelRef.current;
     if (!isTauri || !label) return;
-    void reloadWebview(label).catch(() => {});
-  }, [isTauri]);
+    markPageLoadStarted();
+    const sequence = pageLoadSequenceRef.current;
+    void reloadWebview(label).catch(() => {
+      if (mountedRef.current && sequence === pageLoadSequenceRef.current) markPageLoadSettled();
+    });
+  }, [isTauri, markPageLoadSettled, markPageLoadStarted]);
+
+  // Ask the page loader to stop through the existing controller-local command.
+  const stopLoading = useCallback(() => {
+    const sequence = pageLoadSequenceRef.current;
+    void evalInWebview('window.stop()').then(() => {
+      if (!mountedRef.current || sequence !== pageLoadSequenceRef.current) return;
+      setError(null);
+      markPageLoadSettled();
+    }).catch(stopError => {
+      log.warn('Stop browser page load failed', stopError);
+      if (mountedRef.current && sequence === pageLoadSequenceRef.current) {
+        setError(formatUnknownError(stopError));
+      }
+    });
+  }, [evalInWebview, log, markPageLoadSettled]);
 
   const getWebviewLabel = useCallback(() => webviewLabelRef.current, []);
   const getCurrentUrl = useCallback(() => currentUrlRef.current, []);
@@ -608,6 +689,7 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     previewBounds,
     reload,
     setInputValue,
+    stopLoading,
     viewportRef,
     webviewLabel,
   }), [
@@ -626,6 +708,7 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
     previewUrl,
     previewBounds,
     reload,
+    stopLoading,
     viewportRef,
     webviewLabel,
   ]);

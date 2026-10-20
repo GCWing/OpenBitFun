@@ -559,14 +559,14 @@ impl ComputerUseActions {
                     let meta: serde_json::Value = json!({
                     "image_width": shot.image_width,
                     "image_height": shot.image_height,
-                    "screenshot_id": shot.screenshot_id,
+                    "screenshot_id": shot.screenshot_id, "capture_frame": shot.capture_frame,
                     "native_width": shot.native_width,
                     "native_height": shot.native_height,
                     "vision_scale": shot.vision_scale,
                     "mime_type": shot.mime_type,
                     "image_content_rect": shot.image_content_rect,
                     "image_global_bounds": shot.image_global_bounds,
-                        "coordinate_hint": "Use pixels in this image with image_xy {x,y,screenshot_id}. Coordinates are relative to this image, not the desktop. Native background-delivery capabilities still apply: a visible target does not authorize foreground takeover.",
+                        "coordinate_hint": "Use pixels in this image with image_xy {x,y,screenshot_id}. Coordinates are relative to this image, not the desktop. Use the active mode and supported input route. A reused capture_frame is not proof that the last input was processed.",
                     });
                     obj.insert("screenshot_meta".to_string(), meta);
                 }
@@ -635,7 +635,7 @@ impl ComputerUseActions {
                         json!({
                             "image_width": shot.image_width,
                             "image_height": shot.image_height,
-                            "screenshot_id": shot.screenshot_id,
+                            "screenshot_id": shot.screenshot_id, "capture_frame": shot.capture_frame,
                             "native_width": shot.native_width,
                             "native_height": shot.native_height,
                             "vision_scale": shot.vision_scale,
@@ -669,7 +669,7 @@ impl ComputerUseActions {
                         json!({
                             "image_width": shot.image_width,
                             "image_height": shot.image_height,
-                            "screenshot_id": shot.screenshot_id,
+                            "screenshot_id": shot.screenshot_id, "capture_frame": shot.capture_frame,
                             "native_width": shot.native_width,
                             "native_height": shot.native_height,
                             "vision_scale": shot.vision_scale,

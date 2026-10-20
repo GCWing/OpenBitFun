@@ -117,6 +117,15 @@ pnpm --dir src/web-ui run test:run src/app/layout/useNavResize.test.tsx src/app/
 These local DOM fixtures cover gesture state and spring settling, not native
 WebView rendering or live remote scenarios.
 
+For conversation selection and the floating annotation editor (placement,
+dragging, resizing, draft retention, and nonmodal interaction):
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/selection/FlowChatSelectionBar.test.tsx
+```
+
+These DOM fixtures do not establish native WebView rendering or live remote behavior.
+
 For Appearance descriptor changes, also exercise production registration; its ID
 and property validation goes beyond the static DOM audit:
 

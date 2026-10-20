@@ -46,7 +46,16 @@ windows = { version = "0.61", features = [
   "Win32_System_WinRT_Graphics_Capture", "Win32_UI_Accessibility", "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell"
 ] }
+${check ? '' : '[build-dependencies]\ncc = "1"\n'}
 `);
+  if (!check) {
+    await writeFile(join(dir, 'build.rs'), `fn main() {
+      cc::Build::new()
+        .file(${source('src/apps/desktop/src/computer_use/pointer_motion.c')})
+        .std("c11")
+        .compile("computer_use_pointer_motion");
+    }`);
+  }
   await copyFile(join(root, 'Cargo.lock'), join(dir, 'Cargo.lock'));
   // Only the error-category constructors are adapted to the portable error
   // envelope. Every native API, DTO, cache, lease and algorithm is production code.
@@ -71,8 +80,10 @@ pub mod util { pub mod errors {
     pub use crate::computer_use_contract::{ComputerUseContractError as OpenBitFunError, ComputerUseContractResult as OpenBitFunResult};
 }}
 mod computer_use {
-  ${['control_session', 'process_identity', 'grants', 'permissions', 'windows_list_apps', 'windows_ax_ui', 'windows_ax_shortcuts', 'provider_worker', 'windows_msaa', 'windows_capture', 'windows_wgc_capture', 'windows_pointer_feedback', 'ui_locate_common', 'ax_snapshot_digest'].map(name => `#[path = ${source(`src/apps/desktop/src/computer_use/${name}.rs`)}] mod ${name};`).join('\n  ')}
+  ${['control_session', 'process_identity', 'grants', 'permissions', 'windows_list_apps', 'windows_window_target', 'windows_ax_ui', 'windows_ax_shortcuts', 'provider_worker', 'windows_msaa', 'windows_capture', 'windows_wgc_capture', 'windows_pointer_feedback', 'ui_locate_common', 'ax_snapshot_digest'].map(name => `#[path = ${source(`src/apps/desktop/src/computer_use/${name}.rs`)}] mod ${name};`).join('\n  ')}
   mod desktop_host {
+    struct DesktopComputerUseHost;
+    #[path = ${source('src/apps/desktop/src/computer_use/desktop_host/foreground.rs')}] mod foreground;
     use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
     #[path = ${source('src/apps/desktop/src/computer_use/desktop_host/background_guard.rs')}] mod background_guard;
     #[path = ${source('src/apps/desktop/src/computer_use/desktop_host/windows_launch.rs')}] mod windows_launch;

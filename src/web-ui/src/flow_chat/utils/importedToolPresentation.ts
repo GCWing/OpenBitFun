@@ -16,6 +16,13 @@ const codexAliases = new Map<string, NativeCardName>([
   ['exec', 'RunCode'], ['exec_command', 'ExecCommand'], ['shell_command', 'ExecCommand'],
   ['shell', 'ExecCommand'], ['write_stdin', 'WriteStdin'], ['update_plan', 'TodoWrite'],
 ]);
+const cursorAliases = new Map<string, NativeCardName>([
+  ['Shell', 'ExecCommand'], ['StrReplace', 'Edit'], ['read_file', 'Read'], ['read_file_v2', 'Read'],
+  ['run_terminal_cmd', 'ExecCommand'], ['run_terminal_command_v2', 'ExecCommand'],
+  ['list_dir', 'LS'], ['list_dir_v2', 'LS'],
+  ['glob_file_search', 'Glob'], ['ripgrep_search', 'Grep'], ['ripgrep_raw_search', 'Grep'],
+  ['web_search', 'WebSearch'], ['web_fetch', 'WebFetch'], ['todo_write', 'TodoWrite'],
+]);
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -69,6 +76,19 @@ export function importedToolCardName(item: ImportedToolIdentity): NativeCardName
         && Object.keys(input).every(key => key === 'search_query' || key === 'response_length')) return 'WebSearch';
       return undefined;
     }
+  }
+  if (item.importedSource === 'pi') {
+    if (name === 'find') return 'Glob';
+    // A native Edit card represents one replacement. Keep multi-edit records
+    // readable in the existing generic card instead of showing a partial diff.
+    if (name === 'edit') {
+      const edits = inputRecord(item.toolCall?.input).edits;
+      if (Array.isArray(edits) && edits.length !== 1) return undefined;
+    }
+  }
+  if (item.importedSource === 'cursor') {
+    const alias = cursorAliases.get(name);
+    if (alias) return alias;
   }
   return nativeNames.get(name.toLowerCase());
 }
@@ -125,7 +145,8 @@ export function projectImportedToolItem(item: FlowToolItem): FlowToolItem {
   const error = status === 'error'
     ? [...new Set([item.toolResult?.error, output].filter(Boolean))].join('\n\n') || undefined
     : item.toolResult?.error;
-  const path = text(input.file_path) || text(input.path) || text(input.absolute_path);
+  const path = text(input.file_path) || text(input.filePath) || text(input.path) || text(input.absolute_path)
+    || (item.importedSource === 'cursor' ? text(input.target_file) || text(input.targetFile) : '');
   let nativeInput: unknown = card && Object.keys(input).length > 0 ? input : rawInput;
   let nativeResult: unknown = rawResult;
   switch (card) {
@@ -143,6 +164,21 @@ export function projectImportedToolItem(item: FlowToolItem): FlowToolItem {
       break;
     case 'Read': case 'Write': case 'Edit':
       nativeInput = { ...input, file_path: path };
+      if (item.importedSource === 'cursor' && card === 'Write') {
+        nativeInput = { ...input, file_path: path, content: typeof input.content === 'string' ? input.content : text(input.contents) };
+      }
+      if (item.importedSource === 'cursor' && card === 'Read' && typeof result.contents === 'string') {
+        nativeResult = result.contents;
+      }
+      if (card === 'Edit' && ('oldString' in input || 'newString' in input || 'replaceAll' in input)) nativeInput = { ...input, file_path: path,
+        old_string: typeof input.old_string === 'string' ? input.old_string : text(input.oldString),
+        new_string: typeof input.new_string === 'string' ? input.new_string : text(input.newString),
+        replace_all: input.replace_all ?? input.replaceAll,
+      };
+      if (card === 'Edit' && item.importedSource === 'pi') {
+        const edit = Array.isArray(input.edits) ? record(input.edits[0]) : input;
+        nativeInput = { ...input, file_path: path, old_string: text(edit.oldText), new_string: text(edit.newText) };
+      }
       break;
     case 'view_image':
       nativeInput = { ...input, path };
@@ -151,6 +187,10 @@ export function projectImportedToolItem(item: FlowToolItem): FlowToolItem {
       nativeResult = { ...result, result: typeof result.result === 'string' ? result.result : output };
       break;
     case 'Glob': case 'LS':
+      if (item.importedSource === 'cursor') {
+        nativeInput = { ...input, path: path || text(input.targetDirectory),
+          ...(card === 'Glob' ? { pattern: text(input.pattern) || text(input.globPattern) } : {}) };
+      }
       nativeResult = Array.isArray(rawResult) ? rawResult : { ...result, content: text(result.content) || output };
       break;
     case 'WebSearch':

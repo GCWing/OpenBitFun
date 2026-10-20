@@ -149,6 +149,7 @@ impl ControlActionPolicy {
             | "visual_click" => (false, false, true, true),
             "clipboard_set" => (false, false, false, true),
             "open_app" => (false, false, false, true),
+            "activate_app" => (false, true, true, true),
             "run_apple_script" | "run_script" | "open_url" | "open_file" => {
                 (false, true, false, true)
             }

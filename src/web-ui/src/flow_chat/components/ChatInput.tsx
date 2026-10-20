@@ -134,7 +134,7 @@ import {
 } from '../utils/sessionWorkspace';
 import { sessionOwningWorkspaceId } from '../utils/sessionOrdering';
 import { findWorkspaceForSession } from '../utils/workspaceScope';
-import { isTauriRuntime, isWindowsDesktopRuntime } from '@/infrastructure/runtime';
+import { isLinuxDesktopRuntime, isTauriRuntime, isWindowsDesktopRuntime } from '@/infrastructure/runtime';
 import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Tooltip } from '@openbitfun/ui';
 import { useShortcut } from '@/infrastructure/hooks/useShortcut';
 import { confirmDanger, confirmWarning } from '@/infrastructure/confirm-dialog';
@@ -5057,6 +5057,25 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     t,
   ]);
 
+  /**
+   * Host-side clipboard file read for engines that deliver paste events with
+   * empty DataTransfer (WebKitGTK on Linux). A copied file or folder reaches
+   * the clipboard as a URI list and never as an image payload, so an
+   * image-only fallback silently dropped every file paste.
+   */
+  const readPastedClipboardFiles = useCallback(async (request: ExternalFileIntakeRequest) => {
+    try {
+      const { files } = await workspaceAPI.getClipboardFiles();
+      if (!isExternalFileIntakeRequestCurrent(request)) return false;
+      if (files.length === 0) return false;
+      await addExternalPaths(request, 'clipboard', files);
+      return true;
+    } catch (error) {
+      log.warn('Native clipboard file read failed', { error });
+      return false;
+    }
+  }, [addExternalPaths, isExternalFileIntakeRequestCurrent]);
+
   const intakeExternalPaths = useCallback((
     source: ExternalFileSource,
     paths: string[],
@@ -5180,16 +5199,29 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       );
     };
     const handlePasteFallback = (event: Event) => {
-      // WebKitGTK fires paste with zero DataTransfer types; the in-page file
-      // branch can never run there, so ask the host to read the clipboard.
+      // WebKitGTK does not deliver pasted OS clipboard content in-band: an
+      // image clipboard arrives with no DataTransfer types, and a copied file
+      // arrives as a `text/uri-list` target. Both need the host read.
       const clipboardData = (event as ClipboardEvent).clipboardData;
-      if (!clipboardData) return;
-      if (!shouldAttemptNativeClipboardImageRead(Array.from(clipboardData.types ?? []))) return;
+      const types = clipboardData ? Array.from(clipboardData.types ?? []) : [];
+      // An engine that delivered real File objects already ran the in-page file
+      // branch; reading the host clipboard again would attach twice.
+      if (types.includes('Files')) return;
       if (!externalFileAvailability.supported) return;
+      const emptyTyped = shouldAttemptNativeClipboardImageRead(types);
+      if (!emptyTyped && !isLinuxDesktopRuntime()) return;
       const request = captureExternalFileIntakeRequest();
       void enqueueExternalFileIntake(
         request,
-        () => readPastedClipboardImage(request),
+        async () => {
+          // A copied file or folder only exists as a clipboard URI list; when
+          // the host finds one it owns the paste.
+          if (await readPastedClipboardFiles(request)) return;
+          // An OS image clipboard is the only payload WebKitGTK starves of
+          // types; a typed paste keeps its in-page text path.
+          if (!emptyTyped) return;
+          await readPastedClipboardImage(request);
+        },
       );
     };
     inputElement.addEventListener('imagePaste', handleImagePaste);
@@ -5203,6 +5235,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     captureExternalFileIntakeRequest,
     enqueueExternalFileIntake,
     externalFileAvailability,
+    readPastedClipboardFiles,
     readPastedClipboardImage,
   ]);
 

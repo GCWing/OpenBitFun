@@ -748,7 +748,8 @@
   "browserView": {
     "addressPlaceholder": "Enter a URL, for example {{exampleUrl}}",
     "startElementSelection": "Select element",
-    "stopElementSelection": "Exit element selection"
+    "stopElementSelection": "Exit element selection",
+    "stopLoading": "Stop loading"
   },
   "newProject": {
     "title": "Create project",
@@ -1373,6 +1374,10 @@
     "selectionMenu": {
       "name": "Selection Menu",
       "description": "Provides text selection actions"
+    },
+    "textInputMenu": {
+      "name": "Text Input Menu",
+      "description": "Provides copy, cut, paste and select-all actions for text fields"
     },
     "terminalMenu": {
       "name": "Terminal Menu",

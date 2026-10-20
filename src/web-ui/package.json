@@ -31,14 +31,15 @@
     "test:run": "node scripts/run-vitest.mjs run --maxWorkers=50%"
   },
   "dependencies": {
-    "@openbitfun/flow-chat-presentation": "workspace:*",
+    "@monaco-editor/react": "^4.6.0",
     "@openbitfun/design-tokens": "workspace:^",
+    "@openbitfun/flow-chat-presentation": "workspace:*",
     "@openbitfun/theme-openbitfun": "workspace:^",
     "@openbitfun/ui": "workspace:^",
-    "@monaco-editor/react": "^4.6.0",
     "@tanstack/react-virtual": "^3.13.23",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-autostart": "^2.0.0",
+    "@tauri-apps/plugin-clipboard-manager": "2.3.3",
     "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-fs": "^2.0.0",
     "@tauri-apps/plugin-log": "^2.8.0",

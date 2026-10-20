@@ -65,19 +65,51 @@ export function getEstimatedTerminalOutputRowHeight(): number {
 }
 
 export function prepareReadOnlyTerminalOutput(content: string): string {
-  return content
+  const prepared = content
     // A fresh xterm has no prior rows for absolute cursor positions to target.
     // eslint-disable-next-line no-control-regex -- terminal control sequences are expected here.
-    .replace(/\x1b\[\d*;?\d*[Hf]/g, '\r\n')
-    // Avoid moving the cursor to an otherwise empty trailing row.
-    // eslint-disable-next-line no-control-regex -- terminal control sequences are expected here.
-    .replace(/(?:\r\n|\r|\n)+((?:\x1b\[[0-?]*[ -/]*[@-~])*)$/g, '$1');
+    .replace(/\x1b\[\d*(?:;\d*)?[Hf]/g, '\r\n');
+
+  // Walk the trailing CSI sequences backwards, then remove the preceding line
+  // breaks. An unanchored newline-run regex retries at every newline when a
+  // large blank region is followed by text, causing quadratic backtracking.
+  let suffixStart = prepared.length;
+  while (suffixStart > 0) {
+    let cursor = suffixStart - 1;
+    const final = prepared.charCodeAt(cursor);
+    if (final < 0x40 || final > 0x7e) break;
+    cursor -= 1;
+    while (cursor >= 0 && prepared.charCodeAt(cursor) >= 0x20 && prepared.charCodeAt(cursor) <= 0x2f) cursor -= 1;
+    while (cursor >= 0 && prepared.charCodeAt(cursor) >= 0x30 && prepared.charCodeAt(cursor) <= 0x3f) cursor -= 1;
+    if (cursor < 1 || prepared[cursor] !== '[' || prepared.charCodeAt(cursor - 1) !== 0x1b) break;
+    suffixStart = cursor - 1;
+  }
+  let end = suffixStart;
+  while (end > 0 && (prepared[end - 1] === '\r' || prepared[end - 1] === '\n')) end -= 1;
+  return end === suffixStart ? prepared : prepared.slice(0, end) + prepared.slice(suffixStart);
 }
 
 export function stripTerminalControlSequences(content: string): string {
-  return content
-    // eslint-disable-next-line no-control-regex -- terminal control sequences are expected here.
-    .replace(/\x1b[\]PX_^][\s\S]*?(?:\x07|\x1b\\)/g, '')
+  // Unterminated OSC/DCS strings must not restart an unbounded wildcard search
+  // at every later opener. Scan fixed delimiters once, keeping incomplete text.
+  // eslint-disable-next-line no-control-regex -- terminal control sequences are expected here.
+  const delimiters = /\x1b[\]PX_^]|\x07|\x1b\\/g;
+  const parts: string[] = [];
+  let start = -1;
+  let copiedThrough = 0;
+  let match: RegExpExecArray | null;
+  while ((match = delimiters.exec(content)) !== null) {
+    const terminator = match[0] === '\x07' || match[0] === '\x1b\\';
+    if (start < 0) {
+      if (!terminator) start = match.index;
+    } else if (terminator) {
+      parts.push(content.slice(copiedThrough, start));
+      copiedThrough = delimiters.lastIndex;
+      start = -1;
+    }
+  }
+  const withoutStrings = copiedThrough === 0 ? content : parts.join('') + content.slice(copiedThrough);
+  return withoutStrings
     // eslint-disable-next-line no-control-regex -- terminal control sequences are expected here.
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
     // eslint-disable-next-line no-control-regex -- terminal control sequences are expected here.
@@ -126,7 +158,20 @@ export function calculateTerminalOutputHeight(
     ? heightForRows(maxRows)
     : alignHeightToRows(maxHeight, 'floor');
   const boundedMaxHeight = Math.max(effectiveMinHeight, effectiveMaxHeight);
-  const lineCount = content ? content.split(/\r\n|\r|\n/).length : 1;
+  // Height saturates at this row count; do not allocate every output line just
+  // to size a small preview. Invalid geometry still follows the math below.
+  const rowLimit = rowHeight > 0 && Number.isFinite(rowHeight) && Number.isFinite(boundedMaxHeight)
+    ? Math.max(1, Math.ceil(boundedMaxHeight / rowHeight))
+    : Infinity;
+  let lineCount = 1;
+  for (let index = 0; index < content.length && lineCount < rowLimit; index += 1) {
+    if (content[index] === '\r') {
+      lineCount += 1;
+      if (content[index + 1] === '\n') index += 1;
+    } else if (content[index] === '\n') {
+      lineCount += 1;
+    }
+  }
   const visibleRows = maxRows != null && maxRows > 0
     ? Math.min(lineCount, maxRows)
     : lineCount;

@@ -1265,6 +1265,7 @@ mod tests {
                 location: "/skills/interactive-debug".to_string(),
             }],
             subagents: Vec::new(),
+            deferred_tools: None,
         };
         manager
             .save_skill_agent_baseline_override_snapshot(

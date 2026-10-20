@@ -4,8 +4,9 @@ import { useI18n } from '@/infrastructure/i18n';
 import { getActiveSurfaceId, surfaceScopedKey } from '@/infrastructure/peer-device/deviceSurface';
 import { sessionSourceAgentLabel, useWorkspaceSessionViewStore, type WorkspaceSessionSourceAgent } from '../../workspaceSessionView';
 import WorkspaceMenuSubmenu from './WorkspaceMenuSubmenu';
+import { EXTERNAL_SESSION_NAMES } from '@/shared/types/external-session';
 
-const SOURCES: readonly WorkspaceSessionSourceAgent[] = ['all', 'openbitfun', 'codex', 'zcode'];
+const SOURCES: readonly WorkspaceSessionSourceAgent[] = ['all', 'openbitfun', ...Object.keys(EXTERNAL_SESSION_NAMES) as (keyof typeof EXTERNAL_SESSION_NAMES)[]];
 
 interface WorkspaceSessionSourceFilterProps {
   workspaceId: string;

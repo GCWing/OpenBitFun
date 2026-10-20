@@ -254,6 +254,7 @@
     "fileTransferPrimitives": [
       "local_file_download",
       "export_local_file_to_path",
+      "load_agent_companion_pet_spritesheet",
       "paste_files",
       "workspace_file_upload"
     ],

@@ -651,6 +651,8 @@ async function seedWorkspaceState(options, workspacePath) {
   ])).slice(0, 20);
 
   await writeJson(workspaceDataPath, {
+    format_version: 1,
+    product_id: 'openbitfun',
     workspaces,
     opened_workspace_ids: openedWorkspaceIds,
     current_workspace_id: workspaceId,

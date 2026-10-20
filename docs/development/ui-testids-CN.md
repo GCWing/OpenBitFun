@@ -309,10 +309,10 @@
 | Browser 面板标题 | `browser-panel-title` | Browser toolbar/form 区域。 |
 | Browser URL 输入框 | `browser-url-input` | 真实 URL 输入框。按 Enter 打开输入的 URL。 |
 | Browser 页面容器 | `browser-page-frame` | iframe/webview host 内容区域。 |
-| Browser 加载状态 | `browser-loading-indicator` | URL 加载中时的刷新/加载图标。 |
+| Browser 加载状态 | `browser-loading-indicator` | URL 加载中时地址栏内替换浏览器图标的转圈指示。 |
 | Browser 错误信息 | `browser-error-message` | URL 校验、连通性或 webview 加载失败信息。 |
 | Browser 当前 URL | `browser-current-url` | webview placeholder 中展示的当前 URL。 |
-| Browser 刷新按钮 | `browser-refresh-button` | 刷新当前 Browser 页面。 |
+| Browser 刷新按钮 | `browser-refresh-button` | 刷新当前 Browser 页面；加载中该按钮变为停止加载。 |
 | Browser 后退按钮 | `browser-back-button` | Browser 历史后退。 |
 | Browser 前进按钮 | `browser-forward-button` | Browser 历史前进。 |
 

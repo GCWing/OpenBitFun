@@ -1,6 +1,7 @@
 import { invokeExternalSourceCommand } from './ExternalSourcesAPI';
+import type { ExternalSessionEcosystem } from '@/shared/types/external-session';
 
-export type ExternalSessionEcosystem = 'codex' | 'zcode';
+export type { ExternalSessionEcosystem } from '@/shared/types/external-session';
 export interface RemovedExternalSession {
   ecosystemId: ExternalSessionEcosystem;
   sessionId: string;

@@ -8939,6 +8939,7 @@ mod tests {
                 description: "desc-a".to_string(),
                 default_tools: vec!["Read".to_string()],
             }],
+            deferred_tools: None,
         };
 
         manager

@@ -9,12 +9,20 @@ import {
   EditorContext,
   TerminalContext,
   FlowChatContext,
+  TextInputContext,
   TabContext,
   PanelHeaderContext,
   EmptySpaceContext,
   CustomContext,
   ContextResolverConfig
 } from '../types/context.types';
+import {
+  findTextInputHost,
+  isEditableInput,
+  isTextInputReadOnly,
+  readTextInputSelection,
+  readTextInputSelectionRange,
+} from '@/shared/utils/nativeTextEditing';
 import { createLogger } from '@/shared/utils/logger';
 
 const log = createLogger('ContextResolver');
@@ -93,6 +101,7 @@ export class ContextResolver {
 
     const context =
       (inFileExplorer ? this.resolveFileNode(baseContext) : null) ??
+      this.resolveTextInput(baseContext) ??
       this.resolveSelection(baseContext) ??
       this.resolveTerminal(baseContext) ??
       (!inFileExplorer ? this.resolveFileNode(baseContext) : null) ??
@@ -104,6 +113,58 @@ export class ContextResolver {
       this.resolveEmptySpace(baseContext);
 
     return context;
+  }
+
+  /**
+   * Text fields own a copy/cut/paste/select-all menu even without a selection.
+   * A document selection is resolved afterwards, so a field is never reported as
+   * a bare text selection.
+   */
+  private resolveTextInput(base: BaseContext): TextInputContext | null {
+    // Monaco and xterm both render hidden textareas; the editor and terminal
+    // menus own those surfaces.
+    const ownedByEditorOrTerminal =
+      this.findClosestWithAttribute(base.targetElement, [
+        'data-monaco-editor',
+        'data-editor-id',
+        'data-terminal-id'
+      ]) ||
+      this.findClosestByClass(base.targetElement, [
+        'monaco-editor',
+        'code-editor',
+        'editor-container',
+        'xterm',
+        'openbitfun-terminal',
+        'terminal-container'
+      ]);
+
+    if (ownedByEditorOrTerminal) {
+      return null;
+    }
+
+    const element = findTextInputHost(base.targetElement);
+    if (!element) {
+      return null;
+    }
+
+    const tagName = element.tagName.toLowerCase();
+    const kind = tagName === 'input' ? 'input' : tagName === 'textarea' ? 'textarea' : 'contenteditable';
+    const selectedText = readTextInputSelection(element);
+
+    return {
+      ...base,
+      type: ContextType.TEXT_INPUT,
+      element,
+      kind,
+      isReadOnly: isTextInputReadOnly(element),
+      hasSelection: selectedText.length > 0,
+      selectedText,
+      selectionStart: isEditableInput(element) ? element.selectionStart ?? undefined : undefined,
+      selectionEnd: isEditableInput(element) ? element.selectionEnd ?? undefined : undefined,
+      savedSelectionRange: kind === 'contenteditable'
+        ? readTextInputSelectionRange(element)
+        : undefined
+    };
   }
 
    

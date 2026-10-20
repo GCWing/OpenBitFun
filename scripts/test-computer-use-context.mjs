@@ -48,6 +48,8 @@ mod ocr_context;
 mod interactive_filter;
 #[path = ${source('src/apps/desktop/src/computer_use/ax_snapshot_digest.rs')}]
 mod ax_snapshot_digest;
+#[path = ${source('src/apps/desktop/src/computer_use/windows_window_target.rs')}]
+mod windows_window_target;
 #[path = ${source('src/crates/assembly/core/src/agentic/tools/browser_control/snapshot_context.rs')}]
 mod snapshot_context;
 `);

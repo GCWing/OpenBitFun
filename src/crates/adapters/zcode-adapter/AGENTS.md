@@ -1,7 +1,9 @@
 # Zcode Adapter
 
 This adapter reads Zcode's local `~/.zcode/cli/db/db.sqlite` session store.
-It owns source schema, visibility, ordering and tool-result translation only.
+It owns source path and provenance. The OpenCode adapter owns the shared
+read-only session/message/part protocol, including optional sequence and visibility
+metadata. This narrow dependency avoids a second SQLite history implementation.
 Keep native import, workspace registration and continuation in their existing
 product owners. Do not launch Zcode, execute imported tools, load credentials,
 change SQLite schema or write to the source database. Use read-only SQLite

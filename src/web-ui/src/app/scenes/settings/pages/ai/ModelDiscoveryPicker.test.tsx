@@ -76,6 +76,7 @@ describe('model discovery capsules', () => {
     expect(popup()!.textContent).toContain(copy('providerSelection.fetchedModels', { count: '3' }));
     expect(capsules().map(button => button.textContent)).toEqual(['alpha', 'beta', 'gamma']);
     expect(capsules()[0].getAttribute('aria-pressed')).toBe('true');
+    expect(capsules()[0].getAttribute('data-openbitfun-variant')).toBe('fill');
     click(capsules()[2]);
     expect(changes.at(-1)).toEqual(['custom-model', 'ALPHA', 'gamma']);
     expect(popup()).not.toBeNull();
@@ -83,6 +84,7 @@ describe('model discovery capsules', () => {
     click(capsules()[0]);
     expect(changes.at(-1)).toEqual(['custom-model', 'gamma']);
     expect(capsules()).toHaveLength(3);
+    expect(capsules()[0].getAttribute('data-openbitfun-variant')).toBe('outline');
 
     act(() => {
       search().focus();

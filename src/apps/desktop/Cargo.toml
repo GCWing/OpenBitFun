@@ -45,6 +45,7 @@ tauri-plugin-autostart = { workspace = true }
 tauri-plugin-notification = { workspace = true }
 tauri-plugin-updater = { workspace = true }
 tauri-plugin-single-instance = { workspace = true }
+tauri-plugin-clipboard-manager = { workspace = true }
 keepawake = { workspace = true }
 # Keep Tauri's transitive time resolution on the known-good release.
 time = { workspace = true }
@@ -161,6 +162,7 @@ devtools = ["tauri/devtools", "openbitfun-webdriver/embedded"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = { workspace = true }
+gtk = { workspace = true }
 atspi = { workspace = true, features = ["zbus"] }
 gstreamer = { workspace = true }
 gstreamer-app = { workspace = true }

@@ -291,17 +291,38 @@ preserve omitted source fields and existing app storage when updating.
 Open a disposable local workspace in Desktop and select an app under External Import.
 Use test content or reversible imported copies. Category discovery coverage is independent of copy import and execution support.
 
-For Codex and Zcode, enable **Automatically discover sessions** in Ecosystem
+For Codex, Zcode, Claude Code, OpenCode, Pi, DeepSeek Harness and Cursor, enable **Automatically discover sessions** in Ecosystem
 Compatibility. Opening a local workspace adds a lightweight index of all matching
 source sessions to its regular list, including startup-restored workspace lists. A
 small source label identifies imported history. Use **Session source** in the
-workspace menu to show all agents or only OpenBitFun, Codex or Zcode. Filtering
+workspace menu to show all agents or a selected source. Filtering
 searches the complete metadata catalog, including sessions beyond the first page,
 while the workspace list initially shows five sessions. Use its existing expand
 controls to see more; switching sources starts folded again.
 Preferences are stored on the serving host; workspace filters are scoped by device
 and workspace. Older hosts display an unavailable switch. SSH workspace discovery
 is explicitly unsupported and never reads controller-side history.
+Cursor reads CLI snapshots under `CURSOR_CONFIG_DIR/chats` (otherwise
+`XDG_CONFIG_HOME/cursor/chats` or `~/.cursor/chats`) and Desktop's local
+`Cursor/User/globalStorage/state.vscdb`. Set `OPENBITFUN_CURSOR_USER_DATA_DIR` on
+the OpenBitFun host for a custom Desktop profile. CLI JSONL transcripts under
+`CURSOR_DATA_DIR/projects` (default `~/.cursor/projects`) are a fallback and can
+lack tool results. Desktop can also omit saved file contents. These gaps are shown
+as source warnings; missing snapshot references fail explicitly. Workspace paths
+come from stored metadata, never reconstructed from lossy directory names.
+Plaintext-only `.txt` transcripts report an unsupported-format warning.
+Cursor's Read, Write, StrReplace and Shell records use existing read-only cards;
+unmatched tool contracts retain their full data in the generic card.
+Claude Code reads `CLAUDE_CONFIG_DIR` (default `~/.claude`), preserves the selected
+conversation branch and available pre-compaction history, and excludes subagent
+transcripts. Its imported tool records use the existing read-only tool cards.
+OpenCode reads its SQLite history from `XDG_DATA_HOME/opencode/opencode.db`
+(default `~/.local/share/opencode/opencode.db`), including committed WAL data and
+pending undo boundaries. Pi reads `PI_CODING_AGENT_DIR` (default `~/.pi/agent`)
+and absolute configured session directories, preserving the active branch and saved
+context edits in v1/v2/v3 logs. DeepSeek Harness reads v0 raw or Zstandard logs under
+`DSH_HOME/sessions` (default `~/.dsh/sessions`); custom Cordis persistence roots are
+not discovered. Unknown formats report a diagnostic. No external Agent runs during import.
 Opening a source session caches its history and keeps following the original Agent.
 The source refreshes once each time it is opened. Staying on the page, typing,
 returning to the window or viewing a native branch does not refresh it.
@@ -345,7 +366,7 @@ and imported cards cannot approve tools or act on current-workspace snapshots.
 
 | Check | Action | Expected result |
 |---|---|---|
-| Automatic session discovery | Enable Codex or Zcode session discovery, reopen a matching workspace, then continue its source in both apps | Discovery indexes metadata only; opening caches a followed view. First send forks the viewed version; later source changes stay separate. Drafts, rename/archive/delete, old native copies and missing-source caches remain intact |
+| Automatic session discovery | Enable session discovery for each supported Agent, reopen a matching workspace, then continue its source in both apps | Discovery indexes metadata only; opening caches a followed view. First send forks the viewed version; later source changes stay separate. Drafts, rename/archive/delete, old native copies and missing-source caches remain intact |
 | Command discovery | Put `Reply with STATUS_OK.` in `.claude/commands/status-check.md`, then refresh the catalog | The category shows the discovered count and the category dialog lists the discovered commands. Viewing it neither enables execution nor offers unsupported copy import; runtime activation stays with its existing owner |
 | MCP copy versus connection | Review and import an existing supported MCP declaration, leaving the native copy disabled | The row says Imported and connection not confirmed. Check and enable the copy in MCP settings, which owns the actual connection result |
 | Read-only hooks | Select Pi or DSH with a configured extension and open the Hook category dialog | Static declarations are viewable without execution. Single and category import actions are absent |

@@ -6,8 +6,10 @@
 
 use openbitfun_core::util::errors::{OpenBitFunError, OpenBitFunResult};
 use std::time::{Duration, Instant};
-use windows::core::Interface;
-use windows::Graphics::Capture::{Direct3D11CaptureFramePool, GraphicsCaptureItem};
+use windows::core::{Interface, HRESULT};
+use windows::Graphics::Capture::{
+    Direct3D11CaptureFrame, Direct3D11CaptureFramePool, GraphicsCaptureItem,
+};
 use windows::Graphics::DirectX::Direct3D11::IDirect3DDevice;
 use windows::Graphics::DirectX::DirectXPixelFormat;
 use windows::Win32::Foundation::{HMODULE, HWND};
@@ -37,6 +39,37 @@ pub(super) struct WgcCaptureSession {
     stopped: bool,
     closed: std::sync::Arc<std::sync::atomic::AtomicBool>,
     closed_token: i64,
+    last_frame: Option<RetainedFrame>,
+}
+
+struct RetainedFrame {
+    pixels: Vec<u8>,
+    width: u32,
+    height: u32,
+    received: Instant,
+}
+
+impl RetainedFrame {
+    fn reuse(
+        &self,
+        width: i32,
+        height: i32,
+    ) -> Option<(
+        Vec<u8>,
+        u32,
+        u32,
+        openbitfun_core::agentic::tools::computer_use_host::CaptureFrameInfo,
+    )> {
+        (i64::from(width) == i64::from(self.width) && i64::from(height) == i64::from(self.height))
+            .then(|| {
+                (
+                    self.pixels.clone(),
+                    self.width,
+                    self.height,
+                    frame_info(true, self.received.elapsed()),
+                )
+            })
+    }
 }
 
 impl WgcCaptureSession {
@@ -46,15 +79,25 @@ impl WgcCaptureSession {
         }
         let scope = crate::computer_use::control_session::observation_scope()
             .map_err(OpenBitFunError::service)?;
+        let target = super::windows_window_target::inspect_window(hwnd);
+        if let Some(reason) = target.capture_unavailable_reason() {
+            return Err(OpenBitFunError::service(format!(
+                "[CAPTURE_TARGET_UNAVAILABLE] {reason}; {target:?}"
+            )));
+        }
         unsafe {
             let (device, context) = create_d3d11_device()?;
             let direct_device = create_winrt_d3d_device(&device)?;
             let interop =
                 windows::core::factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>()
                     .map_err(|e| OpenBitFunError::service(format!("WGC factory: {e}")))?;
-            let item: GraphicsCaptureItem = interop
-                .CreateForWindow(hwnd)
-                .map_err(|e| OpenBitFunError::service(format!("WGC CreateForWindow: {e}")))?;
+            let item: GraphicsCaptureItem = interop.CreateForWindow(hwnd).map_err(|e| {
+                OpenBitFunError::service(format!(
+                    "[CAPTURE_TARGET_UNAVAILABLE] WGC CreateForWindow: {e}; {target:?}. \
+                         Use list_windows and an explicit app: {{pid, window_id}} to select the \
+                         intended window. No other window or desktop pixels were captured."
+                ))
+            })?;
             let size = item
                 .Size()
                 .map_err(|e| OpenBitFunError::service(format!("WGC size: {e}")))?;
@@ -118,6 +161,7 @@ impl WgcCaptureSession {
                 stopped: false,
                 closed,
                 closed_token,
+                last_frame: None,
             })
         }
     }
@@ -125,6 +169,7 @@ impl WgcCaptureSession {
     pub(super) fn stop(&mut self) {
         if !self.stopped {
             self.stopped = true;
+            self.last_frame = None;
             let _ = self.item.RemoveClosed(self.closed_token);
             let _ = self.session.Close();
             let _ = self.pool.Close();
@@ -147,26 +192,51 @@ impl WgcCaptureSession {
         Ok(())
     }
 
-    pub(super) fn capture(&mut self) -> OpenBitFunResult<(Vec<u8>, u32, u32)> {
-        if self.stopped || self.closed.load(std::sync::atomic::Ordering::Acquire) {
-            return Err(OpenBitFunError::service("WGC capture session stopped"));
+    fn next_frame(&mut self) -> OpenBitFunResult<Option<Direct3D11CaptureFrame>> {
+        // The WinRT method returns S_OK + null when its queue is empty. The
+        // generated non-optional wrapper converts null into an error, losing
+        // the distinction from a real provider/device failure.
+        let mut raw = std::ptr::null_mut();
+        let status = unsafe {
+            (Interface::vtable(&self.pool).TryGetNextFrame)(Interface::as_raw(&self.pool), &mut raw)
+        };
+        let frame = (!raw.is_null()).then(|| unsafe { Direct3D11CaptureFrame::from_raw(raw) });
+        let result = checked_frame_result(status, frame);
+        if result.is_err() {
+            self.last_frame = None;
         }
+        result
+    }
+
+    pub(super) fn capture(&mut self) -> CaptureResult {
+        self.ensure_live()?;
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
-            if let Ok(mut frame) = self.pool.TryGetNextFrame() {
+            self.ensure_live()?;
+            if let Some(mut frame) = self.next_frame()? {
                 // A long-lived pool may still contain observations queued
                 // before the latest input. Consume all immediately available
                 // frames and copy only the newest. Keep this frame when the
                 // queue is empty: static windows need not emit another frame.
                 // This improves recency, but is not proof of input processing.
-                while let Ok(newer) = self.pool.TryGetNextFrame() {
-                    let _ = frame.Close();
-                    frame = newer;
+                loop {
+                    match self.next_frame() {
+                        Ok(Some(newer)) => {
+                            let _ = frame.Close();
+                            frame = newer;
+                        }
+                        Ok(None) => break,
+                        Err(error) => {
+                            let _ = frame.Close();
+                            return Err(error);
+                        }
+                    }
                 }
                 let content = frame
                     .ContentSize()
                     .map_err(|e| OpenBitFunError::service(format!("WGC content size: {e}")))?;
                 if content.Width != self.size.Width || content.Height != self.size.Height {
+                    self.last_frame = None;
                     let _ = frame.Close();
                     if content.Width <= 0 || content.Height <= 0 {
                         return Err(OpenBitFunError::service(
@@ -186,11 +256,35 @@ impl WgcCaptureSession {
                 }
                 let result = unsafe { copy_frame_to_bgra(&frame, &self.device, &self.context) };
                 let _ = frame.Close();
-                return result;
+                let (pixels, width, height) = result?;
+                self.ensure_live()?;
+                self.last_frame = Some(RetainedFrame {
+                    pixels: pixels.clone(),
+                    width,
+                    height,
+                    received: Instant::now(),
+                });
+                return Ok((pixels, width, height, frame_info(false, Duration::ZERO)));
+            }
+            // WGC is change-driven. An empty queue in a live, unchanged stream
+            // is not a closed target. Never reuse across size/scope changes.
+            let size = self
+                .item
+                .Size()
+                .map_err(|e| OpenBitFunError::service(format!("WGC target unavailable: {e}")))?;
+            if size.Width != self.size.Width || size.Height != self.size.Height {
+                self.last_frame = None;
+            }
+            if let Some(frame) = self
+                .last_frame
+                .as_ref()
+                .and_then(|frame| frame.reuse(size.Width, size.Height))
+            {
+                return Ok(frame);
             }
             if Instant::now() >= deadline {
                 return Err(OpenBitFunError::service(
-                    "WGC frame unavailable: target may be closed, minimized or capture revoked",
+                    "[CAPTURE_FRAME_PENDING] The live window stream has not produced a frame yet. Observe again or use include_image=false for accessibility; no desktop pixels were substituted",
                 ));
             }
             std::thread::sleep(Duration::from_millis(16));
@@ -204,7 +298,68 @@ impl Drop for WgcCaptureSession {
     }
 }
 
-type CaptureResult = OpenBitFunResult<(Vec<u8>, u32, u32)>;
+fn checked_frame_result(
+    status: HRESULT,
+    frame: Option<Direct3D11CaptureFrame>,
+) -> OpenBitFunResult<Option<Direct3D11CaptureFrame>> {
+    status.ok().map_err(|error| {
+        OpenBitFunError::service(format!(
+            "[CAPTURE_UNAVAILABLE] WGC frame acquisition failed: {error}"
+        ))
+    })?;
+    Ok(frame)
+}
+
+fn frame_info(
+    reused: bool,
+    age: Duration,
+) -> openbitfun_core::agentic::tools::computer_use_host::CaptureFrameInfo {
+    openbitfun_core::agentic::tools::computer_use_host::CaptureFrameInfo {
+        reused,
+        age_ms: age.as_millis().min(u64::MAX as u128) as u64,
+    }
+}
+
+#[cfg(test)]
+mod retained_frame_tests {
+    use super::*;
+
+    #[test]
+    fn an_empty_queue_is_distinct_from_native_capture_failure() {
+        assert!(checked_frame_result(HRESULT(0), None).unwrap().is_none());
+        for status in [0x80004003_u32, 0x80070005, 0x887A0005] {
+            let error = checked_frame_result(HRESULT(status as i32), None).unwrap_err();
+            assert!(error.to_string().contains("CAPTURE_UNAVAILABLE"));
+        }
+    }
+
+    #[test]
+    fn unchanged_stream_reuses_pixels_with_truthful_recency_but_resize_rejects_them() {
+        let frame = RetainedFrame {
+            pixels: vec![1, 2, 3, 255],
+            width: 1,
+            height: 1,
+            received: Instant::now() - Duration::from_secs(1),
+        };
+        for _ in 0..3 {
+            let (pixels, width, height, info) = frame.reuse(1, 1).unwrap();
+            assert_eq!((pixels, width, height), (vec![1, 2, 3, 255], 1, 1));
+            assert!(info.reused);
+            assert!(info.age_ms >= 1_000);
+        }
+        for size in [(2, 1), (1, 2), (0, 0), (-1, 1)] {
+            assert!(frame.reuse(size.0, size.1).is_none());
+        }
+        assert!(!frame_info(false, Duration::ZERO).reused);
+    }
+}
+
+type CaptureResult = OpenBitFunResult<(
+    Vec<u8>,
+    u32,
+    u32,
+    openbitfun_core::agentic::tools::computer_use_host::CaptureFrameInfo,
+)>;
 enum CaptureCommand {
     Ensure(
         usize,

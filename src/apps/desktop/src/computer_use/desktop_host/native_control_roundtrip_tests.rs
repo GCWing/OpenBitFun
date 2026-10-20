@@ -500,6 +500,68 @@ async fn run_covered_semantic() {
     context.primary_model_facts.api_format = "anthropic".into();
     let tool = ComputerUseTool::new();
     let _cleanup = StopOnExit;
+    if std::env::var_os("OPENBITFUN_INPUT_FOREGROUND").is_some() {
+        let app = json!({"pid":pid,"window_id":initial["window_id"]});
+        call(&tool, &context, json!({"action":"get_app_state","app":app})).await;
+        let background = host.control_snapshot();
+        call(
+            &tool,
+            &context,
+            json!({"action":"start_control","mode":"foreground"}),
+        )
+        .await;
+        assert_eq!(host.control_snapshot().target, background.target);
+        assert_ne!(host.control_snapshot().generation, background.generation);
+        let wrong_focus = tool
+            .call_impl(
+                &json!({"action":"type_text","text":"must-not-reach-observer","app":app}),
+                &context,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            wrong_focus
+                .to_string()
+                .contains("FOREGROUND_TARGET_MISMATCH"),
+            "{wrong_focus}"
+        );
+        let active = call(&tool, &context, json!({"action":"activate_app","app":app})).await;
+        assert_eq!(active["activated"], true);
+        assert_eq!(
+            crate::computer_use::macos_bg_input::frontmost_pid_macos(),
+            Some(pid)
+        );
+        let field = observed_node_index(&active, "fixture-text-field");
+        call(&tool, &context, json!({"action":"app_type_text","app":app,"text":"foreground","focus":{"kind":"node_idx","idx":field}})).await;
+        call(
+            &tool,
+            &context,
+            json!({"action":"type_text","app":app,"text":"✓"}),
+        )
+        .await;
+        call(
+            &tool,
+            &context,
+            json!({"action":"key_chord","app":app,"keys":["command","shift","k"]}),
+        )
+        .await;
+        let after = call(&tool, &context, json!({"action":"get_app_state","app":app})).await;
+        assert!(after["app_state"]["tree_text"]
+            .as_str()
+            .unwrap()
+            .contains("foreground✓"));
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_eq!(read(&path)["field_text"], "foreground✓");
+        assert_eq!(read(&path)["shortcut_actions"], 1);
+        assert_eq!(read(&path)["foreign_actions"], 0);
+        assert!(read(&observer_path)["input_events"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        call(&tool, &context, json!({"action":"stop_control"})).await;
+        eprintln!("PASS foreground recovery retains exact target, rejects wrong focus, activates once and delivers Unicode/shortcut only to the fixture");
+        return;
+    }
     call(
         &tool,
         &context,

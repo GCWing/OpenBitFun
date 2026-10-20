@@ -9,6 +9,7 @@ import {
 import './ComputerUseControlCard.scss';
 import { ComputerUseSharingControls } from './ComputerUseSharingControls';
 import { SharedPreview } from './computer-use/SharedPreview';
+import { PreviewCursor } from './computer-use/PreviewCursor';
 
 interface View {
   epoch: number;
@@ -159,11 +160,8 @@ export function ComputerUseControlCard() {
         {expanded && !snapshot.sharing && current?.frame && <div className="computer-control-card__preview" data-openbitfun-component="computer-control" data-openbitfun-part="preview">
           <img src={`data:${current.frame.mime_type};base64,${current.frame.image_base64}`}
             alt={t('computerControl.previewAlt')} />
-          {pointer && <span className="computer-control-card__pointer"
-            data-openbitfun-component="computer-control" data-openbitfun-part="pointer"
-            style={{ left: `${pointer.x * 100}%`, top: `${pointer.y * 100}%` }} aria-hidden="true">
-            <svg viewBox="0 0 40 40" focusable="false"><path d="M8 8 C6 10 7 12 8 15 L14 31 C15.5 35 19 35 20.5 31.5 L23 26 C23.6 24.5 24.5 23.6 26 23 L31.5 20.5 C35 19 35 15.5 31 14 L15 8 C12 7 10 6 8 8 Z" /></svg>
-          </span>}
+          {pointer && <PreviewCursor key={`${identity}:${snapshot.target}:${snapshot.target_revision ?? 0}`}
+            x={pointer.x} y={pointer.y} />}
           {clickFeedback && <span className="computer-control-card__click"
             data-openbitfun-component="computer-control" data-openbitfun-part="click"
             style={{ left: `${clickFeedback.x * 100}%`, top: `${clickFeedback.y * 100}%` }} aria-hidden="true" />}

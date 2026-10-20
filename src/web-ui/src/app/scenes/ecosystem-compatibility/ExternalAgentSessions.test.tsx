@@ -3,8 +3,9 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ getConfig: vi.fn(), setConfig: vi.fn(), epoch: 0 }));
+const mocks = vi.hoisted(() => ({ getConfig: vi.fn(), setConfig: vi.fn(), listRemoved: vi.fn(), epoch: 0 }));
 vi.mock('@/infrastructure/api/service-api/ConfigAPI', () => ({ configAPI: mocks }));
+vi.mock('@/infrastructure/api/service-api/ExternalSessionImportAPI', () => ({ externalSessionImportAPI: mocks }));
 vi.mock('./RemovedExternalSessions', () => ({ RemovedExternalSessions: () => null }));
 vi.mock('@/infrastructure/config/services/ConfigManager', () => ({ configManager: { setConfig: mocks.setConfig } }));
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({
@@ -19,6 +20,7 @@ vi.mock('@openbitfun/ui', () => ({
   Alert: ({ message }: { message: React.ReactNode }) => <div role="alert">{message}</div>,
 }));
 import ExternalAgentSessions from './ExternalAgentSessions';
+import { EXTERNAL_SESSION_NAMES, type ExternalSessionEcosystem } from '@/shared/types/external-session';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -34,6 +36,7 @@ describe('external session automatic discovery toggle', () => {
     mocks.epoch = 0;
     mocks.getConfig.mockResolvedValue({});
     mocks.setConfig.mockResolvedValue(undefined);
+    mocks.listRemoved.mockResolvedValue([]);
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     container = document.createElement('div');
     document.body.append(container);
@@ -45,7 +48,7 @@ describe('external session automatic discovery toggle', () => {
     vi.unstubAllGlobals();
   });
   const toggle = () => container.querySelector<HTMLInputElement>('input')!;
-  const render = async (ecosystemId: 'codex' | 'zcode' = 'codex', key = 'host') => {
+  const render = async (ecosystemId: ExternalSessionEcosystem = 'codex', key = 'host') => {
     await act(async () => root.render(<ExternalAgentSessions key={key} ecosystemId={ecosystemId} />));
   };
 
@@ -67,6 +70,22 @@ describe('external session automatic discovery toggle', () => {
     await act(async () => toggle().click());
     expect(mocks.setConfig).toHaveBeenCalledWith('app.external_session_discovery.zcode', false);
     expect(toggle().checked).toBe(false);
+  });
+
+  it.each(['claude-code', 'opencode', 'pi', 'deepseek-harness', 'cursor'] as const)('verifies %s support on the serving host before saving a preference', async source => {
+    await render(source);
+    expect(mocks.listRemoved).toHaveBeenCalledWith(source);
+    expect(container.textContent).toContain(EXTERNAL_SESSION_NAMES[source]);
+    await act(async () => toggle().click());
+    expect(mocks.setConfig).toHaveBeenCalledWith(`app.external_session_discovery.${source}`, true);
+  });
+
+  it.each(['claude-code', 'opencode', 'pi', 'deepseek-harness', 'cursor'] as const)('does not enable %s on an older host that accepts arbitrary settings keys', async source => {
+    mocks.listRemoved.mockRejectedValue({ code: 'unsupported' });
+    await render(source);
+    expect(toggle().disabled).toBe(true);
+    expect(container.textContent).toContain('sessions.autoDiscovery.unsupported');
+    expect(mocks.setConfig).not.toHaveBeenCalled();
   });
 
   it('keeps the confirmed preference after a failed save and supports retry', async () => {

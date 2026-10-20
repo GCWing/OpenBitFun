@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <stdatomic.h>
 #include <string.h>
+#include "pointer_motion.h"
 extern void obf_control_native_stopped(uint64_t generation, uint64_t revision, int32_t pid, uint32_t windowID, const char *reason);
 
 // Zero means the main-thread observer is not installed yet. Consumers must
@@ -639,28 +640,41 @@ void obf_capture_stop(void *handle) {
 @end
 static NSPanel *obfPointerPanel;
 static NSTimer *obfPointerTimer;
+static NSTimer *obfPointerFrameTimer;
 static uint32_t obfPointerTarget;
 static CGPoint obfPointerOffset;
 static BOOL obfPointerHasOffset;
 static NSTimeInterval obfPointerClickUntil;
+static BOOL obfPointerPendingClick;
+static OBFPointerMotion obfPointerMotion;
+static NSTimeInterval obfPointerMotionTime;
+static NSArray *obfPointerWindows;
+static CGRect obfPointerTargetBounds;
 
-static void obf_pointer_refresh(BOOL animate) {
-    if (!obfPointerTarget) return;
-    CFArrayRef raw = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, kCGNullWindowID);
-    NSArray *windows = CFBridgingRelease(raw);
-    CGRect target = CGRectZero;
-    for (NSDictionary *window in windows) {
-        if ([window[(id)kCGWindowNumber] unsignedIntValue] == obfPointerTarget) {
-            CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)window[(id)kCGWindowBounds], &target);
-            break;
-        }
+static void obf_pointer_advance(NSTimeInterval now) {
+    if (NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) {
+        obf_pointer_motion_snap(&obfPointerMotion, obfPointerOffset.x, obfPointerOffset.y);
+    } else {
+        obf_pointer_motion_advance(&obfPointerMotion, now - obfPointerMotionTime);
     }
+    obfPointerMotionTime = now;
+}
+
+static void obf_pointer_render(void) {
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    if (obfPointerPendingClick &&
+        hypot(obfPointerMotion.x - obfPointerOffset.x, obfPointerMotion.y - obfPointerOffset.y) < 1) {
+        obfPointerClickUntil = now + 0.2;
+        obfPointerPendingClick = NO;
+    }
+    CGRect target = obfPointerTargetBounds;
     if (CGRectIsEmpty(target)) { [obfPointerPanel orderOut:nil]; return; }
-    // Follow window movement without moving the last point within its content.
-    CGPoint point = CGPointMake(target.origin.x + obfPointerOffset.x, target.origin.y + obfPointerOffset.y);
+    // Window translation is separate from motion within its content. Never
+    // restart a move (or snap to its destination) during a visibility refresh.
+    CGPoint point = CGPointMake(target.origin.x + obfPointerMotion.x, target.origin.y + obfPointerMotion.y);
     CGRect marker = CGRectMake(point.x - 8, point.y - 8, 40, 40);
     BOOL visible = NO;
-    for (NSDictionary *window in windows) {
+    for (NSDictionary *window in obfPointerWindows) {
         uint32_t number = [window[(id)kCGWindowNumber] unsignedIntValue];
         if (obfPointerPanel && number == (uint32_t)obfPointerPanel.windowNumber) continue;
         if ([window[(id)kCGWindowAlpha] doubleValue] == 0) continue;
@@ -686,36 +700,66 @@ static void obf_pointer_refresh(BOOL animate) {
         obfPointerPanel.contentView = [[OBFControlPointerView alloc] initWithFrame:NSMakeRect(0, 0, 40, 40)];
     }
     OBFControlPointerView *view = (OBFControlPointerView *)obfPointerPanel.contentView;
-    BOOL click = NSDate.timeIntervalSinceReferenceDate < obfPointerClickUntil;
+    // Play the visual pulse at its destination without waiting to deliver input.
+    BOOL click = now < obfPointerClickUntil;
     if (view.click != click) { view.click = click; view.needsDisplay = YES; }
     double primaryHeight = CGDisplayBounds(CGMainDisplayID()).size.height;
     NSPoint destination = NSMakePoint(point.x - 8, primaryHeight - point.y - 32);
-    if (animate && obfPointerPanel.visible && !NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) {
-        [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
-            context.duration = 0.1;
-            [[obfPointerPanel animator] setFrameOrigin:destination];
-        } completionHandler:nil];
-    } else {
-        [obfPointerPanel setFrameOrigin:destination];
-    }
+    [obfPointerPanel setFrameOrigin:destination];
     // Relative normal-level ordering never raises the target or overlays covering apps.
-    [obfPointerPanel orderWindow:NSWindowAbove relativeTo:obfPointerTarget];
+    if (!obfPointerPanel.visible) [obfPointerPanel orderWindow:NSWindowAbove relativeTo:obfPointerTarget];
+}
+
+static void obf_pointer_refresh(void) {
+    if (!obfPointerTarget) return;
+    obfPointerWindows = CFBridgingRelease(CGWindowListCopyWindowInfo(
+        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, kCGNullWindowID));
+    obfPointerTargetBounds = CGRectZero;
+    for (NSDictionary *window in obfPointerWindows) {
+        if ([window[(id)kCGWindowNumber] unsignedIntValue] == obfPointerTarget) {
+            CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)window[(id)kCGWindowBounds], &obfPointerTargetBounds);
+            break;
+        }
+    }
+    obf_pointer_advance(NSProcessInfo.processInfo.systemUptime);
+    obf_pointer_render();
+    if (obfPointerPanel.visible) [obfPointerPanel orderWindow:NSWindowAbove relativeTo:obfPointerTarget];
+}
+
+static void obf_pointer_start_frames(void) {
+    if (obfPointerFrameTimer || !obf_pointer_motion_active(&obfPointerMotion)) return;
+    // The hot loop uses cached visibility geometry; WindowServer enumeration
+    // stays on the slower lifecycle timer. Elapsed time, not tick count, drives
+    // the spring, including on 60Hz displays and after a busy main-thread frame.
+    obfPointerFrameTimer = [NSTimer timerWithTimeInterval:1.0 / 120 repeats:YES block:^(NSTimer *timer) {
+        obf_pointer_advance(NSProcessInfo.processInfo.systemUptime);
+        obf_pointer_render();
+        if (!obf_pointer_motion_active(&obfPointerMotion)) {
+            [timer invalidate]; obfPointerFrameTimer = nil;
+        }
+    }];
+    [[NSRunLoop mainRunLoop] addTimer:obfPointerFrameTimer forMode:NSRunLoopCommonModes];
+}
+
+static void obf_pointer_reset(void) {
+    [obfPointerFrameTimer invalidate]; obfPointerFrameTimer = nil;
+    [obfPointerTimer invalidate]; obfPointerTimer = nil;
+    obfPointerTarget = 0; obfPointerHasOffset = NO; obfPointerClickUntil = 0; obfPointerPendingClick = NO;
+    obfPointerWindows = nil; obfPointerTargetBounds = CGRectZero;
+    obf_pointer_motion_snap(&obfPointerMotion, 0, 0);
+    [obfPointerPanel orderOut:nil];
 }
 
 void obf_pointer_hide(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [obfPointerTimer invalidate]; obfPointerTimer = nil;
-        obfPointerTarget = 0; obfPointerHasOffset = NO; obfPointerClickUntil = 0;
-        [obfPointerPanel orderOut:nil];
+        obf_pointer_reset();
     });
 }
 void obf_pointer_show(uint32_t targetWindow, double x, double y, bool click) {
     dispatch_async(dispatch_get_main_queue(), ^{
         BOOL sameTarget = obfPointerTarget == targetWindow;
-        if (!sameTarget) {
-            [obfPointerPanel orderOut:nil];
-            obfPointerTarget = 0; obfPointerHasOffset = NO; obfPointerClickUntil = 0;
-        }
+        if (!sameTarget) obf_pointer_reset();
+        if (!targetWindow || !isfinite(x) || !isfinite(y)) { obf_pointer_reset(); return; }
         CFArrayRef raw = CGWindowListCopyWindowInfo(kCGWindowListOptionIncludingWindow, targetWindow);
         NSArray *windows = CFBridgingRelease(raw);
         CGRect target = CGRectZero;
@@ -725,16 +769,28 @@ void obf_pointer_show(uint32_t targetWindow, double x, double y, bool click) {
                 break;
             }
         }
-        if (CGRectIsEmpty(target)) { [obfPointerPanel orderOut:nil]; return; }
+        if (CGRectIsEmpty(target)) { obf_pointer_reset(); return; }
+        NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+        BOOL animate = sameTarget && obfPointerPanel.visible &&
+            !NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
+        if (animate) obf_pointer_advance(now);
         obfPointerTarget = targetWindow;
-        obfPointerOffset = CGPointMake(x - target.origin.x, y - target.origin.y);
+        CGPoint offset = CGPointMake(x - target.origin.x, y - target.origin.y);
+        if (!CGPointEqualToPoint(offset, obfPointerOffset)) {
+            obfPointerPendingClick = NO; obfPointerClickUntil = 0;
+        }
+        obfPointerOffset = offset;
         obfPointerHasOffset = YES;
-        if (click) obfPointerClickUntil = NSDate.timeIntervalSinceReferenceDate + 0.2;
-        obf_pointer_refresh(sameTarget);
+        if (animate) obf_pointer_motion_retarget(&obfPointerMotion, obfPointerOffset.x, obfPointerOffset.y);
+        else obf_pointer_motion_snap(&obfPointerMotion, obfPointerOffset.x, obfPointerOffset.y);
+        obfPointerMotionTime = now;
+        if (click) obfPointerPendingClick = YES;
+        obf_pointer_refresh();
+        obf_pointer_start_frames();
         if (!obfPointerTimer) {
             obfPointerTimer = [NSTimer timerWithTimeInterval:0.15 repeats:YES block:^(NSTimer *timer) {
                 (void)timer;
-                if (obfPointerHasOffset) obf_pointer_refresh(NO);
+                if (obfPointerHasOffset) obf_pointer_refresh();
             }];
             [[NSRunLoop mainRunLoop] addTimer:obfPointerTimer forMode:NSRunLoopCommonModes];
         }

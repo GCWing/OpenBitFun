@@ -199,6 +199,10 @@ pub struct ComputerUseImageGlobalBounds {
 /// (`full_display` vs `region_crop`, plus **`shortcut_policy`**).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ComputerScreenshot {
+    /// Recency of a retained native frame. Missing on older/other providers;
+    /// a reused frame is not evidence that the latest input was processed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capture_frame: Option<CaptureFrameInfo>,
     /// Stable id for this exact screenshot coordinate basis. Follow-up
     /// `ClickTarget::ImageXy` / `ImageGrid` calls should pass this id so the
     /// host maps image pixels against the same frame the model saw.
@@ -248,6 +252,12 @@ pub struct ComputerScreenshot {
     /// Desktop: this JPEG was produced by implicit 500×500 confirmation crop (mouse or text focus center).
     #[serde(default, skip_serializing_if = "is_false")]
     pub implicit_confirmation_crop_applied: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CaptureFrameInfo {
+    pub age_ms: u64,
+    pub reused: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -1774,6 +1784,7 @@ pub fn build_screenshot_tool_body_and_hint(
     let mut data = json!({
         "success": true,
         "screenshot_id": shot.screenshot_id,
+        "capture_frame": shot.capture_frame,
         "mime_type": shot.mime_type,
         "image_width": shot.image_width,
         "image_height": shot.image_height,
@@ -1922,6 +1933,7 @@ mod tool_body_tests {
 
     fn screenshot() -> ComputerScreenshot {
         ComputerScreenshot {
+            capture_frame: None,
             screenshot_id: Some("test-shot".to_string()),
             bytes: vec![1, 2, 3],
             mime_type: "image/jpeg".to_string(),
@@ -2016,9 +2028,26 @@ mod tool_body_tests {
         payload["future_field"] = json!({"version":2});
         let old: ComputerScreenshot = serde_json::from_value(payload).unwrap();
         assert_eq!(old.screenshot_id, None);
+        assert_eq!(old.capture_frame, None);
         let restored: ComputerScreenshot =
             serde_json::from_value(serde_json::to_value(&old).unwrap()).unwrap();
         assert_eq!(old, restored);
+    }
+
+    #[test]
+    fn retained_frame_recency_round_trips_and_reaches_tool_output() {
+        let mut shot = screenshot();
+        shot.capture_frame = Some(CaptureFrameInfo {
+            age_ms: 1234,
+            reused: true,
+        });
+        let payload = serde_json::to_value(&shot).unwrap();
+        assert_eq!(
+            serde_json::from_value::<ComputerScreenshot>(payload).unwrap(),
+            shot
+        );
+        let (body, _) = build_screenshot_tool_body_and_hint(&shot, None);
+        assert_eq!(body["capture_frame"], json!({"age_ms":1234,"reused":true}));
     }
 
     #[test]

@@ -19,9 +19,12 @@ never the covering application's content or an unsolicited desktop capture.
 
 Background mode must not raise a window, change the human's keyboard focus, switch
 Spaces/desktops, or silently use global seat input. A backend's inability to meet
-that contract must be visible. Foreground takeover requires explicit user
-permission; approval of a message's content and recipient does not authorize it.
-A generated agent plan cannot widen the original user's authorization.
+that contract must be visible. A user's GUI task authorizes a foreground
+transition when its required background route is unsupported or verified
+ineffective, unless the user requested background-only/no-disruption. The Agent
+announces that mode change and selects it through `start_control`; native input
+never silently escalates or retries. A generated agent plan cannot override the
+original user's constraints, Stop, cancellation or OS permission denial.
 
 The operating system owns privacy/sharing indicators. OpenBitFun neither imitates
 macOS's Sharing menu on other systems nor suppresses native capture borders.
@@ -170,6 +173,15 @@ binding. Older hosts and Linux reject exact-window requests explicitly; Linux
 keeps its existing AT-SPI and portal selection contracts. No remote-workspace
 request falls back to the controller's desktop.
 
+For an unbound Windows PID/name selector, default selection prefers ordinary
+content windows over tool/no-activate windows and topmost companions, preserving
+native order among equal candidates. An enabled dialog can outrank a disabled
+main window, and utility-only applications remain selectable. Known hidden,
+minimized, cloaked, capture-restricted or empty targets are ineligible for this
+default. Explicit IDs and live bindings bypass ranking. WGC remains the capture
+authority; a creation failure returns the exact HWND and window facts with
+explicit-selection guidance, without probing or switching to another window.
+
 The optional manual-sharing API uses `awaiting_share`, opaque process-bound
 choices, observe-first capture and a separate revocable input grant. Its scope
 does not apply to normal Agent tasks. Existing remembered preferences and manual
@@ -212,6 +224,25 @@ that every third-party app honors activation policy; subsequent observations
 establish actual state. Linux currently reports unavailable background launch
 instead of silently using an activating launcher. Existing AT-SPI targets remain
 usable. GUI-less hosts and remote workspaces do not fall back to the local GUI.
+In foreground mode Linux starts an executable without waiting for the GUI process
+to exit, or uses `gtk-launch` for a desktop ID / `gio launch` for a desktop-file
+path. Launcher waits are bounded and their PID is never reported as the app PID.
+The launch receipt still requires application/window discovery and verification.
+
+Successful launch with an unresolved PID/window is not an actionable observation.
+Its receipt recommends native window discovery (or AT-SPI application discovery
+on Linux), rather than an unbound screenshot of the current foreground app.
+Capture failure after input retains valid accessibility facts and also reports
+`observation_error`; missing pixels never establish failed input.
+
+macOS and Windows advertise `activate-app-v1`. In foreground mode, `activate_app`
+activates the prepared exact window, checks actual foreground ownership, and
+returns a new observation before the next input. Global input checks that its
+foreground destination matches the observed binding. Windows may deny activation;
+macOS AXRaise/focus may be unavailable. Those failures send no task input and do
+not invoke Alt-Tab or click a guessed location. Linux uses its consented portal
+surface instead of native-window activation; an AT-SPI PID cannot identify that
+surface. App-directed actions retain their semantic/directed route in either mode.
 
 Manual preview input joins the same exclusive action lease as the Agent. Pointer
 gestures retain their screenshot until release; resizing or revocation cancels
@@ -322,6 +353,12 @@ resurrection. The Agent may restart after recoverable target/capture loss, but
 must respect a user stop or denial. Optional manual sharing retains its separate
 `awaiting_share → active(observe) → active(granted mode)` lifecycle; revoking its
 grant preserves observation and invalidates stale input workers immediately.
+
+A same-owner mode change preserves an Agent session's exact target, while
+advancing generation and invalidating its native resources and references.
+Restarting a stopped task or leaving manual sharing does not inherit that target.
+Tool-issued Stop reports `agent_stopped`; native user Stop remains `user_stopped`.
+Neither reason authorizes automatic restart during the same task.
 
 Stop revokes admission and advances generation before cancelling native work,
 releasing owned pressed keys/buttons, stopping capture and hiding feedback.
@@ -574,9 +611,23 @@ capture errors. No unlock, wake or automatic activation is a recovery action.
 
 Observation, semantic actions, locate, hit-testing and shortcut discovery share
 a retained MTA UIA worker/cache. Validate
-PID, HWND, generation, target revision, enabled state and geometry before supported Invoke,
+root PID, HWND, generation, target revision, enabled state and geometry before supported Invoke,
 Toggle, SelectionItem or Scroll operations. Release retained COM references with
 the cache; do not rebuild indices during input.
+
+Hosted UIA controls can have a different process from their root HWND. A bounded
+RawView ancestry walk proves membership in the bound root; equality with the root
+PID is not a substitute. Recheck root ownership after the walk and reject detached
+controls, unrelated same-process windows and disabled elements.
+
+WGC retains the last valid pixels for the current native stream. An empty frame
+queue on a static window reuses those pixels with `capture_frame.age_ms` and
+`capture_frame.reused`, rather than claiming the target closed. Stop, target,
+generation and size changes invalidate reuse. Frame recency is not evidence of
+input delivery; the Agent checks AX/application state or observes again. A stream
+without its first frame reports `CAPTURE_FRAME_PENDING`. A native frame-pool
+failure invalidates retained pixels and returns an error; only a successful
+empty queue permits frame reuse.
 
 Use `CUIAutomation8` / `IUIAutomation2` with automatic focus disabled, a two-second
 connection timeout and a five-second transaction timeout. A separate ten-second
@@ -644,6 +695,18 @@ preview feedback conservatively when native visibility cannot be established.
 Ubuntu preview does not invent a Wayland global overlay. Reduced-motion retains
 static position feedback without movement transitions.
 
+macOS and Windows use the same platform-independent, critically damped spring
+in `pointer_motion.h`. It retains displayed position and velocity on retarget,
+uses elapsed monotonic time, and catches up after a delayed frame without
+replaying queued movements. macOS samples motion separately from its slower
+window/occlusion refresh. Windows coalesces visual destinations on a persistent
+window-owning worker; Stop wakes it and releases the window. Both stop frequent
+updates at rest, respect the OS motion preference and pulse clicks at visual
+arrival without delaying native input. This follows the displayed-tip and
+retained-velocity approach in
+[open-computer-use Cursor Motion](https://github.com/ifuryst/open-computer-use/blob/43eb4b53de7a15b3f99ec2c9922bedeb95602266/packages/OpenComputerUseKit/Sources/OpenComputerUseKit/CursorMotionModel.swift);
+the native integration remains asynchronous.
+
 The physical preview cursor is a deterministic 240 Hz simulation sampled by
 `requestAnimationFrame`, with retargeting, directional rotation, speed stretch,
 arrival deformation, opacity/blur and resize behavior from the reference. Motion
@@ -651,6 +714,12 @@ never acknowledges, schedules or delays native input. Reduced-motion uses
 immediate feedback. Rust-generated golden traces test the mathematical port,
 not native OS delivery. The click ring expires independently of the persistent
 pointer.
+Both the Agent control card and the shared interactive preview use this renderer
+on macOS, Windows and Linux, including peer-host previews. Position is written
+through `translate3d` rather than per-frame layout properties. Unchanged resize
+notifications do not retarget it, and direct user manipulation cancels animation
+immediately. The golden model is unchanged; component tests separately cover
+render scheduling, cancellation, resize and live reduced-motion changes.
 
 The product surface shows authoritative target, mode, status and Stop while the
 chat card is collapsed. Preview sampling is bounded and stops when unobserved;

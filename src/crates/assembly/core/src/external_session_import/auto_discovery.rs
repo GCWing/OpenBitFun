@@ -31,11 +31,19 @@ async fn enabled_sources() -> Result<Vec<String>, String> {
         .get_config(Some("app.external_session_discovery"))
         .await
         .map_err(|error| error.to_string())?;
-    Ok(["codex", "zcode"]
-        .into_iter()
-        .filter(|source| settings.get(*source) == Some(&true))
-        .map(str::to_owned)
-        .collect())
+    Ok([
+        "codex",
+        "zcode",
+        "claude-code",
+        "opencode",
+        "pi",
+        "deepseek-harness",
+        "cursor",
+    ]
+    .into_iter()
+    .filter(|source| settings.get(*source) == Some(&true))
+    .map(str::to_owned)
+    .collect())
 }
 
 /// Opening a workspace explicitly refreshes discovery. Metadata reads also run
@@ -226,15 +234,9 @@ async fn discover_enabled(
             Ok(source) => source,
             Err(_) => continue,
         };
-        let catalog = shared_catalog(
-            &SOURCE_CATALOGS,
-            ecosystem,
-            requested_at,
-            move || match source {
-                ImportSource::Codex => codex_reader().discover_all(),
-                ImportSource::Zcode => ZcodeSessionReader::default().discover_all(),
-            },
-        )
+        let catalog = shared_catalog(&SOURCE_CATALOGS, ecosystem, requested_at, move || {
+            source.discover_all()
+        })
         .await;
         match catalog {
             Ok(catalog) => {

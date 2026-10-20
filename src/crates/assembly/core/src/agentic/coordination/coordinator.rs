@@ -567,6 +567,9 @@ enum SkillAgentSnapshotPersistence {
     None,
     SaveCurrentTurn,
     RecoverFirstTurnBaseline,
+    /// Save the current snapshot and make it the listing baseline, because
+    /// the earlier listing diffs cannot be reconciled with it.
+    RebuildListingBaseline,
 }
 
 impl SubagentResult {
@@ -4035,21 +4038,20 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .latest_turn_skill_agent_snapshot_at_or_before(session_id, turn_index - 1)
             .await
         {
-            let diff = diff_skill_agent_snapshot(&previous_snapshot, &surface_resolution.snapshot);
-            append_skill_agent_listing_diff_reminders(
+            let head_lists_deferred_tools = self
+                .session_manager
+                .skill_agent_listing_baseline_snapshot(session_id)
+                .await
+                .is_some_and(|baseline| baseline.lists_deferred_tools());
+            plan_skill_agent_listing_update(
                 &mut prepended_messages,
-                diff.render_skill_listing_update(),
-                diff.render_agent_listing_update(),
-            );
-            if diff.is_empty() {
-                SkillAgentSnapshotPersistence::None
-            } else {
-                debug!(
-                    "Skill-agent snapshot changed; persisting sparse snapshot: session_id={}, turn_index={}, baseline_turn_index={}",
-                    session_id, turn_index, baseline_turn_index
-                );
-                SkillAgentSnapshotPersistence::SaveCurrentTurn
-            }
+                session_id,
+                turn_index,
+                baseline_turn_index,
+                &previous_snapshot,
+                &surface_resolution.snapshot,
+                head_lists_deferred_tools,
+            )
         } else {
             warn!(
                 "No prior skill-agent snapshot available for diff; skipping skill-agent diff: session_id={}, turn_index={}",
@@ -6979,6 +6981,18 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     .await;
                 self.session_manager
                     .remove_listing_diff_internal_reminders(&session_id)
+                    .await;
+            }
+            SkillAgentSnapshotPersistence::RebuildListingBaseline => {
+                self.session_manager
+                    .remember_turn_skill_agent_snapshot(
+                        &session_id,
+                        turn_index,
+                        wrapped_user_input_payload.skill_agent_snapshot.clone(),
+                    )
+                    .await;
+                self.session_manager
+                    .rebuild_skill_agent_listing_baseline_to_latest(&session_id)
                     .await;
             }
         }
@@ -11761,6 +11775,28 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         target_session_id: &str,
         parent_session_id: &str,
     ) -> OpenBitFunResult<Session> {
+        let session = self
+            .load_owned_subagent_session(target_session_id, parent_session_id)
+            .await?;
+        if session.config.continuation_policy == SessionContinuationPolicy::FreshOnly {
+            return Err(OpenBitFunError::Validation(
+                "subagent_follow_up_unsupported: this subagent session is fresh-only; start a new AgentSpawn invocation".to_string(),
+            ));
+        }
+        if matches!(session.state, SessionState::Error { .. }) {
+            return Err(OpenBitFunError::Validation(format!(
+                "Subagent session is in error state and cannot be reused: {}",
+                target_session_id
+            )));
+        }
+        Ok(session)
+    }
+
+    async fn load_owned_subagent_session(
+        &self,
+        target_session_id: &str,
+        parent_session_id: &str,
+    ) -> OpenBitFunResult<Session> {
         let session = match self.session_manager.get_session(target_session_id) {
             Some(session) => session,
             None => {
@@ -11774,22 +11810,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                             parent_session_id
                         ))
                     })?;
-                let persisted_metadata = self
-                    .session_manager
-                    .load_session_metadata(&binding.session_storage_dir(), target_session_id)
-                    .await?;
-                if persisted_metadata.as_ref().is_some_and(|metadata| {
-                    metadata
-                        .relationship
-                        .as_ref()
-                        .and_then(|relationship| relationship.continuation_policy)
-                        == Some(SessionContinuationPolicy::FreshOnly)
-                }) {
-                    return Err(OpenBitFunError::Validation(
-                        "subagent_follow_up_unsupported: this subagent session is fresh-only; start a new Task invocation"
-                            .to_string(),
-                    ));
-                }
                 self.restore_internal_session_from_storage_path(
                     &binding.session_storage_dir(),
                     target_session_id,
@@ -11797,13 +11817,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 .await?
             }
         };
-
-        if session.config.continuation_policy == SessionContinuationPolicy::FreshOnly {
-            return Err(OpenBitFunError::Validation(
-                "subagent_follow_up_unsupported: this subagent session is fresh-only; start a new Task invocation"
-                    .to_string(),
-            ));
-        }
 
         if session.kind != SessionKind::Subagent {
             return Err(OpenBitFunError::Validation(format!(
@@ -11819,13 +11832,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             return Err(OpenBitFunError::Validation(format!(
                 "Subagent session '{}' was not created by parent session '{}'",
                 target_session_id, parent_session_id
-            )));
-        }
-
-        if matches!(session.state, SessionState::Error { .. }) {
-            return Err(OpenBitFunError::Validation(format!(
-                "Subagent session is in error state and cannot be reused: {}",
-                target_session_id
             )));
         }
 
@@ -12724,23 +12730,17 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         subagent_session_id: &str,
         cancel_descendants: bool,
     ) -> OpenBitFunResult<usize> {
-        self.ensure_subagent_session_loaded_for_reuse(subagent_session_id, parent_session_id)
+        self.load_owned_subagent_session(subagent_session_id, parent_session_id)
             .await?;
 
         let descendant_session_ids = if cancel_descendants {
             let mut descendant_session_ids =
                 self.active_background_descendant_session_ids(subagent_session_id);
-            match self
-                .background_subagent_outcomes
-                .swarm_descendant_session_ids(subagent_session_id)
-                .await
-            {
-                Ok(persisted_descendants) => descendant_session_ids.extend(persisted_descendants),
-                Err(error) => warn!(
-                    "Failed to load persisted Swarm descendants during cascading cancellation: session_id={}, error={}",
-                    subagent_session_id, error
-                ),
-            }
+            descendant_session_ids.extend(
+                self.background_subagent_outcomes
+                    .agent_subtree_session_ids_postorder(subagent_session_id)
+                    .await?,
+            );
             descendant_session_ids
         } else {
             std::collections::HashSet::new()
@@ -12758,6 +12758,30 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .cancel_background_subagent_controls(controls, cancel_descendants)
             .await?;
         self.background_subagent_outcomes.cancel(&task_pks).await;
+        // Direct user turns have no background task control. Cancel them through
+        // the same scheduler boundary as other Session lifecycle operations.
+        let mut session_ids = descendant_session_ids;
+        session_ids.insert(subagent_session_id.to_string());
+        let deadline = Instant::now() + Duration::from_secs(30);
+        for session_id in session_ids {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if let Some(scheduler) = get_global_scheduler() {
+                scheduler
+                    .cancel_active_turn_for_session_with_descendant_policy(
+                        &session_id,
+                        remaining,
+                        cancel_descendants,
+                    )
+                    .await?;
+            } else {
+                self.cancel_active_turn_for_session_with_descendant_policy(
+                    &session_id,
+                    remaining,
+                    cancel_descendants,
+                )
+                .await?;
+            }
+        }
         Ok(cancelled)
     }
 
@@ -12849,6 +12873,15 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .await
     }
 
+    pub(crate) async fn reserved_agent_ids(
+        &self,
+        parent_session_id: &str,
+    ) -> OpenBitFunResult<Vec<String>> {
+        self.background_subagent_outcomes
+            .reserved_agent_ids(parent_session_id)
+            .await
+    }
+
     pub(crate) async fn delete_direct_child_agents(
         &self,
         parent_session_id: &str,
@@ -12884,7 +12917,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
     ) -> OpenBitFunResult<usize> {
         let subtree = self
             .background_subagent_outcomes
-            .swarm_subtree_session_ids_postorder(target_session_id)
+            .agent_subtree_session_ids_postorder(target_session_id)
             .await?;
         if subtree.last().map(String::as_str) != Some(target_session_id) {
             return Err(OpenBitFunError::OutcomeUnknown(format!(
@@ -16056,10 +16089,56 @@ pub fn get_global_coordinator() -> Option<Arc<ConversationCoordinator>> {
     GLOBAL_COORDINATOR.get().cloned()
 }
 
+fn plan_skill_agent_listing_update(
+    prepended_messages: &mut Vec<Message>,
+    session_id: &str,
+    turn_index: usize,
+    baseline_turn_index: usize,
+    previous_snapshot: &TurnSkillAgentSnapshot,
+    current_snapshot: &TurnSkillAgentSnapshot,
+    head_lists_deferred_tools: bool,
+) -> SkillAgentSnapshotPersistence {
+    if head_lists_deferred_tools
+        && previous_snapshot.deferred_tools.is_none()
+        && current_snapshot.deferred_tools.is_some()
+    {
+        // A build without deferred-tool tracking wrote the previous snapshot
+        // after the baseline, so deferred changes since the baseline are unknown.
+        warn!(
+            "Previous skill-agent snapshot lacks deferred tools; rebuilding listing baseline: session_id={}, turn_index={}, previous_turn_index={}",
+            session_id, turn_index, baseline_turn_index
+        );
+        return SkillAgentSnapshotPersistence::RebuildListingBaseline;
+    }
+
+    let diff = diff_skill_agent_snapshot(previous_snapshot, current_snapshot);
+    append_skill_agent_listing_diff_reminders(
+        prepended_messages,
+        diff.render_skill_listing_update(),
+        diff.render_agent_listing_update(),
+        diff.render_deferred_tool_listing_update()
+            .filter(|_| head_lists_deferred_tools),
+    );
+    // Starting deferred-tool tracking is persisted too, so a later baseline
+    // rebuild (for example after compression) begins with a tracked catalog.
+    let tracking_started =
+        previous_snapshot.deferred_tools.is_none() && current_snapshot.deferred_tools.is_some();
+    if diff.is_empty() && !tracking_started {
+        SkillAgentSnapshotPersistence::None
+    } else {
+        debug!(
+            "Skill-agent snapshot changed; persisting sparse snapshot: session_id={}, turn_index={}, baseline_turn_index={}",
+            session_id, turn_index, baseline_turn_index
+        );
+        SkillAgentSnapshotPersistence::SaveCurrentTurn
+    }
+}
+
 fn append_skill_agent_listing_diff_reminders(
     prepended_messages: &mut Vec<Message>,
     skill_update: Option<String>,
     agent_update: Option<String>,
+    deferred_tool_update: Option<String>,
 ) {
     if let Some(skill_update) = skill_update {
         prepended_messages.push(Message::internal_reminder(
@@ -16071,6 +16150,15 @@ fn append_skill_agent_listing_diff_reminders(
         prepended_messages.push(Message::internal_reminder(
             InternalReminderKind::AgentListingDiff,
             agent_update,
+        ));
+    }
+    // Reminder kinds are persisted and older builds reject unknown variants,
+    // so deferred-tool updates reuse a listing-diff kind with the same
+    // compaction and baseline-rebuild handling.
+    if let Some(deferred_tool_update) = deferred_tool_update {
+        prepended_messages.push(Message::internal_reminder(
+            InternalReminderKind::SkillListingDiff,
+            deferred_tool_update,
         ));
     }
 }
@@ -16109,7 +16197,7 @@ fn merge_prepended_messages_for_turn(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{
         append_skill_agent_listing_diff_reminders, apply_primary_agent_model_default,
         btw_session_memory_mode, build_subagent_session_relationship,
@@ -16119,22 +16207,28 @@ mod tests {
         lineage_session_is_settling_without_active_state, logical_subagent_type_or_runtime,
         merge_prepended_messages_for_turn, normalize_model_selection,
         normalize_subagent_max_concurrency, permission_mode_from_metadata,
-        resolve_agent_session_create_created_by, resolve_agent_submission_turn_id,
-        resolve_subagent_model_selection, resolve_submission_permission_mode,
-        revoke_interrupted_turn_intent_or_observe_commit, runtime_port_error_preserving_message,
-        runtime_session_summary, runtime_tool_restrictions_for_session_lifetime,
-        runtime_transcript_messages_from_turns, session_storage_workspace_locator,
-        snapshot_normal_session_model, turn_review_manifest_for_agent,
-        validate_required_lineage_turns_settled, ActiveSubagentExecution,
-        BackgroundSubagentWaitMode, ContextCompactionOutcome, ConversationCoordinator,
-        DialogSubmissionPolicy, DialogTriggerSource, InterruptedTurnIntentState,
-        ManualCompactionCommitGate, SessionMemoryMode, SessionReferenceLocator,
-        SessionRelationshipKind, SubagentExecutionRequest, TEST_AGENT_MODEL_DEFAULTS,
+        plan_skill_agent_listing_update, resolve_agent_session_create_created_by,
+        resolve_agent_submission_turn_id, resolve_subagent_model_selection,
+        resolve_submission_permission_mode, revoke_interrupted_turn_intent_or_observe_commit,
+        runtime_port_error_preserving_message, runtime_session_summary,
+        runtime_tool_restrictions_for_session_lifetime, runtime_transcript_messages_from_turns,
+        session_storage_workspace_locator, snapshot_normal_session_model,
+        turn_review_manifest_for_agent, validate_required_lineage_turns_settled,
+        ActiveSubagentExecution, BackgroundSubagentWaitMode, ContextCompactionOutcome,
+        ConversationCoordinator, DialogSubmissionPolicy, DialogTriggerSource,
+        InterruptedTurnIntentState, ManualCompactionCommitGate, SessionMemoryMode,
+        SessionReferenceLocator, SessionRelationshipKind, SubagentExecutionRequest,
+        TEST_AGENT_MODEL_DEFAULTS,
+    };
+    use super::{
+        BackgroundSubagentCancelTarget, SkillAgentSnapshotPersistence, SubagentResult,
+        SubagentResultStatus,
     };
     use crate::agentic::agents::ExternalSubagentModelBinding;
     use crate::agentic::coordination::coordination_store::{
         BackgroundTaskRegistration, RegisteredBackgroundTask,
     };
+    use crate::agentic::core::Session;
     use crate::agentic::core::{
         InternalReminderKind, Message, MessageContent, MessageRole, MessageSemanticKind,
         ProcessingPhase, SessionAgentRouteOwner, SessionConfig, SessionContinuationPolicy,
@@ -16168,6 +16262,7 @@ mod tests {
     use openbitfun_runtime_ports::AgentTurnSettlementStatus;
     use openbitfun_runtime_services::test_support::FakeRuntimePort;
     use openbitfun_services_core::permission_store::ProjectPermissionSqliteStore;
+    use std::path::Path;
 
     #[test]
     fn interrupted_turn_intent_commit_wins_over_timeout_revocation() {
@@ -18270,7 +18365,7 @@ mod tests {
         test_persistent_user_shell_coordinator_with_tool(Arc::new(TestExecCommandTool::default()))
     }
 
-    fn test_coordinator() -> (ConversationCoordinator, Arc<SessionManager>) {
+    pub(crate) fn test_coordinator() -> (ConversationCoordinator, Arc<SessionManager>) {
         test_coordinator_with_max_active_sessions(100)
     }
 
@@ -19770,6 +19865,530 @@ mod tests {
             })
             .await
             .expect("register background task")
+    }
+
+    pub(crate) async fn agent_lifecycle_child(
+        coordinator: &ConversationCoordinator,
+        workspace: &Path,
+        parent: &str,
+        policy: SessionContinuationPolicy,
+    ) -> Session {
+        let child = coordinator
+            .create_hidden_subagent_session(
+                None,
+                "Lifecycle child".into(),
+                "GeneralPurpose".into(),
+                SessionConfig {
+                    workspace_path: Some(workspace.to_string_lossy().into_owned()),
+                    continuation_policy: policy,
+                    ..Default::default()
+                },
+                Some(format!("session-{parent}")),
+            )
+            .await
+            .expect("create child");
+        coordinator
+            .agent_id_for_subagent_session_with_requested_id(parent, &child.session_id, None)
+            .await
+            .expect("register child");
+        child
+    }
+
+    #[tokio::test]
+    async fn agent_lifecycle_fresh_only_and_failed_children_can_be_cancelled() {
+        let workspace = tempfile::tempdir().unwrap();
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let (coordinator, manager) = test_coordinator();
+        for policy in [
+            SessionContinuationPolicy::FreshOnly,
+            SessionContinuationPolicy::Reusable,
+        ] {
+            let child =
+                agent_lifecycle_child(&coordinator, workspace.path(), "parent", policy).await;
+            if policy == SessionContinuationPolicy::Reusable {
+                manager
+                    .update_session_state(
+                        &child.session_id,
+                        SessionState::Error {
+                            error: "failed execution".into(),
+                            recoverable: false,
+                        },
+                    )
+                    .await
+                    .unwrap();
+            }
+            assert!(coordinator
+                .ensure_subagent_session_loaded_for_reuse(&child.session_id, "parent")
+                .await
+                .is_err());
+            assert!(coordinator
+                .cancel_background_subagents_for_parent("other-parent", &child.session_id, true)
+                .await
+                .is_err());
+            coordinator
+                .cancel_background_subagents_for_parent("parent", &child.session_id, true)
+                .await
+                .expect("lifecycle operations must not require continuation eligibility");
+        }
+    }
+
+    #[tokio::test]
+    async fn agent_lifecycle_interrupt_cancels_direct_user_turn() {
+        let workspace = tempfile::tempdir().unwrap();
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let (coordinator, manager) = test_coordinator();
+        let child = agent_lifecycle_child(
+            &coordinator,
+            workspace.path(),
+            "parent",
+            SessionContinuationPolicy::Reusable,
+        )
+        .await;
+        let turn = manager
+            .start_dialog_turn(
+                &child.session_id,
+                "GeneralPurpose".into(),
+                "Follow up".into(),
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let token = CancellationToken::new();
+        coordinator
+            .execution_engine
+            .register_cancel_token(&turn, token.clone());
+        let (cancelled, ()) = tokio::join!(
+            coordinator.cancel_background_subagents_for_parent("parent", &child.session_id, true),
+            async {
+                token.cancelled().await;
+                coordinator
+                    .execution_engine
+                    .cleanup_cancel_token(&turn)
+                    .await;
+            }
+        );
+        cancelled.unwrap();
+        assert!(token.is_cancelled());
+        assert!(matches!(
+            manager.get_session(&child.session_id).unwrap().state,
+            SessionState::Idle
+        ));
+    }
+
+    #[tokio::test]
+    async fn agent_lifecycle_interrupt_crosses_inactive_ordinary_ancestor() {
+        let workspace = tempfile::tempdir().unwrap();
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let (coordinator, _) = test_coordinator();
+        let child = agent_lifecycle_child(
+            &coordinator,
+            workspace.path(),
+            "parent",
+            SessionContinuationPolicy::Reusable,
+        )
+        .await;
+        let middle = agent_lifecycle_child(
+            &coordinator,
+            workspace.path(),
+            &child.session_id,
+            SessionContinuationPolicy::Reusable,
+        )
+        .await;
+        let leaf = agent_lifecycle_child(
+            &coordinator,
+            workspace.path(),
+            &middle.session_id,
+            SessionContinuationPolicy::Reusable,
+        )
+        .await;
+        let task = register_test_background_task(
+            &coordinator,
+            &middle.session_id,
+            "turn-middle",
+            &leaf.session_id,
+        )
+        .await;
+        let token = CancellationToken::new();
+        coordinator.register_background_subagent_task(
+            task.task_pk,
+            middle.session_id.clone(),
+            leaf.session_id.clone(),
+            BackgroundSubagentCancelTarget::Direct(token.clone()),
+        );
+        assert_eq!(
+            coordinator
+                .cancel_background_subagents_for_parent("parent", &child.session_id, false)
+                .await
+                .unwrap(),
+            0
+        );
+        assert!(!token.is_cancelled());
+        assert_eq!(
+            coordinator
+                .cancel_background_subagents_for_parent("parent", &child.session_id, true)
+                .await
+                .unwrap(),
+            1
+        );
+        assert!(token.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn agent_lifecycle_list_tracks_foreground_turns_after_background_completion() {
+        let workspace = tempfile::tempdir().unwrap();
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let (coordinator, manager) = test_coordinator();
+        let child = agent_lifecycle_child(
+            &coordinator,
+            workspace.path(),
+            "parent",
+            SessionContinuationPolicy::Reusable,
+        )
+        .await;
+        let turn = manager
+            .start_dialog_turn(
+                &child.session_id,
+                "GeneralPurpose".into(),
+                "Initial task".into(),
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        manager
+            .complete_dialog_turn(
+                &child.session_id,
+                &turn,
+                "Done".into(),
+                &[],
+                Default::default(),
+                Some("complete".into()),
+                Some(true),
+            )
+            .await
+            .unwrap();
+        manager
+            .update_session_state(&child.session_id, SessionState::Idle)
+            .await
+            .unwrap();
+        assert_eq!(
+            coordinator.direct_child_agents("parent").await.unwrap()[0]
+                .status
+                .as_str(),
+            "completed"
+        );
+        let task =
+            register_test_background_task(&coordinator, "parent", "parent-turn", &child.session_id)
+                .await;
+        coordinator
+            .background_subagent_outcomes
+            .complete(
+                task.task_pk,
+                Err(&OpenBitFunError::Cancelled("old task".into())),
+            )
+            .await;
+        let turn = manager
+            .start_dialog_turn(
+                &child.session_id,
+                "GeneralPurpose".into(),
+                "Follow up".into(),
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            coordinator.direct_child_agents("parent").await.unwrap()[0]
+                .status
+                .as_str(),
+            "running"
+        );
+        manager
+            .complete_dialog_turn(
+                &child.session_id,
+                &turn,
+                "Done again".into(),
+                &[],
+                Default::default(),
+                Some("complete".into()),
+                Some(true),
+            )
+            .await
+            .unwrap();
+        manager
+            .update_session_state(&child.session_id, SessionState::Idle)
+            .await
+            .unwrap();
+        assert_eq!(
+            coordinator.direct_child_agents("parent").await.unwrap()[0]
+                .status
+                .as_str(),
+            "completed"
+        );
+        for expected in ["failed", "cancelled"] {
+            let turn = manager
+                .start_dialog_turn(
+                    &child.session_id,
+                    "GeneralPurpose".into(),
+                    "Another follow up".into(),
+                    None,
+                    None,
+                    None,
+                )
+                .await
+                .unwrap();
+            if expected == "failed" {
+                manager
+                    .fail_dialog_turn(&child.session_id, &turn, "Test failure".into())
+                    .await
+                    .unwrap();
+            } else {
+                manager
+                    .cancel_dialog_turn(&child.session_id, &turn)
+                    .await
+                    .unwrap();
+            }
+            manager
+                .update_session_state(&child.session_id, SessionState::Idle)
+                .await
+                .unwrap();
+            assert_eq!(
+                coordinator.direct_child_agents("parent").await.unwrap()[0]
+                    .status
+                    .as_str(),
+                expected
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn agent_lifecycle_cold_fresh_only_and_failed_subtree_can_be_deleted() {
+        let workspace = tempfile::tempdir().unwrap();
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let (coordinator, manager) = test_persistent_coordinator();
+        let parent = manager
+            .create_session(
+                "Parent".into(),
+                "Standard".into(),
+                SessionConfig {
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let child = agent_lifecycle_child(
+            &coordinator,
+            workspace.path(),
+            &parent.session_id,
+            SessionContinuationPolicy::FreshOnly,
+        )
+        .await;
+        let leaf = agent_lifecycle_child(
+            &coordinator,
+            workspace.path(),
+            &child.session_id,
+            SessionContinuationPolicy::Reusable,
+        )
+        .await;
+        manager
+            .update_session_state(
+                &leaf.session_id,
+                SessionState::Error {
+                    error: "Test failure".into(),
+                    recoverable: false,
+                },
+            )
+            .await
+            .unwrap();
+        let id = coordinator
+            .existing_agent_id_for_subagent_session(&parent.session_id, &child.session_id)
+            .await
+            .unwrap()
+            .unwrap();
+        manager
+            .unload_session_from_memory(&child.session_id)
+            .await
+            .unwrap();
+        manager
+            .unload_session_from_memory(&leaf.session_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            coordinator
+                .delete_direct_child_agents(&parent.session_id, &[id])
+                .await
+                .unwrap(),
+            2
+        );
+        assert!(manager.get_session(&child.session_id).is_none());
+        assert!(manager.get_session(&leaf.session_id).is_none());
+        assert!(manager.get_session(&parent.session_id).is_some());
+        assert!(coordinator
+            .direct_child_agents(&parent.session_id)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn agent_lifecycle_list_uses_cold_summary_and_preserves_queued_and_partial_outcomes() {
+        let workspace = tempfile::tempdir().unwrap();
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let (coordinator, manager) = test_persistent_coordinator();
+        let parent = manager
+            .create_session(
+                "Parent".into(),
+                "Standard".into(),
+                SessionConfig {
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let child = agent_lifecycle_child(
+            &coordinator,
+            workspace.path(),
+            &parent.session_id,
+            SessionContinuationPolicy::Reusable,
+        )
+        .await;
+        let turn = manager
+            .start_dialog_turn(
+                &child.session_id,
+                "GeneralPurpose".into(),
+                "Task".into(),
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        manager
+            .complete_dialog_turn(
+                &child.session_id,
+                &turn,
+                "Done".into(),
+                &[],
+                Default::default(),
+                Some("complete".into()),
+                Some(true),
+            )
+            .await
+            .unwrap();
+        manager
+            .update_session_state(&child.session_id, SessionState::Idle)
+            .await
+            .unwrap();
+        manager
+            .unload_session_from_memory(&child.session_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            coordinator
+                .direct_child_agents(&parent.session_id)
+                .await
+                .unwrap()[0]
+                .status
+                .as_str(),
+            "completed"
+        );
+        assert!(
+            manager.get_session(&child.session_id).is_none(),
+            "listing must not restore a runtime"
+        );
+        let storage = manager
+            .require_session_storage_path(&parent.session_id)
+            .await
+            .unwrap();
+        manager
+            .update_session_metadata(&storage, &child.session_id, |metadata| {
+                metadata.last_turn = None
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            coordinator
+                .direct_child_agents(&parent.session_id)
+                .await
+                .unwrap()[0]
+                .status
+                .as_str(),
+            "completed",
+            "legacy foreground registration is terminal"
+        );
+        let task = register_test_background_task(
+            &coordinator,
+            &parent.session_id,
+            "parent-turn",
+            &child.session_id,
+        )
+        .await;
+        assert_eq!(
+            coordinator
+                .direct_child_agents(&parent.session_id)
+                .await
+                .unwrap()[0]
+                .status
+                .as_str(),
+            "running",
+            "queued task must override old completion"
+        );
+        coordinator
+            .load_owned_subagent_session(&child.session_id, &parent.session_id)
+            .await
+            .unwrap();
+        let turn = format!("turn-{}", child.session_id);
+        manager
+            .start_dialog_turn(
+                &child.session_id,
+                "GeneralPurpose".into(),
+                "Background work".into(),
+                Some(turn.clone()),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        manager
+            .cancel_dialog_turn(&child.session_id, &turn)
+            .await
+            .unwrap();
+        manager
+            .update_session_state(&child.session_id, SessionState::Idle)
+            .await
+            .unwrap();
+        coordinator
+            .background_subagent_outcomes
+            .complete(
+                task.task_pk,
+                Ok(&SubagentResult {
+                    text: "Partial result".into(),
+                    status: SubagentResultStatus::PartialTimeout,
+                    reason: None,
+                    ledger_event_id: None,
+                    session_id: Some(child.session_id.clone()),
+                }),
+            )
+            .await;
+        manager
+            .unload_session_from_memory(&child.session_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            coordinator
+                .direct_child_agents(&parent.session_id)
+                .await
+                .unwrap()[0]
+                .status
+                .as_str(),
+            "partial_timeout"
+        );
     }
 
     #[test]
@@ -22697,6 +23316,7 @@ mod tests {
                 location: "C:/Users/wsp/.codex/skills/interactive-debug".to_string(),
             }],
             subagents: Vec::new(),
+            deferred_tools: None,
         };
         session_manager
             .remember_turn_skill_agent_snapshot(
@@ -22814,13 +23434,17 @@ mod tests {
             &mut messages,
             Some("skills changed".to_string()),
             Some("agents changed".to_string()),
+            Some("deferred tools changed".to_string()),
         );
 
-        assert_eq!(messages.len(), 3);
+        assert_eq!(messages.len(), 4);
         assert_eq!(
             messages[0].internal_reminder_kind(),
             Some(InternalReminderKind::AgentMode)
         );
+        assert!(messages[1..].iter().all(|message| message
+            .internal_reminder_kind()
+            .is_some_and(InternalReminderKind::is_listing_diff)));
     }
 
     #[test]
@@ -22831,6 +23455,7 @@ mod tests {
             &mut messages,
             None,
             Some("agents changed".to_string()),
+            None,
         );
 
         let kinds = messages
@@ -22838,6 +23463,99 @@ mod tests {
             .map(Message::internal_reminder_kind)
             .collect::<Vec<_>>();
         assert_eq!(kinds, vec![Some(InternalReminderKind::AgentListingDiff)]);
+    }
+
+    fn deferred_listing_snapshot(names: &[&str]) -> TurnSkillAgentSnapshot {
+        TurnSkillAgentSnapshot {
+            deferred_tools: Some(
+                names
+                    .iter()
+                    .map(
+                        |name| crate::agentic::skill_agent_snapshot::DeferredToolSnapshotEntry {
+                            name: (*name).to_string(),
+                            short_description: None,
+                        },
+                    )
+                    .collect(),
+            ),
+            ..Default::default()
+        }
+    }
+
+    fn plan_listing_update(
+        previous: &TurnSkillAgentSnapshot,
+        current: &TurnSkillAgentSnapshot,
+        head_lists_deferred_tools: bool,
+    ) -> (SkillAgentSnapshotPersistence, Vec<Message>) {
+        let mut messages = Vec::new();
+        let persistence = plan_skill_agent_listing_update(
+            &mut messages,
+            "session",
+            3,
+            1,
+            previous,
+            current,
+            head_lists_deferred_tools,
+        );
+        (persistence, messages)
+    }
+
+    #[test]
+    fn deferred_tool_changes_append_a_listing_diff_when_the_head_lists_the_baseline() {
+        let (persistence, messages) = plan_listing_update(
+            &deferred_listing_snapshot(&["WebFetch"]),
+            &deferred_listing_snapshot(&["WebFetch", "mcp__docs__search"]),
+            true,
+        );
+
+        assert_eq!(persistence, SkillAgentSnapshotPersistence::SaveCurrentTurn);
+        assert_eq!(messages.len(), 1);
+        assert!(messages[0]
+            .internal_reminder_kind()
+            .is_some_and(InternalReminderKind::is_listing_diff));
+        let MessageContent::Text(text) = &messages[0].content else {
+            panic!("listing diff reminders are text messages");
+        };
+        assert!(text.contains("# Deferred Tool Listing Update"));
+        assert!(text.contains("- mcp__docs__search"));
+    }
+
+    #[test]
+    fn deferred_tool_changes_are_persisted_without_reminders_when_the_head_renders_current() {
+        let (persistence, messages) = plan_listing_update(
+            &deferred_listing_snapshot(&["WebFetch"]),
+            &deferred_listing_snapshot(&["Cron"]),
+            false,
+        );
+
+        assert_eq!(persistence, SkillAgentSnapshotPersistence::SaveCurrentTurn);
+        assert!(messages.is_empty());
+    }
+
+    #[test]
+    fn untracked_previous_snapshot_starts_tracking_or_rebuilds_a_tracked_head() {
+        let legacy = TurnSkillAgentSnapshot::default();
+        let current = deferred_listing_snapshot(&["WebFetch"]);
+
+        let (persistence, messages) = plan_listing_update(&legacy, &current, false);
+        assert_eq!(persistence, SkillAgentSnapshotPersistence::SaveCurrentTurn);
+        assert!(messages.is_empty());
+
+        let (persistence, messages) = plan_listing_update(&legacy, &current, true);
+        assert_eq!(
+            persistence,
+            SkillAgentSnapshotPersistence::RebuildListingBaseline
+        );
+        assert!(messages.is_empty());
+    }
+
+    #[test]
+    fn unchanged_tracked_snapshot_needs_no_persistence_or_reminder() {
+        let snapshot = deferred_listing_snapshot(&["WebFetch", "Cron"]);
+        let (persistence, messages) = plan_listing_update(&snapshot, &snapshot, true);
+
+        assert_eq!(persistence, SkillAgentSnapshotPersistence::None);
+        assert!(messages.is_empty());
     }
 
     #[test]

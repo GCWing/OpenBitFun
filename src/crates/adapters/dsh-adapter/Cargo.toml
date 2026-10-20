@@ -15,6 +15,7 @@ async-trait = { workspace = true }
 openbitfun-plugin-runtime-client = { path = "../../execution/plugin-runtime-client" }
 openbitfun-product-domains = { path = "../../contracts/product-domains", features = ["plugin-source", "external-sources"] }
 openbitfun-static-hook-support = { path = "../static-hook-support" }
+openbitfun-services-core = { path = "../../services/services-core" }
 dirs = { workspace = true }
 openbitfun-runtime-ports = { path = "../../contracts/runtime-ports", features = ["plugin-runtime"] }
 hex = { workspace = true }
@@ -24,6 +25,7 @@ serde_yaml = { workspace = true }
 sha2 = { workspace = true }
 urlencoding = { workspace = true }
 url = { workspace = true }
+zstd = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

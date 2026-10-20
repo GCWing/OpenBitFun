@@ -223,6 +223,10 @@ fn runtime_context_renderer_adds_text_only_computer_use_guidance_for_non_visual_
     assert!(reminder.contains("`include_image: false`"));
     assert!(reminder.contains("`app_batch`"));
     assert!(reminder.contains("never replay completed steps after partial failure"));
+    assert!(reminder.contains("background-only/no-disruption"));
+    assert!(reminder.contains("`activate_app`"));
+    assert!(reminder.contains("Never replay uncertain input"));
+    assert!(reminder.contains("Respect Stop, cancellation and permission denial"));
     for obsolete in [
         "frontmost app",
         "again after an action to confirm `ax_state_digest` changed",

@@ -1,10 +1,13 @@
 //! Background next-input suggestion after a completed interactive turn.
 //!
-//! The request retains the turn's model, tools, cache routing identity and
-//! send-time message rendering. It overrides reasoning to the lowest supported
-//! preset and requests plain text without the turn's output schema. A failed
-//! attempt falls back once to the turn's original client. Both attempts share
-//! the timeout and cancellation scope. Cache reuse is provider-dependent.
+//! The request retains the turn's client (model and reasoning settings), tools,
+//! cache routing identity and send-time message rendering, then appends one
+//! instruction and requests plain text without the turn's output schema.
+//! Reasoning and thinking settings are rendered into the provider prompt prefix
+//! (for example DeepSeek encodes them at position 0, and Anthropic invalidates
+//! the message cache when thinking parameters change), so overriding them would
+//! turn the turn's cached prefix into a full miss. A failed attempt retries once
+//! with the same request. Both attempts share the timeout and cancellation scope.
 
 use super::execution_engine::ExecutionEngine;
 use super::model_exchange_trace::{
@@ -15,19 +18,15 @@ use crate::agentic::events::{AgenticEvent, EventQueue};
 use crate::agentic::session::SessionManager;
 use crate::agentic::workspace::WorkspaceServices;
 use crate::agentic::WorkspaceBinding;
-use crate::infrastructure::ai::reasoning_catalog::{
-    load_models_dev_reasoning_catalog_without_refresh, project_model_reasoning_catalog,
-};
 use crate::infrastructure::ai::AIClient;
 use crate::service::config::{subscribe_config_updates, ConfigUpdateEvent};
 use crate::util::types::{Message as AIMessage, ToolDefinition};
 use log::{debug, info, warn};
 use openbitfun_agent_runtime::prompt_suggestion::{
-    lowest_prompt_suggestion_reasoning_preset, prompt_suggestion_instruction,
-    prompt_suggestion_text, PromptSuggestionRuntime,
+    prompt_suggestion_instruction, prompt_suggestion_text, PromptSuggestionRuntime,
 };
 use openbitfun_ai_adapters::ModelExchangeTraceConfig;
-use openbitfun_core_types::{ModelRequestContext, ReasoningCatalogProjection};
+use openbitfun_core_types::ModelRequestContext;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -40,7 +39,6 @@ pub(super) struct PromptSuggestionRequest {
     pub session_id: String,
     pub turn_id: String,
     pub messages: Vec<Message>,
-    pub model_id: String,
     pub ai_client: Arc<AIClient>,
     pub tool_definitions: Option<Vec<ToolDefinition>>,
     pub model_request_context: ModelRequestContext,
@@ -55,44 +53,6 @@ fn suggestion_request_context(context: &ModelRequestContext) -> ModelRequestCont
         output_schema: None,
         ..context.clone()
     }
-}
-
-fn client_with_lowest_reasoning(
-    client: &AIClient,
-    projection: &ReasoningCatalogProjection,
-) -> anyhow::Result<AIClient> {
-    match lowest_prompt_suggestion_reasoning_preset(&projection.presets) {
-        Some(preset) => {
-            client.validate_reasoning_preset(preset)?;
-            Ok(client.with_reasoning_preset(preset))
-        }
-        None => {
-            if client.selected_reasoning_preset().is_some()
-                || client.model_reasoning_preset().is_some()
-            {
-                anyhow::bail!(
-                    "Cannot resolve the lowest supported reasoning preset for this model"
-                );
-            }
-            debug!("Prompt suggestion model has no selectable reasoning presets");
-            Ok(client.clone())
-        }
-    }
-}
-
-async fn suggestion_client(request: &PromptSuggestionRequest) -> anyhow::Result<AIClient> {
-    let config = crate::service::config::get_global_config_service()
-        .await?
-        .get_effective_ai_config()
-        .await?;
-    let model = config
-        .models
-        .iter()
-        .find(|model| model.id == request.model_id)
-        .ok_or_else(|| anyhow::anyhow!("Prompt suggestion model configuration is unavailable"))?;
-    let catalog = load_models_dev_reasoning_catalog_without_refresh().await;
-    let projection = project_model_reasoning_catalog(model, catalog.catalog.as_deref());
-    client_with_lowest_reasoning(request.ai_client.as_ref(), &projection)
 }
 
 async fn prompt_suggestion_enabled() -> bool {
@@ -139,7 +99,6 @@ async fn generate_prompt_suggestion(
         return Ok(None);
     };
     generate_while_enabled(updates, prompt_suggestion_enabled, async {
-        let ai_client = suggestion_client(&request).await;
         let ai_messages = build_prompt_suggestion_messages(&request).await?;
 
         let trace_dir = session_manager
@@ -159,7 +118,7 @@ async fn generate_prompt_suggestion(
         )
         .await;
 
-        request_prompt_suggestion_response(&request, ai_client, ai_messages, trace).await
+        request_prompt_suggestion_response(&request, ai_messages, trace).await
     })
     .await
 }
@@ -201,29 +160,24 @@ where
 
 async fn request_prompt_suggestion_response(
     request: &PromptSuggestionRequest,
-    lowest_reasoning_client: anyhow::Result<AIClient>,
     ai_messages: Vec<AIMessage>,
     trace: Option<ModelExchangeTraceConfig>,
 ) -> anyhow::Result<Option<String>> {
     let context = suggestion_request_context(&request.model_request_context);
-    let response = match lowest_reasoning_client {
-        Ok(client) => {
-            client
-                .send_message_once_with_trace_and_request_context(
-                    ai_messages.clone(),
-                    request.tool_definitions.clone(),
-                    Some(context.clone()),
-                    trace.clone(),
-                )
-                .await
-        }
-        Err(error) => Err(error),
-    };
+    let response = request
+        .ai_client
+        .send_message_once_with_trace_and_request_context(
+            ai_messages.clone(),
+            request.tool_definitions.clone(),
+            Some(context.clone()),
+            trace.clone(),
+        )
+        .await;
     let response = match response {
         Ok(response) => response,
         Err(error) => {
             debug!(
-                "Prompt suggestion falling back to original session model settings: session_id={}, turn_id={}, error={:#}",
+                "Prompt suggestion retrying once with the turn's model settings: session_id={}, turn_id={}, error={:#}",
                 request.session_id, request.turn_id, error
             );
             request
@@ -345,10 +299,8 @@ mod tests {
     use super::*;
     use crate::agentic::events::EventQueueConfig;
     use crate::agentic::execution::round_executor::tests::RetryTestServer;
+    use crate::infrastructure::ai::reasoning_catalog::project_model_reasoning_catalog;
     use crate::service::config::types::AIModelConfig;
-    use openbitfun_core_types::{
-        ReasoningCatalogBinding, ReasoningConfig, ReasoningPreset, ReasoningPresetAction,
-    };
 
     async fn assert_silent_completion(
         runtime: &PromptSuggestionRuntime,
@@ -511,57 +463,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unsupported_reasoning_validation_uses_the_original_client_once() {
-        let server = RetryTestServer::new(vec![suggestion_response("Run the tests")]);
-        let projection = project_model_reasoning_catalog(
-            &AIModelConfig {
-                provider: "openai".into(),
-                reasoning: Some(ReasoningConfig {
-                    catalog: ReasoningCatalogBinding::Disabled,
-                    presets: vec![ReasoningPreset {
-                        id: "lowest".into(),
-                        actions: vec![ReasoningPresetAction::BudgetTokens { value: 1_024 }],
-                        ..Default::default()
-                    }],
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-            None,
-        );
-        let request = test_suggestion_request(server.client());
-        let lowest = client_with_lowest_reasoning(&request.ai_client, &projection);
-        assert!(lowest.is_err());
-        let messages = build_prompt_suggestion_messages(&request).await.unwrap();
-        assert_eq!(
-            request_prompt_suggestion_response(&request, lowest, messages, None)
-                .await
-                .unwrap(),
-            Some("Run the tests".into())
-        );
-        let requests = server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert!(requests[0].get("reasoning_effort").is_none());
-        assert!(requests[0].get("response_format").is_none());
-    }
-
-    #[tokio::test]
-    async fn provider_rejection_of_low_reasoning_retries_the_original_session_call() {
-        for original_effort in [None, Some("high")] {
+    async fn suggestion_keeps_turn_reasoning_and_retries_the_identical_request_once() {
+        for turn_effort in [None, Some("high")] {
             let text = "  Run the tests.  ";
             let server = RetryTestServer::new(vec![
                 (
                     400,
                     serde_json::json!({
-                        "error": { "code": "unsupported_value", "param": "reasoning_effort",
-                            "message": "This model does not support reasoning_effort low" }
+                        "error": { "type": "invalid_request_error", "message": "temporarily rejected" }
                     })
                     .to_string(),
                 ),
                 suggestion_response(text),
             ]);
             let client = server.client();
-            let mut projection = project_model_reasoning_catalog(
+            let projection = project_model_reasoning_catalog(
                 &AIModelConfig {
                     provider: "openai".into(),
                     model_name: client.config.model.clone(),
@@ -570,7 +486,7 @@ mod tests {
                 },
                 None,
             );
-            let session_client = match original_effort {
+            let session_client = match turn_effort {
                 Some(effort) => Arc::new(
                     client.with_reasoning_preset(
                         projection
@@ -582,9 +498,6 @@ mod tests {
                 ),
                 None => client,
             };
-            projection.presets.retain(|preset| preset.id == "low");
-            assert_eq!(projection.presets.len(), 1);
-            let lowest = client_with_lowest_reasoning(&session_client, &projection);
             let mut request = test_suggestion_request(session_client.clone());
             request.model_request_context.output_schema = Some(serde_json::json!({
                 "type": "object", "properties": {"report": {"type": "string"}}
@@ -596,10 +509,7 @@ mod tests {
                 queue.clone(),
                 "session-1".into(),
                 "turn-1".into(),
-                async move {
-                    let messages = build_prompt_suggestion_messages(&request).await?;
-                    request_prompt_suggestion_response(&request, lowest, messages, None).await
-                },
+                run_test_suggestion(request),
             )
             .await
             .unwrap();
@@ -613,28 +523,22 @@ mod tests {
                 session_client
                     .selected_reasoning_preset()
                     .map(|preset| preset.id.as_str()),
-                original_effort
+                turn_effort
             );
             let requests = server.requests.lock().unwrap();
             assert_eq!(requests.len(), 2);
-            assert_eq!(requests[0]["reasoning_effort"], "low");
             assert_eq!(
-                requests[1]
+                requests[0], requests[1],
+                "the retry must resend the identical request"
+            );
+            assert_eq!(
+                requests[0]
                     .get("reasoning_effort")
                     .and_then(|value| value.as_str()),
-                original_effort
+                turn_effort,
+                "reasoning settings are part of the cached prefix and must match the turn"
             );
-            for body in requests.iter() {
-                assert!(body.get("response_format").is_none());
-            }
-            let mut first = requests[0].clone();
-            let mut second = requests[1].clone();
-            first.as_object_mut().unwrap().remove("reasoning_effort");
-            second.as_object_mut().unwrap().remove("reasoning_effort");
-            assert_eq!(
-                first, second,
-                "fallback must retain all other request parameters"
-            );
+            assert!(requests[0].get("response_format").is_none());
         }
     }
 
@@ -660,7 +564,6 @@ mod tests {
         PromptSuggestionRequest {
             session_id: "session-1".into(),
             turn_id: "turn-1".into(),
-            model_id: "test-model".into(),
             messages: vec![
                 Message::system("Follow the user's instructions".into()),
                 Message::user("Fix the build".into()),
@@ -687,13 +590,7 @@ mod tests {
         request: PromptSuggestionRequest,
     ) -> anyhow::Result<Option<String>> {
         let messages = build_prompt_suggestion_messages(&request).await?;
-        request_prompt_suggestion_response(
-            &request,
-            Ok(request.ai_client.as_ref().clone()),
-            messages,
-            None,
-        )
-        .await
+        request_prompt_suggestion_response(&request, messages, None).await
     }
 
     #[tokio::test]
@@ -735,7 +632,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn repeated_provider_failure_stays_silent_after_one_original_client_retry() {
+    async fn repeated_provider_failure_stays_silent_after_one_identical_retry() {
         let server = RetryTestServer::new(vec![(
             400,
             serde_json::json!({"error": {
@@ -806,64 +703,6 @@ mod tests {
         assert!(context.output_schema.is_some());
     }
 
-    #[test]
-    fn suggestion_uses_lowest_supported_reasoning_without_mutating_turn_client() {
-        let model = AIModelConfig {
-            provider: "responses".to_string(),
-            model_name: "gpt-5.4".to_string(),
-            base_url: "https://api.openai.com/v1/responses".to_string(),
-            reasoning: Some(ReasoningConfig {
-                catalog: ReasoningCatalogBinding::Disabled,
-                default_preset: Some("high".to_string()),
-                presets: ["high", "low"]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(order, effort)| ReasoningPreset {
-                        id: effort.to_string(),
-                        order: Some(order as i32),
-                        actions: vec![ReasoningPresetAction::Effort {
-                            value: effort.to_string(),
-                        }],
-                        ..Default::default()
-                    })
-                    .collect(),
-            }),
-            ..Default::default()
-        };
-        let projection = project_model_reasoning_catalog(&model, None);
-        let high = projection
-            .presets
-            .iter()
-            .find(|preset| preset.id == "high")
-            .unwrap();
-        let mut client = test_client().with_reasoning_preset(high);
-        client.config.format = "responses".to_string();
-        client.config.model = model.model_name;
-        client.config.base_url = model.base_url.clone();
-        client.config.request_url = model.base_url;
-        let suggestion = client_with_lowest_reasoning(&client, &projection).unwrap();
-        assert_eq!(suggestion.selected_reasoning_preset().unwrap().id, "low");
-        assert_eq!(client.selected_reasoning_preset().unwrap().id, "high");
-        assert_eq!(suggestion.config.model, client.config.model);
-        assert_eq!(suggestion.config.max_tokens, client.config.max_tokens);
-
-        let unsupported = project_model_reasoning_catalog(
-            &AIModelConfig {
-                reasoning: Some(ReasoningConfig {
-                    catalog: ReasoningCatalogBinding::Disabled,
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-            None,
-        );
-        assert!(client_with_lowest_reasoning(&test_client(), &unsupported)
-            .unwrap()
-            .selected_reasoning_preset()
-            .is_none());
-        assert!(client_with_lowest_reasoning(&client, &unsupported).is_err());
-    }
-
     fn test_client() -> Arc<AIClient> {
         Arc::new(AIClient::new(openbitfun_core_types::AIConfig {
             name: "prompt-suggestion-test".to_string(),
@@ -912,7 +751,6 @@ mod tests {
             session_id: "session-1".to_string(),
             turn_id: "turn-1".to_string(),
             messages,
-            model_id: "test-model".to_string(),
             ai_client,
             tool_definitions: None,
             model_request_context: ModelRequestContext::default(),

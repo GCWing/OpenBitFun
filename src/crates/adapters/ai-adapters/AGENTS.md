@@ -16,6 +16,11 @@ provider-neutral contracts owned by `openbitfun-agent-stream`.
   `cache_creation_token_count` separate, and preserve provider-specific mappings
   such as DeepSeek prompt-cache hits and Gemini's current lack of creation
   count.
+- Anthropic Messages requests carry block-level `cache_control` breakpoints
+  (system head, last two messages); without them Anthropic does not cache at
+  all. Keep the custom-body top-level `cache_control` override (object or
+  `null`) and the "leave existing markers alone" rule; see
+  `docs/architecture/model-request-cache-reuse.md`.
 - Do not change shared stream or usage semantics without updating the focused
   adapter tests and downstream usage expectations.
 - Do not move provider-neutral stream DTOs, replay policy, or tool-call

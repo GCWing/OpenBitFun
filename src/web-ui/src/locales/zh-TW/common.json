@@ -748,7 +748,8 @@
   "browserView": {
     "addressPlaceholder": "輸入網址，例如 {{exampleUrl}}",
     "startElementSelection": "選取元素",
-    "stopElementSelection": "結束元素選取"
+    "stopElementSelection": "結束元素選取",
+    "stopLoading": "停止載入"
   },
   "newProject": {
     "title": "建立專案",
@@ -1373,6 +1374,10 @@
     "selectionMenu": {
       "name": "文字選擇菜單",
       "description": "提供文字選擇相關的操作"
+    },
+    "textInputMenu": {
+      "name": "輸入框菜單",
+      "description": "為輸入框提供複製、粘貼、剪切和全選操作"
     },
     "terminalMenu": {
       "name": "終端菜單",

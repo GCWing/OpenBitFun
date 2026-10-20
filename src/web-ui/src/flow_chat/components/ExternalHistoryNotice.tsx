@@ -3,6 +3,7 @@ import { Button } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { createLogger } from '@/shared/utils/logger';
+import { EXTERNAL_SESSION_NAMES, isExternalSessionEcosystem } from '@/shared/types/external-session';
 import { externalSessionImportAPI, type RemovedExternalSession } from '@/infrastructure/api/service-api/ExternalSessionImportAPI';
 import { openMainSession } from '../services/sessionActivation';
 import { flowChatStore } from '../store/FlowChatStore';
@@ -37,7 +38,7 @@ export function ExternalHistoryNotice({ session, active }: { session?: Session; 
   const key = JSON.stringify([surface.epoch, session?.sessionId, sourceId]);
   const notice = feedback?.key === key ? feedback : undefined;
   const missing = session?.externalHistory?.sourceStatus === 'unavailable';
-  const source = sourceName === 'codex' ? 'Codex' : sourceName === 'zcode' ? 'Zcode' : sourceName;
+  const source = isExternalSessionEcosystem(sourceName) ? EXTERNAL_SESSION_NAMES[sourceName] : sourceName;
 
   async function openSource() {
     if (!sourceId || !workspaceId || unsupportedSurface || !active || pending.current) return;
@@ -62,7 +63,7 @@ export function ExternalHistoryNotice({ session, active }: { session?: Session; 
       const found = await flowChatStore.ensurePersistedSessionMetadata(sourceId, workspaceId, true);
       if (!isCurrent()) return;
       if (!found) {
-        const removed = sourceName === 'codex' || sourceName === 'zcode'
+        const removed = isExternalSessionEcosystem(sourceName)
           ? (await externalSessionImportAPI.listRemoved(sourceName)).find(entry =>
             entry.sessionId === sourceId && entry.workspaceId === workspaceId)
           : undefined;

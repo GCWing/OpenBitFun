@@ -629,6 +629,212 @@ mod tests {
     use crate::external_session_import::auto_discovery::tests::{candidate, document};
     use openbitfun_services_core::session::SessionBranchBoundary;
 
+    #[tokio::test]
+    #[ignore = "Reads a real external session and verifies native discovery, history and continuation in temporary storage"]
+    async fn inspect_installed_external_session_follow_and_fork() {
+        use crate::agentic::persistence::PersistenceManager;
+        use crate::infrastructure::PathManager;
+        let ecosystem =
+            std::env::var("OPENBITFUN_TEST_SESSION_ECOSYSTEM").expect("Select a source ecosystem");
+        let source_id =
+            std::env::var("OPENBITFUN_TEST_SESSION_ID").expect("Select a real source session");
+        let source = ImportSource::from_ecosystem(&ecosystem).unwrap();
+        let candidate = source
+            .discover_all()
+            .unwrap()
+            .candidates
+            .into_iter()
+            .find(|candidate| candidate.source_session_id == source_id)
+            .expect("Source session was not discovered");
+        let source_path = PathBuf::from(candidate.cwd.as_ref().expect("Source has no workspace"));
+        assert!(source_path.is_dir());
+        let workspace =
+            crate::service::workspace::legacy_compat::register_local_fixture_blocking(&source_path);
+        let temp = tempfile::tempdir().unwrap();
+        let paths = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().join("user"),
+        ));
+        let root = paths.project_sessions_dir(&source_path);
+        let manager = PersistenceManager::new(paths).unwrap();
+        let original = source.read(&candidate.candidate_id).unwrap();
+        assert!(!original.turns.is_empty());
+        register(&root, &workspace, &workspace, vec![candidate.clone()])
+            .await
+            .unwrap();
+        let entry = read_index(&root)
+            .await
+            .unwrap()
+            .entries
+            .values()
+            .find(|entry| entry.source_session_id == source_id)
+            .unwrap()
+            .clone();
+        let id = &entry.metadata.session_id;
+        assert!(
+            !root.join(SNAPSHOTS).exists(),
+            "Discovery must not read or copy transcript bodies"
+        );
+        refresh_reference(
+            &root,
+            entry.clone(),
+            workspace.clone(),
+            workspace.clone(),
+            vec![workspace.clone()],
+            |source, id| source.read(id),
+        )
+        .await
+        .unwrap();
+        let viewed = snapshot(&root, id, false).await.unwrap().unwrap();
+        assert_eq!(viewed.turns.len(), original.turns.len());
+        for (source, viewed) in original.turns.iter().zip(&viewed.turns) {
+            use openbitfun_product_domains::session_import::ExternalSessionItem;
+            let source_tools: Vec<_> = source
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    ExternalSessionItem::Tool {
+                        id,
+                        name,
+                        input,
+                        result,
+                        success,
+                    } => Some((id, name, input, result, success)),
+                    _ => None,
+                })
+                .collect();
+            let viewed_tools: Vec<_> = viewed
+                .model_rounds
+                .iter()
+                .flat_map(|round| &round.tool_items)
+                .collect();
+            assert_eq!(source_tools.len(), viewed_tools.len());
+            for ((id, name, input, result, success), viewed) in
+                source_tools.into_iter().zip(viewed_tools)
+            {
+                assert_eq!(id, &viewed.tool_call.id);
+                assert_eq!(name, &viewed.tool_name);
+                assert_eq!(input, &viewed.tool_call.input);
+                assert_eq!(
+                    result.as_ref(),
+                    viewed.tool_result.as_ref().map(|result| &result.result)
+                );
+                if let (Some(expected), Some(actual)) = (success, &viewed.tool_result) {
+                    assert_eq!(*expected, actual.success);
+                }
+            }
+            let source_text: Vec<_> = source
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    ExternalSessionItem::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect();
+            let viewed_text: Vec<_> = viewed
+                .model_rounds
+                .iter()
+                .flat_map(|round| &round.text_items)
+                .map(|item| item.content.as_str())
+                .collect();
+            assert_eq!(source_text, viewed_text);
+        }
+        assert_eq!(
+            viewed
+                .turns
+                .iter()
+                .map(|turn| turn.user_message.content.as_str())
+                .collect::<Vec<_>>(),
+            original
+                .turns
+                .iter()
+                .map(|turn| turn.user_text.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(viewed.metadata.agent_type, "Standard");
+        assert!(
+            !root.join(id).join("metadata.json").exists(),
+            "Opening a source must keep it a followed view"
+        );
+        let last = viewed.turns.last().unwrap().turn_id.clone();
+        let branch_source = manager
+            .external_history_branch_source(&source_path, id, Some(&last))
+            .await
+            .unwrap()
+            .unwrap();
+        let branch = manager
+            .branch_transient_session(
+                &source_path,
+                &SessionBranchRequest {
+                    source_session_id: id.clone(),
+                    source_turn_id: last,
+                    boundary: SessionBranchBoundary::ThroughTurn,
+                },
+                branch_source,
+            )
+            .await
+            .unwrap();
+        let native = OfflineSessionImportStore::new(&root)
+            .load_bundle(&branch.session_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(native.turns.len(), viewed.turns.len());
+        assert_eq!(native.metadata.agent_type, "Standard");
+        assert!(!is_followed(&native.metadata));
+        assert_eq!(
+            native.metadata.custom_metadata.as_ref().unwrap()["externalBranchOf"]["ecosystemId"],
+            ecosystem
+        );
+        for (before, after) in viewed.turns.iter().zip(&native.turns) {
+            assert_eq!(before.user_message.content, after.user_message.content);
+            assert_eq!(before.model_rounds.len(), after.model_rounds.len());
+            assert_eq!(
+                after.user_message.metadata.as_ref().unwrap()["importedFrom"],
+                ecosystem
+            );
+            for (before, after) in before.model_rounds.iter().zip(&after.model_rounds) {
+                assert_eq!(before.tool_items.len(), after.tool_items.len());
+                for (before, after) in before.tool_items.iter().zip(&after.tool_items) {
+                    assert_eq!(
+                        serde_json::to_value(&before.tool_call).unwrap(),
+                        serde_json::to_value(&after.tool_call).unwrap()
+                    );
+                    assert_eq!(
+                        serde_json::to_value(&before.tool_result).unwrap(),
+                        serde_json::to_value(&after.tool_result).unwrap()
+                    );
+                }
+            }
+        }
+        assert!(manager
+            .save_dialog_turn(&source_path, &viewed.turns[0])
+            .await
+            .is_err());
+        assert!(manager
+            .assert_relay_history_supported(&source_path, id)
+            .await
+            .is_err());
+        manager
+            .assert_relay_history_supported(&source_path, &branch.session_id)
+            .await
+            .unwrap();
+        register(&root, &workspace, &workspace, vec![candidate])
+            .await
+            .unwrap();
+        let rows = merge_metadata(&root, vec![native.metadata.clone()])
+            .await
+            .unwrap();
+        assert_eq!(
+            rows.len(),
+            2,
+            "Rediscovery keeps one source plus its independent native branch"
+        );
+        println!(
+            "{}",
+            json!({"ecosystem":ecosystem,"source_sessions":1,"source_turns":viewed.turns.len(),"native_turns":native.turns.len(),"native_tools":native.metadata.tool_call_count,"follow_and_fork":"passed"})
+        );
+    }
+
     pub(super) async fn create_source(root: &Path, workspace: &WorkspaceInfo) -> Reference {
         register(
             root,

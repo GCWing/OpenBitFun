@@ -5,6 +5,7 @@ use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
 
 pub(super) struct WindowCapture {
+    pub frame_info: openbitfun_core::agentic::tools::computer_use_host::CaptureFrameInfo,
     pub rgba: Vec<u8>,
     pub origin_x: i32,
     pub origin_y: i32,
@@ -42,7 +43,8 @@ pub(super) fn window_bounds(hwnd: HWND) -> OpenBitFunResult<[f64; 4]> {
 
 pub(super) fn screenshot_window_capture(hwnd: HWND) -> OpenBitFunResult<WindowCapture> {
     let scope = super::control_session::observation_scope().map_err(OpenBitFunError::service)?;
-    let (mut rgba, width, height) = super::windows_wgc_capture::capture_window_bgra(hwnd)?;
+    let (mut rgba, width, height, frame_info) =
+        super::windows_wgc_capture::capture_window_bgra(hwnd)?;
     let bounds = window_bounds(hwnd)?;
     if bounds[2] != f64::from(width) || bounds[3] != f64::from(height) {
         return Err(OpenBitFunError::service(
@@ -60,6 +62,7 @@ pub(super) fn screenshot_window_capture(hwnd: HWND) -> OpenBitFunResult<WindowCa
     super::control_session::validate_observation_scope(&scope).map_err(OpenBitFunError::service)?;
     super::control_session::publish_rgba(&scope, &rgba, width, height, bounds);
     Ok(WindowCapture {
+        frame_info,
         rgba,
         origin_x: bounds[0] as i32,
         origin_y: bounds[1] as i32,

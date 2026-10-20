@@ -9,6 +9,21 @@ overlays and their relevant ancestors rather than rescanning the document for
 unrelated class/style mutations. Hidden tabs do not subscribe; document hiding
 pauses observation. Relevant popup mutations still reconcile before the next paint.
 
+`isLoading` follows native `browser-webview-page-load` events and the child
+document's readiness rather than IPC completion. Subscribe before creating the
+view so fast pages cannot finish before the listeners are ready. After a native
+commit or completion, `browserPageLifecycleScript` checks `document.readyState`
+and observes `pageshow`, `popstate`, and related load events. This settles history
+restoration even when a matching native completion notification is absent or late.
+The bridge uses the existing event permission and accepts only the current view
+label and loading sequence; cached pages and delayed scripts cannot finish a newer
+navigation. Do not probe before commit, when the previous document can still be
+complete. A 30-second watchdog remains a last resort if both signal paths fail.
+
+Both surfaces show the loading state as an address-field spinner and turn the
+refresh action into a stop action that runs `window.stop()` in the child view.
+Failed stop requests retain the stop action and display the error so users can retry.
+
 `BrowserPreviewCache` retains one decoded JPEG in memory beneath the native view.
 It samples only while the native page and document are visible, waits at least five
 seconds between completed captures, and allows at most one request in flight.

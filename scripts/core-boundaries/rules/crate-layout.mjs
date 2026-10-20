@@ -41,6 +41,7 @@ export const crateLayoutRules = [
   { crateName: 'ai-adapters', layer: 'adapters', path: 'src/crates/adapters/ai-adapters' },
   { crateName: 'claude-code-adapter', layer: 'adapters', path: 'src/crates/adapters/claude-code-adapter' },
   { crateName: 'codex-adapter', layer: 'adapters', path: 'src/crates/adapters/codex-adapter' },
+  { crateName: 'cursor-adapter', layer: 'adapters', path: 'src/crates/adapters/cursor-adapter' },
   { crateName: 'zcode-adapter', layer: 'adapters', path: 'src/crates/adapters/zcode-adapter' },
   { crateName: 'opencode-adapter', layer: 'adapters', path: 'src/crates/adapters/opencode-adapter' },
   { crateName: 'dsh-adapter', layer: 'adapters', path: 'src/crates/adapters/dsh-adapter' },

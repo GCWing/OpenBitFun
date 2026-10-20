@@ -429,13 +429,21 @@ pub(crate) fn summarize_request_body_for_log(
             serde_json::Value::Bool(tool_stream),
         );
     }
-    if let Some(system) = request_body
-        .get("system")
-        .and_then(serde_json::Value::as_str)
-    {
+    let system_chars = match request_body.get("system") {
+        Some(serde_json::Value::String(system)) => Some(system.chars().count()),
+        Some(serde_json::Value::Array(blocks)) => Some(
+            blocks
+                .iter()
+                .filter_map(|block| block.get("text").and_then(serde_json::Value::as_str))
+                .map(|text| text.chars().count())
+                .sum(),
+        ),
+        _ => None,
+    };
+    if let Some(system_chars) = system_chars {
         summary.insert(
             "system_chars".to_string(),
-            serde_json::Value::Number((system.chars().count() as u64).into()),
+            serde_json::Value::Number((system_chars as u64).into()),
         );
     }
     if let Some(messages) = request_body

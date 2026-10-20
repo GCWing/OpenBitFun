@@ -15,6 +15,58 @@ function item(toolName: string, input: unknown, result: unknown, importedSource:
 }
 
 describe('imported tool projection to native cards', () => {
+  it('reuses native Cursor file and shell cards without changing source records', () => {
+    const write = item('Write', { path: '/project/result.txt', contents: 'IMPORTED_42' }, 'success', 'cursor');
+    const before = JSON.stringify(write);
+    expect(importedToolCardName(write)).toBe('Write');
+    expect(projectEffectiveToolItem(write).toolCall.input).toMatchObject({ file_path: '/project/result.txt', content: 'IMPORTED_42' });
+    expect(JSON.stringify(write)).toBe(before);
+    const read = item('read_file_v2', { targetFile: '/project/result.txt' }, { contents: 'IMPORTED_42' }, 'cursor');
+    expect(projectEffectiveToolItem(read)).toMatchObject({ toolName: 'Read', toolCall: { input: { file_path: '/project/result.txt' } }, toolResult: { result: 'IMPORTED_42' } });
+    expect(projectEffectiveToolItem(item('Shell', { command: 'pwd' }, '/project', 'cursor'))).toMatchObject({ toolName: 'ExecCommand', toolCall: { input: { cmd: 'pwd' } } });
+    expect(projectEffectiveToolItem(item('StrReplace', { path: '/a', old_string: 'remove', new_string: '' }, 'done', 'cursor')).toolCall.input)
+      .toMatchObject({ file_path: '/a', old_string: 'remove', new_string: '' });
+    const failed = item('Read', { path: '/missing' }, 'File not found', 'cursor');
+    failed.toolResult!.success = false;
+    expect(projectEffectiveToolItem(failed)).toMatchObject({ status: 'error', toolResult: { error: 'File not found', success: false } });
+    for (const name of ['edit_file_v2', 'CursorTool-999', 'Task', 'AskQuestion']) {
+      const tool = item(name, { arbitrary: 'preserved' }, { original: 'result' }, 'cursor');
+      expect(importedToolCardName(tool)).toBeUndefined();
+      expect(projectEffectiveToolItem(tool).toolCall.input).toEqual(tool.toolCall.input);
+    }
+  });
+  it('projects current Cursor Desktop terminal and file-search arguments without mutating history', () => {
+    const shell = item('run_terminal_command_v2', { command: 'Get-Content result.txt', cwd: 'D:\\workspace' },
+      { output: 'DESKTOP_OK\r\n', rejected: false, notInterrupted: true }, 'cursor');
+    const glob = item('glob_file_search', { targetDirectory: 'D:\\workspace', globPattern: '*.txt' },
+      { directories: [{ absPath: 'D:\\workspace', files: [{ relPath: 'result.txt' }], totalFiles: 1 }] }, 'cursor');
+    const before = JSON.stringify([shell, glob]);
+    expect(projectEffectiveToolItem(shell)).toMatchObject({ toolName: 'ExecCommand',
+      toolCall: { input: { cmd: 'Get-Content result.txt' } }, toolResult: { result: { output: 'DESKTOP_OK\r\n' } } });
+    expect(projectEffectiveToolItem(glob)).toMatchObject({ toolName: 'Glob',
+      toolCall: { input: { path: 'D:\\workspace', pattern: '*.txt' } } });
+    expect(projectEffectiveToolItem(glob).toolResult?.result.content).toContain('result.txt');
+    expect(JSON.stringify([shell, glob])).toBe(before);
+  });
+  it('uses native cards for Pi file search and compatible edits, retaining all multi-edit data', () => {
+    expect(importedToolCardName(item('find', { pattern: '*.ts' }, 'a.ts', 'pi'))).toBe('Glob');
+    for (const input of [{ path: '/a', oldText: 'before', newText: '' },
+      { path: '/a', edits: [{ oldText: 'before', newText: '' }] }]) {
+      expect(projectEffectiveToolItem(item('edit', input, 'updated', 'pi')).toolCall.input)
+        .toMatchObject({ file_path: '/a', old_string: 'before', new_string: '' });
+    }
+    const multi = item('edit', { path: '/a', edits: [{ oldText: 'a', newText: 'b' }, { oldText: 'c', newText: 'd' }] }, 'updated', 'pi');
+    expect(importedToolCardName(multi)).toBeUndefined();
+    expect(projectEffectiveToolItem(multi).toolCall.input).toEqual(multi.toolCall.input);
+  });
+  it('projects OpenCode camel-case paths and empty edits through existing native cards', () => {
+    const tool = item('edit', { filePath: '/project/a.ts', oldString: 'remove', newString: '', replaceAll: false }, 'Updated', 'opencode');
+    const before = JSON.stringify(tool);
+    expect(importedToolCardName(tool)).toBe('Edit');
+    expect(projectEffectiveToolItem(tool).toolCall.input).toMatchObject({ file_path: '/project/a.ts', old_string: 'remove', new_string: '', replace_all: false });
+    expect(JSON.stringify(tool)).toBe(before);
+    expect(projectEffectiveToolItem(item('read', { filePath: '/project/a.ts' }, 'body', 'opencode')).toolCall.input.file_path).toBe('/project/a.ts');
+  });
   it.each([
     ['exec', 'RunCode'], ['functions.exec', 'RunCode'], ['exec_command', 'ExecCommand'],
     ['functions.shell_command', 'ExecCommand'], ['shell', 'ExecCommand'], ['write_stdin', 'WriteStdin'],

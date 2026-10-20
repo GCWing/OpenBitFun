@@ -134,7 +134,12 @@ pub(super) async fn observe_after_input(
         return (None, Some("CONTROL_CHANGED_DURING_OBSERVATION: The observation was discarded because control was cancelled, stopped, or rebound. Submitted inputs were not replayed.".into()));
     }
     match observation {
-        Ok(snapshot) => (Some(snapshot), None),
+        Ok(snapshot) => {
+            let error = (include_image && snapshot.screenshot.is_none()).then(|| {
+                "[CAPTURE_UNAVAILABLE] Accessibility observation succeeded but the requested image is unavailable. Inspect tree_text for the native capture reason; use include_image=false if AX is sufficient. Missing pixels do not establish input failure and do not authorize replay.".into()
+            });
+            (Some(snapshot), error)
+        }
         Err(error) => (None, Some(error.to_string())),
     }
 }

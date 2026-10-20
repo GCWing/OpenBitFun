@@ -35,9 +35,16 @@ const active = (target: string, generation = 4): ComputerUseControlSnapshot => (
 beforeEach(() => {
   vi.useFakeTimers(); mocks.status.mockReset(); mocks.stop.mockReset(); mocks.preview.mockReset();
   mocks.scope = { epoch: 1, isCurrent: () => mocks.scope.epoch === 1 };
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300);
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(200);
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
 });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); });
+afterEach(async () => {
+  await act(async () => root.unmount()); container.remove();
+  vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals();
+});
 
 it('stops the generation the user saw, then removes the stop action', async () => {
   mocks.status.mockResolvedValue(active('Window A'));
@@ -127,8 +134,8 @@ it('keeps the session arrow after click feedback expires and clears it on stop',
   await act(async () => vi.advanceTimersByTime(2000));
   const arrow = container.querySelector<HTMLElement>('[data-openbitfun-part="pointer"]');
   expect(arrow?.querySelector('svg path')).not.toBeNull();
-  expect(arrow?.style.left).toBe('40%');
-  expect(arrow?.style.top).toBe('60%');
+  expect(arrow?.classList.contains('computer-control-card__pointer--physical')).toBe(true);
+  expect(arrow?.style.transform).toContain('translate3d(115.2px,115.2px,0)');
   await act(async () => [...container.querySelectorAll('button')].find(b => b.textContent === 'computerControl.stop')!.click());
   expect(container.querySelector('[data-openbitfun-part="pointer"]')).toBeNull();
 });

@@ -19,6 +19,7 @@ services.
 | `pi-adapter` | PI settings/package extension selection and static native event discovery; no execution | [AGENTS.md](pi-adapter/AGENTS.md) |
 | `claude-code-adapter` | Runtime-free Claude Code user Instructions, Command, Subagent, MCP, and Hook source semantics with redacted projection | [AGENTS.md](claude-code-adapter/AGENTS.md) |
 | `codex-adapter` | Runtime-free Codex user Instructions, Subagent, MCP, and Hook source semantics with redacted projection | [AGENTS.md](codex-adapter/AGENTS.md) |
+| `cursor-adapter` | Read-only Cursor CLI snapshot, Desktop composer and fallback JSONL session history | [AGENTS.md](cursor-adapter/AGENTS.md) |
 | `zcode-adapter` | Read-only Zcode SQLite task discovery and session-history translation | [AGENTS.md](zcode-adapter/AGENTS.md) |
 | `static-hook-support` | Shared bounded/redacting static-source utilities plus the JSON/TOML Hook parser used by sibling ecosystem adapters; no ecosystem policy or runtime | inherited |
 | `transport` | Event transport adapters plus protocol-neutral bounded JSON encoding and TypeScript message/JSON-RPC mechanics shared by current hosts | [AGENTS.md](transport/AGENTS.md) |

@@ -28,6 +28,8 @@ unsafe extern "C" {
         value: *mut CFTypeRef,
     ) -> i32;
     fn AXUIElementCopyActionNames(element: AXUIElementRef, names: *mut CFArrayRef) -> i32;
+    fn AXUIElementPerformAction(element: AXUIElementRef, action: CFStringRef) -> i32;
+    fn AXUIElementSetMessagingTimeout(element: AXUIElementRef, timeout: f32) -> i32;
     fn AXUIElementCopyElementAtPosition(
         element: AXUIElementRef,
         x: f32,
@@ -1199,6 +1201,51 @@ pub(super) unsafe fn try_window_element_by_id(
         }
     }
     None
+}
+
+pub(super) fn focused_window_id(pid: i32) -> Option<u32> {
+    unsafe {
+        let app = AXUIElementCreateApplication(pid);
+        if app.is_null() {
+            return None;
+        }
+        AXUIElementSetMessagingTimeout(app, 0.5);
+        let window = ax_copy_attr(app, "AXFocusedWindow");
+        let id = window.and_then(|window| {
+            let id = ax_window_id(window as AXUIElementRef);
+            ax_release(window);
+            id
+        });
+        ax_release(app);
+        id
+    }
+}
+
+pub(super) fn raise_window(pid: i32, window: u32) -> OpenBitFunResult<()> {
+    super::control_session::foreground_allowed().map_err(OpenBitFunError::tool)?;
+    super::control_session::target_allowed(&format!("pid:{pid}/window:{window}"))
+        .map_err(OpenBitFunError::tool)?;
+    unsafe {
+        let app = AXUIElementCreateApplication(pid);
+        if app.is_null() {
+            return Err(OpenBitFunError::tool(
+                "[AX_STALE_TARGET] Application is unavailable",
+            ));
+        }
+        AXUIElementSetMessagingTimeout(app, 0.5);
+        let element = try_window_element_by_id(app, window);
+        ax_release(app);
+        let element = element.ok_or_else(|| {
+            OpenBitFunError::tool("[AX_STALE_TARGET] The exact window is unavailable")
+        })?;
+        let action = CFString::new("AXRaise");
+        let result = AXUIElementPerformAction(element, action.as_concrete_TypeRef());
+        ax_release(element);
+        if result != 0 {
+            return Err(OpenBitFunError::tool(format!("[FOREGROUND_ACTIVATION_DENIED] AXRaise failed ({result}); verify current focus before input")));
+        }
+    }
+    Ok(())
 }
 
 pub(super) unsafe fn try_frontmost_window_element(app: AXUIElementRef) -> Option<AXUIElementRef> {

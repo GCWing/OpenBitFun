@@ -6,7 +6,7 @@ pub use openbitfun_agent_tools::computer_use::{
     clamp_point_crop_half_extent, parse_windows_accelerator_display,
     suggested_point_crop_half_extent_from_native_bounds, AppClickParams, AppInfo, AppInputAction,
     AppMenuShortcut, AppSelector, AppShortcutsSnapshot, AppStateSnapshot, AppWaitPredicate,
-    AppWindowInfo, AxNode, ClickIndexTarget, ClickTarget, ComputerScreenshot,
+    AppWindowInfo, AxNode, CaptureFrameInfo, ClickIndexTarget, ClickTarget, ComputerScreenshot,
     ComputerUseDisplayInfo, ComputerUseForegroundApplication, ComputerUseImageContentRect,
     ComputerUseImageGlobalBounds, ComputerUseImplicitScreenshotCenter,
     ComputerUseInteractionScreenshotKind, ComputerUseInteractionState, ComputerUseLastMutationKind,
@@ -51,6 +51,13 @@ pub trait ComputerUseHost: Send + Sync + std::fmt::Debug {
 
     async fn prepare_control_target(&self, _app: AppSelector) -> OpenBitFunResult<()> {
         Ok(())
+    }
+    /// Foreground-only activation of the prepared native window. Capability
+    /// negotiation prevents an older/portal host from ignoring an exact target.
+    async fn activate_app(&self, _app: AppSelector) -> OpenBitFunResult<()> {
+        Err(OpenBitFunError::tool(
+            "[ACTIVATION_UNSUPPORTED] This host cannot activate a native window. On Linux use the consented portal surface and verify focus before seat input.",
+        ))
     }
     async fn start_control(
         &self,

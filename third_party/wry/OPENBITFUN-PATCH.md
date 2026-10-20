@@ -49,3 +49,46 @@ the resolved feature audit.
 
 The warning cleanup can be dropped when the vendored release contains the
 equivalent API and conditional-compilation fixes.
+
+---
+
+# WebKitGTK file-drop delivery
+
+Same vendored `wry` 0.56.0 release, Linux handler only.
+
+`src/webkitgtk/drag_drop.rs` claimed OS file drags but could never deliver a
+drop to the application:
+
+- `DragDropEvent::Drop` required `DragControllerState::Leaving`, which only the
+  `drag-leave` signal sets, and GTK emits `drag-leave` after `drag-drop`. The
+  branch was unreachable.
+- `Enter` and the stored paths depended on `drag-data-received` firing with
+  `info == 2`, but nothing in this handler ever called `gtk_drag_get_data`, so
+  the reply was at best incidental.
+
+The webview therefore reported `Enter`/`Over` at most and never `Drop`, and a
+file dropped on the window was discarded. Desktop depends on that event for
+attachment intake (`useLocalFileDrop`), and the WebKitGTK DOM path cannot
+substitute for it: the page receives no `DataTransfer` types for an OS file
+drag, which is why `ContextDropZone` deliberately leaves empty-typed drags
+unclaimed.
+
+The handler now:
+
+- claims only drags whose target list contains `text/uri-list`, so internal
+  application drags, tab moves and text drags stay with WebKit;
+- requests the URI list on the first `drag-motion`, so `Enter` carries the
+  paths while the drag is still in progress;
+- finishes the drag and emits `Drop` from `drag-drop` when the paths are
+  already known, or from `drag-data-received` when the drop raced the reply;
+- rejects non-`file://` URIs, so a link or text drag that happens to advertise
+  a URI list cannot become an attachment path;
+- answers a pending drop with `drop_finish(false)` when the drag leaves first,
+  instead of leaving the source wait for a reply that will never come.
+
+Verification: `cargo check -p openbitfun-desktop` covers the handler on Linux.
+Manual desktop verification is a file dragged from the file manager onto the
+composer and onto the Files panel, plus a tab or context-pill drag to confirm
+internal drags still work.
+
+Remove the override when upstream wry delivers `Drop` for WebKitGTK file drags.

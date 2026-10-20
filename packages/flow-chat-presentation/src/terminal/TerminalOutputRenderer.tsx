@@ -2,7 +2,7 @@
  * Terminal output renderer based on xterm.js (read-only).
  * Uses TerminalActionManager to avoid per-instance EventBus listeners.
  */
-import { forwardRef, memo, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import type { ITheme } from '@xterm/xterm';
@@ -117,18 +117,18 @@ const TerminalOutputRendererComponent = forwardRef<TerminalOutputRendererHandle,
   const [rowHeight, setRowHeight] = useState(getEstimatedTerminalOutputRowHeight);
   const [hasScrollableBuffer, setHasScrollableBuffer] = useState(false);
   const [isInitialRenderReady, setIsInitialRenderReady] = useState(initialFallback == null);
-  const preparedContent = prepareReadOnlyTerminalOutput(content);
+  const preparedContent = useMemo(() => prepareReadOnlyTerminalOutput(content), [content]);
 
   useImperativeHandle(ref, () => ({
     getVisibleText: () => getTerminalVisibleText(terminalRef.current),
   }), []);
 
-  const height = calculateTerminalOutputHeight(preparedContent, {
+  const height = useMemo(() => calculateTerminalOutputHeight(preparedContent, {
     rowHeight,
     minHeight,
     maxHeight,
     maxRows,
-  });
+  }), [preparedContent, rowHeight, minHeight, maxHeight, maxRows]);
   const updateScrollableBufferState = useCallback(() => {
     setHasScrollableBuffer(hasScrollableTerminalBuffer(terminalRef.current));
   }, []);

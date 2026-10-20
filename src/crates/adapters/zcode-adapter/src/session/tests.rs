@@ -1,6 +1,8 @@
 use super::*;
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use serde_json::json;
+use serde_json::Value;
+use std::collections::BTreeSet;
 
 struct Fixture {
     _root: tempfile::TempDir,
@@ -41,10 +43,7 @@ impl Fixture {
                 params![id, session, order, data.to_string()],
             )
             .unwrap();
-        if columns(&self.writer, "message")
-            .unwrap()
-            .contains("sequence")
-        {
+        if self.writer.prepare("SELECT sequence FROM message").is_ok() {
             self.writer
                 .execute(
                     "UPDATE message SET sequence = ?1 WHERE id = ?2",
@@ -55,7 +54,7 @@ impl Fixture {
     }
     fn part(&self, session: &str, message: &str, id: &str, order: u64, data: Value) {
         self.writer.execute("INSERT INTO part (id, message_id, session_id, time_created, data) VALUES (?1, ?2, ?3, ?4, ?5)", params![id, message, session, order, data.to_string()]).unwrap();
-        if columns(&self.writer, "part").unwrap().contains("sequence") {
+        if self.writer.prepare("SELECT sequence FROM part").is_ok() {
             self.writer
                 .execute(
                     "UPDATE part SET sequence = ?1 WHERE id = ?2",
@@ -223,34 +222,6 @@ fn parent_ids_keep_interleaved_replies_with_their_original_user_turns() {
 }
 
 #[test]
-fn reads_committed_wal_and_uses_one_read_only_snapshot() {
-    let fixture = Fixture::new(true);
-    fixture.conversation("main");
-    assert!(fixture._root.path().join("cli/db/db.sqlite-wal").exists());
-    let (connection, _) = fixture.reader.open().unwrap().unwrap();
-    assert!(connection
-        .is_readonly(rusqlite::DatabaseName::Main)
-        .unwrap());
-    fixture
-        .writer
-        .execute(
-            "UPDATE part SET data = ?1 WHERE id='main-p2'",
-            [json!({"type":"text","text":"New committed answer"}).to_string()],
-        )
-        .unwrap();
-    let old: String = connection
-        .query_row("SELECT data FROM part WHERE id='main-p2'", [], |row| {
-            row.get(0)
-        })
-        .unwrap();
-    assert_eq!(serde_json::from_str::<Value>(&old).unwrap()["text"], "Done");
-    assert!(connection.execute("DELETE FROM session", []).is_err());
-    assert!(
-        matches!(&fixture.read("main").turns[0].items[0], ExternalSessionItem::Text { text } if text == "New committed answer")
-    );
-}
-
-#[test]
 fn unknown_parent_ids_cannot_attach_history_to_an_unrelated_user_turn() {
     let fixture = Fixture::new(true);
     fixture.conversation("main");
@@ -412,7 +383,11 @@ fn inspect_installed_zcode() {
         !catalog.candidates.is_empty(),
         "No installed Zcode sessions found"
     );
-    let (connection, _) = reader.open().unwrap().unwrap();
+    let connection = Connection::open_with_flags(
+        reader.zcode_home.join("cli/db/db.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     let source_ids = connection
         .prepare("SELECT id FROM session WHERE parent_id IS NULL")
         .unwrap()

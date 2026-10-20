@@ -14,6 +14,7 @@ import type {
 import type { AiErrorDetail } from '@/shared/ai-errors/aiErrorPresenter';
 import type { ReviewTargetEvidence, ReviewTeamRunManifest } from '@/shared/services/reviewTeamService';
 import type { ContextItem } from '@/shared/types/context';
+import type { ExternalSessionEcosystem } from '@/shared/types/external-session';
 
 export type ModelRoundAttemptDiagnostic = import('@/shared/types/session-history').ModelRoundAttemptDiagnostic;
 
@@ -53,7 +54,7 @@ export interface FlowToolItem extends FlowItem {
   /** Provider-facing identity. Deferred calls remain `CallDeferredTool`. */
   toolName: string;
   /** Read-time provenance from the owning Turn, never a native runtime tool. */
-  importedSource?: 'codex' | 'zcode';
+  importedSource?: ExternalSessionEcosystem;
   terminalSessionId?: string;
   interruptionReason?: 'app_restart' | 'retry_superseded';
   toolCall: {

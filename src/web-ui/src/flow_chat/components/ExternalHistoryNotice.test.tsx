@@ -5,13 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { activateSurface, LOCAL_SURFACE_ID } from '@/infrastructure/peer-device/deviceSurface';
 import type { Session } from '../types/flow-chat';
 import { ExternalHistoryNotice } from './ExternalHistoryNotice';
+import { EXTERNAL_SESSION_NAMES, type ExternalSessionEcosystem } from '@/shared/types/external-session';
 
 const api = vi.hoisted(() => ({ restore: vi.fn(), metadata: vi.fn(), load: vi.fn(), ensure: vi.fn(), open: vi.fn(), listRemoved: vi.fn(), restoreRemoved: vi.fn() }));
 vi.mock('@/infrastructure/api/service-api/ExternalSessionImportAPI', () => ({ externalSessionImportAPI: api }));
 vi.mock('@/infrastructure/api', () => ({ agentAPI: { restoreSessionView: api.restore }, sessionAPI: { loadSessionMetadata: api.metadata } }));
 vi.mock('../store/FlowChatStore', () => ({ flowChatStore: { loadSessionHistory: api.load, ensurePersistedSessionMetadata: api.ensure } }));
 vi.mock('../services/sessionActivation', () => ({ openMainSession: api.open }));
-vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
+vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: (key: string, values?: { source?: string }) => values?.source ? `${key}: ${values.source}` : key }) }));
 vi.mock('@openbitfun/ui', () => ({
   Button: ({ children, onClick, disabled }: { children: ReactNode; onClick: () => void; disabled: boolean }) =>
     <button disabled={disabled} onClick={onClick}>{children}</button>,
@@ -118,17 +119,20 @@ describe('ExternalHistoryNotice', () => {
     expect(api.restore).not.toHaveBeenCalled();
   });
 
-  it('explains a removed source and restores it only after an explicit second click', async () => {
+  it.each(Object.keys(EXTERNAL_SESSION_NAMES) as ExternalSessionEcosystem[])('restores a removed %s source only after an explicit second click', async ecosystem => {
     api.ensure.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    api.listRemoved.mockResolvedValue([{ ecosystemId: 'codex', sessionId: 'source', workspaceId: 'workspace' }]);
-    await render(branch());
+    api.listRemoved.mockResolvedValue([{ ecosystemId: ecosystem, sessionId: 'source', workspaceId: 'workspace' }]);
+    const session = branch();
+    session.externalBranchOf.ecosystemId = ecosystem;
+    await render(session);
+    expect(container.textContent).toContain(EXTERNAL_SESSION_NAMES[ecosystem]);
     await act(async () => container.querySelector('button')!.click());
     expect(container.textContent).toContain('externalHistory.removed');
     expect(container.querySelector('button')!.textContent).toBe('externalHistory.restoreSource');
     expect(api.restoreRemoved).not.toHaveBeenCalled();
     expect(api.open).not.toHaveBeenCalled();
     await act(async () => container.querySelector('button')!.click());
-    expect(api.restoreRemoved).toHaveBeenCalledExactlyOnceWith('source', 'workspace', 'codex');
+    expect(api.restoreRemoved).toHaveBeenCalledExactlyOnceWith('source', 'workspace', ecosystem);
     expect(api.open).toHaveBeenCalledExactlyOnceWith('source', { workspaceId: 'workspace' });
     expect(api.restore).not.toHaveBeenCalled();
   });

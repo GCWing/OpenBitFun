@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { Session } from '@/flow_chat/types/flow-chat';
 import { isWorktreeIsolatedSession } from '@/flow_chat/utils/sessionOrdering';
+import { EXTERNAL_SESSION_NAMES, isExternalSessionEcosystem, type ExternalSessionEcosystem } from '@/shared/types/external-session';
 
 export type WorkspaceSessionGrouping = 'grouped' | 'all';
 export type WorkspaceSessionOrdering = 'updated' | 'status' | 'created' | 'name';
@@ -9,7 +10,7 @@ export type WorkspaceSessionShow = 'all' | 'unread' | 'attention';
 export type WorkspaceSessionStatus = 'running' | 'attention' | 'error' | 'completed' | 'idle';
 export type WorkspaceSessionEnvironment = 'local' | 'remote' | 'detached';
 export type WorkspaceSessionSource = 'openbitfun' | 'external';
-export type WorkspaceSessionSourceAgent = 'all' | 'openbitfun' | 'codex' | 'zcode';
+export type WorkspaceSessionSourceAgent = 'all' | 'openbitfun' | ExternalSessionEcosystem;
 export type WorkspaceSessionWorktree = 'main' | 'worktree';
 
 export interface WorkspaceSessionFilters {
@@ -142,7 +143,7 @@ export function matchesWorkspaceSourceAgent(session: Session, source: WorkspaceS
 }
 
 export function sessionSourceAgentLabel(source: string): string {
-  return ({ codex: 'Codex', zcode: 'Zcode', openbitfun: 'OpenBitFun' } as Record<string, string>)[source] ?? source;
+  return source === 'openbitfun' ? 'OpenBitFun' : isExternalSessionEcosystem(source) ? EXTERNAL_SESSION_NAMES[source] : source;
 }
 
 export function deriveWorkspaceSessionWorktree(session: Session): WorkspaceSessionWorktree {

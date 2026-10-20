@@ -43,6 +43,16 @@ pnpm --dir src/web-ui run test:run src/infrastructure/config/components/common/S
 ```
 
 Follow the parent guide for `check:web`, i18n, and Appearance registration checks.
+For model-pool strategy selection, member search/multi-selection, nested-dialog
+dismissal, preserved records and device-switch isolation, run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/ai/ModelPoolsSection.test.tsx src/app/scenes/settings/pages/ai/ModelDiscoveryPicker.test.tsx src/infrastructure/config/components/common/SettingsControlSizing.test.ts
+```
+
+These DOM fixtures simulate device activation and unsupported peer capabilities;
+they do not establish live remote behavior or visual fidelity.
+
 When changing destination migrations or catalog source evidence, also run
 `pnpm run capabilities:generate`, `pnpm run capabilities:check`, and
 `pnpm run capabilities:test`; retain historical wire destinations for older clients.

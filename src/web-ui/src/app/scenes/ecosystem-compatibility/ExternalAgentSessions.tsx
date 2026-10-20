@@ -4,7 +4,8 @@ import { useI18n } from '@/infrastructure/i18n';
 import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
-import type { ExternalSessionEcosystem } from '@/infrastructure/api/service-api/ExternalSessionImportAPI';
+import { externalSessionImportAPI, type ExternalSessionEcosystem } from '@/infrastructure/api/service-api/ExternalSessionImportAPI';
+import { EXTERNAL_SESSION_NAMES } from '@/shared/types/external-session';
 import { RemovedExternalSessions } from './RemovedExternalSessions';
 
 interface Props {
@@ -27,7 +28,7 @@ export default function ExternalAgentSessions({ ecosystemId = 'codex', onBusyCha
   const [error, setError] = useState<string>();
   const request = useRef(0);
   const pending = useRef(false);
-  const sourceName = ecosystemId === 'zcode' ? 'Zcode' : 'Codex';
+  const sourceName = EXTERNAL_SESSION_NAMES[ecosystemId];
 
   useEffect(() => {
     const version = ++request.current;
@@ -36,7 +37,7 @@ export default function ExternalAgentSessions({ ecosystemId = 'codex', onBusyCha
     setAvailable(false);
     setBusy(true);
     setError(undefined);
-    void configAPI.getConfig(CONFIG_PATH, { skipRetryOnNotFound: true }).then((settings) => {
+    void configAPI.getConfig(CONFIG_PATH, { skipRetryOnNotFound: true }).then(async (settings) => {
       if (!current()) return;
       // Missing fields identify older hosts: never turn a local UI preference
       // into an apparent capability on a peer that cannot perform discovery.
@@ -44,9 +45,19 @@ export default function ExternalAgentSessions({ ecosystemId = 'codex', onBusyCha
         setError('sessions.autoDiscovery.unsupported');
         return;
       }
+      // Older hosts accept arbitrary preference keys but cannot read new source
+      // formats. The existing read-only lifecycle operation validates the source
+      // on that host before this UI enables its discovery switch.
+      if (ecosystemId !== 'codex' && ecosystemId !== 'zcode') {
+        await externalSessionImportAPI.listRemoved(ecosystemId);
+        if (!current()) return;
+      }
       setEnabled(settings[ecosystemId] === true);
       setAvailable(true);
-    }).catch(() => { if (current()) setError('sessions.autoDiscovery.loadFailed'); })
+    }).catch((error) => { if (current()) setError(
+      error?.code === 'unsupported' || error?.code === 'incompatible_version'
+        ? 'sessions.autoDiscovery.unsupported' : 'sessions.autoDiscovery.loadFailed',
+    ); })
       .finally(() => { if (current()) setBusy(false); });
     return () => { request.current += 1; };
   }, [ecosystemId, refreshVersion]);

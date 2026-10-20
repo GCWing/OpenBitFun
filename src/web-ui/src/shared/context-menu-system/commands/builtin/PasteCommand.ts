@@ -2,8 +2,10 @@
 
 import { BaseCommand } from '../BaseCommand';
 import { CommandResult } from '../../types/command.types';
-import { MenuContext, ContextType, SelectionContext, EditorContext } from '../../types/context.types';
+import { MenuContext, ContextType, SelectionContext, EditorContext, TextInputContext } from '../../types/context.types';
 import { MonacoHelper } from '@/shared/helpers/MonacoHelper';
+import { insertTextIntoElement, readClipboardText } from '@/shared/utils/nativeTextEditing';
+import { dispatchPasteIntoTextInput, focusTextInputTarget } from '../../utils/textInputActions';
 import { createLogger } from '@/shared/utils/logger';
 import { i18nService } from '@/infrastructure/i18n';
 
@@ -30,20 +32,27 @@ export class PasteCommand extends BaseCommand {
     if (context.type === ContextType.EDITOR) {
       return !(context as EditorContext).isReadOnly;
     }
+    if (context.type === ContextType.TEXT_INPUT) {
+      return !(context as TextInputContext).isReadOnly;
+    }
     return false;
   }
 
   async execute(context: MenuContext): Promise<CommandResult> {
     try {
       const t = i18nService.getT();
+
+      if (context.type === ContextType.TEXT_INPUT) {
+        return await this.executeForTextInput(context as TextInputContext);
+      }
       
       let text: string;
-      
-      if (navigator.clipboard && navigator.clipboard.readText) {
-        text = await navigator.clipboard.readText();
-      } else {
+
+      const clipboardText = await readClipboardText();
+      if (clipboardText === null) {
         return this.failure(t('errors:contextMenu.clipboardUnavailable'));
       }
+      text = clipboardText;
 
       if (!text) {
         return this.failure(t('errors:contextMenu.clipboardEmpty'));
@@ -68,6 +77,38 @@ export class PasteCommand extends BaseCommand {
     }
   }
   
+  /**
+   * Field paste is delivered as a native `paste` event first, so rich editors
+   * keep their own paste semantics; plain fields fall back to insertion.
+   */
+  private async executeForTextInput(context: TextInputContext): Promise<CommandResult> {
+    const t = i18nService.getT();
+
+    if (context.isReadOnly) {
+      return this.failure(t('errors:contextMenu.notEditable'));
+    }
+
+    const text = await readClipboardText();
+    if (text === null) {
+      return this.failure(t('errors:contextMenu.clipboardUnavailable'));
+    }
+
+    if (!text) {
+      return this.failure(t('errors:contextMenu.clipboardEmpty'));
+    }
+
+    const element = focusTextInputTarget(context);
+    if (!element) {
+      return this.failure(t('errors:contextMenu.pasteFailed'));
+    }
+
+    if (dispatchPasteIntoTextInput(element, text) || insertTextIntoElement(element, text)) {
+      return this.success(t('common:contextMenu.status.pasteSuccess'), { text });
+    }
+
+    return this.failure(t('errors:contextMenu.pasteFailed'));
+  }
+
    
   private async executeForEditor(context: EditorContext, text: string): Promise<CommandResult> {
     try {

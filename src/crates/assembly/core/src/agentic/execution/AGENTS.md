@@ -9,21 +9,34 @@ cargo test --locked -p openbitfun-core --no-default-features --features agent-ru
 Provider parsing changes also require the adapter's focused stream tests.
 
 
-For next-input suggestions (lowest supported reasoning with original-session
-fallback, plain-text output, unchanged message prefix, and silent failure), use:
+For next-input suggestions (turn reasoning settings, one identical retry,
+plain-text output, unchanged message prefix, and silent failure), use:
 
 ```bash
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::execution::prompt_suggestion::tests
 ```
 
-Suggestion generation tries the lowest supported reasoning first. If preparing
-that client or its model call fails, make one call with the completed turn's
-original client and reasoning settings. Both attempts share one 80-second
-deadline and session cancellation. Clear the turn's output schema, retain the
-request prefix and cache routing, and request plain text on both attempts.
-Empty output, the literal `null`, tool calls, and content filters do not trigger
-fallback; all other candidate text is kept verbatim. Do not add JSON parsing,
-format negotiation, correction retries, or text reconstruction.
+Suggestion generation uses the completed turn's client, including its reasoning
+settings. Providers render reasoning and thinking settings into the cached
+prompt prefix (DeepSeek at token 0; Anthropic invalidates the message cache when
+thinking changes), so a cheaper reasoning override turns the turn's prefix into
+a full cache miss. If the model call fails, retry it once unchanged. Both
+attempts share one 80-second deadline and session cancellation. Clear the
+turn's output schema, retain the request prefix and cache routing, and request
+plain text on both attempts. Empty output, the literal `null`, tool calls, and
+content filters do not trigger the retry; all other candidate text is kept
+verbatim. Do not add JSON parsing, format negotiation, correction retries, or
+text reconstruction.
+
+The prepended deferred tool listing renders the session's skill/agent listing
+baseline, not the current catalog; deferred tool changes (MCP connects,
+description edits) arrive as listing-diff reminders so the request head stays
+cache-stable. Snapshots without `deferred_tools` (legacy) keep rendering the
+current catalog. For these paths, use:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib -- deferred_tool listing_baseline untracked_previous unchanged_tracked prepended_deferred
+```
 
 For model retry admission and recovery, use:
 

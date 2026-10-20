@@ -385,12 +385,7 @@ pub fn build_get_tool_spec_catalog_description(
 
     let deferred_tools_list = deferred_tools
         .iter()
-        .map(|tool| match tool.short_description.as_deref() {
-            Some(description) if !description.trim().is_empty() => {
-                format!("- {}: {}", tool.name, description)
-            }
-            _ => format!("- {}", tool.name),
-        })
+        .map(render_get_tool_spec_deferred_tool_entry)
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -398,6 +393,15 @@ pub fn build_get_tool_spec_catalog_description(
         "<deferred_tools>\n{}\n</deferred_tools>",
         deferred_tools_list
     ))
+}
+
+pub fn render_get_tool_spec_deferred_tool_entry(tool: &GetToolSpecDeferredToolSummary) -> String {
+    match tool.short_description.as_deref() {
+        Some(description) if !description.trim().is_empty() => {
+            format!("- {}: {}", tool.name, description)
+        }
+        _ => format!("- {}", tool.name),
+    }
 }
 
 pub fn get_tool_spec_is_readonly() -> bool {

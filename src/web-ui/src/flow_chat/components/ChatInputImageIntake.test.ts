@@ -44,14 +44,21 @@ describe('composer image file intake', () => {
   it('falls back to a host clipboard read for empty-typed pastes', () => {
     // WebKitGTK fires paste with zero DataTransfer types, so the composer must
     // listen for paste directly and ask the host for the clipboard image.
-    expect(component).toContain(
-      'shouldAttemptNativeClipboardImageRead(Array.from(clipboardData.types ?? []))',
-    );
+    expect(component).toContain('shouldAttemptNativeClipboardImageRead(types)');
     expect(component).toMatch(
       /inputElement\.addEventListener\('paste', handlePasteFallback\);/,
     );
     expect(component).toMatch(
       /const image = await workspaceAPI\.getClipboardImage\(\);/,
+    );
+  });
+
+  it('reads clipboard files first and widens the type gate on Linux', () => {
+    // A copied file arrives as a text/uri-list target on WebKitGTK, so an
+    // empty-types-only gate dropped every file paste.
+    expect(component).toContain('if (!emptyTyped && !isLinuxDesktopRuntime()) return;');
+    expect(component).toMatch(
+      /if \(await readPastedClipboardFiles\(request\)\) return;[\s\S]{0,240}?if \(!emptyTyped\) return;/,
     );
   });
 });

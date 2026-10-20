@@ -784,6 +784,9 @@ pub async fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        // The webview's own clipboard API raises a WebView2 permission prompt on
+        // first read; product clipboard paths go through this plugin instead.
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 .app_name("OpenBitFun")
@@ -1519,6 +1522,7 @@ pub async fn run() {
             desktop_cards::commands::desktop_card_set_checklist_item,
             desktop_cards::commands::desktop_card_set_always_on_top,
             list_agent_companion_pets,
+            load_agent_companion_pet_spritesheet,
             import_agent_companion_pet_package,
             delete_agent_companion_pet_package,
             read_file_content,

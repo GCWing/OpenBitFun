@@ -40,6 +40,11 @@ describe('workspace session view model', () => {
     expect(deriveWorkspaceSessionSource(codex)).toBe('external');
     expect(deriveWorkspaceSessionSource(native)).toBe('openbitfun');
   });
+  it.each(['claude-code', 'opencode', 'pi', 'deepseek-harness', 'cursor'] as const)('filters %s by source while preserving native continuation mode', source => {
+    const imported = session({ importedSource: source, config: { agentType: 'Standard' } });
+    expect(matchesWorkspaceSourceAgent(imported, source)).toBe(true);
+    expect(matchesWorkspaceSourceAgent(imported, 'openbitfun')).toBe(false);
+  });
   it('toggles between unified groups and the flat all-session view', () => {
     expect(getNextWorkspaceSessionGrouping('grouped')).toBe('all');
     expect(getNextWorkspaceSessionGrouping('all')).toBe('grouped');

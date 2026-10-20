@@ -103,6 +103,8 @@ describe('FlowToolCard deferred identity', () => {
     ['zcode', 'Read', 'Read'], ['zcode', 'Write', 'Write'], ['zcode', 'Edit', 'Edit'],
     ['zcode', 'WebSearch', 'WebSearch'], ['zcode', 'WebFetch', 'WebFetch'],
     ['codex', 'update_plan', 'TodoWrite'],
+    ['cursor', 'Read', 'Read'], ['cursor', 'Write', 'Write'], ['cursor', 'StrReplace', 'Edit'],
+    ['cursor', 'Shell', 'ExecCommand'], ['cursor', 'read_file_v2', 'Read'],
   ] as const)('selects the registered %s %s native card', (importedSource, toolName, nativeName) => {
     const item: FlowToolItem = {
       id: 'imported', type: 'tool', importedSource, toolName, status: 'completed', timestamp: 1,

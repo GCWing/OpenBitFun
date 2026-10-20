@@ -908,29 +908,7 @@ fn accessibility_hit_at_global_point_for_window_native(
     else {
         return Ok(None);
     };
-    if unsafe { element.CurrentProcessId() }.ok() != Some(expected_pid as i32) {
-        return Ok(None);
-    }
-    let automation = create_automation()?;
-    checkpoint("hit_test_root")?;
-    let root = unsafe { automation.ElementFromHandle(hwnd) }
-        .map_err(|error| OpenBitFunError::tool(format!("UI Automation target root: {error}")))?;
-    let walker = unsafe { automation.RawViewWalker() }
-        .map_err(|error| OpenBitFunError::tool(format!("UI Automation target walker: {error}")))?;
-    let mut current = element;
-    let mut belongs_to_window = false;
-    for _ in 0..200 {
-        checkpoint("hit_test_ancestry")?;
-        if unsafe { automation.CompareElements(&current, &root) }.is_ok_and(|same| same.as_bool()) {
-            belongs_to_window = true;
-            break;
-        }
-        match unsafe { walker.GetParentElement(&current) } {
-            Ok(parent) => current = parent,
-            Err(_) => break,
-        }
-    }
-    if !belongs_to_window || !target_window_matches(hwnd, expected_pid) {
+    if !element_belongs_to_window(&element, hwnd, expected_pid)? {
         return Ok(None);
     }
     // Parent context, when present, comes from this same bounded observation;
@@ -957,6 +935,39 @@ fn accessibility_hit_at_global_point_for_window_native(
         ),
         parent_context,
     }))
+}
+
+/// UIA can stitch a hosted provider from another process into this window's
+/// tree (UWP, WebView). Membership is ancestry, not equality with the HWND PID.
+/// Revalidate the native root on both sides of the bounded provider walk.
+fn element_belongs_to_window(
+    element: &IUIAutomationElement,
+    hwnd: HWND,
+    expected_pid: u32,
+) -> OpenBitFunResult<bool> {
+    if !target_window_matches(hwnd, expected_pid) {
+        return Ok(false);
+    }
+    let automation = create_automation()?;
+    checkpoint("target_root")?;
+    let root = unsafe { automation.ElementFromHandle(hwnd) }
+        .map_err(|error| OpenBitFunError::tool(format!("UI Automation target root: {error}")))?;
+    let walker = unsafe { automation.RawViewWalker() }
+        .map_err(|error| OpenBitFunError::tool(format!("UI Automation target walker: {error}")))?;
+    let mut current = element.clone();
+    let mut belongs_to_window = false;
+    for _ in 0..200 {
+        checkpoint("target_ancestry")?;
+        if unsafe { automation.CompareElements(&current, &root) }.is_ok_and(|same| same.as_bool()) {
+            belongs_to_window = true;
+            break;
+        }
+        match unsafe { walker.GetParentElement(&current) } {
+            Ok(parent) => current = parent,
+            Err(_) => break,
+        }
+    }
+    Ok(belongs_to_window && target_window_matches(hwnd, expected_pid))
 }
 
 // ── AppStateSnapshot builder ────────────────────────────────────────────────
@@ -1496,14 +1507,14 @@ fn replace_native_edit_selection(
             )
         })?;
         checkpoint("native_edit_process")?;
-        if element
+        let provider_pid = element
             .CurrentProcessId()
             .map_err(|e| OpenBitFunError::tool(format!("[AX_ACTION_FAILED] {e}")))?
-            as u32
-            != pid
+            as u32;
+        if !target_window_matches(top, pid)
             || child.0.is_null()
             || !IsWindow(Some(child)).as_bool()
-            || window_pid_for(child) != Some(pid)
+            || window_pid_for(child) != Some(provider_pid)
             || GetAncestor(child, GA_ROOT) != top
         {
             return Err(OpenBitFunError::tool("[AX_STALE_ELEMENT] Native edit HWND does not belong to the observed process and bound top-level window"));
@@ -1644,11 +1655,15 @@ fn apply_semantic(
     let native = |e: windows::core::Error| OpenBitFunError::tool(format!("[AX_ACTION_FAILED] {e}"));
     checkpoint("semantic_preflight")?;
     unsafe {
-        let pid = element.CurrentProcessId().map_err(native)? as u32;
-        checkpoint("semantic_enabled")?;
-        if pid != cache.pid || !element.CurrentIsEnabled().map_err(native)?.as_bool() {
+        if !element_belongs_to_window(&element, HWND(hwnd as *mut _), cache.pid)? {
             return Err(OpenBitFunError::tool(
-                "[AX_STALE_ELEMENT] The observed control is no longer available",
+                "[AX_STALE_ELEMENT] The observed control no longer belongs to the bound window",
+            ));
+        }
+        checkpoint("semantic_enabled")?;
+        if !element.CurrentIsEnabled().map_err(native)?.as_bool() {
+            return Err(OpenBitFunError::tool(
+                "[AX_ELEMENT_DISABLED] The observed control is disabled",
             ));
         }
         checkpoint("semantic_geometry")?;

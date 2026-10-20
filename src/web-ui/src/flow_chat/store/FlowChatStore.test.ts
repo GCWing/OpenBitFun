@@ -1296,7 +1296,7 @@ describe('FlowChatStore round attempts', () => {
     expect(JSON.stringify(payload)).toBe(serialized);
   });
 
-  it.each(['codex', 'zcode'] as const)('derives %s provenance per Turn and round-trips legacy imported tool records', source => {
+  it.each(['codex', 'zcode', 'claude-code', 'opencode', 'pi', 'deepseek-harness', 'cursor'] as const)('derives %s provenance per Turn and round-trips legacy imported tool records', source => {
     const record = {
       turnId: 'imported-turn', sessionId: 'session-1', status: 'completed', timestamp: 1000,
       userMessage: { id: 'user', content: 'Imported question', timestamp: 1000, metadata: { importedFrom: source } },
@@ -2056,7 +2056,7 @@ describe('FlowChatStore historical session hydration state', () => {
     });
   });
 
-  it.each(['codex', 'zcode'])('preserves %s provenance when loading metadata without restoring a transcript', async importedFrom => {
+  it.each(['codex', 'zcode', 'claude-code', 'opencode', 'pi', 'deepseek-harness', 'cursor'])('preserves %s provenance when loading metadata without restoring a transcript', async importedFrom => {
     apiMocks.listSessions.mockResolvedValueOnce([{
       sessionId: 'imported-history', sessionName: 'Imported', agentType: 'primary', modelName: 'primary',
       createdAt: 10, lastActiveAt: 20, customMetadata: { importedFrom, sourceSessionId: 'external-id' },

@@ -902,6 +902,50 @@ mod tests {
     }
 
     #[test]
+    fn chat_prompt_cache_key_is_sent_only_to_the_official_openai_endpoint() {
+        let context = ModelRequestContext {
+            prompt_cache_route_key: Some("lineage-1".to_string()),
+            output_schema: None,
+        };
+        let official = openai::chat::build_request_body_with_context(
+            &make_test_client("openai", None),
+            "https://api.openai.com/v1/chat/completions",
+            Vec::new(),
+            None,
+            None,
+            Some(&context),
+        );
+        assert_eq!(official["prompt_cache_key"], "lineage-1");
+
+        for url in [
+            "https://example.com/v1/chat/completions",
+            "https://api.deepseek.com/chat/completions",
+            "https://api.openai.com.evil.test/v1/chat/completions",
+            "http://api.openai.com/v1/chat/completions",
+        ] {
+            let body = openai::chat::build_request_body_with_context(
+                &make_test_client("openai", None),
+                url,
+                Vec::new(),
+                None,
+                None,
+                Some(&context),
+            );
+            assert!(body.get("prompt_cache_key").is_none(), "{url}");
+        }
+
+        let without_key = openai::chat::build_request_body_with_context(
+            &make_test_client("openai", None),
+            "https://api.openai.com/v1/chat/completions",
+            Vec::new(),
+            None,
+            None,
+            Some(&ModelRequestContext::default()),
+        );
+        assert!(without_key.get("prompt_cache_key").is_none());
+    }
+
+    #[test]
     fn provider_request_bodies_map_turn_output_schema() {
         let context = structured_output_context();
         let chat = openai::chat::build_request_body_with_context(
@@ -2620,8 +2664,25 @@ mod tests {
         );
 
         assert_eq!(request_body["model"], "test-model");
-        assert_eq!(request_body["messages"], json!(messages));
-        assert_eq!(request_body["system"], "Use the system prompt");
+        assert_eq!(
+            request_body["messages"],
+            json!([{
+                "role": "user",
+                "content": [{
+                    "type": "text",
+                    "text": "hello",
+                    "cache_control": { "type": "ephemeral" }
+                }]
+            }])
+        );
+        assert_eq!(
+            request_body["system"],
+            json!([{
+                "type": "text",
+                "text": "Use the system prompt",
+                "cache_control": { "type": "ephemeral" }
+            }])
+        );
         assert_eq!(request_body["stream"], true);
         assert_eq!(request_body["max_tokens"], 8192);
         assert_eq!(request_body["metadata"]["tag"], "kept");

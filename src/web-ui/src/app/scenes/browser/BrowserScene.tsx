@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import { OverflowText, Icon, IconButton, Input } from '@openbitfun/ui';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, LoaderCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { createLogger } from '@/shared/utils/logger';
 import { useSceneStore } from '@/app/stores/sceneStore';
@@ -61,12 +61,9 @@ const BrowserScene: React.FC = () => {
         <IconButton
           type="button"
           size="sm"
-          onClick={browser.reload}
-          disabled={browser.isLoading}
-          aria-label={t('actions.refresh')}
-          icon={(
-            <Icon name="refresh" size="lg" className={browser.isLoading ? 'browser-scene__spinning' : undefined} data-testid={browser.isLoading ? 'browser-loading-indicator' : undefined} />
-          )}
+          onClick={browser.isLoading ? browser.stopLoading : browser.reload}
+          aria-label={browser.isLoading ? t('browserView.stopLoading') : t('actions.refresh')}
+          icon={<Icon name={browser.isLoading ? 'xmark' : 'refresh'} size="lg" />}
           data-testid="browser-refresh-button"
         />
         <div className="browser-scene__address">
@@ -75,7 +72,9 @@ const BrowserScene: React.FC = () => {
             type="text"
             value={browser.inputValue}
             onValueChange={browser.setInputValue}
-            leading={<Icon name="browser" size="md" />}
+            leading={browser.isLoading
+              ? <Icon glyph={LoaderCircle} size="md" className="browser-scene__spinning" data-testid="browser-loading-indicator" />
+              : <Icon name="browser" size="md" />}
             placeholder={t('browserView.addressPlaceholder', { exampleUrl: 'https://example.com' })}
             spellCheck={false}
             data-testid="browser-url-input"

@@ -107,6 +107,26 @@ fn skill_agent_listing_reminders(
     )
 }
 
+/// The deferred catalog comes from the listing baseline so catalog changes
+/// (for example MCP servers connecting later) arrive as diff reminders instead
+/// of rewriting the request head. Baselines that list no deferred tools,
+/// including those persisted before deferred tools were tracked, keep
+/// rendering the current catalog.
+fn deferred_tool_listing_reminder(
+    current_tool_sections: &ToolListingSections,
+    baseline_tool_sections: Option<&ToolListingSections>,
+) -> Option<String> {
+    current_tool_sections.deferred_tool_listing.as_ref()?;
+    match baseline_tool_sections.and_then(|sections| sections.deferred_tool_listing.clone()) {
+        Some(baseline_listing) => ToolListingSections {
+            deferred_tool_listing: Some(baseline_listing),
+            ..current_tool_sections.clone()
+        }
+        .render_deferred_tool_listing_reminder(),
+        None => current_tool_sections.render_deferred_tool_listing_reminder(),
+    }
+}
+
 fn reached_fixed_model_round_limit(max_rounds: usize, completed_rounds: usize) -> bool {
     max_rounds > 0 && completed_rounds >= max_rounds
 }
@@ -1562,19 +1582,12 @@ impl ExecutionEngine {
             .as_ref()
             .map(|remote| remote.connection_display_name.replace('|', "/"));
 
+        let current_tool_sections = prompt_context.tool_listing_sections.clone();
         let prompt_builder = PromptBuilder::new(prompt_context.clone());
-        let baseline_tool_sections = if let Some(snapshot) = self
+        let baseline_tool_sections = self
             .session_manager
-            .skill_agent_baseline_override_snapshot(session_id)
+            .skill_agent_listing_baseline_snapshot(session_id)
             .await
-        {
-            Some(snapshot)
-        } else {
-            self.session_manager
-                .turn_skill_agent_snapshot(session_id, 0)
-                .await
-        };
-        let baseline_tool_sections = baseline_tool_sections
             .map(|snapshot| build_skill_agent_tool_listing_sections_from_snapshot(&snapshot));
         if baseline_tool_sections.is_none() {
             warn!(
@@ -1653,7 +1666,10 @@ impl ExecutionEngine {
             skill_agent_listing_reminders(baseline_tool_sections.as_ref());
 
         PrependedPromptReminders {
-            deferred_tool_listing: prompt_builder.build_deferred_tool_listing_reminder(),
+            deferred_tool_listing: deferred_tool_listing_reminder(
+                &current_tool_sections,
+                baseline_tool_sections.as_ref(),
+            ),
             skill_listing,
             agent_listing,
             runtime_context,
@@ -2030,14 +2046,18 @@ impl ExecutionEngine {
         }
     }
 
-    const MAX_IMAGE_BEARING_MESSAGE_ROUNDS: usize = 2;
+    /// The latest image-bearing messages that always keep their pixels.
+    const MIN_RETAINED_IMAGE_MESSAGES: usize = 2;
+    /// Eliding pixels rewrites an already-sent message and invalidates provider
+    /// prompt caches from that message onward, so older image-bearing messages
+    /// are elided this many at a time instead of one per new image.
+    const IMAGE_ELISION_BATCH: usize = 4;
 
     pub(crate) fn image_input_requirement(
         messages: &[Message],
         analysis_tool_available: bool,
     ) -> ImageInputRequirement {
-        let retained =
-            Self::image_bearing_indices_to_keep(messages, Self::MAX_IMAGE_BEARING_MESSAGE_ROUNDS);
+        let retained = Self::image_bearing_indices_to_keep(messages);
         if retained.is_empty() {
             return ImageInputRequirement::None;
         }
@@ -2054,25 +2074,29 @@ impl ExecutionEngine {
         }
     }
 
-    /// Indices of the last image-bearing messages that should keep image payloads.
-    fn image_bearing_indices_to_keep(
-        messages: &[Message],
-        max_image_messages: usize,
-    ) -> HashSet<usize> {
+    /// Indices of the image-bearing messages that should keep image payloads.
+    fn image_bearing_indices_to_keep(messages: &[Message]) -> HashSet<usize> {
         let with_images: Vec<usize> = messages
             .iter()
             .enumerate()
             .filter(|(_, m)| Self::message_bears_images(m))
             .map(|(i, _)| i)
             .collect();
-        let n = with_images.len();
-        if n <= max_image_messages {
-            return with_images.into_iter().collect();
+        let elided = Self::elided_image_message_count(with_images.len());
+        with_images[elided..].iter().copied().collect()
+    }
+
+    /// Number of oldest image-bearing messages whose pixels are elided. It only
+    /// grows as history is appended, in steps of `IMAGE_ELISION_BATCH`, and
+    /// always leaves between `MIN_RETAINED_IMAGE_MESSAGES + 1` and
+    /// `MIN_RETAINED_IMAGE_MESSAGES + IMAGE_ELISION_BATCH` messages once it starts.
+    fn elided_image_message_count(image_bearing_messages: usize) -> usize {
+        let retained_ceiling = Self::MIN_RETAINED_IMAGE_MESSAGES + Self::IMAGE_ELISION_BATCH;
+        if image_bearing_messages <= retained_ceiling {
+            return 0;
         }
-        with_images[n - max_image_messages..]
-            .iter()
-            .copied()
-            .collect()
+        (image_bearing_messages - Self::MIN_RETAINED_IMAGE_MESSAGES - 1) / Self::IMAGE_ELISION_BATCH
+            * Self::IMAGE_ELISION_BATCH
     }
 
     async fn run_finalize_round(
@@ -2183,7 +2207,7 @@ impl ExecutionEngine {
         let mut prepended_reminders_injected = false;
 
         let keep_image_messages = if attach_images {
-            Self::image_bearing_indices_to_keep(messages, Self::MAX_IMAGE_BEARING_MESSAGE_ROUNDS)
+            Self::image_bearing_indices_to_keep(messages)
         } else {
             HashSet::new()
         };
@@ -2230,10 +2254,9 @@ impl ExecutionEngine {
                     };
                     let prompt = if dropped_count > 0 {
                         format!(
-                            "{}\n\n[{} image(s) from this message omitted: only the latest {} message(s) in the conversation that contain images are sent to the model.]",
+                            "{}\n\n[{} image(s) from this message omitted: only the most recent messages in the conversation that contain images are sent to the model.]",
                             prompt.trim_end(),
-                            dropped_count,
-                            Self::MAX_IMAGE_BEARING_MESSAGE_ROUNDS
+                            dropped_count
                         )
                     } else {
                         prompt
@@ -2318,10 +2341,9 @@ impl ExecutionEngine {
                                 let dropped = atts.len();
                                 let content_str = ai.content.as_deref().unwrap_or("");
                                 ai.content = Some(format!(
-                                    "{}\n\n[{} image(s) from this tool result omitted: only the latest {} message(s) in the conversation that contain images are sent to the model.]",
+                                    "{}\n\n[{} image(s) from this tool result omitted: only the most recent messages in the conversation that contain images are sent to the model.]",
                                     content_str.trim_end(),
-                                    dropped,
-                                    Self::MAX_IMAGE_BEARING_MESSAGE_ROUNDS
+                                    dropped
                                 ));
                                 ai.tool_image_attachments = None;
                             }
@@ -3352,7 +3374,7 @@ impl ExecutionEngine {
             "Config service unavailable, assuming primary model is text-only for image input gating",
         )
         .await;
-        let mut resolved_primary_model_id = primary_model_facts.model_id.clone();
+        let resolved_primary_model_id = primary_model_facts.model_id.clone();
         let mut primary_supports_image_understanding = primary_model_facts.supports_image_inputs;
 
         let model_context_window = ai_client.config.context_window as usize;
@@ -3691,7 +3713,6 @@ impl ExecutionEngine {
                         "Model pool configuration unavailable",
                     )
                     .await;
-                    resolved_primary_model_id = primary_model_facts.model_id.clone();
                     primary_supports_image_understanding =
                         primary_model_facts.supports_image_inputs;
                     context_profile_policy = ContextProfilePolicy::for_agent_context(
@@ -5266,7 +5287,6 @@ impl ExecutionEngine {
                     session_id: context.session_id.clone(),
                     turn_id: context.dialog_turn_id.clone(),
                     messages: messages.clone(),
-                    model_id: resolved_primary_model_id.clone(),
                     ai_client: ai_client.clone(),
                     tool_definitions: tool_definitions.clone(),
                     model_request_context: model_request_context.clone(),
@@ -5386,10 +5406,12 @@ mod compression_tests;
 #[cfg(test)]
 mod tests {
     use super::{
-        activate_conditional_instructions_after_round, manual_compaction_terminal_error,
-        reached_fixed_model_round_limit, resolve_round_permission_mode,
-        runtime_context_needs_for_manifest, skill_agent_listing_reminders, ContextHealthSnapshot,
-        ExecutionEngine, ExecutionEngineConfig, RoundResult, TurnPromptScaffold,
+        activate_conditional_instructions_after_round,
+        build_skill_agent_tool_listing_sections_from_snapshot, deferred_tool_listing_reminder,
+        manual_compaction_terminal_error, reached_fixed_model_round_limit,
+        resolve_round_permission_mode, runtime_context_needs_for_manifest,
+        skill_agent_listing_reminders, ContextHealthSnapshot, ExecutionEngine,
+        ExecutionEngineConfig, RoundResult, TurnPromptScaffold,
     };
     use crate::agentic::agents::{
         PrependedPromptReminders, PromptBuilderContext, ToolListingSections, UserContextPolicy,
@@ -5600,9 +5622,26 @@ mod tests {
         messages.push(Message::internal_reminder_multimodal(
             InternalReminderKind::UserSteering,
             "New image",
+            vec![image.clone()],
+        ));
+        // Elision advances in batches, so the tool pixels stay in the sent window.
+        assert_eq!(
+            ExecutionEngine::image_input_requirement(&messages, true),
+            Requirement::Native
+        );
+        messages.push(user_image.clone());
+        messages.push(user_image.clone());
+        assert_eq!(
+            ExecutionEngine::image_input_requirement(&messages, true),
+            Requirement::Native
+        );
+        messages.push(Message::internal_reminder_multimodal(
+            InternalReminderKind::UserSteering,
+            "Seventh image",
             vec![image],
         ));
-        // The tool pixels are now outside the same last-two-message window used for sending.
+        // The seventh image-bearing message elides the oldest batch, including
+        // the tool pixels, from the same window used for sending.
         assert_eq!(
             ExecutionEngine::image_input_requirement(&messages, true),
             Requirement::NativeOrAnalysisTool
@@ -5708,6 +5747,71 @@ mod tests {
             assert!(!text.contains("base64"));
         }
         assert!(messages.iter().all(|message| matches!(&message.content, crate::agentic::core::MessageContent::Multimodal { images, .. } if images[0].data_url.is_some())));
+    }
+
+    #[test]
+    fn image_elision_advances_in_batches_and_never_reverts() {
+        let min = ExecutionEngine::MIN_RETAINED_IMAGE_MESSAGES;
+        let batch = ExecutionEngine::IMAGE_ELISION_BATCH;
+        let mut previous = 0;
+        for count in 0..=40 {
+            let elided = ExecutionEngine::elided_image_message_count(count);
+            assert!(elided >= previous, "count={count}");
+            assert_eq!(elided % batch, 0, "count={count}");
+            let retained = count - elided;
+            if count <= min + batch {
+                assert_eq!(elided, 0, "count={count}");
+            } else {
+                assert!(retained > min && retained <= min + batch, "count={count}");
+            }
+            previous = elided;
+        }
+        assert_eq!(ExecutionEngine::elided_image_message_count(6), 0);
+        assert_eq!(ExecutionEngine::elided_image_message_count(7), 4);
+        assert_eq!(ExecutionEngine::elided_image_message_count(10), 4);
+        assert_eq!(ExecutionEngine::elided_image_message_count(11), 8);
+    }
+
+    #[tokio::test]
+    async fn new_images_keep_earlier_sent_messages_unchanged_between_elision_batches() {
+        let image = crate::agentic::image_analysis::attachments::test_image();
+        let image_message = |index: usize| {
+            Message::user_multimodal(format!("Screenshot {index}"), vec![image.clone()])
+                .with_turn_id("turn".into())
+        };
+        let send = |messages: Vec<Message>| async move {
+            serde_json::to_value(
+                ExecutionEngine::build_ai_messages_for_send(
+                    &messages,
+                    "anthropic",
+                    None,
+                    None,
+                    "turn",
+                    true,
+                    &["stable reminder"],
+                )
+                .await
+                .unwrap(),
+            )
+            .unwrap()
+        };
+        let mut messages = vec![Message::system("system".into())];
+        let mut previous = send(messages.clone()).await;
+        for index in 1..=7 {
+            messages.push(image_message(index));
+            let current = send(messages.clone()).await;
+            let previous_len = previous.as_array().unwrap().len();
+            let prefix_kept =
+                current.as_array().unwrap()[..previous_len] == previous.as_array().unwrap()[..];
+            // Only the seventh image-bearing message elides a batch and rewrites history.
+            assert_eq!(prefix_kept, index < 7, "image message {index}");
+            previous = current;
+        }
+        let sent = previous.to_string();
+        assert_eq!(
+            sent.matches("image(s) from this message omitted").count(),
+            4
+        );
     }
 
     #[tokio::test]
@@ -5833,6 +5937,149 @@ mod tests {
         assert!(agent_listing
             .as_deref()
             .is_some_and(|listing| listing.contains("# Agent Listing")));
+    }
+
+    #[test]
+    fn deferred_tool_listing_head_comes_from_the_tracked_baseline() {
+        let current = ToolListingSections {
+            direct_tool_listing: Some("<direct_tools>\n- Read\n</direct_tools>".to_string()),
+            deferred_tool_listing: Some(
+                "<deferred_tools>\n- mcp__late__tool\n- WebFetch\n</deferred_tools>".to_string(),
+            ),
+            ..Default::default()
+        };
+        let baseline = build_skill_agent_tool_listing_sections_from_snapshot(
+            &crate::agentic::skill_agent_snapshot::TurnSkillAgentSnapshot {
+                deferred_tools: Some(vec![
+                    crate::agentic::skill_agent_snapshot::DeferredToolSnapshotEntry {
+                        name: "WebFetch".to_string(),
+                        short_description: None,
+                    },
+                ]),
+                ..Default::default()
+            },
+        );
+
+        let head = deferred_tool_listing_reminder(&current, Some(&baseline))
+            .expect("current agent lists deferred tools");
+        assert!(head.contains("<direct_tools>\n- Read\n</direct_tools>"));
+        assert!(head.contains("<deferred_tools>\n- WebFetch\n</deferred_tools>"));
+        assert!(!head.contains("mcp__late__tool"));
+
+        let without_gateway = ToolListingSections {
+            deferred_tool_listing: None,
+            ..current.clone()
+        };
+        assert_eq!(
+            deferred_tool_listing_reminder(&without_gateway, Some(&baseline)),
+            None
+        );
+    }
+
+    #[test]
+    fn deferred_tool_listing_head_renders_current_without_a_tracked_baseline() {
+        let current = ToolListingSections {
+            direct_tool_listing: Some("<direct_tools>\n- Read\n</direct_tools>".to_string()),
+            deferred_tool_listing: Some("<deferred_tools>\n- WebFetch\n</deferred_tools>".into()),
+            ..Default::default()
+        };
+        let legacy_baseline = build_skill_agent_tool_listing_sections_from_snapshot(
+            &crate::agentic::skill_agent_snapshot::TurnSkillAgentSnapshot::default(),
+        );
+
+        for baseline in [None, Some(&legacy_baseline)] {
+            assert_eq!(
+                deferred_tool_listing_reminder(&current, baseline),
+                current.render_deferred_tool_listing_reminder()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn prepended_deferred_listing_stays_on_the_session_baseline_when_tools_arrive() {
+        use crate::agentic::skill_agent_snapshot::{
+            DeferredToolSnapshotEntry, TurnSkillAgentSnapshot,
+        };
+
+        let (temp, engine) = super::compression_tests::engine();
+        let session_id = "deferred-listing-session";
+        let workspace_root = temp.path().to_path_buf();
+        let context = crate::agentic::execution::types::ExecutionContext {
+            session_id: session_id.to_string(),
+            dialog_turn_id: "turn-1".to_string(),
+            turn_index: 1,
+            agent_type: "Standard".to_string(),
+            workspace: Some(WorkspaceBinding::new(None, workspace_root.clone())),
+            context: HashMap::new(),
+            subagent_parent_info: None,
+            permission_delegation: None,
+            permission_runtime_ceiling: None,
+            delegation_policy: openbitfun_runtime_ports::DelegationPolicy::top_level(),
+            runtime_tool_restrictions: ToolRuntimeRestrictions::default(),
+            workspace_services: Some(local_workspace_services(
+                workspace_root.to_string_lossy().to_string(),
+            )),
+            terminal_port: None,
+            remote_exec_port: None,
+            round_injection: None,
+            emit_lifecycle_events: false,
+            recover_partial_on_cancel: false,
+        };
+        let agent = crate::agentic::agents::get_agent_registry()
+            .get_agent("Standard", None)
+            .expect("Standard agent should be registered");
+        let mut prompt_context = PromptBuilderContext::new(
+            workspace_root.to_string_lossy().to_string(),
+            Some(session_id.to_string()),
+            Some("model".to_string()),
+        );
+        prompt_context.tool_listing_sections = ToolListingSections {
+            direct_tool_listing: Some("<direct_tools>\n- GetToolSpec\n</direct_tools>".into()),
+            deferred_tool_listing: Some(
+                "<deferred_tools>\n- WebFetch\n- mcp__late__search\n</deferred_tools>".into(),
+            ),
+            ..Default::default()
+        };
+
+        let untracked = engine
+            .build_cached_prepended_prompt_reminders(
+                &context,
+                agent.as_ref(),
+                Some(&prompt_context),
+            )
+            .await;
+        assert!(untracked
+            .deferred_tool_listing
+            .as_deref()
+            .is_some_and(|listing| listing.contains("mcp__late__search")));
+
+        engine
+            .session_manager
+            .remember_turn_skill_agent_snapshot(
+                session_id,
+                0,
+                TurnSkillAgentSnapshot {
+                    deferred_tools: Some(vec![DeferredToolSnapshotEntry {
+                        name: "WebFetch".to_string(),
+                        short_description: None,
+                    }]),
+                    ..Default::default()
+                },
+            )
+            .await;
+        let tracked = engine
+            .build_cached_prepended_prompt_reminders(
+                &context,
+                agent.as_ref(),
+                Some(&prompt_context),
+            )
+            .await;
+        let head = tracked
+            .deferred_tool_listing
+            .expect("the agent still exposes deferred tools");
+        assert!(head.contains("<direct_tools>\n- GetToolSpec\n</direct_tools>"));
+        assert!(head.contains("<deferred_tools>\n- WebFetch\n</deferred_tools>"));
+        assert!(!head.contains("mcp__late__search"));
     }
 
     #[test]

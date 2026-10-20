@@ -158,6 +158,15 @@ For streaming `exec` retry, context recovery, and final-event contracts:
 cargo test --locked -p openbitfun-cli --test cli_command_contracts exec_cli_contracts::stream_json_
 ```
 
+For ACP stdio session restore, duplicate-load rejection, history replay and close:
+
+```bash
+cargo test --locked -p openbitfun-cli --test acp_stdio_cli
+```
+
+Back-to-back requests can reach the server during or after the first transition;
+the fixture validates both rejection states and exactly one history replay.
+
 When a CLI change crosses a shared boundary, use the focused command maintained
 by that owner: Agent Runtime for port/SDK behavior, the IPC adapter for shared
 protocol behavior, Core for turn/tool/persistence behavior, Terminal for

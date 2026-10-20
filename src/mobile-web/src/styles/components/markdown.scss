@@ -503,8 +503,8 @@
   }
 
   .katex {
-    font-size: 1.05em;
-    line-height: 1.2;
+    font-size: var(--openbitfun-type-body-lg-font-size);
+    line-height: var(--openbitfun-type-modifier-leading-dense-line-height);
     text-indent: 0;
   }
 

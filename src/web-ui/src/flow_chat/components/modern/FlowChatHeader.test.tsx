@@ -133,6 +133,7 @@ describe('FlowChatHeader', () => {
     document.querySelector('[data-openbitfun-overlay-host="true"]')?.remove();
     container.remove();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('keeps the inline fallback hidden until the session has content', () => {
@@ -473,6 +474,49 @@ describe('FlowChatHeader', () => {
     expect(panel?.closest('[data-openbitfun-overlay-host]')?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
     expect(panel?.style.visibility).toBe('visible');
     expect(panel?.hasAttribute('data-openbitfun-view')).toBe(false);
+  });
+
+  it('keeps the open overview attached while its pane is resized or collapsed', async () => {
+    vi.useFakeTimers();
+    let anchorLeft = 480;
+    const observers = new Map<object, { targets: Set<Element>; notify: () => void }>();
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(notify: () => void) { observers.set(this, { targets: new Set(), notify }); }
+      observe(target: Element) { observers.get(this)!.targets.add(target); }
+      unobserve(target: Element) { observers.get(this)!.targets.delete(target); }
+      disconnect() { observers.delete(this); }
+    });
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.testid === 'flowchat-header-session-overview') return new DOMRect(anchorLeft, 20, 24, 24);
+      if (this.dataset.testid === 'flowchat-header-session-overview-panel') return new DOMRect(0, 0, 360, 240);
+      return new DOMRect();
+    });
+    try {
+      act(() => root.render(<FlowChatHeader {...createProps()} />));
+      const trigger = container.querySelector<HTMLButtonElement>('[data-testid="flowchat-header-session-overview"]')!;
+      await act(async () => { trigger.click(); });
+      const panel = document.querySelector<HTMLElement>('[data-testid="flowchat-header-session-overview-panel"]')!;
+      expect(panel.style.left).toBe('144px');
+
+      // Only the containing pane resizes: the trigger stays 24 x 24, and
+      // neither a window resize nor a new render announces its movement.
+      for (const nextLeft of [560, 640, 900]) {
+        anchorLeft = nextLeft;
+        act(() => {
+          observers.forEach(observer => {
+            if (observer.targets.has(container)) observer.notify();
+          });
+          vi.advanceTimersByTime(20);
+        });
+        expect(panel.style.left).toBe(`${anchorLeft + 24 - 360}px`);
+        expect(panel.style.top).toBe('52px');
+        expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      }
+      act(() => trigger.click());
+      expect([...observers.values()].some(observer => observer.targets.has(container))).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('renders the Agent tree immediately without a back-navigation state', async () => {

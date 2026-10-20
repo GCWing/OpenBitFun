@@ -518,6 +518,12 @@ pub struct ListAgentCompanionPetsRequest {
     pub builtin_import_version: Option<u32>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadAgentCompanionPetSpritesheetRequest {
+    pub spritesheet_path: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListAgentCompanionPetsResponse {
@@ -2610,6 +2616,48 @@ mod pet_package_tests {
     }
 
     #[test]
+    fn pet_spritesheet_read_is_confined_to_the_companion_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("agent-companions");
+        let pet_dir = root.join("pet-abc");
+        std::fs::create_dir_all(&pet_dir).unwrap();
+        let spritesheet = pet_dir.join("spritesheet.webp");
+        std::fs::write(&spritesheet, [1u8, 2, 3]).unwrap();
+
+        assert_eq!(
+            read_agent_companion_pet_spritesheet(&root, &spritesheet).unwrap(),
+            vec![1, 2, 3]
+        );
+
+        let outside = temp.path().join("credentials.txt");
+        std::fs::write(&outside, b"secret").unwrap();
+        let error = read_agent_companion_pet_spritesheet(&root, &outside).unwrap_err();
+        assert!(
+            error.contains("outside the companion pet directory"),
+            "{error}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pet_spritesheet_read_rejects_a_symlinked_escape() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("agent-companions");
+        let pet_dir = root.join("pet-abc");
+        std::fs::create_dir_all(&pet_dir).unwrap();
+        let outside = temp.path().join("credentials.txt");
+        std::fs::write(&outside, b"secret").unwrap();
+        let link = pet_dir.join("spritesheet.webp");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+
+        let error = read_agent_companion_pet_spritesheet(&root, &link).unwrap_err();
+        assert!(
+            error.contains("outside the companion pet directory"),
+            "{error}"
+        );
+    }
+
+    #[test]
     #[ignore = "Imports installed Codex pets into an isolated temporary directory"]
     fn installed_builtin_pets_can_be_previewed_and_imported() {
         let temp = tempfile::tempdir().unwrap();
@@ -2823,6 +2871,77 @@ pub(crate) async fn list_agent_companion_pets_impl(
         builtin_import_version: 1,
         external: None,
     })
+}
+
+/// Upper bound for a single pet spritesheet. A spritesheet is a small sprite
+/// atlas, so a larger file is not a pet package asset and must not be buffered
+/// through the IPC channel.
+const MAX_AGENT_COMPANION_SPRITESHEET_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Reads a user pet spritesheet through the host.
+///
+/// The webview used to read this file with the filesystem plugin, whose scope
+/// requires a literal leading dot on unix. Every XDG directory starts with a
+/// dot, so a Linux install could never resolve a spritesheet that lives under
+/// the app data directory; the read always failed with `forbidden path`
+/// (#3370). The host performs the read instead and keeps it confined to the
+/// managed companion directory, which is the only place a user pet package can
+/// be imported to.
+#[tauri::command]
+pub async fn load_agent_companion_pet_spritesheet(
+    state: State<'_, AppState>,
+    request: LoadAgentCompanionPetSpritesheetRequest,
+) -> Result<tauri::ipc::Response, String> {
+    let packages_root = companion_user_packages_dir(&state);
+    let spritesheet_path = request.spritesheet_path;
+    let bytes = tokio::task::spawn_blocking(move || {
+        read_agent_companion_pet_spritesheet(&packages_root, Path::new(&spritesheet_path))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+fn read_agent_companion_pet_spritesheet(
+    packages_root: &Path,
+    spritesheet_path: &Path,
+) -> Result<Vec<u8>, String> {
+    let root = packages_root.canonicalize().map_err(|error| {
+        format!(
+            "Companion pet directory is unavailable ({}): {}",
+            packages_root.display(),
+            error
+        )
+    })?;
+    let requested = spritesheet_path.canonicalize().map_err(|error| {
+        format!(
+            "Failed to resolve {}: {}",
+            spritesheet_path.display(),
+            error
+        )
+    })?;
+    if !requested.starts_with(&root) {
+        return Err(format!(
+            "Refused to read {} outside the companion pet directory",
+            spritesheet_path.display()
+        ));
+    }
+    let metadata = std::fs::metadata(&requested)
+        .map_err(|error| format!("Failed to read {}: {}", requested.display(), error))?;
+    if !metadata.is_file() {
+        return Err(format!(
+            "Not a companion pet spritesheet file: {}",
+            requested.display()
+        ));
+    }
+    if metadata.len() > MAX_AGENT_COMPANION_SPRITESHEET_BYTES {
+        return Err(format!(
+            "Companion pet spritesheet is too large: {} bytes",
+            metadata.len()
+        ));
+    }
+    std::fs::read(&requested)
+        .map_err(|error| format!("Failed to read {}: {}", requested.display(), error))
 }
 
 #[tauri::command]
