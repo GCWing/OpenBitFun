@@ -46,6 +46,28 @@ fn swarm_agent_type_contract_is_closed() {
 }
 
 #[test]
+fn ultimate_defaults_to_swarm_roles_but_explicit_override_can_enable_other_agents() {
+    let explore = builtin_agent_definition_specs()
+        .into_iter()
+        .find(|spec| spec.id == "Explore")
+        .expect("Explore spec should exist");
+    assert!(!resolve_subagent_default_enabled(
+        SubagentSourceKind::Builtin,
+        &explore.visibility_policy,
+        Some("Ultimate")
+    ));
+    let enabled = resolve_subagent_availability(
+        SubagentSourceKind::Builtin,
+        false,
+        SubagentOverrideLayers {
+            project_override: None,
+            user_override: Some(SubagentOverrideState::Enabled),
+        },
+    );
+    assert!(enabled.effective_enabled);
+}
+
+#[test]
 fn availability_preserves_builtin_project_and_user_override_layering() {
     let builtin = resolve_subagent_availability(
         SubagentSourceKind::Builtin,

@@ -125,7 +125,11 @@ impl AgentExecutionTool {
                 workspace_id,
                 list_scope: SubagentListScope::TaskVisible,
                 include_disabled: false,
-                external_sources_supported: context.is_none_or(|ctx| !ctx.is_remote()),
+                external_sources_supported: context.is_none_or(|ctx| {
+                    !ctx.is_remote()
+                        && ctx.delegation_policy().scope
+                            != openbitfun_runtime_ports::DelegationScope::Swarm
+                }),
             })
             .await
     }

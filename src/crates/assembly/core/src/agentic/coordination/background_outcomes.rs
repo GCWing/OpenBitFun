@@ -615,6 +615,7 @@ impl BackgroundSubagentOutcomeStore {
         parent_agent_type: &str,
         child_agent_type: &str,
         child_depth: u8,
+        parent_can_delegate: bool,
     ) -> OpenBitFunResult<()> {
         self.coordination_store
             .reserve_swarm_child(
@@ -623,6 +624,7 @@ impl BackgroundSubagentOutcomeStore {
                 parent_agent_type,
                 child_agent_type,
                 child_depth,
+                parent_can_delegate,
             )
             .await
     }

@@ -35,6 +35,19 @@ pub(super) fn merge_dynamic_mode_tools(
 }
 
 impl AgentRegistry {
+    /// Recursive delegation is an explicit tool capability. It only takes
+    /// effect inside Swarm; ordinary child sessions remain non-recursive.
+    pub(crate) async fn can_delegate_in_swarm(
+        &self,
+        agent_type: &str,
+        workspace_id: Option<&str>,
+    ) -> bool {
+        self.get_agent_tools(agent_type, workspace_id)
+            .await
+            .iter()
+            .any(|tool| matches!(tool.as_str(), "AgentSpawn" | "Task"))
+    }
+
     /// Return every effective local agent definition that can participate in
     /// product-level external-source conflict resolution. Main-agent modes and
     /// subagents share one logical id namespace in external ecosystems, so a
@@ -402,7 +415,13 @@ impl AgentRegistry {
                 );
             }
         }
-        if query.external_sources_supported {
+        // Swarm currently executes native definitions only. External route
+        // overlays must not advertise candidates the invocation cannot resolve.
+        if query.external_sources_supported
+            && !query
+                .parent_agent_type
+                .is_some_and(crate::agentic::agents::is_swarm_planner_agent_type)
+        {
             if let Some(workspace_id) = query.workspace_id {
                 result = self.apply_external_routes_to_query(workspace_id, result);
             }

@@ -12,7 +12,9 @@ use super::{
     turn_settlement::TurnSettlementTracker,
     BackgroundSubagentOutcomeStore, BackgroundSubagentWaitMode, BackgroundSubagentWaitResult,
 };
-use crate::agentic::agents::{get_agent_registry, ExternalSubagentModelBinding};
+use crate::agentic::agents::{
+    get_agent_registry, is_swarm_delegate_agent_type, ExternalSubagentModelBinding,
+};
 use crate::agentic::context_profile::ContextProfilePolicy;
 use crate::agentic::core::{
     InternalReminderKind, Message, MessageContent, MessageSemanticKind, ProcessingPhase, Session,
@@ -1080,21 +1082,21 @@ fn normalize_subagent_max_concurrency(raw: usize) -> usize {
 fn delegation_policy_for_agent_turn(
     agent_type: &str,
     swarm_depth: Option<u8>,
+    can_delegate: bool,
 ) -> OpenBitFunResult<DelegationPolicy> {
+    if let Some(nesting_depth) = swarm_depth {
+        return Ok(DelegationPolicy {
+            allow_subagent_spawn: can_delegate
+                && i64::from(nesting_depth) < super::coordination_store::SWARM_MAX_DEPTH,
+            nesting_depth,
+            scope: openbitfun_runtime_ports::DelegationScope::Swarm,
+        });
+    }
     match agent_type {
         "Ultimate" => Ok(DelegationPolicy::swarm_root()),
-        "SwarmPlanner" => {
-            let nesting_depth = swarm_depth.ok_or_else(|| {
-                OpenBitFunError::tool(
-                    "SwarmPlanner session is missing its persisted tree node".to_string(),
-                )
-            })?;
-            Ok(DelegationPolicy {
-                allow_subagent_spawn: true,
-                nesting_depth,
-                scope: openbitfun_runtime_ports::DelegationScope::Swarm,
-            })
-        }
+        agent_type if is_swarm_delegate_agent_type(agent_type) => Err(OpenBitFunError::tool(
+            "Swarm agent session is missing its persisted tree node".to_string(),
+        )),
         _ => Ok(DelegationPolicy::top_level()),
     }
 }
@@ -6383,17 +6385,19 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         let primary_route_key = primary_agent_binding.route_key.clone();
         let external_agent_generation_lease = primary_agent_binding.lease;
 
-        // Resolve Swarm lineage before creating or mutating any turn state. A
-        // persisted SwarmPlanner without its tree node cannot safely recover
-        // its delegation depth and must fail closed without leaving the
-        // Session in Processing.
-        let swarm_depth = if effective_agent_type == "SwarmPlanner" {
-            self.swarm_depth_for_session(&session_id).await?
-        } else {
-            None
-        };
+        // Restore every Swarm child by lineage, including custom types. A root
+        // that switches back to an ordinary mode must use that mode's policy.
+        let swarm_depth =
+            if session.kind == SessionKind::Subagent || effective_agent_type == "Ultimate" {
+                self.swarm_depth_for_session(&session_id).await?
+            } else {
+                None
+            };
+        let can_delegate = get_agent_registry()
+            .can_delegate_in_swarm(&runtime_agent_type, session.config.workspace_id.as_deref())
+            .await;
         let delegation_policy =
-            delegation_policy_for_agent_turn(&effective_agent_type, swarm_depth)?;
+            delegation_policy_for_agent_turn(&effective_agent_type, swarm_depth, can_delegate)?;
 
         Self::track_session_workspace_activity_best_effort(
             &session.config,
@@ -13027,6 +13031,18 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .await
     }
 
+    pub(crate) async fn swarm_node_policy(
+        &self,
+        agent_type: &str,
+        workspace_id: Option<&str>,
+        depth: u8,
+    ) -> OpenBitFunResult<DelegationPolicy> {
+        let can_delegate = get_agent_registry()
+            .can_delegate_in_swarm(agent_type, workspace_id)
+            .await;
+        delegation_policy_for_agent_turn(agent_type, Some(depth), can_delegate)
+    }
+
     fn claim_background_subagent_controls(
         &self,
         matches: impl Fn(&BackgroundSubagentTaskControl) -> bool,
@@ -13273,6 +13289,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         };
         let is_new_swarm_node = is_swarm && request.prepared_session_created;
         if is_new_swarm_node {
+            let parent_can_delegate = get_agent_registry()
+                .can_delegate_in_swarm(
+                    &parent_session.agent_type,
+                    parent_session.config.workspace_id.as_deref(),
+                )
+                .await;
             if let Err(error) = self
                 .background_subagent_outcomes
                 .reserve_swarm_child(
@@ -13281,6 +13303,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     &parent_session.agent_type,
                     &request.logical_agent_type,
                     request.delegation_policy.nesting_depth,
+                    parent_can_delegate,
                 )
                 .await
             {
@@ -13367,17 +13390,14 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 "Background subagent start was cancelled".to_string(),
             ));
         }
-        let parent_cancel_token = (!is_swarm)
-            .then(|| {
-                self.execution_engine
-                    .cancel_token_for_dialog_turn(&subagent_parent_info.dialog_turn_id)
-                    .map(|token| token.child_token())
-            })
-            .flatten();
-        // A Swarm child is independent once its background launch has been
-        // accepted. Cancellation still prevents an unaccepted launch above,
-        // but it must not become a lifetime link to the parent Planner turn.
-        let tool_cancellation_token = (!is_swarm).then_some(tool_cancellation_token).flatten();
+        // Every background child remains cancellable through its owning parent
+        // turn. This covers the interval before the child has entered
+        // `active_subagent_executions`; the explicit descendant cascade handles
+        // executions that have already been registered.
+        let parent_cancel_token = self
+            .execution_engine
+            .cancel_token_for_dialog_turn(&subagent_parent_info.dialog_turn_id)
+            .map(|token| token.child_token());
 
         if let Some(scheduler) = get_global_scheduler() {
             let submit_result = match scheduler
@@ -16528,7 +16548,7 @@ pub(crate) mod tests {
 
     #[test]
     fn agent_turn_delegation_policy_recovers_swarm_scope_and_depth() {
-        let ultra = delegation_policy_for_agent_turn("Ultimate", None)
+        let ultra = delegation_policy_for_agent_turn("Ultimate", None, true)
             .expect("Ultimate should start a Swarm tree");
         assert!(ultra.allow_subagent_spawn);
         assert_eq!(ultra.nesting_depth, 0);
@@ -16537,7 +16557,7 @@ pub(crate) mod tests {
             openbitfun_runtime_ports::DelegationScope::Swarm
         );
 
-        let planner = delegation_policy_for_agent_turn("SwarmPlanner", Some(2))
+        let planner = delegation_policy_for_agent_turn("SwarmPlanner", Some(2), true)
             .expect("a persisted planner should recover its tree depth");
         assert!(planner.allow_subagent_spawn);
         assert_eq!(planner.nesting_depth, 2);
@@ -16546,18 +16566,34 @@ pub(crate) mod tests {
             openbitfun_runtime_ports::DelegationScope::Swarm
         );
 
-        let worker = delegation_policy_for_agent_turn("SwarmWorker", Some(2))
+        let worker = delegation_policy_for_agent_turn("SwarmWorker", Some(2), false)
             .expect("workers use the standard non-recursive turn policy");
-        assert_eq!(worker, DelegationPolicy::top_level());
+        assert!(!worker.allow_subagent_spawn);
+        assert_eq!(worker.nesting_depth, 2);
+        assert_eq!(
+            worker.scope,
+            openbitfun_runtime_ports::DelegationScope::Swarm
+        );
     }
 
     #[test]
     fn swarm_planner_turn_fails_closed_without_persisted_depth() {
-        let error = delegation_policy_for_agent_turn("SwarmPlanner", None)
+        let error = delegation_policy_for_agent_turn("SwarmPlanner", None, true)
             .expect_err("a planner without a persisted tree node must not execute");
         assert!(error
             .to_string()
             .contains("missing its persisted tree node"));
+    }
+
+    #[test]
+    fn every_swarm_delegate_turn_fails_closed_without_persisted_depth() {
+        for agent_type in ["SwarmPlanner", "SwarmWorker", "SwarmReviewer"] {
+            let error = delegation_policy_for_agent_turn(agent_type, None, true)
+                .expect_err("a Swarm delegate without a persisted tree node must not execute");
+            assert!(error
+                .to_string()
+                .contains("missing its persisted tree node"));
+        }
     }
 
     #[test]
