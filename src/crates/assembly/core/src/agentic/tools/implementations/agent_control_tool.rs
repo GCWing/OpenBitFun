@@ -248,7 +248,7 @@ impl Tool for AgentControlTool {
                         "interrupted_background_tasks": interrupted_background_tasks,
                     }),
                     result_for_assistant: Some(format!(
-                        "Interrupted {interrupted_background_tasks} active background run(s) for agent subtrees: {}.",
+                        "Interrupted active work in agent subtrees: {} ({interrupted_background_tasks} background run(s)).",
                         agent_ids.join(", ")
                     )),
                     image_attachments: None,

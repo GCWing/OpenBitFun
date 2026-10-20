@@ -1899,7 +1899,7 @@ impl DialogScheduler {
             .await
     }
 
-    async fn cancel_active_turn_for_session_with_descendant_policy(
+    pub(crate) async fn cancel_active_turn_for_session_with_descendant_policy(
         &self,
         session_id: &str,
         wait_timeout: Duration,

@@ -274,7 +274,7 @@ impl DesktopComputerUseHost {
     #[cfg(target_os = "windows")]
     async fn capture_window(
         &self,
-        pid: i32,
+        _pid: i32,
         hwnd_raw: isize,
         update_navigation: bool,
     ) -> OpenBitFunResult<ComputerScreenshot> {

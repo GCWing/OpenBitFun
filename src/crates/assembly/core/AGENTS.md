@@ -247,6 +247,16 @@ cargo test --locked -p openbitfun-core --no-default-features --features agent-ru
 These fixtures cover local turn admission and SSH-workspace agent resolution;
 they do not exercise live SSH, relay, peer, or dispatch connections.
 
+For child-Agent lifecycle operations, mode-switch continuation, current-turn
+listing (including reserved IDs), parent-scoped resolution, and persisted deletion/cancellation lineage
+(ordinary subagents and Swarm):
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib -- agent_lifecycle_ agentic::coordination::coordination_store::tests agentic::tools::implementations::agent_list_tool::tests
+```
+
+These fixtures cover local execution and persistence, not live remote transports.
+
 For disk-backed history paging and legacy sessions without a catalog:
 `cargo test --locked -p openbitfun-core --no-default-features --features remote-connect,git --lib history_page_`.
 

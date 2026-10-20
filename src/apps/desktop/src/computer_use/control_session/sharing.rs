@@ -155,6 +155,7 @@ pub(crate) fn acquire_shared(
 
 /// Must run before native capture, AX observation or input, not after pixels
 /// have already been fetched from an unshared application.
+#[cfg(target_os = "macos")]
 pub(crate) fn shared_target_allowed(target: &str) -> Result<(), String> {
     locked()?.admission.shared_target_allowed(target)
 }

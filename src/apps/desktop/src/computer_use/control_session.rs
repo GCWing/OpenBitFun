@@ -12,9 +12,11 @@ mod admission;
 mod sharing;
 use admission::Admission;
 pub(crate) use admission::ControlToken;
+#[cfg(target_os = "macos")]
+pub(crate) use sharing::shared_target_allowed;
 pub(crate) use sharing::{
     acquire_shared, begin_share, finish_share, grant_preference_result, request_share,
-    set_share_control, shared_process, shared_target_allowed,
+    set_share_control, shared_process,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

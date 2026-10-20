@@ -6902,6 +6902,36 @@ impl SessionManager {
             .await
     }
 
+    /// Read the compact latest user-turn outcome without restoring a Session or
+    /// reading its transcript. Legacy metadata may have no summary yet.
+    pub(crate) async fn latest_turn_for_agent_listing(
+        &self,
+        session_id: &str,
+        parent_storage_path: Option<&Path>,
+    ) -> OpenBitFunResult<Option<(String, TurnStatus)>> {
+        if !self.should_persist_session_id(session_id) {
+            return Ok(self.transient_turns.get(session_id).and_then(|history| {
+                history
+                    .turns
+                    .iter()
+                    .rev()
+                    .find(|turn| turn.kind == DialogTurnKind::UserDialog)
+                    .map(|turn| (turn.turn_id.clone(), turn.status.clone()))
+            }));
+        }
+        let storage_path = match self.effective_session_storage_path(session_id).await {
+            Some(path) => path,
+            None => parent_storage_path.map(Path::to_path_buf).ok_or_else(|| {
+                OpenBitFunError::NotFound(format!("Agent session storage not found: {session_id}"))
+            })?,
+        };
+        Ok(self
+            .load_session_metadata(&storage_path, session_id)
+            .await?
+            .and_then(|metadata| metadata.last_turn)
+            .map(|turn| (turn.turn_id, turn.status)))
+    }
+
     pub async fn update_session_metadata(
         &self,
         workspace_path: &Path,

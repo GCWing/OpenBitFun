@@ -17,6 +17,7 @@ pub(crate) struct ControlToken {
 }
 
 impl ControlToken {
+    #[cfg(target_os = "macos")]
     pub(crate) fn generation(self) -> u64 {
         self.generation
     }

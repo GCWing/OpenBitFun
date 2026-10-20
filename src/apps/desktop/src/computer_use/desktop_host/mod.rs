@@ -31,8 +31,6 @@ use openbitfun_core::agentic::tools::computer_use_host::{
     ComputerUseForegroundApplication, ComputerUsePointerGlobal,
 };
 use openbitfun_core::util::errors::{OpenBitFunError, OpenBitFunResult};
-#[cfg(any(target_os = "windows", target_os = "linux"))]
-use screenshots::display_info::DisplayInfo;
 use screenshots::Screen;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;

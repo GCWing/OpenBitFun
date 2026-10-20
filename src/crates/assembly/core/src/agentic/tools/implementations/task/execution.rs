@@ -136,26 +136,23 @@ async fn child_delegation_policy(
     let target_type = target_session_id
         .and_then(|session_id| coordinator.get_session_manager().get_session(session_id))
         .map(|session| session.agent_type);
-    let parent_policy = context.delegation_policy();
-    if parent_policy.scope == openbitfun_runtime_ports::DelegationScope::Swarm {
-        if let Some(target_type) = target_type.as_deref() {
-            let target_depth = match target_session_id {
-                Some(session_id) => coordinator
-                    .swarm_depth_for_session(session_id)
-                    .await?
-                    .ok_or_else(|| {
-                        OpenBitFunError::tool(
-                            "Swarm agent session is missing its persisted tree node".to_string(),
-                        )
-                    })?,
-                None => parent_policy.nesting_depth,
-            };
+    // An existing child's lineage does not change when its parent switches modes.
+    if let (Some(session_id), Some(target_type)) = (target_session_id, target_type.as_deref()) {
+        if let Some(target_depth) = coordinator.swarm_depth_for_session(session_id).await? {
             return Ok(openbitfun_runtime_ports::DelegationPolicy {
                 allow_subagent_spawn: target_type == "SwarmPlanner",
                 nesting_depth: target_depth,
                 scope: openbitfun_runtime_ports::DelegationScope::Swarm,
             });
         }
+        if matches!(target_type, "SwarmPlanner" | "SwarmWorker") {
+            return Err(OpenBitFunError::tool(
+                "Swarm agent session is missing its persisted tree node".to_string(),
+            ));
+        }
+        return Ok(
+            openbitfun_runtime_ports::DelegationPolicy::top_level().spawn_child_for(target_type)
+        );
     }
     Ok(context.delegation_policy().spawn_child_for(
         subagent_type
@@ -1346,6 +1343,32 @@ mod target_context_tests {
             runtime_tool_restrictions: Default::default(),
             runtime_handles: openbitfun_runtime_ports::ToolRuntimeHandles::default(),
         }
+    }
+
+    #[tokio::test]
+    async fn agent_lifecycle_mode_switch_preserves_ordinary_child_policy() {
+        let (coordinator, _) = crate::agentic::coordination::coordinator::tests::test_coordinator();
+        let workspace = tempfile::tempdir().unwrap();
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let child = crate::agentic::coordination::coordinator::tests::agent_lifecycle_child(
+            &coordinator,
+            workspace.path(),
+            "parent",
+            Default::default(),
+        )
+        .await;
+        let mut context = parent_tool_context();
+        context
+            .custom_data
+            .insert("delegation_scope".into(), json!("swarm"));
+        let policy = child_delegation_policy(&context, &coordinator, None, Some(&child.session_id))
+            .await
+            .expect("ordinary child remains reusable after parent switches to Ultimate");
+        assert_eq!(
+            policy.scope,
+            openbitfun_runtime_ports::DelegationScope::Standard
+        );
+        assert!(!policy.allow_subagent_spawn);
     }
 
     #[test]

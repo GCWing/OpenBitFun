@@ -499,23 +499,6 @@ impl DesktopComputerUseHost {
             .unwrap_or(0)
     }
 
-    /// Screen-space center of the foreground window (physical pixels). Used as
-    /// the default scroll anchor when no explicit focus target is given.
-    #[cfg(target_os = "windows")]
-    pub(super) fn windows_foreground_window_center(hwnd_raw: isize) -> Option<(i32, i32)> {
-        use windows::Win32::Foundation::{HWND, RECT};
-        use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
-        if hwnd_raw == 0 {
-            return None;
-        }
-        let hwnd = HWND(hwnd_raw as *mut std::ffi::c_void);
-        let mut rect = RECT::default();
-        if unsafe { GetWindowRect(hwnd, &mut rect) }.is_err() {
-            return None;
-        }
-        Some(((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2))
-    }
-
     /// Resolve a [`ClickTarget`] into a **global screen** `(x, y)` on Windows.
     ///
     /// Mirrors the macOS coordinate-resolution arm of `app_click`, but every
