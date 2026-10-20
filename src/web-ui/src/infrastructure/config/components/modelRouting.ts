@@ -51,18 +51,31 @@ export function newAccountSlotId(provider: SubscriptionProvider): string {
   return `${provider}-account-${crypto.randomUUID()}`;
 }
 
+// Mirrors config-contracts' output-cap resolution, including legacy invalid
+// caps falling back to automatic tiers. The shared safety reserve cancels out.
+function channelInputCapacity(model: Pick<AIModelConfig, 'context_window' | 'max_tokens'>): number {
+  const context = model.context_window ?? 128_128;
+  const configured = model.max_tokens;
+  const quarter = Math.floor(context / 4);
+  const output = configured && configured > 0 && configured * 100 <= context * 40
+    ? configured
+    : [64_000, 32_000, 24_000, 16_000, 8_000].find(tier => tier <= quarter) ?? quarter;
+  return Math.max(0, context - output);
+}
+
 /**
  * Mirrors the host's route validation: a backup must generate text, carry no
  * route of its own, and keep the primary's context window and capabilities.
  */
 export function isEligibleBackup(
-  primary: Pick<AIModelConfig, 'id' | 'context_window' | 'capabilities'>,
+  primary: Pick<AIModelConfig, 'id' | 'context_window' | 'max_tokens' | 'capabilities'>,
   candidate: AIModelConfig,
 ): boolean {
   if (!candidate.id || candidate.id === primary.id) return false;
   if (candidate.category === 'speech_recognition') return false;
   if ((candidate.channel_routing?.fallback_model_ids.length ?? 0) > 0) return false;
-  if ((candidate.context_window ?? 0) < (primary.context_window ?? 0)) return false;
+  if ((candidate.context_window ?? 128_128) < (primary.context_window ?? 128_128)) return false;
+  if (channelInputCapacity(candidate) < channelInputCapacity(primary)) return false;
   return (primary.capabilities ?? []).every(capability => candidate.capabilities.includes(capability));
 }
 

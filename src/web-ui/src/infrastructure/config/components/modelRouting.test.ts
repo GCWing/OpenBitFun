@@ -59,6 +59,16 @@ describe('backup channels', () => {
       .toBe(false);
   });
 
+  it('reserves the resolved output cap before comparing input capacity', () => {
+    const primary = model('primary', { max_tokens: 8_000 });
+    for (const max_tokens of [48_000, undefined, 0, 128_000]) {
+      expect(isEligibleBackup(primary, model('backup', { max_tokens }))).toBe(false);
+    }
+    expect(isEligibleBackup(primary, model('backup', { max_tokens: 8_000 }))).toBe(true);
+    expect(isEligibleBackup(primary, model('backup', { context_window: 256_000, max_tokens: 48_000 }))).toBe(true);
+    expect(isEligibleBackup(model('legacy', { context_window: undefined }), model('small', { context_window: 32_000 }))).toBe(false);
+  });
+
   it('stores empty routes as absent and drops stale manual choices', () => {
     expect(normalizeChannelRouting({ version: 1, fallback_model_ids: [] })).toBeUndefined();
     expect(normalizeChannelRouting({ version: 1, fallback_model_ids: ['b'], manual_channel: 'b' }))

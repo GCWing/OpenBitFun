@@ -1943,6 +1943,30 @@ mod tests {
     }
 
     #[test]
+    fn model_sync_payload_keeps_legacy_absence_without_copying_host_settings() {
+        let original = subscription_sync_fixture(crate::service::config::AuthConfig::ApiKey);
+        let payload = protected_model_sync_payload(&original).unwrap();
+        let keys: std::collections::BTreeSet<_> = payload
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            std::collections::BTreeSet::from([
+                "models",
+                "default_models",
+                "agent_model_defaults",
+                "model_pools",
+            ])
+        );
+        assert_eq!(payload["model_pools"], original["ai"]["model_pools"]);
+        assert!(payload.get("agent_model_selections").is_none());
+        assert!(original["ai"].get("proxy").is_some());
+    }
+
+    #[test]
     fn subscription_model_sync_uses_guarded_export_and_restores_the_exact_binding() {
         use crate::service::config::{AuthConfig, SubscriptionProvider};
         use openbitfun_config_contracts::protected_account_models::{
@@ -1963,13 +1987,35 @@ mod tests {
                 revision: 7,
             },
         ] {
-            let original = subscription_sync_fixture(auth);
+            let mut original = subscription_sync_fixture(auth);
+            original["ai"]["agent_model_selections"] = json!({"mode":{"kind":"model","model_ref":"sync-model"},"subagents":{"default":{"kind":"inherit"},"builtin":{},"fork":{"kind":"inherit"}}});
+            original["ai"]["model_pools"] = json!({"version":1,"pools":[{"id":"sync-pool","name":"Sync pool","strategy":"ordered","member_model_ids":["sync-model"]}]});
+            original["ai"]["proxy"] = json!({"url":"https://private-proxy.invalid"});
             let mut payload = protected_model_sync_payload(&original).unwrap();
+            let keys: std::collections::BTreeSet<_> = payload
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect();
             assert_eq!(
-                payload.as_object().unwrap().len(),
-                3,
-                "sync must not carry unrelated host settings"
+                keys,
+                std::collections::BTreeSet::from([
+                    "models",
+                    "default_models",
+                    "agent_model_defaults",
+                    "agent_model_selections",
+                    "model_pools",
+                ]),
+                "sync must carry only model settings"
             );
+            for key in [
+                "agent_model_defaults",
+                "agent_model_selections",
+                "model_pools",
+            ] {
+                assert_eq!(payload[key], original["ai"][key]);
+            }
             assert_eq!(payload["models"][0]["auth"]["type"], "api_key");
             assert_eq!(payload["models"][0]["base_url"], ACCOUNT_MODEL_GUARD_URL);
             assert_eq!(

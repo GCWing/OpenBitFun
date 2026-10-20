@@ -1132,7 +1132,7 @@ impl RoundExecutor {
                             effective_output: lifecycle.observed_effective_output,
                             nonportable_history: has_opaque_replay && !routed,
                             remaining_attempts: max_attempts
-                                .saturating_sub(lifecycle.attempts_started() as usize),
+                                .saturating_sub(local_attempt_index + 1),
                         },
                         &mut authentication_recovery_attempted,
                         &mut excluded_accounts,
@@ -1602,7 +1602,7 @@ impl RoundExecutor {
                             effective_output: lifecycle.observed_effective_output,
                             nonportable_history: has_opaque_replay && !routed,
                             remaining_attempts: max_attempts
-                                .saturating_sub(lifecycle.attempts_started() as usize),
+                                .saturating_sub(local_attempt_index + 1),
                         },
                         &mut authentication_recovery_attempted,
                         &mut excluded_accounts,
@@ -2929,14 +2929,20 @@ pub(super) mod tests {
         use crate::service::config::{ConfigManagerSettings, ConfigService};
         use crate::service::token_usage::{TimeRange, TokenUsageQuery, TokenUsageService};
         use openbitfun_config_contracts::channel_routing::ModelChannelRouting;
-        for (format, manual, blocked) in [
-            ("openai", false, false),
-            ("anthropic", false, false),
-            ("gemini", false, false),
-            ("openai", true, false),
-            ("openai", false, true),
-            ("anthropic", false, true),
-            ("gemini", false, true),
+        for (format, manual, blocked, previous_attempts) in [
+            ("openai", false, false, 0),
+            ("anthropic", false, false, 0),
+            ("gemini", false, false, 0),
+            ("openai", true, false, 0),
+            ("openai", false, true, 0),
+            ("anthropic", false, true, 0),
+            ("gemini", false, true, 0),
+            (
+                "openai",
+                false,
+                false,
+                RoundExecutor::MAX_STREAM_ATTEMPTS as u32,
+            ),
         ] {
             let dir = tempfile::tempdir().unwrap();
             let primary = RetryTestServer::new(vec![(
@@ -3066,9 +3072,14 @@ pub(super) mod tests {
                 super::AIMessage::user("Continue from that result".into()),
             ];
             let before = serde_json::to_value(&history).unwrap();
+            let mut lifecycle = ModelRoundLifecycle::new();
+            for _ in 0..previous_attempts {
+                lifecycle.begin_attempt();
+            }
             let result = tokio::time::timeout(
                 Duration::from_secs(12),
-                executor.execute_round(client, context, history.clone(), None, None),
+                executor.execute_round_with_lifecycle(client, context, history.clone(), None, None,
+                    &mut lifecycle, None, None),
             )
             .await
             .unwrap_or_else(|_| panic!("Channel fixture did not settle: protocol={format}, manual={manual}, signed_history={blocked}, primary_requests={}, backup_requests={}", primary.requests.lock().unwrap().len(), backup.requests.lock().unwrap().len()));
@@ -3122,7 +3133,7 @@ pub(super) mod tests {
                 );
                 assert_eq!(
                     completed.request_context().unwrap().attempt_index,
-                    if manual { 1 } else { 2 }
+                    previous_attempts + if manual { 1 } else { 2 }
                 );
                 let headers = backup.headers.lock().unwrap();
                 assert!(
@@ -6555,6 +6566,53 @@ pub(super) mod tests {
         );
         let events = executor.event_queue.dequeue_batch(100).await;
         assert_eq!(events.iter().filter(|event| matches!(&event.event, AgenticEvent::ModelRoundAttemptSuperseded { diagnostic, .. } if diagnostic.category == "account_switch")).count(), 1);
+    }
+
+    #[tokio::test]
+    async fn later_model_pool_members_keep_their_account_switch_budget() {
+        for reply in [
+            account_quota_error(),
+            (
+                200,
+                format!(
+                    "data: {}\n\n",
+                    json!({"error":{"code":"insufficient_quota","message":"Quota exhausted"}})
+                ),
+            ),
+        ] {
+            let primary = RetryTestServer::new(vec![reply]);
+            let backup = RetryTestServer::new(vec![retry_test_success()]);
+            let source = test_account_source(vec![primary.client(), backup.client()], false);
+            let mut context = test_round_context();
+            context.account_client_source = Some(source.clone());
+            let mut lifecycle = ModelRoundLifecycle::new();
+            // An earlier outer-pool member exhausted its response recovery.
+            // Attempt numbering/usage remain global; retry admission is local.
+            for _ in 0..RoundExecutor::MAX_STREAM_ATTEMPTS {
+                lifecycle.begin_attempt();
+            }
+            let result = test_round_executor()
+                .execute_round_with_lifecycle(
+                    primary.client(),
+                    context,
+                    vec![super::AIMessage::user("Try the next pool member".into())],
+                    None,
+                    None,
+                    &mut lifecycle,
+                    None,
+                    None,
+                )
+                .await
+                .unwrap();
+            assert!(result.had_assistant_text);
+            assert_eq!(
+                lifecycle.attempts_started() as usize,
+                RoundExecutor::MAX_STREAM_ATTEMPTS + 2
+            );
+            assert_eq!(primary.requests.lock().unwrap().len(), 1);
+            assert_eq!(backup.requests.lock().unwrap().len(), 1);
+            assert_eq!(source.accepted.lock().unwrap().len(), 1);
+        }
     }
 
     #[tokio::test]

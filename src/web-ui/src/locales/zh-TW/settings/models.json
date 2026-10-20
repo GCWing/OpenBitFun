@@ -634,6 +634,7 @@
     "cloneName": "{{name}} - 副本",
     "templateName": "{{provider}} - {{modelName}}",
     "templateDescription": "{{description}} - {{modelName}}",
+    "configChanged": "模型設定已在其他地方變更，目前草稿已保留。請重新整理模型設定並重新開啟編輯器後再儲存。",
     "providerRemoved": "此服務已被移除，請關閉編輯器後重新開啟模型設定。"
   },
   "modelsDevCatalog": {

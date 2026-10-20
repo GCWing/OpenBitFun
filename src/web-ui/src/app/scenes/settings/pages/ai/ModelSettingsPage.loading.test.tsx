@@ -4,8 +4,8 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { aiApi, systemAPI } from '@/infrastructure/api';
-import { configManager } from '@/infrastructure/config/services/ConfigManager';
-import { getSettingsDraftSnapshot, requestAllSettingsDraftsExit } from '@/infrastructure/config/settingsDraftRegistry';
+import { ConfigConflictError, configManager } from '@/infrastructure/config/services/ConfigManager';
+import { cancelPendingSettingsNavigation, getSettingsDraftSnapshot, requestAllSettingsDraftsExit } from '@/infrastructure/config/settingsDraftRegistry';
 import type { AIModelConfig } from '@/infrastructure/config/types';
 import { i18nService } from '@/infrastructure/i18n';
 import { notificationService } from '@/shared/notification-system';
@@ -96,6 +96,83 @@ describe('ModelSettingsPage loading and provider actions', () => {
     expect(selectors()[0].disabled).toBe(false);
     expect(configManager.getOptionalConfig).not.toHaveBeenCalled();
     expect(configManager.getConfig).not.toHaveBeenCalled();
+  });
+
+  it.each(['add', 'remove', 'reorder', 'manual'] as const)('protects a channel-only %s edit and saves its original model snapshot', async operation => {
+    const primary: AIModelConfig = {
+      ...model, api_key: 'fixture-key', context_window: 128_000, max_tokens: 8_000,
+      capabilities: ['text_chat', 'function_calling'],
+      metadata: { provider_instance_id: 'primary-provider' },
+      ...(operation === 'add' ? {} : { channel_routing: {
+        version: 1, fallback_model_ids: operation === 'reorder' ? ['backup', 'second'] : ['backup'],
+      } }),
+    };
+    const backup: AIModelConfig = { ...primary, id: 'backup', name: 'Backup', model_name: 'backup-model',
+      channel_routing: undefined, metadata: { provider_instance_id: 'backup-provider' } };
+    const second: AIModelConfig = { ...backup, id: 'second', name: 'Second', model_name: 'second-model',
+      metadata: { provider_instance_id: 'second-provider' } };
+    const models = [primary, backup, second];
+    const baseline = structuredClone(models);
+    const values: Record<string, unknown> = {
+      'ai.models': models, 'ai.default_models': { primary: primary.id },
+      'ai.proxy': { enabled: false, url: '', username: '', password: '' },
+      'ai.stream_idle_timeout_secs': 120, 'ai.stream_ttft_timeout_secs': 60,
+    };
+    vi.spyOn(configManager, 'hasCachedConfig').mockImplementation(path => path in values);
+    vi.spyOn(configManager, 'getCachedConfig').mockImplementation(<T,>(path: string) => values[path] as T);
+    const update = vi.spyOn(configManager, 'updateConfig').mockImplementation(
+      async <T,>(_path: string, transform: (current: T) => T) => transform(models as T),
+    );
+    vi.spyOn(aiApi, 'testAIConfigConnection').mockImplementation(() => new Promise(() => {}));
+    await act(async () => root.render(<ModelSettingsPage />));
+    await act(async () => container.querySelector<HTMLButtonElement>(
+      `[data-config-id="${primary.id}"] button[aria-label="${copy('actions.edit')}"]`,
+    )!.click());
+    const editor = () => document.querySelector<HTMLElement>('.openbitfun-model-settings__editor-dialog')!;
+    const editorButton = (key: string) => [...editor().querySelectorAll<HTMLButtonElement>('button')]
+      .find(element => element.textContent === copy(key))!;
+    const draft = () => getSettingsDraftSnapshot().resources.find(resource => resource.id === 'model-provider-editor')!;
+    expect(draft().dirty).toBe(false);
+    if (operation === 'add' || operation === 'manual') {
+      const label = copy(operation === 'add' ? 'channelRouting.add' : 'channelRouting.mode');
+      await act(async () => editor().querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click());
+      await act(async () => [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+        .find(option => option.textContent?.includes('backup-model'))!.click());
+    } else {
+      const label = copy(operation === 'remove' ? 'channelRouting.remove' : 'subscriptionAuth.pool.moveDown');
+      await act(async () => editor().querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click());
+    }
+    expect(draft().dirty).toBe(true);
+    const leave = vi.fn();
+    expect(requestAllSettingsDraftsExit(leave)).toBe(false);
+    expect(leave).not.toHaveBeenCalled();
+    cancelPendingSettingsNavigation();
+    await act(async () => editorButton('actions.cancel').click());
+    const confirmation = document.querySelector<HTMLElement>('[role="alertdialog"]')!;
+    expect(confirmation.textContent).toContain(copy('draftClose.title'));
+    await act(async () => [...confirmation.querySelectorAll<HTMLButtonElement>('button')]
+      .find(element => element.textContent === copy('draftClose.continueEditing'))!.click());
+    // A refresh/mutation of the cached object must not change the edit baseline.
+    models[0].description = 'Concurrent change';
+    if (operation === 'add') {
+      const error = vi.spyOn(notificationService, 'error');
+      update.mockRejectedValueOnce(new ConfigConflictError());
+      await act(async () => editorButton('actions.save').click());
+      expect(error).toHaveBeenCalledWith(copy('messages.configChanged'), undefined);
+      expect(draft().dirty).toBe(true);
+      expect(editor()).not.toBeNull();
+      update.mockClear();
+    }
+    await act(async () => editorButton('actions.save').click());
+    expect(update).toHaveBeenCalledOnce();
+    expect(update.mock.calls[0][2]).toEqual({ expectedValue: baseline });
+    const saved = await update.mock.results[0].value as AIModelConfig[];
+    expect(saved[0].channel_routing).toEqual({
+      add: { version: 1, fallback_model_ids: ['backup'] },
+      remove: undefined,
+      reorder: { version: 1, fallback_model_ids: ['second', 'backup'] },
+      manual: { version: 1, fallback_model_ids: ['backup'], manual_channel: 'backup' },
+    }[operation]);
   });
 
   it.each([false, true])('cancelling a new WorkBuddy account preserves the settings draft state (model editor: %s)', async inModelEditor => {

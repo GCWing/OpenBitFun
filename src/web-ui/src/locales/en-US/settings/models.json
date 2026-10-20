@@ -634,6 +634,7 @@
     "cloneName": "{{name}} - Copy",
     "templateName": "{{provider}} - {{modelName}}",
     "templateDescription": "{{description}} - {{modelName}}",
+    "configChanged": "The model configuration changed elsewhere. Your draft has been kept. Refresh model settings and reopen the editor before saving.",
     "providerRemoved": "This provider was removed. Close the editor and reopen model settings."
   },
   "modelsDevCatalog": {

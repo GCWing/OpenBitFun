@@ -63,7 +63,7 @@ import {
 } from '@/infrastructure/config/components/subscriptionLoginCoordinator';
 import { resolveProviderTemplates } from '@/infrastructure/config/services/builtinProviderCatalog';
 import { useConfigSeed } from '@/infrastructure/config/hooks/useConfigSeed';
-import { configManager } from '@/infrastructure/config/services/ConfigManager';
+import { ConfigConflictError, configManager } from '@/infrastructure/config/services/ConfigManager';
 import { getCapabilitiesByCategory, getEffectiveModelCapabilities, resolveModelCategory } from '@/infrastructure/config/services/modelCategory';
 import { getModelTags, getModelUserTags, preserveModelAnnotations } from '@/infrastructure/config/services/modelTags';
 import {
@@ -413,6 +413,7 @@ function modelDraftHasUnsavedChanges(
     draft.category !== (persisted.category ?? 'general_chat') ||
     draft.contextWindow !== (persisted.context_window || 300000) ||
     draft.maxTokens !== persisted.max_tokens ||
+    stableJson(normalizeChannelRouting(draft.channelRouting)) !== stableJson(normalizeChannelRouting(persisted.channel_routing)) ||
     stableJson(draft.reasoning) !== stableJson(canonicalReasoningConfig(persisted)) ||
     stableJson(draft.requestSettings) !== stableJson(getModelEditorRequestSettings(persisted)) ||
     (draft.userTags !== undefined && stableJson(draft.userTags) !== stableJson(getModelUserTags(persisted)))
@@ -539,6 +540,7 @@ const ModelSettingsPage: React.FC = () => {
       : missingModelFieldLabels[0],
   });
 
+  const editingModelsSnapshotRef = React.useRef<AIModelConfigType[]>([]);
   const [editingProviderModelIds, setEditingProviderModelIds] = useState<Set<string>>(new Set());
   const providerIdentityLocked = !!editingConfig?.id || editingProviderModelIds.size > 0;
   const configuredProvider = aiModels.find(model => editingConfig?.id
@@ -1879,6 +1881,7 @@ const ModelSettingsPage: React.FC = () => {
     const providerGroupKey = getProviderGroupKey(config);
     const targetKey = `provider:${providerGroupKey}`;
     requestEditorOpen(targetKey, () => {
+      editingModelsSnapshotRef.current = structuredClone(aiModels);
       setShowProviderManager(false);
       resetRemoteModelDiscovery();
       setManualModelInput('');
@@ -1933,6 +1936,7 @@ const ModelSettingsPage: React.FC = () => {
   const handleEdit = (config: AIModelConfigType) => {
     const targetKey = `model:${config.id || `${config.provider}:${config.base_url}:${config.model_name}`}`;
     requestEditorOpen(targetKey, () => {
+      editingModelsSnapshotRef.current = structuredClone(aiModels);
       setShowProviderManager(false);
       resetRemoteModelDiscovery();
       setManualModelInput('');
@@ -2180,7 +2184,7 @@ const ModelSettingsPage: React.FC = () => {
         return [...current, ...configsToSave.map((config, index) => (
           preserveModelAnnotations(undefined, config, draftsToSave[index].userTags)
         ))];
-      });
+      }, providerIdentityLocked ? { expectedValue: editingModelsSnapshotRef.current } : undefined);
       const configsToAutoTest = configsNeedingAutoTest(
         previousModelsBeforeSave,
         configsToSave,
@@ -2217,7 +2221,7 @@ const ModelSettingsPage: React.FC = () => {
       return true;
     } catch (error) {
       log.error('Failed to save config', error);
-      notification.error(t('messages.saveFailed'));
+      notification.error(t(error instanceof ConfigConflictError ? 'messages.configChanged' : 'messages.saveFailed'));
       return false;
     } finally {
       editorSavingRef.current = false;
@@ -3064,6 +3068,7 @@ const ModelSettingsPage: React.FC = () => {
       const primary = {
         id: savedModelId,
         context_window: draft.contextWindow,
+        max_tokens: draft.maxTokens,
         capabilities: getCapabilitiesByCategory(draft.category),
       };
       const candidates = aiModels.filter(model => (

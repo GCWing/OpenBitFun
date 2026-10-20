@@ -4,6 +4,19 @@ use crate::AIModelConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+// Resolve output reservation exactly as conversion::AIConfig does. Both
+// channels retain the same safety reserve, so it does not affect comparison.
+fn input_capacity(model: &AIModelConfig) -> u32 {
+    let context = model
+        .context_window
+        .unwrap_or(crate::DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS);
+    let output = model
+        .max_tokens
+        .filter(|tokens| crate::is_valid_configured_max_output_tokens(context, *tokens))
+        .unwrap_or_else(|| crate::automatic_max_output_tokens(context));
+    context.saturating_sub(output)
+}
+
 fn version_one() -> u32 {
     1
 }
@@ -75,6 +88,7 @@ pub fn channel_members<'a>(
             < model
                 .context_window
                 .unwrap_or(crate::DEFAULT_MODEL_CONTEXT_WINDOW_TOKENS)
+            || input_capacity(next) < input_capacity(model)
             || model
                 .capabilities
                 .iter()
@@ -180,5 +194,26 @@ mod tests {
         a.capabilities
             .push(crate::ModelCapability::ImageUnderstanding);
         assert!(validate_channel_routes(&[a, b]).is_err());
+    }
+    #[test]
+    fn backups_preserve_input_capacity_after_output_reservation() {
+        let mut primary = model("primary");
+        primary.context_window = Some(128_000);
+        primary.max_tokens = Some(8_000);
+        primary.channel_routing = Some(ModelChannelRouting {
+            fallback_model_ids: vec!["backup".into()],
+            ..Default::default()
+        });
+        let mut backup = model("backup");
+        backup.context_window = Some(128_000);
+        for output in [Some(48_000), None, Some(0), Some(128_000)] {
+            backup.max_tokens = output;
+            assert!(validate_channel_routes(&[primary.clone(), backup.clone()]).is_err());
+        }
+        backup.max_tokens = Some(8_000);
+        assert!(validate_channel_routes(&[primary.clone(), backup.clone()]).is_ok());
+        backup.max_tokens = Some(48_000);
+        backup.context_window = Some(256_000);
+        assert!(validate_channel_routes(&[primary, backup]).is_ok());
     }
 }
