@@ -275,6 +275,51 @@ fn parse_zcode(
     ))
 }
 
+fn parse_grok(
+    slot: &str,
+    revision: u64,
+    now: i64,
+    data: &Value,
+) -> Result<SubscriptionQuotaSnapshot> {
+    let config = &data["config"];
+    let mut meters = Vec::new();
+    if let Some(used) = number(&config["creditUsagePercent"]) {
+        let duration = match config["currentPeriod"]["type"].as_str() {
+            Some("USAGE_PERIOD_TYPE_DAILY") => Some(86400),
+            Some("USAGE_PERIOD_TYPE_WEEKLY") => Some(604800),
+            Some("USAGE_PERIOD_TYPE_MONTHLY") => Some(2592000),
+            _ => None,
+        };
+        meters.push(SubscriptionQuotaMeter {
+            id: "period".into(),
+            used_percent: Some(used.min(100.0)),
+            duration_seconds: duration,
+            resets_at: timestamp(&config["currentPeriod"]["end"])
+                .or_else(|| timestamp(&config["billingPeriodEnd"])),
+            ..Default::default()
+        });
+    }
+    if let Some(cap) = number(&config["onDemandCap"]["val"]).filter(|n| *n > 0.0) {
+        if let Some(used) = number(&config["onDemandUsed"]["val"]) {
+            let mut meter = amounts("on-demand".into(), Some(used), Some(cap), None);
+            meter.display_name = Some("On-demand".into());
+            meter.secondary = true;
+            meter.resets_at = timestamp(&config["billingPeriodEnd"])
+                .or_else(|| timestamp(&config["currentPeriod"]["end"]));
+            meters.push(meter);
+        }
+    }
+    super::plan_quota::observed(
+        "grok",
+        slot,
+        revision,
+        now,
+        Some("Grok".into()),
+        None,
+        meters,
+    )
+}
+
 fn signed(
     mut builder: reqwest::RequestBuilder,
     credential: &super::ResolvedCredential,
@@ -340,6 +385,7 @@ async fn fetch(
     let (data, supplementary) =
         query_billing(provider, &credential, &metadata, &client, root).await?;
     match provider {
+        SubscriptionProvider::Grok => parse_grok(slot, entry.revision, now, &data),
         SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => parse_workbuddy(
             provider,
             slot,
@@ -365,6 +411,7 @@ async fn fetch(
 
 fn billing_root(provider: SubscriptionProvider, team: bool) -> Result<&'static str> {
     Ok(match provider {
+        SubscriptionProvider::Grok => "https://cli-chat-proxy.grok.com/v1",
         SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
             super::workbuddy::root(provider)
         }
@@ -388,6 +435,20 @@ async fn query_billing(
     root: &str,
 ) -> Result<(Value, Option<Value>)> {
     match provider {
+        SubscriptionProvider::Grok => {
+            let response = signed(
+                client.get(format!("{root}/billing?format=credits")),
+                credential,
+                true,
+            )?
+            .send()
+            .await?;
+            if !response.status().is_success() {
+                return Err(anyhow!("Grok billing request failed"));
+            }
+            Ok((response.json().await?, None))
+        }
+
         SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
             let sum = browser_poll::data(
                 signed(
@@ -468,6 +529,7 @@ pub(super) async fn read(
     if !force {
         if let Some(cached) = cached.as_ref().filter(|q| {
             q.provider == provider.key()
+                && q.credential_revision == revision
                 && q.state == SubscriptionQuotaState::Known
                 && q.valid_until.is_some_and(|end| end > now)
         }) {
@@ -507,6 +569,60 @@ async fn finish(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn grok_period_percent_and_on_demand_are_display_only() {
+        let q = parse_grok("grok:fixture", 7, 1000, &json!({"config":{"creditUsagePercent":"42.5","currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","end":"2026-11-01T00:00:00Z"},"onDemandCap":{"val":100},"onDemandUsed":{"val":20}}})).unwrap();
+        let m = &q.display.unwrap().meters;
+        assert_eq!(m[0].duration_seconds, Some(604800));
+        assert_eq!(m[0].used_percent, Some(42.5));
+        assert_eq!(m[1].remaining, Some(80.0));
+        assert!(m[1].secondary);
+        assert!(q.allowed.is_none() && q.windows.is_empty());
+        assert!(parse_grok("grok", 1, 1000, &json!({"config":{}})).is_err());
+        assert!(parse_grok(
+            "grok",
+            1,
+            1000,
+            &json!({"config":{"creditUsagePercent":-1}})
+        )
+        .is_err());
+    }
+    #[tokio::test]
+    async fn grok_billing_uses_selected_account_token_and_cli_headers() {
+        use axum::{extract::Request, routing::any, Json, Router};
+        openbitfun_services_core::tls_provider::ensure_ring_crypto_provider();
+        let router = Router::new().fallback(any(|request: Request| async move {
+            assert_eq!(request.uri(), "/billing?format=credits");
+            assert_eq!(
+                request.headers()["authorization"],
+                "Bearer selected-account"
+            );
+            assert_eq!(request.headers()["x-fixture-cli"], "cli-signature");
+            Json(json!({"config":{"creditUsagePercent":12}}))
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let root = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let credential = super::super::ResolvedCredential {
+            api_key: "selected-account".into(),
+            extra_headers: [("x-fixture-cli".into(), "cli-signature".into())].into(),
+            base_url: None,
+            request_url: None,
+            format: None,
+            expires_at: None,
+        };
+        let (data, _) = query_billing(
+            SubscriptionProvider::Grok,
+            &credential,
+            &json!({}),
+            &reqwest::Client::new(),
+            &root,
+        )
+        .await
+        .unwrap();
+        assert_eq!(data["config"]["creditUsagePercent"], 12);
+        server.abort();
+    }
     #[test]
     fn workbuddy_accepts_decimal_strings_and_keeps_missing_capacities_unknown() {
         let q=parse_workbuddy(SubscriptionProvider::Workbuddy,"workbuddy",1,1000,&json!({"IsPaidUser":true,"Packages":[{"CycleTotalCapacity":"1000","CycleUsedCapacity":"123.5","CycleRemainCapacity":"876.5"}]}),None).unwrap();

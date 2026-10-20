@@ -46,3 +46,21 @@ it('discovers the selected Console account catalog instead of the provider defau
     request: { provider: 'opencode', accountId: 'slot-c' },
   });
 });
+
+it('new plan queries send only a saved model ID to the capability-gated host command', async () => {
+  invoke.mockResolvedValue({ state: 'known' });
+  for (const provider of ['minimax', 'kimi_code', 'stepfun'] as const) {
+    await new AIApi().getModelProviderQuota('saved-plan', provider);
+    expect(invoke).toHaveBeenLastCalledWith('get_model_provider_quota', { request: { modelId: 'saved-plan' } });
+  }
+});
+
+it('never puts pasted StepFun authorization or a raw upstream error in diagnostics', async () => {
+  invoke.mockRejectedValue(new Error('private synthetic-session'));
+  let failure: unknown;
+  try { await new AIApi().manageModelQuotaConnection('saved-stepfun', 'connect', 'synthetic-session'); }
+  catch (error) { failure = error; }
+  expect(String(failure)).not.toContain('synthetic-session');
+  expect(JSON.stringify(failure)).not.toContain('synthetic-session');
+  expect(invoke).toHaveBeenCalledWith('manage_model_quota_connection', { request: { modelId: 'saved-stepfun', action: 'connect', sessionToken: 'synthetic-session' } });
+});

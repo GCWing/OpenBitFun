@@ -273,7 +273,9 @@
       "get_session_interaction_mailbox"
     ],
     "subscriptionAccountBackend": [
+      "get_model_provider_quota",
       "get_subscription_account_quota",
+      "manage_model_quota_connection",
       "list_subscription_account_instances",
       "logout_subscription_account_instance",
       "refresh_subscription_account_instance",

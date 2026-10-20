@@ -230,6 +230,27 @@ remaining free usage and reset times are not exposed. Console OAuth is never sen
 to Go's API-key billing endpoint. Local HTTP/DOM fixtures cover these paths; live account
 billing and physical remote hosts have not been verified.
 
+MiniMax Token/Coding Plan and Kimi Code allowance appear in the saved API-key
+connection editor. MiniMax shows rolling and weekly windows (including separate
+model buckets when provided); Kimi Code shows short and weekly windows. Use the
+plan key on the official regional endpoint. Ordinary Moonshot pay-as-you-go keys
+are not Kimi Code subscriptions. Grok accounts show their current billing period
+and any on-demand spending cap in the subscription account panel.
+
+StepFun Step Plan uses a separate web-account session. After saving an official
+StepFun connection, open its allowance section, open the StepFun platform, and
+copy the authorization bookmark. Save that code as a browser bookmark and run it
+on the signed-in platform page. Paste its result into **Authorization session**
+and select **Connect allowance**. The quota belongs to the displayed web account;
+an inference API key alone cannot identify its Step Plan quota. The session is
+kept in the application's credential vault, scoped by saved connection and region.
+Disconnecting removes that allowance authorization. No other application's
+credential files or browser cookies are automatically read. New plan queries and
+connections require `model_provider_quota_v1` on a peer; older Go/account quota
+capabilities are insufficient. Missing usage stays unknown and refresh failures
+retain the previous observation. These four providers' display meters do not
+change model-routing eligibility.
+
 ## Subscription routing status
 
 The Models settings frontend was restored to upstream/main on 2026-10-16.

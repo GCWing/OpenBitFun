@@ -100,3 +100,8 @@ export function canEditChannelRoutingOnSurface(
 export function canQueryModelQuotaOnSurface(peerActive: boolean, capabilities: PeerHostCapabilities | null): boolean {
   return !peerActive || capabilities?.subscriptionModelQuotaV1 === true;
 }
+
+/** New plan adapters must not be inferred from the older Go-only quota capability. */
+export function canQueryProviderPlanQuotaOnSurface(peerActive: boolean, capabilities: PeerHostCapabilities | null): boolean {
+  return !peerActive || capabilities?.modelProviderQuotaV1 === true;
+}

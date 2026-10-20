@@ -305,3 +305,13 @@ state and console link instead of scraping cookies or fabricating a balance.
 Run `cargo test --locked -p openbitfun-ai-adapters --features subscription-auth --lib subscription_auth::opencode_quota`.
 Fixtures cover both response generations, Bearer authentication, 401/403 distinctions
 and origin pinning; they do not verify a subscribed production account.
+
+MiniMax Token Plan and Kimi Code billing reads live in `subscription_auth::plan_quota`;
+StepFun Step Plan session import/refresh lives in `stepfun_quota`; Grok OAuth
+billing uses `vendor_quota`. Keep official origins pinned, redirects disabled,
+provider windows display-only, and unknown values absent. StepFun authorization
+is explicitly pasted into the application vault, scoped by model/region, with
+account-preserving refresh and revision-checked commits; do not scan CLI stores
+or browser profiles. A cancelled observer must not abandon a started token rotation.
+Focused checks: `cargo test --locked -p openbitfun-ai-adapters --features subscription-auth --lib subscription_auth`.
+The isolated HTTP/vault fixtures do not establish live provider entitlement.

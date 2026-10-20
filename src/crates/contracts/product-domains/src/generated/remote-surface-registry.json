@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:1578b6d9b6b37c5d",
+  "digest": "fnv1a64:0f23a14e0dc727f5",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -24,6 +24,7 @@
       "subscription_provider_accounts_v1",
       "subscription_quota_v1",
       "subscription_model_quota_v1",
+      "model_provider_quota_v1",
       "subscription_account_pools_v1",
       "subscription_account_failover_v1",
       "model_channel_routing_v1",
@@ -58,6 +59,7 @@
       "subscription_provider_accounts_v1",
       "subscription_quota_v1",
       "subscription_model_quota_v1",
+      "model_provider_quota_v1",
       "subscription_account_pools_v1",
       "subscription_account_failover_v1",
       "model_channel_routing_v1",
@@ -3059,6 +3061,18 @@
       }
     },
     {
+      "id": "get_model_provider_quota",
+      "surface": "tauri_command",
+      "remoteWorkspace": "LocalOnly",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "unsupported",
+        "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
       "id": "get_models_dev_catalog_status",
       "surface": "tauri_command",
       "remoteWorkspace": "LocalOnly",
@@ -4608,6 +4622,18 @@
       },
       "cliPeer": {
         "kind": "handled"
+      }
+    },
+    {
+      "id": "manage_model_quota_connection",
+      "surface": "tauri_command",
+      "remoteWorkspace": "LocalOnly",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "unsupported",
+        "reason": "the CLI peer host has no handler for this command"
       }
     },
     {

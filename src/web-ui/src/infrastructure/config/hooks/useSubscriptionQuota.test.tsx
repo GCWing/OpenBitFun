@@ -73,7 +73,7 @@ it('retains the last observation when a refresh returns a provider HTTP failure 
 it('uses only the saved model ID for Go billing and never resolves a provider-default account', async () => {
   modelQuery.mockResolvedValue({ account_id: 'model:go', provider: 'opencode', state: 'known', plan: 'Go plan', windows: [] });
   await act(async () => root.render(<Probe modelId="go" accountId="model:go" />));
-  expect(modelQuery).toHaveBeenCalledExactlyOnceWith('go');
+  expect(modelQuery).toHaveBeenCalledExactlyOnceWith('go', 'opencode');
   expect(query).not.toHaveBeenCalled();
   expect(container.textContent).toBe('Go plan');
 });

@@ -1,0 +1,16 @@
+.root {
+  grid-column: 1 / -1;
+  min-inline-size: 0;
+  padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
+}
+
+.actions, .authorization {
+  display: flex;
+  align-items: center;
+  gap: var(--openbitfun-space-2);
+  min-inline-size: 0;
+}
+
+.actions { flex-wrap: wrap; }
+.authorization { inline-size: 100%; }
+.authorization > :first-child { flex: 1; min-inline-size: 0; }

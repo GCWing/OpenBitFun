@@ -89,3 +89,11 @@ public free access have explicit informational states plus the console action.
 Focused checks:
 `pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/ai/SubscriptionServiceGroup.test.tsx src/app/scenes/settings/pages/ai/subscriptionServices.test.ts src/app/scenes/settings/pages/ai/ZcodeSubscriptionGroup.test.tsx src/app/scenes/settings/pages/ai/OpenCodeModelQuota.test.ts src/infrastructure/api/service-api/AIApi.quota.test.ts`.
 These are local DOM/data fixtures, not visual or physical remote-host acceptance.
+
+MiniMax/Kimi Code/StepFun saved-model quota panels and Grok period support require
+`model_provider_quota_v1` on peers; the older Go/account quota capabilities do
+not imply these adapters. Step Plan authorization is independent of inference
+credentials, explicitly pasted, and cleared from drafts after submission/closing.
+Keep observations and setup responses fenced by device activation and saved-model
+identity. Focused checks add `src/app/scenes/settings/pages/ai/ModelProviderQuota.test.tsx`
+to the allowance tests above; these are local fixtures, not live provider acceptance.

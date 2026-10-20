@@ -5,6 +5,7 @@ import { ModelPoolsSection } from './ModelPoolsSection';
 import { ModelPoolCardActions } from './ModelPoolCardActions';
 import { ZcodeSubscriptionGroup } from './ZcodeSubscriptionGroup';
 import { OpenCodeModelQuota } from './OpenCodeModelQuota';
+import { ModelProviderQuota } from './ModelProviderQuota';
 import { SubscriptionQuotaPanel } from './SubscriptionQuotaPanel';
 import { SubscriptionAccountList, SubscriptionServiceGroup } from './SubscriptionServiceGroup';
 import { managedSubscriptionAccounts, modelsUsingSubscriptionAccount, groupSubscriptionServices, isZcodeProvider, preferredZcodeProvider, subscriptionManagerAccounts } from './subscriptionServices';
@@ -99,7 +100,7 @@ import {
 import { i18nService, useI18n } from '@/infrastructure/i18n';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
-import { canEditAccountPoolsOnSurface, canEditChannelRoutingOnSurface, canQuerySubscriptionQuotaOnSurface, canQueryModelQuotaOnSurface } from '@/infrastructure/peer-device/peerCapabilityResolution';
+import { canEditAccountPoolsOnSurface, canEditChannelRoutingOnSurface, canQuerySubscriptionQuotaOnSurface, canQueryModelQuotaOnSurface, canQueryProviderPlanQuotaOnSurface } from '@/infrastructure/peer-device/peerCapabilityResolution';
 import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFlag';
 import { isTauriRuntime } from '@/infrastructure/runtime';
 import { LONG_CONTEXT_WARNING_THRESHOLD_TOKENS } from '@/shared/constants/modelContext';
@@ -3445,7 +3446,7 @@ const ModelSettingsPage: React.FC = () => {
                       <SubscriptionQuotaPanel provider={instance.account.provider} accountId={instance.account_id}
                         identity={`${instance.upstream_account_id || ''}:${instance.account.expires_at || ''}`}
                         active={isEditing && checked && !managingSubscriptionProvider}
-                        supported={canQuerySubscriptionQuota}
+                        supported={canQuerySubscriptionQuota && (instance.account.provider !== 'grok' || canQueryProviderPlanQuotaOnSurface(Boolean(peerDevice?.peerMode.active), peerDevice?.currentPeerCapabilities ?? null))}
                         refreshVersion={quotaRefreshVersions[instance.account.provider]} compact />
                     )}
                     </React.Fragment>
@@ -3526,7 +3527,7 @@ const ModelSettingsPage: React.FC = () => {
           <SubscriptionQuotaPanel provider={selectedSubscriptionProvider}
             identity={`${matchedSubscription.account || ''}:${matchedSubscription.expires_at || ''}`}
             active={isEditing && !managingSubscriptionProvider}
-            supported={canQuerySubscriptionQuota}
+            supported={canQuerySubscriptionQuota && (selectedSubscriptionProvider !== 'grok' || canQueryProviderPlanQuotaOnSurface(Boolean(peerDevice?.peerMode.active), peerDevice?.currentPeerCapabilities ?? null))}
             refreshVersion={quotaRefreshVersions[selectedSubscriptionProvider]} compact />
         )}
         {subscriptionAccountHint && (
@@ -3918,6 +3919,9 @@ const ModelSettingsPage: React.FC = () => {
                         )}
                       </div>
                     </ConfigPageRow>
+                    <ModelProviderQuota draft={{ ...editingConfig, id: editingConfig.id || configuredProvider?.id }} saved={configuredProvider}
+                      active={isEditing && !managingSubscriptionProvider}
+                      supported={canQueryProviderPlanQuotaOnSurface(Boolean(peerDevice?.peerMode.active), peerDevice?.currentPeerCapabilities ?? null)} />
                   </>
                 )}
               </ConfigPageSection>
@@ -4102,7 +4106,7 @@ const ModelSettingsPage: React.FC = () => {
               provider={account.provider} accountId={slot}
               identity={`${account.account || ''}:${account.expires_at || ''}`}
               active={showSubscriptionManager || !!managingSubscriptionProvider}
-              supported={canQuerySubscriptionQuota}
+              supported={canQuerySubscriptionQuota && (account.provider !== 'grok' || canQueryProviderPlanQuotaOnSurface(Boolean(peerDevice?.peerMode.active), peerDevice?.currentPeerCapabilities ?? null))}
               refreshVersion={quotaRefreshVersions[account.provider]}
             />
           )}
