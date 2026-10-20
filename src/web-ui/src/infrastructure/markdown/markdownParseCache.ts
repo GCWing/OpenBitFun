@@ -2,7 +2,8 @@ import type { Root } from 'mdast';
 import type { Processor } from 'unified';
 import { BoundedResourceCache } from '@/shared/utils/BoundedResourceCache';
 
-const cache = new BoundedResourceCache<string, Root>(12 * 1024 * 1024, 64);
+const MAX_CACHE_BYTES = 12 * 1024 * 1024;
+const cache = new BoundedResourceCache<string, Root>(MAX_CACHE_BYTES, 64);
 const jobs = new Map<string, number>();
 let worker: Worker | undefined;
 let current: string | undefined;
@@ -20,7 +21,8 @@ function disableWorker() {
   jobs.clear();
 }
 
-const cacheTree = (text: string, tree: Root) => cache.set(text, tree, text.length * 14 + 256);
+const treeBytes = (text: string) => text.length * 14 + 256;
+const cacheTree = (text: string, tree: Root) => cache.set(text, tree, treeBytes(text));
 
 /** Cache parser output, before product plugins mutate it. Sanitization still runs. */
 export function remarkCachedParse(this: Processor) {
@@ -30,7 +32,9 @@ export function remarkCachedParse(this: Processor) {
     const tree = cache.get(text);
     if (tree) return structuredClone(tree);
     const parsed = parse(text, file);
-    if (text.length >= 2000) cacheTree(text, structuredClone(parsed as Root));
+    // Oversized entries cannot be retained. Avoid cloning their entire AST only
+    // to have the bounded cache discard it immediately.
+    if (text.length >= 2000 && treeBytes(text) <= MAX_CACHE_BYTES) cacheTree(text, structuredClone(parsed as Root));
     return parsed;
   };
 }

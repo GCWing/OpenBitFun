@@ -38,6 +38,22 @@ describe('immutable Markdown parse cache', () => {
     expect(JSON.stringify(first)).not.toContain('"tagName":"script"');
     expect(JSON.stringify(first)).not.toContain('onError');
   });
+
+  it('parses oversized documents in full without cloning an AST the cache cannot retain', () => {
+    const oversized = 'x'.repeat(900_000);
+    const clone = vi.spyOn(globalThis, 'structuredClone');
+    try {
+      const processor = unified().use(remarkParse).use(remarkCachedParse);
+      const first = processor.parse(oversized);
+      const second = processor.parse(oversized);
+      expect(second).toEqual(first);
+      expect(first.children[0]).toMatchObject({ type: 'paragraph', children: [{ type: 'text', value: oversized }] });
+      expect(second).not.toBe(first);
+      expect(clone).not.toHaveBeenCalled();
+    } finally {
+      clone.mockRestore();
+    }
+  });
 });
 
 describe('Markdown worker prewarming', () => {
