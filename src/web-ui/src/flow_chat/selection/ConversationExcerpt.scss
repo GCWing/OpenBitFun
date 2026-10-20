@@ -77,6 +77,104 @@
     gap: var(--openbitfun-space-4);
   }
 
+  &__floating-editor {
+    position: fixed;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+    box-shadow: var(--openbitfun-shadow-sm);
+  }
+
+  &__floating-header {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    padding: var(--openbitfun-space-2);
+  }
+
+  &__drag, &__resize {
+    display: flex;
+    align-items: center;
+    border: 0;
+    background: transparent;
+    color: var(--openbitfun-color-content-secondary);
+    touch-action: none;
+    user-select: none;
+
+    &:focus-visible {
+      outline: var(--openbitfun-border-width-strong) solid var(--openbitfun-color-field-border-focus);
+      outline-offset: -2px;
+    }
+  }
+
+  &__drag {
+    flex: 1;
+    min-inline-size: 0;
+    min-block-size: var(--openbitfun-control-height-sm);
+    padding: var(--openbitfun-space-1);
+    gap: var(--openbitfun-space-2);
+    text-align: start;
+    cursor: grab;
+    font-family: var(--openbitfun-type-label-md-font-family);
+    font-size: var(--openbitfun-type-label-md-font-size);
+    font-weight: var(--openbitfun-type-label-md-font-weight);
+    line-height: var(--openbitfun-type-label-md-line-height);
+    letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
+
+    > svg { flex-shrink: 0; }
+    > span { overflow-wrap: anywhere; }
+    &:active { cursor: grabbing; }
+  }
+
+  &__floating-body {
+    flex: 1;
+    min-block-size: 0;
+    overflow-y: auto;
+    padding-inline: var(--openbitfun-space-3);
+    gap: var(--openbitfun-space-3);
+
+    > .conversation-excerpt__source { flex-shrink: 0; }
+    .conversation-excerpt__input [data-openbitfun-part='input'] { max-block-size: none; }
+  }
+
+  &__floating-footer {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--openbitfun-space-2);
+    padding: var(--openbitfun-space-3) var(--openbitfun-space-4) var(--openbitfun-space-3) var(--openbitfun-space-3);
+  }
+
+  &__resize {
+    position: absolute;
+    padding: 0;
+
+    &[data-resize-edge='right'] {
+      inset-block: 0 var(--openbitfun-space-4);
+      inset-inline-end: 0;
+      inline-size: var(--openbitfun-space-2);
+      cursor: ew-resize;
+    }
+
+    &[data-resize-edge='bottom'] {
+      inset-inline: 0 var(--openbitfun-space-4);
+      inset-block-end: 0;
+      block-size: var(--openbitfun-space-2);
+      cursor: ns-resize;
+    }
+
+    &[data-resize-edge='corner'] {
+      inset-inline-end: 0;
+      inset-block-end: 0;
+      inline-size: var(--openbitfun-space-4);
+      block-size: var(--openbitfun-space-4);
+      cursor: nwse-resize;
+    }
+  }
+
   &__source {
     display: flex;
     align-items: flex-start;

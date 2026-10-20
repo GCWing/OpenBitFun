@@ -78,6 +78,8 @@ function clipToAncestors(bounds: Rect, element: Element | null, view: Window, st
   for (let parent = element; parent && parent !== stop; parent = parent.parentElement) {
     const style = view.getComputedStyle(parent);
     if (style.visibility === 'hidden' || style.display === 'none') return null;
+    // Boxless scene/layout wrappers cannot clip their rendered descendants.
+    if (style.display === 'contents') continue;
     const rect = parent.getBoundingClientRect();
     if (/auto|scroll|hidden|clip/.test(style.overflowX)) {
       visible.left = Math.max(visible.left, rect.left);
@@ -133,6 +135,30 @@ export function measureSelectionBarGeometry(root: HTMLElement, selection: Captur
     || !line.some(rect => rect.left < visible.right && rect.right > visible.left)) return null;
   anchor.x = Math.max(visible.left, Math.min(x, visible.right));
   return { anchor, bounds, textRects };
+}
+
+/** Draft editors can outlive the toolbar's stricter clipping and input-occlusion policy. */
+export function measureExcerptEditorGeometry(root: HTMLElement, selection: CapturedFlowChatSelection): SelectionBarGeometry | null {
+  const geometry = measureSelectionBarGeometry(root, selection);
+  if (geometry) return geometry;
+  const view = root.ownerDocument.defaultView;
+  if (!view) return null;
+  const visual = view.visualViewport;
+  const bounds = {
+    left: visual?.offsetLeft ?? 0, top: visual?.offsetTop ?? 0,
+    right: (visual?.offsetLeft ?? 0) + (visual?.width ?? view.innerWidth),
+    bottom: (visual?.offsetTop ?? 0) + (visual?.height ?? view.innerHeight),
+  };
+  const textRects = [...selection.range.getClientRects()].filter(rect => rect.width > 0 && rect.height > 0);
+  const visible = textRects.filter(rect => overlaps(rect, bounds));
+  const backward = selection.range.startContainer === selection.focusNode && selection.range.startOffset === selection.focusOffset;
+  const endpoint = backward ? visible[0] : visible[visible.length - 1];
+  if (!endpoint) return null;
+  return { bounds, textRects, anchor: {
+    x: Math.max(bounds.left, Math.min(backward ? endpoint.left : endpoint.right, bounds.right)),
+    top: Math.max(endpoint.top, bounds.top), bottom: Math.min(endpoint.bottom, bounds.bottom),
+    preferredPlacement: backward ? 'top' : 'bottom',
+  } };
 }
 
 /** Layout changes retire a transient toolbar instead of moving the target under the pointer. */

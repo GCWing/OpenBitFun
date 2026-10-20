@@ -77,6 +77,8 @@
     "inheritedSettings": "此设备版本的首次侧边提问沿用主会话设置。发送后可调整模型。",
     "actions": "选中文本操作",
     "annotate": "添加批注",
+    "moveEditor": "移动批注输入框",
+    "resizeEditor": "调整批注输入框大小",
     "annotation": "批注",
     "annotationPlaceholder": "写下你的批注…",
     "editAnnotation": "批注选中文本",
