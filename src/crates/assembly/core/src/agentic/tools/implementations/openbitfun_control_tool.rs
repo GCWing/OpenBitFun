@@ -376,6 +376,7 @@ impl Tool for OpenBitFunControlTool {
                 },
                 "value_array": {
                     "type": "array",
+                    "items": {},
                     "description": "Configure value when get returns valueSchema.type=array."
                 },
                 "value_null": {
