@@ -151,47 +151,6 @@
       }
     },
     {
-      "id": "stepfun",
-      "display_order": 32,
-      "region": "cn",
-      "name": "StepFun",
-      "description": "StepFun Step Plan",
-      "help_url": "https://platform.stepfun.com/interface-key",
-      "requires_api_key": true,
-      "catalog_provider_ids": [
-        "stepfun-step-plan",
-        "stepfun-ai-step-plan"
-      ],
-      "endpoints": [
-        {
-          "id": "step-plan",
-          "base_url": "https://api.stepfun.com/step_plan/v1",
-          "api_format": "openai",
-          "label": "stepPlan",
-          "is_default": true,
-          "trusted_for_auto_detection": true,
-          "catalog_provider_ids": [
-            "stepfun-step-plan"
-          ]
-        },
-        {
-          "id": "international-step-plan",
-          "base_url": "https://api.stepfun.ai/step_plan/v1",
-          "api_format": "openai",
-          "label": "intlStepPlan",
-          "trusted_for_auto_detection": true,
-          "catalog_provider_ids": [
-            "stepfun-ai-step-plan"
-          ]
-        }
-      ],
-      "model_policy": {
-        "mode": "catalog",
-        "curated_models": [],
-        "additional_models": []
-      }
-    },
-    {
       "id": "moonshot",
       "display_order": 30,
       "region": "cn",

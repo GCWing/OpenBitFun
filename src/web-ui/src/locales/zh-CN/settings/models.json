@@ -174,21 +174,7 @@
     },
     "accountMarker": "账号 · {{marker}}",
     "accountsCount": "{{count}} 个账号",
-    "newAccount": "新账号",
-    "planServices": {
-      "minimax": {
-        "name": "MiniMax Token Plan",
-        "description": "使用 Token / Coding Plan 套餐 Key 导入，保存后查看短周期和周额度。"
-      },
-      "kimi_code": {
-        "name": "Kimi Code",
-        "description": "使用 Kimi Code 订阅 Key 导入，走 Coding 专用地址，与 Moonshot 按量计费独立。"
-      },
-      "stepfun": {
-        "name": "StepFun Step Plan",
-        "description": "使用 Step Plan 套餐 Key 导入；保存后在额度区连接网页会话，即可查询周期额度。"
-      }
-    }
+    "newAccount": "新账号"
   },
   "providerSelection": {
     "modelRoutingPending": "刷新模型列表后显示协议和端点；目录外模型可手动配置。",
@@ -358,14 +344,6 @@
     "tokendance": {
       "name": "词元跳动",
       "description": "统一的大模型 API 网关"
-    },
-    "stepfun": {
-      "name": "StepFun",
-      "description": "使用 Step Plan 套餐 Key 导入；保存后在额度区连接网页会话，即可查询周期额度。",
-      "urlOptions": {
-        "stepPlan": "Step Plan（中国）",
-        "intlStepPlan": "Step Plan（国际）"
-      }
     }
   },
   "tabs": {
@@ -867,21 +845,6 @@
     "opencodeCustomAuth": "额度查询暂不支持自定义认证请求头，请前往控制台查看用量。",
     "openConsole": "打开控制台",
     "saveBeforeQuery": "保存此连接后，可查询 OpenCode Go 额度。",
-    "planKeyRejected": "请检查已保存的密钥是否包含 Coding / Token Plan 订阅权限。",
-    "stepfunSignInRequired": "请连接 Step Plan 网页账号后查询额度。",
-    "connectionChanged": "账号授权已变化，请重新刷新额度。",
-    "planSaveBeforeQuery": "保存此连接后，可查询套餐额度。",
-    "stepfunConnection": "Step Plan 账号",
-    "stepfunConnectionHint": "额度属于此网页账号，与推理 API Key 独立；授权会话保存在应用凭据库中。",
-    "stepfunAccount": "已连接账号：{{account}}",
-    "stepfunDisconnect": "断开连接",
-    "stepfunOpen": "打开阶跃平台",
-    "stepfunCopyBookmark": "复制授权书签",
-    "stepfunAuthorization": "授权会话",
-    "stepfunBookmarkHint": "将复制的 javascript 代码保存为浏览器书签，在已登录的阶跃平台页面运行，再将返回结果粘贴到这里。仅用于读取套餐额度。",
-    "stepfunConnect": "连接额度",
-    "stepfunConnectFailed": "连接失败，请登录阶跃平台，重新复制授权会话后重试。",
-    "stepfunBookmarkCopied": "已复制书签代码。将其保存为浏览器书签，再在已登录的阶跃平台页面运行。",
     "onDemand": "按量用量"
   },
   "channelRouting": {

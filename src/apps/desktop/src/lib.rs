@@ -1494,8 +1494,6 @@ pub async fn run() {
             list_subscription_accounts,
             list_subscription_account_instances,
             get_subscription_account_quota,
-            get_model_provider_quota,
-            manage_model_quota_connection,
             start_subscription_account_login,
             logout_subscription_account_instance,
             set_subscription_account_enabled,

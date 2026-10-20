@@ -5,9 +5,6 @@ import { ModelPoolsSection } from './ModelPoolsSection';
 import { ModelPoolCardActions } from './ModelPoolCardActions';
 import { ZcodeSubscriptionGroup } from './ZcodeSubscriptionGroup';
 import { OpenCodeModelQuota } from './OpenCodeModelQuota';
-import { ModelProviderQuota } from './ModelProviderQuota';
-import { PlanSubscriptionServices } from './PlanSubscriptionServices';
-import { isSubscriptionChannel, planSubscriptionPreset } from './planSubscriptions';
 import { SubscriptionQuotaPanel } from './SubscriptionQuotaPanel';
 import { SubscriptionAccountList, SubscriptionServiceGroup } from './SubscriptionServiceGroup';
 import { managedSubscriptionAccounts, modelsUsingSubscriptionAccount, groupSubscriptionServices, isZcodeProvider, preferredZcodeProvider, subscriptionManagerAccounts } from './subscriptionServices';
@@ -102,7 +99,7 @@ import {
 import { i18nService, useI18n } from '@/infrastructure/i18n';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
-import { canEditAccountPoolsOnSurface, canEditChannelRoutingOnSurface, canQuerySubscriptionQuotaOnSurface, canQueryModelQuotaOnSurface, canQueryProviderPlanQuotaOnSurface } from '@/infrastructure/peer-device/peerCapabilityResolution';
+import { canEditAccountPoolsOnSurface, canEditChannelRoutingOnSurface, canQuerySubscriptionQuotaOnSurface, canQueryModelQuotaOnSurface, canQueryGrokQuotaOnSurface } from '@/infrastructure/peer-device/peerCapabilityResolution';
 import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFlag';
 import { isTauriRuntime } from '@/infrastructure/runtime';
 import { LONG_CONTEXT_WARNING_THRESHOLD_TOKENS } from '@/shared/constants/modelContext';
@@ -1851,24 +1848,6 @@ const ModelSettingsPage: React.FC = () => {
     setIsEditing(true);
   };
 
-  const handleImportPlanSubscription = (kind: import('@/infrastructure/api/service-api/AIApi').ModelPlanQuotaProvider) => {
-    const preset = planSubscriptionPreset(kind, providerTemplates);
-    if (!preset) return;
-    requestEditorOpen(`new-provider:plan:${kind}`, () => {
-      setShowSubscriptionManager(false);
-      setShowProviderManager(false);
-      setManagingSubscriptionProvider(null);
-      handleSelectProvider(preset.templateId);
-      setEditingTargetKey(`new-provider:plan:${kind}`);
-      setEditingConfig(current => ({ ...current,
-        name: t(`subscriptionAuth.planServices.${kind}.name`),
-        base_url: preset.url, provider: preset.format,
-        auth: { type: 'api_key' },
-        metadata: { ...current?.metadata, subscription_plan: kind },
-      }));
-    });
-  };
-
   const handleSelectCustom = () => {
     resetRemoteModelDiscovery();
     setManualModelInput('');
@@ -2604,8 +2583,8 @@ const ModelSettingsPage: React.FC = () => {
     });
   }, [aiModels, providerOrder]);
 
-  const apiProviderGroups = providerGroups.filter(group => !isSubscriptionChannel(group.models[0]));
-  const subscriptionProviderGroups = providerGroups.filter(group => isSubscriptionChannel(group.models[0]));
+  const apiProviderGroups = providerGroups.filter(group => !subscriptionProviderOf(group.models[0].auth));
+  const subscriptionProviderGroups = providerGroups.filter(group => !!subscriptionProviderOf(group.models[0].auth));
 
   const toggleProviderGroup = (groupKey: string) => {
     setExpandedProviderGroupKeys(previous => {
@@ -2655,7 +2634,7 @@ const ModelSettingsPage: React.FC = () => {
     return [...providers].map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [aiModels, importedSubscriptions]);
-  const subscriptionModelCount = aiModels.filter(isSubscriptionChannel).length;
+  const subscriptionModelCount = aiModels.filter(model => !!subscriptionProviderOf(model.auth)).length;
   const visiblePoolModels = useMemo(() => {
     const query = poolQuery.trim().toLowerCase();
     const priority = (model: AIModelConfigType) => (
@@ -3466,7 +3445,7 @@ const ModelSettingsPage: React.FC = () => {
                       <SubscriptionQuotaPanel provider={instance.account.provider} accountId={instance.account_id}
                         identity={`${instance.upstream_account_id || ''}:${instance.account.expires_at || ''}`}
                         active={isEditing && checked && !managingSubscriptionProvider}
-                        supported={canQuerySubscriptionQuota && (instance.account.provider !== 'grok' || canQueryProviderPlanQuotaOnSurface(Boolean(peerDevice?.peerMode.active), peerDevice?.currentPeerCapabilities ?? null))}
+                        supported={canQuerySubscriptionQuota && (instance.account.provider !== 'grok' || canQueryGrokQuotaOnSurface(Boolean(peerDevice?.peerMode.active), peerDevice?.currentPeerCapabilities ?? null))}
                         refreshVersion={quotaRefreshVersions[instance.account.provider]} compact />
                     )}
                     </React.Fragment>
@@ -3547,7 +3526,7 @@ const ModelSettingsPage: React.FC = () => {
           <SubscriptionQuotaPanel provider={selectedSubscriptionProvider}
             identity={`${matchedSubscription.account || ''}:${matchedSubscription.expires_at || ''}`}
             active={isEditing && !managingSubscriptionProvider}
-            supported={canQuerySubscriptionQuota && (selectedSubscriptionProvider !== 'grok' || canQueryProviderPlanQuotaOnSurface(Boolean(peerDevice?.peerMode.active), peerDevice?.currentPeerCapabilities ?? null))}
+            supported={canQuerySubscriptionQuota && (selectedSubscriptionProvider !== 'grok' || canQueryGrokQuotaOnSurface(Boolean(peerDevice?.peerMode.active), peerDevice?.currentPeerCapabilities ?? null))}
             refreshVersion={quotaRefreshVersions[selectedSubscriptionProvider]} compact />
         )}
         {subscriptionAccountHint && (
@@ -3939,9 +3918,6 @@ const ModelSettingsPage: React.FC = () => {
                         )}
                       </div>
                     </ConfigPageRow>
-                    <ModelProviderQuota draft={{ ...editingConfig, id: editingConfig.id || configuredProvider?.id }} saved={configuredProvider}
-                      active={isEditing && !managingSubscriptionProvider}
-                      supported={canQueryProviderPlanQuotaOnSurface(Boolean(peerDevice?.peerMode.active), peerDevice?.currentPeerCapabilities ?? null)} />
                   </>
                 )}
               </ConfigPageSection>
@@ -4126,7 +4102,7 @@ const ModelSettingsPage: React.FC = () => {
               provider={account.provider} accountId={slot}
               identity={`${account.account || ''}:${account.expires_at || ''}`}
               active={showSubscriptionManager || !!managingSubscriptionProvider}
-              supported={canQuerySubscriptionQuota && (account.provider !== 'grok' || canQueryProviderPlanQuotaOnSurface(Boolean(peerDevice?.peerMode.active), peerDevice?.currentPeerCapabilities ?? null))}
+              supported={canQuerySubscriptionQuota && (account.provider !== 'grok' || canQueryGrokQuotaOnSurface(Boolean(peerDevice?.peerMode.active), peerDevice?.currentPeerCapabilities ?? null))}
               refreshVersion={quotaRefreshVersions[account.provider]}
             />
           )}
@@ -4203,7 +4179,7 @@ const ModelSettingsPage: React.FC = () => {
             loading={isLoadingSubscriptions} onRetry={() => void refreshSubscriptionAccounts()} />
         )}
         {isLoadingSubscriptions && <p className="openbitfun-model-settings__dialog-status" role="status">{t('messages.loading')}</p>}
-        {!isLoadingSubscriptions && !subscriptionLoadError && accounts.length === 0 && !!provider && (
+        {!isLoadingSubscriptions && !subscriptionLoadError && accounts.length === 0 && (
           <ConfigEmptyState icon={<Wifi aria-hidden="true" />} description={t(provider ? 'subscriptionAuth.serviceUnavailable' : 'acquisition.noServices')} />
         )}
         <div className="openbitfun-model-settings__cli-discovery" data-openbitfun-component="model-settings" data-openbitfun-part="subscriptionArea">
@@ -4251,8 +4227,6 @@ const ModelSettingsPage: React.FC = () => {
                 renderAccount={item => renderAccount(item.account, false, item.accountId, item.enabled)} />
             </SubscriptionServiceGroup>
           ))}
-          {!provider && <PlanSubscriptionServices models={aiModels} busy={!modelConfigReady || !!loggingInProvider}
-            onImport={handleImportPlanSubscription} onEdit={handleEditProvider} />}
         </div>
       </>
     );

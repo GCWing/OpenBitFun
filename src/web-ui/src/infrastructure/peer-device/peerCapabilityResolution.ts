@@ -101,7 +101,7 @@ export function canQueryModelQuotaOnSurface(peerActive: boolean, capabilities: P
   return !peerActive || capabilities?.subscriptionModelQuotaV1 === true;
 }
 
-/** New plan adapters must not be inferred from the older Go-only quota capability. */
-export function canQueryProviderPlanQuotaOnSurface(peerActive: boolean, capabilities: PeerHostCapabilities | null): boolean {
-  return !peerActive || capabilities?.modelProviderQuotaV1 === true;
+/** Account quota support on older hosts does not imply Grok billing support. */
+export function canQueryGrokQuotaOnSurface(peerActive: boolean, capabilities: PeerHostCapabilities | null): boolean {
+  return !peerActive || capabilities?.grokQuotaV1 === true;
 }

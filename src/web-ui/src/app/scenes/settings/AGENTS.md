@@ -90,20 +90,8 @@ Focused checks:
 `pnpm --dir src/web-ui run test:run src/app/scenes/settings/pages/ai/SubscriptionServiceGroup.test.tsx src/app/scenes/settings/pages/ai/subscriptionServices.test.ts src/app/scenes/settings/pages/ai/ZcodeSubscriptionGroup.test.tsx src/app/scenes/settings/pages/ai/OpenCodeModelQuota.test.ts src/infrastructure/api/service-api/AIApi.quota.test.ts`.
 These are local DOM/data fixtures, not visual or physical remote-host acceptance.
 
-MiniMax/Kimi Code/StepFun saved-model quota panels and Grok period support require
-`model_provider_quota_v1` on peers; the older Go/account quota capabilities do
-not imply these adapters. Step Plan authorization is independent of inference
-credentials, explicitly pasted, and cleared from drafts after submission/closing.
-Keep observations and setup responses fenced by device activation and saved-model
-identity. Focused checks add `src/app/scenes/settings/pages/ai/ModelProviderQuota.test.tsx`
-to the allowance tests above; these are local fixtures, not live provider acceptance.
-
-API-key plan services are visible in the subscription importer alongside OAuth
-services. Reuse catalog-owned endpoint templates; Kimi must choose its Coding
-endpoint and StepFun its regional Step Plan endpoint. Preserve API-key auth and
-store the additive `metadata.subscription_plan` presentation marker on explicit
-imports. MiniMax shares pay-as-you-go endpoints, so do not infer a plan from its
-key or endpoint alone. Classify and count saved plan connections consistently in
-the subscription summary, and retain editor draft/device guards when opening them.
-Focused verification: `planSubscriptions.test.ts`, `ModelSettingsPage.loading.test.tsx`,
-and the existing quota/settings tests in this directory (local DOM fixtures).
+Grok OAuth period/on-demand allowance requires `grok_quota_v1` on peers in
+addition to the existing account-quota capability. Keep API-key model setup in
+the ordinary provider/custom model flow; MiniMax, Kimi Code and StepFun have no
+separate subscription importer or allowance UI. The existing OpenCode Go path
+retains its independently advertised capability.

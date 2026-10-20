@@ -1,5 +1,5 @@
 import type { SubscriptionQuotaMeter } from '@/infrastructure/api/service-api/AIApi';
-import type { QuotaProvider } from '@/infrastructure/api/service-api/AIApi';
+import type { SubscriptionProvider } from '@/infrastructure/config/types';
 import { useSubscriptionQuota } from '@/infrastructure/config/hooks/useSubscriptionQuota';
 import { i18nService, useI18n } from '@/infrastructure/i18n';
 import { Button, Icon, IconButton, StatusPill, Tooltip } from '@openbitfun/ui';
@@ -8,7 +8,7 @@ import styles from './SubscriptionQuotaPanel.module.scss';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 
 interface Props {
-  provider: QuotaProvider;
+  provider: SubscriptionProvider;
   accountId?: string;
   identity: string;
   active: boolean;
@@ -36,10 +36,6 @@ export function SubscriptionQuotaPanel({ provider, accountId = provider, identit
     opencode_go_required: 'quota.opencodeGoRequired',
     opencode_query_failed: 'quota.queryFailed',
     opencode_custom_auth: 'quota.opencodeCustomAuth',
-    plan_quota_query_failed: 'quota.queryFailed',
-    plan_quota_key_rejected: 'quota.planKeyRejected',
-    stepfun_quota_sign_in_required: 'quota.stepfunSignInRequired',
-    stepfun_quota_connection_changed: 'quota.connectionChanged',
   };
   const reason = snapshot?.error && reasons[snapshot.error];
   const status = query.unsupportedHost ? t('quota.hostUnsupported')

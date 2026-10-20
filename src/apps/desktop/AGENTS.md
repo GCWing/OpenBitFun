@@ -305,10 +305,3 @@ The host resolves the saved model, rejects non-API authentication and custom aut
 and rechecks its authorization binding before publishing the result. Model-scoped
 requests require the separately advertised `subscription_model_quota_v1` capability;
 legacy requests retain the exact account-slot path. These tests do not contact billing.
-
-`get_model_provider_quota` reads MiniMax/Kimi Code/StepFun from a saved model;
-`manage_model_quota_connection` manages explicit Step Plan vault authorization.
-Both require `model_provider_quota_v1` on a peer. Do not widen the legacy Go-only
-capability or accept draft keys/billing origins. Revalidate saved authorization
-before publishing and never derive Debug for a session-bearing request.
-The focused `quota_request_compatibility_tests` also exercises plan origin/auth guards.

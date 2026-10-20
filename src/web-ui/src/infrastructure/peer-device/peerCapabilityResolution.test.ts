@@ -103,10 +103,10 @@ it('requires the model-scoped quota capability instead of inferring it from acco
   expect(canQueryModelQuotaOnSurface(true, { subscriptionModelQuotaV1: true } as PeerHostCapabilities)).toBe(true);
 });
 
-import { canQueryProviderPlanQuotaOnSurface } from './peerCapabilityResolution';
-it('requires new provider support instead of the legacy account or Go quota capabilities', () => {
-  expect(canQueryProviderPlanQuotaOnSurface(false, null)).toBe(true);
-  expect(canQueryProviderPlanQuotaOnSurface(true, null)).toBe(false);
-  expect(canQueryProviderPlanQuotaOnSurface(true, caps({ subscriptionQuotaV1: true, subscriptionModelQuotaV1: true }))).toBe(false);
-  expect(canQueryProviderPlanQuotaOnSurface(true, caps({ modelProviderQuotaV1: true }))).toBe(true);
+import { canQueryGrokQuotaOnSurface } from './peerCapabilityResolution';
+it('requires advertised Grok quota support from a peer', () => {
+  expect(canQueryGrokQuotaOnSurface(false, null)).toBe(true);
+  expect(canQueryGrokQuotaOnSurface(true, null)).toBe(false);
+  expect(canQueryGrokQuotaOnSurface(true, { subscriptionQuotaV1: true } as PeerHostCapabilities)).toBe(false);
+  expect(canQueryGrokQuotaOnSurface(true, { grokQuotaV1: true } as PeerHostCapabilities)).toBe(true);
 });

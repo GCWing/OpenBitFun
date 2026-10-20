@@ -2,12 +2,12 @@
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
   "catalogDigest": "05afb29f354928738ed26d4275819bbe3c165c7878bb24996b5169639ba03330",
-  "commandCount": 700,
+  "commandCount": 698,
   "coverage": {
-    "commandCount": 700,
+    "commandCount": 698,
     "documentedCommandCount": 642,
-    "implementationCommandCount": 58,
-    "implementationDigest": "4f9c7c3974697400e0f5fd6aa9ab1b6678948915a2074718bea9072f764df0e9"
+    "implementationCommandCount": 56,
+    "implementationDigest": "a3b798bfb8715535a1220fdebd3fdbfb0f1bd2f71daebed8264d8d026c58e28f"
   },
   "commands": [
     {
@@ -3800,20 +3800,6 @@
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
-      "id": "get_model_provider_quota",
-      "moduleId": "commands",
-      "capabilityId": "feature.projects",
-      "capabilityIds": [
-        "feature.projects"
-      ],
-      "documentedItemIds": [],
-      "visibility": "implementation",
-      "rustPath": "get_model_provider_quota",
-      "sourceFile": "src/apps/desktop/src/api/commands.rs",
-      "signature": "fn get_model_provider_quota( state: State<'_, AppState>, request: ModelProviderQuotaRequest, ) -> Result<openbitfun_core_types::subscription::SubscriptionQuotaSnapshot, String>",
-      "remoteWorkspacePolicy": "LocalOnly"
-    },
-    {
       "id": "get_models_dev_catalog_status",
       "moduleId": "commands",
       "capabilityId": "setting.ai.models",
@@ -5860,20 +5846,6 @@
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
       "signature": "fn manage_dialog_queue( runtime: State<'_, DesktopRuntimeContext>, request: openbitfun_runtime_ports::DialogQueueRequest, ) -> Result<openbitfun_runtime_ports::DialogQueueSnapshot, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
-    },
-    {
-      "id": "manage_model_quota_connection",
-      "moduleId": "commands",
-      "capabilityId": "feature.projects",
-      "capabilityIds": [
-        "feature.projects"
-      ],
-      "documentedItemIds": [],
-      "visibility": "implementation",
-      "rustPath": "manage_model_quota_connection",
-      "sourceFile": "src/apps/desktop/src/api/commands.rs",
-      "signature": "fn manage_model_quota_connection( state: State<'_, AppState>, request: ModelQuotaConnectionRequest, ) -> Result< openbitfun_core::infrastructure::subscription_auth::stepfun_quota::StepFunQuotaSetup, String, >",
-      "remoteWorkspacePolicy": "LocalOnly"
     },
     {
       "id": "mark_openbitfun_control_surface_ready",

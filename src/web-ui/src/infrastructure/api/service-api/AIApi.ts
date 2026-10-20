@@ -15,15 +15,6 @@ export type {
   ReasoningPresetAction,
 } from '@/infrastructure/config/types';
 
-export type ModelPlanQuotaProvider = 'minimax' | 'kimi_code' | 'stepfun';
-export type QuotaProvider = SubscriptionProvider | ModelPlanQuotaProvider;
-export interface StepFunQuotaSetup {
-  connected: boolean;
-  account: string | null;
-  signInUrl: string;
-  bookmarklet: string;
-}
-
 export const AI_MODEL_CATALOG_UPDATED_EVENT = 'ai://model-catalog-updated';
 
 export interface AIModelCatalogUpdatedEvent {
@@ -522,29 +513,13 @@ export class AIApi {
   }
 
   /** Reads credentials from the saved model on the selected host, never from a UI draft. */
-  async getModelProviderQuota(modelId: string, provider: QuotaProvider = 'opencode'): Promise<SubscriptionQuotaSnapshot> {
-    if (provider !== 'opencode') {
-      try {
-        return await api.invoke<SubscriptionQuotaSnapshot>('get_model_provider_quota', { request: { modelId } });
-      } catch (error) {
-        throw createTauriCommandError('get_model_provider_quota', error, { modelId });
-      }
-    }
+  async getModelProviderQuota(modelId: string): Promise<SubscriptionQuotaSnapshot> {
     try {
       return await api.invoke<SubscriptionQuotaSnapshot>('get_subscription_account_quota', {
         request: { provider: 'opencode', accountId: `model:${modelId}`, modelId },
       });
     } catch (error) {
       throw createTauriCommandError('get_subscription_account_quota', error, { modelId });
-    }
-  }
-
-  async manageModelQuotaConnection(modelId: string, action: 'status' | 'connect' | 'disconnect', sessionToken?: string): Promise<StepFunQuotaSetup> {
-    try {
-      return await api.invoke<StepFunQuotaSetup>('manage_model_quota_connection', { request: { modelId, action, ...(sessionToken ? { sessionToken } : {}) } });
-    } catch {
-      // Never attach the session or raw transport error to diagnostics.
-      throw createTauriCommandError('manage_model_quota_connection', new Error('Could not update StepFun allowance connection'), { modelId, action });
     }
   }
 

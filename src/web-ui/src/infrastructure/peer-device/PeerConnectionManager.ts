@@ -56,8 +56,8 @@ export interface PeerHostCapabilities {
   readonly subscriptionAccountPoolsV1?: boolean;
   /** Host-owned read-only subscription allowance query. */
   readonly subscriptionQuotaV1?: boolean;
+  readonly grokQuotaV1?: boolean;
   readonly subscriptionModelQuotaV1?: boolean;
-  readonly modelProviderQuotaV1?: boolean;
   /** Host routes a model to its configured backup channels. */
   readonly modelChannelRoutingV1?: boolean;
   readonly wholeSessionCopyV1?: boolean;
@@ -191,8 +191,8 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   wslWorkspacesV1: false,
   subscriptionAccountPoolsV1: false,
   subscriptionQuotaV1: false,
+  grokQuotaV1: false,
   subscriptionModelQuotaV1: false,
-  modelProviderQuotaV1: false,
   modelChannelRoutingV1: false,
   wholeSessionCopyV1: false,
   modelPoolSelectionV1: false,
@@ -543,8 +543,8 @@ export class PeerConnectionManager {
       wslWorkspacesV1: caps?.wsl_workspaces_v1 === true,
       subscriptionAccountPoolsV1: caps?.subscription_account_pools_v1 === true,
       subscriptionQuotaV1: caps?.subscription_quota_v1 === true,
+      grokQuotaV1: caps?.grok_quota_v1 === true,
       subscriptionModelQuotaV1: caps?.subscription_model_quota_v1 === true,
-      modelProviderQuotaV1: caps?.model_provider_quota_v1 === true,
       modelChannelRoutingV1: caps?.model_channel_routing_v1 === true,
       wholeSessionCopyV1: caps?.whole_session_copy_v1 === true,
       modelPoolSelectionV1: caps?.model_pool_selection_v1 === true,
@@ -795,8 +795,8 @@ function capabilitiesEqual(
     a.wslWorkspacesV1 === b.wslWorkspacesV1 &&
     a.subscriptionAccountPoolsV1 === b.subscriptionAccountPoolsV1 &&
     a.subscriptionQuotaV1 === b.subscriptionQuotaV1 &&
+    a.grokQuotaV1 === b.grokQuotaV1 &&
     a.subscriptionModelQuotaV1 === b.subscriptionModelQuotaV1 &&
-    a.modelProviderQuotaV1 === b.modelProviderQuotaV1 &&
     a.modelChannelRoutingV1 === b.modelChannelRoutingV1 &&
     a.wholeSessionCopyV1 === b.wholeSessionCopyV1 &&
     a.modelPoolSelectionV1 === b.modelPoolSelectionV1 &&

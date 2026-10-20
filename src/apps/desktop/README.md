@@ -218,6 +218,11 @@ unlimited are distinct. These WorkBuddy/ZCode observations are informational and
 do not change model routing. Older peers without the quota capability show an
 unsupported-host state.
 
+Grok OAuth accounts show the reported billing period and optional on-demand
+usage in the existing subscription account panel. Reads use the selected account,
+including its CLI headers. Peers require `grok_quota_v1`; older account-quota
+support does not imply Grok billing support. These observations are display-only.
+
 OpenCode Go API-key models show 5-hour, weekly and monthly usage in their connection
 editor after the connection is saved. Keys stay on the configuration's host, and
 older peers require the separate `subscription_model_quota_v1` capability before
@@ -229,34 +234,6 @@ remains open; use **Open console**. Public free-model access explicitly states t
 remaining free usage and reset times are not exposed. Console OAuth is never sent
 to Go's API-key billing endpoint. Local HTTP/DOM fixtures cover these paths; live account
 billing and physical remote hosts have not been verified.
-
-In **Settings → Models → Subscription channels → Import**, choose **MiniMax Token
-Plan**, **Kimi Code**, or **StepFun Step Plan**. Enter the plan's API key and select
-models before saving. These imports use API-key authentication and remain listed
-under Subscription channels after saving. Ordinary MiniMax pay-as-you-go
-connections stay in API providers. StepFun offers China/international Step Plan
-endpoints; it does not send a plan key to the standard pay-as-you-go API.
-
-MiniMax Token/Coding Plan and Kimi Code allowance appear in the saved API-key
-connection editor. MiniMax shows rolling and weekly windows (including separate
-model buckets when provided); Kimi Code shows short and weekly windows. Use the
-plan key on the official regional endpoint. Ordinary Moonshot pay-as-you-go keys
-are not Kimi Code subscriptions. Grok accounts show their current billing period
-and any on-demand spending cap in the subscription account panel.
-
-StepFun Step Plan uses a separate web-account session. After saving an official
-StepFun connection, open its allowance section, open the StepFun platform, and
-copy the authorization bookmark. Save that code as a browser bookmark and run it
-on the signed-in platform page. Paste its result into **Authorization session**
-and select **Connect allowance**. The quota belongs to the displayed web account;
-an inference API key alone cannot identify its Step Plan quota. The session is
-kept in the application's credential vault, scoped by saved connection and region.
-Disconnecting removes that allowance authorization. No other application's
-credential files or browser cookies are automatically read. New plan queries and
-connections require `model_provider_quota_v1` on a peer; older Go/account quota
-capabilities are insufficient. Missing usage stays unknown and refresh failures
-retain the previous observation. These four providers' display meters do not
-change model-routing eligibility.
 
 ## Subscription routing status
 

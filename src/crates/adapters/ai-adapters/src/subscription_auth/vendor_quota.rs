@@ -1,4 +1,4 @@
-//! WorkBuddy and ZCode billing reads. Endpoints, units and regional account
+//! WorkBuddy, ZCode and Grok billing reads. Endpoints, units and regional account
 //! headers stay in this adapter; display observations never gate model routing.
 use super::{accounts, browser_poll, quota, store, SubscriptionHttpOptions, SubscriptionProvider};
 use anyhow::{anyhow, Result};
@@ -309,15 +309,27 @@ fn parse_grok(
             meters.push(meter);
         }
     }
-    super::plan_quota::observed(
-        "grok",
-        slot,
-        revision,
-        now,
-        Some("Grok".into()),
-        None,
+    if meters.is_empty() {
+        return Err(anyhow!("Grok returned no supported allowance windows"));
+    }
+    let mut observation = quota::empty_snapshot(SubscriptionProvider::Grok, slot, revision);
+    observation.state = SubscriptionQuotaState::Known;
+    observation.observed_at = Some(now);
+    observation.valid_until = Some(
+        meters
+            .iter()
+            .filter_map(|meter| meter.resets_at)
+            .filter(|reset| *reset > now)
+            .fold(now + quota::CACHE_SECONDS, i64::min),
+    );
+    observation.plan = Some("Grok".into());
+    // Grok reports display-only account usage, without model eligibility facts.
+    observation.display = Some(SubscriptionQuotaDisplay {
+        version: 1,
+        expires_at: None,
         meters,
-    )
+    });
+    Ok(observation)
 }
 
 fn signed(

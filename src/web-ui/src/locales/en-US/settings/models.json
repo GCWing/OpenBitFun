@@ -174,21 +174,7 @@
     },
     "accountMarker": "Account · {{marker}}",
     "accountsCount": "{{count}} accounts",
-    "newAccount": "New account",
-    "planServices": {
-      "minimax": {
-        "name": "MiniMax Token Plan",
-        "description": "Import with your Token/Coding Plan key. Shows rolling and weekly allowance after saving."
-      },
-      "kimi_code": {
-        "name": "Kimi Code",
-        "description": "Import with your Kimi Code subscription key. Uses the Coding endpoint, separate from Moonshot pay-as-you-go."
-      },
-      "stepfun": {
-        "name": "StepFun Step Plan",
-        "description": "Import with your Step Plan key. After saving, connect a web session in the allowance section to read quota."
-      }
-    }
+    "newAccount": "New account"
   },
   "providerSelection": {
     "modelRoutingPending": "Refresh the model list to show protocols and endpoints. Models outside the catalog can be configured manually.",
@@ -358,14 +344,6 @@
     "tokendance": {
       "name": "TokenDance",
       "description": "Unified AI model gateway"
-    },
-    "stepfun": {
-      "name": "StepFun",
-      "description": "Import with your Step Plan key. After saving, connect a web session in the allowance section to read quota.",
-      "urlOptions": {
-        "stepPlan": "Step Plan (China)",
-        "intlStepPlan": "Step Plan (International)"
-      }
     }
   },
   "tabs": {
@@ -867,21 +845,6 @@
     "opencodeCustomAuth": "Allowance lookup does not support custom authentication headers. View usage in the console.",
     "openConsole": "Open console",
     "saveBeforeQuery": "Save this connection to query its OpenCode Go allowance.",
-    "planKeyRejected": "Use the saved subscription key. Check that this key includes a Coding/Token Plan.",
-    "stepfunSignInRequired": "Connect your Step Plan web account to read its allowance.",
-    "connectionChanged": "The connection changed. Refresh allowance again.",
-    "planSaveBeforeQuery": "Save this connection before reading plan allowance.",
-    "stepfunConnection": "Step Plan account",
-    "stepfunConnectionHint": "Allowance belongs to this web account. It is independent of the inference API key and is stored in the credential vault.",
-    "stepfunAccount": "Connected account: {{account}}",
-    "stepfunDisconnect": "Disconnect",
-    "stepfunOpen": "Open StepFun",
-    "stepfunCopyBookmark": "Copy authorization bookmark",
-    "stepfunAuthorization": "Authorization session",
-    "stepfunBookmarkHint": "Save the copied javascript code as a browser bookmark. Run it on your signed-in StepFun page, then paste its result here. This only reads plan allowance.",
-    "stepfunConnect": "Connect allowance",
-    "stepfunConnectFailed": "Could not connect. Sign in to StepFun, copy a new authorization session and retry.",
-    "stepfunBookmarkCopied": "Bookmark copied. Save it as a browser bookmark, then run it on your signed-in StepFun page.",
     "onDemand": "On-demand usage"
   },
   "channelRouting": {

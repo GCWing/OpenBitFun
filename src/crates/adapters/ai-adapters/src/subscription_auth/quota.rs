@@ -178,17 +178,9 @@ pub(super) fn empty_snapshot(
     account_id: &str,
     revision: u64,
 ) -> SubscriptionQuotaSnapshot {
-    empty_provider_snapshot(provider.key(), account_id, revision)
-}
-
-pub(super) fn empty_provider_snapshot(
-    provider: &str,
-    account_id: &str,
-    revision: u64,
-) -> SubscriptionQuotaSnapshot {
     SubscriptionQuotaSnapshot {
         account_id: account_id.to_string(),
-        provider: provider.to_string(),
+        provider: provider.key().to_string(),
         state: SubscriptionQuotaState::Unknown,
         credential_revision: revision,
         observed_at: None,

@@ -49,10 +49,10 @@ pub enum PeerHostCapability {
     SubscriptionProviderAccountsV1,
     /// Account-scoped vendor allowance snapshots are implemented.
     SubscriptionQuotaV1,
+    /// Grok OAuth billing periods and on-demand usage are available.
+    GrokQuotaV1,
     /// The quota command can read a saved API-key model by model_id.
     SubscriptionModelQuotaV1,
-    /// MiniMax, Kimi Code and explicit Step Plan allowance connections.
-    ModelProviderQuotaV1,
     /// Model configs support ordered pools and atomic `set_config.expectedModels`
     /// comparisons for editors of those bindings.
     SubscriptionAccountPoolsV1,
@@ -107,8 +107,8 @@ impl PeerHostCapability {
         Self::SubscriptionAccountsV1,
         Self::SubscriptionProviderAccountsV1,
         Self::SubscriptionQuotaV1,
+        Self::GrokQuotaV1,
         Self::SubscriptionModelQuotaV1,
-        Self::ModelProviderQuotaV1,
         Self::SubscriptionAccountPoolsV1,
         Self::SubscriptionAccountFailoverV1,
         Self::ModelChannelRoutingV1,
@@ -145,8 +145,8 @@ impl PeerHostCapability {
             Self::SubscriptionAccountsV1 => "subscription_accounts_v1",
             Self::SubscriptionProviderAccountsV1 => "subscription_provider_accounts_v1",
             Self::SubscriptionQuotaV1 => "subscription_quota_v1",
+            Self::GrokQuotaV1 => "grok_quota_v1",
             Self::SubscriptionModelQuotaV1 => "subscription_model_quota_v1",
-            Self::ModelProviderQuotaV1 => "model_provider_quota_v1",
             Self::SubscriptionAccountPoolsV1 => "subscription_account_pools_v1",
             Self::SubscriptionAccountFailoverV1 => "subscription_account_failover_v1",
             Self::ModelChannelRoutingV1 => "model_channel_routing_v1",

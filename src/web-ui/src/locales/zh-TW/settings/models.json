@@ -174,21 +174,7 @@
     },
     "accountMarker": "帳號 · {{marker}}",
     "accountsCount": "{{count}} 個帳號",
-    "newAccount": "新帳號",
-    "planServices": {
-      "minimax": {
-        "name": "MiniMax Token Plan",
-        "description": "使用 Token / Coding Plan 方案金鑰匯入，儲存後查看短週期和每週額度。"
-      },
-      "kimi_code": {
-        "name": "Kimi Code",
-        "description": "使用 Kimi Code 訂閱金鑰匯入，透過 Coding 專用網址，與 Moonshot 隨用隨付獨立。"
-      },
-      "stepfun": {
-        "name": "StepFun Step Plan",
-        "description": "使用 Step Plan 方案金鑰匯入；儲存後在額度區連接網頁工作階段，即可查詢週期額度。"
-      }
-    }
+    "newAccount": "新帳號"
   },
   "providerSelection": {
     "modelRoutingPending": "重新整理模型清單後顯示協定和端點；目錄外模型可手動設定。",
@@ -358,14 +344,6 @@
     "tokendance": {
       "name": "詞元跳動",
       "description": "統一的大模型 API 閘道"
-    },
-    "stepfun": {
-      "name": "StepFun",
-      "description": "使用 Step Plan 方案金鑰匯入；儲存後在額度區連接網頁工作階段，即可查詢週期額度。",
-      "urlOptions": {
-        "stepPlan": "Step Plan（中國）",
-        "intlStepPlan": "Step Plan（國際）"
-      }
     }
   },
   "tabs": {
@@ -867,21 +845,6 @@
     "opencodeCustomAuth": "額度查詢暫不支援自訂認證標頭，請前往控制台查看用量。",
     "openConsole": "開啟控制台",
     "saveBeforeQuery": "儲存此連線後，可查詢 OpenCode Go 額度。",
-    "planKeyRejected": "請檢查已儲存的金鑰是否包含 Coding / Token Plan 訂閱權限。",
-    "stepfunSignInRequired": "請連接 Step Plan 網頁帳號後查詢額度。",
-    "connectionChanged": "帳號授權已變更，請重新整理額度。",
-    "planSaveBeforeQuery": "儲存此連線後，可查詢方案額度。",
-    "stepfunConnection": "Step Plan 帳號",
-    "stepfunConnectionHint": "額度屬於此網頁帳號，與推理 API Key 獨立；授權工作階段儲存在應用程式憑據庫中。",
-    "stepfunAccount": "已連接帳號：{{account}}",
-    "stepfunDisconnect": "中斷連線",
-    "stepfunOpen": "開啟階躍平台",
-    "stepfunCopyBookmark": "複製授權書籤",
-    "stepfunAuthorization": "授權工作階段",
-    "stepfunBookmarkHint": "將複製的 javascript 程式碼儲存為瀏覽器書籤，在已登入的階躍平台頁面執行，再將傳回結果貼到這裡。僅用於讀取方案額度。",
-    "stepfunConnect": "連接額度",
-    "stepfunConnectFailed": "連接失敗，請登入階躍平台，重新複製授權工作階段後重試。",
-    "stepfunBookmarkCopied": "已複製書籤程式碼。將其儲存為瀏覽器書籤，再於已登入的階躍平台頁面執行。",
     "onDemand": "隨用隨付用量"
   },
   "channelRouting": {
