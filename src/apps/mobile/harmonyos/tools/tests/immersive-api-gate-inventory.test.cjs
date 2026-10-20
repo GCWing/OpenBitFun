@@ -167,15 +167,16 @@ test('every member a component may only reach through a gate is counted against 
         'its own rather than a shared or unconditional one');
     }
   }
-  // The rows are only a gate while the gate question still exists somewhere: a tree with
-  // no question left is a tree that has quietly gone back to naming the member outright.
-  for (const [name, text] of components) {
-    const body = codeOf(text);
-    if (componentMaterialCalls(body) > 0) {
-      assert.ok(occurrences(body, 'usesMaterial(') > 0,
-        `${name} adopts the component material without asking the capability question`);
-    }
-  }
+  // The rows are only a gate while the question they answer still exists in the tree, so
+  // this asserts the question itself: a tree whose components no longer ask whether the
+  // device has a material has gone back to naming the platform's members outright. The
+  // adoption case — a component reading the attribute without asking — is the forbidden
+  // row's, which fails on the same file with the member's own name in it, so it is stated
+  // there once and not a second time here.
+  const asking = components.filter(([, text]) => occurrences(codeOf(text), 'usesMaterial(') > 0);
+  assert.ok(asking.length >= 1,
+    'the component tree must keep asking the capability question: no component asks it any more, which is the ' +
+    'state the forbidden rows below exist to prevent');
 });
 
 test('the members whose only host is the gate owner are never named by a component', () => {
@@ -193,7 +194,9 @@ test('the members whose only host is the gate owner are never named by a compone
     for (const [name, text] of components) {
       assert.equal(reads(codeOf(text)), 0,
         `${name} must not name ${row.member} (${row.floor}+): the member does not exist below ${row.floor}, and ` +
-        `the gate that owns it is ${row.owner}`);
+        (row.owner === undefined
+          ? 'no component may adopt it at all, because the platform does not draw it on a content surface'
+          : `the gate that owns it is ${row.owner}`));
     }
     // And the owner is where it lives: a pointer to a file that stopped naming the member
     // is a row nobody owns, which is the state this inventory exists to prevent.

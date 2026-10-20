@@ -566,17 +566,23 @@ test('a construction the platform refuses stays a fallback surface and is logged
 });
 
 test('the policy answer and the component source agree on which surfaces take a material', () => {
-  // The boolean above is only half of the answer: the three component surfaces have to
-  // say the same thing, or the split turns into the defect it was written for. While the
-  // chrome scenes take no material those surfaces must paint their whole glass and name
-  // no material member; if the scenes ever take one again, the same surfaces must really
-  // attach it, behind the posture that keeps a device below the material's floor away
-  // from an attribute it does not have. Either half alone is a shipped bug, so the
-  // failure below names what is missing rather than only that something is.
+  // The boolean above is only half of the answer: the three component surfaces have to say
+  // the same thing, or the split turns into the defect it was written for. While the chrome
+  // scenes take no material those surfaces must paint their whole glass and name no material
+  // member; if the scenes ever take one again, the same surfaces must really attach it — and
+  // attach it *inside* the question that asks whether this device has one, because below the
+  // material's floor the attribute is not there at all, so an unguarded call is a start-up
+  // crash rather than a degradation. Either half alone is a shipped bug, which is why the
+  // failures below name what is missing rather than only that something is.
+  //
+  // Every assertion runs on the chain that draws the surface, sliced out of the file by that
+  // chain's own signature: read as one string, a chain whose attachment sits outside its
+  // guard looks exactly like a chain whose attachment sits inside it.
   const surfaces = [
     {
       name: 'the wide top band',
       file: 'pages/components/ConversationView.ets',
+      chain: 'private SelfDrawnTopBand() {',
       attachment: '.systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.TOP_CHROME))',
       glass: ['surfaceFill(ImmersiveSurfaceScene.TOP_CHROME, PAGE_BG_OVERLAY)',
         'surfaceBlur(ImmersiveSurfaceScene.TOP_CHROME)',
@@ -585,6 +591,7 @@ test('the policy answer and the component source agree on which surfaces take a 
     {
       name: 'the composer pill',
       file: 'pages/components/ComposerBar.ets',
+      chain: 'AdaptiveComposer() {',
       attachment: '.systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.BOTTOM_CHROME))',
       glass: ['surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, CARD_OVERLAY)',
         'surfaceBlur(ImmersiveSurfaceScene.BOTTOM_CHROME)',
@@ -593,6 +600,7 @@ test('the policy answer and the component source agree on which surfaces take a 
     {
       name: 'the staging capsule',
       file: 'pages/components/RollbackStagingBar.ets',
+      chain: 'build() {',
       attachment: '.systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.BOTTOM_CHROME))',
       glass: ['surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, SOFT)',
         'surfaceHairline(ImmersiveSurfaceScene.BOTTOM_CHROME, ROLLBACK_BAR_HAIRLINE_WIDTH)']
@@ -604,6 +612,62 @@ test('the policy answer and the component source agree on which surfaces take a 
     .replace(/\/\/[^\n]*/g, ' ')
     // One space between tokens, so a fragment still reads across the formatter's wraps.
     .replace(/\s+/g, ' ');
+
+  // The brace that closes the block opening at `open`, so a chain is read as its own body
+  // rather than as the rest of the file.
+  const closeOf = (text, open) => {
+    let depth = 0;
+    for (let index = open; index < text.length; index += 1) {
+      if (text[index] === '{') {
+        depth += 1;
+      } else if (text[index] === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          return index;
+        }
+      }
+    }
+    return -1;
+  };
+  const chainOf = (text, surface) => {
+    const start = text.indexOf(surface.chain);
+    assert.notEqual(start, -1,
+      surface.name + ': the chain that draws this surface must still be ' + surface.chain + ' — if it was renamed ' +
+      'or moved, this contract moves with it');
+    const open = text.indexOf('{', start);
+    const close = open === -1 ? -1 : closeOf(text, open);
+    assert.notEqual(close, -1, surface.name + ': the chain that draws it must close its own block');
+    return text.slice(start, close + 1);
+  };
+  // The positive branches of the capability question inside a chain. The negative branch is
+  // the one that paints the glass below the floor, so only these may hold an attachment.
+  const guardedBlocks = (slice) => {
+    const blocks = [];
+    const question = /if\s*\(\s*(!?)\s*ImmersiveSurfaceSupport\.usesMaterial\s*\(/g;
+    let match = question.exec(slice);
+    while (match !== null) {
+      if (match[1] !== '!') {
+        // Step over the call's own arguments, then take the block that follows it.
+        let index = match.index + match[0].length;
+        let parens = 1;
+        while (index < slice.length && parens > 0) {
+          if (slice[index] === '(') {
+            parens += 1;
+          } else if (slice[index] === ')') {
+            parens -= 1;
+          }
+          index += 1;
+        }
+        const open = slice.indexOf('{', index);
+        const close = open === -1 ? -1 : closeOf(slice, open);
+        if (close !== -1) {
+          blocks.push(slice.slice(open, close + 1));
+        }
+      }
+      match = question.exec(slice);
+    }
+    return blocks;
+  };
 
   // One answer for both chrome scenes, and the decision on a capable device has to be the
   // same answer: the policy is not allowed to say two things about one kind of surface.
@@ -617,25 +681,33 @@ test('the policy answer and the component source agree on which surfaces take a 
   }
 
   for (const surface of surfaces) {
-    const body = code(surface.file);
+    const source = code(surface.file);
+    const chain = chainOf(source, surface);
     if (takes) {
-      // The scenes take a material: the surfaces have to be able to take one too.
-      assert.ok(body.includes(surface.attachment),
-        surface.name + ' must attach the material the policy now allows, through the shared support: without it the ' +
-        'surface drops its own glass for a material nothing attaches');
-      assert.ok(body.includes('usesMaterial('),
-        surface.name + ' must ask the capability question again: below the material\'s floor the attribute does not ' +
-        'exist, so an unconditional call is a start-up crash rather than a degradation');
+      // The scenes take a material: the surfaces have to be able to take one too, and only
+      // where a device that cannot has another branch to fall back to.
+      const guards = guardedBlocks(chain);
+      assert.ok(guards.some((block) => block.includes(surface.attachment)),
+        surface.name + ' must attach the material the policy now allows, through the shared support, inside the ' +
+        'capability question that owns it: ' + (guards.length === 0
+          ? 'this chain asks no such question at all, so the attachment would reach every device — and below the ' +
+            'material\'s floor the attribute does not exist, so that call takes the process down before a frame'
+          : 'the chain asks the question, but the attachment sits outside its block'));
+      const droppedGlass = surface.glass.filter((fragment) => !chain.includes(fragment));
+      assert.deepEqual(droppedGlass, [],
+        surface.name + ' must keep painting its own glass beside the material: a device below the material\'s floor ' +
+        'takes the other branch of that question and would have nothing else to draw — missing ' +
+        droppedGlass.join(', '));
     } else {
-      const missing = surface.glass.filter((fragment) => !body.includes(fragment));
+      const missing = surface.glass.filter((fragment) => !chain.includes(fragment));
       assert.deepEqual(missing, [],
         surface.name + ' must paint its whole glass while the chrome scenes take no material: missing ' +
-        missing.join(', ') + ' — with the material switched on in the policy alone, this surface would drop the glass ' +
-        'it paints for a surface the platform never draws');
-      assert.equal(body.includes('.systemMaterial('), false,
+        missing.join(', ') + ' — with the material switched on in the policy alone, this surface would drop the ' +
+        'glass it paints for a surface the platform never draws');
+      assert.equal(source.includes('.systemMaterial('), false,
         surface.name + ' must name no material member while the chrome scenes take no material: the platform accepts ' +
         'one on a content surface and then draws nothing, which is the transparent surface this split removed');
-      assert.equal(body.includes('systemMaterialEffect'), false,
+      assert.equal(source.includes('systemMaterialEffect'), false,
         surface.name + ' must not name the platform band\'s field either: that channel belongs to the compact route');
     }
   }

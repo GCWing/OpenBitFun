@@ -88,10 +88,11 @@ export struct RollbackStagingBar {
   }
 
   /**
-   * The capsule's contents, mounted by both of its postures.
+   * The capsule's contents, mounted by the capsule's one chain.
    *
-   * The material is a property of the capsule's surface, so the two branches above
-   * differ in their decoration alone and both take their contents from here.
+   * The surface is a property of the capsule, not of what sits on it, so the labels and
+   * the two exits are stated once, here, and a change to any of them reaches both of the
+   * responsive presentations.
    */
   @Builder
   private CapsuleContent() {

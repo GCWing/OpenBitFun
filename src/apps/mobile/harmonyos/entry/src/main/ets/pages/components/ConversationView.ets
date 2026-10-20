@@ -74,7 +74,7 @@ import {
  *
  * Geometry, not a colour: the design draft for the wide band draws it as an inset
  * half-pixel edge on the band's own box (`artifacts/ui-drafts/wide-topband/option-b.html`,
- * `.topband__surface`), which is the boundary between the band and the fade that
+ * `.topband-b__surface`), which is the boundary between the band and the fade that
  * carries it into the transcript. It is drawn on every device — see
  * `ImmersiveSurfaceSupport.surfaceHairline`.
  */
