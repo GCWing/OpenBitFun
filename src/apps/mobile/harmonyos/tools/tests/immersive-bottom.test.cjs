@@ -137,54 +137,6 @@ function composerPillChain() {
   return composerBar.slice(start, end);
 }
 
-// The two postures of a surface whose material is a branch.
-//
-// `if (usesMaterial(scene)) { …material… } else { …fallback… }` is the only shape
-// that is safe below the attribute's floor, so the assertions read the two bodies by
-// themselves: one posture, the other, and the question they branch on.
-//
-// The anchor below is deliberately this exactly. A refactor that spells the same
-// question another way — a local alias, an extracted helper, a reversed condition —
-// goes red here, and that is the intended trade: a false red on a legal rewrite is
-// cheap, while a missed bare read of the attribute is a start-up crash on every device
-// below its floor (see the wide band's own test). Do not loosen the anchor to make a
-// rewrite pass; move the call sites into the shape the contract names instead.
-function posturesOf(sourceText, scene = 'BOTTOM_CHROME') {
-  const marker = `if (ImmersiveSurfaceSupport.usesMaterial(ImmersiveSurfaceScene.${scene})) {`;
-  const start = sourceText.indexOf(marker);
-  assert.notEqual(start, -1,
-    `the surface must branch on the ${scene} material question rather than calling the attribute from a ` +
-    'chain a device below its floor also reaches');
-  const body = (from) => {
-    // The scan starts *inside* the block, so its own braces are already open: the
-    // body ends where the nesting returns to one, not to zero.
-    let depth = 1;
-    let parens = 0;
-    for (let index = from; index < sourceText.length; index++) {
-      const char = sourceText[index];
-      if (char === '(') {
-        parens += 1;
-      } else if (char === ')') {
-        parens -= 1;
-      } else if (parens === 0 && char === '{') {
-        // Braces inside a call are an object literal — `Column({ space: 2 })` — and
-        // are not a block, so only the ones that are themselves in code count.
-        depth += 1;
-      } else if (parens === 0 && char === '}') {
-        depth -= 1;
-        if (depth === 0) {
-          return sourceText.slice(from, index);
-        }
-      }
-    }
-    throw new Error('unbalanced material branch');
-  };
-  const material = body(start + marker.length);
-  const elseAt = sourceText.indexOf('} else {', start + marker.length + material.length);
-  assert.notEqual(elseAt, -1, 'the material branch must name the posture an old device takes');
-  return { material: material, fallback: body(elseAt + '} else {'.length) };
-}
-
 // Collapses a slice to one line so an assertion is about the call, not about
 // where the formatter happened to wrap it. Comments drop out first: an
 // explanation between a call's arguments is part of the source, not of the call.
@@ -571,7 +523,7 @@ test('the compact conversation hands its top band to the platform, and paints no
   assert.match(normalize(conversationView),
     /if \(this\.platformBar\) \{ this\.PlatformTopBand\(\) \} else \{ this\.SelfDrawnTopBand\(\) \}/,
     'the band the page draws must be selected by who owns the chrome, not by a second condition');
-const selfDrawn = builderBody(conversationView, 'SelfDrawnTopBand');
+  const selfDrawn = builderBody(conversationView, 'SelfDrawnTopBand');
   assert.equal(call(selfDrawn, 'padding'),
     '.padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topSafeInset })',
     'the self-drawn band is the one that reserves the status bar itself, because it is the page\'s own top edge');
@@ -1147,7 +1099,6 @@ test('each fill names the edges its own box actually touches', () => {
   }
 });
 
-
 test('every surface whose side edge is the screen edge reserves the side strips', () => {
   // The side strips are the camera cutout, which a rotated device moves onto the
   // window's left or right edge. A full-width band consumes them per side —
@@ -1675,7 +1626,6 @@ test('only the surfaces no sheet presents still draw their own header', () => {
   assert.deepEqual(drawing('SheetCloseButton('), ['pages/components/SheetCloseHeader.ets'],
     'the shared header must stay the only consumer of the hand-drawn close button');
 });
-
 
 test('the chat page owns the keyboard avoidance the bottom rule assumes', () => {
   // `insetsOf` hands the bottom strip to the keyboard while it is visible,

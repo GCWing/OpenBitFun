@@ -19,7 +19,7 @@ const ROLLBACK_GLYPH_SIZE: number = 20;
 const ROLLBACK_BAR_RADIUS: number = 16;
 const ROLLBACK_BAR_LEADING_PADDING: number = 12;
 const ROLLBACK_BAR_TRAILING_PADDING: number = 4;
-/** The capsule's own edge on the material path; below it the bar draws no edge. */
+/** The capsule's own bottom hairline, drawn on every device: the recipe owns the colour. */
 const ROLLBACK_BAR_HAIRLINE_WIDTH: number = 0.5;
 /** Gap between the label block and the controls, and between the two glyphs. */
 const ROLLBACK_BAR_ACTION_GAP: number = 4;

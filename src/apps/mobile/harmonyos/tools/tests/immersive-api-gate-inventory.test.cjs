@@ -74,7 +74,10 @@ const components = etsFilesUnder(componentRoot)
 // Every row is one member, the scope it is read in, and how a device below its floor is
 // kept away from it. `count` rows are the counting rule; `forbidden` rows are members
 // whose only legal host is the gate owner, so the component scope must not name one at
-// all; `owned` rows are locked by the test named, and the pointer is asserted below.
+// all; `owned` rows are locked by the test named, and the pointer is asserted below. A
+// `forbidden` row may carry its own `read` when the member's name also occurs in
+// something that is not a read of it, and may leave `owner` out when no file may name
+// it at all.
 //
 // The pointer is the owning test's whole gated-member list rather than one word from it:
 // a word can be met by a stray mention elsewhere in that file, and the point of the row
@@ -85,11 +88,10 @@ const INVENTORY = [
   {
     member: '.systemMaterial(',
     floor: 26,
-    kind: 'count',
-    gate: 'usesMaterial(',
+    kind: 'forbidden',
     read: componentMaterialCalls,
-    gateRead: (text) => occurrences(text, 'usesMaterial('),
-    note: 'the component-channel material attribute: one gate question per call site'
+    note: 'the component-channel material attribute: no component adopts it any more, because the platform accepts ' +
+      'it on a content surface and then draws nothing, so a surface that attaches one gives up the glass it paints'
   },
   {
     member: 'systemMaterialEffect',
@@ -148,8 +150,9 @@ const INVENTORY = [
 
 test('every member a component may only reach through a gate is counted against that gate', () => {
   const counting = INVENTORY.filter((row) => row.kind === 'count');
-  assert.ok(counting.length >= 2,
-    'the inventory must keep both counted members: they are the two ways a surface adopts a material');
+  assert.ok(counting.length >= 1,
+    'the inventory must keep the counted member that remains — the platform band\'s field, which is answered once ' +
+    'per surface — while the component attribute is a forbidden row rather than a counted one');
   for (const row of counting) {
     for (const [name, text] of components) {
       const body = codeOf(text);
@@ -177,15 +180,28 @@ test('every member a component may only reach through a gate is counted against 
 
 test('the members whose only host is the gate owner are never named by a component', () => {
   const forbidden = INVENTORY.filter((row) => row.kind === 'forbidden');
-  assert.ok(forbidden.length >= 2, 'the inventory must keep both owner-only members');
+  assert.ok(forbidden.length >= 3,
+    'the inventory must keep the owner-only members and the attribute no component may adopt');
   for (const row of forbidden) {
+    // A row may carry its own reader: the attribute's name also appears inside the
+    // support class's own mapping method, and a substring test would read that as an
+    // adoption. The reader below counts calls at a word boundary, which is the read the
+    // counting rule uses as well.
+    const reads = (text) => (row.read === undefined
+      ? (text.includes(row.member) ? 1 : 0)
+      : row.read(text));
     for (const [name, text] of components) {
-      assert.equal(codeOf(text).includes(row.member), false,
+      assert.equal(reads(codeOf(text)), 0,
         `${name} must not name ${row.member} (${row.floor}+): the member does not exist below ${row.floor}, and ` +
         `the gate that owns it is ${row.owner}`);
     }
     // And the owner is where it lives: a pointer to a file that stopped naming the member
     // is a row nobody owns, which is the state this inventory exists to prevent.
+    if (row.owner === undefined) {
+      // No file may name this one, so there is no owner to point at: the row's whole
+      // content is the prohibition above.
+      continue;
+    }
     const owner = path.join(__dirname, '../..', 'entry/src/main/ets', row.owner);
     assert.ok(fs.existsSync(owner), `${row.member} must still have its gate owner at ${row.owner}`);
     assert.ok(codeOf(fs.readFileSync(owner, 'utf8')).includes(row.member),

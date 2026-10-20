@@ -1,14 +1,22 @@
 /**
  * The wiring between a floating surface and the platform's immersive material.
  *
- * A surface that adopts `ImmersiveMaterial` (API 26) stops painting its own
- * background, blur, border and shadow — the material layer supplies them — and
- * a device below 26 keeps the painted surface it ships today. Every call site
- * therefore needs two answers, and this file is the one place that asks the
- * question: one scene, one resolved material, one merge into whatever option
- * object the surface binds with.
+ * A window-level surface that adopts `ImmersiveMaterial` (API 26) stops painting its own
+ * background, blur, border and shadow — the material layer supplies them — and a device
+ * below 26 keeps the painted surface it ships today. Those surfaces are the platform's
+ * own shells (the modal sheet, the floating menu, the toast), and this file is the one
+ * place that asks the question for them: one scene, one resolved material, one merge
+ * into whatever options object the shell binds with.
  *
- * Four rules keep it honest:
+ * A component surface is the other kind, and it is asked no question at all. The wide
+ * top band, the composer pill and the staging capsule are painted by components of this
+ * app, and the platform accepts a material on one and then draws nothing — so a surface
+ * that attached one would have dropped its own floor, blur, edge and shadow for an empty
+ * box. `ImmersiveMaterialPolicy.takesPlatformMaterial` answers that before the device is
+ * read, and those three surfaces therefore paint their own glass on every device, with
+ * every value still asked of their recipe.
+ *
+ * Four rules keep the window-level half honest:
  *
  * - the device facts that cannot change while the app runs — the API level and
  *   the app-level material state — are read once per process
@@ -25,9 +33,7 @@
  * - on the material path the merge returns the caller's option object with the
  *   material injected and the conflicting fill transparent; on the fallback path
  *   it returns the caller's option object with only the geometry the caller owns
- *   left as it was. The two surfaces that decorate a *component* rather than an
- *   option object — the blur and the hairline — resolve the same way, as values
- *   the caller's single node binds with.
+ *   left as it was.
  *
  * This is also the one place the two declarations of the material contract meet.
  * The policy must not import a service and the service must not import a page, so

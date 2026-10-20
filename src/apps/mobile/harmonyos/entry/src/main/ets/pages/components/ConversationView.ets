@@ -74,9 +74,9 @@ import {
  *
  * Geometry, not a colour: the design draft for the wide band draws it as an inset
  * half-pixel edge on the band's own box (`artifacts/ui-drafts/wide-topband/option-b.html`,
- * `.topband-b__surface`), which is the boundary between the band and the fade that
- * carries it into the transcript. It is drawn only where the band adopts the
- * platform material — see `ImmersiveSurfaceSupport.surfaceHairline`.
+ * `.topband__surface`), which is the boundary between the band and the fade that
+ * carries it into the transcript. It is drawn on every device — see
+ * `ImmersiveSurfaceSupport.surfaceHairline`.
  */
 const TOP_BAND_HAIRLINE_WIDTH: number = 0.5;
 
@@ -348,25 +348,20 @@ export struct ConversationView {
    *
    * This is the wide composition's top band — the page's own top edge, and a
    * *content* surface rather than a navigation bar: it is not a destination's
-   * `titleBar`, and the app is the thing that decides what it is made of. Two
-   * answers, one per device, and both come from the shared surface support so a
-   * recipe change moves them together:
+   * `titleBar`, and the app is the thing that decides what it is made of. It is a
+   * content surface on every device, so the platform material is not drawn on it and
+   * the band paints the whole of its own glass, every value asked of the shared surface
+   * support so a recipe change moves them together:
    *
-   * - where `ImmersiveMaterial` is available the band adopts it on the ordinary
-   *   component channel (`systemMaterial`), which is the *other* channel from the
-   *   platform band's `systemMaterialEffect` field — one surface, one channel. The
-   *   material is the band's floor, edge and blurring then, so the fill resolves to
-   *   transparent, the blur resolves to none (a component blur under a material is
-   *   the second glass) and the band's own half-pixel hairline is the one edge it
-   *   still draws itself;
-   * - below API 26 the band paints the surface it always painted: the page overlay
-   *   colour, the recipe's thin blur, no border. That path is a shipped form, not an
-   *   error, and it is deliberately left looking exactly as it does today.
+   * - the page overlay colour is the floor, through the recipe;
+   * - the recipe's thin blur does the separating, through the recipe;
+   * - the band's own half-pixel hairline closes the box at the bottom, and the fade
+   *   below it carries the band into the transcript.
    *
-   * The band carries the page's overlay colour, the platform's thin blur and the
-   * fade that carries both into the transcript; the design draft for this posture
-   * (`artifacts/ui-drafts/wide-topband/option-b.html`) is what the two paths and
-   * the hairline were read from.
+   * The design draft for this surface (`artifacts/ui-drafts/wide-topband/option-b.html`)
+   * is where the floor, the blur and the hairline were read from. The material channel
+   * belongs to the platform's own band, which is the compact route's `titleBar` and a
+   * different surface entirely — one surface, one channel.
    */
   @Builder
   private SelfDrawnTopBand() {
@@ -446,21 +441,15 @@ export struct ConversationView {
     // something to work with.
     //
     // Every stop is asked of the bottom-chrome surface, because this layer is the
-    // backdrop the pill sits on and the two share one answer. Where the pill adopts
-    // the immersive material the overlay stands down: it is a second, near-opaque
-    // sheet between the transcript and the glass, and the material can only be made
-    // of what is behind it. Below the material every stop is the colour this layer
-    // has always painted.
+    // backdrop the pill sits on and the two share one answer. All three stops are the
+    // colours this layer has always painted: the pill paints its own glass on every
+    // device, so there is no posture left in which this layer has to stand down.
     //
-    // One consequence is accepted rather than fixed. Where the pill is glass this
-    // layer paints nothing, so the status line above the pill and the strip below it
-    // stand on no backing at all: the transcript's last line arrives under them at
-    // full contrast instead of being dimmed by a sheet. That is the price of the
-    // surface being made of what is behind it — a backing here would be the second
-    // pane of glass again — and whether it still reads well is a question for a
-    // device rather than for this note. If a legibility floor is ever needed back,
-    // the smaller answer is a backing on the status line itself, not this layer's
-    // gradient returning.
+    // The note this replaces recorded the opposite as an accepted consequence — while
+    // the pill adopted a material this layer painted nothing, and the status line above
+    // it and the strip below it stood on no backing. That posture is gone with the
+    // component material, so the consequence is gone with it: the fade is back on every
+    // device, and the legibility floor it used to cost is not a trade this app makes.
     .linearGradient({
       angle: 180,
       colors: [

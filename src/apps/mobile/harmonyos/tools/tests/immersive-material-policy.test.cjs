@@ -564,3 +564,79 @@ test('a construction the platform refuses stays a fallback surface and is logged
   assert.equal(harness.logs.length, 1, 'a refused construction must be logged in English');
   assert.match(harness.logs[0], /^Immersive material construction failed for level thin/);
 });
+
+test('the policy answer and the component source agree on which surfaces take a material', () => {
+  // The boolean above is only half of the answer: the three component surfaces have to
+  // say the same thing, or the split turns into the defect it was written for. While the
+  // chrome scenes take no material those surfaces must paint their whole glass and name
+  // no material member; if the scenes ever take one again, the same surfaces must really
+  // attach it, behind the posture that keeps a device below the material's floor away
+  // from an attribute it does not have. Either half alone is a shipped bug, so the
+  // failure below names what is missing rather than only that something is.
+  const surfaces = [
+    {
+      name: 'the wide top band',
+      file: 'pages/components/ConversationView.ets',
+      attachment: '.systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.TOP_CHROME))',
+      glass: ['surfaceFill(ImmersiveSurfaceScene.TOP_CHROME, PAGE_BG_OVERLAY)',
+        'surfaceBlur(ImmersiveSurfaceScene.TOP_CHROME)',
+        'surfaceHairline(ImmersiveSurfaceScene.TOP_CHROME, TOP_BAND_HAIRLINE_WIDTH)']
+    },
+    {
+      name: 'the composer pill',
+      file: 'pages/components/ComposerBar.ets',
+      attachment: '.systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.BOTTOM_CHROME))',
+      glass: ['surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, CARD_OVERLAY)',
+        'surfaceBlur(ImmersiveSurfaceScene.BOTTOM_CHROME)',
+        'surfaceShadow(ImmersiveSurfaceScene.BOTTOM_CHROME']
+    },
+    {
+      name: 'the staging capsule',
+      file: 'pages/components/RollbackStagingBar.ets',
+      attachment: '.systemMaterial(ImmersiveSurfaceSupport.materialFor(ImmersiveSurfaceScene.BOTTOM_CHROME))',
+      glass: ['surfaceFill(ImmersiveSurfaceScene.BOTTOM_CHROME, SOFT)',
+        'surfaceHairline(ImmersiveSurfaceScene.BOTTOM_CHROME, ROLLBACK_BAR_HAIRLINE_WIDTH)']
+    }
+  ];
+  const code = (file) => fs
+    .readFileSync(path.join(__dirname, '../../entry/src/main/ets', file), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, ' ')
+    // One space between tokens, so a fragment still reads across the formatter's wraps.
+    .replace(/\s+/g, ' ');
+
+  // One answer for both chrome scenes, and the decision on a capable device has to be the
+  // same answer: the policy is not allowed to say two things about one kind of surface.
+  const takes = policy.ImmersiveMaterialPolicy.takesPlatformMaterial(Scene.TOP_CHROME);
+  assert.equal(policy.ImmersiveMaterialPolicy.takesPlatformMaterial(Scene.BOTTOM_CHROME), takes,
+    'the two chrome scenes share one answer: both are painted by a component of this app');
+  for (const scene of [Scene.TOP_CHROME, Scene.BOTTOM_CHROME]) {
+    const resolved = resolveImmersiveMaterial(scene, snapshot(26, 'default', false));
+    assert.equal(resolved.apply, takes,
+      scene + ': the decision and the scene\'s own answer must agree on a device at the material\'s floor');
+  }
+
+  for (const surface of surfaces) {
+    const body = code(surface.file);
+    if (takes) {
+      // The scenes take a material: the surfaces have to be able to take one too.
+      assert.ok(body.includes(surface.attachment),
+        surface.name + ' must attach the material the policy now allows, through the shared support: without it the ' +
+        'surface drops its own glass for a material nothing attaches');
+      assert.ok(body.includes('usesMaterial('),
+        surface.name + ' must ask the capability question again: below the material\'s floor the attribute does not ' +
+        'exist, so an unconditional call is a start-up crash rather than a degradation');
+    } else {
+      const missing = surface.glass.filter((fragment) => !body.includes(fragment));
+      assert.deepEqual(missing, [],
+        surface.name + ' must paint its whole glass while the chrome scenes take no material: missing ' +
+        missing.join(', ') + ' — with the material switched on in the policy alone, this surface would drop the glass ' +
+        'it paints for a surface the platform never draws');
+      assert.equal(body.includes('.systemMaterial('), false,
+        surface.name + ' must name no material member while the chrome scenes take no material: the platform accepts ' +
+        'one on a content surface and then draws nothing, which is the transparent surface this split removed');
+      assert.equal(body.includes('systemMaterialEffect'), false,
+        surface.name + ' must not name the platform band\'s field either: that channel belongs to the compact route');
+    }
+  }
+});

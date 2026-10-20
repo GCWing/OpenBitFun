@@ -213,10 +213,25 @@ export class ImmersiveMaterialPolicy {
    * component the material is accepted and then not drawn: the component has already
    * given up its own glass, and the surface the user sees is bare.
    *
-   * Hence the split, and hence this one place to change it. A real device that draws a
-   * component's material flips the answer here; every other file reads it through the
-   * decision below, so no component has to be edited again. Evidence: the immersive
-   * material render finding in the mobile artefact notes.
+   * Scope of that evidence: it is the API 26 emulator's account, and the only one this
+   * app has. The two chrome scenes share the mechanism and the API 22 rendering was
+   * never captured, so the answer below is a measured emulator fact plus an
+   * extrapolation across the two chrome scenes — the real-device arbitration is still
+   * open, and its list of open questions is the finding's own section.
+   *
+   * Hence the split. A real device that draws a component's material turns the boolean
+   * below off, and that is a change rather than a switch: this flag answers the policy
+   * side alone. With it off the decision applies a material to the chrome scenes again,
+   * and the app is not ready for that — the three component surfaces no longer attach
+   * one, so they would drop their own floor, blur, edge and shadow for a surface nothing
+   * draws, which is exactly the defect this rule was written for. Enabling it takes all
+   * three of: attaching the material again on the wide top band, the composer pill and
+   * the staging capsule; restoring the posture that keeps a device below the material's
+   * floor away from the attribute it does not have; and the recipes' material branch
+   * becoming reachable at all. The components keep no half-built structure on purpose —
+   * an enable is meant to be a real change rather than a switch that reproduces the
+   * defect — and `immersive-material-policy.test.cjs` fails while the two sides
+   * disagree, naming what is missing.
    */
   static readonly COMPONENT_SURFACES_TAKE_NO_MATERIAL: boolean = true;
 
@@ -240,6 +255,11 @@ export class ImmersiveMaterialPolicy {
    * Answered here rather than at each call site, so a surface cannot half-adopt a
    * material: the window shells ask, the decision below carries the answer to the
    * service that builds the object, and a scene that answers no never reaches it.
+   *
+   * This is the policy's half only. What the components' own source does with the
+   * answer is the other half, and the two are held against each other by
+   * `immersive-material-policy.test.cjs`: the policy may not turn the chrome scenes on
+   * while their surfaces attach nothing, and it may not keep them off while they do.
    */
   static takesPlatformMaterial(scene: string): boolean {
     if (!ImmersiveMaterialPolicy.COMPONENT_SURFACES_TAKE_NO_MATERIAL) {

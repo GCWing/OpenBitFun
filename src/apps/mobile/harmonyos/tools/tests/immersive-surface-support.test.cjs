@@ -225,15 +225,6 @@ test('API 26 injects one material and makes the conflicting decoration transpare
 
   assert.equal(harness.Support.usesMaterial(Scene.MODAL_SHEET), true);
   assert.equal(harness.Support.surfaceFill(Scene.MODAL_SHEET), TRANSPARENT,
-    'the content root must not paint over the material');
-  assert.equal(harness.Support.surfaceFill(Scene.MODAL_SHEET, CARD), TRANSPARENT,
-    'a caller override must not survive the material path either');
-  assert.deepEqual(harness.Support.surfaceBorder(Scene.MODAL_SHEET, { width: 0.5 }),
-    { width: 0, color: TRANSPARENT }, 'the hairline must be dropped');
-  assert.deepEqual(harness.Support.surfaceShadow(Scene.MODAL_SHEET, { radius: 18, color: SHADOW_SUBTLE, offsetY: 7 }),
-    { radius: 0, color: TRANSPARENT, offsetY: 7 }, 'the shadow must be dropped, the offset kept');
-  assert.equal(harness.Support.usesMaterial(Scene.MODAL_SHEET), true);
-  assert.equal(harness.Support.surfaceFill(Scene.MODAL_SHEET), TRANSPARENT,
     'the sheet content root must not paint over the material');
   assert.equal(harness.Support.surfaceFill(Scene.MODAL_SHEET, CARD), TRANSPARENT,
     'a caller override must not survive the material path either');
