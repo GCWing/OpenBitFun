@@ -46,6 +46,8 @@ pub mod sleep_prevention;
 pub mod startup_trace;
 pub mod tray;
 mod webview_recovery;
+#[cfg(target_os = "windows")]
+mod window_shell;
 mod window_state_support;
 #[cfg(target_os = "windows")]
 mod window_webview_geometry;
