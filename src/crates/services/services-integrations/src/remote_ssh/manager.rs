@@ -1976,18 +1976,28 @@ fn split_container_entry_fields<'a>(
     Ok((name, path, kind, size, modified, permissions))
 }
 
-fn parse_container_exists_output(path: &str, stderr: &str, status: i32) -> anyhow::Result<bool> {
+fn parse_container_exists_output(
+    path: &str,
+    stderr: &str,
+    status: i32,
+    wsl: bool,
+) -> anyhow::Result<bool> {
+    let reports_failure = if wsl {
+        crate::remote_ssh::wsl::stderr_reports_failure(stderr)
+    } else {
+        !stderr.trim().is_empty()
+    };
     match status {
         0 => Ok(true),
-        1 if stderr.trim().is_empty() => Ok(false),
+        1 if !reports_failure => Ok(false),
         _ => anyhow::bail!(
             "Failed to check whether container path '{}' exists: command exited with status {}{}",
             path,
             status,
-            if stderr.trim().is_empty() {
-                String::new()
-            } else {
+            if reports_failure {
                 format!(": {}", stderr.trim())
+            } else {
+                String::new()
             }
         ),
     }
@@ -4840,9 +4850,9 @@ impl SSHConnectionManager {
                     let command = container_signal_command(&pid_file, signal);
                     Box::pin(async move { super::wsl::signal(&config, &command).await })
                 });
-            return crate::remote_ssh::WorkspaceStdio::spawn_local_process_with_signal_hook(
-                super::wsl::EXECUTABLE,
+            return crate::remote_ssh::WorkspaceStdio::spawn_wsl_process(
                 &super::wsl::exec_args(&wsl, &supervised_command),
+                &[super::wsl::UTF8_ENV],
                 Some(signal_hook),
             );
         }
@@ -5009,6 +5019,17 @@ impl SSHConnectionManager {
         self.get_effective_connection_config(connection_id)
             .await
             .is_some_and(|config| config.uses_shell_filesystem())
+    }
+
+    /// Whether this connection runs in a native Windows WSL distribution.
+    ///
+    /// WSL shares the shell-workspace code path with `docker exec`, but its
+    /// launcher appends host notices to the guest command's stderr. Callers that
+    /// interpret stderr as a failure signal must ask this question first.
+    async fn is_wsl_workspace(&self, connection_id: &str) -> bool {
+        self.get_effective_connection_config(connection_id)
+            .await
+            .is_some_and(|config| config.wsl.is_some())
     }
 
     pub async fn local_process_exec_spec(
@@ -5653,7 +5674,12 @@ impl SSHConnectionManager {
         let path = self.resolve_sftp_path(connection_id, path).await?;
         let script = container_read_dir_script(&path, max_entries);
         let (stdout, stderr, status) = self.execute_workspace_bytes(connection_id, &script).await?;
-        if status != 0 || !stderr.is_empty() {
+        let failed = if self.is_wsl_workspace(connection_id).await {
+            super::wsl::stderr_reports_failure(&String::from_utf8_lossy(&stderr))
+        } else {
+            !stderr.is_empty()
+        };
+        if status != 0 || failed {
             anyhow::bail!(
                 "Failed to list container directory '{}': {}",
                 path,
@@ -5676,7 +5702,8 @@ impl SSHConnectionManager {
             crate::remote_ssh::shell::quote_arg(&path)
         );
         let (_, stderr, status) = self.execute_command(connection_id, &command).await?;
-        parse_container_exists_output(&path, &stderr, status)
+        let wsl = self.is_wsl_workspace(connection_id).await;
+        parse_container_exists_output(&path, &stderr, status, wsl)
     }
 
     pub async fn container_mkdir(
@@ -8534,8 +8561,8 @@ mod tests {
 
     #[test]
     fn container_exists_retains_transport_and_command_errors() {
-        assert!(parse_container_exists_output("/workspace/file", "", 0).unwrap());
-        assert!(!parse_container_exists_output("/workspace/missing", "", 1).unwrap());
+        assert!(parse_container_exists_output("/workspace/file", "", 0, false).unwrap());
+        assert!(!parse_container_exists_output("/workspace/missing", "", 1, false).unwrap());
         for (status, stderr) in [
             (1, "Error response from daemon: No such container"),
             (2, "Permission denied"),
@@ -8543,12 +8570,29 @@ mod tests {
             (126, "Shell is not executable"),
             (127, ""),
         ] {
-            let error = parse_container_exists_output("/workspace/file", stderr, status)
+            let error = parse_container_exists_output("/workspace/file", stderr, status, false)
                 .expect_err("container failures must not be treated as missing files")
                 .to_string();
             assert!(error.contains(&format!("status {status}")));
             assert!(error.contains(stderr));
         }
+    }
+
+    #[test]
+    fn wsl_host_notices_do_not_look_like_missing_paths_or_command_failures() {
+        // `wsl.exe` prints this host notice on stderr for every start while the
+        // guest command itself succeeds.
+        let notice = "wsl: 检测到 localhost 代理配置，但未镜像到 WSL。NAT 模式下的 WSL 不支持 localhost 代理。";
+        assert!(!crate::remote_ssh::wsl::stderr_reports_failure(notice));
+        assert!(
+            !parse_container_exists_output("/home/dev/missing", notice, 1, true).unwrap(),
+            "a host notice must not turn 'missing' into a failure"
+        );
+
+        // A guest diagnostic after the notice still counts as a failure.
+        let guest_failure = format!("{notice}\nstat: cannot statx '/x': Permission denied");
+        assert!(crate::remote_ssh::wsl::stderr_reports_failure(&guest_failure));
+        assert!(parse_container_exists_output("/home/dev/x", &guest_failure, 1, true).is_err());
     }
 
     #[test]

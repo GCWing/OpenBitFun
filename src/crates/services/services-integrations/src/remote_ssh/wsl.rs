@@ -9,6 +9,15 @@ use std::time::Duration;
 
 pub(crate) const EXECUTABLE: &str = "wsl.exe";
 
+/// Force `wsl.exe` to emit its own diagnostics as UTF-8 instead of UTF-16LE.
+///
+/// WSL writes host-side notices (for example the "localhost proxy is not
+/// mirrored into WSL" warning) and `WSL_E_*` errors as UTF-16LE on stderr while
+/// Linux process output stays UTF-8. Without this switch every stderr read mixes
+/// both encodings, so UTF-8 consumers see replacement characters and
+/// `container_exists` cannot tell an empty stderr from a diagnostic.
+pub(crate) const UTF8_ENV: (&str, &str) = ("WSL_UTF8", "1");
+
 pub(crate) fn validate(config: &WslWorkspaceConfig) -> anyhow::Result<()> {
     if config.distribution.trim().is_empty()
         || config.distribution.contains(['\0', '\r', '\n'])
@@ -72,6 +81,7 @@ async fn output(args: &[String], timeout: Duration) -> anyhow::Result<Output> {
         timeout,
         process_manager::create_tokio_command(EXECUTABLE)
             .args(args)
+            .env(UTF8_ENV.0, UTF8_ENV.1)
             .stdin(Stdio::null())
             .kill_on_drop(true)
             .output(),
@@ -181,6 +191,26 @@ pub(crate) async fn probe(
 pub(crate) async fn signal(config: &WslWorkspaceConfig, command: &str) -> anyhow::Result<()> {
     let result = output(&exec_args(config, command), Duration::from_secs(3)).await?;
     check_output(&result)
+}
+
+/// Whether stderr carries an actual command diagnostic.
+///
+/// `wsl.exe` writes its own host notices to the same stderr stream as the guest
+/// command (for example the "localhost proxy is not mirrored into WSL" warning
+/// emitted on every start). Callers that treat any stderr output as failure must
+/// ignore those notices, otherwise every WSL workspace operation looks broken.
+pub(crate) fn stderr_reports_failure(stderr: &str) -> bool {
+    stderr
+        .lines()
+        .map(str::trim)
+        .any(|line| !line.is_empty() && !is_host_notice(line))
+}
+
+/// `wsl.exe` prefixes its own messages with `wsl: `. Guest diagnostics never do.
+fn is_host_notice(line: &str) -> bool {
+    line.strip_prefix("wsl:").is_some_and(|rest| {
+        rest.starts_with(' ') || rest.starts_with(':') || rest.is_empty()
+    })
 }
 
 #[cfg(test)]
@@ -377,6 +407,90 @@ mod tests {
         manager.disconnect(&config.id).await.unwrap();
         manager.ensure_connected(&config.id).await.unwrap();
         assert!(manager.is_shell_workspace(&config.id).await);
+        manager.disconnect(&config.id).await.unwrap();
+    }
+}
+
+#[cfg(all(test, windows))]
+mod issue_repro_tests {
+    //! Reproduces https://github.com/GCWing/OpenBitFun/issues/3435 against a real
+    //! distribution. Run with OPENBITFUN_TEST_WSL_DISTRO and `--ignored`.
+
+    #[tokio::test]
+    #[ignore = "requires Windows and an initialized WSL distribution"]
+    async fn wsl_workspace_file_browsing_reports_missing_paths_without_failing() {
+        let distribution =
+            std::env::var("OPENBITFUN_TEST_WSL_DISTRO").expect("Set OPENBITFUN_TEST_WSL_DISTRO");
+        let root = tempfile::tempdir().unwrap();
+        let manager = super::super::SSHConnectionManager::new(root.path().into());
+        let mut config: super::super::SSHConnectionConfig = serde_json::from_value(serde_json::json!({
+            "id": "wsl-browse", "name": "WSL browse", "host": "wsl.invalid", "port": 0,
+            "username": "", "auth": { "type": "PrivateKey", "keyPath": "" },
+            "wsl": { "distribution": distribution }
+        }))
+        .unwrap();
+        config.wsl.as_mut().unwrap().distribution = distribution.clone();
+        let result = manager.connect(config.clone()).await.unwrap();
+        assert!(result.success, "connect failed: {:?}", result.error);
+        manager.save_connection(&config).await.unwrap();
+
+        let home = result.server_info.as_ref().unwrap().home_dir.clone();
+
+        // The browser starts by listing the workspace root. WSL's launcher
+        // notices must not turn that listing into a failure.
+        let entries = manager.container_read_dir(&config.id, &home).await.unwrap();
+        assert!(
+            !entries.is_empty(),
+            "home directory listing should return entries"
+        );
+        assert!(
+            entries.iter().all(|entry| !entry.name.contains('\u{fffd}')),
+            "listing must not contain replacement characters"
+        );
+
+        // A missing child path must read as "absent", not as a hard error.
+        let missing = format!("{home}/openbitfun-missing-{}", uuid::Uuid::new_v4());
+        assert!(
+            !manager.container_exists(&config.id, &missing).await.unwrap(),
+            "a missing path must report absent instead of failing"
+        );
+
+        manager.disconnect(&config.id).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Windows and an initialized WSL distribution"]
+    async fn wsl_workspace_stderr_carries_only_guest_diagnostics() {
+        use tokio::io::AsyncReadExt;
+
+        let distribution =
+            std::env::var("OPENBITFUN_TEST_WSL_DISTRO").expect("Set OPENBITFUN_TEST_WSL_DISTRO");
+        let root = tempfile::tempdir().unwrap();
+        let manager = super::super::SSHConnectionManager::new(root.path().into());
+        let config: super::super::SSHConnectionConfig = serde_json::from_value(serde_json::json!({
+            "id": "wsl-stderr", "name": "WSL stderr", "host": "wsl.invalid", "port": 0,
+            "username": "", "auth": { "type": "PrivateKey", "keyPath": "" },
+            "wsl": { "distribution": distribution }
+        }))
+        .unwrap();
+        assert!(manager.connect(config.clone()).await.unwrap().success);
+        manager.save_connection(&config).await.unwrap();
+
+        // The guest writes one diagnostic to stderr. WSL's launcher notices share
+        // that stream, so the caller must see the diagnostic alone, as valid UTF-8.
+        let transport = manager
+            .open_workspace_stdio(&config.id, "printf 'guest-only' >&2")
+            .await
+            .unwrap();
+        let (_stdin, _stdout, mut stderr, _control, completion) = transport.into_parts();
+        let mut diagnostic = String::new();
+        stderr
+            .read_to_string(&mut diagnostic)
+            .await
+            .expect("stderr must stay valid UTF-8 for workspace consumers");
+        completion.wait().await;
+        assert_eq!(diagnostic, "guest-only");
+
         manager.disconnect(&config.id).await.unwrap();
     }
 }

@@ -203,12 +203,30 @@ impl WorkspaceStdio {
         args: &[String],
         signal_hook: Option<WorkspaceSignalHook>,
     ) -> anyhow::Result<Self> {
-        let mut child = process_manager::create_tokio_command(executable)
+        Self::spawn_local_process_with_env(executable, args, &[], signal_hook)
+    }
+
+    /// Spawn a local workspace process with extra environment entries.
+    ///
+    /// Used for targets whose launcher prints host-side diagnostics on the same
+    /// stderr stream as the guest command, such as `wsl.exe`.
+    pub(crate) fn spawn_local_process_with_env(
+        executable: &str,
+        args: &[String],
+        env: &[(&str, &str)],
+        signal_hook: Option<WorkspaceSignalHook>,
+    ) -> anyhow::Result<Self> {
+        let mut command = process_manager::create_tokio_command(executable);
+        command
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
+            .kill_on_drop(true);
+        for (key, value) in env {
+            command.env(key, value);
+        }
+        let mut child = command
             .spawn()
             .with_context(|| format!("Failed to start local executable '{}'", executable))?;
         let child_stdin = child
@@ -243,6 +261,31 @@ impl WorkspaceStdio {
         })
     }
 
+    /// Spawn `wsl.exe` with host notices removed from stderr.
+    ///
+    /// WSL shares stderr between its own launcher messages and the guest
+    /// command. Callers that read stderr to build diagnostics, or that treat any
+    /// stderr output as failure, must not see the launcher's notices.
+    pub(crate) fn spawn_wsl_process(
+        args: &[String],
+        env: &[(&str, &str)],
+        signal_hook: Option<WorkspaceSignalHook>,
+    ) -> anyhow::Result<Self> {
+        let transport = Self::spawn_local_process_with_env("wsl.exe", args, env, signal_hook)?;
+        let mut parts = transport.into_parts();
+        let stderr = std::mem::replace(
+            &mut parts.2,
+            Box::pin(tokio::io::empty()) as WorkspaceReader,
+        );
+        Ok(Self {
+            stdin: parts.0,
+            stdout: parts.1,
+            stderr: Box::pin(HostNoticeFilteredReader::new(stderr)),
+            control: parts.3,
+            completion: parts.4,
+        })
+    }
+
     pub fn into_parts(
         self,
     ) -> (
@@ -266,6 +309,95 @@ struct WorkspaceLease {
     cancellation: CancellationToken,
     signal_hook: Option<WorkspaceSignalHook>,
     finished: Arc<AtomicBool>,
+}
+
+/// A [`WorkspaceReader`] that drops launcher host notices from stderr.
+///
+/// `wsl.exe` prints host-side notices on the same stderr stream as the guest
+/// command, so a caller reading stderr for diagnostics receives WSL's own
+/// messages prefixed to the real output. Filtering happens only on complete
+/// lines, so a notice split across reads is still recognized and a partial line
+/// is never forwarded early.
+pub(crate) struct HostNoticeFilteredReader {
+    inner: WorkspaceReader,
+    /// Bytes of the current incomplete line.
+    pending: Vec<u8>,
+    /// Filtered bytes ready to hand to the caller.
+    ready: Vec<u8>,
+    /// Set once the inner reader reported EOF.
+    drained: bool,
+}
+
+impl HostNoticeFilteredReader {
+    pub(crate) fn new(inner: WorkspaceReader) -> Self {
+        Self {
+            inner,
+            pending: Vec::new(),
+            ready: Vec::new(),
+            drained: false,
+        }
+    }
+
+    /// Move complete lines out of `pending`, dropping host notices.
+    fn take_complete_lines(&mut self) {
+        while let Some(end) = self.pending.iter().position(|byte| *byte == b'\n') {
+            let line = self.pending.drain(..=end).collect::<Vec<_>>();
+            if !is_host_notice_line(&line) {
+                self.ready.extend_from_slice(&line);
+            }
+        }
+    }
+}
+
+fn is_host_notice_line(line: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(line);
+    let trimmed = text.trim_end_matches(['\r', '\n']);
+    trimmed
+        .strip_prefix("wsl:")
+        .is_some_and(|rest| rest.starts_with(' ') || rest.starts_with(':') || rest.is_empty())
+}
+
+impl AsyncRead for HostNoticeFilteredReader {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        loop {
+            if !this.ready.is_empty() {
+                let take = this.ready.len().min(buf.remaining());
+                buf.put_slice(&this.ready[..take]);
+                this.ready.drain(..take);
+                return Poll::Ready(Ok(()));
+            }
+            if this.drained {
+                return Poll::Ready(Ok(()));
+            }
+            let mut chunk = [0_u8; 4096];
+            let mut read_buf = ReadBuf::new(&mut chunk);
+            match Pin::new(&mut this.inner).poll_read(cx, &mut read_buf) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                Poll::Ready(Ok(())) => {
+                    let filled = read_buf.filled();
+                    if filled.is_empty() {
+                        this.drained = true;
+                        // A final line without a trailing newline still counts.
+                        if !this.pending.is_empty() {
+                            let tail = std::mem::take(&mut this.pending);
+                            if !is_host_notice_line(&tail) {
+                                this.ready.extend_from_slice(&tail);
+                            }
+                        }
+                        continue;
+                    }
+                    this.pending.extend_from_slice(filled);
+                    this.take_complete_lines();
+                }
+            }
+        }
+    }
 }
 
 impl Drop for WorkspaceLease {
@@ -1014,5 +1146,67 @@ mod tests {
 
         assert!(hook_called.load(Ordering::SeqCst));
         assert_eq!(exit.exit_code, Some(137));
+    }
+
+    #[tokio::test]
+    async fn host_notice_filter_drops_launcher_lines_and_keeps_guest_diagnostics() {
+        use tokio::io::AsyncReadExt;
+
+        let notice = "wsl: 检测到 localhost 代理配置，但未镜像到 WSL。NAT 模式下的 WSL 不支持 localhost 代理。\r\n";
+        let raw = format!("{notice}stat: cannot statx '/x': Permission denied\n");
+        let mut reader = HostNoticeFilteredReader::new(Box::pin(std::io::Cursor::new(
+            raw.into_bytes(),
+        )));
+        let mut output = String::new();
+        reader.read_to_string(&mut output).await.unwrap();
+
+        assert_eq!(output, "stat: cannot statx '/x': Permission denied\n");
+    }
+
+    #[tokio::test]
+    async fn host_notice_filter_recognizes_a_notice_split_across_reads() {
+        use tokio::io::AsyncReadExt;
+
+        // One byte per poll forces the notice and its terminator apart.
+        struct Trickle(Vec<u8>, usize);
+        impl AsyncRead for Trickle {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                _cx: &mut TaskContext<'_>,
+                buf: &mut ReadBuf<'_>,
+            ) -> Poll<std::io::Result<()>> {
+                if buf.remaining() == 0 || self.1 >= self.0.len() {
+                    return Poll::Ready(Ok(()));
+                }
+                let byte = self.0[self.1];
+                self.1 += 1;
+                buf.put_slice(&[byte]);
+                Poll::Ready(Ok(()))
+            }
+        }
+
+        let raw = b"wsl: host notice\nguest diagnostic".to_vec();
+        let mut reader =
+            HostNoticeFilteredReader::new(Box::pin(Trickle(raw, 0)) as WorkspaceReader);
+        let mut output = String::new();
+        reader.read_to_string(&mut output).await.unwrap();
+
+        assert_eq!(
+            output, "guest diagnostic",
+            "a notice split across reads must still be dropped"
+        );
+    }
+
+    #[tokio::test]
+    async fn host_notice_filter_forwards_output_without_any_notice() {
+        use tokio::io::AsyncReadExt;
+
+        let mut reader = HostNoticeFilteredReader::new(Box::pin(std::io::Cursor::new(
+            b"plain\noutput\n".to_vec(),
+        )));
+        let mut output = String::new();
+        reader.read_to_string(&mut output).await.unwrap();
+
+        assert_eq!(output, "plain\noutput\n");
     }
 }
