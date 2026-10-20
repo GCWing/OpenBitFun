@@ -230,6 +230,13 @@ remaining free usage and reset times are not exposed. Console OAuth is never sen
 to Go's API-key billing endpoint. Local HTTP/DOM fixtures cover these paths; live account
 billing and physical remote hosts have not been verified.
 
+In **Settings → Models → Subscription channels → Import**, choose **MiniMax Token
+Plan**, **Kimi Code**, or **StepFun Step Plan**. Enter the plan's API key and select
+models before saving. These imports use API-key authentication and remain listed
+under Subscription channels after saving. Ordinary MiniMax pay-as-you-go
+connections stay in API providers. StepFun offers China/international Step Plan
+endpoints; it does not send a plan key to the standard pay-as-you-go API.
+
 MiniMax Token/Coding Plan and Kimi Code allowance appear in the saved API-key
 connection editor. MiniMax shows rolling and weekly windows (including separate
 model buckets when provided); Kimi Code shows short and weekly windows. Use the

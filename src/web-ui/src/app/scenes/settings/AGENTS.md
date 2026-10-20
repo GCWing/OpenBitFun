@@ -97,3 +97,13 @@ credentials, explicitly pasted, and cleared from drafts after submission/closing
 Keep observations and setup responses fenced by device activation and saved-model
 identity. Focused checks add `src/app/scenes/settings/pages/ai/ModelProviderQuota.test.tsx`
 to the allowance tests above; these are local fixtures, not live provider acceptance.
+
+API-key plan services are visible in the subscription importer alongside OAuth
+services. Reuse catalog-owned endpoint templates; Kimi must choose its Coding
+endpoint and StepFun its regional Step Plan endpoint. Preserve API-key auth and
+store the additive `metadata.subscription_plan` presentation marker on explicit
+imports. MiniMax shares pay-as-you-go endpoints, so do not infer a plan from its
+key or endpoint alone. Classify and count saved plan connections consistently in
+the subscription summary, and retain editor draft/device guards when opening them.
+Focused verification: `planSubscriptions.test.ts`, `ModelSettingsPage.loading.test.tsx`,
+and the existing quota/settings tests in this directory (local DOM fixtures).

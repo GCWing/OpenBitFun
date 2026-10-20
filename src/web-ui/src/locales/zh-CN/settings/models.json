@@ -174,7 +174,21 @@
     },
     "accountMarker": "账号 · {{marker}}",
     "accountsCount": "{{count}} 个账号",
-    "newAccount": "新账号"
+    "newAccount": "新账号",
+    "planServices": {
+      "minimax": {
+        "name": "MiniMax Token Plan",
+        "description": "使用 Token / Coding Plan 套餐 Key 导入，保存后查看短周期和周额度。"
+      },
+      "kimi_code": {
+        "name": "Kimi Code",
+        "description": "使用 Kimi Code 订阅 Key 导入，走 Coding 专用地址，与 Moonshot 按量计费独立。"
+      },
+      "stepfun": {
+        "name": "StepFun Step Plan",
+        "description": "使用 Step Plan 套餐 Key 导入；保存后在额度区连接网页会话，即可查询周期额度。"
+      }
+    }
   },
   "providerSelection": {
     "modelRoutingPending": "刷新模型列表后显示协议和端点；目录外模型可手动配置。",
@@ -344,6 +358,14 @@
     "tokendance": {
       "name": "词元跳动",
       "description": "统一的大模型 API 网关"
+    },
+    "stepfun": {
+      "name": "StepFun",
+      "description": "使用 Step Plan 套餐 Key 导入；保存后在额度区连接网页会话，即可查询周期额度。",
+      "urlOptions": {
+        "stepPlan": "Step Plan（中国）",
+        "intlStepPlan": "Step Plan（国际）"
+      }
     }
   },
   "tabs": {

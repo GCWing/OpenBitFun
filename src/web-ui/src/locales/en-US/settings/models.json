@@ -174,7 +174,21 @@
     },
     "accountMarker": "Account · {{marker}}",
     "accountsCount": "{{count}} accounts",
-    "newAccount": "New account"
+    "newAccount": "New account",
+    "planServices": {
+      "minimax": {
+        "name": "MiniMax Token Plan",
+        "description": "Import with your Token/Coding Plan key. Shows rolling and weekly allowance after saving."
+      },
+      "kimi_code": {
+        "name": "Kimi Code",
+        "description": "Import with your Kimi Code subscription key. Uses the Coding endpoint, separate from Moonshot pay-as-you-go."
+      },
+      "stepfun": {
+        "name": "StepFun Step Plan",
+        "description": "Import with your Step Plan key. After saving, connect a web session in the allowance section to read quota."
+      }
+    }
   },
   "providerSelection": {
     "modelRoutingPending": "Refresh the model list to show protocols and endpoints. Models outside the catalog can be configured manually.",
@@ -344,6 +358,14 @@
     "tokendance": {
       "name": "TokenDance",
       "description": "Unified AI model gateway"
+    },
+    "stepfun": {
+      "name": "StepFun",
+      "description": "Import with your Step Plan key. After saving, connect a web session in the allowance section to read quota.",
+      "urlOptions": {
+        "stepPlan": "Step Plan (China)",
+        "intlStepPlan": "Step Plan (International)"
+      }
     }
   },
   "tabs": {

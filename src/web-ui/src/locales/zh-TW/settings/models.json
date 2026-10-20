@@ -174,7 +174,21 @@
     },
     "accountMarker": "帳號 · {{marker}}",
     "accountsCount": "{{count}} 個帳號",
-    "newAccount": "新帳號"
+    "newAccount": "新帳號",
+    "planServices": {
+      "minimax": {
+        "name": "MiniMax Token Plan",
+        "description": "使用 Token / Coding Plan 方案金鑰匯入，儲存後查看短週期和每週額度。"
+      },
+      "kimi_code": {
+        "name": "Kimi Code",
+        "description": "使用 Kimi Code 訂閱金鑰匯入，透過 Coding 專用網址，與 Moonshot 隨用隨付獨立。"
+      },
+      "stepfun": {
+        "name": "StepFun Step Plan",
+        "description": "使用 Step Plan 方案金鑰匯入；儲存後在額度區連接網頁工作階段，即可查詢週期額度。"
+      }
+    }
   },
   "providerSelection": {
     "modelRoutingPending": "重新整理模型清單後顯示協定和端點；目錄外模型可手動設定。",
@@ -344,6 +358,14 @@
     "tokendance": {
       "name": "詞元跳動",
       "description": "統一的大模型 API 閘道"
+    },
+    "stepfun": {
+      "name": "StepFun",
+      "description": "使用 Step Plan 方案金鑰匯入；儲存後在額度區連接網頁工作階段，即可查詢週期額度。",
+      "urlOptions": {
+        "stepPlan": "Step Plan（中國）",
+        "intlStepPlan": "Step Plan（國際）"
+      }
     }
   },
   "tabs": {

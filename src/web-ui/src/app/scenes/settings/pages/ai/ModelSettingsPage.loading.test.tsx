@@ -83,6 +83,29 @@ describe('ModelSettingsPage loading and provider actions', () => {
     vi.restoreAllMocks();
   });
 
+  it.each([
+    ['minimax', 'https://api.minimaxi.com/anthropic'],
+    ['kimi_code', 'https://api.kimi.com/coding'],
+    ['stepfun', 'https://api.stepfun.com/step_plan/v1'],
+  ])('opens the %s plan import from subscription channels with the correct endpoint', async (kind, endpoint) => {
+    const values: Record<string, unknown> = {
+      'ai.models': [], 'ai.default_models': {},
+      'ai.proxy': { enabled: false, url: '' },
+      'ai.stream_idle_timeout_secs': 120, 'ai.stream_ttft_timeout_secs': 60,
+    };
+    vi.spyOn(configManager, 'hasCachedConfig').mockImplementation(path => path in values);
+    vi.spyOn(configManager, 'getCachedConfig').mockImplementation(<T,>(path: string) => values[path] as T);
+    await act(async () => root.render(<ModelSettingsPage />));
+    await act(async () => button('acquisition.import').click());
+    const service = [...document.querySelectorAll('[data-testid="settings-subscription-service"]')]
+      .find(element => element.textContent?.includes(copy(`subscriptionAuth.planServices.${kind}.name`)))!;
+    expect(service).toBeTruthy();
+    await act(async () => service.querySelector<HTMLButtonElement>('button')!.click());
+    expect(document.querySelector<HTMLInputElement>('[data-testid="settings-model-base-url-input"]')?.value).toBe(endpoint);
+    expect(document.querySelectorAll('[role="dialog"]:not([aria-hidden="true"]) [data-testid="settings-subscription-service"]')).toHaveLength(0);
+    expect(aiApi.listSubscriptionAccounts).toHaveBeenCalled();
+  });
+
   it('renders a warm model pool immediately without starting a read that could overwrite edits', () => {
     const values: Record<string, unknown> = {
       'ai.models': [model], 'ai.default_models': { primary: model.id },

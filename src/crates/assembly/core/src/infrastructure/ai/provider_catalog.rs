@@ -606,7 +606,28 @@ mod tests {
     #[test]
     fn overlay_is_valid_and_keeps_product_endpoint_decisions() {
         let overlay = parse_overlay().expect("valid overlay");
-        assert_eq!(overlay.providers.len(), 16);
+        assert_eq!(overlay.providers.len(), 17);
+        let stepfun = overlay
+            .providers
+            .iter()
+            .find(|provider| provider.id == "stepfun")
+            .expect("Step Plan preset");
+        assert!(stepfun.requires_api_key);
+        assert_eq!(
+            stepfun.endpoints[0].base_url,
+            "https://api.stepfun.com/step_plan/v1"
+        );
+        assert!(stepfun.endpoints[0].is_default);
+        assert_eq!(
+            stepfun.endpoints[1].base_url,
+            "https://api.stepfun.ai/step_plan/v1"
+        );
+        assert!(stepfun
+            .endpoints
+            .iter()
+            .all(|endpoint| endpoint.api_format == "openai"));
+        assert!(stepfun.model_policy.curated_models.is_empty());
+        assert_eq!(stepfun.model_policy.mode, super::ModelPolicyMode::Catalog);
         let go = overlay
             .providers
             .iter()
@@ -849,7 +870,7 @@ mod tests {
             "bundle".to_string(),
             ProviderCatalogSource::Bundle,
         );
-        assert_eq!(resolved.providers.len(), 16);
+        assert_eq!(resolved.providers.len(), 17);
         let go = resolved
             .providers
             .iter()

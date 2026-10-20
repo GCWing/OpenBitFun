@@ -6,6 +6,8 @@ import { ModelPoolCardActions } from './ModelPoolCardActions';
 import { ZcodeSubscriptionGroup } from './ZcodeSubscriptionGroup';
 import { OpenCodeModelQuota } from './OpenCodeModelQuota';
 import { ModelProviderQuota } from './ModelProviderQuota';
+import { PlanSubscriptionServices } from './PlanSubscriptionServices';
+import { isSubscriptionChannel, planSubscriptionPreset } from './planSubscriptions';
 import { SubscriptionQuotaPanel } from './SubscriptionQuotaPanel';
 import { SubscriptionAccountList, SubscriptionServiceGroup } from './SubscriptionServiceGroup';
 import { managedSubscriptionAccounts, modelsUsingSubscriptionAccount, groupSubscriptionServices, isZcodeProvider, preferredZcodeProvider, subscriptionManagerAccounts } from './subscriptionServices';
@@ -1849,6 +1851,24 @@ const ModelSettingsPage: React.FC = () => {
     setIsEditing(true);
   };
 
+  const handleImportPlanSubscription = (kind: import('@/infrastructure/api/service-api/AIApi').ModelPlanQuotaProvider) => {
+    const preset = planSubscriptionPreset(kind, providerTemplates);
+    if (!preset) return;
+    requestEditorOpen(`new-provider:plan:${kind}`, () => {
+      setShowSubscriptionManager(false);
+      setShowProviderManager(false);
+      setManagingSubscriptionProvider(null);
+      handleSelectProvider(preset.templateId);
+      setEditingTargetKey(`new-provider:plan:${kind}`);
+      setEditingConfig(current => ({ ...current,
+        name: t(`subscriptionAuth.planServices.${kind}.name`),
+        base_url: preset.url, provider: preset.format,
+        auth: { type: 'api_key' },
+        metadata: { ...current?.metadata, subscription_plan: kind },
+      }));
+    });
+  };
+
   const handleSelectCustom = () => {
     resetRemoteModelDiscovery();
     setManualModelInput('');
@@ -2584,8 +2604,8 @@ const ModelSettingsPage: React.FC = () => {
     });
   }, [aiModels, providerOrder]);
 
-  const apiProviderGroups = providerGroups.filter(group => !subscriptionProviderOf(group.models[0].auth));
-  const subscriptionProviderGroups = providerGroups.filter(group => !!subscriptionProviderOf(group.models[0].auth));
+  const apiProviderGroups = providerGroups.filter(group => !isSubscriptionChannel(group.models[0]));
+  const subscriptionProviderGroups = providerGroups.filter(group => isSubscriptionChannel(group.models[0]));
 
   const toggleProviderGroup = (groupKey: string) => {
     setExpandedProviderGroupKeys(previous => {
@@ -2635,7 +2655,7 @@ const ModelSettingsPage: React.FC = () => {
     return [...providers].map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [aiModels, importedSubscriptions]);
-  const subscriptionModelCount = aiModels.filter(model => !!subscriptionProviderOf(model.auth)).length;
+  const subscriptionModelCount = aiModels.filter(isSubscriptionChannel).length;
   const visiblePoolModels = useMemo(() => {
     const query = poolQuery.trim().toLowerCase();
     const priority = (model: AIModelConfigType) => (
@@ -4183,7 +4203,7 @@ const ModelSettingsPage: React.FC = () => {
             loading={isLoadingSubscriptions} onRetry={() => void refreshSubscriptionAccounts()} />
         )}
         {isLoadingSubscriptions && <p className="openbitfun-model-settings__dialog-status" role="status">{t('messages.loading')}</p>}
-        {!isLoadingSubscriptions && !subscriptionLoadError && accounts.length === 0 && (
+        {!isLoadingSubscriptions && !subscriptionLoadError && accounts.length === 0 && !!provider && (
           <ConfigEmptyState icon={<Wifi aria-hidden="true" />} description={t(provider ? 'subscriptionAuth.serviceUnavailable' : 'acquisition.noServices')} />
         )}
         <div className="openbitfun-model-settings__cli-discovery" data-openbitfun-component="model-settings" data-openbitfun-part="subscriptionArea">
@@ -4231,6 +4251,8 @@ const ModelSettingsPage: React.FC = () => {
                 renderAccount={item => renderAccount(item.account, false, item.accountId, item.enabled)} />
             </SubscriptionServiceGroup>
           ))}
+          {!provider && <PlanSubscriptionServices models={aiModels} busy={!modelConfigReady || !!loggingInProvider}
+            onImport={handleImportPlanSubscription} onEdit={handleEditProvider} />}
         </div>
       </>
     );
