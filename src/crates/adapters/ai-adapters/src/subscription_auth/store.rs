@@ -749,10 +749,13 @@ async fn acquire_store_transaction() -> Result<(PathBuf, StoreTransactionGuard)>
 /// Serializes rotating-token refreshes for one provider across OpenBitFun
 /// processes. The caller must reload the credential after acquiring the lease.
 pub(crate) async fn acquire_provider_refresh_lease(provider: &str) -> Result<ProviderRefreshLease> {
+    // The id becomes part of a file name, so it stays inside one path
+    // component. The underscore is part of real slot ids (`workbuddy_ai`,
+    // `zcode_cn`), so rejecting it would fail their refresh before any request.
     if provider.is_empty()
-        || !provider
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+        || !provider.chars().all(|character| {
+            character.is_ascii_alphanumeric() || character == '-' || character == '_'
+        })
     {
         return Err(anyhow!("invalid subscription refresh-lease provider id"));
     }
@@ -2143,6 +2146,35 @@ mod file_lock_tests {
             Err(error) if error.raw_os_error() == fs2::lock_contended_error().raw_os_error() => {}
             Err(error) => panic!("child transaction lock attempt failed unexpectedly: {error}"),
         }
+    }
+
+    /// The lease turns its id into a file name, so every slot id a provider can
+    /// actually hold must pass the check. `workbuddy_ai` and `zcode_cn` carry
+    /// an underscore, and a rejected id fails the refresh before any request is
+    /// made.
+    #[tokio::test]
+    async fn refresh_leases_accept_every_provider_and_slot_id() {
+        use crate::subscription_auth::SubscriptionProvider;
+        let _guard = super::super::tests::test_lock().lock().await;
+        let path = temporary_metadata_path("provider-lease");
+        set_store_path_for_test(path.clone());
+        for provider in SubscriptionProvider::ALL {
+            let slot = provider.key();
+            acquire_provider_refresh_lease(slot)
+                .await
+                .unwrap_or_else(|error| panic!("{slot} lease refused: {error}"));
+        }
+        // Additional accounts extend a default slot instead of replacing it.
+        let named_slot = format!(
+            "{}-account-0f8fad5b-d9cb-469f-a165-70867728950e",
+            SubscriptionProvider::WorkbuddyAi.key()
+        );
+        acquire_provider_refresh_lease(&named_slot)
+            .await
+            .unwrap_or_else(|error| panic!("{named_slot} lease refused: {error}"));
+        assert!(acquire_provider_refresh_lease("").await.is_err());
+        assert!(acquire_provider_refresh_lease("../escape").await.is_err());
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[tokio::test]
