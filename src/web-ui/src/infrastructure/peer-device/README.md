@@ -252,3 +252,9 @@ listener alone recovers an interaction emitted before attachment.
     replaces the capability, including when a host restarts on an older build.
     Once a copy is acknowledged, a metadata-read failure reports the created
     copy and asks for a list refresh; it must not replay the copy mutation.
+
+20. **Local context truncation requires explicit peer support.**
+    `local_context_truncation_v1` gates `compact_session` with `force: true`
+    and writes to `ai.local_context_truncation`. Ordinary compaction retains
+    its existing payload for older Desktop peers. A missing capability rejects
+    the new behavior before RPC and never falls back to controller execution.

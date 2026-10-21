@@ -5,6 +5,7 @@ use crate::agentic::execution::round_executor::tests::{
 };
 use crate::agentic::persistence::PersistenceManager;
 use crate::agentic::session::{SessionContextStore, SessionManagerConfig};
+use openbitfun_config_contracts::LocalContextTruncation;
 
 pub(super) fn engine() -> (tempfile::TempDir, ExecutionEngine) {
     let temp = tempfile::Builder::new()
@@ -121,6 +122,27 @@ async fn apply_prefetch(
     messages: &[Message],
     prefetch: Option<PrefetchedCompression>,
 ) -> OpenBitFunResult<Option<(usize, Vec<Message>)>> {
+    apply_compression_policy(
+        engine,
+        session,
+        server,
+        messages,
+        prefetch,
+        "auto",
+        LocalContextTruncation::ExplicitOnly,
+    )
+    .await
+}
+
+async fn apply_compression_policy(
+    engine: &ExecutionEngine,
+    session: &str,
+    server: &RetryTestServer,
+    messages: &[Message],
+    prefetch: Option<PrefetchedCompression>,
+    trigger: &str,
+    policy: LocalContextTruncation,
+) -> OpenBitFunResult<Option<(usize, Vec<Message>)>> {
     let pressure = ExecutionEngine::estimate_auto_compression_pressure(
         messages,
         None,
@@ -132,7 +154,7 @@ async fn apply_prefetch(
         .compress_messages(
             session,
             "turn",
-            "auto",
+            trigger,
             messages.to_vec(),
             pressure,
             128_000,
@@ -146,6 +168,7 @@ async fn apply_prefetch(
             None,
             None,
             prefetch,
+            policy,
         )
         .await
 }
@@ -490,6 +513,7 @@ async fn compression_overflow_replans_with_smaller_input() {
             None,
             None,
             None,
+            LocalContextTruncation::ExplicitOnly,
         )
         .await
         .unwrap()
@@ -525,6 +549,7 @@ async fn compression_overflow_exhausts_four_plans_without_local_summary() {
             None,
             None,
             None,
+            LocalContextTruncation::ExplicitOnly,
         )
         .await
         .unwrap_err();
@@ -600,6 +625,7 @@ async fn compression_failure_preserves_context_and_success_count() {
             None,
             None,
             None,
+            LocalContextTruncation::ExplicitOnly,
         )
         .await
         .unwrap_err();
@@ -635,4 +661,384 @@ async fn compression_failure_preserves_context_and_success_count() {
         event.event,
         AgenticEvent::ContextCompressionCompleted { .. }
     )));
+}
+
+fn assert_local_compacted_messages(compacted: &[Message], original: &[Message]) {
+    let mut continuation_count = 0;
+    for message in compacted {
+        assert_ne!(
+            message.metadata.semantic_kind,
+            Some(MessageSemanticKind::CompressionSummary)
+        );
+        if message.internal_reminder_kind() == Some(InternalReminderKind::CompressionContinuation) {
+            continuation_count += 1;
+            continue;
+        }
+        let retained = original
+            .iter()
+            .find(|old| old.id == message.id)
+            .expect("local truncation retains the identity of every original message");
+        assert_eq!(
+            serde_json::to_value(&message.content).unwrap(),
+            serde_json::to_value(&retained.content).unwrap()
+        );
+        assert_eq!(
+            message.metadata.semantic_kind,
+            retained.metadata.semantic_kind
+        );
+    }
+    assert_eq!(continuation_count, 1);
+}
+
+#[tokio::test]
+async fn compression_local_policy_always_and_main_overflow_skip_model_requests() {
+    for (policy, trigger) in [
+        (LocalContextTruncation::Always, "auto"),
+        (
+            LocalContextTruncation::OnContextOverflow,
+            "context_overflow_recovery",
+        ),
+    ] {
+        let (temp, engine) = engine();
+        let server = RetryTestServer::new(vec![retry_test_success()]);
+        let messages = messages();
+        let session = prefetch_session(&engine, temp.path(), &messages).await;
+        let (_, compacted) =
+            apply_compression_policy(&engine, &session, &server, &messages, None, trigger, policy)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(server.requests.lock().unwrap().is_empty());
+        assert!(compacted.len() < messages.len());
+        assert_local_compacted_messages(&compacted, &messages);
+        let stored = engine
+            .session_manager
+            .get_context_messages(&session)
+            .await
+            .unwrap();
+        assert_eq!(
+            stored.iter().map(|message| &message.id).collect::<Vec<_>>(),
+            compacted
+                .iter()
+                .skip(1)
+                .map(|message| &message.id)
+                .collect::<Vec<_>>()
+        );
+        assert!(engine.event_queue.dequeue_batch(100).await.iter().any(|event| matches!(
+            &event.event,
+            AgenticEvent::ContextCompressionCompleted { has_summary: false, summary_source, applied: true, .. }
+                if summary_source == "local_truncation"
+        )));
+    }
+}
+
+#[tokio::test]
+async fn compression_local_policy_summary_overflow_truncates_after_one_request() {
+    let (temp, engine) = engine();
+    let server = RetryTestServer::new(vec![overflow(), retry_test_success()]);
+    let messages = messages();
+    let session = prefetch_session(&engine, temp.path(), &messages).await;
+    let (_, compacted) = apply_compression_policy(
+        &engine,
+        &session,
+        &server,
+        &messages,
+        None,
+        "auto",
+        LocalContextTruncation::OnContextOverflow,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(server.requests.lock().unwrap().len(), 1);
+    assert!(compacted.len() < messages.len());
+    assert_local_compacted_messages(&compacted, &messages);
+    assert!(engine
+        .event_queue
+        .dequeue_batch(100)
+        .await
+        .iter()
+        .any(|event| matches!(
+            &event.event,
+            AgenticEvent::ContextCompressionCompleted { has_summary: false, summary_source, .. }
+                if summary_source == "local_truncation"
+        )));
+}
+
+#[tokio::test]
+async fn compression_local_policy_successful_summary_preserves_model_behavior() {
+    let (temp, engine) = engine();
+    let server = RetryTestServer::new(vec![retry_test_success()]);
+    let messages = messages();
+    let session = prefetch_session(&engine, temp.path(), &messages).await;
+    let (_, compacted) = apply_compression_policy(
+        &engine,
+        &session,
+        &server,
+        &messages,
+        None,
+        "auto",
+        LocalContextTruncation::OnContextOverflow,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(server.requests.lock().unwrap().len(), 1);
+    assert!(compacted
+        .iter()
+        .any(|message| message.content.to_string().contains("Recovered")));
+    assert!(engine
+        .event_queue
+        .dequeue_batch(100)
+        .await
+        .iter()
+        .any(|event| matches!(
+            &event.event,
+            AgenticEvent::ContextCompressionCompleted { has_summary: true, summary_source, .. }
+                if summary_source == "model"
+        )));
+}
+
+#[tokio::test]
+async fn compression_local_policy_prefetched_overflow_is_silent_then_uses_latest_tail() {
+    let (temp, engine) = engine();
+    let server = RetryTestServer::new(vec![overflow(), retry_test_success()]);
+    let mut messages = messages();
+    let session = prefetch_session(&engine, temp.path(), &messages).await;
+    engine.event_queue.dequeue_batch(100).await;
+    let job = prefetch_job(&engine, &server, &messages, 0)
+        .with_local_truncation_policy(LocalContextTruncation::OnContextOverflow);
+    let (published, barrier) = tokio::sync::oneshot::channel();
+    let work = job.spawn_prefetch_with(&CancellationToken::new(), |job| async move {
+        let result = job.run().await;
+        let _ = published.send(());
+        result
+    });
+    barrier.await.unwrap();
+    assert!(engine.event_queue.dequeue_batch(100).await.is_empty());
+    let latest = Message::user("Latest request after the failed speculative summary".into());
+    engine
+        .session_manager
+        .add_message(&session, latest.clone())
+        .await
+        .unwrap();
+    messages.push(latest.clone());
+    let (_, compacted) = apply_compression_policy(
+        &engine,
+        &session,
+        &server,
+        &messages,
+        Some(work),
+        "auto",
+        LocalContextTruncation::OnContextOverflow,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(server.requests.lock().unwrap().len(), 1);
+    assert!(compacted.iter().any(|message| message.id == latest.id));
+}
+
+#[tokio::test]
+async fn compression_local_policy_other_provider_errors_preserve_context() {
+    let (temp, engine) = engine();
+    let server = RetryTestServer::new(vec![(
+        401,
+        serde_json::json!({
+            "error": { "code": "invalid_api_key", "message": "invalid api key" }
+        })
+        .to_string(),
+    )]);
+    let messages = messages();
+    let session = prefetch_session(&engine, temp.path(), &messages).await;
+    let error = apply_compression_policy(
+        &engine,
+        &session,
+        &server,
+        &messages,
+        None,
+        "auto",
+        LocalContextTruncation::OnContextOverflow,
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("plan 1"));
+    assert_eq!(server.requests.lock().unwrap().len(), 1);
+    let stored = engine
+        .session_manager
+        .get_context_messages(&session)
+        .await
+        .unwrap();
+    assert_eq!(
+        stored.iter().map(|message| &message.id).collect::<Vec<_>>(),
+        messages
+            .iter()
+            .map(|message| &message.id)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        engine
+            .session_manager
+            .get_session(&session)
+            .unwrap()
+            .compression_state
+            .compression_count,
+        0
+    );
+}
+
+fn forced_compaction_context(session_id: &str, workspace: &std::path::Path) -> ExecutionContext {
+    ExecutionContext {
+        session_id: session_id.into(),
+        dialog_turn_id: "manual-force-turn".into(),
+        turn_index: 0,
+        agent_type: "Standard".into(),
+        workspace: Some(WorkspaceBinding::new(None, workspace.to_path_buf())),
+        context: HashMap::new(),
+        subagent_parent_info: None,
+        permission_delegation: None,
+        permission_runtime_ceiling: None,
+        delegation_policy: openbitfun_runtime_ports::DelegationPolicy::top_level(),
+        runtime_tool_restrictions: ToolRuntimeRestrictions::default(),
+        workspace_services: None,
+        terminal_port: None,
+        remote_exec_port: None,
+        round_injection: None,
+        emit_lifecycle_events: false,
+        recover_partial_on_cancel: false,
+    }
+}
+
+#[tokio::test]
+async fn compaction_force_works_without_a_configured_model() {
+    let (temp, engine) = engine();
+    let session = engine
+        .session_manager
+        .create_session(
+            "forced compaction".into(),
+            "Standard".into(),
+            crate::agentic::core::SessionConfig {
+                workspace_path: Some(temp.path().to_string_lossy().into_owned()),
+                model_id: Some("unconfigured-model-for-force-test".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    // Stored context has no execution-only system scaffold.
+    let messages = messages().into_iter().skip(1).collect::<Vec<_>>();
+    engine
+        .session_manager
+        .replace_context_messages(&session.session_id, messages.clone())
+        .await;
+    let context = forced_compaction_context(&session.session_id, temp.path());
+    let outcome = engine
+        .compact_session_context(
+            session.session_id.clone(),
+            context.dialog_turn_id.clone(),
+            "force-test".into(),
+            context,
+            messages.clone(),
+            "manual",
+            CancellationToken::new(),
+            Arc::new(ManualCompactionCommitGate::planning()),
+            true,
+            LocalContextTruncation::ExplicitOnly,
+        )
+        .await
+        .unwrap();
+    assert!(outcome.applied);
+    assert!(!outcome.has_summary);
+    assert_eq!(outcome.summary_source, "local_truncation");
+    let stored = engine
+        .session_manager
+        .get_context_messages(&session.session_id)
+        .await
+        .unwrap();
+    assert!(stored.len() < messages.len());
+    assert!(stored.iter().any(|message| message.id == messages[0].id));
+    let latest_user = messages
+        .iter()
+        .rfind(|message| message.is_actual_user_message())
+        .unwrap();
+    assert!(stored.iter().any(|message| message.id == latest_user.id));
+    assert!(engine.event_queue.dequeue_batch(100).await.iter().any(|event| matches!(
+        &event.event,
+        AgenticEvent::ContextCompressionCompleted { has_summary: false, summary_source, applied: true, .. }
+            if summary_source == "local_truncation"
+    )));
+}
+
+#[tokio::test]
+async fn compaction_cancelled_force_preserves_context() {
+    let (temp, engine) = engine();
+    let messages = messages();
+    let session = prefetch_session(&engine, temp.path(), &messages).await;
+    let context = forced_compaction_context(&session, temp.path());
+    let cancellation = CancellationToken::new();
+    cancellation.cancel();
+    let error = engine
+        .compact_session_context(
+            session.clone(),
+            context.dialog_turn_id.clone(),
+            "cancelled-force-test".into(),
+            context,
+            messages.clone(),
+            "manual",
+            cancellation,
+            Arc::new(ManualCompactionCommitGate::planning()),
+            true,
+            LocalContextTruncation::ExplicitOnly,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, OpenBitFunError::Cancelled(_)));
+    let stored = engine
+        .session_manager
+        .get_context_messages(&session)
+        .await
+        .unwrap();
+    assert_eq!(
+        stored.iter().map(|message| &message.id).collect::<Vec<_>>(),
+        messages
+            .iter()
+            .map(|message| &message.id)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        engine
+            .session_manager
+            .get_session(&session)
+            .unwrap()
+            .compression_state
+            .compression_count,
+        0
+    );
+}
+
+#[tokio::test]
+async fn compression_local_policy_manual_planning_preserves_overflow_classification() {
+    let (_temp, engine) = engine();
+    let server = RetryTestServer::new(vec![overflow(), retry_test_success()]);
+    let error = engine
+        .build_planned_compression_result(
+            "session",
+            "turn",
+            &messages(),
+            128_000,
+            None,
+            server.client(),
+            &ModelRequestContext::default(),
+            &None,
+            &PrependedPromptReminders::default(),
+            false,
+            None,
+            None,
+            None,
+            LocalContextTruncation::OnContextOverflow,
+        )
+        .await
+        .unwrap_err();
+    assert!(error.is_recoverable_context_overflow());
+    assert_eq!(server.requests.lock().unwrap().len(), 1);
 }

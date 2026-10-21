@@ -837,11 +837,11 @@ export class FlowChatManager {
   }
 
   /** Manually compact a session's context through its driver. */
-  async compactSession(sessionId: string): Promise<void> {
+  async compactSession(sessionId: string, force?: boolean): Promise<void> {
     const draft = this.context.flowChatStore.getState().sessions.get(sessionId);
     if (draft?.draft) await prepareSessionDraftForCommand(draft);
     const session = this.context.flowChatStore.getState().sessions.get(sessionId);
-    return driverForSession(sessionId, session).compactSession(this.context, sessionId);
+    return driverForSession(sessionId, session).compactSession(this.context, sessionId, force);
   }
 
   /** Produce the session usage report and show it, through its driver. */

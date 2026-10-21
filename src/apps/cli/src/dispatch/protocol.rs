@@ -422,6 +422,8 @@ pub(crate) struct DispatchContinueRequest {
     /// Operation the worker runs; defaults to an ordinary prompt turn.
     #[serde(default)]
     pub(crate) kind: DispatchTurnKind,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) force: bool,
     #[serde(default)]
     pub(crate) attachments: Vec<DispatchAttachment>,
 }

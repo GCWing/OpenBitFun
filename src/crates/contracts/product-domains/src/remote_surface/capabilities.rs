@@ -65,6 +65,8 @@ pub enum PeerHostCapability {
     WorkspaceIdReferencesV1,
     /// `copy_session` copies a whole session without a caller-selected turn id.
     WholeSessionCopyV1,
+    /// Explicit model-free compaction and the local truncation configuration are understood.
+    LocalContextTruncationV1,
     /// `submit_user_answers` is implemented for Runtime-owned questions.
     UserQuestionResponse,
     /// First human interaction disables the unattended question timeout.
@@ -96,6 +98,7 @@ impl PeerHostCapability {
         Self::ChatMcpCatalogV1,
         Self::WorkspaceIdReferencesV1,
         Self::WholeSessionCopyV1,
+        Self::LocalContextTruncationV1,
         Self::UserQuestionResponse,
         Self::UserQuestionInteractionV1,
     ];
@@ -125,6 +128,7 @@ impl PeerHostCapability {
             Self::ChatMcpCatalogV1 => "chat_mcp_catalog_v1",
             Self::WorkspaceIdReferencesV1 => "workspace_id_references_v1",
             Self::WholeSessionCopyV1 => "whole_session_copy_v1",
+            Self::LocalContextTruncationV1 => "local_context_truncation_v1",
             Self::UserQuestionResponse => "user_question_response",
             Self::UserQuestionInteractionV1 => "user_question_interaction_v1",
         }

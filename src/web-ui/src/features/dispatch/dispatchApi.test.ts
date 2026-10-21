@@ -24,6 +24,15 @@ describe('dispatchApi', () => {
     });
   });
 
+  it('forwards force compaction to the target without changing ordinary compact requests', async () => {
+    await dispatchApi.continueJob('job-1', 'turn-1', '', undefined, { kind: 'compact', force: true });
+    expect(mocks.invoke).toHaveBeenLastCalledWith('dispatch_continue', {
+      request: expect.objectContaining({ jobId: 'job-1', kind: 'compact', force: true }),
+    });
+    await dispatchApi.continueJob('job-1', 'turn-2', '', undefined, { kind: 'compact' });
+    expect(mocks.invoke.mock.calls.at(-1)![1].request).not.toHaveProperty('force');
+  });
+
   it('carries the selected reasoning preset when submitting a job', async () => {
     await dispatchApi.submit({
       target: {

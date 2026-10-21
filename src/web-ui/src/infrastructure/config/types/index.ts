@@ -370,6 +370,8 @@ export interface AgentModelDefaultsConfig {
   };
 }
 
+export type LocalContextTruncation = 'explicit_only' | 'on_context_overflow' | 'always';
+
 export interface AIConfig {
   models: AIModelConfig[];
   default_models: DefaultModelsConfig;
@@ -392,6 +394,8 @@ export interface AIConfig {
   user_question_timeout_secs?: number | null;
   /** Opt-in evaluation edit constraint guard; defaults to false. */
   enable_edit_constraint_guard?: boolean;
+  /** Global context truncation policy; absent values require explicit /compact force. */
+  local_context_truncation?: LocalContextTruncation;
   allow_tool_json_repair?: boolean;
   subagent_batch_execution_policy?: 'safe_only' | 'force_parallel' | 'serial';
   computer_use_enabled?: boolean;

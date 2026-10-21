@@ -42,6 +42,17 @@ describe('AgentAPI', () => {
     });
   });
 
+  it('forwards force compaction and preserves the legacy omitted-field request', async () => {
+    await agentAPI.compactSession({ sessionId: 'session-1', workspaceId: 'remote-workspace', force: true });
+    expect(invokeMock).toHaveBeenLastCalledWith('compact_session', {
+      request: { sessionId: 'session-1', workspaceId: 'remote-workspace', force: true },
+    });
+    await agentAPI.compactSession({ sessionId: 'session-1' });
+    expect(invokeMock).toHaveBeenLastCalledWith('compact_session', {
+      request: { sessionId: 'session-1' },
+    });
+  });
+
   it('preserves remote identity when querying the workspace mode catalog', async () => {
     invokeMock.mockResolvedValueOnce([]);
 

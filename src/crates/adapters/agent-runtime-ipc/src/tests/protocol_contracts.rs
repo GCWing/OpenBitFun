@@ -19,8 +19,8 @@ use openbitfun_runtime_ports::{
 use serde_json::{json, Map};
 
 #[test]
-fn shared_runtime_protocol_supports_workspace_ids_at_version_19() {
-    assert_eq!(PROTOCOL_VERSION, 19);
+fn shared_runtime_protocol_negotiates_local_truncation_at_version_20() {
+    assert_eq!(PROTOCOL_VERSION, 20);
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn protocol_round_trips_reviewed_permission_and_user_input_operations() {
 
 #[test]
 fn protocol_round_trips_read_only_main_agent_catalog() {
-    assert_eq!(PROTOCOL_VERSION, 19);
+    assert_eq!(PROTOCOL_VERSION, 20);
     let operation = RuntimeIpcOperation::ListAgentModes {
         session_id: Some("session-1".to_string()),
     };
@@ -136,7 +136,7 @@ fn protocol_round_trips_read_only_main_agent_catalog() {
 
 #[test]
 fn protocol_round_trips_exact_turn_steering_without_replacing_turn_admission() {
-    assert_eq!(PROTOCOL_VERSION, 19);
+    assert_eq!(PROTOCOL_VERSION, 20);
     let operation = RuntimeIpcOperation::SteerTurn {
         request: AgentDialogSteerRequest {
             session_id: "session-1".to_string(),
@@ -257,7 +257,7 @@ fn protocol_round_trips_root_scoped_lineage_operations() {
 
 #[test]
 fn protocol_round_trips_workspace_diff_as_a_read_only_workspace_operation() {
-    assert_eq!(PROTOCOL_VERSION, 19);
+    assert_eq!(PROTOCOL_VERSION, 20);
 
     let operation = RuntimeIpcOperation::WorkspaceDiff;
     let encoded = serde_json::to_value(&operation).expect("serialize workspace diff operation");
@@ -379,7 +379,7 @@ fn protocol_round_trips_the_reviewed_session_model_operation() {
 
 #[test]
 fn protocol_round_trips_the_current_session_rename_operation() {
-    assert_eq!(PROTOCOL_VERSION, 19);
+    assert_eq!(PROTOCOL_VERSION, 20);
 
     let operation = RuntimeIpcOperation::RenameSession {
         request: RuntimeSessionRenameRequest {
@@ -451,6 +451,7 @@ fn protocol_round_trips_manual_compaction_as_an_idle_controller_turn() {
         request: AgentSessionCompactionRequest {
             session_id: "session-1".to_string(),
             turn_id: "turn-compact-1".to_string(),
+            force: false,
         },
     };
 
@@ -656,5 +657,27 @@ fn workspace_identity_capability_and_legacy_serializer_are_explicit() {
     assert_eq!(
         serde_json::from_value::<RuntimeIpcOperation>(json).unwrap(),
         projected
+    );
+}
+
+#[test]
+fn local_truncation_capability_defaults_to_unsupported_and_force_round_trips() {
+    let legacy: crate::RuntimeIpcCapabilities = serde_json::from_value(json!({
+        "health": true, "interactive_tui": true
+    }))
+    .unwrap();
+    assert!(!legacy.local_context_truncation);
+    let operation = RuntimeIpcOperation::CompactSession {
+        request: AgentSessionCompactionRequest {
+            session_id: "session".into(),
+            turn_id: "turn".into(),
+            force: true,
+        },
+    };
+    let encoded = serde_json::to_value(&operation).unwrap();
+    assert_eq!(encoded["request"]["force"], true);
+    assert_eq!(
+        serde_json::from_value::<RuntimeIpcOperation>(encoded).unwrap(),
+        operation
     );
 }

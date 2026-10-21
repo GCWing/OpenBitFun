@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 
 pub const DISPATCH_PROTOCOL_VERSION: u32 = 6;
 
+/// Optional support for force compaction turns that never call a model.
+pub const DISPATCH_LOCAL_CONTEXT_TRUNCATION_CAPABILITY: &str = "local_context_truncation_v1";
+
 /// Capabilities every v6 target advertises unconditionally.
 pub const DISPATCH_BASE_TARGET_CAPABILITIES: &[&str] = &[
     "product_identity",

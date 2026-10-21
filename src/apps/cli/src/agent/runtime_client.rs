@@ -1622,11 +1622,16 @@ impl CliAgentRuntimeClient {
         Ok(id)
     }
 
-    pub(crate) async fn start_session_compaction(&self, session_id: &str) -> Result<String> {
+    pub(crate) async fn start_session_compaction(
+        &self,
+        session_id: &str,
+        force: bool,
+    ) -> Result<String> {
         let turn_id = uuid::Uuid::new_v4().to_string();
         let request = AgentSessionCompactionRequest {
             session_id: session_id.to_string(),
             turn_id: turn_id.clone(),
+            force,
         };
         *self.current_turn_id.lock().await = Some(turn_id.clone());
 

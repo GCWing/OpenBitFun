@@ -57,6 +57,7 @@ describe('ModelSettingsPage loading and provider actions', () => {
     reads = new Map([
       'ai.models', 'ai.default_models', 'ai.proxy',
       'ai.stream_idle_timeout_secs', 'ai.stream_ttft_timeout_secs',
+      'ai.local_context_truncation',
     ].map(path => [path, deferred()]));
     vi.spyOn(configManager, 'getOptionalConfig').mockImplementation(
       <T,>(path: string) => reads.get(path)!.promise as Promise<T | undefined>,
@@ -85,6 +86,7 @@ describe('ModelSettingsPage loading and provider actions', () => {
       'ai.models': [model], 'ai.default_models': { primary: model.id },
       'ai.proxy': { enabled: false, url: '', username: '', password: '' },
       'ai.stream_idle_timeout_secs': 120, 'ai.stream_ttft_timeout_secs': 60,
+      'ai.local_context_truncation': 'explicit_only',
     };
     vi.spyOn(configManager, 'hasCachedConfig').mockImplementation(path => path in values);
     vi.spyOn(configManager, 'getCachedConfig').mockImplementation(<T,>(path: string) => values[path] as T);

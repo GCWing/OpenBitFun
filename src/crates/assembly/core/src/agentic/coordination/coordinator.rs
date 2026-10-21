@@ -5839,10 +5839,21 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         Ok(plan)
     }
 
+    #[cfg(test)]
     async fn start_manual_compaction_task(
         &self,
         session_id: String,
         requested_turn_id: Option<String>,
+    ) -> OpenBitFunResult<ManualCompactionTask> {
+        self.start_manual_compaction_task_with_force(session_id, requested_turn_id, false)
+            .await
+    }
+
+    async fn start_manual_compaction_task_with_force(
+        &self,
+        session_id: String,
+        requested_turn_id: Option<String>,
+        force: bool,
     ) -> OpenBitFunResult<ManualCompactionTask> {
         openbitfun_core_types::validate_session_id(&session_id)
             .map_err(OpenBitFunError::Validation)?;
@@ -5905,12 +5916,21 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
 
         self.commit_session_revert_before_persisted_turn_locked(&session_id, "Manual compaction")
             .await?;
-        let user_message_metadata = Some(Self::manual_compaction_metadata());
+        let command = if force {
+            "/compact force"
+        } else {
+            MANUAL_COMPACTION_COMMAND
+        };
+        let mut metadata = Self::manual_compaction_metadata();
+        if force {
+            metadata["command"] = serde_json::json!(command);
+        }
+        let user_message_metadata = Some(metadata);
         let turn_id = self
             .session_manager
             .start_maintenance_turn_locked(
                 &session_id,
-                MANUAL_COMPACTION_COMMAND.to_string(),
+                command.to_string(),
                 requested_turn_id,
                 user_message_metadata.clone(),
             )
@@ -5951,7 +5971,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             session_id: session_id.clone(),
             turn_id: turn_id.clone(),
             turn_index,
-            user_input: MANUAL_COMPACTION_COMMAND.to_string(),
+            user_input: command.to_string(),
             original_user_input: None,
             user_message_metadata: user_message_metadata.clone(),
         })
@@ -5986,6 +6006,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 remote_exec_port,
                 cancellation_token,
                 commit_gate,
+                force,
             )
             .await;
             let _ = completion_tx.send(result);
@@ -6095,14 +6116,21 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         remote_exec_port: Option<Arc<dyn RemoteExecPort>>,
         cancellation_token: CancellationToken,
         commit_gate: Arc<ManualCompactionCommitGate>,
+        force: bool,
     ) -> OpenBitFunResult<()> {
         let compression_id = format!("compression_{}", uuid::Uuid::new_v4());
         let mut context_window = session.config.max_context_tokens;
         let result = async {
-            let (manual_execution_context, resolved_context_window) =
+            let (manual_execution_context, resolved_context_window, policy) =
                 prepare_compression_cancellable(&cancellation_token, async {
-                    let manual_workspace_services =
-                        Self::build_workspace_services(&manual_workspace).await?;
+                    let policy = ExecutionEngine::local_context_truncation_policy().await;
+                    let local = force
+                        || policy == crate::service::config::types::LocalContextTruncation::Always;
+                    let manual_workspace_services = if local {
+                        None
+                    } else {
+                        Self::build_workspace_services(&manual_workspace).await?
+                    };
                     let manual_execution_context = ExecutionContext {
                         session_id: session_id.clone(),
                         dialog_turn_id: turn_id.clone(),
@@ -6128,7 +6156,9 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     let session_max_tokens = session.config.max_context_tokens;
 
                     // Unify context_window: min(model capability, session config)
-                    let model_context_window =
+                    let model_context_window = if local {
+                        None
+                    } else {
                         match crate::infrastructure::ai::get_global_ai_client_factory().await {
                             Ok(factory) => {
                                 let model_id =
@@ -6139,12 +6169,13 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                                 }
                             }
                             Err(_) => None,
-                        };
+                        }
+                    };
                     let context_window = match model_context_window {
                         Some(mcw) => mcw.min(session_max_tokens),
                         None => session_max_tokens,
                     };
-                    Ok((manual_execution_context, context_window))
+                    Ok((manual_execution_context, context_window, policy))
                 })
                 .await?;
             context_window = resolved_context_window;
@@ -6158,6 +6189,8 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     "manual",
                     cancellation_token,
                     commit_gate,
+                    force,
+                    policy,
                 )
                 .await
         }
@@ -6240,7 +6273,18 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
     /// task used by Agent Runtime callers, then await its terminal result for
     /// the existing Desktop compatibility API.
     pub async fn compact_session_manually(&self, session_id: String) -> OpenBitFunResult<()> {
-        let task = self.start_manual_compaction_task(session_id, None).await?;
+        self.compact_session_manually_with_force(session_id, false)
+            .await
+    }
+
+    pub async fn compact_session_manually_with_force(
+        &self,
+        session_id: String,
+        force: bool,
+    ) -> OpenBitFunResult<()> {
+        let task = self
+            .start_manual_compaction_task_with_force(session_id, None, force)
+            .await?;
         task.completion.await.map_err(|_| {
             OpenBitFunError::Service(format!(
                 "Manual compaction task ended without a terminal result: {}",
@@ -6257,7 +6301,17 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         session_id: String,
         turn_id: String,
     ) -> OpenBitFunResult<()> {
-        self.start_manual_compaction_task(session_id, Some(turn_id))
+        self.start_manual_compaction_turn_with_force(session_id, turn_id, false)
+            .await
+    }
+
+    pub async fn start_manual_compaction_turn_with_force(
+        &self,
+        session_id: String,
+        turn_id: String,
+        force: bool,
+    ) -> OpenBitFunResult<()> {
+        self.start_manual_compaction_task_with_force(session_id, Some(turn_id), force)
             .await
             .map(|_task| ())
     }
@@ -15620,7 +15674,11 @@ impl openbitfun_runtime_ports::AgentSessionCompactionPort for ConversationCoordi
     {
         let session_id = request.session_id;
         let task = self
-            .start_manual_compaction_task(session_id.clone(), Some(request.turn_id))
+            .start_manual_compaction_task_with_force(
+                session_id.clone(),
+                Some(request.turn_id),
+                request.force,
+            )
             .await
             .map_err(runtime_port_error_preserving_message)?;
         let turn_id = task.turn_id.clone();
@@ -17471,6 +17529,7 @@ pub(crate) mod tests {
             None,
             token,
             Arc::new(ManualCompactionCommitGate::planning()),
+            false,
         )
         .await;
         assert!(matches!(result, Err(OpenBitFunError::Cancelled(_))));

@@ -135,6 +135,7 @@ export const dispatchApi = {
       approvalPolicy?: DispatchApprovalPolicy;
       /** Operation kind; defaults to an ordinary prompt turn. */
       kind?: 'prompt' | 'compact';
+      force?: boolean;
       attachments?: DispatchInlineAttachment[];
     },
   ): Promise<DispatchContinueResponse> {
@@ -148,6 +149,7 @@ export const dispatchApi = {
         reasoningPreset: options?.reasoningPreset,
         approvalPolicy: options?.approvalPolicy,
         kind: options?.kind,
+        ...(options?.force ? { force: true } : {}),
         attachments: options?.attachments,
       },
     });
