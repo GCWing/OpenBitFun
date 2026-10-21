@@ -18,7 +18,8 @@ use openbitfun_agent_tools::{
     validate_mcp_tool_bridge_input,
 };
 use openbitfun_services_integrations::mcp::adapter::{
-    render_mcp_tool_result_for_assistant, MCPDynamicToolProvider, McpDynamicToolDescriptor,
+    render_mcp_tool_result_for_assistant, render_unparsed_mcp_tool_result_for_assistant,
+    MCPDynamicToolProvider, McpDynamicToolDescriptor,
 };
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
@@ -227,7 +228,10 @@ impl Tool for MCPToolWrapper {
             return Self::render_mcp_result_for_assistant(&self.mcp_tool.name, &result);
         }
 
-        "MCP tool execution completed".to_string()
+        // An unparsed payload must not read as a completed call when the same
+        // payload carries `isError`. Keep the storage policy owning the budget,
+        // as on the parsed path above.
+        render_unparsed_mcp_tool_result_for_assistant(output, usize::MAX)
     }
 
     fn render_tool_use_message(&self, input: &Value, _options: &ToolRenderOptions) -> String {

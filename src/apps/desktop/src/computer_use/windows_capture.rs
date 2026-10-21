@@ -11,6 +11,9 @@ pub(super) struct WindowCapture {
     pub origin_y: i32,
     pub width: u32,
     pub height: u32,
+    /// The bound window's open popups, front to back, composited into `rgba`
+    /// unless their capture failed.
+    pub auxiliary: Vec<super::overlay_windows::CapturedOverlay>,
 }
 
 /// Live physical frame geometry is also used immediately before input. Preview
@@ -59,6 +62,7 @@ pub(super) fn screenshot_window_capture(hwnd: HWND) -> OpenBitFunResult<WindowCa
     for pixel in rgba.chunks_exact_mut(4) {
         pixel.swap(0, 2);
     }
+    let auxiliary = composite_popups(hwnd, &mut rgba, (width, height), bounds);
     super::control_session::validate_observation_scope(&scope).map_err(OpenBitFunError::service)?;
     super::control_session::publish_rgba(&scope, &rgba, width, height, bounds);
     Ok(WindowCapture {
@@ -68,5 +72,53 @@ pub(super) fn screenshot_window_capture(hwnd: HWND) -> OpenBitFunResult<WindowCa
         origin_y: bounds[1] as i32,
         width,
         height,
+        auxiliary,
     })
+}
+
+/// Paints the bound window's open popups over its capture, back to front, so
+/// the observation matches what the user sees. A popup whose pixels cannot be
+/// captured is still reported, with composited=false.
+fn composite_popups(
+    hwnd: HWND,
+    rgba: &mut [u8],
+    size: (u32, u32),
+    bounds: [f64; 4],
+) -> Vec<super::overlay_windows::CapturedOverlay> {
+    let overlays = super::windows_overlay::popups_above(hwnd, bounds);
+    let mut captured = Vec::with_capacity(overlays.len());
+    for overlay in overlays.into_iter().rev() {
+        let popup = HWND(overlay.window_id as usize as *mut _);
+        let (composited, unavailable_reason) =
+            match super::windows_wgc_capture::snapshot_popup(hwnd, popup) {
+                Ok((mut pixels, width, height)) => {
+                    for pixel in pixels.chunks_exact_mut(4) {
+                        pixel.swap(0, 2);
+                    }
+                    super::overlay_windows::blend_premultiplied(
+                        rgba,
+                        size,
+                        bounds,
+                        &pixels,
+                        (width, height),
+                        overlay.bounds,
+                    );
+                    (true, None)
+                }
+                Err(error) => {
+                    log::debug!(
+                        "Computer use popup capture unavailable: window={}, reason={error}",
+                        overlay.window_id
+                    );
+                    (false, Some(error.to_string()))
+                }
+            };
+        captured.push(super::overlay_windows::CapturedOverlay {
+            window: overlay,
+            composited,
+            unavailable_reason,
+        });
+    }
+    captured.reverse();
+    captured
 }

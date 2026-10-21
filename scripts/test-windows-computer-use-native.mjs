@@ -59,7 +59,7 @@ ${check ? '' : '[build-dependencies]\ncc = "1"\n'}
   await copyFile(join(root, 'Cargo.lock'), join(dir, 'Cargo.lock'));
   // Only the error-category constructors are adapted to the portable error
   // envelope. Every native API, DTO, cache, lease and algorithm is production code.
-  await writeFile(join(dir, 'lib.rs'), `#![allow(dead_code, unused_imports)]
+  await writeFile(join(dir, 'lib.rs'), `#![allow(dead_code, unused_imports, non_snake_case)]
 extern crate self as openbitfun_core;
 extern crate self as openbitfun_agent_tools;
 #[path = ${source('src/crates/execution/tool-contracts/src/computer_use.rs')}]
@@ -80,7 +80,7 @@ pub mod util { pub mod errors {
     pub use crate::computer_use_contract::{ComputerUseContractError as OpenBitFunError, ComputerUseContractResult as OpenBitFunResult};
 }}
 mod computer_use {
-  ${['control_session', 'process_identity', 'grants', 'permissions', 'windows_list_apps', 'windows_window_target', 'windows_ax_ui', 'windows_ax_shortcuts', 'provider_worker', 'windows_msaa', 'windows_capture', 'windows_wgc_capture', 'windows_pointer_feedback', 'ui_locate_common', 'ax_snapshot_digest'].map(name => `#[path = ${source(`src/apps/desktop/src/computer_use/${name}.rs`)}] mod ${name};`).join('\n  ')}
+  ${['control_session', 'process_identity', 'grants', 'permissions', 'windows_list_apps', 'windows_window_target', 'windows_ax_ui', 'windows_ax_shortcuts', 'provider_worker', 'windows_msaa', 'windows_capture', 'windows_wgc_capture', 'windows_pointer_feedback', 'ui_locate_common', 'ax_snapshot_digest', 'overlay_windows', 'windows_overlay', 'windows_bg_input'].map(name => `#[path = ${source(`src/apps/desktop/src/computer_use/${name}.rs`)}] mod ${name};`).join('\n  ')}
   mod desktop_host {
     struct DesktopComputerUseHost;
     #[path = ${source('src/apps/desktop/src/computer_use/desktop_host/foreground.rs')}] mod foreground;

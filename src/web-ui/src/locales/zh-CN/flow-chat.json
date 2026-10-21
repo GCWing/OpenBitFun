@@ -3139,6 +3139,7 @@
         "dataSource": "数据来源",
         "visibility": "显示状态",
         "refreshError": "最近刷新错误",
+        "commandStderr": "命令错误输出",
         "presets": "预置卡片",
         "cards": "卡片"
       },

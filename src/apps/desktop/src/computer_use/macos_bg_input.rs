@@ -320,7 +320,7 @@ pub(super) fn release_held_inputs() {
             owner,
             input,
             super::macos_skylight::process_identity,
-            super::macos_capture::window_bounds,
+            super::macos_capture::routing_bounds,
             route_mouse_to_window,
             |pid, event, authenticated| {
                 if !authenticated
@@ -465,11 +465,14 @@ fn post_directed(pid: i32, event: &CGEvent, authenticated: bool) -> OpenBitFunRe
             CGEventSetLocation(event.as_ptr().cast(), point);
         }
     }
+    let mut route_window = window_id;
     if !matches!(
         event.get_type(),
         CGEventType::KeyDown | CGEventType::KeyUp | CGEventType::FlagsChanged
     ) {
-        route_mouse_to_window(event, window_id, wx, wy)?;
+        let (target, [rx, ry, _, _]) = pointer_route(pid, window_id, bounds, event, &held, owner);
+        route_window = target;
+        route_mouse_to_window(event, route_window, rx, ry)?;
     }
     verify_input_identity(owner, super::macos_skylight::process_identity(pid))?;
     if !authenticated || !super::macos_skylight::post_to_pid(pid, event.as_ptr().cast(), true) {
@@ -480,9 +483,82 @@ fn post_directed(pid: i32, event: &CGEvent, authenticated: bool) -> OpenBitFunRe
         CGEventType::KeyDown | CGEventType::KeyUp | CGEventType::FlagsChanged => {
             record_keyboard_input(&mut held, owner, event, authenticated);
         }
-        _ => record_mouse_input(&mut held, owner, event, window_id),
+        _ => record_mouse_input(&mut held, owner, event, route_window),
     }
     Ok(())
+}
+
+fn mouse_button(kind: CGEventType) -> Option<u8> {
+    match kind {
+        CGEventType::LeftMouseDown | CGEventType::LeftMouseDragged | CGEventType::LeftMouseUp => {
+            Some(0)
+        }
+        CGEventType::RightMouseDown
+        | CGEventType::RightMouseDragged
+        | CGEventType::RightMouseUp => Some(1),
+        CGEventType::OtherMouseDown
+        | CGEventType::OtherMouseDragged
+        | CGEventType::OtherMouseUp => Some(2),
+        _ => None,
+    }
+}
+
+/// A physical pointer over the target's open menu or popup reaches that
+/// window, not the bound window beneath it. A press keeps its window through
+/// drag and release, as AppKit mouse tracking does.
+fn pointer_route(
+    pid: i32,
+    bound: u32,
+    bound_bounds: [f64; 4],
+    event: &CGEvent,
+    held: &[(InputOwner, HeldInput)],
+    owner: InputOwner,
+) -> (u32, [f64; 4]) {
+    let kind = event.get_type();
+    let continuation = matches!(
+        kind,
+        CGEventType::LeftMouseDragged
+            | CGEventType::RightMouseDragged
+            | CGEventType::OtherMouseDragged
+            | CGEventType::LeftMouseUp
+            | CGEventType::RightMouseUp
+            | CGEventType::OtherMouseUp
+    );
+    let pressed = mouse_button(kind)
+        .filter(|_| continuation)
+        .and_then(|button| {
+            held.iter().find_map(|(held_owner, input)| match input {
+                HeldInput::Mouse {
+                    button: held_button,
+                    window,
+                    ..
+                } if *held_owner == owner && *held_button == button => Some(*window),
+                _ => None,
+            })
+        });
+    if let Some(window) = pressed {
+        if window != bound {
+            match super::macos_capture::routing_bounds(pid, window) {
+                Ok(bounds) => return (window, bounds),
+                // The popup closed during the press; the release still has to
+                // reach the application so its button state does not stick.
+                Err(error) => debug!(
+                    target: "computer_use::bg_input",
+                    "Pressed popup window unavailable, releasing on bound window: pid={}, window={}, reason={}",
+                    pid,
+                    window,
+                    error
+                ),
+            }
+        }
+        return (bound, bound_bounds);
+    }
+    let point = event.location();
+    let overlays = super::macos_capture::overlays(pid, bound).unwrap_or_default();
+    match super::overlay_windows::topmost_at(&overlays, point.x, point.y) {
+        Some(overlay) => (overlay.window_id as u32, overlay.bounds),
+        None => (bound, bound_bounds),
+    }
 }
 
 // One selected delivery path per event. Never post mouse events twice.
@@ -538,7 +614,22 @@ fn stamp_chromium_fields(
 
 /// Establish a private input context inside the bound application. Foreground
 /// ownership and the physical pointer remain with the human's application.
-fn require_pointer_down_mode(pid: i32) -> OpenBitFunResult<()> {
+/// The focus gesture is a click outside the bound window, which dismisses an
+/// open menu or popup. Pointer input aimed at one of the target's popups is
+/// delivered as a physical click would be: straight to it, without refocusing.
+fn require_pointer_down_mode(pid: i32, point: (f64, f64)) -> OpenBitFunResult<()> {
+    let window = super::macos_capture::bound_window_id(pid).map_err(OpenBitFunError::tool)?;
+    let overlays = super::macos_capture::overlays(pid, window).unwrap_or_default();
+    if let Some(overlay) = super::overlay_windows::topmost_at(&overlays, point.0, point.1) {
+        debug!(
+            target: "computer_use::bg_input",
+            "Pointer targets popup window, skipping focus preparation: pid={}, window={}, popup={}",
+            pid,
+            window,
+            overlay.window_id
+        );
+        return Ok(());
+    }
     super::macos_input_focus::prepare(pid)
 }
 
@@ -560,7 +651,7 @@ pub(super) fn bg_click(
     if click_count == 0 {
         return Ok(());
     }
-    require_pointer_down_mode(pid)?;
+    require_pointer_down_mode(pid, point)?;
     let pt = CGPoint {
         x: point.0,
         y: point.1,
@@ -957,7 +1048,7 @@ pub(super) fn bg_click_chromium(
     if click_count == 0 {
         return Ok(());
     }
-    require_pointer_down_mode(pid)?;
+    require_pointer_down_mode(pid, (screen_x, screen_y))?;
     let src = mouse_source("click_chromium")?;
     let target = CGPoint {
         x: screen_x,
@@ -1098,7 +1189,7 @@ pub(super) fn bg_drag(
     button: BgDragButton,
 ) -> OpenBitFunResult<()> {
     let _release = InputReleaseGuard;
-    require_pointer_down_mode(pid)?;
+    require_pointer_down_mode(pid, (from_x, from_y))?;
     let src = mouse_source("drag")?;
     let flags = flags_from(modifiers);
     let cg_button = button.cg();
@@ -1189,7 +1280,7 @@ pub(super) fn bg_right_click(
     modifiers: &[BgModifier],
 ) -> OpenBitFunResult<()> {
     let _release = InputReleaseGuard;
-    super::macos_input_focus::prepare(pid)?;
+    require_pointer_down_mode(pid, point)?;
     let src = mouse_source("right_click")?;
     let pt = CGPoint {
         x: point.0,
@@ -1229,7 +1320,7 @@ pub(super) fn bg_middle_click(
     modifiers: &[BgModifier],
 ) -> OpenBitFunResult<()> {
     let _release = InputReleaseGuard;
-    super::macos_input_focus::prepare(pid)?;
+    require_pointer_down_mode(pid, point)?;
     let src = mouse_source("middle_click")?;
     let pt = CGPoint {
         x: point.0,
@@ -2186,6 +2277,154 @@ mod tests {
             assert_eq!(event.get_integer_value_field(field), 17);
         }
         // No event is posted: this protects the observed native transport recipe.
+    }
+
+    #[test]
+    #[ignore = "requires the dedicated popup fixture, Accessibility and Screen Recording permission"]
+    fn native_popup_overlay_fixture() {
+        let pid: i32 = std::env::var("OPENBITFUN_POPUP_FIXTURE_PID")
+            .unwrap()
+            .parse()
+            .unwrap();
+        let path = std::env::var("OPENBITFUN_POPUP_FIXTURE_RESULT").unwrap();
+        let read = || -> serde_json::Value {
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
+        };
+        let initial = read();
+        let window = initial["window_id"].as_u64().unwrap() as u32;
+        let popup = initial["popup_window_id"].as_u64().unwrap();
+        let rect = |frame: &serde_json::Value| {
+            [
+                frame["x"].as_f64().unwrap(),
+                frame["y"].as_f64().unwrap(),
+                frame["width"].as_f64().unwrap(),
+                frame["height"].as_f64().unwrap(),
+            ]
+        };
+        let popup_frame = rect(&initial["popup_frame"]);
+        assert_eq!(initial["popup_visible"], true);
+
+        use openbitfun_agent_tools::computer_use_control::ControlMode;
+        super::super::control_session::start("native-popup-fixture", ControlMode::Background)
+            .unwrap();
+        let lease =
+            super::super::control_session::acquire("native-popup-fixture", "app_click").unwrap();
+        let frame = super::super::macos_capture::capture_frame(pid, Some(window)).unwrap();
+        eprintln!(
+            "popup fixture frame={}x{} bounds={:?} auxiliary={:?}",
+            frame.width, frame.height, frame.bounds, frame.auxiliary
+        );
+        let captured = frame
+            .auxiliary
+            .iter()
+            .find(|overlay| overlay.window.window_id == popup)
+            .expect("same-process popup above the bound window must be reported");
+        assert_eq!(frame.auxiliary.len(), 1, "only the fixture popup qualifies");
+        let pixel = |gx: f64, gy: f64| {
+            let x = ((gx - frame.bounds[0]) * frame.width as f64 / frame.bounds[2]) as usize;
+            let y = ((gy - frame.bounds[1]) * frame.height as f64 / frame.bounds[3]) as usize;
+            let offset = (y * frame.width as usize + x) * 4;
+            [
+                frame.rgba[offset],
+                frame.rgba[offset + 1],
+                frame.rgba[offset + 2],
+            ]
+        };
+        let popup_center = (
+            popup_frame[0] + popup_frame[2] / 2.0,
+            popup_frame[1] + popup_frame[3] / 2.0,
+        );
+        let main_only = (
+            frame.bounds[0] + frame.bounds[2] - 40.0,
+            frame.bounds[1] + frame.bounds[3] - 40.0,
+        );
+        let [mr, _, mb] = pixel(main_only.0, main_only.1);
+        assert!(
+            mb > 150 && mr < 80,
+            "main window pixel {:?}",
+            pixel(main_only.0, main_only.1)
+        );
+        if captured.composited {
+            let [r, g, b] = pixel(popup_center.0, popup_center.1);
+            assert!(
+                r > 180 && g < 80 && b < 80,
+                "popup pixels must be composited: {:?}",
+                [r, g, b]
+            );
+        } else {
+            let reason = captured.unavailable_reason.as_deref().unwrap_or_default();
+            assert!(
+                reason.contains("AUXILIARY_CAPTURE_UNSUPPORTED"),
+                "only pre-14 hosts may omit popup pixels: {reason}"
+            );
+        }
+
+        let snapshot = super::super::macos_ax_dump::dump_app_ax(
+            pid,
+            super::super::macos_ax_dump::DumpOpts {
+                focus_window_only: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        eprintln!("popup fixture AX tree:\n{}", snapshot.tree_text);
+
+        bg_click(pid, popup_center, BgMouseButton::Left, 1, &[]).unwrap();
+        thread::sleep(Duration::from_millis(300));
+        let after_popup = read();
+        eprintln!("after popup click: {after_popup}");
+        assert_eq!(
+            after_popup["popup_dismissed"], false,
+            "focus preparation must not dismiss the popup"
+        );
+        assert_eq!(
+            after_popup["main_presses"].as_array().unwrap().len(),
+            0,
+            "the window under the popup must not receive the press"
+        );
+        let presses = after_popup["popup_presses"].as_array().unwrap();
+        assert_eq!(
+            presses.len(),
+            2,
+            "popup must receive press and release: {presses:?}"
+        );
+        for press in presses {
+            assert_eq!(press["window_id"].as_u64(), Some(popup));
+            let x = press["x"].as_f64().unwrap();
+            let y = press["y"].as_f64().unwrap();
+            assert!(
+                (x - popup_frame[2] / 2.0).abs() <= 2.0 && (y - popup_frame[3] / 2.0).abs() <= 2.0,
+                "popup-local point {x},{y}"
+            );
+        }
+
+        let outside = (
+            frame.bounds[0] + frame.bounds[2] - 60.0,
+            frame.bounds[1] + frame.bounds[3] - 60.0,
+        );
+        bg_click(pid, outside, BgMouseButton::Left, 1, &[]).unwrap();
+        thread::sleep(Duration::from_millis(300));
+        let after_main = read();
+        eprintln!("after main click: {after_main}");
+        assert_eq!(
+            after_main["popup_dismissed"], true,
+            "a press outside the popup closes it, as a physical press does"
+        );
+        let main_presses = after_main["main_presses"].as_array().unwrap();
+        assert!(
+            main_presses.iter().any(|press| press["phase"] == "down"
+                && press["window_id"].as_u64() == Some(window as u64)),
+            "the bound window must receive presses outside the popup: {main_presses:?}"
+        );
+        assert_eq!(after_main["popup_presses"].as_array().unwrap().len(), 2);
+        let frame = super::super::macos_capture::capture_frame(pid, Some(window)).unwrap();
+        assert!(
+            frame.auxiliary.is_empty(),
+            "a closed popup is no longer reported"
+        );
+        drop(lease);
+        super::super::control_session::stop(Some("native-popup-fixture"), "fixture_complete")
+            .unwrap();
     }
 
     #[test]

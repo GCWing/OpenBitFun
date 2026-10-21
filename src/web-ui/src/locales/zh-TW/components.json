@@ -660,6 +660,7 @@
     "loadFailed": "無法載入此卡片。",
     "unsupportedTemplate": "此卡片需要更新版本的 OpenBitFun。",
     "updated": "更新於{{time}}",
+    "updatedWithWarning": "更新於{{time}}，部分資料可能缺失",
     "refreshFailed": "重新整理失敗：{{error}}",
     "menu": {
       "more": "更多操作",

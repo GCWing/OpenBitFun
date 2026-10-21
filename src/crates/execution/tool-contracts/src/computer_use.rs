@@ -252,6 +252,34 @@ pub struct ComputerScreenshot {
     /// Desktop: this JPEG was produced by implicit 500×500 confirmation crop (mouse or text focus center).
     #[serde(default, skip_serializing_if = "is_false")]
     pub implicit_confirmation_crop_applied: bool,
+    /// Same-process menus, popups and suggestion lists above the captured
+    /// window, front to back. Composited ones are drawn into this image.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auxiliary_windows: Vec<ComputerUseAuxiliaryWindow>,
+}
+
+/// A transient window owned by the captured application that covers part of
+/// its window (menu, popup, dropdown, tooltip). Pointer input inside its
+/// `image_rect` is delivered to this window, as a physical click would be.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ComputerUseAuxiliaryWindow {
+    pub window_id: u64,
+    /// Visible part of the window in this image's pixel coordinates.
+    pub image_rect: ComputerUseImageContentRect,
+    /// Full global frame, which may extend beyond the captured window.
+    pub global_bounds: ComputerUseImageGlobalBounds,
+    /// Whether its pixels are drawn into the attached image.
+    pub composited: bool,
+    /// Whether part of the window lies outside the captured window's image.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub clipped: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Why the pixels are missing when `composited` is false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -448,7 +476,7 @@ impl AppSelector {
 
     pub fn validate_window_target(&self) -> Result<(), &'static str> {
         if self.window_id.is_some()
-            && (self.window_id == Some(0) || !self.pid.is_some_and(|pid| pid > 0))
+            && (self.window_id == Some(0) || self.pid.is_none_or(|pid| pid <= 0))
         {
             return Err("[INVALID_PARAMS] window_id requires a positive owning pid and a positive window_id from list_windows");
         }
@@ -469,6 +497,29 @@ pub struct AppWindowInfo {
     /// Native visibility fact, not a guarantee that capture or input works.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_on_screen: Option<bool>,
+    /// Global window frame in the host's input coordinate space, so a tiny
+    /// system badge is distinguishable from an application's content window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bounds: Option<ComputerUseImageGlobalBounds>,
+}
+
+impl AppWindowInfo {
+    /// Present visible, titled and larger windows first. Inventory order is
+    /// otherwise preserved, so this never hides or drops a window.
+    pub fn sort_for_discovery(windows: &mut [AppWindowInfo]) {
+        windows.sort_by_key(|window| {
+            let area = window
+                .bounds
+                .as_ref()
+                .map(|bounds| (bounds.width.max(0.0) * bounds.height.max(0.0)) as u64)
+                .unwrap_or(0);
+            (
+                window.is_on_screen != Some(true),
+                window.title.trim().is_empty(),
+                std::cmp::Reverse(area),
+            )
+        });
+    }
 }
 
 /// One running application, returned by `ComputerUseHost::list_apps`.
@@ -1176,6 +1227,112 @@ pub enum AppInputAction {
     #[serde(rename = "wait")]
     Wait { ms: u64 },
 }
+
+/// Outcome of waiting for the input target to stop repainting before the
+/// post-input observation. Settling is evidence about pixels only; it never
+/// proves that asynchronous application work has finished.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AppInputSettleStatus {
+    /// The target produced no new frame for the host's quiet interval.
+    Stable,
+    /// The target was still repainting when the host's bound elapsed.
+    StillChanging,
+    /// This host or target has no live frame stream to measure.
+    Unavailable,
+    /// No input step was submitted, so nothing needed to settle.
+    Skipped,
+    /// Stop, cancellation or a changed control scope ended the wait early.
+    Interrupted,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AppInputSettle {
+    pub status: AppInputSettleStatus,
+    #[serde(default)]
+    pub waited_ms: u64,
+    /// Whether at least one repaint was observed after the input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+impl AppInputSettle {
+    pub fn unavailable(reason: impl Into<String>) -> Self {
+        Self {
+            status: AppInputSettleStatus::Unavailable,
+            waited_ms: 0,
+            changed: None,
+            reason: Some(reason.into()),
+        }
+    }
+    pub fn skipped() -> Self {
+        Self {
+            status: AppInputSettleStatus::Skipped,
+            waited_ms: 0,
+            changed: None,
+            reason: None,
+        }
+    }
+}
+
+/// Bounds for one post-input settle. `quiet_ms` is the repaint-free interval
+/// that counts as settled; `first_change_ms` is how long an input that has not
+/// repainted yet may take to start; `max_ms` caps the whole wait.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppInputSettlePolicy {
+    pub quiet_ms: u32,
+    pub first_change_ms: u32,
+    pub max_ms: u32,
+}
+
+impl Default for AppInputSettlePolicy {
+    fn default() -> Self {
+        Self {
+            quiet_ms: 250,
+            first_change_ms: 400,
+            max_ms: 2000,
+        }
+    }
+}
+
+/// Pure decision shared by native frame trackers. Times are milliseconds since
+/// the settle anchor (the input barrier). `last_change_ms` is the newest
+/// repaint at or after the anchor.
+pub fn app_input_settle_decision(
+    policy: AppInputSettlePolicy,
+    elapsed_ms: u64,
+    last_change_ms: Option<u64>,
+) -> Option<AppInputSettleStatus> {
+    let settled = match last_change_ms {
+        Some(changed) => elapsed_ms.saturating_sub(changed) >= u64::from(policy.quiet_ms),
+        None => elapsed_ms >= u64::from(policy.first_change_ms),
+    };
+    if settled {
+        Some(AppInputSettleStatus::Stable)
+    } else if elapsed_ms >= u64::from(policy.max_ms) {
+        Some(AppInputSettleStatus::StillChanging)
+    } else {
+        None
+    }
+}
+
+/// How long a frame tracker may block before the decision can change. A new
+/// repaint should wake it sooner; short slices keep Stop checks responsive.
+pub fn app_input_settle_next_wait_ms(
+    policy: AppInputSettlePolicy,
+    elapsed_ms: u64,
+    last_change_ms: Option<u64>,
+) -> u32 {
+    let due = match last_change_ms {
+        Some(changed) => changed.saturating_add(u64::from(policy.quiet_ms)),
+        None => u64::from(policy.first_change_ms),
+    }
+    .min(u64::from(policy.max_ms));
+    due.saturating_sub(elapsed_ms).clamp(1, 100) as u32
+}
+
 fn default_app_drag_ms() -> u64 {
     400
 }
@@ -1808,6 +1965,9 @@ pub fn build_screenshot_tool_body_and_hint(
         "debug_screenshot_path": debug_rel,
         "ui_tree_text": shot.ui_tree_text,
     });
+    if !shot.auxiliary_windows.is_empty() {
+        data["auxiliary_windows"] = json!(shot.auxiliary_windows);
+    }
     // Preserve legacy result fields, but never instruct the model to send
     // crop/quadrant parameters that parse_screenshot_params now ignores.
     let cropped = !screenshot_covers_full_display(shot);
@@ -1959,6 +2119,7 @@ mod tool_body_tests {
             image_global_bounds: None,
             implicit_confirmation_crop_applied: false,
             ui_tree_text: None,
+            auxiliary_windows: Vec::new(),
         }
     }
 
@@ -2139,5 +2300,147 @@ mod app_input_program_tests {
             .unwrap()
             .validate()
             .is_err());
+    }
+}
+
+#[cfg(test)]
+mod settle_and_overlay_tests {
+    use super::*;
+    use serde_json::json;
+
+    const POLICY: AppInputSettlePolicy = AppInputSettlePolicy {
+        quiet_ms: 250,
+        first_change_ms: 400,
+        max_ms: 2000,
+    };
+
+    #[test]
+    fn settles_after_quiet_interval_once_a_change_was_seen() {
+        assert_eq!(app_input_settle_decision(POLICY, 300, Some(100)), None);
+        assert_eq!(
+            app_input_settle_decision(POLICY, 350, Some(100)),
+            Some(AppInputSettleStatus::Stable)
+        );
+        assert_eq!(app_input_settle_next_wait_ms(POLICY, 300, Some(100)), 50);
+    }
+
+    #[test]
+    fn unchanged_window_settles_after_first_change_window() {
+        assert_eq!(app_input_settle_decision(POLICY, 399, None), None);
+        assert_eq!(
+            app_input_settle_decision(POLICY, 400, None),
+            Some(AppInputSettleStatus::Stable)
+        );
+        assert_eq!(app_input_settle_next_wait_ms(POLICY, 390, None), 10);
+    }
+
+    #[test]
+    fn continuous_repaint_reports_still_changing_at_the_cap() {
+        assert_eq!(app_input_settle_decision(POLICY, 1990, Some(1900)), None);
+        assert_eq!(
+            app_input_settle_decision(POLICY, 2000, Some(1950)),
+            Some(AppInputSettleStatus::StillChanging)
+        );
+        assert_eq!(app_input_settle_next_wait_ms(POLICY, 1990, Some(1900)), 10);
+        assert_eq!(app_input_settle_next_wait_ms(POLICY, 0, None), 100);
+        assert_eq!(app_input_settle_next_wait_ms(POLICY, 5000, Some(10)), 1);
+    }
+
+    #[test]
+    fn settle_receipt_uses_snake_case_and_omits_unknown_fields() {
+        let settle = AppInputSettle::skipped();
+        let value = serde_json::to_value(&settle).unwrap();
+        assert_eq!(value["status"], "skipped");
+        let unavailable = AppInputSettle::unavailable("no stream");
+        let value = serde_json::to_value(&unavailable).unwrap();
+        assert_eq!(value["status"], "unavailable");
+        assert_eq!(value["reason"], "no stream");
+        let stable: AppInputSettle =
+            serde_json::from_value(json!({"status":"still_changing","waited_ms":2000})).unwrap();
+        assert_eq!(stable.status, AppInputSettleStatus::StillChanging);
+        assert_eq!(stable.changed, None);
+    }
+
+    #[test]
+    fn legacy_window_inventory_without_bounds_round_trips() {
+        let old = json!({"pid":7,"window_id":11,"application":"Editor","title":"Doc"});
+        let window: AppWindowInfo = serde_json::from_value(old.clone()).unwrap();
+        assert!(window.bounds.is_none());
+        assert_eq!(serde_json::to_value(&window).unwrap(), old);
+    }
+
+    #[test]
+    fn discovery_order_puts_visible_titled_large_windows_first_without_dropping() {
+        let window = |id: u64, title: &str, on_screen: Option<bool>, size: f64| AppWindowInfo {
+            pid: 1,
+            window_id: id,
+            application: "App".into(),
+            title: title.into(),
+            bundle_id: None,
+            is_on_screen: on_screen,
+            bounds: Some(ComputerUseImageGlobalBounds {
+                left: 0.0,
+                top: 0.0,
+                width: size,
+                height: size,
+            }),
+        };
+        let mut windows = vec![
+            window(1, "", Some(true), 20.0),
+            window(2, "Hidden", Some(false), 900.0),
+            window(3, "Small", Some(true), 100.0),
+            window(4, "Main", Some(true), 800.0),
+            window(5, "Unknown", None, 500.0),
+        ];
+        AppWindowInfo::sort_for_discovery(&mut windows);
+        let order: Vec<u64> = windows.iter().map(|window| window.window_id).collect();
+        assert_eq!(order, [4, 3, 1, 2, 5]);
+    }
+
+    #[test]
+    fn legacy_screenshot_without_auxiliary_windows_round_trips() {
+        let old = json!({
+            "bytes": [], "mime_type": "image/jpeg", "image_width": 10, "image_height": 10,
+            "native_width": 10, "native_height": 10, "display_origin_x": 0, "display_origin_y": 0,
+            "vision_scale": 1.0
+        });
+        let shot: ComputerScreenshot = serde_json::from_value(old).unwrap();
+        assert!(shot.auxiliary_windows.is_empty());
+        let value = serde_json::to_value(&shot).unwrap();
+        assert!(value.get("auxiliary_windows").is_none());
+        let round: ComputerScreenshot = serde_json::from_value(value).unwrap();
+        assert_eq!(shot, round);
+    }
+
+    #[test]
+    fn auxiliary_window_metadata_serializes_minimal_shape() {
+        let window = ComputerUseAuxiliaryWindow {
+            window_id: 9,
+            image_rect: ComputerUseImageContentRect {
+                left: 1,
+                top: 2,
+                width: 3,
+                height: 4,
+            },
+            global_bounds: ComputerUseImageGlobalBounds {
+                left: 10.0,
+                top: 20.0,
+                width: 3.0,
+                height: 4.0,
+            },
+            composited: true,
+            clipped: false,
+            layer: None,
+            title: None,
+            unavailable_reason: None,
+        };
+        let value = serde_json::to_value(&window).unwrap();
+        assert_eq!(
+            value,
+            json!({"window_id":9,"image_rect":{"left":1,"top":2,"width":3,"height":4},
+                "global_bounds":{"left":10.0,"top":20.0,"width":3.0,"height":4.0},"composited":true})
+        );
+        let round: ComputerUseAuxiliaryWindow = serde_json::from_value(value).unwrap();
+        assert_eq!(round, window);
     }
 }

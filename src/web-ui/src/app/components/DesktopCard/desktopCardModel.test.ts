@@ -5,6 +5,7 @@ import {
   effectiveCardData,
   formatCountdownClock,
   formatMetricValue,
+  hasUnresolvedTemplatePaths,
   isSafeWebLink,
   knownTemplate,
   metricHint,
@@ -34,6 +35,26 @@ function card(overrides: Partial<DesktopCardRecord>): DesktopCardRecord {
 }
 
 describe('desktop card model', () => {
+  it('detects template paths the rendered data leaves missing or null', () => {
+    const metrics = { kind: 'metrics', items: [{ label: 'Stars', path: '/stars', hintPath: '/hint' }] } as const;
+    const source = { kind: 'command', command: 'gh api', intervalSeconds: 300 } as const;
+    expect(hasUnresolvedTemplatePaths(card({
+      template: metrics,
+      dataSource: source,
+      lastData: { fetchedAtMs: 1, value: { stars: 3, hint: 'ok' } },
+    }))).toBe(false);
+    expect(hasUnresolvedTemplatePaths(card({
+      template: metrics,
+      dataSource: source,
+      lastData: { fetchedAtMs: 1, value: { stars: 3, hint: null } },
+    }))).toBe(true);
+    expect(hasUnresolvedTemplatePaths(card({
+      template: { kind: 'progress', valuePath: '/done', maxPath: '/total' },
+      data: { done: 1 },
+    }))).toBe(true);
+    expect(hasUnresolvedTemplatePaths(card({ lastData: { fetchedAtMs: 1, value: null } }))).toBe(false);
+  });
+
   it('resolves RFC 6901 pointers including escapes and array indexes', () => {
     const root = { a: { 'b/c': [10, { 'd~e': 'x' }] } };
     expect(resolvePointer(root, '')).toBe(root);

@@ -648,7 +648,7 @@ Use ExecCommand for genuine shell work, never ad hoc GUI capture, clipboard or i
             json!("Default background. Foreground only for a user-requested takeover.");
         properties["app_name"]["description"] = json!("Application name, bundle identifier or path for open_app. Background mode requests a launch without activation where the host supports it; then observe the returned target.");
         properties["include_image"]["description"] = json!("get_app_state and app_batch/app input results: default true. describe_screen: default false, set true to attach the target image for a vision model. Keep images for canvas/game decisions; false when AX text suffices.");
-        properties["steps"]["description"] = json!("Default for several already-decided inputs: one app, ordered steps, one final observation. Examples: known search+Return; several observed form fields with stable layout. End before new information is needed. No routine waits or duplicate reads; never replay completed steps after partial failure. Batch changes neither capability nor authorization.");
+        properties["steps"]["description"] = json!("Required by app_batch as this top-level `steps` field: {\"action\":\"app_batch\",\"app\":{...},\"steps\":[{\"action\":\"app_type_text\",...},{\"action\":\"app_key_chord\",\"keys\":[\"return\"]}]}. Default for several already-decided inputs: one app, ordered steps, one final observation taken after the window settles. Examples: known search+Return; several observed form fields with stable layout. End before new information is needed. No routine waits or duplicate reads; never replay completed steps after partial failure. Batch changes neither capability nor authorization.");
         let observed_focus = if vision {
             json!({"kind":"image_xy","x":120,"y":80,"screenshot_id":"observed-frame"})
         } else {
@@ -691,7 +691,7 @@ Use ExecCommand for genuine shell work, never ad hoc GUI capture, clipboard or i
         });
         properties["focus"]["description"] =
             json!("Text: focus and type together. Scroll: anchor only, never click. Omit to preserve current app focus.");
-        properties["action"]["description"] = json!("Observe known target, then app_batch for decided inputs and one final observation. Start each new user GUI task once with start_control (background by default). When background delivery is unavailable or verified ineffective for the requested GUI task, use start_control(mode=foreground) unless the user required background-only/no-disruption. On activate-app-v1 hosts activate_app selects the exact window and returns its new observation before global input; Linux uses the consented portal surface. Never replay uncertain input; click uses the current pointer.");
+        properties["action"]["description"] = json!("Observe known target, then app_batch for decided inputs and one final observation. Start each new user GUI task once with start_control (background by default). When background delivery is unavailable or verified ineffective for the requested GUI task, use start_control(mode=foreground) unless the user required background-only/no-disruption. activate_app, click, key_chord, type_text, scroll, mouse_move and drag need a foreground session; app_* actions do not. On activate-app-v1 hosts activate_app selects the exact window and returns its new observation before global input; Linux uses the consented portal surface. Never replay uncertain input; click uses the current pointer.");
         properties["delta_x"]["description"] =
             json!("Global scroll horizontal wheel delta; app_scroll uses dx instead.");
         properties["delta_y"]["description"] =
@@ -1031,6 +1031,9 @@ Use ExecCommand for genuine shell work, never ad hoc GUI capture, clipboard or i
                 "image_global_bounds": shot.image_global_bounds,
                 "coordinate_hint": "Use image_xy with this screenshot_id on the observed app window. Image pixels are not desktop coordinates.",
             });
+            if !shot.auxiliary_windows.is_empty() {
+                body["screenshot_meta"]["auxiliary_windows"] = json!(shot.auxiliary_windows);
+            }
         }
         let body =
             computer_use_augment_result_json(host, body, Some(json!({"kind": "describe_screen"})))
@@ -1365,7 +1368,7 @@ Use ExecCommand for genuine shell work, never ad hoc GUI capture, clipboard or i
         if files.len() <= COMPUTER_USE_DEBUG_MAX_FILES {
             return;
         }
-        files.sort_by(|a, b| b.0.cmp(&a.0));
+        files.sort_by_key(|file| std::cmp::Reverse(file.0));
         for (_, path) in files.into_iter().skip(COMPUTER_USE_DEBUG_MAX_FILES) {
             if let Err(e) = tokio::fs::remove_file(&path).await {
                 warn!(
@@ -1409,6 +1412,9 @@ Use ExecCommand for genuine shell work, never ad hoc GUI capture, clipboard or i
             "image_global_bounds": shot.image_global_bounds,
             "debug_screenshot_path": debug_rel,
         });
+        if !shot.auxiliary_windows.is_empty() {
+            data["auxiliary_windows"] = json!(shot.auxiliary_windows);
+        }
         if !ignored.is_empty() {
             data["compatibility"] = json!({"ignored_fields": ignored,
                 "note": "Legacy crop, quadrant, navigation and window hints are accepted but ignored. The image is the current authorized capture, with no additional crop, display navigation or target change."});
@@ -1949,14 +1955,28 @@ impl ComputerUseTool {
         match action {
             "locate" => execute_computer_use_locate(input, context).await,
             "activate_app" => {
-                let app = input
+                let app: crate::agentic::tools::computer_use_host::AppSelector = input
                     .get("app")
                     .filter(|app| app.is_object())
                     .cloned()
                     .map(serde_json::from_value)
                     .transpose()?
                     .unwrap_or_default();
-                host_ref.activate_app(app).await?;
+                host_ref.activate_app(app.clone()).await?;
+                // Raising a window repaints it; observe the settled frame.
+                let settle = tokio::select! {
+                    biased;
+                    _ = async {
+                        match context.cancellation_token() {
+                            Some(token) => token.cancelled().await,
+                            None => std::future::pending().await,
+                        }
+                    } => None,
+                    result = host_ref.settle_after_input(
+                        app,
+                        crate::agentic::tools::computer_use_host::AppInputSettlePolicy::default(),
+                    ) => Some(result),
+                };
                 let mut observation = input.clone();
                 observation["action"] = json!("get_app_state");
                 // Activation invalidates geometry/focus assumptions. Return the
@@ -1968,6 +1988,11 @@ impl ComputerUseTool {
                     if let ToolResult::Result { data, .. } = result {
                         data["action"] = json!("activate_app");
                         data["activated"] = json!(true);
+                        data["settle"] = match &settle {
+                            Some(Ok(settle)) => json!(settle),
+                            Some(Err(error)) => json!(crate::agentic::tools::computer_use_host::AppInputSettle::unavailable(error.to_string())),
+                            None => json!({"status":"interrupted","waited_ms":0,"reason":"Cancelled while waiting for the window to settle"}),
+                        };
                     }
                 }
                 Ok(results)
@@ -3853,6 +3878,7 @@ mod tests {
         replace_control_during_observation: Option<ControlSnapshot>,
         replace_control_during_input: Option<ControlSnapshot>,
         capture_error: &'static str,
+        settle: Option<crate::agentic::tools::computer_use_host::AppInputSettle>,
     }
     impl Default for ControlRecordingHost {
         fn default() -> Self {
@@ -3871,6 +3897,7 @@ mod tests {
                 replace_control_during_observation: None,
                 replace_control_during_input: None,
                 capture_error: "TARGET_APP_HIDDEN: no live surface",
+                settle: None,
             }
         }
     }
@@ -3920,6 +3947,24 @@ mod tests {
                 window_count: None,
                 launch_path: Some("shell_no_activate".into()),
             })
+        }
+        async fn settle_after_input(
+            &self,
+            app: AppSelector,
+            _policy: crate::agentic::tools::computer_use_host::AppInputSettlePolicy,
+        ) -> OpenBitFunResult<crate::agentic::tools::computer_use_host::AppInputSettle> {
+            let Some(settle) = self.settle.clone() else {
+                return Ok(
+                    crate::agentic::tools::computer_use_host::AppInputSettle::unavailable(
+                        "fixture host has no frame stream",
+                    ),
+                );
+            };
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("settle:{:?}", app.pid));
+            Ok(settle)
         }
         fn validate_observation(&self, id: &str) -> OpenBitFunResult<()> {
             self.events.lock().unwrap().push(format!("validate:{id}"));
@@ -4930,6 +4975,175 @@ mod tests {
                     .any(|event| event.starts_with("input:") || event.starts_with("observe:")));
             }
         }
+    }
+
+    fn stable_settle() -> crate::agentic::tools::computer_use_host::AppInputSettle {
+        crate::agentic::tools::computer_use_host::AppInputSettle {
+            status: crate::agentic::tools::computer_use_host::AppInputSettleStatus::Stable,
+            waited_ms: 310,
+            changed: Some(true),
+            reason: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn computer_use_batch_settles_once_between_last_input_and_observation() {
+        let host = Arc::new(ControlRecordingHost {
+            settle: Some(stable_settle()),
+            ..Default::default()
+        });
+        let context = control_context(host.clone());
+        let result = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"app_batch","app":{"pid":421},"steps":[
+                    {"action":"app_type_text","text":"query"},
+                    {"action":"app_key_chord","keys":["return"]}
+                ]}),
+                &context,
+            )
+            .await
+            .unwrap();
+        let body = result[0].content();
+        assert_eq!(body["settle"]["status"], "stable");
+        assert_eq!(body["settle"]["changed"], true);
+        let events = host.events.lock().unwrap();
+        let settle: Vec<_> = events
+            .iter()
+            .enumerate()
+            .filter(|(_, event)| event.starts_with("settle:"))
+            .map(|(index, _)| index)
+            .collect();
+        assert_eq!(settle.len(), 1);
+        let last_input = events
+            .iter()
+            .rposition(|e| e.starts_with("input:"))
+            .unwrap();
+        let observe = events
+            .iter()
+            .position(|e| e.starts_with("observe:"))
+            .unwrap();
+        assert!(last_input < settle[0] && settle[0] < observe, "{events:?}");
+    }
+
+    #[tokio::test]
+    async fn computer_use_settle_reports_unavailable_or_skipped_without_failing_input() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        let tool = ComputerUseTool::new();
+        let typed = tool
+            .call_impl(
+                &json!({"action":"app_type_text","app":{"pid":421},"text":"hello"}),
+                &context,
+            )
+            .await
+            .unwrap();
+        assert_eq!(typed[0].content()["settle"]["status"], "unavailable");
+        assert_eq!(typed[0].content()["status"], "submitted");
+        let waited = tool
+            .call_impl(
+                &json!({"action":"app_batch","app":{"pid":421},"steps":[
+                    {"action":"wait","ms":0}
+                ]}),
+                &context,
+            )
+            .await
+            .unwrap();
+        assert_eq!(waited[0].content()["settle"]["status"], "skipped");
+    }
+
+    #[tokio::test]
+    async fn computer_use_batch_without_steps_names_misplaced_fields_before_input() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        let error = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"app_batch","app":{"pid":421},
+                    "actions":[{"action":"app_type_text","text":"query"}],
+                    "post_click_wait_ms":200}),
+                &context,
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("requires a top-level `steps` array"),
+            "{error}"
+        );
+        assert!(error.contains("field(s): actions;"), "{error}");
+        assert!(
+            !error.contains("post_click_wait_ms"),
+            "accepted compatibility aliases are not reported as unknown: {error}"
+        );
+        assert!(error.contains("No step was executed"), "{error}");
+        assert!(
+            error.contains(r#""steps":[{"action":"app_type_text""#),
+            "{error}"
+        );
+        assert!(!host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| e.starts_with("input:") || e.starts_with("observe:")));
+    }
+
+    #[tokio::test]
+    async fn computer_use_batch_step_decode_error_names_step_index_and_action() {
+        let host = Arc::new(ControlRecordingHost::default());
+        let context = control_context(host.clone());
+        let error = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"app_batch","app":{"pid":421},"steps":[
+                    {"action":"app_type_text","text":"query"},
+                    {"action":"app_key_chord","key":"return"}
+                ]}),
+                &context,
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("steps[1]"), "{error}");
+        assert!(error.contains("app_key_chord"), "{error}");
+        assert!(!host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| e.starts_with("input:")));
+    }
+
+    #[tokio::test]
+    async fn foreground_activation_settles_before_its_observation() {
+        let host = Arc::new(ControlRecordingHost {
+            settle: Some(stable_settle()),
+            ..Default::default()
+        });
+        {
+            let mut state = host.state.lock().unwrap();
+            state.state = "active".into();
+            state.mode = ControlMode::Foreground;
+            state.capabilities.push("activate-app-v1".into());
+        }
+        let context = control_context(host.clone());
+        let result = ComputerUseTool::new()
+            .call_impl(
+                &json!({"action":"activate_app","app":{"pid":421},"include_image":false}),
+                &context,
+            )
+            .await
+            .unwrap();
+        assert_eq!(result[0].content()["settle"]["status"], "stable");
+        let events = host.events.lock().unwrap();
+        let activate = events
+            .iter()
+            .position(|e| e == "activate:Some(421)")
+            .unwrap();
+        let settle = events.iter().position(|e| e == "settle:Some(421)").unwrap();
+        let observe = events
+            .iter()
+            .position(|e| e == "observe:Some(421)")
+            .unwrap();
+        assert!(activate < settle && settle < observe, "{events:?}");
     }
 
     #[tokio::test]

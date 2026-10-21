@@ -5,10 +5,13 @@ import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { desktopCardAPI, type DesktopCardRecord } from '@/infrastructure/api/service-api/DesktopCardAPI';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import {
+  DESKTOP_CARD_RESIZE_DIRECTIONS,
   openDesktopCardSourceSession,
   readDesktopCardIdFromLocation,
   startDesktopCardWindowDrag,
+  startDesktopCardWindowResize,
 } from '@/infrastructure/desktop-cards/desktopCardWindow';
+import { isMacOSDesktopRuntime, supportsNativeWindowControls } from '@/infrastructure/runtime/environment';
 import { createLogger } from '@/shared/utils/logger';
 import {
   ChecklistTemplate,
@@ -24,6 +27,7 @@ import { desktopCardIcon } from './desktopCardIcons';
 import {
   effectiveCardData,
   hasDataSource,
+  hasUnresolvedTemplatePaths,
   isSafeWebLink,
   knownTemplate,
   normalizeTone,
@@ -35,6 +39,33 @@ const log = createLogger('DesktopCardWindow');
 
 function isInteractiveTarget(target: EventTarget | null): boolean {
   return target instanceof Element && Boolean(target.closest('button, a, input, textarea, select, iframe, [role="menu"]'));
+}
+
+/**
+ * Tauri's own resize border for undecorated windows is only a few pixels wide
+ * and does not reliably reach these transparent card windows on Windows, so
+ * these regions start the same OS resize loop. On Linux they overlap Tauri's
+ * GTK edge handler harmlessly; macOS resizes natively.
+ */
+function DesktopCardResizeRegions({ cardId }: { cardId: string | null }) {
+  const enabled = useMemo(() => supportsNativeWindowControls() && !isMacOSDesktopRuntime(), []);
+  if (!enabled) return null;
+  return (
+    <>
+      {DESKTOP_CARD_RESIZE_DIRECTIONS.map(direction => (
+        <div key={direction} className="openbitfun-desktop-card__resize" data-direction={direction} aria-hidden="true"
+          data-openbitfun-component="desktop-card" data-openbitfun-part="resizeHandle"
+          onMouseDown={event => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            event.stopPropagation();
+            void startDesktopCardWindowResize(direction).catch(error => {
+              log.debug('Failed to start desktop card resize', { cardId, direction, error });
+            });
+          }} />
+      ))}
+    </>
+  );
 }
 
 function DesktopCardBody({ card, formatters, onOpenLink, onDismiss }: {
@@ -74,15 +105,21 @@ function DesktopCardFooter({ card, formatRelativeTime }: {
   const { t } = useI18n('components');
   useNow(30_000);
   if (!hasDataSource(card) || !card.lastData) return null;
-  const { error, fetchedAtMs } = card.lastData;
+  const { error, warning, fetchedAtMs } = card.lastData;
+  // Commands often write progress or notices to stderr; only flag it when values are missing.
+  const stderrExplainsGaps = Boolean(warning) && hasUnresolvedTemplatePaths(card);
+  const state = error ? 'error' : stderrExplainsGaps ? 'warning' : undefined;
+  const time = formatRelativeTime(fetchedAtMs);
   return (
-    <footer className="openbitfun-desktop-card__footer" data-state={error ? 'error' : undefined} title={error}
+    <footer className="openbitfun-desktop-card__footer" data-state={state} title={error ?? warning}
       data-openbitfun-component="desktop-card" data-openbitfun-part="footer"
-      data-openbitfun-state={error ? 'error' : undefined}>
+      data-openbitfun-state={state}>
       <OverflowText>
         {error
           ? t('desktopCard.refreshFailed', { error })
-          : t('desktopCard.updated', { time: formatRelativeTime(fetchedAtMs) })}
+          : stderrExplainsGaps
+            ? t('desktopCard.updatedWithWarning', { time })
+            : t('desktopCard.updated', { time })}
       </OverflowText>
     </footer>
   );
@@ -179,6 +216,7 @@ export default function DesktopCardWindow() {
         <div className="openbitfun-desktop-card__empty" role="status">
           {loadFailed ? <span>{t('desktopCard.loadFailed')}</span> : <Spinner size="sm" />}
         </div>
+        <DesktopCardResizeRegions cardId={cardId} />
       </div>
     );
   }
@@ -257,6 +295,7 @@ export default function DesktopCardWindow() {
       <DesktopCardFooter card={card} formatRelativeTime={formatters.formatRelativeTime} />
       <MenuPopover items={menuItems} open={menuOpen} onClose={() => setMenuOpen(false)} anchorRef={menuButtonRef}
         placement="bottom" inlineSize="content" />
+      <DesktopCardResizeRegions cardId={cardId} />
     </div>
   );
 }

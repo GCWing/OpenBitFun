@@ -386,6 +386,13 @@ impl DesktopComputerUseHost {
         &self,
         app: AppSelector,
     ) -> OpenBitFunResult<AppStateSnapshot> {
+        // Settling only delays the read; its outcome never fails delivered input.
+        let _ = self
+            .settle_after_input_impl(
+                app.clone(),
+                openbitfun_core::agentic::tools::computer_use_host::AppInputSettlePolicy::default(),
+            )
+            .await;
         self.get_app_state(app, 32, true).await.map_err(|error| {
             OpenBitFunError::tool(format!("[POST_INPUT_OBSERVATION_FAILED] Input was already submitted; only observation failed: {error}. Observe the target before deciding another input; do not replay the action to repair this error."))
         })

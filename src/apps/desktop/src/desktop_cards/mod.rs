@@ -5,6 +5,7 @@
 //! notifications, and the `app.ai_experience.enable_desktop_cards` gate.
 
 pub mod commands;
+mod fetch_gate;
 mod refresh;
 mod store;
 mod windows;
@@ -29,6 +30,7 @@ use serde_json::{json, Map, Value};
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, Manager};
 
+use fetch_gate::FetchGate;
 use store::CardStore;
 pub use windows::DESKTOP_CARD_WINDOW_PREFIX;
 
@@ -36,6 +38,9 @@ pub const DESKTOP_CARD_CHANGED_EVENT: &str = "desktop-card://changed";
 pub const DESKTOP_CARD_STATE_EVENT: &str = "desktop-card://state";
 const DESKTOP_CARDS_CONFIG_PATH: &str = "app.ai_experience.enable_desktop_cards";
 const GEOMETRY_SAVE_DELAY: Duration = Duration::from_millis(600);
+/// How long create/update wait for the first fetch so the tool result can
+/// report real data; slower sources keep loading in the background.
+const FIRST_FETCH_WAIT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,6 +78,7 @@ pub struct DesktopCards {
     store: tokio::sync::Mutex<CardStore>,
     enabled: AtomicBool,
     timers: Mutex<HashMap<String, CardTimers>>,
+    fetch_gate: FetchGate,
     geometry_save_pending: AtomicBool,
     self_ref: Weak<DesktopCards>,
 }
@@ -140,6 +146,7 @@ impl DesktopCards {
             store: tokio::sync::Mutex::new(store),
             enabled: AtomicBool::new(false),
             timers: Mutex::new(HashMap::new()),
+            fetch_gate: FetchGate::default(),
             geometry_save_pending: AtomicBool::new(false),
             self_ref: self_ref.clone(),
         })
@@ -245,7 +252,45 @@ impl DesktopCards {
         );
         let card = self.sync_card_runtime(card).await;
         self.emit_changed(&card.id, Some(&card), false);
-        Ok(card)
+        Ok(self.await_first_fetch(card).await)
+    }
+
+    /// Waits (bounded) for the first fetch of a shown card whose source has no
+    /// data yet. The refresh loop usually runs it; the fetch gate makes this
+    /// reuse that result instead of starting a second command.
+    async fn await_first_fetch(&self, card: DesktopCardRecord) -> DesktopCardRecord {
+        if card.last_data.is_some() || !card.visible || !self.is_enabled() {
+            return card;
+        }
+        let Some(source) = card
+            .data_source
+            .as_ref()
+            .and_then(DesktopCardDataSource::known)
+            .cloned()
+        else {
+            return card;
+        };
+        let Some(service) = self.arc() else {
+            return card;
+        };
+        let card_id = card.id.clone();
+        // Spawned so that giving up on the wait never kills the approved
+        // command. Any stored data for the current source is a valid first
+        // result, because changing the source clears the snapshot.
+        let fetch = tauri::async_runtime::spawn(async move {
+            service.run_fetch(&card_id, &source, Some(i64::MIN)).await
+        });
+        match tokio::time::timeout(FIRST_FETCH_WAIT, fetch).await {
+            Ok(Ok(Some(fetched))) => fetched,
+            Ok(_) => self.get(&card.id).await.unwrap_or(card),
+            Err(_) => {
+                log::debug!(
+                    "Desktop card first fetch still running after wait: card_id={}",
+                    card.id
+                );
+                self.get(&card.id).await.unwrap_or(card)
+            }
+        }
     }
 
     pub async fn update(
@@ -273,7 +318,7 @@ impl DesktopCards {
         }
         let card = self.sync_card_runtime(card).await;
         self.emit_changed(card_id, Some(&card), false);
-        Ok(card)
+        Ok(self.await_first_fetch(card).await)
     }
 
     pub async fn set_visible(
@@ -318,7 +363,7 @@ impl DesktopCards {
         };
         match source {
             Some(source) => self
-                .run_fetch(card_id, &source)
+                .run_fetch(card_id, &source, Some(now_ms()))
                 .await
                 .ok_or_else(|| not_found(card_id)),
             None => self.get(card_id).await,
@@ -460,6 +505,7 @@ impl DesktopCards {
                         card.id.clone(),
                         source,
                         initial_delay,
+                        now_ms(),
                     ));
                     entry.refresh = Some((fingerprint, handle));
                 }
@@ -505,23 +551,43 @@ impl DesktopCards {
         if let Some(mut entry) = timers.remove(card_id) {
             entry.abort_all();
         }
+        drop(timers);
+        self.fetch_gate.forget(card_id);
     }
 
+    /// Fetches the source and stores the snapshot. A stored fetch of the same
+    /// source that started at or after `not_before_ms` (typically one that ran
+    /// while this call waited for its turn) is reused instead of repeated.
     async fn run_fetch(
         &self,
         card_id: &str,
         source: &DesktopCardDataSourceKind,
+        not_before_ms: Option<i64>,
     ) -> Option<DesktopCardRecord> {
+        let mut turn = self.fetch_gate.turn(card_id).await;
+        {
+            let store = self.store.lock().await;
+            let Some(card) = store.get(card_id) else {
+                drop(store);
+                self.fetch_gate.forget(card_id);
+                return None;
+            };
+            let started_since_request =
+                not_before_ms.is_some_and(|not_before| turn.started_since(not_before));
+            if can_reuse_fetch(card, source, started_since_request) {
+                return Some(card.clone());
+            }
+        }
+        let started_at_ms = now_ms();
         let result = refresh::fetch(source).await;
         let card = {
             let mut store = self.store.lock().await;
-            let card = store.get_mut(card_id)?;
-            if card
-                .data_source
-                .as_ref()
-                .and_then(DesktopCardDataSource::known)
-                != Some(source)
-            {
+            let Some(card) = store.get_mut(card_id) else {
+                drop(store);
+                self.fetch_gate.forget(card_id);
+                return None;
+            };
+            if !fetches_source(card, source) {
                 return Some(card.clone());
             }
             let previous = card
@@ -530,10 +596,11 @@ impl DesktopCards {
                 .map(|snapshot| snapshot.value.clone())
                 .unwrap_or(Value::Null);
             card.last_data = Some(match result {
-                Ok(value) => DesktopCardDataSnapshot {
+                Ok(output) => DesktopCardDataSnapshot {
                     fetched_at_ms: now_ms(),
-                    value,
+                    value: output.value,
                     error: None,
+                    warning: output.warning,
                 },
                 Err(error) => {
                     log::debug!(
@@ -545,6 +612,7 @@ impl DesktopCards {
                         fetched_at_ms: now_ms(),
                         value: previous,
                         error: Some(error),
+                        warning: None,
                     }
                 }
             });
@@ -552,6 +620,8 @@ impl DesktopCards {
             let _ = Self::save_locked(&mut store);
             card
         };
+        turn.record_stored_fetch(started_at_ms);
+        drop(turn);
         self.emit_changed(card_id, Some(&card), false);
         Some(card)
     }
@@ -693,6 +763,23 @@ impl DesktopCards {
     }
 }
 
+fn fetches_source(card: &DesktopCardRecord, source: &DesktopCardDataSourceKind) -> bool {
+    card.data_source
+        .as_ref()
+        .and_then(DesktopCardDataSource::known)
+        == Some(source)
+}
+
+/// Whether a fetch that started at or after the caller's request can be
+/// reused: it must have been stored for the card's current source.
+fn can_reuse_fetch(
+    card: &DesktopCardRecord,
+    source: &DesktopCardDataSourceKind,
+    fetch_started_since_request: bool,
+) -> bool {
+    fetch_started_since_request && fetches_source(card, source) && card.last_data.is_some()
+}
+
 fn initial_refresh_delay(card: &DesktopCardRecord, source: &DesktopCardDataSourceKind) -> Duration {
     let interval_ms = (source.interval_seconds() as i64).saturating_mul(1000);
     match &card.last_data {
@@ -709,18 +796,25 @@ async fn refresh_loop(
     card_id: String,
     source: DesktopCardDataSourceKind,
     initial_delay: Duration,
+    spawned_at_ms: i64,
 ) {
     tokio::time::sleep(initial_delay).await;
     let interval = Duration::from_secs(source.interval_seconds());
+    let mut not_before_ms = spawned_at_ms;
     loop {
         let Some(service) = service.upgrade() else {
             return;
         };
-        if service.run_fetch(&card_id, &source).await.is_none() {
+        if service
+            .run_fetch(&card_id, &source, Some(not_before_ms))
+            .await
+            .is_none()
+        {
             return;
         }
         drop(service);
         tokio::time::sleep(interval).await;
+        not_before_ms = now_ms();
     }
 }
 
@@ -865,5 +959,53 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             });
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn command_card(command: &str, last_data: Value) -> DesktopCardRecord {
+        serde_json::from_value(json!({
+            "id": "card-1",
+            "title": "Repo",
+            "template": {"kind": "note", "text": "x"},
+            "dataSource": {"kind": "command", "command": command, "intervalSeconds": 300},
+            "lastData": last_data
+        }))
+        .unwrap()
+    }
+
+    fn source(command: &str) -> DesktopCardDataSourceKind {
+        serde_json::from_value(
+            json!({"kind": "command", "command": command, "intervalSeconds": 300}),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn fetches_are_reused_only_when_started_since_the_request_for_the_same_source() {
+        let card = command_card("gh api", json!({"fetchedAtMs": 1_000, "value": {"n": 1}}));
+        assert!(can_reuse_fetch(&card, &source("gh api"), true));
+        assert!(!can_reuse_fetch(&card, &source("gh api"), false));
+        assert!(!can_reuse_fetch(&card, &source("gh api --paginate"), true));
+
+        let pending = command_card("gh api", Value::Null);
+        assert!(!can_reuse_fetch(&pending, &source("gh api"), true));
+    }
+
+    #[test]
+    fn failed_or_missing_snapshots_refresh_immediately() {
+        let source = source("gh api");
+        let pending = command_card("gh api", Value::Null);
+        assert_eq!(initial_refresh_delay(&pending, &source), Duration::ZERO);
+        let failed = command_card(
+            "gh api",
+            json!({"fetchedAtMs": now_ms(), "error": "Command exited with 1: boom"}),
+        );
+        assert_eq!(initial_refresh_delay(&failed, &source), Duration::ZERO);
+        let fresh = command_card("gh api", json!({"fetchedAtMs": now_ms(), "value": 1}));
+        assert!(initial_refresh_delay(&fresh, &source) > Duration::from_secs(290));
     }
 }

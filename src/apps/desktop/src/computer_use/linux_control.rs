@@ -468,6 +468,80 @@ impl LinuxControlSession {
         Ok(bytes)
     }
 
+    /// Wait until the authorized stream stops changing after input. Some
+    /// compositors resend identical frames, so only differing content counts
+    /// as a repaint. The newest sample stays available for the next capture.
+    pub(super) async fn wait_settled(
+        &self,
+        policy: openbitfun_core::agentic::tools::computer_use_host::AppInputSettlePolicy,
+    ) -> Result<openbitfun_core::agentic::tools::computer_use_host::AppInputSettle, String> {
+        use openbitfun_core::agentic::tools::computer_use_host::{
+            app_input_settle_decision, app_input_settle_next_wait_ms, AppInputSettle,
+            AppInputSettleStatus,
+        };
+        self.ensure_active(0)?;
+        let sink = self.sink.clone();
+        let active = self.active.clone();
+        super::control_session::spawn_blocking(move || {
+            let digest = |sample: &gst::Sample| {
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                if let Some(mapped) = sample
+                    .buffer()
+                    .and_then(|buffer| buffer.map_readable().ok())
+                {
+                    mapped.as_slice().hash(&mut hasher);
+                }
+                hasher.finish()
+            };
+            let mut previous = sink
+                .property::<Option<gst::Sample>>("last-sample")
+                .map(|sample| digest(&sample));
+            let started = std::time::Instant::now();
+            let mut last_change = None;
+            let mut wait_ms = 0;
+            loop {
+                if let Err(reason) = super::control_session::capture_allowed() {
+                    return AppInputSettle {
+                        status: AppInputSettleStatus::Interrupted,
+                        waited_ms: started.elapsed().as_millis() as u64,
+                        changed: None,
+                        reason: Some(reason),
+                    };
+                }
+                if !active.load(Ordering::Acquire) {
+                    return AppInputSettle {
+                        status: AppInputSettleStatus::Interrupted,
+                        waited_ms: started.elapsed().as_millis() as u64,
+                        changed: None,
+                        reason: Some("Portal session ended".into()),
+                    };
+                }
+                if let Some(sample) =
+                    sink.try_pull_sample(gst::ClockTime::from_mseconds(u64::from(wait_ms)))
+                {
+                    let current = digest(&sample);
+                    if previous != Some(current) {
+                        previous = Some(current);
+                        last_change = Some(started.elapsed().as_millis() as u64);
+                    }
+                }
+                let elapsed = started.elapsed().as_millis() as u64;
+                if let Some(status) = app_input_settle_decision(policy, elapsed, last_change) {
+                    return AppInputSettle {
+                        status,
+                        waited_ms: elapsed,
+                        changed: Some(last_change.is_some()),
+                        reason: None,
+                    };
+                }
+                wait_ms = app_input_settle_next_wait_ms(policy, elapsed, last_change);
+            }
+        })
+        .await
+        .map_err(|e| e.to_string())
+    }
+
     pub(super) async fn move_pointer(&self, x: f64, y: f64) -> Result<(), String> {
         let _input = self.input_lock.lock().await;
         self.ensure_active(2)?;

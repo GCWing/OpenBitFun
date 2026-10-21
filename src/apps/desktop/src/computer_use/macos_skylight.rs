@@ -45,6 +45,10 @@ type SetIntFieldFn = unsafe extern "C" fn(*mut c_void, u32, i64);
 /// `uint32_t CGSMainConnectionID(void)`
 type ConnectionIDFn = unsafe extern "C" fn() -> u32;
 
+/// `CFArrayRef SLSCopyAssociatedWindows(int cid, uint32_t wid)` — the window's
+/// AppKit child-window group (children and the window itself), any owner.
+type CopyAssociatedWindowsFn = unsafe extern "C" fn(u32, u32) -> *const c_void;
+
 // ── NSMenu shortcut activation SPIs ──────────────────────────────────────────
 
 // ── Focus-without-raise SPIs ──────────────────────────────────────────────────
@@ -131,6 +135,12 @@ fn set_int_field_fn() -> Option<SetIntFieldFn> {
 fn connection_id_fn() -> Option<ConnectionIDFn> {
     static SYM: OnceLock<Option<ConnectionIDFn>> = OnceLock::new();
     *SYM.get_or_init(|| find_sym(b"CGSMainConnectionID\0").map(|p| unsafe { as_fn(p) }))
+}
+
+fn copy_associated_windows_fn() -> Option<CopyAssociatedWindowsFn> {
+    static SYM: OnceLock<Option<CopyAssociatedWindowsFn>> = OnceLock::new();
+    // SAFETY: `CopyAssociatedWindowsFn` matches the SPI's C signature.
+    *SYM.get_or_init(|| find_sym(b"SLSCopyAssociatedWindows\0").map(|p| unsafe { as_fn(p) }))
 }
 
 fn factory_msg_send_fn() -> Option<FactoryMsgSendFn> {
@@ -300,6 +310,53 @@ pub(super) fn set_integer_field(event_ptr: *mut c_void, field: u32, value: i64) 
 /// Return the SkyLight main connection ID for the current process.
 pub(super) fn main_connection_id() -> Option<u32> {
     connection_id_fn().map(|f| unsafe { f() })
+}
+
+/// Transitive AppKit child windows of `window`, excluding `window` itself.
+/// `None` when the SPI is unavailable. Child windows inherit their parent's
+/// level, so this is the only layer-independent way to recognize attached
+/// popups from outside the owning process.
+pub(super) fn child_windows(window: u32) -> Option<Vec<u32>> {
+    use core_foundation::array::CFArray;
+    use core_foundation::base::{CFGetTypeID, CFTypeRef, TCFType};
+    use core_foundation::number::CFNumber;
+    const MAX_CHILDREN: usize = 32;
+    let copy = copy_associated_windows_fn()?;
+    let connection = main_connection_id()?;
+    let mut found = Vec::new();
+    let mut pending = vec![window];
+    while let Some(parent) = pending.pop() {
+        // SAFETY: read-only WindowServer query on our own connection; the
+        // result is null or an owned CFArray (create rule).
+        let raw = unsafe { copy(connection, parent) };
+        if raw.is_null() {
+            continue;
+        }
+        // SAFETY: `raw` is a non-null owned CFArray.
+        let group: CFArray<CFTypeRef> = unsafe { CFArray::wrap_under_create_rule(raw.cast()) };
+        for item in group.iter() {
+            // SAFETY: array elements are valid CF objects owned by `group`.
+            if unsafe { CFGetTypeID(*item) } != CFNumber::type_id() {
+                continue;
+            }
+            // SAFETY: the type id was checked above; the get rule retains it.
+            let Some(id) = unsafe { CFNumber::wrap_under_get_rule((*item).cast()) }
+                .to_i64()
+                .and_then(|id| u32::try_from(id).ok())
+            else {
+                continue;
+            };
+            if id == window || id == parent || found.contains(&id) {
+                continue;
+            }
+            found.push(id);
+            pending.push(id);
+            if found.len() == MAX_CHILDREN {
+                return Some(found);
+            }
+        }
+    }
+    Some(found)
 }
 
 // ── Focus-without-raise ───────────────────────────────────────────────────────

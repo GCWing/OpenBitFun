@@ -75,6 +75,8 @@ export interface DesktopCardDataSnapshot {
   fetchedAtMs: number;
   value?: unknown;
   error?: string;
+  /** stderr of a command that still exited successfully. */
+  warning?: string;
 }
 
 export interface DesktopCardRecord {

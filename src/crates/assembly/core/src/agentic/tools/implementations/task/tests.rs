@@ -1,6 +1,6 @@
 use super::{
-    execution::resolved_subagent_is_available, AgentExecutionTool, AgentSendInputTool,
-    AgentSpawnTool, LaunchReviewAgentTool, TaskTool,
+    execution::{requested_subagent_type_is_allowed, resolved_subagent_is_available},
+    AgentExecutionTool, AgentSendInputTool, AgentSpawnTool, LaunchReviewAgentTool, TaskTool,
 };
 use crate::agentic::agents::CustomSubagentConfig;
 use crate::agentic::agents::{
@@ -33,6 +33,18 @@ fn external_subagent_validation_accepts_model_emitted_casing() {
         &available,
         "Explore",
         "external_subagent_runtime:opencode-plugin:explore"
+    ));
+}
+
+#[test]
+fn fresh_subagent_type_validation_rejects_unknown_and_wrong_case_before_resolution() {
+    let available = vec!["Explore".to_string(), "GeneralPurpose".to_string()];
+
+    assert!(requested_subagent_type_is_allowed(&available, "Explore"));
+    assert!(!requested_subagent_type_is_allowed(&available, "explore"));
+    assert!(!requested_subagent_type_is_allowed(
+        &available,
+        "GhostAgent"
     ));
 }
 

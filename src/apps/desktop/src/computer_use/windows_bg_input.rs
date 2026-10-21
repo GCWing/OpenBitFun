@@ -878,7 +878,7 @@ pub(super) fn post_click_screen(
     if root.is_invalid() {
         return Err(OpenBitFunError::service("post_click_screen: invalid HWND"));
     }
-    let target = deepest_child(root, sx, sy);
+    let target = deepest_child(super::windows_overlay::pointer_root(root, sx, sy), sx, sy);
     let (down_msg, up_msg, mk_flag) = match button {
         "right" => (WM_RBUTTONDOWN, WM_RBUTTONUP, MK_RBUTTON),
         "middle" => (WM_MBUTTONDOWN, WM_MBUTTONUP, MK_MBUTTON),
@@ -949,7 +949,7 @@ pub(super) fn post_scroll_screen(
     if root.is_invalid() {
         return Err(OpenBitFunError::service("post_scroll_screen: invalid HWND"));
     }
-    let target = deepest_child(root, sx, sy);
+    let target = deepest_child(super::windows_overlay::pointer_root(root, sx, sy), sx, sy);
     if let Some(uipi) = post_message_blocked_by_uipi(target, WM_VSCROLL) {
         return Err(OpenBitFunError::service(uipi));
     }
@@ -995,7 +995,12 @@ pub(super) fn post_drag_screen(
     if root.is_invalid() {
         return Err(OpenBitFunError::service("post_drag_screen: invalid HWND"));
     }
-    let target = deepest_child(root, sx_from, sy_from);
+    // A press keeps the window it started on for the whole gesture.
+    let target = deepest_child(
+        super::windows_overlay::pointer_root(root, sx_from, sy_from),
+        sx_from,
+        sy_from,
+    );
     if let Some(uipi) = post_message_blocked_by_uipi(target, WM_LBUTTONDOWN) {
         return Err(OpenBitFunError::service(uipi));
     }

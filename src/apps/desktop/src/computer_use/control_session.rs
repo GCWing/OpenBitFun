@@ -327,8 +327,11 @@ pub(crate) fn input_allowed() -> Result<(), String> {
 }
 pub(crate) fn foreground_allowed() -> Result<(), String> {
     input_allowed()?;
-    if locked()?.admission.snapshot.mode != ControlMode::Foreground {
-        return Err(admission::FOREGROUND_REQUIRED.into());
+    let r = locked()?;
+    if r.admission.snapshot.mode != ControlMode::Foreground {
+        return Err(admission::foreground_required(
+            r.admission.snapshot.action.as_deref(),
+        ));
     }
     Ok(())
 }

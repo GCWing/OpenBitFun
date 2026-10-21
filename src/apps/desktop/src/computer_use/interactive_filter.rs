@@ -414,6 +414,7 @@ mod tests {
             }),
             ui_tree_text: None,
             implicit_confirmation_crop_applied: false,
+            auxiliary_windows: Vec::new(),
         }
     }
 

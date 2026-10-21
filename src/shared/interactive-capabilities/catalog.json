@@ -5353,8 +5353,8 @@
         },
         {
           "id": "drag-restore",
-          "titleZh": "拖动卡片到桌面任意位置；关闭 OpenBitFun 时卡片消失，重新打开后按原位置恢复",
-          "titleEn": "Drag cards anywhere on the desktop; they disappear when OpenBitFun closes and return to the same positions when it reopens",
+          "titleZh": "拖动卡片到桌面任意位置，拖动卡片边缘或四角调整大小；关闭 OpenBitFun 时卡片消失，重新打开后按原位置和大小恢复",
+          "titleEn": "Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens",
           "control": {
             "kind": "open",
             "reasonCode": "visualSelection",

@@ -1,7 +1,8 @@
 //! The single app-input executor: a validated program, ordered receipts and one observation.
 //! Never retries a submitted step; a new model decision starts a new program.
 use crate::agentic::tools::computer_use_host::{
-    AppInputAction, AppSelector, AppStateSnapshot, ComputerUseHost, ControlSnapshot,
+    AppInputAction, AppInputSettle, AppInputSettlePolicy, AppInputSettleStatus, AppSelector,
+    AppStateSnapshot, ComputerUseHost, ControlSnapshot,
 };
 use crate::agentic::tools::framework::ToolUseContext;
 use serde_json::{json, Value};
@@ -77,6 +78,22 @@ pub(super) async fn execute(
     interrupted |= context
         .and_then(ToolUseContext::cancellation_token)
         .is_some_and(|token| token.is_cancelled());
+    let input_submitted = receipts.iter().any(|receipt| {
+        receipt["action"] != "wait"
+            && (receipt["status"] == "submitted" || receipt["status"] == "failed")
+    });
+    let settle = if !input_submitted {
+        AppInputSettle::skipped()
+    } else if interrupted || !same_active_control(&initial_control, &host.control_snapshot()) {
+        AppInputSettle {
+            status: AppInputSettleStatus::Interrupted,
+            waited_ms: 0,
+            changed: None,
+            reason: Some("Control was cancelled, stopped or rebound before settling".into()),
+        }
+    } else {
+        settle_after_input(host, app.clone(), context).await
+    };
     let observation_started = std::time::Instant::now();
     let (snapshot, observation_error) = if same_active_control(
         &initial_control,
@@ -96,11 +113,45 @@ pub(super) async fn execute(
             "status":if interrupted {"cancelled"} else if completed == requested {"submitted"} else {"partial"},
             "requested_steps":requested,"completed_steps":completed,"steps":receipts,
             "observation_error":observation_error,"elapsed_ms":started.elapsed().as_millis(),
+            "settle":settle,
             "observation_elapsed_ms":observation_started.elapsed().as_millis(),
             "verification":"Submission is not proof of task completion. Inspect the final observation; never replay the whole batch to repair a failed step or observation. Unattempted steps were not executed."
         }),
         snapshot,
     }
+}
+
+/// Settling only waits for pixels and is safe to abandon on cancellation; a
+/// host failure degrades to an unavailable report instead of failing the batch.
+async fn settle_after_input(
+    host: &dyn ComputerUseHost,
+    app: AppSelector,
+    context: Option<&ToolUseContext>,
+) -> AppInputSettle {
+    let policy = AppInputSettlePolicy::default();
+    let started = std::time::Instant::now();
+    let result = if let Some(token) = context.and_then(ToolUseContext::cancellation_token) {
+        tokio::select! {
+            biased;
+            _ = token.cancelled() => {
+                return AppInputSettle {
+                    status: AppInputSettleStatus::Interrupted,
+                    waited_ms: started.elapsed().as_millis() as u64,
+                    changed: None,
+                    reason: Some("Cancelled while waiting for the window to settle".into()),
+                };
+            }
+            result = host.settle_after_input(app, policy) => result,
+        }
+    } else {
+        host.settle_after_input(app, policy).await
+    };
+    result.unwrap_or_else(|error| AppInputSettle {
+        status: AppInputSettleStatus::Unavailable,
+        waited_ms: started.elapsed().as_millis() as u64,
+        changed: None,
+        reason: Some(error.to_string()),
+    })
 }
 
 /// A recovery read must preserve cancellation and native Stop Sharing. It never

@@ -3,23 +3,24 @@
 // Re-export optimizer types so downstream crates can import from computer_use_host.
 pub use crate::agentic::tools::computer_use_optimizer::{ActionRecord, LoopDetectionResult};
 pub use openbitfun_agent_tools::computer_use::{
-    clamp_point_crop_half_extent, parse_windows_accelerator_display,
-    suggested_point_crop_half_extent_from_native_bounds, AppClickParams, AppInfo, AppInputAction,
-    AppMenuShortcut, AppSelector, AppShortcutsSnapshot, AppStateSnapshot, AppWaitPredicate,
-    AppWindowInfo, AxNode, CaptureFrameInfo, ClickIndexTarget, ClickTarget, ComputerScreenshot,
-    ComputerUseDisplayInfo, ComputerUseForegroundApplication, ComputerUseImageContentRect,
-    ComputerUseImageGlobalBounds, ComputerUseImplicitScreenshotCenter,
-    ComputerUseInteractionScreenshotKind, ComputerUseInteractionState, ComputerUseLastMutationKind,
-    ComputerUseNavigateQuadrant, ComputerUseNavigationRect, ComputerUsePermissionSnapshot,
-    ComputerUsePointerGlobal, ComputerUseScreenshotParams, ComputerUseScreenshotRefinement,
-    ComputerUseSessionSnapshot, InteractiveActionResult, InteractiveClickParams,
-    InteractiveElement, InteractiveScrollParams, InteractiveTypeTextParams, InteractiveView,
-    InteractiveViewOpts, OcrAccessibilityHit, OcrRegionNative, OcrTextMatch, OpenAppResult,
-    ScreenshotCropCenter, UiElementLocateQuery, UiElementLocateResult, VisualActionResult,
-    VisualClickParams, VisualImageRegion, VisualMark, VisualMarkView, VisualMarkViewOpts,
-    COMPUTER_USE_POINT_CROP_HALF_DEFAULT, COMPUTER_USE_POINT_CROP_HALF_MAX,
-    COMPUTER_USE_POINT_CROP_HALF_MIN, COMPUTER_USE_QUADRANT_CLICK_READY_MAX_LONG_EDGE,
-    COMPUTER_USE_QUADRANT_EDGE_EXPAND_PX,
+    app_input_settle_decision, app_input_settle_next_wait_ms, clamp_point_crop_half_extent,
+    parse_windows_accelerator_display, suggested_point_crop_half_extent_from_native_bounds,
+    AppClickParams, AppInfo, AppInputAction, AppInputSettle, AppInputSettlePolicy,
+    AppInputSettleStatus, AppMenuShortcut, AppSelector, AppShortcutsSnapshot, AppStateSnapshot,
+    AppWaitPredicate, AppWindowInfo, AxNode, CaptureFrameInfo, ClickIndexTarget, ClickTarget,
+    ComputerScreenshot, ComputerUseAuxiliaryWindow, ComputerUseDisplayInfo,
+    ComputerUseForegroundApplication, ComputerUseImageContentRect, ComputerUseImageGlobalBounds,
+    ComputerUseImplicitScreenshotCenter, ComputerUseInteractionScreenshotKind,
+    ComputerUseInteractionState, ComputerUseLastMutationKind, ComputerUseNavigateQuadrant,
+    ComputerUseNavigationRect, ComputerUsePermissionSnapshot, ComputerUsePointerGlobal,
+    ComputerUseScreenshotParams, ComputerUseScreenshotRefinement, ComputerUseSessionSnapshot,
+    InteractiveActionResult, InteractiveClickParams, InteractiveElement, InteractiveScrollParams,
+    InteractiveTypeTextParams, InteractiveView, InteractiveViewOpts, OcrAccessibilityHit,
+    OcrRegionNative, OcrTextMatch, OpenAppResult, ScreenshotCropCenter, UiElementLocateQuery,
+    UiElementLocateResult, VisualActionResult, VisualClickParams, VisualImageRegion, VisualMark,
+    VisualMarkView, VisualMarkViewOpts, COMPUTER_USE_POINT_CROP_HALF_DEFAULT,
+    COMPUTER_USE_POINT_CROP_HALF_MAX, COMPUTER_USE_POINT_CROP_HALF_MIN,
+    COMPUTER_USE_QUADRANT_CLICK_READY_MAX_LONG_EDGE, COMPUTER_USE_QUADRANT_EDGE_EXPAND_PX,
 };
 
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
@@ -521,6 +522,19 @@ pub trait ComputerUseHost: Send + Sync + std::fmt::Debug {
     ) -> OpenBitFunResult<()> {
         Err(OpenBitFunError::tool(
             "[APP_INPUT_UNSUPPORTED] This provider does not expose observation-free app input",
+        ))
+    }
+
+    /// Wait, without sending input, until the app's bound window stops
+    /// repainting after submitted input, within `policy`. Providers without a
+    /// live frame stream report `Unavailable`; the caller still observes.
+    async fn settle_after_input(
+        &self,
+        _app: AppSelector,
+        _policy: AppInputSettlePolicy,
+    ) -> OpenBitFunResult<AppInputSettle> {
+        Ok(AppInputSettle::unavailable(
+            "This provider cannot measure window repaint after input",
         ))
     }
 

@@ -34,9 +34,10 @@ use openbitfun_services_integrations::mcp::server::{
 };
 use openbitfun_services_integrations::mcp::{
     build_mcp_tool_descriptor, build_mcp_tool_name, normalize_name_for_mcp,
-    render_mcp_tool_result_for_assistant, MCPContextEnhancer, MCPContextEnhancerConfig,
-    MCPDynamicToolProvider, MCPToolCatalogClient, McpDynamicToolDescriptor, McpToolInfo,
-    PromptAdapter, ResourceAdapter, MCP_TOOL_DELIMITER, MCP_TOOL_PREFIX,
+    render_mcp_tool_result_for_assistant, render_unparsed_mcp_tool_result_for_assistant,
+    MCPContextEnhancer, MCPContextEnhancerConfig, MCPDynamicToolProvider, MCPToolCatalogClient,
+    McpDynamicToolDescriptor, McpToolInfo, PromptAdapter, ResourceAdapter, MCP_TOOL_DELIMITER,
+    MCP_TOOL_PREFIX,
 };
 use rmcp::model::{AnnotateAble, Annotations, Content, Icon, Meta, RawResource, ResourceContents};
 use std::collections::HashMap;
@@ -998,6 +999,149 @@ fn mcp_dynamic_tool_descriptor_and_result_rendering_preserve_tool_contract() {
             12_000,
         ),
         "Error executing MCP tool 'search'"
+    );
+}
+
+#[test]
+fn mcp_tool_error_rendering_preserves_server_details_and_excludes_metadata() {
+    let result: rmcp::model::CallToolResult = serde_json::from_value(serde_json::json!({
+        "isError": true,
+        "content": [
+            { "type": "text", "text": "The query must not be empty." },
+            { "type": "text", "text": "Provide at least one search term." }
+        ],
+        "structuredContent": { "ignored": "content wins" },
+        "_meta": { "private": "not for the model" }
+    }))
+    .unwrap();
+    let result = map_rmcp_tool_result(result);
+
+    assert!(result.is_error);
+
+    assert_eq!(
+        render_mcp_tool_result_for_assistant("search", &result, 12_000),
+        "Error executing MCP tool 'search'\nThe query must not be empty.\nProvide at least one search term."
+    );
+}
+
+#[test]
+fn mcp_tool_error_rendering_uses_structured_details_when_content_is_empty() {
+    for content in [
+        None,
+        Some(Vec::new()),
+        Some(vec![MCPToolResultContent::Text {
+            text: " \n\t".to_string(),
+        }]),
+    ] {
+        let mut result = MCPToolResult {
+            content,
+            is_error: true,
+            structured_content: Some(serde_json::json!({
+                "message": "The requested document was not found."
+            })),
+            meta: Some(serde_json::json!({ "private": "not for the model" })),
+        };
+
+        assert_eq!(
+            render_mcp_tool_result_for_assistant("search", &result, 12_000),
+            "Error executing MCP tool 'search'\n{\"message\":\"The requested document was not found.\"}"
+        );
+
+        result.structured_content = None;
+        assert_eq!(
+            render_mcp_tool_result_for_assistant("search", &result, 12_000),
+            "Error executing MCP tool 'search'"
+        );
+    }
+}
+
+#[test]
+fn mcp_tool_result_rendering_preserves_success_without_an_error_flag() {
+    for (payload, expected) in [
+        (
+            serde_json::json!({ "content": [{ "type": "text", "text": "done" }] }),
+            "done",
+        ),
+        (
+            serde_json::json!({ "structuredContent": { "ok": true } }),
+            "{\"ok\":true}",
+        ),
+        (serde_json::json!({}), "MCP tool execution completed"),
+    ] {
+        let result: MCPToolResult = serde_json::from_value(payload).unwrap();
+        assert_eq!(
+            render_mcp_tool_result_for_assistant("search", &result, 12_000),
+            expected
+        );
+    }
+}
+
+#[test]
+fn mcp_unparsed_tool_error_payload_is_rendered_as_failure_without_private_metadata() {
+    let raw = serde_json::json!({
+        "isError": true,
+        "content": [{ "type": "resource_extension_from_a_newer_server", "uri": "file:///x" }],
+        "_meta": { "private": "not for the model" }
+    });
+
+    let rendered = render_unparsed_mcp_tool_result_for_assistant(&raw, usize::MAX);
+    assert!(
+        rendered.starts_with("MCP tool execution failed: "),
+        "an unparsed failing payload must not read as a completed call: {rendered}"
+    );
+    assert!(rendered.contains("resource_extension_from_a_newer_server"));
+    assert!(rendered.contains("\"isError\":true"));
+    assert!(!rendered.contains("not for the model"));
+
+    // Without the MCP error flag the pre-existing completed text stays.
+    for payload in [
+        serde_json::json!({ "unexpected": true }),
+        serde_json::json!({ "isError": false }),
+        serde_json::json!([1, 2, 3]),
+    ] {
+        assert_eq!(
+            render_unparsed_mcp_tool_result_for_assistant(&payload, usize::MAX),
+            "MCP tool execution completed"
+        );
+    }
+
+    // The failed fallback shares the assistant character budget.
+    let long = serde_json::json!({ "isError": true, "content": "x".repeat(200) });
+    let truncated = render_unparsed_mcp_tool_result_for_assistant(&long, 40);
+    assert!(truncated.starts_with("MCP tool execution failed: "));
+    assert!(truncated.contains("[Result truncated: 40 of"));
+}
+
+#[test]
+fn mcp_tool_error_rendering_uses_the_existing_character_limit() {
+    let result = MCPToolResult {
+        content: Some(vec![MCPToolResultContent::Text {
+            text: "\u{03b1}\u{03b2}\u{03b3}".to_string(),
+        }]),
+        is_error: true,
+        structured_content: None,
+        meta: None,
+    };
+
+    assert_eq!(
+        render_mcp_tool_result_for_assistant("search", &result, 37),
+        "Error executing MCP tool 'search'\n\u{03b1}\u{03b2}\u{03b3}"
+    );
+    assert_eq!(
+        render_mcp_tool_result_for_assistant("search", &result, 36),
+        "Error executing MCP tool 'search'\n\u{03b1}\u{03b2}\n[Result truncated: 36 of 37 characters shown]"
+    );
+
+    let long_details = "x".repeat(12_001);
+    let long_result = MCPToolResult {
+        content: Some(vec![MCPToolResultContent::Text {
+            text: long_details.clone(),
+        }]),
+        ..result
+    };
+    assert_eq!(
+        render_mcp_tool_result_for_assistant("search", &long_result, usize::MAX),
+        format!("Error executing MCP tool 'search'\n{}", long_details)
     );
 }
 

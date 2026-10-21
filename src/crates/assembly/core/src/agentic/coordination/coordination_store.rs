@@ -12,7 +12,7 @@ use tokio::task;
 use uuid::Uuid;
 
 const SWARM_MAX_NODES: i64 = 128;
-const SWARM_MAX_DEPTH: i64 = 4;
+pub(super) const SWARM_MAX_DEPTH: i64 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BackgroundTaskStatus {
@@ -312,35 +312,27 @@ ORDER BY agents.created_at_ms ASC, agents.agent_pk ASC
         parent_agent_type: &str,
         child_agent_type: &str,
         child_depth: u8,
+        parent_can_delegate: bool,
     ) -> OpenBitFunResult<()> {
         let parent_session_id = parent_session_id.to_string();
         let child_session_id = child_session_id.to_string();
         let parent_agent_type = parent_agent_type.to_string();
         let child_agent_type = child_agent_type.to_string();
         self.with_connection(move |connection| {
+            if !parent_can_delegate {
+                return Err(OpenBitFunError::tool(
+                    "Recursive subagent delegation is blocked for this Swarm node".to_string(),
+                ));
+            }
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(db_error)?;
-            if !matches!(
-                child_agent_type.as_str(),
-                "SwarmPlanner" | "SwarmWorker" | "SwarmReviewer"
-            ) {
-                return Err(OpenBitFunError::tool(format!(
-                    "Swarm cannot launch agent_type={child_agent_type}"
-                )));
-            }
             let child_depth = i64::from(child_depth);
             if child_depth == 0 || child_depth > SWARM_MAX_DEPTH {
                 return Err(OpenBitFunError::tool(format!(
                     "Swarm tree height limit exceeded: child depth {child_depth}, maximum {SWARM_MAX_DEPTH}"
                 )));
             }
-            if child_depth == SWARM_MAX_DEPTH && child_agent_type == "SwarmPlanner" {
-                return Err(OpenBitFunError::tool(
-                    "SwarmPlanner cannot be launched at the final tree level".to_string(),
-                ));
-            }
-
             let root_session_id = transaction
                 .query_row(
                     "SELECT root_session_id FROM swarm_nodes WHERE session_id = ?1",
@@ -395,11 +387,6 @@ ORDER BY agents.created_at_ms ASC, agents.agent_pk ASC
             if parent.0 != root_session_id || parent.1.saturating_add(1) != child_depth {
                 return Err(OpenBitFunError::tool(
                     "Swarm child depth does not match its parent lineage".to_string(),
-                ));
-            }
-            if !matches!(parent.2.as_str(), "Ultimate" | "SwarmPlanner") {
-                return Err(OpenBitFunError::tool(
-                    "Only a Swarm planner can launch child agents".to_string(),
                 ));
             }
             let node_count = transaction
@@ -1448,7 +1435,14 @@ PRAGMA user_version = 2;
             .expect("seed a legacy tree");
 
         store
-            .reserve_swarm_child("legacy-root", "new-planner", "Ultimate", "SwarmPlanner", 1)
+            .reserve_swarm_child(
+                "legacy-root",
+                "new-planner",
+                "Ultimate",
+                "SwarmPlanner",
+                1,
+                true,
+            )
             .await
             .expect("a legacy root remains usable after an upgrade");
         store
@@ -1458,6 +1452,7 @@ PRAGMA user_version = 2;
                 "Ultimate",
                 "SwarmPlanner",
                 1,
+                true,
             )
             .await
             .expect("create a tree with the canonical identity");
@@ -1493,7 +1488,7 @@ PRAGMA user_version = 2;
     async fn swarm_admission_enforces_depth_and_tree_size_budgets() {
         let (_root, store) = test_store();
         store
-            .reserve_swarm_child("root", "planner", "Ultimate", "SwarmPlanner", 1)
+            .reserve_swarm_child("root", "planner", "Ultimate", "SwarmPlanner", 1, true)
             .await
             .expect("reserve planner");
         store
@@ -1503,23 +1498,45 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmWorker",
                 1,
+                true,
             )
             .await
             .expect_err("a non-Ultra session cannot create a new Swarm tree");
         store
-            .reserve_swarm_child("planner", "spoofed-worker", "Ultimate", "SwarmWorker", 2)
+            .reserve_swarm_child(
+                "planner",
+                "spoofed-worker",
+                "Ultimate",
+                "SwarmWorker",
+                2,
+                true,
+            )
             .await
             .expect_err("the runtime parent type must match the persisted tree node");
         store
-            .reserve_swarm_child("planner", "worker", "SwarmPlanner", "SwarmWorker", 2)
+            .reserve_swarm_child("planner", "worker", "SwarmPlanner", "SwarmWorker", 2, true)
             .await
             .expect("reserve worker");
         store
-            .reserve_swarm_child("worker", "invalid-child", "SwarmWorker", "SwarmWorker", 3)
+            .reserve_swarm_child(
+                "worker",
+                "invalid-child",
+                "SwarmWorker",
+                "SwarmWorker",
+                3,
+                false,
+            )
             .await
             .expect_err("worker cannot launch children");
         store
-            .reserve_swarm_child("worker", "leaf-reviewer", "SwarmWorker", "SwarmReviewer", 3)
+            .reserve_swarm_child(
+                "worker",
+                "leaf-reviewer",
+                "SwarmWorker",
+                "SwarmReviewer",
+                3,
+                false,
+            )
             .await
             .expect_err("a worker cannot launch a reviewer either");
         store
@@ -1529,6 +1546,7 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmPlanner",
                 2,
+                true,
             )
             .await
             .expect("reserve nested planner");
@@ -1539,6 +1557,7 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmPlanner",
                 3,
+                true,
             )
             .await
             .expect("reserve planner on the penultimate level");
@@ -1549,6 +1568,7 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmWorker",
                 4,
+                true,
             )
             .await
             .expect("reserve worker on the final level");
@@ -1559,9 +1579,10 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmPlanner",
                 4,
+                true,
             )
             .await
-            .expect_err("final tree level cannot contain a planner");
+            .expect("final-level nodes are admitted but cannot delegate beyond the depth limit");
         store
             .reserve_swarm_child(
                 "final-worker",
@@ -1569,6 +1590,7 @@ PRAGMA user_version = 2;
                 "SwarmWorker",
                 "SwarmWorker",
                 5,
+                false,
             )
             .await
             .expect_err("a sixth tree level must be rejected");
@@ -1579,6 +1601,7 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmWorker",
                 3,
+                true,
             )
             .await
             .expect("reserve nested worker");
@@ -1595,6 +1618,7 @@ PRAGMA user_version = 2;
                 "nested-planner".to_string(),
                 "deep-planner".to_string(),
                 "final-worker".to_string(),
+                "final-planner".to_string(),
                 "nested-worker".to_string(),
             ]
             .into_iter()
@@ -1602,8 +1626,8 @@ PRAGMA user_version = 2;
         );
 
         // A planner may use the rest of the tree budget for direct children.
-        // The seven existing nodes plus these 121 fill the 128-node tree.
-        for index in 0..121 {
+        // The eight existing nodes plus these 120 fill the 128-node tree.
+        for index in 0..120 {
             store
                 .reserve_swarm_child(
                     "planner",
@@ -1611,6 +1635,7 @@ PRAGMA user_version = 2;
                     "SwarmPlanner",
                     "SwarmReviewer",
                     2,
+                    true,
                 )
                 .await
                 .expect("reserve direct planner child");
@@ -1622,6 +1647,7 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmReviewer",
                 2,
+                true,
             )
             .await
             .expect_err("whole-tree node budget should be enforced");
@@ -1804,7 +1830,7 @@ PRAGMA user_version = 2;
             .is_empty());
 
         store
-            .reserve_swarm_child("swarm-root", "planner", "Ultimate", "SwarmPlanner", 1)
+            .reserve_swarm_child("swarm-root", "planner", "Ultimate", "SwarmPlanner", 1, true)
             .await
             .expect("reserve planner");
         store
@@ -1818,6 +1844,7 @@ PRAGMA user_version = 2;
                 "SwarmPlanner",
                 "SwarmWorker",
                 2,
+                true,
             )
             .await
             .expect("reserve worker before task registration");
@@ -1838,11 +1865,11 @@ PRAGMA user_version = 2;
     async fn direct_child_agents_use_latest_status_and_ignore_delivery() {
         let (_root, store) = test_store();
         store
-            .reserve_swarm_child("root", "planner", "Ultimate", "SwarmPlanner", 1)
+            .reserve_swarm_child("root", "planner", "Ultimate", "SwarmPlanner", 1, true)
             .await
             .expect("reserve planner");
         store
-            .reserve_swarm_child("planner", "worker", "SwarmPlanner", "SwarmWorker", 2)
+            .reserve_swarm_child("planner", "worker", "SwarmPlanner", "SwarmWorker", 2, true)
             .await
             .expect("reserve nested worker");
         let first = store
@@ -1910,11 +1937,11 @@ PRAGMA user_version = 2;
     async fn direct_child_resolution_and_subtree_postorder_are_lineage_scoped() {
         let (_root, store) = test_store();
         store
-            .reserve_swarm_child("root", "planner", "Ultimate", "SwarmPlanner", 1)
+            .reserve_swarm_child("root", "planner", "Ultimate", "SwarmPlanner", 1, true)
             .await
             .expect("reserve planner");
         store
-            .reserve_swarm_child("planner", "worker", "SwarmPlanner", "SwarmWorker", 2)
+            .reserve_swarm_child("planner", "worker", "SwarmPlanner", "SwarmWorker", 2, true)
             .await
             .expect("reserve worker");
         let planner = store

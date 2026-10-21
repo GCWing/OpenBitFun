@@ -118,6 +118,16 @@ pub(super) fn list_windows() -> Vec<AppWindowInfo> {
             title: window.title,
             bundle_id: None,
             is_on_screen: Some(true),
+            bounds: super::windows_capture::window_bounds(HWND(window.hwnd as *mut c_void))
+                .ok()
+                .map(|[left, top, width, height]| {
+                    openbitfun_core::agentic::tools::computer_use_host::ComputerUseImageGlobalBounds {
+                        left,
+                        top,
+                        width,
+                        height,
+                    }
+                }),
         })
         .collect()
 }

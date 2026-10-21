@@ -32,9 +32,10 @@ use openbitfun_agent_tools::{
     build_tool_execution_timeout_presentation,
     build_user_rejected_tool_presentation_with_instruction,
     build_user_steering_interrupted_presentation, build_write_tail_closure_notice,
-    render_tool_result_for_assistant, validate_tool_execution_admission, PermissionIntent,
-    ResolvedToolInvocation, ToolExecutionAdmissionRejection, ToolExecutionAdmissionRequest,
-    ToolExecutionErrorPresentation, GET_TOOL_SPEC_TOOL_NAME, USER_STEERING_INTERRUPTED_MESSAGE,
+    render_tool_result_for_assistant, validate_tool_execution_admission, DynamicToolInfo,
+    PermissionIntent, ResolvedToolInvocation, ToolExecutionAdmissionRejection,
+    ToolExecutionAdmissionRequest, ToolExecutionErrorPresentation, GET_TOOL_SPEC_TOOL_NAME,
+    USER_STEERING_INTERRUPTED_MESSAGE,
 };
 use openbitfun_runtime_ports::{
     PermissionReply, PermissionRequest, PermissionRequestSource, PermissionRequestSourceKind,
@@ -129,6 +130,7 @@ fn convert_tool_result(
     tool_id: &str,
     wire_tool_name: &str,
     effective_tool_name: &str,
+    dynamic_tool_info: Option<&DynamicToolInfo>,
 ) -> ModelToolResult {
     match framework_result {
         FrameworkToolResult::Result {
@@ -147,7 +149,11 @@ fn convert_tool_result(
             // hints. Preserve that payload, but propagate its semantic status
             // so the tool card, hooks, persistence, and model all agree that
             // `{ ok: false }` is a failure rather than a completed operation.
-            let is_error = data.get("ok").and_then(|value| value.as_bool()) == Some(false);
+            // MCP uses its own status field. Only interpret it for an explicitly
+            // identified MCP provider; ordinary tool data may also contain isError.
+            let is_error = data.get("ok").and_then(|value| value.as_bool()) == Some(false)
+                || (dynamic_tool_info.is_some_and(|info| info.mcp.is_some())
+                    && data.get("isError").and_then(|value| value.as_bool()) == Some(true));
 
             ModelToolResult {
                 tool_id: tool_id.to_string(),
@@ -2605,8 +2611,11 @@ impl ToolPipeline {
 
         let execution_future = tool.call(task.effective_arguments(), &tool_context);
 
-        let timeout_owner = resolve_contextual_tool(Arc::clone(&tool), &tool_context);
-        let pipeline_timeout_secs = if timeout_owner
+        let execution_owner = resolve_contextual_tool(Arc::clone(&tool), &tool_context);
+        let dynamic_tool_info = execution_owner
+            .as_ref()
+            .and_then(|selected| selected.dynamic_tool_info());
+        let pipeline_timeout_secs = if execution_owner
             .as_ref()
             .is_some_and(|selected| selected.manages_own_execution_timeout())
         {
@@ -2644,6 +2653,7 @@ impl ToolPipeline {
                     &task.tool_call.tool_id,
                     &task.tool_call.tool_name,
                     task.effective_tool_name(),
+                    dynamic_tool_info.as_ref(),
                 )
             })
             .ok_or_else(|| {
@@ -3175,6 +3185,7 @@ mod tests {
     struct StaticTestTool {
         name: String,
         response: serde_json::Value,
+        dynamic_tool_info: Option<DynamicToolInfo>,
         delay_ms: u64,
         readonly: bool,
         round_injection_yieldable: bool,
@@ -3694,6 +3705,10 @@ mod tests {
             &self.name
         }
 
+        fn dynamic_tool_info(&self) -> Option<DynamicToolInfo> {
+            self.dynamic_tool_info.clone()
+        }
+
         async fn description(&self) -> OpenBitFunResult<String> {
             Ok("static test tool".to_string())
         }
@@ -3881,6 +3896,7 @@ mod tests {
             .register_tool(Arc::new(StaticTestTool {
                 name: name.to_string(),
                 response,
+                dynamic_tool_info: None,
                 delay_ms,
                 readonly: true,
                 round_injection_yieldable: false,
@@ -3899,6 +3915,7 @@ mod tests {
             .register_tool(Arc::new(StaticTestTool {
                 name: name.to_string(),
                 response,
+                dynamic_tool_info: None,
                 delay_ms: 30_000,
                 readonly: true,
                 round_injection_yieldable: true,
@@ -3975,6 +3992,7 @@ mod tests {
             .register_tool(Arc::new(StaticTestTool {
                 name: "UnclassifiedMutation".to_string(),
                 response: json!({ "unexpected": true }),
+                dynamic_tool_info: None,
                 delay_ms: 0,
                 readonly: false,
                 round_injection_yieldable: false,
@@ -5895,6 +5913,7 @@ mod tests {
             "tool_1",
             "ExecCommand",
             "ExecCommand",
+            None,
         );
 
         let assistant_text = result.result_for_assistant.unwrap_or_default();
@@ -5951,8 +5970,13 @@ mod tests {
                 }],
             )];
             complete_model_results(&mut results);
-            let converted =
-                convert_tool_result(results.remove(0), "call-1", "ComputerUse", "ComputerUse");
+            let converted = convert_tool_result(
+                results.remove(0),
+                "call-1",
+                "ComputerUse",
+                "ComputerUse",
+                None,
+            );
             assert_eq!(converted.result, data, "stored/UI result must be unchanged");
             let message = AIMessage::from(Message::tool_result(converted));
             let content = message.content.unwrap();
@@ -5987,6 +6011,7 @@ mod tests {
             "tool_1",
             "ControlHub",
             "ControlHub",
+            None,
         );
 
         assert!(result.is_error);
@@ -5996,6 +6021,184 @@ mod tests {
             result.result_for_assistant.as_deref(),
             Some("TIMEOUT: target did not become ready")
         );
+    }
+
+    fn mcp_result_provider_info() -> DynamicToolInfo {
+        DynamicToolInfo {
+            provider_id: "fixture".to_string(),
+            provider_kind: Some("mcp".to_string()),
+            mcp: Some(openbitfun_agent_tools::DynamicMcpToolInfo {
+                server_id: "fixture".to_string(),
+                server_name: "Fixture".to_string(),
+                tool_name: "lookup".to_string(),
+            }),
+        }
+    }
+
+    #[test]
+    fn mcp_result_status_uses_explicit_provider_metadata() {
+        let mcp_info = mcp_result_provider_info();
+        let other_info = DynamicToolInfo {
+            provider_id: "other".to_string(),
+            provider_kind: Some("external_source".to_string()),
+            mcp: None,
+        };
+        for (tool_name, error_field, info, expected_error) in [
+            ("Read", Some(json!(true)), None, false),
+            ("mcp__fixture__lookup", Some(json!(true)), None, false),
+            (
+                "mcp__fixture__lookup",
+                Some(json!(true)),
+                Some(&other_info),
+                false,
+            ),
+            ("aliased_lookup", Some(json!(true)), Some(&mcp_info), true),
+            ("aliased_lookup", Some(json!(false)), Some(&mcp_info), false),
+            ("aliased_lookup", None, Some(&mcp_info), false),
+            (
+                "aliased_lookup",
+                Some(json!("true")),
+                Some(&mcp_info),
+                false,
+            ),
+        ] {
+            let mut raw = json!({"content": [{"type": "text", "text": "Tool response"}]});
+            if let Some(error_field) = error_field {
+                raw["isError"] = error_field;
+            }
+            let result = convert_tool_result(
+                FrameworkToolResult::ok(raw.clone(), None),
+                "call-1",
+                tool_name,
+                tool_name,
+                info,
+            );
+
+            assert_eq!(
+                result.is_error, expected_error,
+                "tool={tool_name}, data={raw}"
+            );
+            assert_eq!(result.result, raw, "provider payload must remain unchanged");
+        }
+    }
+
+    #[cfg(feature = "mcp-runtime")]
+    #[test]
+    fn mcp_tool_failures_reach_model_with_details_and_error_flag() {
+        use crate::agentic::core::message::Message;
+        use crate::service::mcp::protocol::MCPToolResult;
+        use crate::util::types::Message as AIMessage;
+        use openbitfun_agent_tools::build_mcp_tool_bridge_result;
+        use openbitfun_services_integrations::mcp::adapter::render_mcp_tool_result_for_assistant;
+
+        let mcp_info = mcp_result_provider_info();
+        let effective_name = "mcp__fixture__lookup";
+        let cases = [
+            (
+                json!({
+                    "content": [{"type": "text", "text": "Missing required parameter: customer_id"}],
+                    "isError": true,
+                    "_meta": {"private_ui_value": "not-for-model"}
+                }),
+                "Missing required parameter: customer_id",
+            ),
+            (
+                json!({
+                    "content": [],
+                    "isError": true,
+                    "structuredContent": {"code": "CUSTOMER_NOT_FOUND", "customer_id": "123"}
+                }),
+                "CUSTOMER_NOT_FOUND",
+            ),
+        ];
+        for (raw, expected_detail) in cases {
+            let protocol_result: MCPToolResult = serde_json::from_value(raw.clone()).unwrap();
+            let rendered =
+                render_mcp_tool_result_for_assistant("lookup", &protocol_result, usize::MAX);
+            for wire_name in [effective_name, CALL_DEFERRED_TOOL_NAME] {
+                let converted = convert_tool_result(
+                    build_mcp_tool_bridge_result(raw.clone(), rendered.clone()),
+                    "call-mcp",
+                    wire_name,
+                    effective_name,
+                    Some(&mcp_info),
+                );
+                assert_eq!(converted.result, raw);
+                assert_eq!(
+                    converted.effective_tool_name.as_deref(),
+                    (wire_name != effective_name).then_some(effective_name)
+                );
+
+                let message = AIMessage::from(Message::tool_result(converted));
+                let content = message.content.unwrap();
+                assert!(
+                    content.contains(expected_detail),
+                    "missing detail in {content}"
+                );
+                assert!(!content.contains("not-for-model"));
+                assert_eq!(message.is_error, Some(true));
+                assert_eq!(message.tool_call_id.as_deref(), Some("call-mcp"));
+                assert_eq!(message.name.as_deref(), Some(wire_name));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn mcp_runtime_execution_preserves_error_metadata_through_deferred_gateway() {
+        use crate::agentic::core::message::Message;
+        use crate::util::types::Message as AIMessage;
+
+        let pipeline = test_tool_pipeline();
+        let effective_name = "aliased_mcp_runtime_lookup";
+        let raw = json!({
+            "content": [{"type": "text", "text": "Missing customer_id"}],
+            "isError": true
+        });
+        pipeline
+            .tool_registry
+            .write()
+            .await
+            .register_tool(Arc::new(StaticTestTool {
+                name: effective_name.to_string(),
+                response: raw.clone(),
+                dynamic_tool_info: Some(mcp_result_provider_info()),
+                delay_ms: 0,
+                readonly: true,
+                round_injection_yieldable: false,
+            }));
+        for wire_name in [effective_name, CALL_DEFERRED_TOOL_NAME] {
+            let mut context = test_tool_execution_context();
+            context.allowed_tools = vec![
+                effective_name.to_string(),
+                CALL_DEFERRED_TOOL_NAME.to_string(),
+            ];
+            let mut call = test_tool_call(wire_name, wire_name);
+            if wire_name == CALL_DEFERRED_TOOL_NAME {
+                context.deferred_tools = vec![effective_name.to_string()];
+                context.loaded_deferred_tool_specs = vec![loaded_spec(
+                    effective_name,
+                    current_registry_generation(&pipeline).await,
+                )];
+                call.arguments = json!({"tool_name": effective_name, "args": {}});
+            }
+            let mut results = pipeline
+                .execute_tools(vec![call], context, ToolExecutionOptions::default())
+                .await
+                .expect("MCP execution should return a structured tool result");
+            assert_eq!(results.len(), 1);
+            let result = results.remove(0).result;
+            assert_eq!(result.result, raw);
+            assert!(result.is_error);
+            assert_eq!(
+                result.effective_tool_name.as_deref(),
+                (wire_name != effective_name).then_some(effective_name)
+            );
+            let message = AIMessage::from(Message::tool_result(result));
+            assert_eq!(message.is_error, Some(true));
+            assert!(message.content.unwrap().contains("Missing customer_id"));
+            assert_eq!(message.tool_call_id.as_deref(), Some(wire_name));
+            assert_eq!(message.name.as_deref(), Some(wire_name));
+        }
     }
 
     #[test]

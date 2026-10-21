@@ -137,6 +137,7 @@ impl DesktopComputerUseHost {
                 height: native_h as f64,
             }),
             implicit_confirmation_crop_applied: false,
+            auxiliary_windows: Vec::new(),
             ui_tree_text: None,
         })
     }
@@ -225,6 +226,7 @@ impl DesktopComputerUseHost {
         })
         .await
         .map_err(|e| OpenBitFunError::tool(e.to_string()))??;
+        let auxiliary = cap.auxiliary;
         let rgba = image::RgbaImage::from_raw(cap.width, cap.height, cap.rgba)
             .ok_or_else(|| OpenBitFunError::tool("CAPTURE_INVALID_FRAME"))?;
         let rgb = DynamicImage::ImageRgba8(rgba).to_rgb8();
@@ -239,6 +241,8 @@ impl DesktopComputerUseHost {
             width: cap.bounds[2],
             height: cap.bounds[3],
         });
+        shot.auxiliary_windows =
+            crate::computer_use::overlay_windows::auxiliary_metadata(&shot, &auxiliary);
         shot.quadrant_navigation_click_ready = true;
         crate::computer_use::control_session::validate_observation_scope(&scope)
             .map_err(OpenBitFunError::tool)?;
@@ -290,6 +294,7 @@ impl DesktopComputerUseHost {
         .await
         .map_err(|e| OpenBitFunError::tool(e.to_string()))??;
 
+        let auxiliary = cap.auxiliary;
         let rgba = image::RgbaImage::from_raw(cap.width, cap.height, cap.rgba)
             .ok_or_else(|| OpenBitFunError::tool("[CAPTURE_INVALID_FRAME] Invalid RGBA buffer"))?;
         let rgb = DynamicImage::ImageRgba8(rgba).to_rgb8();
@@ -299,6 +304,8 @@ impl DesktopComputerUseHost {
         let mut shot =
             Self::raw_shot_from_rgb_crop(rgb, cap.origin_x, cap.origin_y, native_w, native_h)?;
         shot.capture_frame = Some(cap.frame_info);
+        shot.auxiliary_windows =
+            crate::computer_use::overlay_windows::auxiliary_metadata(&shot, &auxiliary);
 
         // Image pixels map 1:1 to the captured window rectangle (no downscale),
         // so content == image == native and the screen origin is the window's

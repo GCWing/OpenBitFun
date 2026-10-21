@@ -228,8 +228,14 @@ pub(crate) fn validate_bound_target(pid: i32, target: AxRef) -> OpenBitFunResult
             "AX_TARGET_MISMATCH: Accessibility target belongs to a different application",
         ));
     }
+    // An open menu or popup of the bound window is a separate window of the
+    // same process; physical input there reaches it, so its elements qualify.
     let allowed = match element_window_id(target) {
-        Some(actual) => actual == bound,
+        Some(actual) => {
+            actual == bound
+                || super::macos_capture::overlays(pid, bound)
+                    .is_ok_and(|overlays| overlays.iter().any(|o| o.window_id == actual as u64))
+        }
         None => is_application_menu_item(target),
     };
     if !allowed {
@@ -786,6 +792,12 @@ pub(super) fn dump_app_ax(pid: i32, opts: DumpOpts) -> OpenBitFunResult<AppState
         })
     };
 
+    let popup_roots = match (opts.focus_window_only, bound_window) {
+        // SAFETY: `app` is still retained here and released only below.
+        (true, Some(window_id)) => unsafe { popup_ax_roots(app, pid, window_id) },
+        _ => Vec::new(),
+    };
+
     // We're done with the app handle for now (root is independently retained).
     unsafe { ax_release(app as CFTypeRef) };
 
@@ -797,6 +809,14 @@ pub(super) fn dump_app_ax(pid: i32, opts: DumpOpts) -> OpenBitFunResult<AppState
         parent_idx: None,
         depth: 0,
     });
+    let popup_count = popup_roots.len();
+    for popup in popup_roots {
+        queue.push_back(Queued {
+            elem: popup,
+            parent_idx: None,
+            depth: 0,
+        });
+    }
     let mut visited: usize = 0;
     let mut pruned_menu_subtrees: usize = 0;
 
@@ -917,6 +937,12 @@ pub(super) fn dump_app_ax(pid: i32, opts: DumpOpts) -> OpenBitFunResult<AppState
         tree_text.push_str("\n[note] AX_WINDOW_CONTENT_UNAVAILABLE: The application exposes window chrome but no accessible content controls. This tree cannot identify content or prove its absence. Use the same target window screenshot/OCR; repeated AX searches cannot reveal controls the app does not expose.\n");
     }
 
+    if popup_count > 0 {
+        tree_text.push_str(&format!(
+            "\n[note] {popup_count} open popup/menu window(s) of this window are listed as additional top-level nodes. Their elements are part of this observation and accept app_click like any other node.\n"
+        ));
+    }
+
     // Say that menus were skipped on purpose, and where to get them. Otherwise
     // an agent that needs a menu command sees a bare `AXMenu` leaf and has no
     // way to tell "pruned" from "this app has no menu items".
@@ -1000,6 +1026,90 @@ fn window_tree_has_only_chrome(nodes: &[AxNode]) -> bool {
         }
     }
     has_window
+}
+
+/// A retained application-level AXMenu and its global frame.
+type MenuRoot = (AXUIElementRef, (f64, f64, f64, f64));
+
+/// Retained AX roots for the bound window's open popups, front to back.
+/// Popup panels are AXWindows; open menus are application-level AXMenus,
+/// matched to their WindowServer window by frame.
+unsafe fn popup_ax_roots(app: AXUIElementRef, pid: i32, bound: u32) -> Vec<AXUIElementRef> {
+    let Ok(overlays) = super::macos_capture::overlays(pid, bound) else {
+        return Vec::new();
+    };
+    if overlays.is_empty() {
+        return Vec::new();
+    }
+    let mut roots: Vec<AXUIElementRef> = Vec::new();
+    let mut menus: Option<Vec<MenuRoot>> = None;
+    // SAFETY: `app` is a live AX element owned by the caller; every element
+    // retained here is either returned in `roots` or released below.
+    unsafe {
+        for overlay in &overlays {
+            let found = u32::try_from(overlay.window_id)
+                .ok()
+                .and_then(|id| super::macos_ax_ui::try_window_element_by_id(app, id))
+                .or_else(|| {
+                    let menus = menus.get_or_insert_with(|| open_application_menus(app));
+                    menus
+                        .iter()
+                        .find(|(_, frame)| frame_matches(*frame, overlay.bounds))
+                        .map(|(menu, _)| CFRetain(*menu as CFTypeRef) as AXUIElementRef)
+                });
+            let Some(found) = found else { continue };
+            if roots
+                .iter()
+                .any(|known| CFEqual(*known as CFTypeRef, found as CFTypeRef) != 0)
+            {
+                ax_release(found as CFTypeRef);
+                continue;
+            }
+            roots.push(found);
+        }
+        for (menu, _) in menus.unwrap_or_default() {
+            ax_release(menu as CFTypeRef);
+        }
+    }
+    roots
+}
+
+unsafe fn open_application_menus(app: AXUIElementRef) -> Vec<MenuRoot> {
+    let mut menus = Vec::new();
+    // SAFETY: `app` is a live AX element; the children array follows the
+    // create rule and each returned menu is retained for the caller.
+    unsafe {
+        let Some(raw) = ax_copy_attr(app, "AXChildren") else {
+            return menus;
+        };
+        if CFGetTypeID(raw) != core_foundation::array::CFArrayGetTypeID() {
+            ax_release(raw);
+            return menus;
+        }
+        let children = CFArray::<*const c_void>::wrap_under_create_rule(raw as CFArrayRef);
+        for index in 0..children.len() {
+            let Some(child) = children.get(index).map(|child| *child as AXUIElementRef) else {
+                continue;
+            };
+            if child.is_null() || read_cf_string_attr(child, "AXRole").as_deref() != Some("AXMenu")
+            {
+                continue;
+            }
+            if let Some(frame) = read_global_frame(child).filter(|f| f.2 > 0.0 && f.3 > 0.0) {
+                menus.push((CFRetain(child as CFTypeRef) as AXUIElementRef, frame));
+            }
+        }
+    }
+    menus
+}
+
+fn frame_matches(frame: (f64, f64, f64, f64), bounds: [f64; 4]) -> bool {
+    // Menu windows add a few points of rounded chrome around the AXMenu frame.
+    const SLACK: f64 = 8.0;
+    (frame.0 - bounds[0]).abs() <= SLACK
+        && (frame.1 - bounds[1]).abs() <= SLACK
+        && (frame.2 - bounds[2]).abs() <= 2.0 * SLACK
+        && (frame.3 - bounds[3]).abs() <= 2.0 * SLACK
 }
 
 /// Render a Codex-style indented tree.

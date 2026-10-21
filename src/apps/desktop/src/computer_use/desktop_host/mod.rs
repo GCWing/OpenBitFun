@@ -185,6 +185,7 @@ mod visual_grid_tests {
             image_global_bounds: None,
             ui_tree_text: None,
             implicit_confirmation_crop_applied: false,
+            auxiliary_windows: Vec::new(),
         };
 
         let (x0, y0, width, height) =
@@ -793,6 +794,7 @@ mod ax_orchestration;
 #[cfg(target_os = "macos")]
 mod macos;
 mod pointer_input;
+mod settle;
 
 impl DesktopComputerUseHost {
     /// Enumerate the registered keyboard shortcuts in `app`'s menu bar.
@@ -894,6 +896,14 @@ impl ComputerUseHost for DesktopComputerUseHost {
         action: openbitfun_core::agentic::tools::computer_use_host::AppInputAction,
     ) -> OpenBitFunResult<()> {
         self.dispatch_app_input_impl(app, action).await
+    }
+
+    async fn settle_after_input(
+        &self,
+        app: AppSelector,
+        policy: openbitfun_core::agentic::tools::computer_use_host::AppInputSettlePolicy,
+    ) -> OpenBitFunResult<openbitfun_core::agentic::tools::computer_use_host::AppInputSettle> {
+        self.settle_after_input_impl(app, policy).await
     }
 
     fn capture_scope(&self) -> Option<&'static str> {

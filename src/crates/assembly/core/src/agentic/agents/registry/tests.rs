@@ -736,8 +736,9 @@ async fn task_visible_subagents_are_filtered_by_parent_visibility() {
     for swarm_id in ["SwarmPlanner", "SwarmWorker", "SwarmReviewer"] {
         assert!(ultra_visible.iter().any(|agent| agent.id == swarm_id));
     }
-    assert!(ultra_visible.len() > 3);
-    assert!(ultra_visible
+    assert_eq!(ultra_visible.len(), 3);
+    assert!(!ultra_visible.iter().any(|agent| agent.id == "Explore"));
+    assert!(!ultra_visible
         .iter()
         .any(|agent| agent.id == "GeneralPurpose"));
 
@@ -750,11 +751,11 @@ async fn task_visible_subagents_are_filtered_by_parent_visibility() {
             external_sources_supported: false,
         })
         .await;
-    assert!(planner_visible.len() > 3);
+    assert_eq!(planner_visible.len(), 3);
     for swarm_id in ["SwarmPlanner", "SwarmWorker", "SwarmReviewer"] {
         assert!(planner_visible.iter().any(|agent| agent.id == swarm_id));
     }
-    assert!(planner_visible
+    assert!(!planner_visible
         .iter()
         .any(|agent| agent.id == "GeneralPurpose"));
 }

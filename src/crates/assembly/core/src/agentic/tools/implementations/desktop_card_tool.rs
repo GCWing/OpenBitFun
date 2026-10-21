@@ -1,13 +1,14 @@
 //! DesktopCard tool: small always-available cards outside the main window.
 
 use crate::agentic::tools::desktop_card_host::{
-    desktop_card_host_available, invoke_desktop_card_host, validate_data, validate_data_source,
-    validate_icon, validate_size, validate_subtitle, validate_template, validate_title,
-    validate_tone, validate_web_url, DesktopCardDataSourceKind, DesktopCardDraft,
-    DesktopCardHostRequest, DesktopCardOrigin, DesktopCardPatch, DesktopCardSize,
-    DesktopCardTemplateKind, DESKTOP_CARD_ICONS,
+    desktop_card_command_shell_label, desktop_card_host_available, desktop_card_template_paths,
+    invoke_desktop_card_host, validate_data, validate_data_source, validate_icon, validate_size,
+    validate_subtitle, validate_template, validate_title, validate_tone, validate_web_url,
+    DesktopCardDataSourceKind, DesktopCardDraft, DesktopCardHostRequest, DesktopCardOrigin,
+    DesktopCardPatch, DesktopCardSize, DesktopCardTemplateKind, DESKTOP_CARD_ICONS,
 };
 use crate::agentic::tools::framework::{PermissionIntent, Tool, ToolResult, ToolUseContext};
+use crate::agentic::tools::implementations::ExecCommandTool;
 use crate::service::config::global::GlobalConfigManager;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use async_trait::async_trait;
@@ -17,6 +18,154 @@ use serde_json::{json, Map, Value};
 
 pub const DESKTOP_CARDS_CONFIG_PATH: &str = "app.ai_experience.enable_desktop_cards";
 const MAX_COUNTDOWN_SECONDS: i64 = 366 * 24 * 60 * 60;
+const MAX_VALUE_PREVIEW_CHARS: usize = 400;
+
+const TEMPLATE_SHAPES: &[(&str, &str)] = &[
+    (
+        "countdown",
+        r#"{"kind":"countdown","durationSeconds":900,"message":"Join the stand-up"} (or targetAt as ISO-8601 with offset)"#,
+    ),
+    (
+        "checklist",
+        r#"{"kind":"checklist","items":[{"id":"tag","text":"Push the tag","done":false}]}"#,
+    ),
+    ("note", r#"{"kind":"note","text":"Port 5173"}"#),
+    (
+        "progress",
+        r#"{"kind":"progress","valuePath":"/done","maxPath":"/total","statusPath":"/status"}"#,
+    ),
+    (
+        "metrics",
+        r#"{"kind":"metrics","layout":"grid","items":[{"label":"Stars","path":"/stars","format":"number"}]}"#,
+    ),
+    (
+        "cronJob",
+        r#"{"kind":"cronJob","jobId":"<id returned by Cron>"}"#,
+    ),
+    (
+        "custom",
+        r#"{"kind":"custom","html":"<div id=\"v\"></div><script>...</script>"}"#,
+    ),
+];
+
+const DATA_SOURCE_SHAPES: &str = r#"{"kind":"http","url":"https://...","intervalSeconds":300,"parse":"json"} or {"kind":"command","command":"...","intervalSeconds":300,"timeoutSeconds":30,"parse":"json"}"#;
+
+/// Template-only fields that models sometimes put on the card or in data.
+const MISPLACEABLE_TEMPLATE_FIELDS: &[&str] = &[
+    "items",
+    "layout",
+    "durationSeconds",
+    "targetAt",
+    "targetAtMs",
+    "valuePath",
+    "maxPath",
+    "statusPath",
+    "jobId",
+    "html",
+];
+
+const PULL_REQUEST_STATUS_COMMAND_SH: &str = r#"gh pr view 123 --repo owner/repo --json state,reviewDecision,mergeable,statusCheckRollup --jq '{state, review: (.reviewDecision // "PENDING"), mergeable, failing: ([.statusCheckRollup[]? | select(.conclusion == "FAILURE")] | length), pending: ([.statusCheckRollup[]? | select(.status != "COMPLETED")] | length)}'"#;
+
+/// Windows PowerShell 5.1 strips double quotes inside arguments passed to
+/// native programs, so the jq form above breaks there; shape JSON in PowerShell.
+const PULL_REQUEST_STATUS_COMMAND_POWERSHELL: &str = r#"gh pr view 123 --repo owner/repo --json state,reviewDecision,mergeable,statusCheckRollup | ConvertFrom-Json | ForEach-Object { [pscustomobject]@{ state = $_.state; review = $(if ($_.reviewDecision) { $_.reviewDecision } else { 'PENDING' }); mergeable = $_.mergeable; failing = @($_.statusCheckRollup | Where-Object { $_.conclusion -eq 'FAILURE' }).Count; pending = @($_.statusCheckRollup | Where-Object { $_.status -ne 'COMPLETED' }).Count } } | ConvertTo-Json -Compress"#;
+
+/// GraphQL variables keep string literals out of the query, so the same
+/// command works in /bin/sh and Windows PowerShell.
+const REPOSITORY_STATS_COMMAND: &str = r#"gh api graphql -f owner=owner -f name=repo -f query='query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { stargazerCount forkCount issues(states: OPEN) { totalCount } pullRequests(states: OPEN) { totalCount } } }' --jq '.data.repository | {stars: .stargazerCount, forks: .forkCount, openIssues: .issues.totalCount, openPRs: .pullRequests.totalCount}'"#;
+
+const WINDOWS_COMMAND_GUIDANCE: &str = "On this Windows computer: `curl` is an alias of Invoke-WebRequest (use curl.exe -sS or Invoke-RestMethod); Windows PowerShell 5.1 strips double quotes inside arguments passed to native programs such as gh, jq, or git, so keep double quotes out of those arguments (use GraphQL variables, or pipe to ConvertFrom-Json and build the result with [pscustomobject]@{...} | ConvertTo-Json -Compress); only the last statement decides the exit code, so a failed earlier call shows up as null values plus a stderr warning instead of an error.";
+
+const POSIX_COMMAND_GUIDANCE: &str = "The command runs without your login profile; prefer absolute paths or CLIs on the system PATH, and use curl -sS so the progress meter stays off stderr.";
+
+async fn command_test_guidance() -> String {
+    let shell = ExecCommandTool::local_shell_prompt_info().await;
+    command_test_guidance_for(&shell.shell_type, &shell.display_name)
+}
+
+/// ExecCommand follows the configured terminal shell, which can differ from
+/// the fixed shell of command sources; PowerShell 7 and Git Bash, for example,
+/// keep the double quotes that Windows PowerShell 5.1 strips.
+fn command_test_guidance_for(exec_shell_type: &str, exec_shell_name: &str) -> String {
+    let card_shell_type = if cfg!(windows) { "powershell" } else { "sh" };
+    if exec_shell_type == card_shell_type {
+        "ExecCommand uses the same shell as card commands.".to_string()
+    } else if cfg!(windows) && exec_shell_type == "pwsh" {
+        format!(
+            "ExecCommand uses {exec_shell_name}, not Windows PowerShell 5.1, so a command can pass there and still fail on the card. Test it through the card's shell instead: run powershell.exe -NoProfile -NonInteractive -Command {{ <command> }} with ExecCommand."
+        )
+    } else if cfg!(windows) {
+        format!(
+            "ExecCommand uses {exec_shell_name}, not Windows PowerShell 5.1, so a command can pass there and still fail on the card. Test it through the card's shell instead: write it to a temporary .ps1 file and run powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <file> with ExecCommand."
+        )
+    } else {
+        format!(
+            "ExecCommand uses {exec_shell_name}, not /bin/sh, so avoid shell-specific syntax such as arrays, [[ ]], or brace expansion, and test with ExecCommand as /bin/sh -c '<command>'."
+        )
+    }
+}
+
+fn pull_request_status_command() -> &'static str {
+    if cfg!(windows) {
+        PULL_REQUEST_STATUS_COMMAND_POWERSHELL
+    } else {
+        PULL_REQUEST_STATUS_COMMAND_SH
+    }
+}
+
+fn template_shape(kind: &str) -> Option<&'static str> {
+    TEMPLATE_SHAPES
+        .iter()
+        .find(|(candidate, _)| *candidate == kind)
+        .map(|(_, shape)| *shape)
+}
+
+/// Points at template fields placed on the card/patch or in data, which the
+/// schema cannot express as an error by itself.
+fn with_misplaced_field_hint(error: String, container: &Map<String, Value>, label: &str) -> String {
+    let mut misplaced = MISPLACEABLE_TEMPLATE_FIELDS
+        .iter()
+        .filter(|field| container.contains_key(**field))
+        .map(|field| format!("{label}.{field}"))
+        .collect::<Vec<_>>();
+    for key in ["data", "dataMerge"] {
+        if let Some(Value::Object(data)) = container.get(key) {
+            for field in ["items", "layout"] {
+                if data.contains_key(field) {
+                    misplaced.push(format!("{label}.{key}.{field}"));
+                }
+            }
+        }
+    }
+    if misplaced.is_empty() {
+        error
+    } else {
+        format!(
+            "{error}. Found {} outside the template: template fields such as items and layout belong inside {label}.template.",
+            misplaced.join(", ")
+        )
+    }
+}
+
+/// Template fields on the card/patch itself would otherwise be dropped silently.
+fn reject_misplaced_template_fields(
+    container: &Map<String, Value>,
+    label: &str,
+) -> Result<(), String> {
+    let misplaced = MISPLACEABLE_TEMPLATE_FIELDS
+        .iter()
+        .filter(|field| container.contains_key(**field))
+        .map(|field| format!("{label}.{field}"))
+        .collect::<Vec<_>>();
+    if misplaced.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} would be ignored: template fields such as items and layout belong inside {label}.template.",
+            misplaced.join(", ")
+        ))
+    }
+}
 
 pub struct DesktopCardTool;
 
@@ -101,14 +250,32 @@ fn normalize_template_input(raw: &Value, now: i64) -> Result<DesktopCardTemplate
             object.insert("startedAtMs".to_string(), json!(now));
         }
     }
-    let template: DesktopCardTemplateKind = serde_json::from_value(Value::Object(object))
-        .map_err(|error| format!("invalid template: {error}"))?;
+    let kind = object
+        .get("kind")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let template: DesktopCardTemplateKind =
+        serde_json::from_value(Value::Object(object)).map_err(|error| {
+            match kind.as_deref().and_then(template_shape) {
+                Some(shape) => format!("invalid template: {error}. Expected shape: {shape}"),
+                None => format!(
+                    "invalid template: {error}. template.kind must be one of: {}",
+                    TEMPLATE_SHAPES
+                        .iter()
+                        .map(|(kind, _)| *kind)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            }
+        })?;
     validate_template(template)
 }
 
 fn parse_data_source(raw: &Value) -> Result<DesktopCardDataSourceKind, String> {
-    let source: DesktopCardDataSourceKind = serde_json::from_value(raw.clone())
-        .map_err(|error| format!("invalid dataSource: {error}"))?;
+    let source: DesktopCardDataSourceKind =
+        serde_json::from_value(raw.clone()).map_err(|error| {
+            format!("invalid dataSource: {error}. Expected shape: {DATA_SOURCE_SHAPES}")
+        })?;
     validate_data_source(source)
 }
 
@@ -136,10 +303,11 @@ fn parse_draft(raw: &Value, now: i64) -> Result<DesktopCardDraft, String> {
         return Err("card is required for create and must be an object".to_string());
     };
     let title = validate_title(optional_str(card, "title")?.unwrap_or_default())?;
-    let template = normalize_template_input(
-        object_field(card, "template").ok_or("card.template is required")?,
-        now,
-    )?;
+    let template = object_field(card, "template")
+        .ok_or_else(|| "card.template is required".to_string())
+        .and_then(|template| normalize_template_input(template, now))
+        .map_err(|error| with_misplaced_field_hint(error, card, "card"))?;
+    reject_misplaced_template_fields(card, "card")?;
     let data = card.get("data").cloned().unwrap_or(Value::Null);
     validate_data(&data)?;
     let data_source = match card.get("dataSource") {
@@ -218,8 +386,12 @@ fn parse_patch(raw: &Value, now: i64) -> Result<DesktopCardPatch, String> {
         ..Default::default()
     };
     if let Some(template) = patch.get("template").filter(|value| !value.is_null()) {
-        result.template = Some(normalize_template_input(template, now)?);
+        result.template = Some(
+            normalize_template_input(template, now)
+                .map_err(|error| with_misplaced_field_hint(error, patch, "patch"))?,
+        );
     }
+    reject_misplaced_template_fields(patch, "patch")?;
     if let Some(data) = patch.get("data") {
         validate_data(data)?;
         result.data = Some(data.clone());
@@ -249,7 +421,11 @@ fn parse_patch(raw: &Value, now: i64) -> Result<DesktopCardPatch, String> {
         Some(_) => return Err("alwaysOnTop must be a boolean".to_string()),
     }
     if result.is_empty() {
-        return Err("patch does not change any supported field".to_string());
+        return Err(with_misplaced_field_hint(
+            "patch does not change any supported field".to_string(),
+            patch,
+            "patch",
+        ));
     }
     Ok(result)
 }
@@ -322,7 +498,7 @@ fn presets() -> Value {
                     "link": "https://github.com/owner/repo/pull/123",
                     "dataSource": {
                         "kind": "command",
-                        "command": "gh pr view 123 --repo owner/repo --json state,reviewDecision,mergeable,statusCheckRollup --jq '{state, review: (.reviewDecision // \"PENDING\"), mergeable, failing: ([.statusCheckRollup[]? | select(.conclusion == \"FAILURE\")] | length), pending: ([.statusCheckRollup[]? | select(.status != \"COMPLETED\")] | length)}'",
+                        "command": pull_request_status_command(),
                         "intervalSeconds": 300,
                         "parse": "json"
                     },
@@ -337,7 +513,36 @@ fn presets() -> Value {
                     }
                 }
             },
-            "notes": "Command sources run locally through the user's shell with existing CLI auth (gh). They require user approval."
+            "notes": "Command sources run locally with existing CLI auth (gh) and require user approval. This command is already written for the shell on this computer; keep its quoting style when you change the PR number or repository."
+        },
+        {
+            "id": "repository-stats",
+            "useWhen": "The user watches a repository's stars, forks, open issues, or open pull requests.",
+            "call": {
+                "action": "create",
+                "card": {
+                    "title": "owner/repo",
+                    "icon": "star",
+                    "link": "https://github.com/owner/repo",
+                    "dataSource": {
+                        "kind": "command",
+                        "command": REPOSITORY_STATS_COMMAND,
+                        "intervalSeconds": 1800,
+                        "parse": "json"
+                    },
+                    "template": {
+                        "kind": "metrics",
+                        "layout": "grid",
+                        "items": [
+                            { "label": "Stars", "path": "/stars", "format": "number", "emphasis": true },
+                            { "label": "Forks", "path": "/forks", "format": "number" },
+                            { "label": "Open issues", "path": "/openIssues", "format": "number" },
+                            { "label": "Open PRs", "path": "/openPRs", "format": "number" }
+                        ]
+                    }
+                }
+            },
+            "notes": "GraphQL variables (-f owner=... -f name=...) keep double quotes out of the query, so the same command works in /bin/sh and Windows PowerShell. Fetch several numbers in one call like this instead of chaining commands."
         },
         {
             "id": "weather",
@@ -464,31 +669,45 @@ impl Tool for DesktopCardTool {
 Use a card whenever the user would otherwise have to come back and check on something: a reminder after some time, a scheduled job, a pull request's review/CI state, a deployment or long task's progress, weather, a stock price, a checklist of manual steps, or reference info needed again soon. Create one when the user asks, and also proactively when a task naturally produces something worth glancing at later. Prefer updating an existing card (list first) over creating near-duplicates, and delete cards that are no longer useful.
 
 Actions:
-- presets: return ready-to-use recipes (countdown, scheduled job, PR status, weather, stock, progress, checklist, note, custom HTML). Call it when unsure how to build a card.
-- create: requires card. Returns the new cardId and shows the card.
-- update: requires cardId and patch. Only provided fields change; null clears optional fields. patch.dataMerge shallow-merges into data (null removes a key).
+- presets: return ready-to-use recipes (countdown, scheduled job, PR status, repository stats, weather, stock, progress, checklist, note, custom HTML). Call it when unsure how to build a card; preset commands are already written for the shell on this computer.
+- create: requires card. Shows the card and returns its cardId. With a dataSource, the result already contains the first fetch: the value, any fetch error, stderr output, and template paths that resolved to nothing. Read it instead of calling get or refresh again.
+- update: requires cardId and patch. Only provided fields change; null clears optional fields. patch.dataMerge shallow-merges into data (null removes a key). A changed dataSource is fetched before the result returns.
 - list / get: inspect cards, including the latest fetched data or fetch error and checklist state.
 - show / hide: hiding keeps the card for later. delete: remove permanently.
-- refresh: fetch the data source now.
+- refresh: fetch the data source now and return the result.
+Data sources are fetched on their interval only while the card is shown.
 
 Card fields: title (required), subtitle, icon ({icons}), accent (neutral|accent|info|success|warning|danger), template (required), data, dataSource, link (http/https opened from the card), width/height (logical px), alwaysOnTop (default true).
 
-Templates (template.kind):
+Templates (template.kind). Every template field, including items and layout, goes inside the template object; data and dataSource only supply the values that paths read:
 - countdown: durationSeconds | targetAt (ISO-8601 with offset) | targetAtMs, optional message, notify (default true: system notification when due).
 - checklist: items [{{id, text, done}}]. The user can tick items.
 - note: text (plain text, newlines kept).
 - progress: value/max or valuePath/maxPath, optional status/statusPath.
-- metrics: items [{{label, value | path, format (text|number|percent|currency|datetime|relativeTime), digits, currency, prefix, suffix, tone, toneMap {{"VALUE": tone}}, signTone, hint | hintPath, emphasis}}], layout list|grid.
+- metrics: items (1-12) [{{label, value | path, format (text|number|percent|currency|datetime|relativeTime), digits, currency, prefix, suffix, tone, toneMap {{"VALUE": tone}}, signTone, hint | hintPath, emphasis}}], layout list|grid.
 - cronJob: jobId of a Cron job; shows next run and last result live.
 - custom: html for a sandboxed widget; openbitfunCard.onData(cb) receives {{data, card, error}}.
 Paths are JSON Pointers (e.g. /current/temperature_2m) into the card data. With a dataSource, data is the latest fetched value.
 
 Data sources (dataSource.kind):
 - http: url, optional headers, intervalSeconds (30-86400), parse json|text. Fetched from this computer.
-- command: shell command run locally on this computer (sh -c on macOS/Linux, PowerShell on Windows), intervalSeconds (30-86400), optional cwd (defaults to the local workspace) and timeoutSeconds (max 120), parse json|text. Requires user approval; not allowed for remote workspaces. Prefer CLIs that already hold credentials (gh, kubectl) over putting secrets in http headers.
+- command: shell command run locally on this computer with {shell}, intervalSeconds (30-86400), optional cwd (defaults to the local workspace) and timeoutSeconds (default 20, max 120), parse json|text. Requires user approval; not allowed for remote workspaces. Prefer CLIs that already hold credentials (gh, kubectl) over putting secrets in http headers. {command_guidance}
+
+Workflow for command sources:
+1. Run the exact command once with ExecCommand and confirm it prints the JSON you plan to bind (card commands additionally skip shell profiles). {command_test_guidance}
+2. Prefer one call that prints one JSON object (for example gh api graphql --jq, or ConvertTo-Json -Compress) over several chained commands.
+3. Bind template paths to the keys you saw in that output, then create the card.
+4. If the result reports a fetch error or unresolved paths, fix the command or the paths with update instead of creating another card. Reported stderr output alone is often harmless progress text; use it to explain missing values.
 
 Cards are shown only on this desktop. They are unavailable for remote mobile or bot control turns because that user cannot see them."#,
-            icons = DESKTOP_CARD_ICONS.join(", ")
+            icons = DESKTOP_CARD_ICONS.join(", "),
+            shell = desktop_card_command_shell_label(),
+            command_test_guidance = command_test_guidance().await,
+            command_guidance = if cfg!(windows) {
+                WINDOWS_COMMAND_GUIDANCE
+            } else {
+                POSIX_COMMAND_GUIDANCE
+            },
         ))
     }
 
@@ -498,28 +717,77 @@ Cards are shown only on this desktop. They are unavailable for remote mobile or 
     }
 
     fn input_schema(&self) -> Value {
+        let tones = json!(["neutral", "accent", "info", "success", "warning", "danger"]);
+        let template_item = json!({
+            "type": "object",
+            "description": "checklist item {id, text, done} or metrics item {label, value | path, ...}.",
+            "properties": {
+                "id": { "type": "string", "description": "checklist: stable item id." },
+                "text": { "type": "string", "description": "checklist: item text." },
+                "done": { "type": "boolean", "description": "checklist: ticked state." },
+                "label": { "type": "string", "description": "metrics: row label." },
+                "value": { "description": "metrics: static value; use path for fetched data." },
+                "path": { "type": "string", "description": "metrics: JSON Pointer into the card data, such as /stars." },
+                "format": { "type": "string", "enum": ["text", "number", "percent", "currency", "datetime", "relativeTime"] },
+                "digits": { "type": "integer", "minimum": 0, "maximum": 8 },
+                "currency": { "type": "string", "description": "ISO 4217 code for format currency, such as USD." },
+                "prefix": { "type": "string" },
+                "suffix": { "type": "string" },
+                "tone": { "type": "string", "enum": tones },
+                "toneMap": { "type": "object", "description": "Tone by displayed raw value, such as {\"OPEN\": \"info\", \"0\": \"success\"}.", "additionalProperties": { "type": "string", "enum": tones } },
+                "signTone": { "type": "boolean", "description": "Positive numbers success, negative danger." },
+                "hint": { "type": "string" },
+                "hintPath": { "type": "string", "description": "JSON Pointer for a secondary line." },
+                "emphasis": { "type": "boolean" }
+            }
+        });
+        let template = json!({
+            "type": "object",
+            "description": "Template object. All template fields, including items and layout, go here (not in data).",
+            "properties": {
+                "kind": { "type": "string", "enum": ["countdown", "checklist", "note", "progress", "metrics", "cronJob", "custom"] },
+                "durationSeconds": { "type": "number", "description": "countdown: seconds from now." },
+                "targetAt": { "type": "string", "description": "countdown: ISO-8601 time with offset, such as 2026-03-17T15:30:00+08:00." },
+                "targetAtMs": { "type": "integer", "description": "countdown: epoch milliseconds." },
+                "message": { "type": "string", "description": "countdown: shown when due." },
+                "notify": { "type": "boolean", "description": "countdown: system notification when due (default true)." },
+                "items": { "type": "array", "description": "checklist or metrics (1-12) items.", "items": template_item },
+                "layout": { "type": "string", "enum": ["list", "grid"], "description": "metrics layout." },
+                "text": { "type": "string", "description": "note: plain text." },
+                "value": { "type": "number", "description": "progress: static value." },
+                "max": { "type": "number", "description": "progress: static maximum." },
+                "valuePath": { "type": "string", "description": "progress: JSON Pointer to the value." },
+                "maxPath": { "type": "string", "description": "progress: JSON Pointer to the maximum." },
+                "status": { "type": "string", "description": "progress: static status line." },
+                "statusPath": { "type": "string", "description": "progress: JSON Pointer to the status line." },
+                "jobId": { "type": "string", "description": "cronJob: id returned by Cron." },
+                "html": { "type": "string", "description": "custom: self-contained widget HTML." }
+            },
+            "required": ["kind"]
+        });
+        let data_source = json!({
+            "type": ["object", "null"],
+            "description": "Periodic data source; the latest value becomes the card data.",
+            "properties": {
+                "kind": { "type": "string", "enum": ["http", "command"] },
+                "url": { "type": "string", "description": "http: https URL." },
+                "headers": { "type": "object", "description": "http: request headers.", "additionalProperties": { "type": "string" } },
+                "command": { "type": "string", "description": format!("command: run with {} on this computer; should print one JSON object.", desktop_card_command_shell_label()) },
+                "cwd": { "type": "string", "description": "command: working directory (defaults to the local workspace)." },
+                "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 120, "description": "command: default 20." },
+                "intervalSeconds": { "type": "integer", "minimum": 30, "maximum": 86400 },
+                "parse": { "type": "string", "enum": ["json", "text"], "description": "Default json." }
+            },
+            "required": ["kind"]
+        });
         let card_properties = json!({
             "title": { "type": "string" },
             "subtitle": { "type": ["string", "null"] },
             "icon": { "type": ["string", "null"], "enum": DESKTOP_CARD_ICONS.iter().map(|icon| Value::String((*icon).to_string())).chain(std::iter::once(Value::Null)).collect::<Vec<_>>() },
             "accent": { "type": ["string", "null"], "enum": ["neutral", "accent", "info", "success", "warning", "danger", null] },
-            "template": {
-                "type": "object",
-                "description": "Template object with kind: countdown, checklist, note, progress, metrics, cronJob, or custom. See the tool description for fields.",
-                "properties": {
-                    "kind": { "type": "string", "enum": ["countdown", "checklist", "note", "progress", "metrics", "cronJob", "custom"] }
-                },
-                "required": ["kind"]
-            },
-            "data": { "description": "Static data for template paths when there is no dataSource." },
-            "dataSource": {
-                "type": ["object", "null"],
-                "description": "Periodic data source: {kind: http, url, headers?, intervalSeconds, parse?} or {kind: command, command, cwd?, intervalSeconds, timeoutSeconds?, parse?}.",
-                "properties": {
-                    "kind": { "type": "string", "enum": ["http", "command"] }
-                },
-                "required": ["kind"]
-            },
+            "template": template,
+            "data": { "description": "Static values read by template paths when there is no dataSource, such as {\"done\": 3, \"total\": 10}." },
+            "dataSource": data_source,
             "link": { "type": ["string", "null"], "description": "http(s) URL opened from the card." },
             "width": { "type": "number" },
             "height": { "type": "number" },
@@ -745,8 +1013,120 @@ fn card_line(card: &Value) -> String {
     );
     if let Some(error) = card.pointer("/lastData/error").and_then(Value::as_str) {
         line.push_str(&format!(", last fetch failed: {error}"));
+    } else if card
+        .pointer("/lastData/warning")
+        .is_some_and(Value::is_string)
+    {
+        line.push_str(", last fetch also wrote to stderr (see get)");
+    }
+    let unresolved = unresolved_template_paths(card).len();
+    if unresolved > 0 {
+        line.push_str(&format!(", {unresolved} template path(s) unresolved"));
     }
     line
+}
+
+fn truncate_chars(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let mut truncated = text.chars().take(max).collect::<String>();
+    truncated.push_str("...");
+    truncated
+}
+
+/// Template paths with no value in the data the card renders. Empty while the
+/// first fetch is pending or when the last fetch failed, since the error
+/// already explains the placeholders.
+fn unresolved_template_paths(card: &Value) -> Vec<String> {
+    let Some(template) = card.get("template").and_then(|template| {
+        serde_json::from_value::<DesktopCardTemplateKind>(template.clone()).ok()
+    }) else {
+        return Vec::new();
+    };
+    let has_source = card
+        .get("dataSource")
+        .is_some_and(|source| !source.is_null());
+    let data = if has_source {
+        let Some(snapshot) = card.get("lastData").filter(|snapshot| !snapshot.is_null()) else {
+            return Vec::new();
+        };
+        if snapshot.get("error").is_some_and(Value::is_string) {
+            return Vec::new();
+        }
+        snapshot.get("value").unwrap_or(&Value::Null)
+    } else {
+        card.get("data").unwrap_or(&Value::Null)
+    };
+    desktop_card_template_paths(&template)
+        .into_iter()
+        .filter(|(_, path)| data.pointer(path).is_none_or(Value::is_null))
+        .map(|(field, path)| format!("{path} ({field})"))
+        .collect()
+}
+
+fn data_status(card: &Value) -> Vec<String> {
+    let mut lines = Vec::new();
+    let has_source = card
+        .get("dataSource")
+        .is_some_and(|source| !source.is_null());
+    if has_source {
+        let visible = card
+            .get("visible")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        match card.get("lastData").filter(|snapshot| !snapshot.is_null()) {
+            None if !visible => lines.push(
+                "Data: the card is hidden, so its source is not fetched until it is shown."
+                    .to_string(),
+            ),
+            None => lines.push(
+                "Data: the first fetch has not finished yet; call get in a few seconds to see its result."
+                    .to_string(),
+            ),
+            Some(snapshot) => {
+                if let Some(error) = snapshot.get("error").and_then(Value::as_str) {
+                    lines.push(format!("Data: the last fetch failed: {error}"));
+                }
+                if let Some(warning) = snapshot.get("warning").and_then(Value::as_str) {
+                    lines.push(format!(
+                        "Data: the command exited successfully and wrote to stderr (often progress output or notices; if values are missing, it may explain why): {warning}"
+                    ));
+                }
+                if let Some(value) = snapshot.get("value").filter(|value| !value.is_null()) {
+                    lines.push(format!(
+                        "Data: latest value {}",
+                        truncate_chars(
+                            &serde_json::to_string(value).unwrap_or_default(),
+                            MAX_VALUE_PREVIEW_CHARS
+                        )
+                    ));
+                }
+            }
+        }
+    }
+    let unresolved = unresolved_template_paths(card);
+    if !unresolved.is_empty() {
+        let fix = if has_source {
+            "Run the source once with ExecCommand (or open the URL) to see its real output, then fix the command or the paths with update."
+        } else {
+            "The card has no dataSource, so set these values with update + patch.dataMerge (or card.data on create), or fix the paths."
+        };
+        lines.push(format!(
+            "Data: these template paths are missing or null, so the card shows placeholders: {}. {fix}",
+            unresolved.join(", ")
+        ));
+    }
+    lines
+}
+
+fn with_data_status(summary: String, card: Option<&Value>) -> String {
+    let lines = card.map(data_status).unwrap_or_default();
+    if lines.is_empty() {
+        summary
+    } else {
+        format!("{summary}\n{}", lines.join("\n"))
+    }
 }
 
 fn render_result_for_assistant(action: &str, result: &Value) -> String {
@@ -756,16 +1136,26 @@ fn render_result_for_assistant(action: &str, result: &Value) -> String {
         .and_then(Value::as_str)
         .unwrap_or("?");
     match action {
-        "create" => format!(
-            "Created desktop card {card_id} and showed it on the user's desktop. Use this cardId for later update, hide, or delete."
+        "create" => with_data_status(
+            format!(
+                "Created desktop card {card_id} and showed it on the user's desktop. Use this cardId for later update, hide, or delete."
+            ),
+            card,
         ),
-        "update" => format!("Updated desktop card {card_id}."),
+        "update" => with_data_status(format!("Updated desktop card {card_id}."), card),
         "show" => format!("Desktop card {card_id} is now shown."),
         "hide" => format!("Desktop card {card_id} is hidden; it is kept and can be shown again."),
         "delete" => format!("Deleted desktop card {card_id}."),
-        "refresh" => format!(
-            "Refreshed desktop card {card_id}.\n{}",
-            card.map(card_line).unwrap_or_default()
+        "refresh" => with_data_status(
+            format!(
+                "Refreshed desktop card {card_id}.\n{}",
+                card.map(card_line).unwrap_or_default()
+            ),
+            card,
+        ),
+        "get" => with_data_status(
+            serde_json::to_string_pretty(result).unwrap_or_default(),
+            card,
         ),
         "list" => {
             let cards = result
@@ -876,6 +1266,246 @@ mod tests {
             parse_draft(card, 1_000)
                 .unwrap_or_else(|error| panic!("preset {} is invalid: {error}", preset["id"]));
         }
+    }
+
+    #[test]
+    fn misplaced_template_fields_get_an_actionable_hint() {
+        let error = parse_draft(
+            &json!({
+                "title": "Repo",
+                "template": {"kind": "metrics"},
+                "data": {"items": [{"label": "Stars", "path": "/stars"}]}
+            }),
+            0,
+        )
+        .unwrap_err();
+        assert!(error.contains("template.items"), "{error}");
+        assert!(error.contains("card.data.items"), "{error}");
+        assert!(error.contains("inside card.template"), "{error}");
+
+        let error = parse_draft(
+            &json!({"title": "Repo", "items": [], "template": {"kind": "metrics"}}),
+            0,
+        )
+        .unwrap_err();
+        assert!(error.contains("card.items"), "{error}");
+
+        let error = parse_patch(&json!({"items": []}), 0).unwrap_err();
+        assert!(error.contains("patch.items"), "{error}");
+
+        let error = parse_draft(
+            &json!({"title": "N", "layout": "grid", "template": {"kind": "note", "text": "x"}}),
+            0,
+        )
+        .unwrap_err();
+        assert!(error.contains("card.layout would be ignored"), "{error}");
+        let error = parse_patch(&json!({"title": "N", "valuePath": "/done"}), 0).unwrap_err();
+        assert!(
+            error.contains("patch.valuePath would be ignored"),
+            "{error}"
+        );
+        assert!(parse_patch(&json!({"dataMerge": {"items": 3}}), 0).is_ok());
+    }
+
+    #[test]
+    fn invalid_shapes_include_an_example() {
+        let error =
+            parse_draft(&json!({"title": "N", "template": {"kind": "note"}}), 0).unwrap_err();
+        assert!(error.contains(r#"{"kind":"note","text""#), "{error}");
+        let error =
+            parse_draft(&json!({"title": "N", "template": {"kind": "chart"}}), 0).unwrap_err();
+        assert!(error.contains("must be one of: countdown"), "{error}");
+        let error = parse_draft(
+            &json!({
+                "title": "N",
+                "template": {"kind": "note", "text": "x"},
+                "dataSource": {"kind": "command"}
+            }),
+            0,
+        )
+        .unwrap_err();
+        assert!(error.contains(r#""kind":"command","command""#), "{error}");
+    }
+
+    #[test]
+    fn schema_describes_template_and_data_source_fields() {
+        let schema = DesktopCardTool::new().input_schema();
+        let card = &schema["properties"]["card"]["properties"];
+        for field in [
+            "items",
+            "layout",
+            "valuePath",
+            "durationSeconds",
+            "jobId",
+            "html",
+        ] {
+            assert!(
+                card["template"]["properties"].get(field).is_some(),
+                "{field}"
+            );
+        }
+        assert!(
+            card["template"]["properties"]["items"]["items"]["properties"]
+                .get("toneMap")
+                .is_some()
+        );
+        for field in [
+            "url",
+            "headers",
+            "command",
+            "cwd",
+            "timeoutSeconds",
+            "intervalSeconds",
+            "parse",
+        ] {
+            assert!(
+                card["dataSource"]["properties"].get(field).is_some(),
+                "{field}"
+            );
+        }
+        let patch = &schema["properties"]["patch"]["properties"];
+        assert!(patch["template"]["properties"].get("items").is_some());
+        assert!(patch.get("dataMerge").is_some());
+    }
+
+    #[test]
+    fn command_test_guidance_flags_a_different_exec_shell() {
+        let same = if cfg!(windows) { "powershell" } else { "sh" };
+        assert_eq!(
+            command_test_guidance_for(same, "Shell"),
+            "ExecCommand uses the same shell as card commands."
+        );
+        let guidance = command_test_guidance_for("pwsh", "My Shell");
+        assert!(guidance.contains("ExecCommand uses My Shell"), "{guidance}");
+        let bash = command_test_guidance_for("bash", "Git Bash");
+        assert!(bash.contains("ExecCommand uses Git Bash"), "{bash}");
+        if cfg!(windows) {
+            assert!(
+                guidance
+                    .contains("powershell.exe -NoProfile -NonInteractive -Command { <command> }"),
+                "{guidance}"
+            );
+            assert!(
+                bash.contains("-ExecutionPolicy Bypass -File <file>"),
+                "{bash}"
+            );
+        } else {
+            assert!(guidance.contains("/bin/sh -c"), "{guidance}");
+            assert!(bash.contains("/bin/sh -c"), "{bash}");
+        }
+    }
+
+    #[test]
+    fn cross_shell_commands_avoid_double_quotes() {
+        assert!(!REPOSITORY_STATS_COMMAND.contains('"'));
+        assert!(!PULL_REQUEST_STATUS_COMMAND_POWERSHELL.contains('"'));
+        let preset = presets()
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|preset| preset["id"] == "pull-request-status")
+            .unwrap()
+            .clone();
+        let command = preset
+            .pointer("/call/card/dataSource/command")
+            .and_then(Value::as_str)
+            .unwrap();
+        if cfg!(windows) {
+            assert!(command.contains("ConvertTo-Json -Compress"));
+        } else {
+            assert!(command.contains("--jq"));
+        }
+    }
+
+    fn metrics_card(last_data: Value) -> Value {
+        json!({
+            "card": {
+                "id": "card-1",
+                "title": "Repo",
+                "visible": true,
+                "template": {
+                    "kind": "metrics",
+                    "items": [
+                        {"label": "Stars", "path": "/stars"},
+                        {"label": "Forks", "path": "/forks"}
+                    ]
+                },
+                "dataSource": {"kind": "command", "command": "gh api", "intervalSeconds": 300},
+                "lastData": last_data
+            }
+        })
+    }
+
+    #[test]
+    fn create_results_report_the_first_fetch() {
+        let pending = render_result_for_assistant("create", &metrics_card(Value::Null));
+        assert!(
+            pending.contains("first fetch has not finished"),
+            "{pending}"
+        );
+        assert!(!pending.contains("template paths are missing"), "{pending}");
+
+        let partial = render_result_for_assistant(
+            "create",
+            &metrics_card(json!({
+                "fetchedAtMs": 1,
+                "value": {"stars": 12, "forks": null},
+                "warning": "gh: rate limited"
+            })),
+        );
+        assert!(partial.contains("wrote to stderr"), "{partial}");
+        assert!(partial.contains("gh: rate limited"), "{partial}");
+        assert!(partial.contains("latest value {"), "{partial}");
+        assert!(partial.contains("\"stars\":12"), "{partial}");
+        assert!(
+            partial.contains("/forks (metric `Forks` path)"),
+            "{partial}"
+        );
+        assert!(!partial.contains("/stars ("), "{partial}");
+
+        let failed = render_result_for_assistant(
+            "update",
+            &metrics_card(json!({"fetchedAtMs": 1, "error": "Command exited with 1: boom"})),
+        );
+        assert!(
+            failed.contains("last fetch failed: Command exited with 1: boom"),
+            "{failed}"
+        );
+        assert!(!failed.contains("template paths are missing"), "{failed}");
+
+        let healthy = render_result_for_assistant(
+            "create",
+            &metrics_card(json!({"fetchedAtMs": 1, "value": {"stars": 1, "forks": 2}})),
+        );
+        assert!(!healthy.contains("missing or null"), "{healthy}");
+
+        let mut hidden = metrics_card(Value::Null);
+        hidden["card"]["visible"] = json!(false);
+        let hidden = render_result_for_assistant("create", &hidden);
+        assert!(hidden.contains("not fetched until it is shown"), "{hidden}");
+        assert!(!hidden.contains("first fetch has not finished"), "{hidden}");
+    }
+
+    #[test]
+    fn static_cards_report_paths_missing_from_data() {
+        let result = json!({
+            "card": {
+                "id": "card-2",
+                "title": "Migration",
+                "template": {"kind": "progress", "valuePath": "/done", "maxPath": "/total"},
+                "data": {"done": 3}
+            }
+        });
+        let text = render_result_for_assistant("create", &result);
+        assert!(text.contains("/total (maxPath)"), "{text}");
+        assert!(text.contains("patch.dataMerge"), "{text}");
+        assert!(!text.contains("ExecCommand"), "{text}");
+        assert!(!text.contains("first fetch"), "{text}");
+        let list = render_result_for_assistant(
+            "list",
+            &json!({"enabled": true, "cards": [result["card"].clone()]}),
+        );
+        assert!(list.contains("1 template path(s) unresolved"), "{list}");
     }
 
     #[test]

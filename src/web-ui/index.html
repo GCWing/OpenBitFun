@@ -99,7 +99,12 @@
         }
         root.setAttribute('data-contrast', 'standard');
         root.setAttribute('data-density', 'compact');
-        var bg = root.style.backgroundColor || 'var(--openbitfun-color-surface-chrome)';
+        // The shell owns the window frame background when the desktop bootstrap
+        // advertises a client-side frame; painting it here would cover the
+        // transparent corners.
+        var bg = root.getAttribute('data-openbitfun-native-frame') === 'client'
+          ? 'transparent'
+          : (root.style.backgroundColor || 'var(--openbitfun-color-surface-chrome)');
         root.style.backgroundColor = bg;
         function paintBody() {
           if (document.body) document.body.style.backgroundColor = bg;
@@ -147,6 +152,25 @@
       #openbitfun-startup-overlay {
         width: 100%;
         height: 100%;
+      }
+
+      /* WebKitGTK keeps the GTK frame square on Wayland, so the shell owns the
+         frame radius and stands on a transparent window. */
+      html[data-openbitfun-native-frame='client'],
+      html[data-openbitfun-native-frame='client'] body {
+        background-color: transparent;
+      }
+
+      html[data-openbitfun-native-frame='client'] #root,
+      html[data-openbitfun-native-frame='client'] #openbitfun-startup-overlay {
+        border-radius: 12px;
+      }
+
+      /* The startup overlay paints its own translucent sheet; keep the same frame
+         shape and stop it from dimming the desktop behind the window. */
+      html[data-openbitfun-native-frame='client'] .splash-screen {
+        border-radius: 12px;
+        background: var(--openbitfun-color-surface-chrome);
       }
 
       #openbitfun-startup-overlay {

@@ -39,7 +39,29 @@ unsafe extern "C" {
     ) -> i32;
     fn obf_capture_bind_revision(handle: *mut c_void, revision: u64);
     fn obf_capture_mark_input(handle: *mut c_void);
+    fn obf_capture_settle_anchor(handle: *mut c_void) -> i64;
+    fn obf_capture_settle_poll(
+        handle: *mut c_void,
+        anchor_ns: i64,
+        wait_ms: u32,
+        elapsed_ms: *mut i64,
+        last_change_ms: *mut i64,
+        error: *mut c_char,
+        capacity: usize,
+    ) -> i32;
+    fn obf_capture_retain(handle: *mut c_void) -> *mut c_void;
+    fn obf_capture_release(handle: *mut c_void);
     fn obf_capture_free(bytes: *mut c_void);
+    fn obf_capture_window_snapshot(
+        pid: i32,
+        window: u32,
+        bytes: *mut *mut u8,
+        length: *mut usize,
+        width: *mut u32,
+        height: *mut u32,
+        error: *mut c_char,
+        capacity: usize,
+    ) -> i32;
     fn obf_capture_stop(handle: *mut c_void);
     fn obf_pointer_show(window: u32, x: f64, y: f64, click: bool);
     fn obf_pointer_hide();
@@ -58,6 +80,8 @@ pub(super) struct CaptureFrame {
     pub window_id: u32,
     pub bounds: [f64; 4],
     pub scope: openbitfun_agent_tools::computer_use_control::ObservationScope,
+    /// Same-process popups composited over (or missing from) `rgba`, front to back.
+    pub auxiliary: Vec<super::overlay_windows::CapturedOverlay>,
 }
 
 struct CaptureSession {
@@ -146,6 +170,7 @@ impl CaptureSession {
             height,
             window_id,
             bounds,
+            auxiliary: Vec::new(),
             scope: openbitfun_agent_tools::computer_use_control::ObservationScope {
                 generation: self.generation,
                 target_revision: self.target_revision,
@@ -248,8 +273,9 @@ pub(super) fn capture_frame(pid: i32, window_id: Option<u32>) -> Result<CaptureF
     if session.pid != pid || window_id.is_some_and(|id| session.window_id != id) {
         return Err("CAPTURE_TARGET_CHANGED: Re-observe the intended target".into());
     }
-    let frame = session.frame()?;
+    let mut frame = session.frame()?;
     drop(active);
+    composite_overlays(pid, &mut frame);
     super::control_session::validate_observation_scope(&frame.scope)?;
     super::control_session::publish_rgba(
         &frame.scope,
@@ -260,6 +286,114 @@ pub(super) fn capture_frame(pid: i32, window_id: Option<u32>) -> Result<CaptureF
     );
     Ok(frame)
 }
+fn window_snapshot(pid: i32, window_id: u32) -> Result<(Vec<u8>, u32, u32), String> {
+    let mut error = [0; 1024];
+    let mut bytes = std::ptr::null_mut();
+    let (mut length, mut width, mut height) = (0, 0, 0);
+    // SAFETY: every out-pointer refers to a live local, and `error` is a
+    // writable buffer of the advertised capacity.
+    let ok = unsafe {
+        obf_capture_window_snapshot(
+            pid,
+            window_id,
+            &mut bytes,
+            &mut length,
+            &mut width,
+            &mut height,
+            error.as_mut_ptr(),
+            error.len(),
+        )
+    };
+    if ok == 0 {
+        return Err(error_string(&error));
+    }
+    if bytes.is_null() || length != width as usize * height as usize * 4 {
+        // SAFETY: the buffer, if any, was allocated by the native snapshot and
+        // is freed exactly once; free(NULL) is a no-op.
+        unsafe { obf_capture_free(bytes.cast()) };
+        return Err("AUXILIARY_CAPTURE_FAILED: Invalid popup buffer".into());
+    }
+    // SAFETY: on success the native snapshot returns a non-null buffer of
+    // exactly `length` initialized bytes that stays valid until freed below.
+    let rgba = unsafe { std::slice::from_raw_parts(bytes, length).to_vec() };
+    // SAFETY: freed exactly once, after the copy above.
+    unsafe { obf_capture_free(bytes.cast()) };
+    Ok((rgba, width, height))
+}
+
+/// Paints the target's open menus and popups over its window capture, back
+/// to front, so the observation matches what the user sees. A popup whose
+/// pixels cannot be captured is still reported, with composited=false.
+fn composite_overlays(pid: i32, frame: &mut CaptureFrame) {
+    let overlays = super::macos_list_apps::overlays_above(pid, frame.window_id, frame.bounds);
+    let mut captured = Vec::with_capacity(overlays.len());
+    for overlay in overlays.into_iter().rev() {
+        let result = u32::try_from(overlay.window_id)
+            .map_err(|_| "AUXILIARY_WINDOW_UNAVAILABLE: Window id out of range".to_string())
+            .and_then(|id| window_snapshot(pid, id));
+        let (composited, unavailable_reason) = match result {
+            Ok((pixels, width, height)) => {
+                super::overlay_windows::blend_premultiplied(
+                    &mut frame.rgba,
+                    (frame.width, frame.height),
+                    frame.bounds,
+                    &pixels,
+                    (width, height),
+                    overlay.bounds,
+                );
+                (true, None)
+            }
+            Err(reason) => {
+                log::debug!(
+                    "Computer use popup capture unavailable: pid={pid}, window={}, reason={reason}",
+                    overlay.window_id
+                );
+                (false, Some(reason))
+            }
+        };
+        captured.push(super::overlay_windows::CapturedOverlay {
+            window: overlay,
+            composited,
+            unavailable_reason,
+        });
+    }
+    captured.reverse();
+    frame.auxiliary = captured;
+}
+
+/// Same-process popups above the bound window, front to back.
+pub(super) fn overlays(
+    pid: i32,
+    window_id: u32,
+) -> Result<Vec<super::overlay_windows::OverlayWindow>, String> {
+    let bounds = window_bounds(pid, window_id)?;
+    Ok(super::macos_list_apps::overlays_above(
+        pid, window_id, bounds,
+    ))
+}
+
+/// Current global frame of the bound window or of one of its open popups.
+/// Usable after revocation so held presses can still be released.
+pub(super) fn routing_bounds(pid: i32, window_id: u32) -> Result<[f64; 4], String> {
+    let bound = {
+        let active = capture().lock().map_err(|_| "Capture lock poisoned")?;
+        let session = active.as_ref().ok_or("CAPTURE_STOPPED")?;
+        if session.pid != pid {
+            return Err("CAPTURE_TARGET_CHANGED".into());
+        }
+        session.window_id
+    };
+    let bound_bounds = window_bounds(pid, bound)?;
+    if window_id == bound {
+        return Ok(bound_bounds);
+    }
+    super::macos_list_apps::overlays_above(pid, bound, bound_bounds)
+        .into_iter()
+        .find(|overlay| overlay.window_id == window_id as u64)
+        .map(|overlay| overlay.bounds)
+        .ok_or_else(|| "AUXILIARY_WINDOW_CLOSED: The popup that received the press is gone".into())
+}
+
 pub(super) fn window_bounds(pid: i32, window_id: u32) -> Result<[f64; 4], String> {
     let active = capture().lock().map_err(|_| "Capture lock poisoned")?;
     let session = active.as_ref().ok_or("CAPTURE_STOPPED")?;
@@ -288,6 +422,94 @@ pub(super) fn note_input(pid: i32) {
         if let Some(session) = active.as_ref().filter(|session| session.pid == pid) {
             unsafe { obf_capture_mark_input(session.handle.as_ptr()) };
         }
+    }
+}
+
+/// Native session reference held across a settle wait without CAPTURE, so a
+/// concurrent Stop is never blocked behind it.
+struct RetainedCapture(NonNull<c_void>);
+// SAFETY: the native object is internally synchronized by its NSCondition.
+unsafe impl Send for RetainedCapture {}
+impl Drop for RetainedCapture {
+    fn drop(&mut self) {
+        // SAFETY: balances the single retain taken when this value was built.
+        unsafe { obf_capture_release(self.0.as_ptr()) };
+    }
+}
+
+/// Wait until the bound window has not repainted for the policy's quiet
+/// interval after the latest input barrier. Never captures pixels itself.
+pub(super) fn wait_settled(
+    pid: i32,
+    window_id: u32,
+    policy: openbitfun_core::agentic::tools::computer_use_host::AppInputSettlePolicy,
+) -> Result<openbitfun_core::agentic::tools::computer_use_host::AppInputSettle, String> {
+    use openbitfun_core::agentic::tools::computer_use_host::{
+        app_input_settle_decision, app_input_settle_next_wait_ms, AppInputSettle,
+        AppInputSettleStatus,
+    };
+    let started = std::time::Instant::now();
+    let retained = {
+        let active = capture().lock().map_err(|_| "Capture lock poisoned")?;
+        let Some(session) = active.as_ref() else {
+            return Ok(AppInputSettle::unavailable(
+                "No live window stream; the observation was taken without waiting for repaint",
+            ));
+        };
+        if session.pid != pid || session.window_id != window_id {
+            return Ok(AppInputSettle::unavailable(
+                "The live window stream belongs to another target",
+            ));
+        }
+        session.check()?;
+        RetainedCapture(
+            // SAFETY: the session handle is live while CAPTURE is locked.
+            NonNull::new(unsafe { obf_capture_retain(session.handle.as_ptr()) })
+                .ok_or("CAPTURE_STOPPED")?,
+        )
+    };
+    let interrupted = |reason: String| AppInputSettle {
+        status: AppInputSettleStatus::Interrupted,
+        waited_ms: started.elapsed().as_millis() as u64,
+        changed: None,
+        reason: Some(reason),
+    };
+    // SAFETY: `retained` keeps the native session alive for this call.
+    let anchor = unsafe { obf_capture_settle_anchor(retained.0.as_ptr()) };
+    let mut wait_ms = 0;
+    loop {
+        if let Err(reason) = super::control_session::capture_allowed() {
+            return Ok(interrupted(reason));
+        }
+        let (mut elapsed, mut last_change) = (0_i64, -1_i64);
+        let mut error = [0; 1024];
+        // SAFETY: `retained` keeps the session alive; out-pointers are live
+        // locals and `error` has the advertised capacity.
+        let ok = unsafe {
+            obf_capture_settle_poll(
+                retained.0.as_ptr(),
+                anchor,
+                wait_ms,
+                &mut elapsed,
+                &mut last_change,
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        };
+        if ok == 0 {
+            return Ok(interrupted(error_string(&error)));
+        }
+        let elapsed = elapsed.max(0) as u64;
+        let last_change = u64::try_from(last_change).ok();
+        if let Some(status) = app_input_settle_decision(policy, elapsed, last_change) {
+            return Ok(AppInputSettle {
+                status,
+                waited_ms: started.elapsed().as_millis() as u64,
+                changed: Some(last_change.is_some()),
+                reason: None,
+            });
+        }
+        wait_ms = app_input_settle_next_wait_ms(policy, elapsed, last_change);
     }
 }
 

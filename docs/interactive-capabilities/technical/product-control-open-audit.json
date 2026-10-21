@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "05afb29f354928738ed26d4275819bbe3c165c7878bb24996b5169639ba03330",
+  "catalogDigest": "9f38314ae86d2f3c1ea90e1214b85207b289d1ddbef6d5a74af0e92d7451ba4f",
   "count": 216,
   "reasonCounts": {
     "externalAuth": 4,
@@ -2525,8 +2525,8 @@
     {
       "capabilityId": "feature.desktop-cards",
       "itemId": "drag-restore",
-      "titleZh": "拖动卡片到桌面任意位置；关闭 OpenBitFun 时卡片消失，重新打开后按原位置恢复",
-      "titleEn": "Drag cards anywhere on the desktop; they disappear when OpenBitFun closes and return to the same positions when it reopens",
+      "titleZh": "拖动卡片到桌面任意位置，拖动卡片边缘或四角调整大小；关闭 OpenBitFun 时卡片消失，重新打开后按原位置和大小恢复",
+      "titleEn": "Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens",
       "reasonCode": "visualSelection",
       "reasonZh": "卡片位置由用户在桌面上直接拖动决定，没有可以代替视觉摆放的结构化命令；智能体只说明操作方式，摆放保留给用户。",
       "reasonEn": "Card positions are chosen by dragging directly on the desktop, and no structured command can replace that visual placement; the Agent explains the interaction and leaves placement to the user.",

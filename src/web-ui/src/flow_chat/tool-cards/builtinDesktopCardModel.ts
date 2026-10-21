@@ -67,6 +67,7 @@ export function buildDesktopCardToolCard(context: BuiltinCardContext): void {
   field('dataSource', source.kind ? sourceLabel(source, t) : undefined);
   field('visibility', visibilityLabel(card.visible, t));
   section('refreshError', lastData.error);
+  section('commandStderr', lastData.error ? undefined : lastData.warning, 'code');
   link('url', card.link ?? draft.link, 'openSource');
 
   if (action === 'presets') {

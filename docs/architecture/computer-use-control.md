@@ -243,6 +243,9 @@ macOS AXRaise/focus may be unavailable. Those failures send no task input and do
 not invoke Alt-Tab or click a guessed location. Linux uses its consented portal
 surface instead of native-window activation; an AT-SPI PID cannot identify that
 surface. App-directed actions retain their semantic/directed route in either mode.
+In a background session `activate_app` and global pointer/keyboard actions are
+rejected at admission with an action-specific `FOREGROUND_REQUIRED` message that
+names the background `app_*` alternative; nothing is activated or sent.
 
 Manual preview input joins the same exclusive action lease as the Agent. Pointer
 gestures retain their screenshot until release; resizing or revocation cancels
@@ -283,6 +286,25 @@ search results still require an observation before choosing a result. macOS and
 Windows clicks have no implicit per-step settle sleep; explicit `wait_ms_after`
 is preserved. A program takes its final observation through the capture provider
 instead of multiplying a fixed delay by its step count.
+
+Before that final observation the host waits once for the bound window to stop
+repainting (`settle_after_input`). The decision is the portable
+`app_input_settle_decision` in the tool contract: settled after 250 ms without a
+content change once a change was seen, or after 400 ms when nothing changed;
+`still_changing` at 2 s. macOS counts complete ScreenCaptureKit frames presented
+after the input barrier, Windows counts WGC frame arrivals (keeping the newest as
+the retained frame), and Linux compares portal sample digests. Accessibility-only
+observation has no frame stream and reports `unavailable`. The receipt's
+`settle` field (`stable`, `still_changing`, `unavailable`, `skipped`,
+`interrupted`) tells the model whether the observation shows a settled result.
+Settling never retries input, never fails a delivered step, and is interrupted
+by Stop, cancellation and rebinding like any other wait. `activate_app` settles
+the same way before its observation.
+
+A program request without a top-level `steps` array, or with fields of another
+action shape, fails before any input with `INVALID_PARAMS` naming the unknown
+fields and the expected shape. Step decoding reports the failing step index and
+action.
 
 For an observed search field whose Return-to-search behavior is already known,
 a program can combine `app_type_text` with that field as `focus`, followed by
@@ -440,8 +462,44 @@ Post-input observation is fresh with respect to the capture provider's guarantee
 macOS marks a host-clock input barrier and waits for a later complete or idle
 ScreenCaptureKit sample. Idle can establish unchanged pixels; resize still needs
 a valid complete frame. This proves capture timing, not completion of asynchronous
-application work. Windows drains WGC frames to the newest available frame; it
-does not claim an equivalent input-clock barrier.
+application work; the settle wait above narrows that gap for repaint-driven UI
+but cannot prove completion of work that does not repaint. Windows drains WGC
+frames to the newest available frame; it does not claim an equivalent
+input-clock barrier.
+
+### Popup and menu windows
+
+Open menus, dropdowns, suggestion lists and floating panels are separate native
+windows of the bound process, so a single-window capture omits them while a
+physical pointer over them reaches them. The bound window's authority extends to
+these windows and to nothing else: same PID, on screen in front of the bound
+window and intersecting it. macOS selects raised WindowServer layers (above 0 and
+below the screen-saver level) and AppKit child windows of the bound window
+(SkyLight `SLSCopyAssociatedWindows`, transitively), because child windows
+inherit their parent's layer; without that SPI only raised layers qualify.
+Windows selects visible, uncloaked top-level
+windows owned by the bound HWND, or unowned captionless fixed-size non-app
+popups. Sibling main windows and other processes never qualify; titles, classes
+and application names are never consulted.
+
+Each observation composites those windows over the bound capture, back to front
+(macOS 14+ `SCScreenshotManager` with a desktop-independent window filter;
+Windows one-shot WGC on the capture worker) and reports them in
+`auxiliary_windows` with image rectangle, global bounds, and `composited`. A
+popup whose pixels cannot be captured is still reported with
+`composited: false` and a reason, never filled with desktop pixels. macOS adds
+their AX subtrees (popup AXWindows, and open application AXMenus matched to
+their window by frame) as extra top-level nodes, and AX target validation
+accepts elements of those windows.
+
+Pointer input follows physical hit testing: a press, move or scroll whose point
+is inside such a window is routed to the front-most one there, using its own
+window-local coordinates. Drag and release stay with the window that received
+the press; if that popup has closed, the release goes to the bound window so no
+button stays held. macOS skips the out-of-window focus-preparation click when
+the pointer targets a popup, because that click would dismiss it. Keyboard input
+keeps the bound window's route. Older hosts and payloads without
+`auxiliary_windows` deserialize to an empty list.
 
 Windows input preparation validates and reuses the live WGC session without
 consuming or encoding a frame. Only an actual observation requests pixels. WGC BGRA converts directly to RGBA
@@ -810,7 +868,8 @@ helper-process target resolution, first-click policy, scrolling, dragging,
 menus/sheets and cancellation. The reference uses desktop-independent window
 capture on an inspected ScreenCaptureKit path; it also has other capture routes.
 Its input target resolver can follow out-of-process AX targets, whereas
-OpenBitFun keeps input within the authorized captured PID/window. Copying that
+OpenBitFun keeps input within the authorized captured PID/window and that
+window's same-process popups (see Popup and menu windows). Copying that
 resolver would require an explicit authority design. Reference menu/window
 observers and drag APIs do not establish equivalent coverage of system popups,
 all helper processes or cancellation races.

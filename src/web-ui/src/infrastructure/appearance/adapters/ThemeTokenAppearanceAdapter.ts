@@ -137,9 +137,13 @@ export const themeTokenAppearanceAdapter: AppearanceRendererAdapter<'theme-token
       style.textContent = scopeCss;
       document.head.appendChild(style);
     }
-    // Native material is advertised by the local desktop window bootstrap.
-    // Keep this independent of the active peer/runtime and of theme changes.
-    const background = document.documentElement.getAttribute('data-openbitfun-native-material') === 'sidebar'
+    // Native material and client-owned window frames are advertised by the local
+    // desktop window bootstrap. Keep this independent of the active peer/runtime
+    // and of theme changes.
+    const documentElement = document.documentElement;
+    const shellOwnsFrame = documentElement.getAttribute('data-openbitfun-native-frame') === 'client';
+    const background = documentElement.getAttribute('data-openbitfun-native-material') === 'sidebar'
+      || shellOwnsFrame
       ? 'transparent'
       : `var(${ROOT_BACKGROUND_VARIABLE})`;
     rootStyle.backgroundColor = background;

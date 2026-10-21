@@ -50,6 +50,29 @@ export function resolvePointer(root: unknown, pointer: string | undefined): unkn
   return current;
 }
 
+/** JSON Pointers a template reads from the card data, matching the host's `desktop_card_template_paths`. */
+export function templateDataPaths(template: DesktopCardTemplate | null): string[] {
+  switch (template?.kind) {
+    case 'progress':
+      return [template.valuePath, template.maxPath, template.statusPath].filter((path): path is string => path !== undefined);
+    case 'metrics':
+      return (Array.isArray(template.items) ? template.items : [])
+        .flatMap(item => [item.path, item.hintPath])
+        .filter((path): path is string => path !== undefined);
+    default:
+      return [];
+  }
+}
+
+/** Whether the rendered data leaves a template path missing or null, so the card shows placeholders. */
+export function hasUnresolvedTemplatePaths(card: DesktopCardRecord): boolean {
+  const data = effectiveCardData(card);
+  return templateDataPaths(knownTemplate(card)).some(path => {
+    const value = resolvePointer(data, path);
+    return value === undefined || value === null;
+  });
+}
+
 export function normalizeTone(tone: unknown): DesktopCardTone | undefined {
   return typeof tone === 'string' && (DESKTOP_CARD_TONES as readonly string[]).includes(tone)
     ? tone as DesktopCardTone

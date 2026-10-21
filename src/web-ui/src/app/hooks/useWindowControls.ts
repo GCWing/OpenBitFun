@@ -54,6 +54,54 @@ export const useWindowControls = (options?: { isToolbarMode?: boolean }) => {
   const [isMaximized, setIsMaximized] = useState(false);
   // OS fullscreen state: entire Desktop window fullscreen, not panel fullscreen.
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // A shell-owned window frame drops its radius once the window fills the screen,
+  // otherwise the desktop would show through the window corners. Ask the window
+  // manager on every resize instead of sampling window geometry: panels and dock
+  // reservations make outer size an unreliable maximize signal.
+  useEffect(() => {
+    if (!canUseNativeWindowControls) return;
+
+    let disposed = false;
+    let timer: number | undefined;
+    let unlisten: (() => void) | undefined;
+
+    const syncFrameShape = async () => {
+      try {
+        const appWindow = getCurrentWindow();
+        const [maximized, fullscreen] = await Promise.all([
+          appWindow.isMaximized(),
+          appWindow.isFullscreen(),
+        ]);
+        if (disposed) return;
+        document.documentElement.toggleAttribute(
+          'data-openbitfun-window-maximized',
+          maximized || fullscreen,
+        );
+      } catch {
+        // Window state is unavailable while the window is closing or hidden.
+      }
+    };
+
+    const scheduleSync = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        void syncFrameShape();
+      }, 120);
+    };
+
+    void syncFrameShape();
+    void getCurrentWindow().onResized(scheduleSync).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    });
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+      unlisten?.();
+    };
+  }, [canUseNativeWindowControls]);
   
   // Debounce guard to prevent rapid toggles
   const isMaximizeInProgress = useRef(false);

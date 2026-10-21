@@ -290,6 +290,176 @@ impl WgcCaptureSession {
             std::thread::sleep(Duration::from_millis(16));
         }
     }
+
+    /// WGC delivers a frame only when the window content changed. Consume
+    /// arrivals until none came for the quiet interval, keep the newest one
+    /// for the next observation, and never read back intermediate frames.
+    fn settle(
+        &mut self,
+        policy: openbitfun_core::agentic::tools::computer_use_host::AppInputSettlePolicy,
+    ) -> OpenBitFunResult<openbitfun_core::agentic::tools::computer_use_host::AppInputSettle> {
+        use openbitfun_core::agentic::tools::computer_use_host::{
+            app_input_settle_decision, app_input_settle_next_wait_ms, AppInputSettle,
+            AppInputSettleStatus,
+        };
+        self.ensure_live()?;
+        let started = Instant::now();
+        let mut newest: Option<Direct3D11CaptureFrame> = None;
+        let mut last_change = None;
+        let outcome = loop {
+            if let Err(reason) = crate::computer_use::control_session::capture_allowed() {
+                break AppInputSettle {
+                    status: AppInputSettleStatus::Interrupted,
+                    waited_ms: started.elapsed().as_millis() as u64,
+                    changed: None,
+                    reason: Some(reason),
+                };
+            }
+            if let Err(error) = self.ensure_live() {
+                if let Some(frame) = newest.take() {
+                    let _ = frame.Close();
+                }
+                return Err(error);
+            }
+            let mut arrived = false;
+            loop {
+                match self.next_frame() {
+                    Ok(Some(frame)) => {
+                        if let Some(older) = newest.replace(frame) {
+                            let _ = older.Close();
+                        }
+                        arrived = true;
+                    }
+                    Ok(None) => break,
+                    Err(error) => {
+                        if let Some(frame) = newest.take() {
+                            let _ = frame.Close();
+                        }
+                        return Err(error);
+                    }
+                }
+            }
+            let elapsed = started.elapsed().as_millis() as u64;
+            if arrived {
+                last_change = Some(elapsed);
+            }
+            if let Some(status) = app_input_settle_decision(policy, elapsed, last_change) {
+                break AppInputSettle {
+                    status,
+                    waited_ms: elapsed,
+                    changed: Some(last_change.is_some()),
+                    reason: None,
+                };
+            }
+            let wait = app_input_settle_next_wait_ms(policy, elapsed, last_change).min(16);
+            std::thread::sleep(Duration::from_millis(u64::from(wait)));
+        };
+        if let Some(frame) = newest {
+            self.retain_frame(frame)?;
+        }
+        Ok(outcome)
+    }
+
+    /// One frame of another window of the target process (an open popup),
+    /// read with this stream's device. It registers no Closed handler: a
+    /// popup closing is not the bound target stopping.
+    fn snapshot_window(&self, hwnd: HWND) -> OpenBitFunResult<(Vec<u8>, u32, u32)> {
+        self.ensure_live()?;
+        let failed = |e: windows::core::Error| {
+            OpenBitFunError::service(format!("AUXILIARY_CAPTURE_FAILED: {e}"))
+        };
+        let interop = windows::core::factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>()
+            .map_err(failed)?;
+        let item: GraphicsCaptureItem = unsafe { interop.CreateForWindow(hwnd) }.map_err(failed)?;
+        let size = item.Size().map_err(failed)?;
+        if size.Width <= 0 || size.Height <= 0 {
+            return Err(OpenBitFunError::service(
+                "AUXILIARY_CAPTURE_FAILED: Popup has no rendered content",
+            ));
+        }
+        let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
+            &self.direct_device,
+            DirectXPixelFormat::B8G8R8A8UIntNormalized,
+            1,
+            size,
+        )
+        .map_err(failed)?;
+        let session = match pool.CreateCaptureSession(&item) {
+            Ok(session) => session,
+            Err(e) => {
+                let _ = pool.Close();
+                return Err(failed(e));
+            }
+        };
+        let _ = session.SetIsCursorCaptureEnabled(false);
+        let result = session.StartCapture().map_err(failed).and_then(|()| {
+            let deadline = Instant::now() + Duration::from_millis(500);
+            loop {
+                let mut raw = std::ptr::null_mut();
+                let status = unsafe {
+                    (Interface::vtable(&pool).TryGetNextFrame)(Interface::as_raw(&pool), &mut raw)
+                };
+                let frame =
+                    (!raw.is_null()).then(|| unsafe { Direct3D11CaptureFrame::from_raw(raw) });
+                if let Some(frame) = checked_frame_result(status, frame)? {
+                    let pixels = unsafe { copy_frame_to_bgra(&frame, &self.device, &self.context) };
+                    let _ = frame.Close();
+                    return pixels;
+                }
+                if Instant::now() >= deadline {
+                    return Err(OpenBitFunError::service(
+                        "AUXILIARY_CAPTURE_TIMEOUT: The popup produced no frame",
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(8));
+            }
+        });
+        let _ = session.Close();
+        let _ = pool.Close();
+        result
+    }
+
+    /// Keep a consumed frame as the stream's latest observation. A resized
+    /// frame resets the pool instead, so old pixels never get new geometry.
+    fn retain_frame(&mut self, frame: Direct3D11CaptureFrame) -> OpenBitFunResult<()> {
+        let content = frame
+            .ContentSize()
+            .map_err(|e| OpenBitFunError::service(format!("WGC content size: {e}")));
+        let content = match content {
+            Ok(content) => content,
+            Err(error) => {
+                let _ = frame.Close();
+                return Err(error);
+            }
+        };
+        if content.Width != self.size.Width || content.Height != self.size.Height {
+            self.last_frame = None;
+            let _ = frame.Close();
+            if content.Width <= 0 || content.Height <= 0 {
+                return Ok(());
+            }
+            self.pool
+                .Recreate(
+                    &self.direct_device,
+                    DirectXPixelFormat::B8G8R8A8UIntNormalized,
+                    2,
+                    content,
+                )
+                .map_err(|e| OpenBitFunError::service(format!("WGC resize: {e}")))?;
+            self.size = content;
+            return Ok(());
+        }
+        let result = unsafe { copy_frame_to_bgra(&frame, &self.device, &self.context) };
+        let _ = frame.Close();
+        let (pixels, width, height) = result?;
+        self.last_frame = Some(RetainedFrame {
+            pixels,
+            width,
+            height,
+            received: Instant::now(),
+        });
+        Ok(())
+    }
 }
 
 impl Drop for WgcCaptureSession {
@@ -371,8 +541,22 @@ enum CaptureCommand {
         crate::computer_use::control_session::ControlToken,
         std::sync::mpsc::SyncSender<CaptureResult>,
     ),
+    Settle(
+        usize,
+        crate::computer_use::control_session::ControlToken,
+        openbitfun_core::agentic::tools::computer_use_host::AppInputSettlePolicy,
+        std::sync::mpsc::SyncSender<SettleResult>,
+    ),
+    Snapshot(
+        usize,
+        usize,
+        crate::computer_use::control_session::ControlToken,
+        std::sync::mpsc::SyncSender<OpenBitFunResult<(Vec<u8>, u32, u32)>>,
+    ),
     Stop(std::sync::mpsc::SyncSender<()>),
 }
+type SettleResult =
+    OpenBitFunResult<openbitfun_core::agentic::tools::computer_use_host::AppInputSettle>;
 
 // A generation change must not retain a prior owner's native capture session.
 fn ensure_stream(
@@ -452,6 +636,39 @@ fn capture_worker() -> &'static std::sync::mpsc::Sender<CaptureCommand> {
                         }
                         let _ = reply.send(result);
                     }
+                    CaptureCommand::Snapshot(handle, popup, token, reply) => {
+                        // A popup failure leaves the bound stream untouched.
+                        let bound = active.as_ref().is_some_and(|(id, _, _)| *id == handle);
+                        let result = if bound {
+                            crate::computer_use::control_session::with_token(token, || {
+                                ensure_stream(&mut active, handle)?
+                                    .snapshot_window(HWND(popup as *mut _))
+                            })
+                        } else {
+                            Err(OpenBitFunError::service(
+                                "AUXILIARY_CAPTURE_FAILED: No live stream for the bound window",
+                            ))
+                        };
+                        let _ = reply.send(result);
+                    }
+                    CaptureCommand::Settle(handle, token, policy, reply) => {
+                        // Settling never starts a stream: the observation that
+                        // follows reports any capture failure itself.
+                        let bound = active.as_ref().is_some_and(|(id, _, _)| *id == handle);
+                        let result = if bound {
+                            crate::computer_use::control_session::with_token(token, || {
+                                ensure_stream(&mut active, handle)?.settle(policy)
+                            })
+                        } else {
+                            Ok(openbitfun_core::agentic::tools::computer_use_host::AppInputSettle::unavailable(
+                                "No live window stream; the observation was taken without waiting for repaint",
+                            ))
+                        };
+                        if result.is_err() {
+                            active = None;
+                        }
+                        let _ = reply.send(result);
+                    }
                 }
             }
             drop(active);
@@ -495,6 +712,43 @@ pub(super) fn capture_window_bgra(hwnd: HWND) -> CaptureResult {
             hwnd.0 as usize,
             crate::computer_use::control_session::capture_token()
                 .map_err(OpenBitFunError::service)?,
+            tx,
+        ))
+        .map_err(|_| OpenBitFunError::service("WGC worker unavailable"))?;
+    rx.recv()
+        .map_err(|_| OpenBitFunError::service("WGC worker stopped"))?
+}
+
+/// One frame of `popup`, an open popup of the bound window `hwnd`.
+pub(super) fn snapshot_popup(hwnd: HWND, popup: HWND) -> OpenBitFunResult<(Vec<u8>, u32, u32)> {
+    crate::computer_use::control_session::capture_allowed().map_err(OpenBitFunError::service)?;
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    capture_worker()
+        .send(CaptureCommand::Snapshot(
+            hwnd.0 as usize,
+            popup.0 as usize,
+            crate::computer_use::control_session::capture_token()
+                .map_err(OpenBitFunError::service)?,
+            tx,
+        ))
+        .map_err(|_| OpenBitFunError::service("WGC worker unavailable"))?;
+    rx.recv()
+        .map_err(|_| OpenBitFunError::service("WGC worker stopped"))?
+}
+
+/// Wait on the worker until the bound stream stops repainting after input.
+pub(super) fn wait_settled(
+    hwnd: HWND,
+    policy: openbitfun_core::agentic::tools::computer_use_host::AppInputSettlePolicy,
+) -> SettleResult {
+    crate::computer_use::control_session::capture_allowed().map_err(OpenBitFunError::service)?;
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    capture_worker()
+        .send(CaptureCommand::Settle(
+            hwnd.0 as usize,
+            crate::computer_use::control_session::capture_token()
+                .map_err(OpenBitFunError::service)?,
+            policy,
             tx,
         ))
         .map_err(|_| OpenBitFunError::service("WGC worker unavailable"))?;

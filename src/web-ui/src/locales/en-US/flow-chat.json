@@ -3139,6 +3139,7 @@
         "dataSource": "Data source",
         "visibility": "Visibility",
         "refreshError": "Last refresh error",
+        "commandStderr": "Command stderr",
         "presets": "Presets",
         "cards": "Cards"
       },

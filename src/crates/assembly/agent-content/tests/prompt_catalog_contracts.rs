@@ -270,7 +270,11 @@ fn computer_use_prompt_preserves_background_observation_and_input_contract() {
         "Begin a new user GUI task with `start_control` once",
         "`include_image: false`",
         "never replay completed steps or the whole batch",
-        "Do not insert routine settle delays",
+        "Do not add routine delays on top of settling",
+        "the receipt's `settle.status` says whether it did",
+        "The steps go in a top-level `steps` array",
+        "they return `FOREGROUND_REQUIRED` without acting",
+        "lists them in `auxiliary_windows`",
     ] {
         assert!(
             prompt.contains(required),

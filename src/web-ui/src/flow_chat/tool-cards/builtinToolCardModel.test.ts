@@ -172,6 +172,12 @@ describe('built-in historical result presentation', () => {
     expect(deleted.summary).toBe('pr-42');
     expect(deleted.outcome).toEqual({ label: 'states.deleted', tone: 'neutral' });
     expect(model('DesktopCard', { action: 'future_action' }, {}).action).toBe('tools.DesktopCard · future_action');
+
+    const partial = model('DesktopCard', { action: 'create', card: { title: 'Repo' } }, {
+      card: { ...record, lastData: { fetchedAtMs: 1, value: { stars: null }, warning: 'gh: rate limited' } },
+    });
+    expect(partial.sections).toContainEqual(expect.objectContaining({ label: 'fields.commandStderr', content: 'gh: rate limited' }));
+    expect(created.sections.map(section => section.label)).not.toContain('fields.commandStderr');
   });
 });
 

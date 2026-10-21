@@ -162,6 +162,11 @@ node scripts/test-macos-input-controls.mjs --latency
 node scripts/test-macos-input-controls.mjs
 # Full Tool -> provider -> native loop on a dedicated window, with main-thread runloop.
 node scripts/test-macos-control-roundtrip.mjs
+# Same-process popup panel over a dedicated window, once as an attached child
+# window (inherits layer 0) and once at the pop-up menu level: composited pixels
+# and auxiliary metadata, popup-routed press without focus preparation
+# dismissing it, and an outside press reaching the bound window.
+node scripts/test-macos-popup-overlay.mjs
 ```
 
 For explicitly selected disposable real applications, the devtools JSONL probe

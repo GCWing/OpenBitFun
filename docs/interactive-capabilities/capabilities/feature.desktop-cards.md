@@ -23,8 +23,8 @@ Let agents place draggable cards outside the main window for glanceable informat
   - See every card in the Home Desktop cards section, and show, hide, or delete individual cards
 - **由专用智能体工具控制 / Delegated Agent tool** · `DesktopCard` · 在卡片上刷新数据、勾选清单项、切换置顶、打开链接或回到来源会话
   - Refresh data, check off list items, toggle always-on-top, open the link, or return to the source session from a card
-- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 拖动卡片到桌面任意位置；关闭 OpenBitFun 时卡片消失，重新打开后按原位置恢复
-  - Drag cards anywhere on the desktop; they disappear when OpenBitFun closes and return to the same positions when it reopens
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 拖动卡片到桌面任意位置，拖动卡片边缘或四角调整大小；关闭 OpenBitFun 时卡片消失，重新打开后按原位置和大小恢复
+  - Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens
 
 ## 怎么用 / How to use it
 
