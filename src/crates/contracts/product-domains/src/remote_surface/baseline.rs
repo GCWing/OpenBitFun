@@ -70,7 +70,6 @@ pub(super) const UNAUDITED_BASELINE: &[&str] = &[
     "get_custom_agent_detail",
     "get_default_review_team_definition",
     "get_file_change_history",
-    "get_file_editor_sync_hash",
     "get_global_config_health",
     "get_global_config_status",
     "get_mcp_prompt",

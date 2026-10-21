@@ -276,6 +276,140 @@ pub async fn exists(
     Ok(service.exists(path).await)
 }
 
+/// Create an empty file, mirroring the desktop `create_file` semantics
+/// (truncating an existing path) on either side of a filesystem connection.
+pub async fn create_empty_file(
+    service: &FileSystemService,
+    path: &str,
+    hint: Option<&str>,
+) -> Result<(), String> {
+    if let Some((fs, id)) = remote(path, hint).await? {
+        return fs
+            .write_file(&id, path, b"")
+            .await
+            .map_err(|e| format!("Failed to create remote file: {e}"));
+    }
+    service
+        .write_file_with_options(
+            path,
+            "",
+            crate::infrastructure::FileOperationOptions::default(),
+        )
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("Failed to create file: {e}"))
+}
+
+/// File metadata as a file explorer or editor reads it.
+///
+/// One shape for both sides of a filesystem connection, so a host without a
+/// graphical filesystem resolver still answers the same fields.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathMetadata {
+    pub path: String,
+    pub modified: u64,
+    pub size: u64,
+    pub is_file: bool,
+    pub is_dir: bool,
+    pub is_symlink: bool,
+    pub is_remote: bool,
+}
+
+pub async fn metadata(
+    service: &FileSystemService,
+    path: &str,
+    hint: Option<&str>,
+) -> Result<PathMetadata, String> {
+    if let Some((fs, id)) = remote(path, hint).await? {
+        let entry = fs
+            .stat(&id, path)
+            .await
+            .map_err(|e| format!("Failed to stat remote file: {e}"))?;
+        let (is_file, is_dir, is_symlink, size, modified) = match entry {
+            Some(entry) => (
+                entry.is_file,
+                entry.is_dir,
+                entry.is_symlink,
+                entry.size.unwrap_or(0),
+                entry.modified.unwrap_or(0),
+            ),
+            None => (false, false, false, 0, 0),
+        };
+        return Ok(PathMetadata {
+            path: path.to_string(),
+            modified,
+            size,
+            is_file,
+            is_dir,
+            is_symlink,
+            is_remote: true,
+        });
+    }
+
+    let path_ref = std::path::Path::new(path);
+    let link_metadata = std::fs::symlink_metadata(path_ref)
+        .map_err(|e| format!("Failed to inspect local file type '{path}': {e}"))?;
+    let metadata = std::fs::metadata(path_ref)
+        .map_err(|e| format!("Failed to stat local file '{path}': {e}"))?;
+
+    // Not collapsible: on Windows a junction/reparse point is not reported as a
+    // symlink by `file_type()`, so the extra attribute check is load-bearing.
+    #[allow(clippy::needless_bool)]
+    let is_symlink = if link_metadata.file_type().is_symlink() {
+        true
+    } else {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+            link_metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
+    };
+
+    let modified = metadata
+        .modified()
+        .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
+    Ok(PathMetadata {
+        path: path.to_string(),
+        modified,
+        size: metadata.len(),
+        is_file: metadata.is_file(),
+        is_dir: metadata.is_dir(),
+        is_symlink,
+        is_remote: false,
+    })
+}
+
+/// Editor external-sync hash plus whether the bytes came from a remote
+/// connection, matching the desktop `get_file_editor_sync_hash` contract.
+pub async fn editor_sync_hash(
+    service: &FileSystemService,
+    path: &str,
+    hint: Option<&str>,
+) -> Result<(String, bool), String> {
+    if let Some((fs, id)) = remote(path, hint).await? {
+        let bytes = fs
+            .read_file(&id, path)
+            .await
+            .map_err(|e| format!("Failed to read remote file: {e}"))?;
+        return Ok((service.editor_sync_sha256_hex_from_raw_bytes(&bytes), true));
+    }
+    let hash = service
+        .editor_sync_content_sha256_hex(path)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok((hash, false))
+}
+
 #[cfg(test)]
 mod tests {
     #[tokio::test]

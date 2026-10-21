@@ -1858,6 +1858,7 @@ const CLI_REVIEWED_CORE_FEATURES = [
   ...ACP_REVIEWED_CORE_FEATURES,
   'product-search',
   'remote-connect',
+  'file-watch',
   'plugin-runtime',
   'opencode-plugin-host',
 ];
