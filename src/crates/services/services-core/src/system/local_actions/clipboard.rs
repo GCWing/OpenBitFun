@@ -326,6 +326,16 @@ pub(super) async fn write_text(text: &str) -> Result<(), LocalSystemActionError>
 mod tests {
     use super::*;
 
+    // These file-backed fixtures test transport semantics, not native clipboard
+    // latency. Concurrent Windows PowerShell cold starts can exceed the product
+    // deadline on CI. Keep that startup allowance test-only; deadline tests below
+    // still pass their own short timeout explicitly.
+    const FIXTURE_TIMEOUT: Duration = if cfg!(windows) {
+        Duration::from_secs(60)
+    } else {
+        HELPER_TIMEOUT
+    };
+
     const TEXT_CASES: &[&str] = &[
         "plain text",
         "中文 café 🦀",
@@ -392,7 +402,7 @@ mod tests {
         let writer = Fixture::writer();
         let reader = Fixture::reader();
         for text in TEXT_CASES {
-            run_helper(&writer.helper, Some(text), HELPER_TIMEOUT)
+            run_helper(&writer.helper, Some(text), FIXTURE_TIMEOUT)
                 .await
                 .unwrap();
             assert_eq!(
@@ -401,7 +411,7 @@ mod tests {
             );
             std::fs::write(reader.dir.path().join("value"), text).unwrap();
             assert_eq!(
-                run_helper(&reader.helper, None, HELPER_TIMEOUT)
+                run_helper(&reader.helper, None, FIXTURE_TIMEOUT)
                     .await
                     .unwrap(),
                 *text
@@ -419,7 +429,7 @@ mod tests {
                 fixture.helper,
             ],
             Some("fallback"),
-            HELPER_TIMEOUT,
+            FIXTURE_TIMEOUT,
         )
         .await
         .unwrap();
@@ -434,7 +444,7 @@ mod tests {
         let result = run_candidates(
             &[first.helper, second.helper],
             Some("submitted"),
-            HELPER_TIMEOUT,
+            FIXTURE_TIMEOUT,
         )
         .await
         .unwrap_err();
@@ -472,7 +482,7 @@ mod tests {
     async fn read_rejects_invalid_utf8_instead_of_corrupting_text() {
         let fixture = Fixture::reader();
         std::fs::write(fixture.dir.path().join("value"), [0xff, 0xfe]).unwrap();
-        let error = run_helper(&fixture.helper, None, HELPER_TIMEOUT)
+        let error = run_helper(&fixture.helper, None, FIXTURE_TIMEOUT)
             .await
             .unwrap_err();
         assert!(
@@ -504,7 +514,7 @@ mod tests {
             vec![b'x'; MAX_TEXT_BYTES + 1],
         )
         .unwrap();
-        let error = run_helper(&fixture.helper, None, HELPER_TIMEOUT)
+        let error = run_helper(&fixture.helper, None, FIXTURE_TIMEOUT)
             .await
             .unwrap_err();
         assert!(
