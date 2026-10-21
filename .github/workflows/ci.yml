@@ -376,32 +376,17 @@ jobs:
       # Every clipboard helper is a separate process: PowerShell plus WinForms on
       # Windows, xclip/xsel or wl-copy on Linux. Parallel test threads starve each
       # other past the helper timeout on a 2-4 vCPU runner, which is what turned a
-      # single locked desktop clipboard into a whole-suite failure. Keep this
+      # single contended process into a whole-suite failure. Keep this
       # process-spawning suite serial.
       - name: Run Computer Use clipboard contracts
         run: cargo test --locked -p openbitfun-services-core --no-default-features --features process-runtime --lib system::local_actions -- --test-threads=1
 
-      # The native round trip drives the real desktop clipboard, so the first
-      # PowerShell + WinForms start must not be charged to the test. Warming the
-      # assembly is best effort: a runner without a desktop clipboard still runs
-      # the round trip, which reports the environment failure itself.
-      - name: Warm up the Windows clipboard helper
-        if: runner.os == 'Windows'
-        shell: pwsh
-        timeout-minutes: 2
-        run: |
-          try {
-            Add-Type -AssemblyName System.Windows.Forms
-            [System.Windows.Forms.Clipboard]::GetText([System.Windows.Forms.TextDataFormat]::UnicodeText) | Out-Null
-          } catch {
-            Write-Output "::warning title=Windows clipboard warm-up failed::$($_.Exception.Message)"
-          }
-
-      - name: Run Windows clipboard round trip
-        if: runner.os == 'Windows'
-        timeout-minutes: 15
-        run: cargo test --locked -p openbitfun-services-core --no-default-features --features process-runtime --lib system::local_actions::clipboard::tests::native_clipboard_roundtrip -- --ignored --exact --test-threads=1
-
+      # The native round trip needs a disposable clipboard. macOS uses a named
+      # pasteboard and Linux uses disposable X11/Wayland seats (below). Windows has
+      # only the runner's global clipboard, so that step is not a CI gate: the
+      # helper definition is asserted by
+      # windows_helper_matches_the_windows_clipboard_contract, and the real Windows
+      # clipboard is exercised on a Windows desktop.
       - name: Run Linux clipboard round trips
         if: runner.os == 'Linux'
         shell: bash

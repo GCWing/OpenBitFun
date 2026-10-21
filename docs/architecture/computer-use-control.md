@@ -605,6 +605,12 @@ helper. Linux owner processes may outlive a successful write to serve future
 paste requests, so write completion waits for the launcher, not pipe EOF from
 its descendants. Dropping the operation kills the launcher if it is still live.
 
+Native round trips run on macOS against a named pasteboard and on Linux inside
+disposable X11 and Wayland seats. Windows shares one clipboard per session and
+offers no disposable equivalent, so CI asserts the Windows helper definition
+instead of driving the runner's global clipboard; real Windows clipboard reads
+and writes are verified on a Windows desktop.
+
 `clipboard_get.max_output_bytes` defaults to 64 KiB and caps at 1 MiB; the old
 `max_bytes` alias remains readable and the canonical field wins when both occur.
 The result keeps `text`, original UTF-8 `byte_length`, and `truncated`; truncation

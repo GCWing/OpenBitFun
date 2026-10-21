@@ -175,7 +175,10 @@ fn macos_helper(writing: bool, board_name: Option<&str>) -> Helper {
     )
 }
 
-#[cfg(target_os = "windows")]
+// Windows has one global clipboard per session, so the write and read helpers
+// are built here for tests on every platform; only the native round trip needs
+// a real Windows desktop.
+#[cfg(any(target_os = "windows", test))]
 fn windows_helper(writing: bool) -> Helper {
     let operation = if writing {
         // ReadToEnd preserves empty strings, CRLF/LF, trailing newlines and
@@ -573,71 +576,10 @@ mod tests {
         }
     }
 
-    // A real desktop clipboard is slower than a fixture script: the Windows
-    // helper starts PowerShell and loads WinForms on every call, and another
-    // process can hold the clipboard for the duration of a copy. Product writes
-    // never retry, but this environment-bound test retries a whole pass so a
-    // transiently locked clipboard on a CI runner cannot fail the build.
-    const NATIVE_ROUNDTRIP_TIMEOUT: Duration = Duration::from_secs(30);
-    const NATIVE_ROUNDTRIP_PASSES: usize = 3;
-    const NATIVE_ROUNDTRIP_BACKOFF: Duration = Duration::from_secs(2);
-
-    enum RoundTripFailure {
-        /// The desktop clipboard was busy or the helper never answered in time.
-        Transient(String),
-        /// The helper answered, and the answer contradicts the clipboard contract.
-        Definite(String),
-    }
-
-    async fn run_native_roundtrip(pairs: &[(Helper, Helper)]) -> Result<(), RoundTripFailure> {
-        for (writer, reader) in pairs {
-            for text in TEXT_CASES {
-                run_helper(writer, Some(text), NATIVE_ROUNDTRIP_TIMEOUT)
-                    .await
-                    .map_err(|error| classify_roundtrip_failure(writer, "write", error))?;
-                let read = run_helper(reader, None, NATIVE_ROUNDTRIP_TIMEOUT)
-                    .await
-                    .map_err(|error| classify_roundtrip_failure(reader, "read", error))?;
-                if read != *text {
-                    return Err(RoundTripFailure::Definite(format!(
-                        "{} read back text that differs from what {} wrote",
-                        reader.program, writer.program
-                    )));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn classify_roundtrip_failure(
-        helper: &Helper,
-        direction: &str,
-        error: HelperError,
-    ) -> RoundTripFailure {
-        match error {
-            HelperError::Failed(error)
-                if matches!(
-                    error.kind(),
-                    LocalSystemActionErrorKind::Timeout | LocalSystemActionErrorKind::NotAvailable
-                ) =>
-            {
-                RoundTripFailure::Transient(format!(
-                    "{direction} through {}: {}",
-                    helper.program,
-                    error.message()
-                ))
-            }
-            other => RoundTripFailure::Definite(format!(
-                "{direction} through {}: {other:?}",
-                helper.program
-            )),
-        }
-    }
-
     #[tokio::test]
     #[cfg_attr(
         not(target_os = "macos"),
-        ignore = "Requires a disposable desktop clipboard; use the documented isolated native fixture"
+        ignore = "Requires a disposable desktop clipboard: Linux uses scripts/test-linux-clipboard.sh, and Windows has no isolated clipboard so its helper is covered by windows_helper_matches_the_windows_clipboard_contract"
     )]
     async fn native_clipboard_roundtrip() {
         #[cfg(target_os = "macos")]
@@ -663,23 +605,67 @@ mod tests {
             .into_iter()
             .zip(helpers(false).unwrap())
             .collect::<Vec<_>>();
-        let mut last_failure = String::new();
-        for attempt in 1..=NATIVE_ROUNDTRIP_PASSES {
-            match run_native_roundtrip(&pairs).await {
-                Ok(()) => return,
-                Err(RoundTripFailure::Definite(reason)) => {
-                    panic!("native clipboard round trip broke the clipboard contract: {reason}")
-                }
-                Err(RoundTripFailure::Transient(reason)) => {
-                    last_failure = reason;
-                    if attempt < NATIVE_ROUNDTRIP_PASSES {
-                        tokio::time::sleep(NATIVE_ROUNDTRIP_BACKOFF).await;
-                    }
-                }
+        for (writer, reader) in pairs {
+            for text in TEXT_CASES {
+                run_helper(&writer, Some(text), HELPER_TIMEOUT)
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    run_helper(&reader, None, HELPER_TIMEOUT).await.unwrap(),
+                    *text,
+                    "{} round trip",
+                    writer.program
+                );
             }
         }
-        panic!(
-            "native clipboard round trip could not use the desktop clipboard in {NATIVE_ROUNDTRIP_PASSES} attempts: {last_failure}"
+    }
+
+    // Windows has no disposable clipboard: unlike the macOS named pasteboard and
+    // the disposable X11/Wayland seats, every helper call takes the runner's
+    // global clipboard, so the native round trip is not a CI gate there. Assert
+    // the helper definition instead: the flags and the code path are what a real
+    // Windows desktop needs, and the text transport itself is covered by the
+    // fixture round trip above on the same runner.
+    #[test]
+    fn windows_helper_matches_the_windows_clipboard_contract() {
+        let writer = windows_helper(true);
+        assert_eq!(writer.program, "powershell.exe");
+        for flag in [
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-STA",
+            "-Command",
+        ] {
+            assert!(
+                writer.args.iter().any(|arg| arg == flag),
+                "window clipboard helper must run non-interactive and STA: missing {flag}"
+            );
+        }
+        let write_script = writer
+            .args
+            .last()
+            .filter(|arg| arg.contains("System.Windows.Forms"))
+            .expect("the write helper must load the Windows Forms clipboard assembly");
+        assert!(write_script.contains("SetText"));
+        assert!(write_script.contains("TextDataFormat]::UnicodeText"));
+        assert!(write_script.contains("OpenStandardInput"));
+        assert!(write_script.contains("$ErrorActionPreference='Stop'"));
+
+        let reader = windows_helper(false);
+        let read_script = reader
+            .args
+            .last()
+            .filter(|arg| arg.contains("System.Windows.Forms"))
+            .expect("the read helper must load the Windows Forms clipboard assembly");
+        assert!(read_script.contains("GetText"));
+        assert!(read_script.contains("OpenStandardOutput"));
+
+        // Clipboard text travels through the child process pipes. Nothing about
+        // the payload may reach argv, where it would show up in process listings.
+        assert!(
+            !write_script.contains("$args") && !read_script.contains("$args"),
+            "clipboard payloads must never be passed as command arguments"
         );
     }
 }
