@@ -28,6 +28,7 @@ import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { canSaveBtwSessionAsFork, discardBtwSession, saveBtwSessionAsFork } from '@/flow_chat/services/BtwSessionLifecycle';
 import { getActiveSurfaceScope, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
 import { notificationService } from '@/shared/notification-system';
+import { useSessionMenuPreferences } from '@/app/components/NavPanel/sections/sessions/sessionMenuPreferences';
 
 const log = createLogger('useTabLifecycle');
 interface UseTabLifecycleOptions {
@@ -69,6 +70,7 @@ export const useTabLifecycle = (options: UseTabLifecycleOptions = {}): UseTabLif
     onReveal,
   } = options;
   const { t } = useI18n('components');
+  const sessionMenuPreferences = useSessionMenuPreferences();
   const canvasStoreApi = mode === 'git' ? useGitCanvasStore
     : mode === 'bottom-terminal' ? useBottomTerminalCanvasStore : useAgentCanvasStore;
 
@@ -94,6 +96,11 @@ export const useTabLifecycle = (options: UseTabLifecycleOptions = {}): UseTabLif
   const confirmBtwClose = useCallback(async (tabs: { title: string; content: PanelContent }[]) => {
     const btwTabs = tabs.filter(isBtwTab);
     if (btwTabs.length === 0) return 'confirm';
+    if (!sessionMenuPreferences.confirmBtwClose) {
+      return btwTabs.some(tab => canSaveBtwSessionAsFork(tab.content.data.childSessionId))
+        ? 'secondary'
+        : 'confirm';
+    }
     return confirmDialogChoice({
       title: t('tabs.closeBtwTitle'),
       message: t('tabs.confirmCloseBtw'),
@@ -105,7 +112,7 @@ export const useTabLifecycle = (options: UseTabLifecycleOptions = {}): UseTabLif
       secondaryText: btwTabs.some(tab => canSaveBtwSessionAsFork(tab.content.data.childSessionId))
         ? t('tabs.saveBtwAsFork') : undefined,
     });
-  }, [isBtwTab, t]);
+  }, [isBtwTab, sessionMenuPreferences.confirmBtwClose, t]);
 
   const closeTerminalSession = useCallback(async (tab: { content: PanelContent }): Promise<boolean> => {
     if (tab.content.type !== 'terminal') return true;

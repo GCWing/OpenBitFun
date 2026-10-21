@@ -7,6 +7,25 @@
     "split": "Side by side",
     "overlay": "Overlay"
   },
+  "sessionMenu": {
+    "title": "Session menu and actions",
+    "description": "Customize the session context menu and choose whether to show action notices and confirmations. When BTW close confirmation is off, submitted content is saved as a fork when possible.",
+    "actions": {
+      "rename": "Rename",
+      "copyId": "Copy ID",
+      "duplicate": "Duplicate session",
+      "openStorage": "Open session storage directory",
+      "export": "Export as Markdown",
+      "scheduledJobs": "Scheduled tasks",
+      "archive": "Archive",
+      "manage": "Manage sessions in bulk",
+      "openWorktreeWorkspace": "Open worktree workspace",
+      "delete": "Delete"
+    },
+    "showArchiveNotice": "Show archive success notice",
+    "confirmDelete": "Confirm before deleting a session",
+    "confirmBtwClose": "Confirm before closing a BTW sub-session"
+  },
   "package": {
     "title": "Appearance",
     "description": "Appearance packs are stored on this device; hover over a thumbnail to preview",

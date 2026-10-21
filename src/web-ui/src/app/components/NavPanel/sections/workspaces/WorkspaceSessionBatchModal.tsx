@@ -25,6 +25,7 @@ import { sessionBelongsToWorkspaceNavRow, compareSessionMetadataForDisplay } fro
 import { deriveSessionRelationshipFromMetadata, resolveSessionRelationship } from '@/flow_chat/utils/sessionMetadata';
 import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { confirmDanger } from '@/infrastructure/confirm-dialog';
+import { useSessionMenuPreferences } from '../sessions/sessionMenuPreferences';
 import { notificationService } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import './WorkspaceSessionBatchModal.scss';
@@ -120,6 +121,7 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
   workspaceLabel,
 }) => {
   const { t, formatDate, formatRelativeTime } = useI18n('common');
+  const sessionMenuPreferences = useSessionMenuPreferences();
   // Display-only projection of the workspace root; never used to select data.
   const workspacePath = workspaceManager.getState().openedWorkspaces.get(workspaceId)?.rootPath ?? '';
   const [sessions, setSessions] = useState<SessionBatchItem[]>([]);
@@ -225,7 +227,9 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
       if (successCount > 0) {
         await refreshWorkspaceSessions();
         window.dispatchEvent(new CustomEvent('openbitfun:session-archived'));
-        notificationService.success(t('nav.sessions.archivedAll', { count: successCount }), { duration: 3000 });
+        if (sessionMenuPreferences.showArchiveNotice) {
+          notificationService.success(t('nav.sessions.archivedAll', { count: successCount }), { duration: 3000 });
+        }
       }
       if (successCount !== selectedIds.length) {
         notificationService.error(t('nav.sessions.bulkArchiveFailed'), { duration: 4000 });
@@ -242,6 +246,7 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
     refreshWorkspaceSessions,
     selectedCount,
     selectedSessionIds,
+    sessionMenuPreferences.showArchiveNotice,
     t,
     workspaceId,
   ]);
@@ -253,15 +258,17 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
     const sourceCount = sessions.filter(item => selectedSessionIds.has(item.metadata.sessionId)
       && externalHistoryFromMetadata(item.metadata.customMetadata)).length;
     const onlySources = sourceCount === selectedCount;
-    const confirmed = await confirmDanger(
-      onlySources ? t('nav.sessions.bulkRemoveSourceConfirmTitle') : t('nav.sessions.bulkDeleteConfirmTitle'),
-      onlySources ? t('nav.sessions.bulkRemoveSourceConfirmMessage', { count: selectedCount })
-        : t('nav.sessions.bulkDeleteConfirmMessage', { count: selectedCount })
-          + (sourceCount ? ` ${t('nav.sessions.removeSourceExplanation')}` : ''),
-      { confirmText: onlySources ? t('nav.sessions.removeSelected') : t('nav.sessions.deleteSelected') },
-    );
-    if (!confirmed) {
-      return;
+    if (sessionMenuPreferences.confirmDelete) {
+      const confirmed = await confirmDanger(
+        onlySources ? t('nav.sessions.bulkRemoveSourceConfirmTitle') : t('nav.sessions.bulkDeleteConfirmTitle'),
+        onlySources ? t('nav.sessions.bulkRemoveSourceConfirmMessage', { count: selectedCount })
+          : t('nav.sessions.bulkDeleteConfirmMessage', { count: selectedCount })
+            + (sourceCount ? ` ${t('nav.sessions.removeSourceExplanation')}` : ''),
+        { confirmText: onlySources ? t('nav.sessions.removeSelected') : t('nav.sessions.deleteSelected') },
+      );
+      if (!confirmed) {
+        return;
+      }
     }
 
     const deletionPlan = getDeletionPlan(selectedSessionIds, sessions);
@@ -303,6 +310,7 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
     selectedCount,
     selectedSessionIds,
     sessions,
+    sessionMenuPreferences.confirmDelete,
     t,
     workspaceId,
   ]);

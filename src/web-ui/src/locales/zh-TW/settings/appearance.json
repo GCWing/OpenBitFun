@@ -7,6 +7,25 @@
     "split": "並排",
     "overlay": "覆蓋"
   },
+  "sessionMenu": {
+    "title": "工作階段選單與操作",
+    "description": "自訂工作階段右鍵選單，並選擇是否顯示操作提示與確認。關閉 BTW 確認後，有可儲存內容時會自動儲存為分支。",
+    "actions": {
+      "rename": "重新命名",
+      "copyId": "複製 ID",
+      "duplicate": "複製工作階段",
+      "openStorage": "開啟工作階段儲存目錄",
+      "export": "匯出為 Markdown",
+      "scheduledJobs": "排程任務",
+      "archive": "封存",
+      "manage": "批次管理工作階段",
+      "openWorktreeWorkspace": "開啟 Worktree 工作區",
+      "delete": "刪除"
+    },
+    "showArchiveNotice": "顯示封存成功提示",
+    "confirmDelete": "刪除工作階段前確認",
+    "confirmBtwClose": "關閉 BTW 子工作階段前確認"
+  },
   "package": {
     "title": "外觀",
     "description": "外觀套件儲存在目前裝置；將游標停留在縮圖上可預覽",
