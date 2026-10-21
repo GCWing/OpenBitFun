@@ -212,6 +212,15 @@ pub(crate) fn dispatch<'a>(
         // Git (local workspace only)
         "git_is_repository" => Box::pin(git::git_is_repository(args)),
         "git_get_repository_trust" => Box::pin(git::git_get_repository_trust(args)),
+        "git_get_repository"
+        | "git_get_repository_basic"
+        | "git_get_status"
+        | "git_get_branches"
+        | "git_get_enhanced_branches"
+        | "git_get_commits"
+        | "git_get_diff"
+        | "git_get_changed_files"
+        | "git_resolve_revision" => Box::pin(git::read(command, args)),
 
         // Soft empty / no-op for Desktop-only subsystems
         "notify_cron_host_ready" => Box::pin(soft::notify_cron_host_ready()),
@@ -332,6 +341,15 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "get_workspace_info",
     "git_get_repository_trust",
     "git_is_repository",
+    "git_get_repository",
+    "git_get_repository_basic",
+    "git_get_status",
+    "git_get_branches",
+    "git_get_enhanced_branches",
+    "git_get_commits",
+    "git_get_diff",
+    "git_get_changed_files",
+    "git_resolve_revision",
     "initialize_workspace_startup_state",
     "list_files",
     "get_session_interaction_mailbox",
