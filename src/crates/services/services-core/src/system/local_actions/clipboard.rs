@@ -573,6 +573,67 @@ mod tests {
         }
     }
 
+    // A real desktop clipboard is slower than a fixture script: the Windows
+    // helper starts PowerShell and loads WinForms on every call, and another
+    // process can hold the clipboard for the duration of a copy. Product writes
+    // never retry, but this environment-bound test retries a whole pass so a
+    // transiently locked clipboard on a CI runner cannot fail the build.
+    const NATIVE_ROUNDTRIP_TIMEOUT: Duration = Duration::from_secs(30);
+    const NATIVE_ROUNDTRIP_PASSES: usize = 3;
+    const NATIVE_ROUNDTRIP_BACKOFF: Duration = Duration::from_secs(2);
+
+    enum RoundTripFailure {
+        /// The desktop clipboard was busy or the helper never answered in time.
+        Transient(String),
+        /// The helper answered, and the answer contradicts the clipboard contract.
+        Definite(String),
+    }
+
+    async fn run_native_roundtrip(pairs: &[(Helper, Helper)]) -> Result<(), RoundTripFailure> {
+        for (writer, reader) in pairs {
+            for text in TEXT_CASES {
+                run_helper(writer, Some(text), NATIVE_ROUNDTRIP_TIMEOUT)
+                    .await
+                    .map_err(|error| classify_roundtrip_failure(writer, "write", error))?;
+                let read = run_helper(reader, None, NATIVE_ROUNDTRIP_TIMEOUT)
+                    .await
+                    .map_err(|error| classify_roundtrip_failure(reader, "read", error))?;
+                if read != *text {
+                    return Err(RoundTripFailure::Definite(format!(
+                        "{} read back text that differs from what {} wrote",
+                        reader.program, writer.program
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn classify_roundtrip_failure(
+        helper: &Helper,
+        direction: &str,
+        error: HelperError,
+    ) -> RoundTripFailure {
+        match error {
+            HelperError::Failed(error)
+                if matches!(
+                    error.kind(),
+                    LocalSystemActionErrorKind::Timeout | LocalSystemActionErrorKind::NotAvailable
+                ) =>
+            {
+                RoundTripFailure::Transient(format!(
+                    "{direction} through {}: {}",
+                    helper.program,
+                    error.message()
+                ))
+            }
+            other => RoundTripFailure::Definite(format!(
+                "{direction} through {}: {other:?}",
+                helper.program
+            )),
+        }
+    }
+
     #[tokio::test]
     #[cfg_attr(
         not(target_os = "macos"),
@@ -602,18 +663,23 @@ mod tests {
             .into_iter()
             .zip(helpers(false).unwrap())
             .collect::<Vec<_>>();
-        for (writer, reader) in pairs {
-            for text in TEXT_CASES {
-                run_helper(&writer, Some(text), HELPER_TIMEOUT)
-                    .await
-                    .unwrap();
-                assert_eq!(
-                    run_helper(&reader, None, HELPER_TIMEOUT).await.unwrap(),
-                    *text,
-                    "{} round trip",
-                    writer.program
-                );
+        let mut last_failure = String::new();
+        for attempt in 1..=NATIVE_ROUNDTRIP_PASSES {
+            match run_native_roundtrip(&pairs).await {
+                Ok(()) => return,
+                Err(RoundTripFailure::Definite(reason)) => {
+                    panic!("native clipboard round trip broke the clipboard contract: {reason}")
+                }
+                Err(RoundTripFailure::Transient(reason)) => {
+                    last_failure = reason;
+                    if attempt < NATIVE_ROUNDTRIP_PASSES {
+                        tokio::time::sleep(NATIVE_ROUNDTRIP_BACKOFF).await;
+                    }
+                }
             }
         }
+        panic!(
+            "native clipboard round trip could not use the desktop clipboard in {NATIVE_ROUNDTRIP_PASSES} attempts: {last_failure}"
+        );
     }
 }
