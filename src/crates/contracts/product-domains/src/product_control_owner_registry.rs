@@ -800,7 +800,7 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
         option(
             "setting.data.diagnostics",
             "log-level",
-            string_enum(&["error", "warn", "info", "debug", "trace"]),
+            string_enum(&["error", "warn", "info", "debug", "trace", "off"]),
             config("app.logging.level"),
         ),
         option(

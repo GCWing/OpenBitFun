@@ -4,8 +4,8 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "9f38314ae86d2f3c1ea90e1214b85207b289d1ddbef6d5a74af0e92d7451ba4f",
-  "ownerDigest": "6faa00479189d7f7bc6df3de0898732bec1ef8ec4333ebd8b8e33e8c42a0a9f3",
+  "digest": "27c7a36f2c817b3df4411cb5ceceb707ae2bfa2b6d128c6498358956fca30411",
+  "ownerDigest": "103fc8646df7b35e9fac1c52149a35b86e9c6115b462b0aa36240a4600903ce4",
   "searchAcceptance": [
     {
       "id": "companion-pet-mixed",
@@ -19381,7 +19381,8 @@
           "warn",
           "info",
           "debug",
-          "trace"
+          "trace",
+          "off"
         ]
       },
       "outputSchema": {
@@ -31079,7 +31080,8 @@
               "warn",
               "info",
               "debug",
-              "trace"
+              "trace",
+              "off"
             ]
           },
           "handler": {
