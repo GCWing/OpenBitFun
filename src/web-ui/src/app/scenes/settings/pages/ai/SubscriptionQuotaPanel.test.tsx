@@ -25,7 +25,7 @@ vi.mock('@openbitfun/ui', () => ({
 }));
 let container: HTMLDivElement;
 let root: Root;
-const render = () => act(() => root.render(<SubscriptionQuotaPanel provider="workbuddy" identity="fixture" active supported />));
+const render = () => act(() => root.render(<SubscriptionQuotaPanel provider="zcode" identity="fixture" active supported />));
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   observation.value = null; observation.loading = false; observation.failed = false; observation.unsupportedHost = false; observation.refresh.mockReset();
@@ -34,7 +34,7 @@ beforeEach(() => {
 afterEach(() => act(() => root.unmount()));
 
 it('shows precise remaining credits with accessible progress, plan and reset time', () => {
-  observation.value = { account_id: 'workbuddy', provider: 'workbuddy', state: 'known', plan: 'Pro', valid_until: Date.now() / 1000 + 60, windows: [],
+  observation.value = { account_id: 'zcode', provider: 'zcode', state: 'known', plan: 'Pro', valid_until: Date.now() / 1000 + 60, windows: [],
     display: { version: 1, meters: [{ id: 'credits', used: 125, limit: 1000, remaining: 875, unit: 'credits', used_percent: 12.5, resets_at: 1800000000 }] } };
   render();
   expect(container.textContent).toContain('875');
@@ -47,7 +47,7 @@ it('shows precise remaining credits with accessible progress, plan and reset tim
 });
 it('keeps old values visibly stale after failure and distinguishes unknown from unlimited', () => {
   observation.failed = true;
-  observation.value = { account_id: 'workbuddy', provider: 'workbuddy', state: 'query_failed', windows: [], observed_at: 1000,
+  observation.value = { account_id: 'zcode', provider: 'zcode', state: 'query_failed', windows: [], observed_at: 1000,
     display: { version: 1, meters: [{ id: 'unknown' }, { id: 'unlimited', unlimited: true }] } };
   render();
   expect(container.textContent).toContain('The last observation');

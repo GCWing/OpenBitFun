@@ -6,11 +6,11 @@ import { ConfigPageRow } from '@/infrastructure/config/components/common';
 
 /** One product heading followed by independent account rows. */
 export function SubscriptionServiceGroup({ title, description, action, busy, onAdd, children }: {
-  title: string; description?: string; action: string; busy: boolean; onAdd: () => void; children: ReactNode;
+  title: string; description?: string; action?: string; busy: boolean; onAdd?: () => void; children: ReactNode;
 }) {
   return <div className={styles.group} data-testid="settings-subscription-service" data-openbitfun-component="model-settings" data-openbitfun-part="subscriptionService">
     <ConfigPageRow label={title} description={description} className="openbitfun-model-settings__cli-account" align="center">
-      <Button size="sm" variant="outline" disabled={busy} onClick={onAdd}>{action}</Button>
+      {action && onAdd && <Button size="sm" variant="outline" disabled={busy} onClick={onAdd}>{action}</Button>}
     </ConfigPageRow>
     {children}
   </div>;

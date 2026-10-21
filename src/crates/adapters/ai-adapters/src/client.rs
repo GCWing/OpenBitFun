@@ -703,8 +703,6 @@ impl AIClient {
             if matches!(
                 provider,
                 SubscriptionProvider::Grok
-                    | SubscriptionProvider::Workbuddy
-                    | SubscriptionProvider::WorkbuddyAi
                     | SubscriptionProvider::Zcode
                     | SubscriptionProvider::ZcodeCn
             ) {
@@ -717,9 +715,6 @@ impl AIClient {
                 return match provider {
                     SubscriptionProvider::Grok => {
                         crate::subscription_auth::grok::list_models(self).await
-                    }
-                    SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
-                        crate::subscription_auth::workbuddy::list_models(self, provider).await
                     }
                     _ => crate::subscription_auth::zcode::list_models(self, provider).await,
                 };

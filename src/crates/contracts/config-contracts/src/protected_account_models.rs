@@ -187,6 +187,8 @@ pub fn preserve_account_guard_sources(value: &mut Value, sources: &HashMap<Strin
 fn explicit_account(model: &Value) -> bool {
     // New subscription tags need the same downgrade boundary even when they
     // use their provider-default slot: older readers cannot parse those tags.
+    // `workbuddy`/`workbuddy_ai` are retired providers, but the models an
+    // earlier release wrote under those tags keep this boundary.
     model
         .get("channel_routing")
         .is_some_and(|route| !route.is_null())

@@ -172,18 +172,16 @@ the literal `public`).
 Console OAuth remains a separate Zen authentication option; existing account
 credentials and saved model configurations are retained.
 
-## WorkBuddy and ZCode subscriptions
+## ZCode subscriptions
 
-In **Settings → Models → Subscription accounts**, sign in to **WorkBuddy**
-(China), **WorkBuddy AI** (international), or **ZCode**. ZCode asks you to choose
-**Z.ai** or **BigModel** when you start sign-in. Connected regional accounts
-stay visible separately under ZCode so each can be imported or signed out.
-Finish sign-in in the browser, return to OpenBitFun, choose **Use as model**,
-then select models from the live catalog. Authorization runs on the model host;
-the verification page can be opened on another device. Credentials are kept in
-OpenBitFun's vault.
+In **Settings → Models → Subscription accounts**, sign in to **ZCode**. ZCode
+asks you to choose **Z.ai** or **BigModel** when you start sign-in. Connected
+regional accounts stay visible separately under ZCode so each can be imported or
+signed out. Finish sign-in in the browser, return to OpenBitFun, choose **Use as
+model**, then select models from the live catalog. Authorization runs on the model
+host; the verification page can be opened on another device. Credentials are kept
+in OpenBitFun's vault.
 
-WorkBuddy uses renewable account tokens and its Chat Completions gateway.
 ZCode browser sign-in reuses or creates the selected project's `zcode-api-key`
 (a team's `zcode-team-api-key`) and uses the Coding Plan Messages endpoint.
 Personal subscriptions and assigned team seats are supported. ZCode Start/gift
@@ -193,6 +191,15 @@ or unavailable catalog returns an error instead of selecting another plan.
 The real authorization-init endpoints were exercised on 2026-10-19. Completing
 sign-in and model inference require the user's account; initialization alone
 does not verify subscription eligibility or model availability.
+
+WorkBuddy (China) and WorkBuddy AI (international) subscriptions were removed
+after the vendor stopped supporting subscription access through OpenBitFun.
+Existing model configurations and vault credentials are preserved: a model still
+pointing at either product shows a removed-provider notice instead of a sign-in
+or import action, and the account stays listed only while this host holds its
+state so it can still be signed out and cleaned up. Recreate those models as an
+API-key provider to keep using them, and do not reintroduce the retired
+request/authorization protocol.
 
 ## Subscription allowance
 
@@ -205,8 +212,7 @@ with Z.ai/BigModel labels on its account rows.
 
 Connected accounts show allowance in **Settings → Models → Subscription accounts**
 and beside selected accounts in the model editor. Codex shows its reported rate
-windows and additional model limits. WorkBuddy and WorkBuddy AI show remaining
-credits, including enterprise usage; ZCode (Z.ai and BigModel) shows its reported
+windows and additional model limits. ZCode (Z.ai and BigModel) shows its reported
 Coding Plan windows, with MCP calls shown separately. Totals, reset times and plan
 expiry appear only when the provider reports them. Other channels explicitly show
 that allowance lookup is unsupported.
@@ -214,8 +220,8 @@ that allowance lookup is unsupported.
 OpenBitFun reads allowance from the account's host, supports manual refresh, and
 refreshes visible active panels once per minute. A failed refresh retains the last
 observation with a stale indicator. Unknown amounts stay unknown; zero and
-unlimited are distinct. These WorkBuddy/ZCode observations are informational and
-do not change model routing. Older peers without the quota capability show an
+unlimited are distinct. These ZCode observations are informational and do not
+change model routing. Older peers without the quota capability show an
 unsupported-host state.
 
 Grok OAuth accounts show the reported billing period and optional on-demand

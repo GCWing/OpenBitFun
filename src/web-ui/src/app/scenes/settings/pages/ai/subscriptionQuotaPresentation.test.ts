@@ -13,7 +13,7 @@ it('reads legacy Codex windows and additional model meters without inventing amo
   expect(remainingPercent({ id: 'unlimited', used_percent: 100, unlimited: true })).toBeUndefined();
 });
 it('refuses unsupported future views and marks old observations as stale', () => {
-  const snapshot: SubscriptionQuotaSnapshot = { account_id: 'workbuddy', provider: 'workbuddy', state: 'known', windows: [], valid_until: 2000,
+  const snapshot: SubscriptionQuotaSnapshot = { account_id: 'zcode', provider: 'zcode', state: 'known', windows: [], valid_until: 2000,
     display: { version: 99, meters: [{ id: 'future', remaining: 100 }] } };
   expect(quotaMeters(snapshot)).toEqual([]);
   expect(quotaIsStale(snapshot, false, 2000)).toBe(true);

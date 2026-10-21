@@ -3,8 +3,8 @@
 //! Existing v2 readers/writers preserve those entries without a schema change.
 
 use super::{
-    antigravity, build_account, codex, grok, hermes, opencode, store, workbuddy, zcode,
-    LoginStartResult, SubscriptionAccount, SubscriptionHttpOptions, SubscriptionLoginMethod,
+    antigravity, build_account, codex, grok, hermes, opencode, store, zcode, LoginStartResult,
+    SubscriptionAccount, SubscriptionHttpOptions, SubscriptionLoginMethod,
     SubscriptionLogoutResult, SubscriptionProvider,
 };
 use anyhow::{anyhow, Result};
@@ -89,6 +89,14 @@ pub async fn list_account_instances() -> Result<Vec<SubscriptionAccountInstance>
     for provider in SubscriptionProvider::ALL {
         result.push(build_instance(provider, provider.key(), &state));
     }
+    // Retired providers are never advertised, but any slot that still holds
+    // credentials or metadata stays listed so an upgrade can show and remove
+    // what an earlier release created.
+    for provider in SubscriptionProvider::RETIRED {
+        if super::slot_holds_state(&state, provider.key()) {
+            result.push(build_instance(provider, provider.key(), &state));
+        }
+    }
     let ids: BTreeSet<_> = state
         .account_metadata
         .keys()
@@ -98,9 +106,13 @@ pub async fn list_account_instances() -> Result<Vec<SubscriptionAccountInstance>
     for id in ids {
         // Unknown entries may belong to another version. Preserve them on disk,
         // but never interpret them as one of the supported account identities.
-        if let Some(provider) = SubscriptionProvider::ALL.into_iter().find(|provider| {
-            id.as_str() != provider.key() && validate_account_id(*provider, id).is_ok()
-        }) {
+        if let Some(provider) = SubscriptionProvider::ALL
+            .into_iter()
+            .chain(SubscriptionProvider::RETIRED)
+            .find(|provider| {
+                id.as_str() != provider.key() && validate_account_id(*provider, id).is_ok()
+            })
+        {
             result.push(build_instance(provider, id, &state));
         }
     }
@@ -155,7 +167,7 @@ pub async fn resolve_account_with_options(
     match provider {
         SubscriptionProvider::Codex => codex::resolve_account(id, options).await,
         SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
-            workbuddy::resolve(provider, id, options).await
+            Err(provider.retired_error())
         }
         SubscriptionProvider::Zcode | SubscriptionProvider::ZcodeCn => {
             zcode::resolve(provider, id, options).await
@@ -196,7 +208,7 @@ pub async fn recover_rejected_account_with_options(
     }
     match provider {
         SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
-            workbuddy::recover(provider, id, rejected_access, options).await
+            Err(provider.retired_error())
         }
         SubscriptionProvider::Zcode | SubscriptionProvider::ZcodeCn => {
             zcode::recover(provider, id, rejected_access, options).await

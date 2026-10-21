@@ -49,7 +49,7 @@
   },
   "subscriptionAuth": {
     "sectionTitle": "Subscription accounts",
-    "sectionDescription": "Connect Codex, Antigravity, OpenCode, xAI, Hermes, WorkBuddy, or ZCode subscriptions",
+    "sectionDescription": "Connect Codex, Antigravity, OpenCode, xAI, Hermes, or ZCode subscriptions",
     "rescan": "Refresh status",
     "import": "Use as model",
     "login": "Sign in",
@@ -81,8 +81,8 @@
       "opencode": "OpenCode",
       "grok": "Grok",
       "hermes": "Hermes",
-      "workbuddy": "WorkBuddy",
-      "workbuddy_ai": "WorkBuddy AI",
+      "workbuddy": "WorkBuddy (removed)",
+      "workbuddy_ai": "WorkBuddy AI (removed)",
       "zcode": "ZCode"
     },
     "details": {
@@ -91,8 +91,8 @@
       "opencode": "Console · Zen",
       "grok": "SuperGrok subscription",
       "hermes": "Nous Portal subscription",
-      "workbuddy": "CodeBuddy · China",
-      "workbuddy_ai": "International",
+      "workbuddy": "Removed · vendor no longer supports sign-in",
+      "workbuddy_ai": "Removed · international",
       "zcode": "GLM Coding Plan"
     },
     "regions": {
@@ -106,8 +106,8 @@
       "antigravity": "Antigravity",
       "grok": "Grok",
       "hermes": "Hermes",
-      "workbuddy": "WorkBuddy",
-      "workbuddy_ai": "WorkBuddy AI",
+      "workbuddy": "WorkBuddy (removed)",
+      "workbuddy_ai": "WorkBuddy AI (removed)",
       "zcode": "ZCode",
       "zcode_cn": "ZCode · BigModel (China)"
     },
@@ -139,6 +139,7 @@
     "logoutConsequence": "Model configurations will not be deleted. Sign in to the same subscription account again to resume using them.",
     "confirmLogout": "Sign out",
     "openCodeRemoved": "OpenCode Console OAuth supports Zen only. Select API key and enter a Go key. Your existing model configuration is preserved.",
+    "retiredProvider": "WorkBuddy subscriptions were removed because the vendor no longer allows subscription access. Your configuration and credentials are preserved; create an API key provider to keep using these models.",
     "editorDescription": "Models from this service share the signed-in subscription account",
     "accountLabel": "Account",
     "accountAuthentication": "Subscription account",

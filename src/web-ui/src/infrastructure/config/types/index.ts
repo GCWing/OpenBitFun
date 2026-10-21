@@ -317,7 +317,13 @@ export interface ModelChannelRouting {
   manual_channel?: string;
 }
 
-/** Subscription provider for in-app OAuth auth. */
+/**
+ * Subscription provider for in-app OAuth auth.
+ *
+ * `workbuddy` and `workbuddy_ai` are retired: the vendor stopped allowing
+ * subscription-token access, so no sign-in is offered. They stay in the union
+ * because configuration an earlier release persisted still carries them.
+ */
 export type SubscriptionProvider = 'codex' | 'antigravity' | 'opencode' | 'grok' | 'hermes' | 'workbuddy' | 'workbuddy_ai' | 'zcode' | 'zcode_cn';
 
 /** OpenCode billing/API product. Both plans reuse the same signed-in account. */

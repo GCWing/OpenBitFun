@@ -5,6 +5,17 @@ export function isZcodeProvider(provider?: SubscriptionProvider): provider is 'z
   return provider === 'zcode' || provider === 'zcode_cn';
 }
 
+/**
+ * Retired products no longer support subscription sign-in: the vendor stopped
+ * allowing subscription-token access. Their persisted accounts stay listed so
+ * users can see and remove them, but nothing offers login, refresh or import.
+ */
+export function isRetiredSubscriptionProvider(
+  provider?: SubscriptionProvider,
+): provider is 'workbuddy' | 'workbuddy_ai' {
+  return provider === 'workbuddy' || provider === 'workbuddy_ai';
+}
+
 /** Presentation grouping only. Every account retains its wire provider and region. */
 export function groupSubscriptionServices(accounts: SubscriptionAccount[]): SubscriptionAccount[][] {
   const groups = new Map<SubscriptionProvider, SubscriptionAccount[]>();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SubscriptionAccount } from '@/infrastructure/api/service-api/AIApi';
-import { groupSubscriptionServices, preferredZcodeProvider, subscriptionManagerAccounts } from './subscriptionServices';
+import { groupSubscriptionServices, isRetiredSubscriptionProvider, preferredZcodeProvider, subscriptionManagerAccounts } from './subscriptionServices';
 
 const account = (provider: SubscriptionAccount['provider'], connected = false): SubscriptionAccount => ({
   provider, connected, display_label: provider, suggested_format: 'anthropic',
@@ -8,15 +8,26 @@ const account = (provider: SubscriptionAccount['provider'], connected = false): 
 });
 
 describe('subscription service presentation', () => {
-  it('groups ZCode regions without merging accounts or the two WorkBuddy products', () => {
-    const accounts = [account('workbuddy'), account('zcode'), account('workbuddy_ai'), account('zcode_cn', true)];
+  it('groups ZCode regions without merging accounts', () => {
+    const accounts = [account('hermes'), account('zcode'), account('codex'), account('zcode_cn', true)];
     const groups = groupSubscriptionServices(accounts);
     expect(groups.map(group => group.map(a => a.provider))).toEqual([
-      ['workbuddy'], ['zcode', 'zcode_cn'], ['workbuddy_ai'],
+      ['hermes'], ['zcode', 'zcode_cn'], ['codex'],
     ]);
     expect(groups[1][0]).toBe(accounts[1]);
     expect(groups[1][1]).toBe(accounts[3]);
     expect(preferredZcodeProvider(accounts)).toBe('zcode_cn');
+  });
+
+  it('never offers sign-in for the retired WorkBuddy products', () => {
+    for (const provider of ['workbuddy', 'workbuddy_ai'] as const) {
+      expect(isRetiredSubscriptionProvider(provider)).toBe(true);
+    }
+    for (const provider of ['codex', 'grok', 'hermes', 'zcode', 'zcode_cn', 'opencode', 'antigravity'] as const) {
+      expect(isRetiredSubscriptionProvider(provider)).toBe(false);
+    }
+    // A retained account still groups on its own so it stays visible for removal.
+    expect(groupSubscriptionServices([account('workbuddy_ai')])).toEqual([[account('workbuddy_ai')]]);
   });
 
   it('keeps an existing model bound to its region while a new draft may choose either', () => {

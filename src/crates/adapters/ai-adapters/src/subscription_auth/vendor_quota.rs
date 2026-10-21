@@ -1,4 +1,4 @@
-//! WorkBuddy, ZCode and Grok billing reads. Endpoints, units and regional account
+//! ZCode and Grok billing reads. Endpoints, units and regional account
 //! headers stay in this adapter; display observations never gate model routing.
 use super::{accounts, browser_poll, quota, store, SubscriptionHttpOptions, SubscriptionProvider};
 use anyhow::{anyhow, Result};
@@ -120,79 +120,6 @@ fn snapshot(
         meters,
     });
     snapshot
-}
-
-fn parse_workbuddy(
-    provider: SubscriptionProvider,
-    slot: &str,
-    revision: u64,
-    now: i64,
-    data: &Value,
-    enterprise: Option<&Value>,
-) -> Result<SubscriptionQuotaSnapshot> {
-    let plan = if enterprise.is_some() {
-        Some("Enterprise".to_owned())
-    } else {
-        data["IsPaidUser"]
-            .as_bool()
-            .map(|paid| if paid { "Pro" } else { "Free" }.to_owned())
-    };
-    let mut meters = Vec::new();
-    if let Some(enterprise) = enterprise {
-        let limit = number(&enterprise["limitNum"]);
-        let used = number(&enterprise["credit"]);
-        if limit.is_some() || used.is_some() {
-            let mut meter = amounts("credits".into(), used, limit, None);
-            meter.unit = Some("credits".into());
-            meter.resets_at = timestamp(&enterprise["cycleResetTime"]);
-            meter.duration_seconds = timestamp(&enterprise["cycleStartTime"])
-                .zip(meter.resets_at)
-                .filter(|(start, end)| end > start)
-                .map(|(start, end)| (end - start) as u64);
-            meters.push(meter);
-        }
-    } else {
-        let packages = data["Packages"]
-            .as_array()
-            .ok_or_else(|| anyhow!("WorkBuddy quota response missing package list"))?;
-        if !packages.is_empty() {
-            // Aggregate only complete vendor fields. A missing capacity in one
-            // package must not make the displayed account total look smaller.
-            let total = packages
-                .iter()
-                .map(|p| number(&p["CycleTotalCapacity"]))
-                .collect::<Option<Vec<_>>>()
-                .map(|ns| ns.iter().sum());
-            let used = packages
-                .iter()
-                .map(|p| number(&p["CycleUsedCapacity"]))
-                .collect::<Option<Vec<_>>>()
-                .map(|ns| ns.iter().sum());
-            let left = packages
-                .iter()
-                .map(|p| number(&p["CycleRemainCapacity"]))
-                .collect::<Option<Vec<_>>>()
-                .map(|ns| ns.iter().sum());
-            if total.is_some() || used.is_some() || left.is_some() {
-                let mut meter = amounts("credits".into(), used, total, left);
-                meter.unit = Some("credits".into());
-                meter.expires_at = packages
-                    .iter()
-                    .filter_map(|p| {
-                        timestamp(&p["ExpiredTime"]).or_else(|| timestamp(&p["DeductionEndTime"]))
-                    })
-                    .filter(|at| *at > now)
-                    .min();
-                meter.resets_at = packages
-                    .iter()
-                    .filter_map(|p| timestamp(&p["CycleEndTime"]))
-                    .filter(|at| *at > now)
-                    .min();
-                meters.push(meter);
-            }
-        }
-    }
-    Ok(snapshot(provider, slot, revision, now, plan, None, meters))
 }
 
 fn zcode_duration(value: &Value) -> Option<u64> {
@@ -405,14 +332,6 @@ async fn fetch(
         query_billing(provider, &credential, &metadata, &client, root).await?;
     match provider {
         SubscriptionProvider::Grok => parse_grok(slot, entry.revision, now, &data),
-        SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => parse_workbuddy(
-            provider,
-            slot,
-            entry.revision,
-            now,
-            &data,
-            supplementary.as_ref(),
-        ),
         SubscriptionProvider::Zcode | SubscriptionProvider::ZcodeCn => parse_zcode(
             provider,
             slot,
@@ -431,9 +350,6 @@ async fn fetch(
 fn billing_root(provider: SubscriptionProvider, team: bool) -> Result<&'static str> {
     Ok(match provider {
         SubscriptionProvider::Grok => "https://cli-chat-proxy.grok.com/v1",
-        SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
-            super::workbuddy::root(provider)
-        }
         SubscriptionProvider::ZcodeCn if team => "https://bigmodel.cn",
         SubscriptionProvider::ZcodeCn => "https://open.bigmodel.cn",
         SubscriptionProvider::Zcode => "https://api.z.ai",
@@ -469,35 +385,7 @@ async fn query_billing(
         }
 
         SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
-            let sum = browser_poll::data(
-                signed(
-                    client
-                        .post(format!("{root}/billing/meter/get-user-resource-summary"))
-                        .json(&json!({})),
-                    credential,
-                    true,
-                )?,
-                false,
-            )
-            .await?;
-            let enterprise = if !browser_poll::text(metadata, "enterprise_id").is_empty() {
-                Some(
-                    browser_poll::data(
-                        signed(
-                            client
-                                .post(format!("{root}/billing/meter/get-enterprise-user-usage"))
-                                .json(&json!({})),
-                            credential,
-                            true,
-                        )?,
-                        false,
-                    )
-                    .await?,
-                )
-            } else {
-                None
-            };
-            Ok((sum, enterprise))
+            Err(provider.retired_error())
         }
         SubscriptionProvider::Zcode | SubscriptionProvider::ZcodeCn => {
             let team = !browser_poll::text(metadata, "organization").is_empty();
@@ -753,24 +641,6 @@ mod tests {
         server.abort();
     }
     #[test]
-    fn workbuddy_accepts_decimal_strings_and_keeps_missing_capacities_unknown() {
-        let q=parse_workbuddy(SubscriptionProvider::Workbuddy,"workbuddy",1,1000,&json!({"IsPaidUser":true,"Packages":[{"CycleTotalCapacity":"1000","CycleUsedCapacity":"123.5","CycleRemainCapacity":"876.5"}]}),None).unwrap();
-        let m = &q.display.unwrap().meters[0];
-        assert_eq!(m.remaining, Some(876.5));
-        assert_eq!(m.used_percent, Some(12.35));
-        let q = parse_workbuddy(
-            SubscriptionProvider::Workbuddy,
-            "workbuddy",
-            1,
-            1000,
-            &json!({"Packages":[{"CycleTotalCapacity":100},{}]}),
-            None,
-        )
-        .unwrap();
-        assert_eq!(q.state, SubscriptionQuotaState::Unknown);
-        assert!(q.windows.is_empty());
-    }
-    #[test]
     fn zcode_distinguishes_unlimited_unknown_and_mcp_from_coding_limits() {
         let q=parse_zcode(SubscriptionProvider::ZcodeCn,"zcode_cn",1,1000,&json!({"limits":[{"type":"TOKENS_LIMIT","unit":3,"usage":100,"remaining":20,"nextResetTime":2000000},{"type":"TIME_LIMIT","unit":5,"percentage":50},{"type":"TOKENS_LIMIT","unit":6,"usage":0,"percentage":100},{"type":"TOKENS_LIMIT","unit":6}]}),&json!({}),None).unwrap();
         let ms = &q.display.as_ref().unwrap().meters;
@@ -800,59 +670,29 @@ mod tests {
             openbitfun_core_types::subscription::ModelQuotaEligibility::Unknown
         ));
     }
-    #[test]
-    fn enterprise_meter_preserves_the_vendor_cycle_and_is_not_a_personal_wallet() {
-        let q=parse_workbuddy(SubscriptionProvider::Workbuddy,"workbuddy",1,1000,&json!({"Packages":[]}),Some(&json!({"limitNum":"800","credit":"200","cycleStartTime":"2026-10-01 00:00:00","cycleResetTime":"2026-11-01 00:00:00"}))).unwrap();
-        assert_eq!(q.plan.as_deref(), Some("Enterprise"));
-        let m = &q.display.unwrap().meters[0];
-        assert_eq!(m.remaining, Some(600.0));
-        assert_eq!(m.used_percent, Some(25.0));
-        assert_eq!(m.resets_at, Some(1793462400));
-    }
     #[tokio::test]
     async fn billing_transport_preserves_vendor_auth_account_headers_and_team_queries() {
         use axum::{extract::Request, routing::any, Json, Router};
         use std::sync::{Arc, Mutex};
         openbitfun_services_core::tls_provider::ensure_ring_crypto_provider();
-        for provider in [
-            SubscriptionProvider::Workbuddy,
-            SubscriptionProvider::WorkbuddyAi,
-            SubscriptionProvider::Zcode,
-            SubscriptionProvider::ZcodeCn,
-        ] {
+        for provider in [SubscriptionProvider::Zcode, SubscriptionProvider::ZcodeCn] {
             for team in [false, true] {
-                let workbuddy = matches!(
-                    provider,
-                    SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi
-                );
                 let requests = Arc::new(Mutex::new(Vec::new()));
                 let received = requests.clone();
                 let app = Router::new().fallback(any(move |request: Request| {
                     let received = received.clone();
                     async move {
                         let headers = request.headers();
-                        assert_eq!(headers["authorization"], if workbuddy { "Bearer synthetic-key" } else { "synthetic-key" });
+                        assert_eq!(headers["authorization"], "synthetic-key");
                         assert!(!headers.contains_key("x-api-key"));
-                        if workbuddy {
-                            assert_eq!(headers["x-user-id"], "fixture-user");
-                            assert_eq!(headers["x-domain"], "fixture-domain");
-                            if team {
-                                assert_eq!(headers["x-enterprise-id"], "fixture-team");
-                                assert_eq!(headers["x-tenant-id"], "fixture-team");
-                            }
-                            assert_eq!(request.method(), reqwest::Method::POST);
-                        } else {
-                            assert_eq!(request.method(), reqwest::Method::GET);
-                            if team {
-                                assert_eq!(headers["bigmodel-organization"], "fixture-team");
-                                assert_eq!(headers["bigmodel-project"], "fixture-project");
-                            }
+                        assert_eq!(request.method(), reqwest::Method::GET);
+                        if team {
+                            assert_eq!(headers["bigmodel-organization"], "fixture-team");
+                            assert_eq!(headers["bigmodel-project"], "fixture-project");
                         }
                         let path = request.uri().to_string();
                         received.lock().unwrap().push(path.clone());
                         let data = match request.uri().path() {
-                            "/billing/meter/get-user-resource-summary" => json!({"IsPaidUser":true,"Packages":[{"CycleTotalCapacity":"100","CycleRemainCapacity":"75"}]}),
-                            "/billing/meter/get-enterprise-user-usage" => json!({"limitNum":400,"credit":100}),
                             "/api/monitor/usage/quota/limit" => {
                                 assert_eq!(request.uri().query(), if team { Some("type=2") } else { None });
                                 json!({"limits":[{"type":"TOKENS_LIMIT","usage":100,"remaining":75}]})
@@ -861,7 +701,7 @@ mod tests {
                             "/api/biz/subscription/list" => return Json(json!({"code":500,"data":null})),
                             _ => panic!("Unexpected billing fixture path"),
                         };
-                        Json(json!({"code":if workbuddy {0} else {200},"data":data}))
+                        Json(json!({"code":200,"data":data}))
                     }
                 }));
                 let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -873,14 +713,7 @@ mod tests {
                     ("Authorization".into(), "must-be-overridden".into()),
                     ("x-api-key".into(), "must-be-removed".into()),
                 ]);
-                if workbuddy {
-                    headers.insert("X-User-Id".into(), "fixture-user".into());
-                    headers.insert("X-Domain".into(), "fixture-domain".into());
-                    if team {
-                        headers.insert("X-Enterprise-Id".into(), "fixture-team".into());
-                        headers.insert("X-Tenant-Id".into(), "fixture-team".into());
-                    }
-                } else if team {
+                if team {
                     headers.insert("bigmodel-organization".into(), "fixture-team".into());
                     headers.insert("bigmodel-project".into(), "fixture-project".into());
                 }
@@ -893,7 +726,7 @@ mod tests {
                     expires_at: None,
                 };
                 let metadata = if team {
-                    json!({"enterprise_id":"fixture-team","organization":"fixture-team"})
+                    json!({"organization":"fixture-team"})
                 } else {
                     json!({})
                 };
@@ -902,41 +735,15 @@ mod tests {
                     query_billing(provider, &credential, &metadata, &client, &root)
                         .await
                         .unwrap();
-                let quota = if workbuddy {
-                    parse_workbuddy(
-                        provider,
-                        provider.key(),
-                        1,
-                        1000,
-                        &data,
-                        supplementary.as_ref(),
-                    )
-                    .unwrap()
-                } else {
-                    assert!(supplementary.is_none());
-                    parse_zcode(provider, provider.key(), 1, 1000, &data, &metadata, None).unwrap()
-                };
+                assert!(supplementary.is_none());
+                let quota =
+                    parse_zcode(provider, provider.key(), 1, 1000, &data, &metadata, None).unwrap();
                 assert_eq!(quota.state, SubscriptionQuotaState::Known);
                 let paths = requests.lock().unwrap();
-                assert_eq!(
-                    paths.len(),
-                    if workbuddy && !team || !workbuddy && team {
-                        1
-                    } else {
-                        2
-                    }
-                );
+                assert_eq!(paths.len(), if team { 1 } else { 2 });
                 server.abort();
             }
         }
-        assert_eq!(
-            billing_root(SubscriptionProvider::Workbuddy, false).unwrap(),
-            "https://copilot.tencent.com"
-        );
-        assert_eq!(
-            billing_root(SubscriptionProvider::WorkbuddyAi, true).unwrap(),
-            "https://www.workbuddy.ai"
-        );
         assert_eq!(
             billing_root(SubscriptionProvider::Zcode, false).unwrap(),
             "https://api.z.ai"
@@ -956,7 +763,7 @@ mod tests {
         let _guard = super::super::tests::test_lock().lock().await;
         let dir = std::env::temp_dir().join(format!("quota-test-{}", uuid::Uuid::new_v4()));
         store::set_store_path_for_test(dir.join("auth.json"));
-        let slot = "workbuddy";
+        let slot = "zcode";
         store::upsert(
             slot,
             super::super::StoredCredential::Oauth {
@@ -971,7 +778,7 @@ mod tests {
         .unwrap();
         let revision = store::credential_revision(slot).await.unwrap();
         let old = snapshot(
-            SubscriptionProvider::Workbuddy,
+            SubscriptionProvider::Zcode,
             slot,
             revision,
             1000,
@@ -980,7 +787,7 @@ mod tests {
             vec![amounts("credits".into(), Some(20.0), Some(100.0), None)],
         );
         let failed = finish(
-            SubscriptionProvider::Workbuddy,
+            SubscriptionProvider::Zcode,
             slot,
             revision,
             Some(old.clone()),
@@ -992,18 +799,12 @@ mod tests {
         assert_eq!(failed.display, old.display);
         assert_eq!(failed.state, SubscriptionQuotaState::QueryFailed);
         assert!(!failed.error.unwrap().contains("private"));
-        super::super::logout(SubscriptionProvider::Workbuddy)
+        super::super::logout(SubscriptionProvider::Zcode)
             .await
             .unwrap();
-        let late = finish(
-            SubscriptionProvider::Workbuddy,
-            slot,
-            revision,
-            None,
-            Ok(old),
-        )
-        .await
-        .unwrap();
+        let late = finish(SubscriptionProvider::Zcode, slot, revision, None, Ok(old))
+            .await
+            .unwrap();
         assert_eq!(late.state, SubscriptionQuotaState::Stale);
         assert!(late.display.is_none());
         let _ = std::fs::remove_dir_all(dir);

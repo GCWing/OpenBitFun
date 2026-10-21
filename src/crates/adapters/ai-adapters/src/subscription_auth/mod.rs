@@ -24,7 +24,6 @@ mod quota;
 pub(crate) mod request_identity;
 pub mod store;
 mod vendor_quota;
-pub(crate) mod workbuddy;
 pub(crate) mod zcode;
 
 pub use accounts::{
@@ -45,14 +44,11 @@ pub fn prepare_account_request_route(
     let (format, base_url, request_url) = match provider {
         SubscriptionProvider::Codex => codex::request_route(),
         SubscriptionProvider::Grok => grok::request_route(),
-        SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
-            let (format, base, _) = workbuddy::suggested(provider);
-            (format, base, workbuddy::inference_url(provider))
-        }
         SubscriptionProvider::Zcode | SubscriptionProvider::ZcodeCn => {
             let (format, base, _) = zcode::suggested(provider);
             (format, base, zcode::inference_url(provider))
         }
+        _ if provider.is_retired() => return Err(provider.retired_error()),
         _ => {
             let (format, base_url, _) = provider.suggested();
             (format, base_url, base_url)
@@ -101,6 +97,12 @@ pub(crate) const OPENCODE_COMPAT_VERSION: &str = "1.18.29";
 pub const OPENCODE_GO_REQUIRES_API_KEY: &str = "OpenCode Console OAuth supports Zen only. Edit this model to use the OpenCode Go API-key preset. Existing configuration and credentials have been preserved.";
 
 /// One of the subscription providers OpenBitFun can sign in to.
+///
+/// `Workbuddy` and `WorkbuddyAi` are retired: the vendor stopped allowing
+/// subscription-token access, so their sign-in, credential refresh, catalog and
+/// billing protocols were removed. The variants stay deserializable and keep
+/// their keys so persisted model configuration, stored credentials and account
+/// slots written by earlier releases still load instead of failing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SubscriptionProvider {
@@ -143,18 +145,37 @@ impl SubscriptionHttpOptions {
 }
 
 impl SubscriptionProvider {
-    /// All providers, in display order.
-    pub const ALL: [SubscriptionProvider; 9] = [
+    /// Providers that can still be signed in to, in display order.
+    pub const ALL: [SubscriptionProvider; 7] = [
         Self::Codex,
         Self::Antigravity,
         Self::Opencode,
         Self::Grok,
         Self::Hermes,
-        Self::Workbuddy,
-        Self::WorkbuddyAi,
         Self::Zcode,
         Self::ZcodeCn,
     ];
+
+    /// Providers whose sign-in and request protocols were removed. They are
+    /// never offered to users, but their stored accounts stay readable so an
+    /// upgrade can show and clean up what an earlier release created.
+    pub const RETIRED: [SubscriptionProvider; 2] = [Self::Workbuddy, Self::WorkbuddyAi];
+
+    /// True when this provider no longer has a usable vendor protocol.
+    pub fn is_retired(self) -> bool {
+        matches!(self, Self::Workbuddy | Self::WorkbuddyAi)
+    }
+
+    /// Error returned by every account, catalog, quota and inference path for a
+    /// retired provider. Persisted configuration is preserved; only the request
+    /// is refused.
+    pub fn retired_error(self) -> anyhow::Error {
+        anyhow!(
+            "{} subscription access is no longer supported by the vendor. \
+             Existing configuration is preserved; create an API key provider to keep using these models",
+            self.display_label()
+        )
+    }
 
     /// Stable store key / serde tag for this provider.
     pub fn key(self) -> &'static str {
@@ -195,8 +216,8 @@ impl SubscriptionProvider {
             Self::Opencode => "OpenCode Console (Zen)",
             Self::Grok => "xAI (SuperGrok)",
             Self::Hermes => "Hermes (Nous Portal)",
-            Self::Workbuddy => "WorkBuddy (CodeBuddy China)",
-            Self::WorkbuddyAi => "WorkBuddy AI (International)",
+            Self::Workbuddy => "WorkBuddy (CodeBuddy China, removed)",
+            Self::WorkbuddyAi => "WorkBuddy AI (International, removed)",
             Self::Zcode => "ZCode (Z.ai Coding Plan)",
             Self::ZcodeCn => "ZCode (BigModel Coding Plan)",
         }
@@ -210,7 +231,9 @@ impl SubscriptionProvider {
             Self::Opencode => opencode::suggested(),
             Self::Grok => grok::suggested(),
             Self::Hermes => hermes::suggested(),
-            Self::Workbuddy | Self::WorkbuddyAi => workbuddy::suggested(self),
+            // A retired provider owns no route facts. Callers must check
+            // `is_retired` before suggesting anything from here.
+            Self::Workbuddy | Self::WorkbuddyAi => ("openai", "", ""),
             Self::Zcode | Self::ZcodeCn => zcode::suggested(self),
         }
     }
@@ -222,13 +245,8 @@ impl SubscriptionProvider {
         match self {
             Self::Codex => &[Browser, Device],
             Self::Antigravity => &[Browser],
-            Self::Opencode
-            | Self::Grok
-            | Self::Hermes
-            | Self::Workbuddy
-            | Self::WorkbuddyAi
-            | Self::Zcode
-            | Self::ZcodeCn => &[Device],
+            Self::Workbuddy | Self::WorkbuddyAi => &[],
+            Self::Opencode | Self::Grok | Self::Hermes | Self::Zcode | Self::ZcodeCn => &[Device],
         }
     }
 
@@ -738,6 +756,29 @@ async fn account_snapshot(provider: SubscriptionProvider) -> SubscriptionAccount
     )
 }
 
+/// True when the store still holds credentials or metadata for exactly this
+/// account slot.
+fn slot_holds_state(state: &store::LoadState, id: &str) -> bool {
+    state.credentials.contains_key(id)
+        || state.account_metadata.contains_key(id)
+        || state.requires_reauthentication.contains(id)
+        || state.vault_unavailable.contains(id)
+}
+
+/// True when this install still holds state for any slot of a retired provider,
+/// either its default slot or a named account slot.
+fn holds_retired_slot_state(state: &store::LoadState, provider: SubscriptionProvider) -> bool {
+    let declares =
+        |id: &str| id == provider.key() || id.starts_with(&format!("{}-account-", provider.key()));
+    state.credentials.keys().any(|id| declares(id))
+        || state.account_metadata.keys().any(|id| declares(id))
+        || state
+            .requires_reauthentication
+            .iter()
+            .any(|id| declares(id))
+        || state.vault_unavailable.iter().any(|id| declares(id))
+}
+
 /// Lists all providers with their current connection state.
 pub async fn list_accounts() -> Vec<SubscriptionAccount> {
     let state = store::load_with_state().await.unwrap_or_else(|error| {
@@ -752,6 +793,11 @@ pub async fn list_accounts() -> Vec<SubscriptionAccount> {
     });
     SubscriptionProvider::ALL
         .iter()
+        .chain(
+            SubscriptionProvider::RETIRED
+                .iter()
+                .filter(|provider| holds_retired_slot_state(&state, **provider)),
+        )
         .map(|provider| {
             build_account(
                 *provider,
@@ -799,6 +845,9 @@ async fn start_login_in_account_slot(
     method: Option<SubscriptionLoginMethod>,
     options: SubscriptionHttpOptions,
 ) -> Result<LoginStartResult> {
+    if provider.is_retired() {
+        return Err(provider.retired_error());
+    }
     let store_key = account_id
         .clone()
         .unwrap_or_else(|| provider.key().to_string());
@@ -896,14 +945,7 @@ async fn start_login_in_account_slot(
                 .await
             }
             SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
-                workbuddy::begin_login_for_account(
-                    provider,
-                    store_key,
-                    begin_cancel.clone(),
-                    expected_revision,
-                    options,
-                )
-                .await
+                Err(provider.retired_error())
             }
             SubscriptionProvider::Zcode | SubscriptionProvider::ZcodeCn => {
                 zcode::begin_login_for_account(
@@ -1155,7 +1197,7 @@ pub async fn resolve_with_options(
         SubscriptionProvider::Grok => grok::resolve(options).await,
         SubscriptionProvider::Hermes => hermes::resolve(options).await,
         SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
-            workbuddy::resolve(provider, provider.key(), options).await
+            Err(provider.retired_error())
         }
         SubscriptionProvider::Zcode | SubscriptionProvider::ZcodeCn => {
             zcode::resolve(provider, provider.key(), options).await
@@ -1349,6 +1391,66 @@ mod tests {
                 .subscription_provider_key()
                 .is_none());
         }
+    }
+
+    #[tokio::test]
+    async fn retired_providers_stay_readable_but_never_sign_in_or_route() {
+        let _guard = test_lock().lock().await;
+        store::set_store_path_for_test(temp_store_path());
+        for provider in SubscriptionProvider::RETIRED {
+            // Configuration written by an earlier release still parses, while
+            // nothing offers the product or reaches its vendor again.
+            assert_eq!(
+                SubscriptionProvider::from_key(provider.key()),
+                Some(provider)
+            );
+            assert!(provider.is_retired());
+            assert!(!SubscriptionProvider::ALL.contains(&provider));
+            assert!(provider.login_methods().is_empty());
+            let mut config: crate::types::AIConfig =
+                serde_json::from_value(serde_json::json!({
+                    "name":"retired","model":"fixture-wire","format":"openai",
+                    "base_url":"https://saved.invalid","request_url":"https://saved.invalid/chat/completions",
+                    "api_key":"existing-key","context_window":4096,"inline_think_in_text":false,"skip_ssl_verify":false
+                }))
+                .unwrap();
+            let error = prepare_account_request_route(provider, &mut config).unwrap_err();
+            assert!(error.to_string().contains("no longer supported"));
+            assert_eq!(config.api_key, "existing-key");
+            assert!(accounts::resolve_account_with_options(
+                provider,
+                provider.key(),
+                &SubscriptionHttpOptions::default()
+            )
+            .await
+            .is_err());
+            assert!(start_login_in_account_slot(
+                provider,
+                None,
+                "retired-session".into(),
+                None,
+                SubscriptionHttpOptions::default()
+            )
+            .await
+            .is_err());
+        }
+        assert!(list_accounts()
+            .await
+            .iter()
+            .all(|account| !account.provider.is_retired()));
+        // A slot that still holds state stays visible so an upgrade can show
+        // and remove it; the credential itself is never deleted automatically.
+        store::upsert("workbuddy", account_fixture("stale-access", "old-subject"))
+            .await
+            .unwrap();
+        assert!(list_accounts().await.iter().any(|account| account.provider
+            == SubscriptionProvider::Workbuddy
+            && account.connected));
+        assert!(accounts::list_account_instances()
+            .await
+            .unwrap()
+            .iter()
+            .any(|instance| instance.account_id == "workbuddy"));
     }
 
     #[tokio::test]

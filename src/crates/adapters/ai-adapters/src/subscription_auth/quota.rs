@@ -463,8 +463,6 @@ pub(super) fn supports_quota(provider: SubscriptionProvider) -> bool {
         provider,
         SubscriptionProvider::Codex
             | SubscriptionProvider::Grok
-            | SubscriptionProvider::Workbuddy
-            | SubscriptionProvider::WorkbuddyAi
             | SubscriptionProvider::Zcode
             | SubscriptionProvider::ZcodeCn
     )

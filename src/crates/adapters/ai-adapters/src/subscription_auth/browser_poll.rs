@@ -124,7 +124,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "Creates short-lived authorization flows against the real vendor APIs; no account is authorized or stored"]
     async fn live_browser_authorization_endpoints() {
-        use super::super::{workbuddy, zcode, SubscriptionHttpOptions, SubscriptionProvider};
+        use super::super::{zcode, SubscriptionHttpOptions, SubscriptionProvider};
         let proxy = std::env::var("OPENBITFUN_LIVE_SUBSCRIPTION_PROXY")
             .ok()
             .map(|url| crate::types::ProxyConfig {
@@ -134,35 +134,16 @@ mod tests {
                 password: None,
             });
         let options = SubscriptionHttpOptions::new(proxy, false);
-        for provider in [
-            SubscriptionProvider::Workbuddy,
-            SubscriptionProvider::WorkbuddyAi,
-            SubscriptionProvider::Zcode,
-            SubscriptionProvider::ZcodeCn,
-        ] {
+        for provider in [SubscriptionProvider::Zcode, SubscriptionProvider::ZcodeCn] {
             let slot = format!("{}-account-{}", provider.key(), uuid::Uuid::new_v4());
-            let result = match provider {
-                SubscriptionProvider::Workbuddy | SubscriptionProvider::WorkbuddyAi => {
-                    workbuddy::begin_login_for_account(
-                        provider,
-                        slot,
-                        tokio_util::sync::CancellationToken::new(),
-                        0,
-                        options.clone(),
-                    )
-                    .await
-                }
-                _ => {
-                    zcode::begin_login_for_account(
-                        provider,
-                        slot,
-                        tokio_util::sync::CancellationToken::new(),
-                        0,
-                        options.clone(),
-                    )
-                    .await
-                }
-            };
+            let result = zcode::begin_login_for_account(
+                provider,
+                slot,
+                tokio_util::sync::CancellationToken::new(),
+                0,
+                options.clone(),
+            )
+            .await;
             let started = result.unwrap_or_else(|error| panic!("{}: {error:#}", provider.key()));
             let url = authorization_url(&started.authorization_url).unwrap();
             println!(

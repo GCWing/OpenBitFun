@@ -49,7 +49,7 @@
   },
   "subscriptionAuth": {
     "sectionTitle": "訂閱賬號",
-    "sectionDescription": "連接 Codex、Antigravity、OpenCode、xAI、Hermes、WorkBuddy 或 ZCode 訂閱",
+    "sectionDescription": "連接 Codex、Antigravity、OpenCode、xAI、Hermes 或 ZCode 訂閱",
     "rescan": "重新整理狀態",
     "import": "匯入使用",
     "login": "登入",
@@ -81,8 +81,8 @@
       "opencode": "OpenCode",
       "grok": "Grok",
       "hermes": "Hermes",
-      "workbuddy": "WorkBuddy",
-      "workbuddy_ai": "WorkBuddy AI",
+      "workbuddy": "WorkBuddy（已下線）",
+      "workbuddy_ai": "WorkBuddy AI（已下線）",
       "zcode": "ZCode"
     },
     "details": {
@@ -91,8 +91,8 @@
       "opencode": "Console · Zen",
       "grok": "SuperGrok 訂閱",
       "hermes": "Nous Portal 訂閱",
-      "workbuddy": "CodeBuddy · 中國版",
-      "workbuddy_ai": "國際版",
+      "workbuddy": "已下線 · 廠商不再支援訂閱授權",
+      "workbuddy_ai": "已下線 · 國際版",
       "zcode": "GLM Coding Plan"
     },
     "regions": {
@@ -106,8 +106,8 @@
       "antigravity": "Antigravity",
       "grok": "Grok",
       "hermes": "Hermes",
-      "workbuddy": "WorkBuddy",
-      "workbuddy_ai": "WorkBuddy AI",
+      "workbuddy": "WorkBuddy（已下線）",
+      "workbuddy_ai": "WorkBuddy AI（已下線）",
       "zcode": "ZCode",
       "zcode_cn": "ZCode · 智譜"
     },
@@ -139,6 +139,7 @@
     "logoutConsequence": "模型設定不會被刪除；重新登入同一訂閱賬號後可以繼續使用。",
     "confirmLogout": "確認登出",
     "openCodeRemoved": "OpenCode Console OAuth 僅支援 Zen。Go 模型請選擇 API key 並填寫金鑰，既有模型設定保留。",
+    "retiredProvider": "WorkBuddy 訂閱已下線：廠商不再支援訂閱授權。現有模型設定與憑證均保留，如需繼續使用這些模型請新增 API Key 服務。",
     "editorDescription": "此服務的模型共用目前登入的訂閱帳號",
     "accountLabel": "帳號",
     "accountAuthentication": "訂閱帳號授權",

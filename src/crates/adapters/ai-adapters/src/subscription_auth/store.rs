@@ -750,8 +750,9 @@ async fn acquire_store_transaction() -> Result<(PathBuf, StoreTransactionGuard)>
 /// processes. The caller must reload the credential after acquiring the lease.
 pub(crate) async fn acquire_provider_refresh_lease(provider: &str) -> Result<ProviderRefreshLease> {
     // The id becomes part of a file name, so it stays inside one path
-    // component. The underscore is part of real slot ids (`workbuddy_ai`,
-    // `zcode_cn`), so rejecting it would fail their refresh before any request.
+    // component. The underscore is part of real slot ids (`zcode_cn` and the
+    // retired `workbuddy_ai`), so rejecting it would fail their refresh before
+    // any request.
     if provider.is_empty()
         || !provider.chars().all(|character| {
             character.is_ascii_alphanumeric() || character == '-' || character == '_'
@@ -2149,9 +2150,9 @@ mod file_lock_tests {
     }
 
     /// The lease turns its id into a file name, so every slot id a provider can
-    /// actually hold must pass the check. `workbuddy_ai` and `zcode_cn` carry
-    /// an underscore, and a rejected id fails the refresh before any request is
-    /// made.
+    /// actually hold must pass the check. `zcode_cn` and the retired
+    /// `workbuddy_ai` carry an underscore, and a rejected id fails the refresh
+    /// before any request is made.
     #[tokio::test]
     async fn refresh_leases_accept_every_provider_and_slot_id() {
         use crate::subscription_auth::SubscriptionProvider;
@@ -2167,7 +2168,7 @@ mod file_lock_tests {
         // Additional accounts extend a default slot instead of replacing it.
         let named_slot = format!(
             "{}-account-0f8fad5b-d9cb-469f-a165-70867728950e",
-            SubscriptionProvider::WorkbuddyAi.key()
+            SubscriptionProvider::ZcodeCn.key()
         );
         acquire_provider_refresh_lease(&named_slot)
             .await

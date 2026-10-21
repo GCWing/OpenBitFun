@@ -227,8 +227,6 @@ pub(crate) async fn send_stream(
     let ttft_timeout = client.stream_options.ttft_timeout;
 
     let compatibility = crate::providers::opencode::FreeTools::prepare(client, &mut request_body)?;
-    #[cfg(feature = "subscription-auth")]
-    let workbuddy_tools = crate::providers::workbuddy::Tools::prepare(client, &mut request_body);
 
     execute_sse_request(
         Some(client),
@@ -245,13 +243,6 @@ pub(crate) async fn send_stream(
                 &url,
                 request_context.as_ref(),
             );
-            #[cfg(feature = "subscription-auth")]
-            let builder = crate::providers::workbuddy::headers(
-                client,
-                builder,
-                &request_body,
-                request_context.as_ref(),
-            );
             builder
         },
         move |response, tx, tx_raw, remaining_ttft_timeout| {
@@ -266,9 +257,5 @@ pub(crate) async fn send_stream(
         },
     )
     .await
-    .map(|response| {
-        #[cfg(feature = "subscription-auth")]
-        let response = workbuddy_tools.wrap(response);
-        compatibility.wrap(response)
-    })
+    .map(|response| compatibility.wrap(response))
 }

@@ -1798,6 +1798,12 @@ pub fn model_runtime_binding_fingerprint(model: &AIModelConfig) -> String {
 }
 
 /// Subscription provider whose in-app OAuth tokens authenticate a model.
+///
+/// `Workbuddy` and `WorkbuddyAi` are retired providers: their sign-in and
+/// request protocols were removed because the vendor stopped allowing
+/// subscription-token access. The variants are never offered and every request
+/// path refuses them, but they stay readable so persisted model configuration
+/// written by an earlier release still loads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SubscriptionProvider {

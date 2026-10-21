@@ -7,7 +7,7 @@ import { ZcodeSubscriptionGroup } from './ZcodeSubscriptionGroup';
 import { OpenCodeModelQuota } from './OpenCodeModelQuota';
 import { SubscriptionQuotaPanel } from './SubscriptionQuotaPanel';
 import { SubscriptionAccountList, SubscriptionServiceGroup } from './SubscriptionServiceGroup';
-import { managedSubscriptionAccounts, modelsUsingSubscriptionAccount, groupSubscriptionServices, isZcodeProvider, preferredZcodeProvider, subscriptionManagerAccounts } from './subscriptionServices';
+import { managedSubscriptionAccounts, modelsUsingSubscriptionAccount, groupSubscriptionServices, isRetiredSubscriptionProvider, isZcodeProvider, preferredZcodeProvider, subscriptionManagerAccounts } from './subscriptionServices';
 import { aiApi, systemAPI } from '@/infrastructure/api';
 import type {
   SubscriptionAccount,
@@ -3265,13 +3265,19 @@ const ModelSettingsPage: React.FC = () => {
       { value: 'subscription:antigravity', label: t('subscriptionAuth.options.antigravity') },
       { value: 'subscription:grok', label: t('subscriptionAuth.options.grok') },
       { value: 'subscription:hermes', label: t('subscriptionAuth.options.hermes') },
-      { value: 'subscription:workbuddy', label: t('subscriptionAuth.options.workbuddy') },
-      { value: 'subscription:workbuddy_ai', label: t('subscriptionAuth.options.workbuddy_ai') },
       { value: 'subscription:zcode', label: t('subscriptionAuth.options.zcode') },
 
       { value: 'subscription:opencode', label: t('subscriptionAuth.options.opencode') },
     ];
     if (legacyOpenCode) authOptions.push({ value: 'subscription:opencode:go', label: t('subscriptionAuth.openCodeRemoved') });
+    // A retired provider is never offered again, but a model an earlier release
+    // saved under it keeps showing its own value so the switch is explicit.
+    if (isRetiredSubscriptionProvider(selectedSubscriptionProvider)) {
+      authOptions.push({
+        value: `subscription:${selectedSubscriptionProvider}`,
+        label: t(`subscriptionAuth.options.${selectedSubscriptionProvider}`),
+      });
+    }
     const matchedSubscription = selectedSubscriptionProvider
       ? subscriptionAccounts.find((account) => account.provider === selectedSubscriptionProvider)
       : undefined;
@@ -3294,7 +3300,9 @@ const ModelSettingsPage: React.FC = () => {
         : matchedSubscription?.connected
           ? t('subscriptionAuth.accountIdentityUnavailable')
           : t('subscriptionAuth.accountUnavailable'));
-    const subscriptionAccountHint = legacyOpenCode
+    const subscriptionAccountHint = isRetiredSubscriptionProvider(selectedSubscriptionProvider)
+      ? t('subscriptionAuth.retiredProvider')
+      : legacyOpenCode
       ? t(providerIdentityLocked ? 'subscriptionAuth.openCodeLegacyConnection' : 'subscriptionAuth.openCodeRemoved')
       : subscriptionState === 'loadFailed'
         ? t('acquisition.loadFailed')
@@ -3984,9 +3992,12 @@ const ModelSettingsPage: React.FC = () => {
       void handleSubscriptionLogin(target, canAdd && hasAccount ? newAccountSlotId(target) : undefined);
     };
     const renderAccount = (account: SubscriptionAccount, groupedRegion = false, slot: string = account.provider, enabled = true) => {
+      const retiredAccount = isRetiredSubscriptionProvider(account.provider);
       const descriptionParts: string[] = [slot === account.provider ? t('subscriptionAuth.pool.defaultAccount') : t('subscriptionAuth.accountMarker', { marker: slot.slice(-8) })];
       if (!enabled) descriptionParts.push(t('subscriptionAuth.pool.disabled'));
-      if (account.connected && account.expires_at) {
+      if (retiredAccount) {
+        descriptionParts.push(t('subscriptionAuth.retiredProvider'));
+      } else if (account.connected && account.expires_at) {
         descriptionParts.push(
           t('subscriptionAuth.expiresAt', {
             time: i18nService.formatDate(new Date(account.expires_at * 1000), {
@@ -4032,15 +4043,17 @@ const ModelSettingsPage: React.FC = () => {
             <div className="openbitfun-model-settings__cli-actions">
               {account.connected ? (
                 <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    loading={isRefreshing}
-                    disabled={anyLoginInProgress || isRefreshing}
-                    onClick={() => void handleSubscriptionRefresh(account.provider, slot)}
-                  >
-                    {t('subscriptionAuth.refresh')}
-                  </Button>
+                  {!retiredAccount && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      loading={isRefreshing}
+                      disabled={anyLoginInProgress || isRefreshing}
+                      onClick={() => void handleSubscriptionRefresh(account.provider, slot)}
+                    >
+                      {t('subscriptionAuth.refresh')}
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
@@ -4049,7 +4062,7 @@ const ModelSettingsPage: React.FC = () => {
                   >
                     {t('subscriptionAuth.logout')}
                   </Button>
-                  {!provider && (
+                  {!retiredAccount && !provider && (
                     <Button
                       size="sm"
                       variant="primary"
@@ -4096,7 +4109,7 @@ const ModelSettingsPage: React.FC = () => {
             </div>
           </ConfigPageRow>
 
-          {account.connected && enabled && !account.vault_unavailable && (
+          {account.connected && enabled && !account.vault_unavailable && !retiredAccount && (
             <SubscriptionQuotaPanel
               key={`${modelDiscoverySurface}:${slot}:quota`}
               provider={account.provider} accountId={slot}
@@ -4221,8 +4234,9 @@ const ModelSettingsPage: React.FC = () => {
               ? ` · ${t('subscriptionAuth.accountsCount', { count: managed.filter(item => item.account.provider === group[0].provider).length })}` : ''}`}
               description={t(`subscriptionAuth.details.${group[0].provider}`)}
               busy={!!loggingInProvider || isLoadingSubscriptions || !!subscriptionLoadError}
-              action={t(managed.some(item => item.account.provider === group[0].provider) && canEditAccountPools ? 'subscriptionAuth.pool.addAccount' : 'subscriptionAuth.login')}
-              onAdd={() => startAccount(group[0].provider)}>
+              action={isRetiredSubscriptionProvider(group[0].provider) ? undefined
+                : t(managed.some(item => item.account.provider === group[0].provider) && canEditAccountPools ? 'subscriptionAuth.pool.addAccount' : 'subscriptionAuth.login')}
+              onAdd={isRetiredSubscriptionProvider(group[0].provider) ? undefined : () => startAccount(group[0].provider)}>
               <SubscriptionAccountList accounts={managed.filter(item => item.account.provider === group[0].provider)}
                 renderAccount={item => renderAccount(item.account, false, item.accountId, item.enabled)} />
             </SubscriptionServiceGroup>

@@ -175,15 +175,15 @@ describe('ModelSettingsPage loading and provider actions', () => {
     }[operation]);
   });
 
-  it.each([false, true])('cancelling a new WorkBuddy account preserves the settings draft state (model editor: %s)', async inModelEditor => {
+  it.each([false, true])('cancelling a new Hermes account preserves the settings draft state (model editor: %s)', async inModelEditor => {
     const account = {
-      provider: 'workbuddy' as const, display_label: 'WorkBuddy', connected: true,
+      provider: 'hermes' as const, display_label: 'Hermes', connected: true,
       account: 'Existing account', suggested_format: 'openai',
-      suggested_base_url: 'https://copilot.tencent.com/v2', suggested_model: 'auto', api_offerings: [],
+      suggested_base_url: 'https://inference-api.nousresearch.com/v1', suggested_model: 'hermes-4', api_offerings: [],
     };
     vi.spyOn(aiApi, 'listSubscriptionAccounts').mockResolvedValue([account]);
     vi.spyOn(aiApi, 'listSubscriptionAccountInstances').mockResolvedValue([{
-      account_id: 'workbuddy', is_default: true, account, enabled: true, supports_multiple_accounts: true,
+      account_id: 'hermes', is_default: true, account, enabled: true, supports_multiple_accounts: true,
     }]);
     vi.spyOn(aiApi, 'getSubscriptionAccountQuota').mockImplementation(() => new Promise(() => {}));
     const started = deferred();
@@ -238,7 +238,7 @@ describe('ModelSettingsPage loading and provider actions', () => {
       expect(warning).not.toHaveBeenCalled();
       expect(dialog().querySelector('[role="alert"]')?.textContent).toContain(missingModels);
       expect(update).not.toHaveBeenCalled();
-      vi.spyOn(aiApi, 'listModelsByConfig').mockResolvedValue([{ id: 'fixture-workbuddy-model' }]);
+      vi.spyOn(aiApi, 'listModelsByConfig').mockResolvedValue([{ id: 'fixture-hermes-model' }]);
       vi.spyOn(aiApi, 'testAIConfigConnection').mockImplementation(() => new Promise(() => {}));
       update.mockImplementation(async <T,>(_path: string, transform: (current: T) => T) => transform([model] as T));
       await act(async () => dialog().querySelector<HTMLButtonElement>('[data-testid="settings-model-select"]')!.click());
@@ -248,8 +248,8 @@ describe('ModelSettingsPage loading and provider actions', () => {
       await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="settings-model-save-btn"]')!.click());
       expect(update).toHaveBeenCalledOnce();
       const saved = update.mock.calls[0][1]([model]) as AIModelConfig[];
-      expect(saved.at(-1)?.auth).toEqual({ type: 'subscription', provider: 'workbuddy' });
-      expect(saved.at(-1)?.model_name).toBe('fixture-workbuddy-model');
+      expect(saved.at(-1)?.auth).toEqual({ type: 'subscription', provider: 'hermes' });
+      expect(saved.at(-1)?.model_name).toBe('fixture-hermes-model');
     } else {
       expect(getSettingsDraftSnapshot().resources.every(resource => !resource.dirty && !resource.saving)).toBe(true);
       const leave = vi.fn();

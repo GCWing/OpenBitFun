@@ -187,23 +187,31 @@ production discovery without inference or reading third-party credentials.
 This verifies the selected host's catalog, not generation eligibility or remote
 transport behavior.
 
-WorkBuddy (`workbuddy`, `workbuddy_ai`) and ZCode (`zcode`, `zcode_cn`) use
-browser authorization with server polling; no loopback callback or third-party
-desktop credential read is involved. Protocols were compared with magpie's
-`internal/provider/workbuddy.go`, `zcode.go`, and
+ZCode (`zcode`, `zcode_cn`) uses browser authorization with server polling; no
+loopback callback or third-party desktop credential read is involved. Protocols
+were compared with magpie's `internal/provider/zcode.go` and
 [magpie-community/plugins](https://github.com/magpie-community/plugins), commit
-`ab38da681af7716ea9a7609f045ca91d2ad9988a`, on 2026-10-19.
-WorkBuddy preserves enterprise identity and refreshes under the existing account
-lease and revision CAS. Its request dialect and tool aliases stay in the provider
-adapter. ZCode imports active personal/team Coding Plans only; its vault access
-field holds the project key after browser authorization, with a non-expiring
-credential marker. Never use a business-session token for inference or silently
-switch Coding Plan requests onto Start/gift plans. Region and project endpoints
-are adapter-owned. Catalog failures remain errors.
+`ab38da681af7716ea9a7609f045ca91d2ad9988a`, on 2026-10-19. ZCode imports active
+personal/team Coding Plans only; its vault access field holds the project key
+after browser authorization, with a non-expiring credential marker. Never use a
+business-session token for inference or silently switch Coding Plan requests onto
+Start/gift plans. Region and project endpoints are adapter-owned. Catalog
+failures remain errors.
+
+WorkBuddy (`workbuddy`, `workbuddy_ai`) is retired. The vendor stopped allowing
+subscription-token access, so its sign-in, refresh, catalog, request-dialect and
+billing protocols were deleted. `SubscriptionProvider::{Workbuddy, WorkbuddyAi}`
+stay deserializable, keep their store keys, and are absent from
+`SubscriptionProvider::ALL` so nothing offers them; every login, resolve,
+catalog, quota and route path returns `SubscriptionProvider::retired_error()`.
+Stored credentials are never deleted automatically: a slot that still holds
+state is listed in `list_accounts`/`list_account_instances` so an upgrade can
+show and remove it. Do not reintroduce a vendor protocol without confirming the
+vendor allows subscription access again.
 
 Focused checks: `cargo test --locked -p openbitfun-ai-adapters --features
 subscription-auth --lib subscription_auth` and `cargo test --locked -p
-openbitfun-ai-adapters --features subscription-auth --lib providers::workbuddy`.
+openbitfun-ai-adapters --features subscription-auth --lib providers`.
 The ignored `subscription_auth::browser_poll::tests::live_browser_authorization_endpoints`
 probe accepts an optional `OPENBITFUN_LIVE_SUBSCRIPTION_PROXY`, creates short-lived
 flows, prints browser hosts only, and never polls, authorizes, or stores an account.
@@ -217,20 +225,6 @@ keeps its advertised interval and expiry across transient connection failures.
 The ignored `subscription_auth::zcode::tests::live_public_coding_catalogs` probe uses
 the same proxy variable to read both public regional Coding Plan catalogs,
 without any credentials; it does not establish account eligibility.
-
-WorkBuddy catalog discovery must send exactly one `User-Agent`:
-`CLI/2.0.0 WorkBuddy/5.5.6`. Remove account/saved User-Agent spellings before
-adding it: reqwest's `.header()` appends, whereas magpie's `Header.Set` replaces.
-Duplicate IDE/CLI identities return the IDE config without a `cli` agent.
-The WorkBuddy subscription tests verify the wire headers for both regions and
-retain the selected user/enterprise identity. For an opt-in real account check,
-set `OPENBITFUN_LIVE_WORKBUDDY_ACCOUNT` to an exact OpenBitFun account slot and
-run `cargo test --locked -p openbitfun-ai-adapters --features subscription-auth
---lib subscription_auth::workbuddy::tests::live_workbuddy_model_catalog --
---ignored --nocapture`. Optionally set `OPENBITFUN_LIVE_SUBSCRIPTION_CONFIG` to
-an explicitly selected OpenBitFun app config to reuse its proxy. The probe uses
-only the in-app vault, may refresh the selected credential, and prints only the
-model count. It verifies catalog discovery, not inference or remote surfaces.
 
 OpenCode API-key discovery uses `https://models.opencode.ai/api.json` with a
 one-hour public-only memory cache and no account headers. Preserve per-model
@@ -281,15 +275,14 @@ cargo test -p openbitfun-ai-adapters --features subscription-auth --lib provider
 If stream behavior affects core integration, also run the relevant tests in
 `src/crates/assembly/core/tests`.
 
-WorkBuddy/ZCode allowance reads live in `subscription_auth::vendor_quota`.
-WorkBuddy billing uses `/billing/meter/` (not `/v2`), account/domain headers and
-enterprise usage when applicable. ZCode monitoring uses the bare project key,
-keeps the BigModel team billing origin and organization/project headers, and
-separates MCP call limits from Coding Plan windows. Optional plan-term failures
-do not erase observed allowance. Missing fields stay unknown; zero-cap ZCode
-limits mean unlimited. These display observations must not gate model routing.
-Versioned display DTOs are additive to existing Codex windows/details. Preserve
-unknown cache/display versions and credential-epoch CAS when publishing results.
+ZCode/Grok allowance reads live in `subscription_auth::vendor_quota`.
+ZCode monitoring uses the bare project key, keeps the BigModel team billing
+origin and organization/project headers, and separates MCP call limits from
+Coding Plan windows. Optional plan-term failures do not erase observed
+allowance. Missing fields stay unknown; zero-cap ZCode limits mean unlimited.
+These display observations must not gate model routing. Versioned display DTOs
+are additive to existing Codex windows/details. Preserve unknown cache/display
+versions and credential-epoch CAS when publishing results.
 
 Focused allowance verification:
 `cargo test --locked -p openbitfun-ai-adapters --features subscription-auth --lib subscription_auth`

@@ -26,7 +26,10 @@ opaque compatible-source fields. This codec is not a general external-config
 importer and performs no credential or filesystem IO.
 Provider-default WorkBuddy/ZCode records also use this downgrade boundary,
 because earlier readers do not recognize their provider enum tags. Existing
-provider-default records retain their original shape.
+provider-default records retain their original shape. `workbuddy` and
+`workbuddy_ai` are retired providers whose runtime protocols were removed; their
+enum tags stay deserializable so the records an earlier release wrote keep
+loading and protecting themselves.
 
 `account_pool` owns pure member validation and revision reconciliation for
 configuration commits. Unchanged historical records remain readable. Member

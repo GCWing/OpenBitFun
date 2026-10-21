@@ -12,7 +12,7 @@
 |---|---|
 | 多服务商 | 已接入的 OpenAI Chat/Responses、Anthropic、Gemini 及订阅渠道可被用户明确选为主备；不同模型名称也可显式选入，不推测模型等价 |
 | 多渠道、多 key | 引用现有模型配置 ID，每个连接使用自己的端点、协议、模型及凭据；同一服务商的多把 API key 可配置为多个独立连接 |
-| 多账号 | Codex、Antigravity、OpenCode Zen、Grok、Hermes、WorkBuddy 和 ZCode 均使用独立账号槽位、固定账号和顺序账号池；登录、可信路由与额度查询分别按 adapter 能力处理 |
+| 多账号 | Codex、Antigravity、OpenCode Zen、Grok、Hermes 和 ZCode 均使用独立账号槽位、固定账号和顺序账号池；登录、可信路由与额度查询分别按 adapter 能力处理 |
 
 首版仅支持明确的顺序主备和手动固定选择。复用现有 Rust 模型链路、认证存储、客户端工厂与 Agent 回合，不引入网关、sidecar、daemon 或另一套工具执行循环。
 
@@ -27,7 +27,7 @@
 | OpenCode Zen | 设备码；Console 用户身份与各账号目录 | 按所选账号解析协议、模型、组织请求头及可信 Console 端点；不向公开 Zen/Go key 路由发送 OAuth token | 暂不支持，显示未知，由请求验证 |
 | Grok | 设备码；服务商 JWT subject | 每槽位刷新，使用 Grok Build 的可信 Responses 与模型目录端点 | 暂不支持，显示未知，由请求验证 |
 | Hermes | 设备码；推理 scope 与 JWT subject | 每槽位轮换刷新，沿用可信 Nous 推理端点及 Chat 协议 | 暂不支持，显示未知，由请求验证 |
-| WorkBuddy | 国内 / 国际区浏览器授权及服务端轮询，保留企业身份 | 每槽位刷新与账号目录发现；地区身份独立 | 按个人 / 企业身份读取额度 |
+| WorkBuddy（已下线） | 厂商不再支持订阅授权，授权/轮询/额度协议已删除；保留槽位与配置反序列化能力，仅用于提示与手动退出 | 不支持，返回已下线错误 | 不支持，显示未知 |
 | ZCode | Z.ai / BigModel 浏览器授权及服务端轮询 | 仅接入有效个人或团队 Coding Plan 的项目 key | 按地区、组织及项目读取限额与附加额度 |
 
 没有上游身份证明时不推测身份；已知身份不能被重登或迟到刷新换绑。其他渠道的签名/不透明历史仍使用包含凭据的回放指纹，令牌轮换不自动获得跨凭据回放资格。OpenCode Go 保持 API key 路径。
