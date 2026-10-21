@@ -34,9 +34,10 @@ use openbitfun_services_integrations::mcp::server::{
 };
 use openbitfun_services_integrations::mcp::{
     build_mcp_tool_descriptor, build_mcp_tool_name, normalize_name_for_mcp,
-    render_mcp_tool_result_for_assistant, MCPContextEnhancer, MCPContextEnhancerConfig,
-    MCPDynamicToolProvider, MCPToolCatalogClient, McpDynamicToolDescriptor, McpToolInfo,
-    PromptAdapter, ResourceAdapter, MCP_TOOL_DELIMITER, MCP_TOOL_PREFIX,
+    render_mcp_tool_result_for_assistant, render_unparsed_mcp_tool_result_for_assistant,
+    MCPContextEnhancer, MCPContextEnhancerConfig, MCPDynamicToolProvider, MCPToolCatalogClient,
+    McpDynamicToolDescriptor, McpToolInfo, PromptAdapter, ResourceAdapter, MCP_TOOL_DELIMITER,
+    MCP_TOOL_PREFIX,
 };
 use rmcp::model::{AnnotateAble, Annotations, Content, Icon, Meta, RawResource, ResourceContents};
 use std::collections::HashMap;
@@ -1073,6 +1074,42 @@ fn mcp_tool_result_rendering_preserves_success_without_an_error_flag() {
             expected
         );
     }
+}
+
+#[test]
+fn mcp_unparsed_tool_error_payload_is_rendered_as_failure_without_private_metadata() {
+    let raw = serde_json::json!({
+        "isError": true,
+        "content": [{ "type": "resource_extension_from_a_newer_server", "uri": "file:///x" }],
+        "_meta": { "private": "not for the model" }
+    });
+
+    let rendered = render_unparsed_mcp_tool_result_for_assistant(&raw, usize::MAX);
+    assert!(
+        rendered.starts_with("MCP tool execution failed: "),
+        "an unparsed failing payload must not read as a completed call: {rendered}"
+    );
+    assert!(rendered.contains("resource_extension_from_a_newer_server"));
+    assert!(rendered.contains("\"isError\":true"));
+    assert!(!rendered.contains("not for the model"));
+
+    // Without the MCP error flag the pre-existing completed text stays.
+    for payload in [
+        serde_json::json!({ "unexpected": true }),
+        serde_json::json!({ "isError": false }),
+        serde_json::json!([1, 2, 3]),
+    ] {
+        assert_eq!(
+            render_unparsed_mcp_tool_result_for_assistant(&payload, usize::MAX),
+            "MCP tool execution completed"
+        );
+    }
+
+    // The failed fallback shares the assistant character budget.
+    let long = serde_json::json!({ "isError": true, "content": "x".repeat(200) });
+    let truncated = render_unparsed_mcp_tool_result_for_assistant(&long, 40);
+    assert!(truncated.starts_with("MCP tool execution failed: "));
+    assert!(truncated.contains("[Result truncated: 40 of"));
 }
 
 #[test]

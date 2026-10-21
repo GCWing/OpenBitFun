@@ -7,6 +7,7 @@ use openbitfun_agent_tools::{
     build_mcp_tool_bridge_definition, McpToolBridgeBehaviorHints, McpToolBridgeDefinition,
     McpToolBridgeDefinitionInput,
 };
+use serde_json::Value;
 
 pub type McpDynamicToolDescriptor = McpToolBridgeDefinition;
 
@@ -153,6 +154,32 @@ pub fn render_mcp_tool_result_for_assistant(
     }
 
     "MCP tool execution completed".to_string()
+}
+
+/// Render a result payload that does not match [`MCPToolResult`].
+///
+/// Unknown content block types from a newer server are the usual cause. Such a
+/// payload must not be reported as a completed call, because the tool pipeline
+/// reads the same `isError` flag to decide the result status; a failed call keeps
+/// the server's own payload visible instead. The private `_meta` extension is
+/// never part of what the model sees.
+pub fn render_unparsed_mcp_tool_result_for_assistant(
+    raw: &Value,
+    max_result_text_chars: usize,
+) -> String {
+    if raw.get("isError").and_then(Value::as_bool) != Some(true) {
+        return "MCP tool execution completed".to_string();
+    }
+
+    let mut payload = raw.clone();
+    if let Some(object) = payload.as_object_mut() {
+        object.remove("_meta");
+    }
+
+    truncate_for_assistant(
+        format!("MCP tool execution failed: {payload}"),
+        max_result_text_chars,
+    )
 }
 
 #[cfg(test)]
