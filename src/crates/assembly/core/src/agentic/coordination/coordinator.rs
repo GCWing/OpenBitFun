@@ -12810,6 +12810,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         Ok(subagent_session_ids)
     }
 
+    #[cfg(test)]
     pub(crate) async fn wait_for_background_subagent_outcomes(
         &self,
         parent_session_id: &str,
@@ -12820,10 +12821,35 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         cancellation_token: Option<&CancellationToken>,
         round_injection_preemption_token: Option<&CancellationToken>,
     ) -> OpenBitFunResult<BackgroundSubagentWaitResult> {
+        self.wait_for_background_subagent_outcomes_with_selection(
+            parent_session_id,
+            bg_task_ids,
+            true,
+            wait_mode,
+            timeout,
+            delivered_parent_dialog_turn_id,
+            cancellation_token,
+            round_injection_preemption_token,
+        )
+        .await
+    }
+
+    pub(crate) async fn wait_for_background_subagent_outcomes_with_selection(
+        &self,
+        parent_session_id: &str,
+        bg_task_ids: &[String],
+        select_all_when_empty: bool,
+        wait_mode: BackgroundSubagentWaitMode,
+        timeout: Duration,
+        delivered_parent_dialog_turn_id: &str,
+        cancellation_token: Option<&CancellationToken>,
+        round_injection_preemption_token: Option<&CancellationToken>,
+    ) -> OpenBitFunResult<BackgroundSubagentWaitResult> {
         self.background_subagent_outcomes
             .wait_for(
                 parent_session_id,
                 bg_task_ids,
+                select_all_when_empty,
                 wait_mode,
                 timeout,
                 delivered_parent_dialog_turn_id,
@@ -20814,8 +20840,79 @@ pub(crate) mod tests {
             )
             .await
             .expect("a consumed outcome should not be delivered twice");
-        assert_eq!(second.status.as_str(), "no_matching_tasks");
+        assert_eq!(second.status.as_str(), "completed");
         assert!(second.outcomes.is_empty());
+        assert_eq!(
+            second.already_delivered_bg_task_ids,
+            vec![registered.bg_task_id]
+        );
+    }
+
+    #[tokio::test]
+    async fn agent_wait_returns_valid_results_and_missing_id_diagnostics_together() {
+        let (coordinator, _) = test_coordinator();
+        let registered = register_test_background_task(
+            &coordinator,
+            "parent-session",
+            "parent-turn",
+            "subagent-session",
+        )
+        .await;
+        let completed = super::SubagentResult::completed("done".to_string());
+        coordinator
+            .background_subagent_outcomes
+            .complete(registered.task_pk, Ok(&completed))
+            .await;
+
+        let result = coordinator
+            .wait_for_background_subagent_outcomes_with_selection(
+                "parent-session",
+                &[registered.bg_task_id.clone(), "bg-missing".to_string()],
+                false,
+                BackgroundSubagentWaitMode::All,
+                Duration::from_millis(10),
+                "wait-turn",
+                None,
+                None,
+            )
+            .await
+            .expect("a missing ID should not prevent collecting valid results");
+
+        assert_eq!(result.status.as_str(), "completed");
+        assert_eq!(result.outcomes.len(), 1);
+        assert_eq!(result.outcomes[0].bg_task_id, registered.bg_task_id);
+        assert_eq!(result.missing_bg_task_ids, vec!["bg-missing"]);
+        assert!(result.already_delivered_bg_task_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn agent_wait_timeout_keeps_missing_id_diagnostics_with_pending_ids() {
+        let (coordinator, _) = test_coordinator();
+        let pending = register_test_background_task(
+            &coordinator,
+            "parent-session",
+            "parent-turn",
+            "subagent-session",
+        )
+        .await;
+
+        let result = coordinator
+            .wait_for_background_subagent_outcomes_with_selection(
+                "parent-session",
+                &[pending.bg_task_id.clone(), "bg-missing".to_string()],
+                false,
+                BackgroundSubagentWaitMode::All,
+                Duration::from_millis(1),
+                "wait-turn",
+                None,
+                None,
+            )
+            .await
+            .expect("a missing ID should not prevent waiting for valid pending IDs");
+
+        assert_eq!(result.status.as_str(), "timed_out");
+        assert_eq!(result.pending_bg_task_ids, vec![pending.bg_task_id]);
+        assert_eq!(result.missing_bg_task_ids, vec!["bg-missing"]);
     }
 
     #[tokio::test]
@@ -20979,7 +21076,7 @@ pub(crate) mod tests {
             )
             .await
             .expect("returned results should be consumed");
-        assert_eq!(retry.status.as_str(), "no_matching_tasks");
+        assert_eq!(retry.status.as_str(), "completed");
     }
 
     #[tokio::test]
@@ -21199,7 +21296,7 @@ pub(crate) mod tests {
             )
             .await
             .expect("a steered wait should consume returned outcomes");
-        assert_eq!(retry.status.as_str(), "no_matching_tasks");
+        assert_eq!(retry.status.as_str(), "completed");
     }
 
     #[test]

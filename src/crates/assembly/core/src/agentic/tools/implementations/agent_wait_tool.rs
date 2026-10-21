@@ -20,6 +20,8 @@ pub struct AgentWaitTool;
 #[derive(Debug, PartialEq, Eq)]
 struct AgentWaitRequest {
     bg_task_ids: Vec<String>,
+    invalid_bg_task_inputs: Vec<Value>,
+    select_all: bool,
     timeout_seconds: u64,
 }
 
@@ -42,35 +44,33 @@ impl AgentWaitTool {
         let task_ids = object
             .get("bg_task_ids")
             .or_else(|| object.get("background_task_ids"));
-        let (values, require_task_id) = match task_ids {
-            None => (Vec::new(), false),
-            Some(value @ Value::String(_)) => (vec![value], true),
-            Some(Value::Array(values)) if values.is_empty() => (Vec::new(), false),
-            Some(Value::Array(values)) => (values.iter().collect::<Vec<_>>(), true),
-            Some(_) => {
-                return Err(OpenBitFunError::tool(
-                    "bg_task_ids must be a string or an array".to_string(),
-                ));
-            }
+        let (values, select_all) = match task_ids {
+            None => (Vec::new(), true),
+            Some(value @ Value::String(_)) => (vec![value], false),
+            Some(Value::Array(values)) if values.is_empty() => (Vec::new(), true),
+            Some(Value::Array(values)) => (values.iter().collect::<Vec<_>>(), false),
+            Some(value) => (vec![value], false),
         };
 
         let mut seen = HashSet::new();
-        let bg_task_ids = values
-            .into_iter()
-            .filter_map(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .filter(|value| seen.insert((*value).to_string()))
-            .map(ToOwned::to_owned)
-            .collect::<Vec<_>>();
-        if require_task_id && bg_task_ids.is_empty() {
-            return Err(OpenBitFunError::tool(
-                "bg_task_ids must contain at least one non-empty string".to_string(),
-            ));
+        let mut bg_task_ids = Vec::new();
+        let mut invalid_bg_task_inputs = Vec::new();
+        for value in values {
+            let Some(task_id) = value.as_str().map(str::trim) else {
+                invalid_bg_task_inputs.push(value.clone());
+                continue;
+            };
+            if task_id.is_empty() {
+                invalid_bg_task_inputs.push(value.clone());
+            } else if seen.insert(task_id.to_string()) {
+                bg_task_ids.push(task_id.to_string());
+            }
         }
 
         Ok(AgentWaitRequest {
             bg_task_ids,
+            invalid_bg_task_inputs,
+            select_all,
             timeout_seconds: Self::parse_timeout_seconds(object.get("timeout_seconds")),
         })
     }
@@ -92,21 +92,16 @@ impl AgentWaitTool {
         })
     }
 
-    fn assistant_result(result: &BackgroundSubagentWaitResult) -> String {
+    fn assistant_result(
+        result: &BackgroundSubagentWaitResult,
+        invalid_bg_task_inputs: &[Value],
+    ) -> String {
         let finished = if result.status == BackgroundSubagentWaitStatus::Steered {
             "AgentWait ended early because user steering arrived. Background agents continue running."
                 .to_string()
         } else {
             format!("AgentWait finished with status {}.", result.status.as_str())
         };
-        if result.outcomes.is_empty() {
-            return format!(
-                "{} Pending background task IDs: {}.",
-                finished,
-                result.pending_bg_task_ids.join(", ")
-            );
-        }
-
         let mut message = finished;
         for outcome in &result.outcomes {
             message.push_str(&format!(
@@ -130,6 +125,26 @@ impl AgentWaitTool {
                 result.pending_bg_task_ids.join(", ")
             ));
         }
+        if !result.already_delivered_bg_task_ids.is_empty() {
+            message.push_str(&format!(
+                "\nAlready delivered background task IDs: {}.",
+                result.already_delivered_bg_task_ids.join(", ")
+            ));
+        }
+        if !result.missing_bg_task_ids.is_empty() {
+            message.push_str(&format!(
+                "\nBackground task IDs not found: {}.",
+                result.missing_bg_task_ids.join(", ")
+            ));
+        }
+        if !invalid_bg_task_inputs.is_empty() {
+            let inputs = invalid_bg_task_inputs
+                .iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            message.push_str(&format!("\nIgnored invalid bg_task_ids inputs: {inputs}."));
+        }
         message
     }
 }
@@ -149,8 +164,7 @@ impl Tool for AgentWaitTool {
     }
 
     async fn description(&self) -> OpenBitFunResult<String> {
-        Ok("Wait for background agent results.
-Wait for every selected task to complete. The tool also returns when `timeout_seconds` has elapsed.".to_string())
+        Ok("Wait for selected background agent results. The tool also returns when `timeout_seconds` has elapsed.".to_string())
     }
 
     fn short_description(&self) -> String {
@@ -171,7 +185,6 @@ Wait for every selected task to complete. The tool also returns when `timeout_se
                     "description": "Maximum time to wait in seconds, with a minimum of 30 minutes (default) and a maximum of 1 hour."
                 }
             },
-            "required": ["bg_task_ids"],
             "additionalProperties": false
         })
     }
@@ -232,9 +245,10 @@ Wait for every selected task to complete. The tool also returns when `timeout_se
         let coordinator = get_global_coordinator()
             .ok_or_else(|| OpenBitFunError::tool("coordinator not initialized".to_string()))?;
         let result = coordinator
-            .wait_for_background_subagent_outcomes(
+            .wait_for_background_subagent_outcomes_with_selection(
                 session_id,
                 &request.bg_task_ids,
+                request.select_all,
                 BackgroundSubagentWaitMode::All,
                 Duration::from_secs(request.timeout_seconds),
                 dialog_turn_id,
@@ -242,14 +256,18 @@ Wait for every selected task to complete. The tool also returns when `timeout_se
                 context.round_injection_preemption_token(),
             )
             .await?;
+        let assistant_text = Self::assistant_result(&result, &request.invalid_bg_task_inputs);
         let data = json!({
             "status": result.status.as_str(),
             "results": result.outcomes.iter().map(Self::outcome_json).collect::<Vec<_>>(),
             "pending_bg_task_ids": result.pending_bg_task_ids,
+            "already_delivered_bg_task_ids": result.already_delivered_bg_task_ids,
+            "missing_bg_task_ids": result.missing_bg_task_ids,
+            "invalid_bg_task_inputs": request.invalid_bg_task_inputs,
         });
         Ok(vec![ToolResult::Result {
             data,
-            result_for_assistant: Some(Self::assistant_result(&result)),
+            result_for_assistant: Some(assistant_text),
             image_attachments: None,
         }])
     }
@@ -258,6 +276,9 @@ Wait for every selected task to complete. The tool also returns when `timeout_se
 #[cfg(test)]
 mod tests {
     use super::{AgentWaitTool, DEFAULT_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS, MIN_TIMEOUT_SECONDS};
+    use crate::agentic::coordination::{
+        BackgroundSubagentWaitResult, BackgroundSubagentWaitStatus,
+    };
     use crate::agentic::tools::framework::Tool;
 
     #[test]
@@ -268,9 +289,51 @@ mod tests {
     }
 
     #[test]
+    fn assistant_result_omits_empty_pending_task_list() {
+        let result = BackgroundSubagentWaitResult {
+            status: BackgroundSubagentWaitStatus::Completed,
+            outcomes: Vec::new(),
+            pending_bg_task_ids: Vec::new(),
+            missing_bg_task_ids: Vec::new(),
+            already_delivered_bg_task_ids: Vec::new(),
+        };
+
+        assert_eq!(
+            AgentWaitTool::assistant_result(&result, &[]),
+            "AgentWait finished with status completed."
+        );
+    }
+
+    #[test]
+    fn assistant_result_renders_diagnostics_in_contract_order() {
+        let result = BackgroundSubagentWaitResult {
+            status: BackgroundSubagentWaitStatus::Completed,
+            outcomes: Vec::new(),
+            pending_bg_task_ids: vec!["bg-pending".to_string()],
+            already_delivered_bg_task_ids: vec!["bg-delivered".to_string()],
+            missing_bg_task_ids: vec!["bg-missing".to_string()],
+        };
+
+        assert_eq!(
+            AgentWaitTool::assistant_result(
+                &result,
+                &[serde_json::json!(123), serde_json::json!(null)]
+            ),
+            concat!(
+                "AgentWait finished with status completed.",
+                "\nPending background task IDs: bg-pending.",
+                "\nAlready delivered background task IDs: bg-delivered.",
+                "\nBackground task IDs not found: bg-missing.",
+                "\nIgnored invalid bg_task_ids inputs: 123, null."
+            )
+        );
+    }
+
+    #[test]
     fn missing_or_empty_task_ids_are_tolerated_by_the_parser() {
         let request = AgentWaitTool::parse_request(&serde_json::json!({})).expect("valid request");
         assert!(request.bg_task_ids.is_empty());
+        assert!(request.select_all);
         assert_eq!(request.timeout_seconds, DEFAULT_TIMEOUT_SECONDS);
 
         let empty = AgentWaitTool::parse_request(&serde_json::json!({
@@ -278,6 +341,18 @@ mod tests {
         }))
         .expect("an empty selector must be valid");
         assert!(empty.bg_task_ids.is_empty());
+        assert!(empty.select_all);
+    }
+
+    #[test]
+    fn input_schema_keeps_string_items_and_allows_omitting_ids() {
+        let schema = AgentWaitTool::new().input_schema();
+
+        assert!(schema.get("required").is_none());
+        assert_eq!(
+            schema["properties"]["bg_task_ids"]["items"],
+            serde_json::json!({ "type": "string" })
+        );
     }
 
     #[test]
@@ -287,6 +362,7 @@ mod tests {
         }))
         .expect("a single task ID string must be accepted");
         assert_eq!(request.bg_task_ids, ["bg1"]);
+        assert!(!request.select_all);
     }
 
     #[test]
@@ -296,24 +372,45 @@ mod tests {
         }))
         .expect("legacy task IDs must remain unambiguous at runtime");
         assert_eq!(request.bg_task_ids, ["bg1"]);
+        assert!(request.invalid_bg_task_inputs.is_empty());
     }
 
     #[test]
-    fn task_ids_filter_empty_values_and_deduplicate() {
+    fn task_ids_trim_deduplicate_and_report_invalid_values() {
         let request = AgentWaitTool::parse_request(&serde_json::json!({
             "bg_task_ids": [" bg1 ", "", null, 1, "bg1", "bg2", "   "]
         }))
         .expect("valid task IDs must be retained");
         assert_eq!(request.bg_task_ids, ["bg1", "bg2"]);
+        assert_eq!(
+            request.invalid_bg_task_inputs,
+            vec![
+                serde_json::json!(""),
+                serde_json::json!(null),
+                serde_json::json!(1),
+                serde_json::json!("   ")
+            ]
+        );
     }
 
     #[test]
-    fn task_ids_require_a_string_after_filtering_non_empty_inputs() {
-        let error = AgentWaitTool::parse_request(&serde_json::json!({
-            "bg_task_ids": ["", null, 1]
+    fn invalid_task_id_inputs_are_tolerated_and_do_not_select_all() {
+        let request = AgentWaitTool::parse_request(&serde_json::json!({
+            "bg_task_ids": ["", null, 1, {"x": true}, false]
         }))
-        .expect_err("non-empty selectors without usable IDs must fail");
-        assert!(error.to_string().contains("at least one non-empty string"));
+        .expect("invalid selectors should be tolerated");
+        assert!(request.bg_task_ids.is_empty());
+        assert!(!request.select_all);
+        assert_eq!(
+            request.invalid_bg_task_inputs,
+            vec![
+                serde_json::json!(""),
+                serde_json::json!(null),
+                serde_json::json!(1),
+                serde_json::json!({"x": true}),
+                serde_json::json!(false)
+            ]
+        );
     }
 
     #[test]

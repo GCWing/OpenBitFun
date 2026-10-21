@@ -97,6 +97,13 @@ pub(crate) struct DirectChildAgentRecord {
     pub background_turn_id: Option<String>,
 }
 
+#[derive(Debug, Default)]
+pub(crate) struct BackgroundTaskSelection {
+    pub records: Vec<BackgroundTaskRecord>,
+    pub missing_bg_task_ids: Vec<String>,
+    pub already_delivered_bg_task_ids: Vec<String>,
+}
+
 pub(crate) struct CoordinationStore {
     db_path: PathBuf,
     connection: OnceCell<Arc<Mutex<Connection>>>,
@@ -620,11 +627,12 @@ WHERE task_pk = ?5 AND status = 'running'
         &self,
         parent_session_id: &str,
         requested_bg_task_ids: &[String],
-    ) -> OpenBitFunResult<Vec<BackgroundTaskRecord>> {
+        select_all_when_empty: bool,
+    ) -> OpenBitFunResult<BackgroundTaskSelection> {
         let parent_session_id = parent_session_id.to_string();
         let requested_bg_task_ids = requested_bg_task_ids.to_vec();
         self.with_connection(move |connection| {
-            if requested_bg_task_ids.is_empty() {
+            if requested_bg_task_ids.is_empty() && select_all_when_empty {
                 let mut statement = connection
                     .prepare(&format!(
                         "{} WHERE tasks.parent_session_id = ?1 AND tasks.delivered_at_ms IS NULL ORDER BY tasks.task_pk",
@@ -634,10 +642,16 @@ WHERE task_pk = ?5 AND status = 'running'
                 let rows = statement
                     .query_map(params![parent_session_id], background_task_from_row)
                     .map_err(db_error)?;
-                return collect_rows(rows);
+                return Ok(BackgroundTaskSelection {
+                    records: collect_rows(rows)?,
+                    ..BackgroundTaskSelection::default()
+                });
             }
 
-            let mut records = Vec::with_capacity(requested_bg_task_ids.len());
+            let mut selection = BackgroundTaskSelection {
+                records: Vec::with_capacity(requested_bg_task_ids.len()),
+                ..BackgroundTaskSelection::default()
+            };
             for bg_task_id in requested_bg_task_ids {
                 let record = connection
                     .query_row(
@@ -649,15 +663,18 @@ WHERE task_pk = ?5 AND status = 'running'
                         background_task_from_row,
                     )
                     .optional()
-                    .map_err(db_error)?
-                    .ok_or_else(|| {
-                        OpenBitFunError::tool(format!("Background task was not found: {bg_task_id}"))
-                    })?;
-                if record.delivered_at_ms.is_none() {
-                    records.push(record);
+                    .map_err(db_error)?;
+                match record {
+                    Some(record) if record.delivered_at_ms.is_none() => {
+                        selection.records.push(record);
+                    }
+                    Some(_) => selection
+                        .already_delivered_bg_task_ids
+                        .push(bg_task_id.clone()),
+                    None => selection.missing_bg_task_ids.push(bg_task_id.clone()),
                 }
             }
-            Ok(records)
+            Ok(selection)
         })
         .await
     }
@@ -1171,6 +1188,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn wait_candidates_classifies_missing_and_delivered_ids_without_dropping_valid_ids() {
+        let (_root, store) = test_store();
+        let pending = store
+            .register_background_task(registration("parent", "child-pending", "spawn-1", None))
+            .await
+            .expect("register pending task");
+        let delivered = store
+            .register_background_task(registration("parent", "child-delivered", "spawn-2", None))
+            .await
+            .expect("register delivered task");
+        store
+            .update_task_status(
+                delivered.task_pk,
+                BackgroundTaskStatus::Completed,
+                None,
+                None,
+            )
+            .await
+            .expect("complete delivered task");
+        store
+            .claim_terminal_tasks("parent", &[delivered.task_pk], "delivered-turn")
+            .await
+            .expect("deliver task");
+
+        let selection = store
+            .wait_candidates(
+                "parent",
+                &[
+                    pending.bg_task_id.clone(),
+                    delivered.bg_task_id.clone(),
+                    "bg-missing".to_string(),
+                ],
+                false,
+            )
+            .await
+            .expect("classify selected ids");
+
+        assert_eq!(selection.records.len(), 1);
+        assert_eq!(selection.records[0].bg_task_id, pending.bg_task_id);
+        assert_eq!(
+            selection.already_delivered_bg_task_ids,
+            vec![delivered.bg_task_id]
+        );
+        assert_eq!(selection.missing_bg_task_ids, vec!["bg-missing"]);
+
+        let empty_selection = store
+            .wait_candidates("parent", &[], false)
+            .await
+            .expect("an explicit empty selection should not select all tasks");
+        assert!(empty_selection.records.is_empty());
+        assert!(empty_selection.missing_bg_task_ids.is_empty());
+        assert!(empty_selection.already_delivered_bg_task_ids.is_empty());
+    }
+
+    #[tokio::test]
     async fn schema_v2_repairs_missing_delivery_columns_idempotently() {
         let root = test_tempdir();
         let db_path = root.path().join("coordination.sqlite");
@@ -1234,12 +1306,12 @@ PRAGMA user_version = 2;
 
         let store = CoordinationStore::new(db_path.clone());
         let candidates = store
-            .wait_candidates("parent", &[])
+            .wait_candidates("parent", &[], true)
             .await
             .expect("repaired database should support current reads");
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].bg_task_id, "helper_bg1");
-        assert!(candidates[0].delivered_at_ms.is_none());
+        assert_eq!(candidates.records.len(), 1);
+        assert_eq!(candidates.records[0].bg_task_id, "helper_bg1");
+        assert!(candidates.records[0].delivered_at_ms.is_none());
         drop(store);
 
         let connection = Connection::open(&db_path).expect("reopen repaired database");
@@ -2044,12 +2116,12 @@ PRAGMA user_version = 2;
             .expect("rollback parent turns");
         assert_eq!(deleted, vec![removed.task_pk]);
         let candidates = store
-            .wait_candidates("parent", &[])
+            .wait_candidates("parent", &[], true)
             .await
             .expect("load restored candidates");
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].task_pk, delivered.task_pk);
-        assert!(candidates[0].delivered_at_ms.is_none());
+        assert_eq!(candidates.records.len(), 1);
+        assert_eq!(candidates.records[0].task_pk, delivered.task_pk);
+        assert!(candidates.records[0].delivered_at_ms.is_none());
     }
 
     #[tokio::test]
@@ -2069,9 +2141,10 @@ PRAGMA user_version = 2;
             .expect("initialize fork reservations");
 
         assert!(store
-            .wait_candidates("target", &[])
+            .wait_candidates("target", &[], true)
             .await
             .expect("load fork tasks")
+            .records
             .is_empty());
         let target = store
             .register_background_task(registration("target", "target-child", "spawn-turn", None))
@@ -2128,9 +2201,10 @@ PRAGMA user_version = 2;
             vec![second.task_pk]
         );
         assert!(store
-            .wait_candidates("parent", &[])
+            .wait_candidates("parent", &[], true)
             .await
             .expect("load remaining tasks")
+            .records
             .is_empty());
     }
 }
