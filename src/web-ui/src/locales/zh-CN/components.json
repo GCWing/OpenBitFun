@@ -659,6 +659,7 @@
     "loading": "加载中…",
     "loadFailed": "无法加载此卡片。",
     "unsupportedTemplate": "此卡片需要更新版本的 OpenBitFun。",
+    "stackingFailed": "无法切换显示模式：{{error}}",
     "updated": "更新于{{time}}",
     "updatedWithWarning": "更新于{{time}}，部分数据可能缺失",
     "refreshFailed": "刷新失败：{{error}}",
@@ -667,7 +668,8 @@
       "refresh": "刷新",
       "openLink": "打开链接",
       "openSession": "打开来源会话",
-      "alwaysOnTop": "保持置顶",
+      "alwaysOnTop": "全局置顶",
+      "desktopPinned": "固定桌面",
       "hide": "隐藏卡片",
       "delete": "删除卡片"
     },

@@ -94,6 +94,10 @@ export interface DesktopCardRecord {
   position?: { x: number; y: number };
   visible: boolean;
   alwaysOnTop: boolean;
+  /** Windows host presentation preference; absent on legacy records. */
+  desktopPinned?: boolean;
+  /** Runtime capability advertised by get(), not a persisted preference. */
+  desktopPinningSupported?: boolean;
   origin?: { sessionId?: string; agentType?: string; workspacePath?: string };
   createdAtMs: number;
   updatedAtMs: number;
@@ -103,6 +107,8 @@ export interface DesktopCardRecord {
 export interface DesktopCardList {
   enabled: boolean;
   cards: DesktopCardRecord[];
+  /** Host capability from `desktop_card_list`; absent on older hosts. */
+  desktopPinningSupported?: boolean;
 }
 
 export interface DesktopCardChangedPayload {
@@ -113,6 +119,13 @@ export interface DesktopCardChangedPayload {
 
 export interface DesktopCardStatePayload {
   enabled: boolean;
+}
+
+/** Desktop pinning and global always-on-top are exclusive on the host. */
+export function isDesktopPinned(
+  card: Pick<DesktopCardRecord, 'desktopPinned' | 'alwaysOnTop'>,
+): boolean {
+  return card.desktopPinned === true && !card.alwaysOnTop;
 }
 
 /** Desktop cards are host windows on this computer; every command stays controller-local. */
@@ -130,6 +143,7 @@ export class DesktopCardAPI {
     return {
       enabled: result?.enabled !== false,
       cards: Array.isArray(result?.cards) ? result.cards : [],
+      desktopPinningSupported: result?.desktopPinningSupported === true,
     };
   }
 
@@ -155,6 +169,16 @@ export class DesktopCardAPI {
 
   async setAlwaysOnTop(cardId: string, alwaysOnTop: boolean): Promise<DesktopCardRecord> {
     return this.invoke<DesktopCardRecord>('desktop_card_set_always_on_top', { cardId, alwaysOnTop });
+  }
+
+  async setDesktopPinned(cardId: string, desktopPinned: boolean): Promise<DesktopCardRecord> {
+    const card = await this.get(cardId);
+    if (card.desktopPinningSupported !== true) {
+      throw new Error('Desktop pinning requires a Windows host that supports this feature.');
+    }
+    return this.invoke<DesktopCardRecord>('desktop_card_set_always_on_top', {
+      cardId, alwaysOnTop: false, desktopPinned,
+    });
   }
 
   onChanged(callback: (payload: DesktopCardChangedPayload) => void): () => void {

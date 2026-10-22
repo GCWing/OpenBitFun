@@ -9,6 +9,9 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const mocks = vi.hoisted(() => ({
   isMac: false,
+  isWindows: true,
+  setDesktopPinned: vi.fn(),
+  setAlwaysOnTop: vi.fn(),
   nativeWindow: true,
   card: null as unknown,
   startResize: vi.fn(async (_direction: string) => {}),
@@ -38,14 +41,18 @@ vi.mock('@openbitfun/ui', () => ({
   IconButton: React.forwardRef<HTMLButtonElement, { 'aria-label'?: string; onClick?: () => void }>(
     ({ 'aria-label': label, onClick }, ref) => <button ref={ref} aria-label={label} onClick={onClick} />,
   ),
-  MenuPopover: () => null,
+  MenuPopover: ({ items, open }: { items: Array<{ id: string; label: string; checked?: boolean; disabled?: boolean; onSelect?: () => void }>; open: boolean }) => open ? (
+    <div role="menu">{items.filter(item => item.onSelect).map(item => (
+      <button key={item.id} data-menu-id={item.id} aria-checked={item.checked} disabled={item.disabled} onClick={item.onSelect}>{item.label}</button>
+    ))}</div>
+  ) : null,
   OverflowText: ({ children, ...props }: { children: React.ReactNode }) => <span {...props}>{children}</span>,
   Spinner: () => <span data-testid="spinner" />,
 }));
 
 vi.mock('@/infrastructure/i18n/hooks/useI18n', () => ({
   useI18n: () => ({
-    t: (key: string) => key,
+    t: (key: string, values?: { error?: string }) => values?.error ? `${key}: ${values.error}` : key,
     formatNumber: (value: number) => String(value),
     formatDate: (value: number) => String(value),
     formatRelativeTime: () => 'just now',
@@ -57,6 +64,9 @@ vi.mock('@/shared/utils/logger', () => ({
 }));
 
 vi.mock('@/infrastructure/api/service-api/DesktopCardAPI', () => ({
+  // Mirrors the host rule: desktop pinning and global always-on-top are exclusive.
+  isDesktopPinned: (card: { desktopPinned?: boolean; alwaysOnTop?: boolean }) =>
+    card.desktopPinned === true && !card.alwaysOnTop,
   desktopCardAPI: {
     get: vi.fn(async () => mocks.card),
     onChanged: vi.fn(() => () => {}),
@@ -64,7 +74,8 @@ vi.mock('@/infrastructure/api/service-api/DesktopCardAPI', () => ({
     setVisible: vi.fn(async () => mocks.card),
     delete: vi.fn(async () => {}),
     refresh: vi.fn(async () => mocks.card),
-    setAlwaysOnTop: vi.fn(async () => mocks.card),
+    setAlwaysOnTop: mocks.setAlwaysOnTop,
+    setDesktopPinned: mocks.setDesktopPinned,
   },
 }));
 
@@ -83,6 +94,7 @@ vi.mock('@/infrastructure/desktop-cards/desktopCardWindow', () => ({
 vi.mock('@/infrastructure/runtime/environment', () => ({
   supportsNativeWindowControls: () => mocks.nativeWindow,
   isMacOSDesktopRuntime: () => mocks.isMac,
+  isWindowsDesktopRuntime: () => mocks.isWindows,
 }));
 
 function noteCard(lastData?: Record<string, unknown>) {
@@ -117,6 +129,9 @@ describe('DesktopCardWindow', () => {
     mocks.isMac = false;
     mocks.nativeWindow = true;
     mocks.card = noteCard();
+    mocks.isWindows = true;
+    mocks.setDesktopPinned.mockReset().mockImplementation(async (_id: string, pinned: boolean) => ({ ...noteCard(), alwaysOnTop: false, desktopPinned: pinned }));
+    mocks.setAlwaysOnTop.mockReset().mockImplementation(async (_id: string, top: boolean) => ({ ...noteCard(), alwaysOnTop: top, desktopPinned: false }));
     mocks.startResize.mockClear();
     mocks.startDrag.mockClear();
   });
@@ -134,6 +149,53 @@ describe('DesktopCardWindow', () => {
       await Promise.resolve();
     });
   }
+
+  async function click(selector: string) {
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(selector)!.click();
+      await Promise.resolve();
+    });
+  }
+
+  it('switches between desktop pinning and global topmost without hiding the card', async () => {
+    mocks.card = { ...noteCard(), desktopPinningSupported: true };
+    await render();
+    await click('[aria-label="desktopCard.menu.more"]');
+    await click('[data-menu-id="desktop-pinned"]');
+    expect(mocks.setDesktopPinned).toHaveBeenCalledWith('card-1', true);
+    expect(container.querySelector('[data-menu-id="desktop-pinned"]')?.getAttribute('aria-checked')).toBe('true');
+    expect(container.querySelector('[data-menu-id="always-on-top"]')?.getAttribute('aria-checked')).toBe('false');
+    await click('[data-menu-id="always-on-top"]');
+    expect(mocks.setAlwaysOnTop).toHaveBeenCalledWith('card-1', true);
+    expect(container.querySelector('[data-menu-id="desktop-pinned"]')?.getAttribute('aria-checked')).toBe('false');
+    expect(container.textContent).toContain('hello');
+  });
+
+  it.each([false, undefined])('hides desktop pinning when the host does not advertise it (%s)', async supported => {
+    mocks.card = { ...noteCard(), desktopPinningSupported: supported };
+    await render();
+    await click('[aria-label="desktopCard.menu.more"]');
+    expect(container.querySelector('[data-menu-id="desktop-pinned"]')).toBeNull();
+  });
+
+  it('hides desktop pinning outside Windows even if the capability was advertised', async () => {
+    mocks.isWindows = false;
+    mocks.card = { ...noteCard(), desktopPinningSupported: true };
+    await render();
+    await click('[aria-label="desktopCard.menu.more"]');
+    expect(container.querySelector('[data-menu-id="desktop-pinned"]')).toBeNull();
+  });
+
+  it('reports a rejected native mode change without changing the selected mode', async () => {
+    mocks.card = { ...noteCard(), desktopPinningSupported: true };
+    mocks.setDesktopPinned.mockRejectedValueOnce(new Error('Explorer unavailable'));
+    await render();
+    await click('[aria-label="desktopCard.menu.more"]');
+    await click('[data-menu-id="desktop-pinned"]');
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('desktopCard.stackingFailed: Explorer unavailable');
+    expect(container.querySelector('[data-menu-id="always-on-top"]')?.getAttribute('aria-checked')).toBe('true');
+    expect(container.querySelector('[data-menu-id="desktop-pinned"]')?.getAttribute('aria-checked')).toBe('false');
+  });
 
   function regions() {
     return Array.from(container.querySelectorAll<HTMLElement>('[data-openbitfun-part="resizeHandle"]'));
