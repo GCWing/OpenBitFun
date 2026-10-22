@@ -46,7 +46,11 @@
       "subtitle": "在主窗口之外显示提醒、PR 状态、进度、天气等值得随时看一眼的小卡片",
       "enable": "启用小卡片",
       "description": "关闭后卡片会隐藏，智能体也无法再创建或更新卡片，已有卡片会保留。",
-      "unsupported": "请更新当前主机后再管理小卡片。"
+      "unsupported": "请更新当前主机后再管理小卡片。",
+      "pinnedOn": "已固定到桌面，位于图标之上并在其他应用之下",
+      "pinnedOff": "未固定到桌面",
+      "pinCard": "把“{{title}}”固定到桌面",
+      "pinFailed": "无法切换固定状态，请重试。"
     },
     "workspaceSearch": {
       "title": "加速工作区搜索",

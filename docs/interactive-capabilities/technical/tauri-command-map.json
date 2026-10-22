@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "c7c38fecfad3e83e4a9f6f451a37edbf7d42ef399409238253f9a0fd124f879b",
+  "catalogDigest": "b6170958ddcc690b4e86a6983ad4255dc3da0613fa768f8b97eae875a0d6b3c9",
   "commandCount": 701,
   "coverage": {
     "commandCount": 701,
@@ -2196,7 +2196,8 @@
         "feature.desktop-cards"
       ],
       "documentedItemIds": [
-        "feature.desktop-cards:card-actions"
+        "feature.desktop-cards:card-actions",
+        "feature.desktop-cards:desktop-pinning"
       ],
       "visibility": "documented",
       "rustPath": "desktop_cards::commands::desktop_card_set_always_on_top",

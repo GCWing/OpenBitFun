@@ -23,6 +23,8 @@ Let agents place draggable cards outside the main window for glanceable informat
   - See every card in the Home Desktop cards section, and show, hide, or delete individual cards
 - **由专用智能体工具控制 / Delegated Agent tool** · `DesktopCard` · 在卡片上刷新数据、勾选清单项、切换置顶、打开链接或回到来源会话
   - Refresh data, check off list items, toggle always-on-top, open the link, or return to the source session from a card
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 在卡片菜单、首页卡片列表或设置里把卡片固定到 Windows 桌面（图标之上、其他应用之下），隐藏的卡片同样可以切换固定状态
+  - Pin a card to the Windows desktop from the card menu, the Home card list, or Settings so it sits above the icons and behind other apps; hidden cards can be pinned too
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 拖动卡片到桌面任意位置，拖动卡片边缘或四角调整大小；关闭 OpenBitFun 时卡片消失，重新打开后按原位置和大小恢复
   - Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens
 
@@ -32,7 +34,9 @@ Let agents place draggable cards outside the main window for glanceable informat
    Ask an agent for a card, or let it create one during a task
 2. 拖动卡片到合适位置
    Drag the card where you want it
-3. 在首页“小卡片”区或卡片菜单中隐藏或删除
+3. 在卡片菜单、首页列表或设置里把卡片固定到桌面（Windows）
+   Pin it to the desktop from the card menu, the Home card list, or Settings (Windows)
+4. 在首页“小卡片”区或卡片菜单中隐藏或删除
    Hide or delete it from the Home Desktop cards section or the card menu
 
 入口 / Entry: OpenBitFun 设置

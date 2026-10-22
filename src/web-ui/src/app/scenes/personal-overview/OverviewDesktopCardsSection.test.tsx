@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   tauri: true,
   list: vi.fn(),
   setVisible: vi.fn(),
+  setDesktopPinned: vi.fn(),
   remove: vi.fn(),
   confirm: vi.fn(),
   notifyError: vi.fn(),
@@ -24,9 +25,13 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/infrastructure/runtime', () => ({ isTauriRuntime: () => mocks.tauri }));
 vi.mock('@/infrastructure/api/service-api/DesktopCardAPI', () => ({
+  // Mirrors the host rule: desktop pinning and global always-on-top are exclusive.
+  isDesktopPinned: (card: { desktopPinned?: boolean; alwaysOnTop?: boolean }) =>
+    card.desktopPinned === true && !card.alwaysOnTop,
   desktopCardAPI: {
     list: mocks.list,
     setVisible: mocks.setVisible,
+    setDesktopPinned: mocks.setDesktopPinned,
     delete: mocks.remove,
     onChanged: (listener: (payload: DesktopCardChangedPayload) => void) => {
       mocks.changed.push(listener);
@@ -80,6 +85,7 @@ beforeEach(() => {
   mocks.state = [];
   mocks.list.mockReset();
   mocks.setVisible.mockReset().mockResolvedValue(undefined);
+  mocks.setDesktopPinned.mockReset().mockResolvedValue(undefined);
   mocks.remove.mockReset().mockResolvedValue(undefined);
   mocks.confirm.mockReset().mockResolvedValue(true);
   mocks.notifyError.mockReset();
@@ -140,6 +146,58 @@ it('keeps a card when deletion is not confirmed and reports host failures', asyn
   mocks.setVisible.mockRejectedValue(new Error('host unavailable'));
   await act(async () => button(rows()[0], 'desktopCards.hide').click());
   expect(mocks.notifyError).toHaveBeenCalledWith('desktopCards.actionFailed');
+});
+
+it('pins and unpins a hidden card from the list when the host advertises pinning', async () => {
+  mocks.list.mockResolvedValue({
+    enabled: true,
+    desktopPinningSupported: true,
+    cards: [card('a', { visible: false })],
+  });
+  await render();
+  await act(async () => button(rows()[0], 'desktopCards.pin').click());
+  expect(mocks.setDesktopPinned).toHaveBeenCalledWith('a', true);
+
+  await act(async () => mocks.changed.forEach(listener => listener({
+    cardId: 'a',
+    card: card('a', { visible: false, alwaysOnTop: false, desktopPinned: true, updatedAtMs: 9 }),
+    deleted: false,
+  })));
+  expect(rows()[0].dataset.pinned).toBe('true');
+  expect(rows()[0].textContent).toContain('desktopCards.pinned');
+  expect(rows()[0].textContent).toContain('desktopCards.hidden');
+
+  await act(async () => button(rows()[0], 'desktopCards.unpin').click());
+  expect(mocks.setDesktopPinned).toHaveBeenCalledWith('a', false);
+});
+
+it('treats a globally topmost card as not pinned when pinning it from the list', async () => {
+  mocks.list.mockResolvedValue({
+    enabled: true,
+    desktopPinningSupported: true,
+    cards: [card('a', { desktopPinned: true, alwaysOnTop: true })],
+  });
+  await render();
+  expect(rows()[0].dataset.pinned).toBe('false');
+  await act(async () => button(rows()[0], 'desktopCards.pin').click());
+  expect(mocks.setDesktopPinned).toHaveBeenCalledWith('a', true);
+});
+
+it('hides the pin action on hosts without the capability', async () => {
+  mocks.list.mockResolvedValue({ enabled: true, cards: [card('a')] });
+  await render();
+  expect(rows()[0].querySelector('button[aria-label="desktopCards.pin"]')).toBeNull();
+  expect(rows()[0].querySelector('button[aria-label="desktopCards.unpin"]')).toBeNull();
+});
+
+it('reports a rejected pin change without claiming the card is pinned', async () => {
+  mocks.list.mockResolvedValue({ enabled: true, desktopPinningSupported: true, cards: [card('a')] });
+  mocks.setDesktopPinned.mockRejectedValue(new Error('Explorer unavailable'));
+  await render();
+  await act(async () => button(rows()[0], 'desktopCards.pin').click());
+  expect(mocks.notifyError).toHaveBeenCalledWith('desktopCards.actionFailed');
+  expect(rows()[0].dataset.pinned).toBe('false');
+  expect(mocks.setVisible).not.toHaveBeenCalled();
 });
 
 it('keeps cards listed but blocks showing hidden ones while the feature is turned off', async () => {
