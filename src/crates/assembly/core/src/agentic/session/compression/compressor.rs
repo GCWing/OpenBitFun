@@ -584,19 +584,39 @@ impl ContextCompressor {
 
     pub(crate) fn build_compact_prompt(&self) -> String {
         String::from(
-            r#"You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.
+            r#"You are performing a CONTEXT CHECKPOINT COMPACTION. Write a structured handoff summary of the conversation above for another LLM that will resume this task without access to it.
 
-Include:
-- Current progress and key decisions made
-- Important context, constraints, or user preferences
-- What remains to be done (clear next steps)
-- Any critical data, examples, or references needed to continue
+Output exactly the sections below, in this order. Omit a section only when it has no content.
 
-Be concise, structured, and focused on helping the next LLM seamlessly continue the work.
+## Goal
+[What the user is trying to accomplish. List multiple goals if the session covers different tasks.]
 
-Note: Preserve durable, task-specific state, but do not reproduce information that can be obtained again from its source:
-- Do not paste large file contents, long code blocks, command output, logs, tool results, or other bulky source material. Record the file path or source reference, plus a one-sentence description of its purpose or relevant contents. Include only a small exact snippet when it is essential and cannot be reliably reconstructed.
-- Do not copy Skill instructions or other reloadable guidance. Record the Skill name, why it is relevant, and that the next LLM should reload it when needed.
+## Constraints & Preferences
+- [Requirements, preferences, or restrictions the user stated or that the work discovered.]
+
+## Progress
+### Done
+- [x] [Completed work with specifics.]
+### In Progress
+- [ ] [Current work and its exact state.]
+### Blocked
+- [ ] [What is blocking progress and why.]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale.]
+
+## Next Steps
+1. [Ordered actions for the successor, written as imperatives, e.g. "Run X", "Fix Y".]
+
+## Critical Context
+- [Exact data, examples, or references needed to continue. Preserve any user question that is still awaiting an answer verbatim. Include repository state (branch, uncommitted changes) when relevant.]
+
+Rules:
+- Capture exact technical state, not abstractions. Preserve exact file paths, function or symbol names, commands, error messages, and relevant tool results or command output values.
+- Preserve durable, task-specific state, but do not reproduce information that can be obtained again from its source:
+  - Do not paste large file contents, long code blocks, command output, logs, tool results, or other bulky source material. Record the file path or source reference, plus a one-sentence description of its purpose or relevant contents. Include only a small exact snippet when it is essential and cannot be reliably reconstructed.
+  - Do not copy Skill instructions or other reloadable guidance. Record the Skill name, why it is relevant, and that the next LLM should reload it when needed.
+- Keep every section concise. The handoff itself is invisible to the document: never list writing, generating, or delivering a summary as progress or a next step.
 
 IMPORTANT: This is a summary-only turn. Do not call tools or perform additional work. Respond with the handoff summary as plain text. Any tool call will be rejected and you will fail the task.
 "#,
@@ -673,6 +693,45 @@ mod tests {
             duration_ms: None,
             image_attachments: None,
         })
+    }
+
+    #[test]
+    fn compact_prompt_is_structured_ascii_and_constrained() {
+        let prompt = ContextCompressor::new().build_compact_prompt();
+
+        for section in [
+            "## Goal",
+            "## Constraints & Preferences",
+            "## Progress",
+            "### Done",
+            "### In Progress",
+            "### Blocked",
+            "## Key Decisions",
+            "## Next Steps",
+            "## Critical Context",
+        ] {
+            assert!(prompt.contains(section), "missing section: {section}");
+        }
+
+        // Retention requirements: exact technical state, unanswered user
+        // questions, and repository state survive the summary.
+        assert!(prompt.contains("Preserve exact file paths"));
+        assert!(prompt.contains("error messages"));
+        assert!(prompt.contains("still awaiting an answer verbatim"));
+        assert!(prompt.contains("repository state (branch, uncommitted changes)"));
+
+        // The anti-bulk-copy and reloadable-guidance constraints carry over
+        // from the previous template.
+        assert!(prompt.contains("Do not paste large file contents"));
+        assert!(prompt.contains("Do not copy Skill instructions"));
+
+        // The summary-only turn contract must stay: tool calls are rejected
+        // downstream and retried as model errors.
+        assert!(prompt.contains("summary-only turn"));
+        assert!(prompt.contains("Do not call tools"));
+
+        // Model-facing copy stays ASCII-only English.
+        assert!(prompt.chars().all(|character| character.is_ascii()));
     }
 
     #[test]
