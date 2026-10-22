@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "b6170958ddcc690b4e86a6983ad4255dc3da0613fa768f8b97eae875a0d6b3c9",
+  "catalogDigest": "4b3baea602820774739229ba5788a734a95d60de43775214a9359d4b2f4f5225",
   "count": 217,
   "reasonCounts": {
     "externalAuth": 4,
@@ -2527,11 +2527,11 @@
     {
       "capabilityId": "feature.desktop-cards",
       "itemId": "desktop-pinning",
-      "titleZh": "在卡片菜单、首页卡片列表或设置里把卡片固定到 Windows 桌面（图标之上、其他应用之下），隐藏的卡片同样可以切换固定状态",
-      "titleEn": "Pin a card to the Windows desktop from the card menu, the Home card list, or Settings so it sits above the icons and behind other apps; hidden cards can be pinned too",
+      "titleZh": "在卡片菜单、首页卡片列表或设置里把卡片固定到 Windows 桌面，隐藏的卡片同样可以切换固定状态",
+      "titleEn": "Pin a card to the Windows desktop from the card menu, the Home card list, or Settings, including hidden cards",
       "reasonCode": "unstructuredInteraction",
-      "reasonZh": "固定桌面会改变卡片在 Windows 桌面层的层级关系，并且需要 Explorer 可用且 DPI 上下文一致才能成立；DesktopCard 工具的配置里没有这项显示偏好，因此由用户在卡片菜单或管理列表里切换，智能体只打开精确入口。",
-      "reasonEn": "Desktop pinning changes how the card is layered inside the Windows desktop and only holds while Explorer is available with a matching DPI context; the DesktopCard tool configuration deliberately does not carry this display preference, so the user toggles it from the card menu or a management list and the Agent only opens the exact entry.",
+      "reasonZh": "“在卡片菜单、首页卡片列表或设置里把卡片固定到 Windows 桌面，隐藏的卡片同样可以切换固定状态”会让卡片进入 Explorer 桌面层，位于桌面图标之上、其他应用之下，并且需要 Explorer 可用且 DPI 上下文一致才能成立；DesktopCard 工具的配置里没有这项显示偏好，因此由用户在卡片菜单或管理列表里切换，智能体只打开精确入口。",
+      "reasonEn": "“Pin a card to the Windows desktop from the card menu, the Home card list, or Settings, including hidden cards” moves the card into the Explorer desktop layer, above the icons and behind other apps, and only holds while Explorer is available with a matching DPI context; the DesktopCard tool configuration deliberately does not carry this display preference, so the user toggles it from the card menu or a management list and the Agent only opens the exact entry.",
       "presentationTarget": {
         "kind": "settings",
         "pageId": "application.pet",
