@@ -1,0 +1,21 @@
+{
+  "title": "Context",
+  "subtitle": "Long conversations are compressed automatically so the working history stays inside the model window",
+  "compression": {
+    "sectionTitle": "Automatic compression",
+    "sectionDescription": "When the conversation approaches the context limit, older history is summarized and the most recent exchanges are kept verbatim",
+    "prefetch": {
+      "label": "Prepare compression early",
+      "description": "Starts the summary in the background just before the limit is reached, so compression finishes faster when it is needed"
+    }
+  },
+  "messages": {
+    "saveSuccess": "Settings saved",
+    "saveFailed": "Failed to save settings"
+  },
+  "loading": {
+    "text": "Loading context settings…",
+    "failed": "Failed to load context settings",
+    "retry": "Retry"
+  }
+}

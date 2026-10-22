@@ -9,6 +9,7 @@ const CONFIG_PATHS: Partial<Record<SettingsPageId, readonly string[]>> = {
   'application.pet': ['app.ai_experience'],
   'application.input': ['app.ai_experience', 'app.flow_chat.auto_show_selection_toolbar'],
   'ai.session-memory': ['app.flow_chat', 'app.ai_experience', 'ai.models', 'ai.task_models', 'memories'],
+  'ai.context': ['ai.enable_context_compression_prefetch'],
   'ai.execution': ['ai.models', 'ai.enable_deferred_tool_loading', 'ai.subagent_max_concurrency', 'ai.swarm_max_concurrency', 'ai.tool_execution_timeout_secs', 'ai.subagent_batch_execution_policy', 'ai.user_question_timeout_secs'],
   'ai.permissions': ['tool_permissions', 'app.flow_chat.show_permission_mode_control'],
   'development.editor': ['editor'],

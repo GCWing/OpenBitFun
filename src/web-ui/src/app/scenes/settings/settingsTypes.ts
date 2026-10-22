@@ -11,6 +11,7 @@ export type SettingsPageId =
   | 'application.pet'
   | 'application.input'
   | 'ai.models'
+  | 'ai.context'
   | 'ai.session-memory'
   | 'ai.execution'
   | 'ai.permissions'

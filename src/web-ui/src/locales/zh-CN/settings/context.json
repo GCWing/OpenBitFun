@@ -1,0 +1,21 @@
+{
+  "title": "上下文",
+  "subtitle": "长对话会自动压缩，让工作历史始终保持在模型窗口范围内",
+  "compression": {
+    "sectionTitle": "自动压缩",
+    "sectionDescription": "当对话接近上下文上限时，较早的历史会被摘要，最近的交流保持原样保留",
+    "prefetch": {
+      "label": "提前准备压缩",
+      "description": "在接近上限前于后台预先开始摘要，使真正需要压缩时完成得更快"
+    }
+  },
+  "messages": {
+    "saveSuccess": "设置已保存",
+    "saveFailed": "保存设置失败"
+  },
+  "loading": {
+    "text": "正在加载上下文设置…",
+    "failed": "加载上下文设置失败",
+    "retry": "重试"
+  }
+}

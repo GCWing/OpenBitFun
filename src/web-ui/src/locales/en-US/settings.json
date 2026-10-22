@@ -36,6 +36,10 @@
         "label": "Models",
         "description": "Connect model providers and choose models for each type of task"
       },
+      "context": {
+        "label": "Context",
+        "description": "Configure how long conversations are compressed to stay within the model window"
+      },
       "execution": {
         "label": "Execution & Collaboration",
         "description": "Configure tool timeouts, agent concurrency, and review capacity"
