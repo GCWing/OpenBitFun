@@ -242,6 +242,7 @@ impl CompressionJob {
             .initial_recent
             .min(context_window.saturating_div(2).max(1));
         let mut previous_cutoff = None;
+        let mut elision = Self::request_elision_ladder().await;
 
         for attempt in 0..ExecutionEngine::MAX_COMPRESSION_OVERFLOW_ATTEMPTS {
             let Some(plan) = self.compressor.plan_compression_for_turn(
@@ -256,12 +257,22 @@ impl CompressionJob {
                     "Context compression has no eligible plan".to_string(),
                 ));
             };
-            if previous_cutoff.is_some_and(|cutoff| plan.cutoff_message_index >= cutoff) {
+            // The planner floors the cutoff above the first atomic unit, so a
+            // cutoff that stops moving means the summary input cannot shrink
+            // by planning alone. Fold oversized blocks in the request copy
+            // instead, deepest pass last; stored history is never rewritten.
+            let cutoff_dead_end =
+                previous_cutoff.is_some_and(|cutoff| plan.cutoff_message_index >= cutoff);
+            if cutoff_dead_end && !elision.can_deepen() {
                 return Err(OpenBitFunError::AIClient(
                     "Context compression cannot reduce the summary input further".to_string(),
                 ));
             }
-            previous_cutoff = Some(plan.cutoff_message_index);
+            if cutoff_dead_end {
+                elision.deepen();
+            } else {
+                previous_cutoff = Some(plan.cutoff_message_index);
+            }
             info!(
                 "Compression context plan: session_id={}, turn_id={}, attempt={}/{}, retained_user_token_budget={}, retained_user_tokens={}, retained_user_messages={}, recent_target_tokens={}, recent_tail_tokens={}, cutoff_message_index={}, summary_messages={}, recent_tail_messages={}",
                 session_id,
@@ -278,7 +289,23 @@ impl CompressionJob {
                 plan.recent_tail_messages.len()
             );
 
-            let summary_result = self.request_summary(&plan.summary_request_messages).await;
+            let mut request_messages = plan.summary_request_messages.clone();
+            if elision.active() {
+                let report = elision.apply(&mut request_messages);
+                info!(
+                    "Compression summary request elision: session_id={}, turn_id={}, attempt={}/{}, depth={}/{}, elided_blocks={}, elided_tokens={}",
+                    session_id,
+                    dialog_turn_id,
+                    attempt + 1,
+                    ExecutionEngine::MAX_COMPRESSION_OVERFLOW_ATTEMPTS,
+                    elision.depth(),
+                    crate::agentic::session::compression::elision::MAX_ELISION_PASSES,
+                    report.elided_blocks,
+                    report.elided_tokens
+                );
+            }
+
+            let summary_result = self.request_summary(&request_messages).await;
 
             match summary_result {
                 Ok(summary) => {
@@ -290,7 +317,7 @@ impl CompressionJob {
                 }
                 Err(err) if err.is_recoverable_context_overflow() => {
                     warn!(
-                        "Compression request exceeded provider context: session_id={}, turn_id={}, attempt={}/{}, recent_target_tokens={}, cutoff_message_index={}, next_recent_target_tokens={:?}, error={}",
+                        "Compression request exceeded provider context: session_id={}, turn_id={}, attempt={}/{}, recent_target_tokens={}, cutoff_message_index={}, next_recent_target_tokens={:?}, cutoff_dead_end={}, elision_depth={}/{}, error={}",
                         session_id,
                         dialog_turn_id,
                         attempt + 1,
@@ -298,16 +325,26 @@ impl CompressionJob {
                         plan.recent_target_tokens,
                         plan.cutoff_message_index,
                         plan.next_recent_target_tokens,
+                        cutoff_dead_end,
+                        elision.depth(),
+                        crate::agentic::session::compression::elision::MAX_ELISION_PASSES,
                         err
                     );
-                    let can_retry = attempt + 1
-                        < ExecutionEngine::MAX_COMPRESSION_OVERFLOW_ATTEMPTS
+                    let ladder_can_move = !cutoff_dead_end
+                        && attempt + 1 < ExecutionEngine::MAX_COMPRESSION_OVERFLOW_ATTEMPTS
                         && plan.next_recent_target_tokens.is_some();
-                    let next_recent_target = plan.next_recent_target_tokens;
-                    if can_retry {
+                    if ladder_can_move {
                         recent_target = recent_target
                             .saturating_add(ContextCompressor::RECENT_CONTEXT_RETRY_STEP_TOKENS)
-                            .max(next_recent_target.expect("retry target checked above"));
+                            .max(
+                                plan.next_recent_target_tokens
+                                    .expect("retry target checked above"),
+                            );
+                        continue;
+                    }
+                    if elision.can_deepen()
+                        && attempt + 1 < ExecutionEngine::MAX_COMPRESSION_OVERFLOW_ATTEMPTS
+                    {
                         continue;
                     }
                     return Err(compression_plan_error(err, attempt + 1));
@@ -317,5 +354,29 @@ impl CompressionJob {
         }
 
         unreachable!("compression planning returns a result or terminal error")
+    }
+
+    /// Ladder state for request-side elision. Disabled or misconfigured
+    /// settings fall back to the documented defaults so the ladder stays
+    /// available as the overflow dead-end rescue.
+    async fn request_elision_ladder() -> crate::agentic::session::RequestElisionLadder {
+        use crate::agentic::session::compression::elision::DEFAULT_ELIDE_MIN_TOKENS;
+        match crate::service::config::get_global_config_service().await {
+            Ok(service) => {
+                let enabled = service
+                    .get_config::<bool>(Some("ai.context_compression_request_elision"))
+                    .await
+                    .unwrap_or(true);
+                let min_tokens = service
+                    .get_config::<u32>(Some("ai.context_compression_elide_min_tokens"))
+                    .await
+                    .unwrap_or(DEFAULT_ELIDE_MIN_TOKENS as u32)
+                    .max(1) as usize;
+                crate::agentic::session::RequestElisionLadder::new(enabled, min_tokens)
+            }
+            Err(_) => {
+                crate::agentic::session::RequestElisionLadder::new(true, DEFAULT_ELIDE_MIN_TOKENS)
+            }
+        }
     }
 }

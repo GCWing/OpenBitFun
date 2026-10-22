@@ -11,5 +11,7 @@
 //! `execution_engine.rs`.
 
 pub mod compressor;
+pub mod elision;
 
 pub use compressor::*;
+pub use elision::{ElisionReport, RequestElisionLadder};
