@@ -24,13 +24,15 @@ function staticImportSpecifiers(source: string): string[] {
 }
 
 describe('startup performance contract', () => {
-  it('creates native glass with a transparent background instead of repainting it after load', () => {
+  it('configures native material before window creation instead of repainting it after load', () => {
     const source = readSource('../../../../apps/desktop/src/appearance.rs');
+    const material = readSource('../../../../apps/desktop/src/window_material.rs');
     const mainWindow = source.slice(source.indexOf('pub fn create_main_window('), source.indexOf('fn show_main_window_for_startup('));
 
-    expect(mainWindow).toContain('.transparent(true)');
-    expect(mainWindow).toContain('.background_color(tauri::window::Color(0, 0, 0, 0))');
-    expect(mainWindow).toContain('tauri::window::Effect::Acrylic');
+    expect(mainWindow).toContain('crate::window_material::configure_main_window(');
+    expect(material).toContain('.transparent(true)');
+    expect(material).toContain('.background_color(tauri::window::Color(0, 0, 0, 0))');
+    expect(material).toContain('tauri::window::Effect::Acrylic');
     // The Windows host fill ignores alpha during repaint. Changing its color
     // after page load can cover the native material even with transparent CSS.
     expect(mainWindow).not.toContain('.set_background_color(');
