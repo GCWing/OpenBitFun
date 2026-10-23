@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "c7c38fecfad3e83e4a9f6f451a37edbf7d42ef399409238253f9a0fd124f879b",
-  "count": 216,
+  "catalogDigest": "f73b2d5ce1cc4824923459e1f2b24c58bba3d3ca930416b059136449aa522d0f",
+  "count": 218,
   "reasonCounts": {
     "externalAuth": 4,
     "secretEntry": 5,
-    "unstructuredInteraction": 182,
+    "unstructuredInteraction": 184,
     "visualSelection": 25
   },
   "entries": [
@@ -2898,6 +2898,40 @@
         "command:update_session_model_target",
         "source:src/web-ui/src/app/scenes/settings/pages/ai/ModelPoolsSection.tsx#ModelPoolsSection",
         "command:retry_model_pool_member"
+      ]
+    },
+    {
+      "capabilityId": "setting.ai.context",
+      "itemId": "compression-prefetch",
+      "titleZh": "控制是否在接近上下文上限前于后台提前准备压缩",
+      "titleEn": "Choose whether compression is prepared in the background before the context limit is reached",
+      "reasonCode": "unstructuredInteraction",
+      "reasonZh": "“控制是否在接近上下文上限前于后台提前准备压缩”是设置页中的即时开关；智能体会打开精确入口，并把交互保留在用户可见界面。",
+      "reasonEn": "“Choose whether compression is prepared in the background before the context limit is reached” is an immediate toggle on the settings page; the Agent opens the exact entry and keeps the interaction visible to the user.",
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "ai.context"
+      },
+      "evidence": [
+        "source:src/web-ui/src/locales/zh-CN/settings/context.json#compression.prefetch.label",
+        "source:src/crates/assembly/core/src/agentic/execution/AGENTS.md#ai.enable_context_compression_prefetch"
+      ]
+    },
+    {
+      "capabilityId": "setting.ai.context",
+      "itemId": "request-elision",
+      "titleZh": "控制摘要请求无法再缩小时是否折叠超大围栏或 XML 块",
+      "titleEn": "Choose whether oversized fenced or XML blocks fold when the summary request cannot shrink further",
+      "reasonCode": "unstructuredInteraction",
+      "reasonZh": "“控制摘要请求无法再缩小时是否折叠超大围栏或 XML 块”是设置页中的即时开关；智能体会打开精确入口，并把交互保留在用户可见界面。",
+      "reasonEn": "“Choose whether oversized fenced or XML blocks fold when the summary request cannot shrink further” is an immediate toggle on the settings page; the Agent opens the exact entry and keeps the interaction visible to the user.",
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "ai.context"
+      },
+      "evidence": [
+        "source:src/web-ui/src/locales/zh-CN/settings/context.json#compression.sectionTitle",
+        "source:src/crates/assembly/core/src/agentic/session/compression/elision.rs#RequestElisionLadder"
       ]
     },
     {
