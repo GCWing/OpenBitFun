@@ -142,6 +142,16 @@ may add the CA from `OPENBITFUN_E2E_SUBSCRIPTION_CA_FILE` under that same guard;
 it does not turn off certificate verification. The native application fixture
 is `node tests/e2e/scripts/run-subscription-pool.mjs` (see its E2E guide).
 
+For desktop card stacking, native parenting rollback, and legacy record/request compatibility,
+run `cargo test --locked -p openbitfun-desktop --no-default-features --lib desktop_cards`.
+On a graphical Windows session with Explorer running, also run
+`cargo test --locked -p openbitfun-desktop --no-default-features --lib live_explorer_attachment_round_trip -- --ignored`.
+The native fixtures use hidden disposable windows; they do not establish WebView rendering,
+Win+D behavior, Explorer restart recovery, mixed-DPI monitor dragging, or remote behavior.
+After rebuilding, manually verify those native interactions and switching between desktop pinning,
+global always-on-top, and hide/show. UI, hidden-card pinning, and old-host negotiation coverage:
+`pnpm --dir src/web-ui run test:run src/app/components/DesktopCard/DesktopCardWindow.test.tsx src/infrastructure/api/service-api/DesktopCardAPI.test.ts src/app/scenes/personal-overview/OverviewDesktopCardsSection.test.tsx src/app/scenes/settings/pages/application/DesktopCardsSettingsSection.test.tsx`.
+
 For session storage directory access, run
 `cargo test -p openbitfun-desktop --lib api::session_storage_directory::tests`
 for session storage directory resolution (these tests do not launch a file manager),

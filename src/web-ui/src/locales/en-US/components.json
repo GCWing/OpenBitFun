@@ -669,6 +669,7 @@
     "loading": "Loading…",
     "loadFailed": "This card could not be loaded.",
     "unsupportedTemplate": "This card needs a newer version of OpenBitFun.",
+    "stackingFailed": "Could not change the display mode: {{error}}",
     "updated": "Updated {{time}}",
     "updatedWithWarning": "Updated {{time}}, some data may be missing",
     "refreshFailed": "Refresh failed: {{error}}",
@@ -677,7 +678,8 @@
       "refresh": "Refresh",
       "openLink": "Open link",
       "openSession": "Open source session",
-      "alwaysOnTop": "Keep on top",
+      "alwaysOnTop": "Always on top (all apps)",
+      "desktopPinned": "Pin to desktop",
       "hide": "Hide card",
       "delete": "Delete card"
     },

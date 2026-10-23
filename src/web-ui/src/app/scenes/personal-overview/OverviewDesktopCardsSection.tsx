@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Eye, EyeOff, Settings, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Pin, PinOff, Settings, Trash2 } from 'lucide-react';
 import { Button, Icon, IconButton, OverflowText } from '@openbitfun/ui';
-import { desktopCardAPI, type DesktopCardRecord } from '@/infrastructure/api/service-api/DesktopCardAPI';
+import {
+  desktopCardAPI,
+  isDesktopPinned,
+  type DesktopCardRecord,
+} from '@/infrastructure/api/service-api/DesktopCardAPI';
 import { confirmDanger } from '@/infrastructure/confirm-dialog';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { isTauriRuntime } from '@/infrastructure/runtime';
@@ -18,7 +22,7 @@ const log = createLogger('OverviewDesktopCardsSection');
 type CardsState =
   | { status: 'loading' }
   | { status: 'failed' }
-  | { status: 'ready'; enabled: boolean; cards: DesktopCardRecord[] };
+  | { status: 'ready'; enabled: boolean; cards: DesktopCardRecord[]; pinningSupported: boolean };
 
 function sortCards(cards: DesktopCardRecord[]): DesktopCardRecord[] {
   return [...cards].sort((a, b) => b.updatedAtMs - a.updatedAtMs);
@@ -40,7 +44,12 @@ export function OverviewDesktopCardsSection({ isActive }: { isActive: boolean })
   const load = useCallback(async () => {
     try {
       const list = await desktopCardAPI.list();
-      setState({ status: 'ready', enabled: list.enabled, cards: sortCards(list.cards) });
+      setState({
+        status: 'ready',
+        enabled: list.enabled,
+        cards: sortCards(list.cards),
+        pinningSupported: list.desktopPinningSupported === true,
+      });
     } catch (error) {
       log.warn('Failed to load desktop cards', error);
       setState(current => current.status === 'ready' ? current : { status: 'failed' });
@@ -80,6 +89,20 @@ export function OverviewDesktopCardsSection({ isActive }: { isActive: boolean })
     }
   };
 
+  const togglePinned = async (card: DesktopCardRecord) => {
+    setBusyCardId(card.id);
+    try {
+      // Works for hidden cards too: the host keeps the preference and applies
+      // it when the card is shown again.
+      await desktopCardAPI.setDesktopPinned(card.id, !isDesktopPinned(card));
+    } catch (error) {
+      log.warn('Failed to change desktop card pinning', { cardId: card.id, error });
+      notification.error(t('desktopCards.actionFailed'));
+    } finally {
+      setBusyCardId(null);
+    }
+  };
+
   const deleteCard = async (card: DesktopCardRecord) => {
     const confirmed = await confirmDanger(
       t('desktopCards.deleteConfirmTitle'),
@@ -100,6 +123,7 @@ export function OverviewDesktopCardsSection({ isActive }: { isActive: boolean })
 
   const cards = state.status === 'ready' ? state.cards : [];
   const enabled = state.status === 'ready' && state.enabled;
+  const pinningSupported = state.status === 'ready' && state.pinningSupported;
   const visibleCount = cards.filter(card => card.visible).length;
   const summaryValue = state.status === 'ready' ? formatNumber(cards.length) : t(state.status === 'loading' ? 'loadingValue' : 'unavailableValue');
   const summaryDescription = state.status !== 'ready'
@@ -138,16 +162,27 @@ export function OverviewDesktopCardsSection({ isActive }: { isActive: boolean })
                 {cards.map(card => {
                   const CardIcon = desktopCardIcon(card);
                   const busy = busyCardId === card.id;
+                  const pinned = isDesktopPinned(card);
                   return (
-                    <li key={card.id} className="overview-desktop-cards__item" data-visible={card.visible ? 'true' : 'false'}>
+                    <li key={card.id} className="overview-desktop-cards__item"
+                      data-visible={card.visible ? 'true' : 'false'}
+                      data-pinned={pinned ? 'true' : 'false'}>
                       <span className="overview-desktop-cards__icon" aria-hidden="true"><Icon glyph={CardIcon} size="sm" /></span>
                       <div className="overview-desktop-cards__copy" data-overflow-trigger>
                         <OverflowText className="overview-desktop-cards__title">{card.title}</OverflowText>
                         <OverflowText className="overview-desktop-cards__meta">
                           {card.visible ? t('desktopCards.shown') : t('desktopCards.hidden')}
+                          {pinned ? ` · ${t('desktopCards.pinned')}` : ''}
                           {card.subtitle ? ` · ${card.subtitle}` : ''}
                         </OverflowText>
                       </div>
+                      {pinningSupported && (
+                        <IconButton size="sm" disabled={busy}
+                          aria-label={pinned ? t('desktopCards.unpin') : t('desktopCards.pin')}
+                          aria-pressed={pinned}
+                          icon={<Icon glyph={pinned ? PinOff : Pin} size="sm" />}
+                          onClick={() => void togglePinned(card)} />
+                      )}
                       <IconButton size="sm" disabled={busy || (!card.visible && !enabled)}
                         aria-label={card.visible ? t('desktopCards.hide') : t('desktopCards.show')}
                         icon={<Icon glyph={card.visible ? EyeOff : Eye} size="sm" />}

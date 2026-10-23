@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "c7c38fecfad3e83e4a9f6f451a37edbf7d42ef399409238253f9a0fd124f879b",
+  "digest": "4b3baea602820774739229ba5788a734a95d60de43775214a9359d4b2f4f5225",
   "ownerDigest": "103fc8646df7b35e9fac1c52149a35b86e9c6115b462b0aa36240a4600903ce4",
   "searchAcceptance": [
     {
@@ -147,11 +147,11 @@
     "features": 23,
     "settings": 21,
     "userFacing": 44,
-    "documentedItems": 332,
+    "documentedItems": 333,
     "controlCoverage": {
       "direct": 51,
       "delegated": 65,
-      "interactive": 216,
+      "interactive": 217,
       "unsupported": 0
     }
   },
@@ -10898,6 +10898,7 @@
         "agent-cards",
         "home-management",
         "card-actions",
+        "desktop-pinning",
         "drag-restore"
       ],
       "kind": "query",
@@ -11072,6 +11073,53 @@
       "delegateTools": [
         "DesktopCard"
       ],
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "application.pet",
+        "sectionId": "desktop-cards"
+      }
+    },
+    {
+      "id": "feature.desktop-cards:open:desktop-pinning",
+      "capabilityId": "feature.desktop-cards",
+      "itemIds": [
+        "desktop-pinning"
+      ],
+      "kind": "open",
+      "risk": "ui",
+      "executionHost": "presentationSurface",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_presentation_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "openReason": "unstructuredInteraction",
       "presentationTarget": {
         "kind": "settings",
         "pageId": "application.pet",
@@ -25459,11 +25507,13 @@
       "highlightsZh": [
         "智能体按需创建并更新卡片",
         "在首页查看、显示、隐藏或删除卡片",
+        "把卡片固定到 Windows 桌面图标之上",
         "拖动卡片，位置在重启后恢复"
       ],
       "highlightsEn": [
         "Agents create and update cards when useful",
         "View, show, hide, or delete cards from Home",
+        "Pin cards to the Windows desktop above the icons",
         "Drag cards; positions are restored after restart"
       ],
       "items": [
@@ -25531,6 +25581,17 @@
           }
         },
         {
+          "id": "desktop-pinning",
+          "titleZh": "在卡片菜单、首页卡片列表或设置里把卡片固定到 Windows 桌面，隐藏的卡片同样可以切换固定状态",
+          "titleEn": "Pin a card to the Windows desktop from the card menu, the Home card list, or Settings, including hidden cards",
+          "control": {
+            "kind": "open",
+            "reasonCode": "unstructuredInteraction",
+            "reasonZh": "“在卡片菜单、首页卡片列表或设置里把卡片固定到 Windows 桌面，隐藏的卡片同样可以切换固定状态”会让卡片进入 Explorer 桌面层，位于桌面图标之上、其他应用之下，并且需要 Explorer 可用且 DPI 上下文一致才能成立；DesktopCard 工具的配置里没有这项显示偏好，因此由用户在卡片菜单或管理列表里切换，智能体只打开精确入口。",
+            "reasonEn": "“Pin a card to the Windows desktop from the card menu, the Home card list, or Settings, including hidden cards” moves the card into the Explorer desktop layer, above the icons and behind other apps, and only holds while Explorer is available with a matching DPI context; the DesktopCard tool configuration deliberately does not carry this display preference, so the user toggles it from the card menu or a management list and the Agent only opens the exact entry."
+          }
+        },
+        {
           "id": "drag-restore",
           "titleZh": "拖动卡片到桌面任意位置，拖动卡片边缘或四角调整大小；关闭 OpenBitFun 时卡片消失，重新打开后按原位置和大小恢复",
           "titleEn": "Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens",
@@ -25545,11 +25606,13 @@
       "stepsZh": [
         "让智能体创建一张卡片，或在任务中由智能体主动创建",
         "拖动卡片到合适位置",
+        "在卡片菜单、首页列表或设置里把卡片固定到桌面（Windows）",
         "在首页“小卡片”区或卡片菜单中隐藏或删除"
       ],
       "stepsEn": [
         "Ask an agent for a card, or let it create one during a task",
         "Drag the card where you want it",
+        "Pin it to the desktop from the card menu, the Home card list, or Settings (Windows)",
         "Hide or delete it from the Home Desktop cards section or the card menu"
       ],
       "agentControl": {
@@ -25598,9 +25661,11 @@
         "countdown reminder",
         "智能体按需创建并更新卡片",
         "在首页查看、显示、隐藏或删除卡片",
+        "把卡片固定到 Windows 桌面图标之上",
         "拖动卡片，位置在重启后恢复",
         "Agents create and update cards when useful",
         "View, show, hide, or delete cards from Home",
+        "Pin cards to the Windows desktop above the icons",
         "Drag cards; positions are restored after restart",
         "按需求或在任务过程中创建倒计时、清单、便签、进度、指标、定时任务和自定义卡片，可定时从 HTTP 接口或本机命令刷新数据",
         "Create countdown, checklist, note, progress, metrics, scheduled-job, and custom cards on request or during a task, optionally refreshed from an HTTP endpoint or a local command",
@@ -25608,6 +25673,8 @@
         "See every card in the Home Desktop cards section, and show, hide, or delete individual cards",
         "在卡片上刷新数据、勾选清单项、切换置顶、打开链接或回到来源会话",
         "Refresh data, check off list items, toggle always-on-top, open the link, or return to the source session from a card",
+        "在卡片菜单、首页卡片列表或设置里把卡片固定到 Windows 桌面，隐藏的卡片同样可以切换固定状态",
+        "Pin a card to the Windows desktop from the card menu, the Home card list, or Settings, including hidden cards",
         "拖动卡片到桌面任意位置，拖动卡片边缘或四角调整大小；关闭 OpenBitFun 时卡片消失，重新打开后按原位置和大小恢复",
         "Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens",
         "20 分钟后提醒我开会",

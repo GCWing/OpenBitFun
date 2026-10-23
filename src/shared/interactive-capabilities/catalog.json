@@ -5306,11 +5306,13 @@
       "highlightsZh": [
         "智能体按需创建并更新卡片",
         "在首页查看、显示、隐藏或删除卡片",
+        "把卡片固定到 Windows 桌面图标之上",
         "拖动卡片，位置在重启后恢复"
       ],
       "highlightsEn": [
         "Agents create and update cards when useful",
         "View, show, hide, or delete cards from Home",
+        "Pin cards to the Windows desktop above the icons",
         "Drag cards; positions are restored after restart"
       ],
       "items": [
@@ -5354,6 +5356,23 @@
           ]
         },
         {
+          "id": "desktop-pinning",
+          "titleZh": "在卡片菜单、首页卡片列表或设置里把卡片固定到 Windows 桌面，隐藏的卡片同样可以切换固定状态",
+          "titleEn": "Pin a card to the Windows desktop from the card menu, the Home card list, or Settings, including hidden cards",
+          "control": {
+            "kind": "open",
+            "reasonCode": "unstructuredInteraction",
+            "reasonZh": "“在卡片菜单、首页卡片列表或设置里把卡片固定到 Windows 桌面，隐藏的卡片同样可以切换固定状态”会让卡片进入 Explorer 桌面层，位于桌面图标之上、其他应用之下，并且需要 Explorer 可用且 DPI 上下文一致才能成立；DesktopCard 工具的配置里没有这项显示偏好，因此由用户在卡片菜单或管理列表里切换，智能体只打开精确入口。",
+            "reasonEn": "“Pin a card to the Windows desktop from the card menu, the Home card list, or Settings, including hidden cards” moves the card into the Explorer desktop layer, above the icons and behind other apps, and only holds while Explorer is available with a matching DPI context; the DesktopCard tool configuration deliberately does not carry this display preference, so the user toggles it from the card menu or a management list and the Agent only opens the exact entry."
+          },
+          "evidence": [
+            "command:desktop_card_set_always_on_top",
+            "source:src/apps/desktop/src/desktop_cards/desktop_layer.rs#SHELLDLL_DefView",
+            "source:src/web-ui/src/app/scenes/personal-overview/OverviewDesktopCardsSection.tsx#desktopCards.pin",
+            "source:src/web-ui/src/app/scenes/settings/pages/application/DesktopCardsSettingsSection.tsx#desktop-card-pin-row"
+          ]
+        },
+        {
           "id": "drag-restore",
           "titleZh": "拖动卡片到桌面任意位置，拖动卡片边缘或四角调整大小；关闭 OpenBitFun 时卡片消失，重新打开后按原位置和大小恢复",
           "titleEn": "Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens",
@@ -5372,11 +5391,13 @@
       "stepsZh": [
         "让智能体创建一张卡片，或在任务中由智能体主动创建",
         "拖动卡片到合适位置",
+        "在卡片菜单、首页列表或设置里把卡片固定到桌面（Windows）",
         "在首页“小卡片”区或卡片菜单中隐藏或删除"
       ],
       "stepsEn": [
         "Ask an agent for a card, or let it create one during a task",
         "Drag the card where you want it",
+        "Pin it to the desktop from the card menu, the Home card list, or Settings (Windows)",
         "Hide or delete it from the Home Desktop cards section or the card menu"
       ],
       "agentControl": {

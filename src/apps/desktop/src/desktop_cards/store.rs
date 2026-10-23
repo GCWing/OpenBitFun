@@ -153,6 +153,31 @@ mod tests {
     }
 
     #[test]
+    fn desktop_pinning_is_additive_and_survives_legacy_record_rewrites() {
+        let legacy = json!({
+            "id": "a", "title": "Note", "template": { "kind": "note", "text": "x" }
+        });
+        let record: DesktopCardRecord = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(record.always_on_top);
+        assert!(!super::super::windows::desktop_pinned(&record));
+        let rewritten = serde_json::to_value(record).unwrap();
+        for (key, value) in legacy.as_object().unwrap() {
+            assert_eq!(&rewritten[key], value);
+        }
+
+        let mut pinned = legacy;
+        pinned["alwaysOnTop"] = json!(false);
+        pinned["desktopPinned"] = json!(true);
+        let mut record: DesktopCardRecord = serde_json::from_value(pinned).unwrap();
+        assert!(super::super::windows::desktop_pinned(&record));
+        record.title = "Renamed by an older client".to_string();
+        let restored: DesktopCardRecord =
+            serde_json::from_value(serde_json::to_value(record).unwrap()).unwrap();
+        assert!(super::super::windows::desktop_pinned(&restored));
+        assert_eq!(restored.extra["desktopPinned"], json!(true));
+    }
+
+    #[test]
     fn unparseable_cards_and_unknown_fields_survive_a_rewrite() {
         let path = temp_path("roundtrip");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
