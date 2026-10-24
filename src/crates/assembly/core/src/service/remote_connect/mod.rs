@@ -51,6 +51,10 @@ pub mod host_stream_subscriber {
     pub use openbitfun_services_integrations::remote_connect::host_stream_subscriber::*;
 }
 
+pub mod rpc_execution {
+    pub use openbitfun_services_integrations::remote_connect::rpc_execution::*;
+}
+
 pub mod session_records {
     pub use openbitfun_services_integrations::remote_connect::session_records::*;
 }

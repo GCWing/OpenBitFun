@@ -700,12 +700,13 @@ jobs:
         timeout-minutes: 5
         run: pnpm --dir src/mobile-web run test:account-browser
 
-      - name: Test mobile web composer and rollback layouts
+      - name: Test mobile web chat controls and layouts
         if: needs.build-impact.outputs.frontend_required != 'false'
         timeout-minutes: 3
         run: |
           pnpm --dir src/mobile-web run test:prompt-suggestion-browser
           pnpm --dir src/mobile-web run test:rollback-browser
+          pnpm --dir src/mobile-web run test:session-model-browser
 
       - name: Upload mobile input layout screenshots
         if: always() && needs.build-impact.outputs.frontend_required != 'false'

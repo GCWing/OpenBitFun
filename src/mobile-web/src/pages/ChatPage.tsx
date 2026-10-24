@@ -4,13 +4,14 @@ import { PermissionMailbox } from '../components/PermissionMailbox';
 import { QuestionInteractionContext } from "../components/ChatAskQuestionCard";
 import { ChevronDown as LucideChevronDown } from 'lucide-react';
 import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { MobileConfirmSheet, MobileIconButton, MobileStatus, MobileTextarea } from '@openbitfun/ui/mobile';
+import { MobileButton, MobileConfirmSheet, MobileIconButton, MobileStatus, MobileTextarea } from '@openbitfun/ui/mobile';
 import { useI18n } from '../i18n';
 import { useControlTargetEpoch } from '../hooks/useControlTargetEpoch';
 import {
   isRemoteControlTargetChangedError,
   RemoteControlTargetChangedError,
   RemoteSessionManager,
+  RemoteSessionModelWriteUnconfirmedError,
   SessionSynchronizer,
   type PollResponse,
   type ChatMessage,
@@ -26,11 +27,8 @@ import { createRemoteCacheScope, remoteCache } from '../services/RemoteCache';
 import ChatHeader from '../components/ChatHeader';
 import ChatComposerBar from '../components/ChatComposerBar';
 import {
-  loadLastSelectedModelId,
   ModelSelectorPill,
   normalizeSelectedModelId,
-  persistLastSelectedModelId,
-  resolvePreferredModelSelection,
 } from '../components/ChatModelControls';
 import ChatMessageActions from '../components/ChatMessageActions';
 import ChatFeedback from '../components/ChatFeedback';
@@ -41,9 +39,12 @@ import ChatTranscript from '../components/ChatTranscript';
 function reportRemoteSessionError(
   error: unknown,
   setError: (message: string) => void,
+  t?: (key: string) => string,
 ): void {
   if (isRemoteControlTargetChangedError(error)) return;
-  setError(error instanceof Error ? error.message : String(error));
+  setError(error instanceof RemoteSessionModelWriteUnconfirmedError && t
+    ? t(error.messageKey)
+    : error instanceof Error ? error.message : String(error));
 }
 
 interface ChatPageProps {
@@ -101,6 +102,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
   const [modelCatalog, setModelCatalog] = useState<RemoteModelCatalog | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string>('auto');
   const [modelUpdating, setModelUpdating] = useState(false);
+  const [modelCatalogLoading, setModelCatalogLoading] = useState(false);
+  const [modelCatalogFailed, setModelCatalogFailed] = useState(false);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [imageAnalyzing, setImageAnalyzing] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -196,7 +199,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
       && sessionMgr.controlTargetEpoch === epoch;
   }, [controlTargetEpoch, sessionId, sessionMgr]);
 
-  const modelSelectionInitializedRef = useRef(false);
+  const modelSelectionInFlightRef = useRef<symbol | null>(null);
   const modelCatalogRequestSeqRef = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -236,12 +239,14 @@ const ChatPage: React.FC<ChatPageProps> = ({
       setIsLoadingMore(false);
       setHasMore(true);
       setModelUpdating(false);
+      setModelCatalogLoading(false);
+      setModelCatalogFailed(false);
       setImageAnalyzing(false);
       setIsSending(false);
       sendInFlightRef.current = null;
       setIsCancelling(false);
       setOptimisticMsg(null);
-      modelSelectionInitializedRef.current = false;
+      modelSelectionInFlightRef.current = null;
       setModelCatalog(null);
       setSelectedModelId('auto');
       setMessages(sessionId, []);
@@ -397,61 +402,45 @@ const ChatPage: React.FC<ChatPageProps> = ({
     const targetEpoch = captureChatTargetEpoch();
     if (targetEpoch === null) return null;
     const requestSeq = ++modelCatalogRequestSeqRef.current;
+    setModelCatalogLoading(true);
     try {
       const catalog = await sessionMgr.getModelCatalog(sessionId);
       if (
         requestSeq !== modelCatalogRequestSeqRef.current
         || !isChatTargetCurrent(targetEpoch)
       ) return null;
+      // Opening a session reads its selection; only explicit choices may change it.
       setModelCatalog(catalog);
-      if (!modelSelectionInitializedRef.current) {
-        const preferredSelection = resolvePreferredModelSelection(loadLastSelectedModelId(), catalog);
-        const sessionModelId = normalizeSelectedModelId(catalog.session_model_id || 'auto', catalog);
-        const nextModelId = preferredSelection.modelId || sessionModelId;
-
-        if (preferredSelection.modelId && preferredSelection.modelId !== sessionModelId) {
-          const selection = catalog.reasoning_preset_selection_supported === true
-            ? await sessionMgr.setSessionModelSelection(sessionId, preferredSelection.modelId, null)
-            : {
-                model_id: await sessionMgr.setSessionModel(sessionId, preferredSelection.modelId),
-                reasoning_preset: null,
-              };
-          if (
-            requestSeq !== modelCatalogRequestSeqRef.current
-            || !isChatTargetCurrent(targetEpoch)
-          ) return null;
-          const normalizedModelId = selection.model_id;
-          setSelectedModelId(normalizedModelId || 'auto');
-          setModelCatalog(current => current ? {
-            ...current,
-            session_model_id: normalizedModelId,
-            session_reasoning_preset: selection.reasoning_preset,
-          } : current);
-          if (preferredSelection.fellBackToAuto && (!normalizedModelId || normalizedModelId === 'auto')) {
-            persistLastSelectedModelId('auto');
-          }
-        } else {
-          setSelectedModelId(nextModelId || 'auto');
-          if (preferredSelection.fellBackToAuto && nextModelId === 'auto') {
-            persistLastSelectedModelId('auto');
-          }
-        }
-        modelSelectionInitializedRef.current = true;
-      }
+      setModelCatalogFailed(false);
+      setSelectedModelId(normalizeSelectedModelId(catalog.session_model_id));
       return catalog;
     } catch (err) {
       if (
         requestSeq === modelCatalogRequestSeqRef.current
         && isChatTargetCurrent(targetEpoch)
-      ) reportRemoteSessionError(err, setError);
+      ) {
+        setModelCatalog(null);
+        setModelCatalogFailed(true);
+        reportRemoteSessionError(err, setError, t);
+      }
       return null;
+    } finally {
+      if (requestSeq === modelCatalogRequestSeqRef.current && isChatTargetCurrent(targetEpoch)) {
+        setModelCatalogLoading(false);
+      }
     }
-  }, [captureChatTargetEpoch, isChatTargetCurrent, sessionId, sessionMgr, setError]);
+  }, [captureChatTargetEpoch, isChatTargetCurrent, sessionId, sessionMgr, setError, t]);
 
   const handleSelectModel = useCallback(async (modelId: string) => {
-    if (modelUpdating || isStreaming || imageAnalyzing) return;
+    if (modelSelectionInFlightRef.current || modelUpdating || isStreaming || imageAnalyzing) return;
     const targetEpoch = captureChatTargetEpoch();
     if (targetEpoch === null) return;
+    const attempt = Symbol('model selection');
+    modelSelectionInFlightRef.current = attempt;
+    modelCatalogRequestSeqRef.current += 1;
+    const isSelectionCurrent = () => (
+      modelSelectionInFlightRef.current === attempt && isChatTargetCurrent(targetEpoch)
+    );
     setModelUpdating(true);
     try {
       const selection = modelCatalog?.reasoning_preset_selection_supported === true
@@ -460,7 +449,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
             model_id: await sessionMgr.setSessionModel(sessionId, modelId),
             reasoning_preset: null,
           };
-      if (!isChatTargetCurrent(targetEpoch)) return;
+      if (!isSelectionCurrent()) return;
       const normalizedModelId = selection.model_id;
       setSelectedModelId(normalizedModelId || 'auto');
       setModelCatalog(current => current ? {
@@ -468,24 +457,37 @@ const ChatPage: React.FC<ChatPageProps> = ({
         session_model_id: normalizedModelId,
         session_reasoning_preset: selection.reasoning_preset,
       } : current);
-      persistLastSelectedModelId(normalizedModelId || 'auto');
     } catch (err) {
-      reportRemoteSessionError(err, setError);
+      if (isSelectionCurrent()) {
+        reportRemoteSessionError(err, setError, t);
+        setModelCatalog(null);
+        await loadModelCatalog();
+      }
     } finally {
-      if (isChatTargetCurrent(targetEpoch)) setModelUpdating(false);
+      if (isSelectionCurrent()) {
+        modelSelectionInFlightRef.current = null;
+        setModelUpdating(false);
+      }
     }
-  }, [captureChatTargetEpoch, imageAnalyzing, isChatTargetCurrent, isStreaming, modelCatalog?.reasoning_preset_selection_supported, modelUpdating, sessionId, sessionMgr, setError]);
+  }, [captureChatTargetEpoch, imageAnalyzing, isChatTargetCurrent, isStreaming, loadModelCatalog, modelCatalog?.reasoning_preset_selection_supported, modelUpdating, sessionId, sessionMgr, setError, t]);
 
   const handleSelectReasoningPreset = useCallback(async (reasoningPreset: string | null) => {
     if (
-      modelUpdating
+      modelSelectionInFlightRef.current
+      || modelUpdating
       || isStreaming
       || imageAnalyzing
       || modelCatalog?.reasoning_preset_selection_supported !== true
     ) return;
     const targetEpoch = captureChatTargetEpoch();
     if (targetEpoch === null) return;
-    const previousReasoningPreset = modelCatalog.session_reasoning_preset ?? null;
+    const attempt = Symbol('reasoning selection');
+    modelSelectionInFlightRef.current = attempt;
+    modelCatalogRequestSeqRef.current += 1;
+    const isSelectionCurrent = () => (
+      modelSelectionInFlightRef.current === attempt && isChatTargetCurrent(targetEpoch)
+    );
+    const previousReasoningPreset = modelCatalog?.session_reasoning_preset ?? null;
     setModelUpdating(true);
     setModelCatalog(current => current ? {
       ...current,
@@ -497,7 +499,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
         selectedModelId,
         reasoningPreset,
       );
-      if (!isChatTargetCurrent(targetEpoch)) return;
+      if (!isSelectionCurrent()) return;
       setSelectedModelId(selection.model_id || 'auto');
       setModelCatalog(current => current ? {
         ...current,
@@ -505,17 +507,21 @@ const ChatPage: React.FC<ChatPageProps> = ({
         session_reasoning_preset: selection.reasoning_preset,
       } : current);
     } catch (err) {
-      if (isChatTargetCurrent(targetEpoch)) {
+      if (isSelectionCurrent()) {
+        reportRemoteSessionError(err, setError, t);
         setModelCatalog(current => current ? {
           ...current,
           session_reasoning_preset: previousReasoningPreset,
         } : current);
-        reportRemoteSessionError(err, setError);
+        await loadModelCatalog();
       }
     } finally {
-      if (isChatTargetCurrent(targetEpoch)) setModelUpdating(false);
+      if (isSelectionCurrent()) {
+        modelSelectionInFlightRef.current = null;
+        setModelUpdating(false);
+      }
     }
-  }, [captureChatTargetEpoch, imageAnalyzing, isChatTargetCurrent, isStreaming, modelCatalog?.reasoning_preset_selection_supported, modelUpdating, selectedModelId, sessionId, sessionMgr, setError]);
+  }, [captureChatTargetEpoch, imageAnalyzing, isChatTargetCurrent, isStreaming, loadModelCatalog, modelCatalog?.reasoning_preset_selection_supported, modelUpdating, selectedModelId, sessionId, sessionMgr, setError, t]);
 
   useEffect(() => {
     if (!isStreaming) return;
@@ -801,7 +807,6 @@ const ChatPage: React.FC<ChatPageProps> = ({
   const pendingInitialScroll = useRef(false);
   const chatInitSeqRef = useRef(0);
   useEffect(() => {
-    modelSelectionInitializedRef.current = false;
     hasMoreRef.current = true;
     isLoadingMoreRef.current = false;
     setHasMore(true);
@@ -827,7 +832,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
         if (isInitCurrent()) setTranscriptHydrating(false);
       };
       try {
-        const catalogPromise = loadModelCatalog();
+        void loadModelCatalog();
         const cached = await remoteCache.loadTranscript(cacheScope, sessionId);
         if (!isInitCurrent()) return;
         if (cached) {
@@ -841,8 +846,6 @@ const ChatPage: React.FC<ChatPageProps> = ({
         // Always reconcile with the authoritative host. The cached transcript is
         // only an immediate paint and remains isolated to this account/device.
         // Durable records reconcile the cached view through the same stream.
-        const initialCatalog = await catalogPromise;
-        if (!isInitCurrent()) return;
         const initialMsgCount = useMobileStore.getState().getMessages(sessionId).length;
         pendingInitialScroll.current = true;
 
@@ -878,14 +881,11 @@ const ChatPage: React.FC<ChatPageProps> = ({
           }
           if (resp.model_catalog) {
             setModelCatalog(resp.model_catalog);
-            setSelectedModelId(normalizeSelectedModelId(
-              resp.model_catalog.session_model_id || 'auto',
-              resp.model_catalog,
-            ));
+            setSelectedModelId(normalizeSelectedModelId(resp.model_catalog.session_model_id));
           }
           if (resp.prompt_suggestion !== undefined) setPromptSuggestion(resp.prompt_suggestion);
           setActiveTurn(resp.active_turn ?? null);
-        }, initialCatalog?.version || 0, history => { if(isInitCurrent()){setHasMore(history.hasMore);hasMoreRef.current=history.hasMore;} }, () => { if(isInitCurrent())setMailboxInvalidation(value=>value+1); },
+        }, 0, history => { if(isInitCurrent()){setHasMore(history.hasMore);hasMoreRef.current=history.hasMore;} }, () => { if(isInitCurrent())setMailboxInvalidation(value=>value+1); },
         // Stream failures are stated, not hidden: an older host or a lost
         // connection shows up in the same banner as any other remote error.
         error => { if (isInitCurrent()) { reportRemoteSessionError(error, setError); setTranscriptHydrating(false); } });
@@ -906,7 +906,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
       if (chatInitSeqRef.current === initSeq) chatInitSeqRef.current += 1;
       streamRef.current?.stop();
       streamRef.current = null;
-      setActiveTurn(null);
+      if (useMobileStore.getState().activeTurn !== null) setActiveTurn(null);
       setPromptSuggestion(null);
     };
   }, [
@@ -1038,7 +1038,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
       }
     } catch (e: any) {
       if (!isChatTargetCurrent(targetEpoch)) return;
-      reportRemoteSessionError(e, setError);
+      reportRemoteSessionError(e, setError, t);
     } finally {
       if (isChatTargetCurrent(targetEpoch) && sendInFlightRef.current === attempt) {
         sendInFlightRef.current = null;
@@ -1309,6 +1309,17 @@ const ChatPage: React.FC<ChatPageProps> = ({
         remoteUnavailable={connectionHealth === 'unreachable'}
         modelControls={(
           <>
+            {modelCatalogFailed && !modelCatalog && (
+              <MobileButton
+                appearance="secondary"
+                className="chat-model-selector__retry"
+                disabled={modelCatalogLoading || modelUpdating || connectionHealth === 'unreachable'}
+                aria-busy={modelCatalogLoading}
+                onClick={() => void loadModelCatalog()}
+              >
+                {t('chat.reloadSessionModel')}
+              </MobileButton>
+            )}
             <ModelSelectorPill catalog={modelCatalog} selectedModelId={selectedModelId} disabled={connectionHealth === 'unreachable' || imageAnalyzing || isStreaming || modelUpdating} onSelect={handleSelectModel} onSelectReasoning={handleSelectReasoningPreset} />
           </>
         )}

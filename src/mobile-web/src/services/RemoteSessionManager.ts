@@ -14,6 +14,7 @@ import { translateAgentIdentityFields } from '../../../shared/agent-harness/wire
 
 import {
   RelayHttpClient,
+  RemoteHostCommandError,
   type ControlTargetSnapshot,
 } from './RelayHttpClient';
 import { getControlClientIdentity } from './controlClientIdentity';
@@ -66,13 +67,14 @@ const RETRYABLE_REMOTE_READ_COMMANDS = new Set([
   'read_file_chunk',
 ]);
 
-// Session settings are small, idempotent writes. Keeping their deadline well
+// Session settings are small writes. Keeping their deadline well
 // below turn execution prevents a lost relay response from making the selector
 // look frozen for the generic 65/130-second command timeout.
 const REMOTE_SETTING_WRITE_TIMEOUT_MS = 20_000;
 
 interface RemoteRequestOptions {
   timeoutMs?: number;
+  onHostSettled?: () => void;
 }
 
 /** A runtime workspace or device location that scopes a file command. */
@@ -191,6 +193,8 @@ export interface RemoteModelCatalog {
   models: RemoteModelConfig[];
   default_models: RemoteDefaultModels;
   reasoning_preset_selection_supported?: boolean;
+  session_model_write_fence_supported?: boolean;
+  session_model_write_token?: string;
   session_model_id?: string | null;
   session_reasoning_preset?: string | null;
 }
@@ -340,10 +344,31 @@ interface HostCapabilitySnapshot {
   capabilities: Set<string>;
 }
 
+interface SessionModelWrite {
+  epoch: number;
+  promise: Promise<unknown>;
+  uncertain: boolean;
+  token?: string;
+}
+
+export class RemoteSessionModelWriteUnconfirmedError extends Error {
+  readonly messageKey: 'chat.modelWriteUnconfirmed' | 'chat.modelWriteUnconfirmedLegacy';
+
+  constructor(legacy = false) {
+    super(legacy
+      ? 'The host cannot confirm a timed-out model update; update and reconnect the host before continuing'
+      : 'The model update outcome is unknown; reconnect and reload the session model before continuing');
+    this.name = 'RemoteSessionModelWriteUnconfirmedError';
+    this.messageKey = legacy ? 'chat.modelWriteUnconfirmedLegacy' : 'chat.modelWriteUnconfirmed';
+  }
+}
+
 export class RemoteSessionManager {
   private client: RelayHttpClient;
   private hostCapabilities: HostCapabilitySnapshot;
   private hostCapabilityProbe: Promise<void> | null = null;
+  private sessionModelWrites = new Map<string, Set<SessionModelWrite>>();
+  private modelWriteFenceCapability: { epoch: number; supported: boolean } | null = null;
 
   constructor(client: RelayHttpClient, capabilities?: string[]) {
     this.client = client;
@@ -481,9 +506,10 @@ export class RemoteSessionManager {
     const commandName = (cmd as { cmd?: unknown }).cmd;
     const retryable = typeof commandName === 'string'
       && RETRYABLE_REMOTE_READ_COMMANDS.has(commandName);
-    const relayOptions = options.timeoutMs === undefined
-      ? { retryable }
-      : { retryable, timeoutMs: options.timeoutMs };
+    const relayOptions = { retryable,
+      ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+      ...(options.onHostSettled ? { onHostSettled: options.onHostSettled } : {}),
+    };
     const targetDeviceId = target.deviceId;
     if (!targetDeviceId) throw new Error('Select an account device to continue');
     try {
@@ -492,10 +518,11 @@ export class RemoteSessionManager {
         translateAgentIdentityFields(cmdWithId, 'legacy'),
         relayOptions,
       );
+      options.onHostSettled?.();
       this.ensureControlTargetCurrent(target);
       const respAny = resp as any;
       if (respAny.resp === 'error') {
-        throw new Error(respAny.message || 'Unknown error');
+        throw new RemoteHostCommandError(respAny.message || 'Unknown error');
       }
       return translateAgentIdentityFields(resp, 'canonical');
     } catch (error: unknown) {
@@ -736,28 +763,144 @@ export class RemoteSessionManager {
     };
   }
 
+  // Host writes outlive page mounts and target epochs. Returning to the same
+  // account/device/session must wait for them before trusting a catalog.
+  private async writeSessionModel<T>(
+    sessionId: string,
+    write: (target: ControlTargetSnapshot, pending: SessionModelWrite) => Promise<T>,
+  ): Promise<T> {
+    const target = this.client.getControlTargetSnapshot();
+    this.ensureControlTargetCurrent(target);
+    const key = JSON.stringify([this.client.accountUserId, target.deviceId, sessionId]);
+    const pending = this.sessionModelWrites.get(key) ?? new Set<SessionModelWrite>();
+    this.sessionModelWrites.set(key, pending);
+    const pendingWrite: SessionModelWrite = {
+      epoch: target.epoch, promise: Promise.resolve(), uncertain: false,
+    };
+    pending.add(pendingWrite);
+    const operation = (async () => {
+      await this.waitForSessionModelWrites(sessionId, target, true, pendingWrite);
+      return write(target, pendingWrite);
+    })();
+    pendingWrite.promise = operation;
+    try {
+      return await operation;
+    } finally {
+      // A transport failure settles the caller, not necessarily the host write.
+      // Only a fenced host read may retire an unknown delivery outcome.
+      if (!pendingWrite.uncertain) pending.delete(pendingWrite);
+      if (pending.size === 0) this.sessionModelWrites.delete(key);
+    }
+  }
+
+  private async waitForSessionModelWrites(
+    sessionId: string,
+    target: ControlTargetSnapshot,
+    requireSuccess = false,
+    beforeWrite?: SessionModelWrite,
+  ): Promise<boolean> {
+    this.ensureControlTargetCurrent(target);
+    const key = JSON.stringify([this.client.accountUserId, target.deviceId, sessionId]);
+    let needsReconciliation = false;
+    let pending = this.sessionModelWrites.get(key);
+    while (pending?.size) {
+      let writes = [...pending];
+      if (beforeWrite) {
+        const position = writes.indexOf(beforeWrite);
+        if (position < 0) break;
+        writes = writes.slice(0, position);
+      }
+      if (writes.length === 0) break;
+      const results = await Promise.allSettled(writes.map(write => write.promise));
+      this.ensureControlTargetCurrent(target);
+      if (writes.some(write => write.uncertain)) {
+        if (writes.some(write => write.uncertain && !write.token)) {
+          throw new RemoteSessionModelWriteUnconfirmedError(true);
+        }
+        try {
+          for (const write of writes.filter(write => write.uncertain)) {
+            const catalog = await this.readModelCatalog(sessionId, target, { model_write_fence: write.token });
+            if (catalog.session_model_write_fence_supported !== true) throw new RemoteSessionModelWriteUnconfirmedError();
+          }
+        } catch (error) {
+          this.ensureControlTargetCurrent(target);
+          throw new RemoteSessionModelWriteUnconfirmedError();
+        }
+        for (const write of writes) {
+          if (write.uncertain) { write.uncertain = false; pending.delete(write); }
+        }
+        if (pending.size === 0) this.sessionModelWrites.delete(key);
+      }
+      if (requireSuccess) {
+        for (const [index, result] of results.entries()) {
+          if (writes[index].epoch !== target.epoch) needsReconciliation = true;
+          else if (result.status === 'rejected') throw result.reason;
+        }
+      }
+      pending = this.sessionModelWrites.get(key);
+    }
+    return needsReconciliation;
+  }
+
+  private async readModelCatalog(
+    sessionId: string | undefined,
+    target: ControlTargetSnapshot,
+    barrier: { prepare_model_write?: true; model_write_fence?: string } = {},
+  ): Promise<RemoteModelCatalog> {
+    const { catalog } = await this.request<{ catalog: RemoteModelCatalog }>({
+      cmd: 'get_model_catalog', session_id: sessionId, ...barrier,
+    }, target, { timeoutMs: REMOTE_SETTING_WRITE_TIMEOUT_MS });
+    this.modelWriteFenceCapability = { epoch: target.epoch,
+      supported: catalog.session_model_write_fence_supported === true };
+    return catalog;
+  }
+
   async getModelCatalog(sessionId?: string): Promise<RemoteModelCatalog> {
-    const resp = await this.request<{
-      resp: string;
-      catalog: RemoteModelCatalog;
-    }>({
-      cmd: 'get_model_catalog',
-      session_id: sessionId ?? undefined,
+    const target = this.client.getControlTargetSnapshot();
+    if (sessionId) await this.waitForSessionModelWrites(sessionId, target);
+    return this.readModelCatalog(sessionId, target);
+  }
+
+  private updateSessionModelSelection(
+    sessionId: string,
+    modelId: string,
+    reasoningPreset?: string | null,
+  ): Promise<RemoteSessionModelSelection> {
+    return this.writeSessionModel(sessionId, async (target, pending) => {
+      // Preparations are per explicit intent. Ordinary readers cannot revoke
+      // them; only a targeted barrier can settle an unknown delivery outcome.
+      let supportsFence = this.modelWriteFenceCapability?.epoch === target.epoch
+        ? this.modelWriteFenceCapability.supported : undefined;
+      if (supportsFence === undefined) {
+        supportsFence = (await this.readModelCatalog(sessionId, target)).session_model_write_fence_supported === true;
+      }
+      if (supportsFence) {
+        const catalog = await this.readModelCatalog(sessionId, target, { prepare_model_write: true });
+        if (catalog.session_model_write_fence_supported !== true
+          || typeof catalog.session_model_write_token !== 'string'
+          || !catalog.session_model_write_token) throw new RemoteSessionModelWriteUnconfirmedError();
+        pending.token = catalog.session_model_write_token;
+      }
+      let hostSettled = false;
+      try {
+        const response = await this.request<RemoteSessionModelSelection>({
+          cmd: 'set_session_model', session_id: sessionId, model_id: modelId,
+          ...(reasoningPreset !== undefined ? { reasoning_preset: reasoningPreset } : {}),
+          ...(pending.token ? { model_write_token: pending.token } : {}),
+        }, target, {
+          timeoutMs: REMOTE_SETTING_WRITE_TIMEOUT_MS,
+          onHostSettled: () => { hostSettled = true; },
+        });
+        return { model_id: response.model_id, reasoning_preset: response.reasoning_preset ?? null };
+      } catch (error) {
+        pending.uncertain = !hostSettled && !(error instanceof RemoteHostCommandError);
+        throw error;
+      }
     });
-    return resp.catalog;
   }
 
   async setSessionModel(sessionId: string, modelId: string): Promise<string> {
-    const resp = await this.request<{
-      resp: string;
-      session_id: string;
-      model_id: string;
-    }>({
-      cmd: 'set_session_model',
-      session_id: sessionId,
-      model_id: modelId,
-    }, undefined, { timeoutMs: REMOTE_SETTING_WRITE_TIMEOUT_MS });
-    return resp.model_id;
+    return (await this.updateSessionModelSelection(sessionId, modelId)).model_id;
   }
 
   async setSessionModelSelection(
@@ -765,21 +908,7 @@ export class RemoteSessionManager {
     modelId: string,
     reasoningPreset: string | null,
   ): Promise<RemoteSessionModelSelection> {
-    const resp = await this.request<{
-      resp: string;
-      session_id: string;
-      model_id: string;
-      reasoning_preset: string | null;
-    }>({
-      cmd: 'set_session_model',
-      session_id: sessionId,
-      model_id: modelId,
-      reasoning_preset: reasoningPreset,
-    }, undefined, { timeoutMs: REMOTE_SETTING_WRITE_TIMEOUT_MS });
-    return {
-      model_id: resp.model_id,
-      reasoning_preset: resp.reasoning_preset ?? null,
-    };
+    return this.updateSessionModelSelection(sessionId, modelId, reasoningPreset);
   }
 
   private queueClients = new Map<string, HostDialogQueue>();
@@ -816,6 +945,15 @@ export class RemoteSessionManager {
       metadata?: Record<string, unknown>;
     }>,
   ): Promise<string> {
+    const target = this.client.getControlTargetSnapshot();
+    const needsReconciliation = await this.waitForSessionModelWrites(sessionId, target, true);
+    this.ensureControlTargetCurrent(target);
+    if (needsReconciliation) {
+      // A retired caller's epoch error does not invalidate this send. Confirm
+      // the host's final selection before submitting from the current target.
+      await this.getModelCatalog(sessionId);
+      this.ensureControlTargetCurrent(target);
+    }
     if (this.supportsHostCapability('dialog_queue_v1')) {
       const result = await this.dialogQueue(sessionId).submit({ content, agentType: agentType || 'Standard',
         attachments: (imageContexts ?? []).map(image => ({ kind: 'remote_image', id: image.id,
@@ -831,7 +969,7 @@ export class RemoteSessionManager {
       content,
       agent_type: agentType || undefined,
       image_contexts: imageContexts && imageContexts.length > 0 ? imageContexts : undefined,
-    });
+    }, target);
     return resp.turn_id;
   }
 

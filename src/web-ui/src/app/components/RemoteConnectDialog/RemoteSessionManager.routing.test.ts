@@ -172,17 +172,27 @@ describe('mobile RemoteSessionManager target routing', () => {
   it('bounds a remote reasoning-setting write independently from long-running commands', async () => {
     const client = clientForTest();
     client.setTargetDeviceId('remote-device');
-    const remoteRequest = vi.spyOn(client, 'sendDeviceRpc').mockResolvedValue({
-      resp: 'session_model_updated',
-      session_id: 'session-a',
-      model_id: 'primary',
-      reasoning_preset: 'high',
-    });
+    const remoteRequest = vi.spyOn(client, 'sendDeviceRpc')
+      .mockResolvedValueOnce({
+        resp: 'model_catalog',
+        catalog: {
+          version: 1,
+          models: [],
+          default_models: {},
+          session_model_write_fence_supported: false,
+        },
+      })
+      .mockResolvedValueOnce({
+        resp: 'session_model_updated',
+        session_id: 'session-a',
+        model_id: 'primary',
+        reasoning_preset: 'high',
+      });
     const manager = new RemoteSessionManager(client);
 
     await expect(manager.setSessionModelSelection('session-a', 'primary', 'high'))
       .resolves.toEqual({ model_id: 'primary', reasoning_preset: 'high' });
-    expect(remoteRequest).toHaveBeenCalledWith(
+    expect(remoteRequest).toHaveBeenLastCalledWith(
       'remote-device',
       expect.objectContaining({
         cmd: 'set_session_model',
@@ -190,7 +200,7 @@ describe('mobile RemoteSessionManager target routing', () => {
         model_id: 'primary',
         reasoning_preset: 'high',
       }),
-      { retryable: false, timeoutMs: 20_000 },
+      expect.objectContaining({ retryable: false, timeoutMs: 20_000 }),
     );
   });
 });
