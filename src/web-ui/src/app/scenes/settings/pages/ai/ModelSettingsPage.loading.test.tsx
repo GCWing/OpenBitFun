@@ -341,7 +341,7 @@ describe('ModelSettingsPage loading and provider actions', () => {
     for (const key of ['acquisition.noneConfigured', 'acquisition.noneImported', 'pool.empty']) {
       expect(container.textContent).not.toContain(copy(key));
     }
-    expect(selectors()).toHaveLength(4);
+    expect(selectors()).toHaveLength(5);
     expect(selectors().every(element => element.disabled)).toBe(true);
     expect(button('actions.addModel').disabled).toBe(true);
     expect(button('acquisition.import').disabled).toBe(false);

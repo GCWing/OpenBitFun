@@ -662,6 +662,7 @@ const ModelSettingsPage: React.FC = () => {
     () => [
       { label: t('category.general_chat'), value: 'general_chat' },
       { label: t('category.multimodal'), value: 'multimodal' },
+      { label: t('category.image_generation'), value: 'image_generation' },
       { label: t('category.speech_recognition'), value: 'speech_recognition' },
     ],
     [t]
@@ -2624,6 +2625,7 @@ const ModelSettingsPage: React.FC = () => {
     { modelId: poolDefaults.primary, label: tDefault('core.primary.label') },
     { modelId: poolDefaults.fast, label: tDefault('core.fast.label') },
     { modelId: poolDefaults.image_understanding, label: tDefault('optional.capabilities.image_understanding.label') },
+    { modelId: poolDefaults.image_generation, label: tDefault('optional.capabilities.image_generation.label') },
     { modelId: poolDefaults.speech_recognition, label: tDefault('optional.capabilities.speech_recognition.label') },
   ], [poolDefaults, tDefault]);
 
@@ -4784,6 +4786,7 @@ const ModelSettingsPage: React.FC = () => {
                   { value: '', label: t('pool.allCapabilities') },
                   { value: 'text_chat', label: t('capabilities.text_chat') },
                   { value: 'image_understanding', label: t('capabilities.image_understanding') },
+                  { value: 'image_generation', label: t('capabilities.image_generation') },
                   { value: 'speech_recognition', label: t('capabilities.speech_recognition') },
                   { value: 'function_calling', label: t('capabilities.function_calling') },
                 ]} />

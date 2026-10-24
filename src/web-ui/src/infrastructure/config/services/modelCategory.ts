@@ -25,6 +25,18 @@ const SPEECH_RECOGNITION_MODEL_HINTS = [
   'speech',
 ];
 
+const IMAGE_GENERATION_MODEL_HINTS = [
+  'dall-e',
+  'dalle',
+  'image',
+  'flux',
+  'sdxl',
+  'stable-diffusion',
+  'midjourney',
+  'imagen',
+  'draw',
+];
+
 export function inferModelCategory(
   modelName: string,
   _provider?: string
@@ -32,6 +44,9 @@ export function inferModelCategory(
   const normalized = modelName.trim().toLowerCase();
   if (SPEECH_RECOGNITION_MODEL_HINTS.some(hint => normalized.includes(hint))) {
     return 'speech_recognition';
+  }
+  if (IMAGE_GENERATION_MODEL_HINTS.some(hint => normalized.includes(hint))) {
+    return 'image_generation';
   }
   if (MULTIMODAL_MODEL_HINTS.some(hint => normalized.includes(hint))) {
     return 'multimodal';
@@ -50,6 +65,10 @@ export function resolveModelCategory(
     return 'multimodal';
   }
 
+  if (category === 'image_generation') {
+    return 'image_generation';
+  }
+
   if (category === 'speech_recognition') {
     return 'speech_recognition';
   }
@@ -62,6 +81,10 @@ export function resolveModelCategory(
     return 'speech_recognition';
   }
 
+  if (category === 'general_chat' && inferred === 'image_generation') {
+    return 'image_generation';
+  }
+
   return category ?? inferred;
 }
 
@@ -69,6 +92,8 @@ export function getCapabilitiesByCategory(category?: ModelCategory | string | nu
   switch (category) {
     case 'speech_recognition':
       return ['speech_recognition'];
+    case 'image_generation':
+      return ['image_generation'];
     case 'multimodal':
       return ['text_chat', 'image_understanding', 'function_calling'];
     case 'general_chat':
@@ -88,6 +113,7 @@ export function getEffectiveModelCapabilities(model: ModelCapabilitySource): Mod
       capability === 'text_chat'
       || capability === 'function_calling'
       || capability === 'image_understanding'
+      || capability === 'image_generation'
       || capability === 'speech_recognition'
     ))
     : [];
