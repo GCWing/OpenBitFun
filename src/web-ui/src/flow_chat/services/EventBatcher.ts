@@ -9,7 +9,7 @@
  * - Merge keys are scoped by session, round/tool id, and retry attempt
  */
 
-import { areSensitiveDiagnosticsEnabled, createLogger } from '@/shared/utils/logger';
+import { areSensitiveDiagnosticsEnabled, createLogger, logger, LogLevel } from '@/shared/utils/logger';
 import { elapsedMs, nowMs } from '@/shared/utils/timing';
 
 const log = createLogger('EventBatcher');
@@ -228,13 +228,20 @@ export class EventBatcher {
 
     const startTime = nowMs();
     const bufferedEvents = Array.from(this.buffer.values());
-    const logPayload = getBatchedEventsLogPayload(bufferedEvents);
-    const { rawEventCount, mergedEventCount } = logPayload;
 
     const events = bufferedEvents.map(({ key, payload }) => ({
       key,
       payload
     }));
+
+    // Build the diagnostic payload only when trace output can reach a sink;
+    // otherwise every flush pays a full event map for a dropped log entry.
+    // `rawEventCount` stays 0 when skipped: the count is only consumed by the
+    // trace entry and the slow-flush warning below reports the duration.
+    const logPayload = logger.getLevel() > LogLevel.TRACE
+      ? { rawEventCount: 0, mergedEventCount: bufferedEvents.length }
+      : getBatchedEventsLogPayload(bufferedEvents);
+    const { rawEventCount, mergedEventCount } = logPayload;
 
     log.trace('Flushing batched events', logPayload);
 

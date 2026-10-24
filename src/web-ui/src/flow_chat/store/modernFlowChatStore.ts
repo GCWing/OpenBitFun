@@ -1,13 +1,12 @@
 /**
  * Modern FlowChat Store
- * High-performance state management using Zustand + Immer
+ * High-performance state management using Zustand
  * Preserves original concept: Session → DialogTurn → ModelRound → FlowItem
  */
 
 import { create, useStore } from 'zustand';
 import { createContext, useContext } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { immer } from 'zustand/middleware/immer';
 import type { Session, DialogTurn, ModelRound, ModelRoundAttempt, FlowThinkingItem, FlowUserSteeringItem, AnyFlowItem } from '../types/flow-chat';
 import { flowChatStore } from './FlowChatStore';
 import { getTurnCompletionNotice } from '../utils/turnCompletionNotice';
@@ -382,7 +381,7 @@ function getInitialModernState(): Pick<
 }
 
 export const createModernFlowChatStore = (initialSession?: Session | null) => create<ModernFlowChatState>()(
-  immer((set, get) => ({
+  (set, get) => ({
     ...(initialSession === undefined ? getInitialModernState() : {
       activeSession: initialSession,
       virtualItems: sessionToVirtualItems(initialSession),
@@ -391,28 +390,28 @@ export const createModernFlowChatStore = (initialSession?: Session | null) => cr
 
     setActiveSession: (session) => {
       const items = sessionToVirtualItems(session);
-      set((state) => {
-        if (state.activeSession?.sessionId !== session?.sessionId) {
-          state.visibleTurnInfo = null;
-        }
-        state.activeSession = session;
-        state.virtualItems = items;
-      });
+      set((state) => ({
+        ...(state.activeSession?.sessionId !== session?.sessionId ? { visibleTurnInfo: null } : null),
+        activeSession: session,
+        virtualItems: items,
+      }));
     },
 
     updateVirtualItems: () => {
       const session = get().activeSession;
       const items = sessionToVirtualItems(session);
-      
-      set((state) => {
-        state.virtualItems = items;
-      });
+
+      set((state) => ({
+        ...state,
+        virtualItems: items,
+      }));
     },
 
     setVisibleTurnInfo: (info) => {
-      set((state) => {
-        state.visibleTurnInfo = info;
-      });
+      set((state) => ({
+        ...state,
+        visibleTurnInfo: info,
+      }));
     },
 
     clear: () => {
@@ -423,14 +422,16 @@ export const createModernFlowChatStore = (initialSession?: Session | null) => cr
       cachedTotalTurnCount = undefined;
       cachedVirtualItems = [];
       cachedTurnItems = new WeakMap();
+      cachedNeedsUserAttention = undefined;
 
-      set((state) => {
-        state.activeSession = null;
-        state.virtualItems = [];
-        state.visibleTurnInfo = null;
-      });
+      set((state) => ({
+        ...state,
+        activeSession: null,
+        virtualItems: [],
+        visibleTurnInfo: null,
+      }));
     },
-  }))
+  })
 );
 
 const defaultModernFlowChatStore = createModernFlowChatStore();

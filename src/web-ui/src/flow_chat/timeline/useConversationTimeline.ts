@@ -22,16 +22,26 @@ export function useConversationTimeline(sources: VirtualItem[], sessionId: strin
   }
   const projection = projectionRef.current.value;
   const labels = useMemo(() => flowGroupToolLabels(t), [t]);
+  // Every streamed flush produces a new sources array; skip texts already
+  // queued or parsed instead of re-walking the whole timeline each time.
+  const prewarmedTextsRef = useRef<WeakSet<object>>(new WeakSet());
   useEffect(() => {
+    const seen = prewarmedTextsRef.current;
+    const cancel: Array<() => void> = [];
     const texts = new Set<string>();
     for (const source of sources) {
       const members = source.type === 'explore-group' ? source.data.allItems
         : source.type === 'model-round' ? source.projectedGroups?.flatMap(group => group.type === 'critical' ? [group.item]
           : group.projection?.allItems ?? group.items) ?? source.data.items : [];
-      for (const member of members) if (member.type === 'text' && !('isStreaming' in member && member.isStreaming)
-        && 'content' in member && typeof member.content === 'string' && member.content.length >= 2000) texts.add(member.content);
+      for (const member of members) {
+        if (member.type !== 'text' || !('content' in member) || typeof member.content !== 'string') continue;
+        if ('isStreaming' in member && member.isStreaming) continue;
+        if (seen.has(member)) continue;
+        seen.add(member);
+        if (member.content.length >= 2000) texts.add(member.content);
+      }
     }
-    const cancel = [...texts].map(prewarmMarkdownParse);
+    for (const text of texts) cancel.push(prewarmMarkdownParse(text));
     return () => cancel.forEach(stop => stop());
   }, [sources]);
   const items = useMemo(() => {
