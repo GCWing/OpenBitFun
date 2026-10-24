@@ -25,6 +25,7 @@ import { sessionAPI, type SessionCatalogQuery, type SessionMetadataPage } from '
 import { createLogger } from '@/shared/utils/logger';
 import { isSamePath } from '@/shared/utils/pathUtils';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
+import { useSessionMenuPreferences, type SessionMenuAction } from './sessionMenuPreferences';
 import { useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores';
 import {
   openBtwSessionInAuxPane,
@@ -251,6 +252,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   const activeBtwSessionData = activeBtwSessionTab?.content.data as
     | { childSessionId: string; parentSessionId: string; workspacePath?: string }
     | undefined;
+  const sessionMenuPreferences = useSessionMenuPreferences();
+  const isMenuActionVisible = (action: SessionMenuAction) => !sessionMenuPreferences.hiddenActions.includes(action);
   const [flowChatState, setFlowChatState] = useState<FlowChatState>(() =>
     flowChatStore.getState()
   );
@@ -1086,7 +1089,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
       e.stopPropagation();
       const session = flowChatStore.getState().sessions.get(sessionId);
       const sourceView = session?.externalHistory?.mode === 'follow';
-      const confirmed = await confirmDanger(
+      const confirmed = !sessionMenuPreferences.confirmDelete || await confirmDanger(
         sourceView ? t('nav.sessions.removeSourceConfirmTitle') : t('nav.sessions.deleteConfirmTitle'),
         sourceView ? t('nav.sessions.removeSourceConfirmMessage', {
           name: session ? resolveSessionTitle(session) : t('nav.sessions.untitled'),
@@ -1103,7 +1106,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
         log.error('Failed to delete session', err);
       }
     },
-    [resolveSessionTitle, t]
+    [resolveSessionTitle, sessionMenuPreferences.confirmDelete, t]
   );
 
   const handleArchive = useCallback(
@@ -1112,12 +1115,14 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
       try {
         await flowChatManager.archiveChatSession(sessionId);
         window.dispatchEvent(new CustomEvent('openbitfun:session-archived'));
-        notificationService.success(t('nav.sessions.archivedAll', { count: 1 }), { duration: 3000 });
+        if (sessionMenuPreferences.showArchiveNotice) {
+          notificationService.success(t('nav.sessions.archivedAll', { count: 1 }), { duration: 3000 });
+        }
       } catch (err) {
         log.error('Failed to archive session', err);
       }
     },
-    [t]
+    [sessionMenuPreferences.showArchiveNotice, t]
   );
 
   const handleCopySessionId = useCallback(
@@ -1818,6 +1823,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                             type="button"
                             leading={<Icon name="edit" size="sm" />}
                             onClick={e => { closeSessionMenu(); handleStartEdit(e, session); }}
+                            hidden={!isMenuActionVisible('rename')}
                             data-testid="nav-session-menu-rename"
                             data-session-id={session.sessionId}
                           >
@@ -1827,6 +1833,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                             type="button"
                             leading={<Icon name="duplicate" size="sm" />}
                             onClick={e => { closeSessionMenu(); void handleCopySessionId(e, session.sessionId); }}
+                            hidden={!isMenuActionVisible('copyId')}
                             data-testid="nav-session-menu-copy-id"
                             data-session-id={session.sessionId}
                           >
@@ -1855,6 +1862,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                                   : runningSessionIds.has(session.sessionId)
                                     ? t('nav.sessions.duplicateRunning')
                                     : undefined}
+                            hidden={!isMenuActionVisible('duplicate')}
                             data-testid="nav-session-menu-duplicate"
                             data-session-id={session.sessionId}
                           >
@@ -1870,6 +1878,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                               : (!workspaceId && !session.projectWorkspaceId && !session.workspaceId)
                                 ? t('nav.sessions.storageDirectoryWorkspaceUnavailable')
                                 : undefined}
+                            hidden={!isMenuActionVisible('openStorage')}
                             data-testid="nav-session-menu-open-storage"
                             data-session-id={session.sessionId}
                           >
@@ -1882,6 +1891,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                               setIsExportScopeMenu(true);
                             }}
                             disabled={exportingSessionId === session.sessionId}
+                            hidden={!isMenuActionVisible('export')}
                             data-testid="nav-session-menu-export-markdown"
                             data-session-id={session.sessionId}
                             leading={exportingSessionId === session.sessionId
@@ -1899,6 +1909,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                               setScheduledJobsSessionId(session.sessionId);
                             }}
                             disabled={!workspacePath}
+                            hidden={!isMenuActionVisible('scheduledJobs')}
                             data-testid="nav-session-menu-scheduled-jobs"
                             data-session-id={session.sessionId}
                           >
@@ -1908,6 +1919,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                             type="button"
                             leading={<Icon glyph={Archive} size="sm" />}
                             onClick={e => { closeSessionMenu(); void handleArchive(e, session.sessionId); }}
+                            hidden={!isMenuActionVisible('archive')}
                             data-testid="nav-session-menu-archive"
                             data-session-id={session.sessionId}
                           >
@@ -1931,6 +1943,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                                   || batchWorkspaceId,
                               });
                             }}
+                            hidden={!isMenuActionVisible('manage')}
                             data-testid="nav-session-menu-manage-sessions"
                           >
                             <span>{t('nav.sessions.manage')}</span>
@@ -1940,6 +1953,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                               type="button"
                               leading={<Icon glyph={FolderGit2} size="sm" />}
                               onClick={e => { void handleOpenWorktreeWorkspace(e, worktreeRootPath); }}
+                              hidden={!isMenuActionVisible('openWorktreeWorkspace')}
                               data-testid="nav-session-menu-open-worktree-workspace"
                               data-session-id={session.sessionId}
                             >
@@ -1951,6 +1965,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                             tone="danger"
                             leading={<Icon name="delete" size="sm" />}
                             onClick={e => { closeSessionMenu(); void handleDelete(e, session.sessionId); }}
+                            hidden={!isMenuActionVisible('delete')}
                             data-testid="nav-session-menu-delete"
                             data-session-id={session.sessionId}
                           >
