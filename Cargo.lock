@@ -6425,6 +6425,7 @@ dependencies = [
  "win32job",
  "windows 0.61.3",
  "windows-core 0.61.2",
+ "windows-version",
  "xz2",
  "zip 4.6.1",
  "zstd",

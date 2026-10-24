@@ -147,6 +147,7 @@ windows = { workspace = true, features = [
   "Win32_UI_WindowsAndMessaging",
 ] }
 windows-core = { workspace = true }
+windows-version = { workspace = true }
 webview2-com = { workspace = true }
 
 [target.'cfg(windows)'.dev-dependencies]

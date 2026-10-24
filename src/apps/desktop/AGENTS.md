@@ -267,6 +267,17 @@ For the matching startup wiring contract, run
 For native sidebar material and appearance bootstrap, run
 `cargo test -p openbitfun-desktop --no-default-features --lib appearance::startup_appearance_tests`
 and `pnpm --dir src/web-ui run test:run src/infrastructure/appearance/adapters/ThemeTokenAppearanceAdapter.test.ts`.
+For Windows main-window material, native frame and eight-direction resizing, run
+`node scripts/test-windows-window-material.mjs` on Windows. It compiles the
+production window configuration with the locked Tauri runtime and local Tao/Wry
+adapters, then checks real hidden WebViews in isolated temporary storage. It
+covers the opaque fallback, available native material, frame insets, resize hit
+testing and window size changes; it does not measure Windows 10 drag frame rate
+or exercise remote scenarios. Use `--check --target x86_64-pc-windows-msvc` from
+another host for a compile-only check, adding `--xwin` when using cargo-xwin.
+Keep the native frame and shadow intact:
+expanding the client rectangle over the non-client frame removes the system's
+side, bottom and corner resize targets.
 For embedded browser preview encoding and target correlation, run
 `cargo test -p openbitfun-desktop --lib api::browser_api::tests`.
 For conversation-owned browser lifetime, build Desktop and Web UI, then run

@@ -320,13 +320,13 @@ impl AppearanceConfig {
         startup_trace_id: &str,
         bootstrap_config: &StartupBootstrapConfig,
         workspace_startup_state: Option<&serde_json::Value>,
+        native_sidebar_material: bool,
     ) -> String {
         let appearance_mode = if self.is_light { "light" } else { "dark" };
         let startup_locale = &bootstrap_config.locale;
         let startup_locale_json =
             serde_json::to_string(&startup_locale).unwrap_or_else(|_| "\"zh-CN\"".to_string());
         let show_startup_window_controls = !cfg!(target_os = "macos");
-        let native_sidebar_material = cfg!(any(target_os = "windows", target_os = "macos"));
         // The Linux shell paints the frame radius itself because WebKitGTK keeps
         // the GTK frame square on Wayland. Advertise that so neither this
         // bootstrap nor the Web UI paints an opaque page background over the
@@ -391,6 +391,8 @@ impl AppearanceConfig {
                     root.setAttribute('data-density', 'compact');
                     if ({native_sidebar_material}) {{
                         root.setAttribute('data-openbitfun-native-material', 'sidebar');
+                    }} else {{
+                        root.removeAttribute('data-openbitfun-native-material');
                     }}
                     {native_frame_attribute}
                     
@@ -476,7 +478,7 @@ mod startup_appearance_tests {
             keybindings: None,
         };
 
-        let script = appearance.generate_init_script("trace-id", &bootstrap, None);
+        let script = appearance.generate_init_script("trace-id", &bootstrap, None, false);
 
         assert!(script.contains("__OPENBITFUN_BOOTSTRAP_APPEARANCE_ID__"));
         assert!(script.contains("__OPENBITFUN_BOOTSTRAP_APPEARANCE_SELECTION__"));
@@ -540,10 +542,12 @@ pub fn create_main_window(
     let (startup_page_ready, mut startup_page_ready_rx) = tokio::sync::watch::channel(false);
     let bootstrap_config = AppearanceConfig::load_startup_bootstrap_config();
     let appearance = bootstrap_config.appearance.clone();
+    let native_sidebar_material = crate::window_material::native_sidebar_material_available();
     let init_script = appearance.generate_init_script(
         startup_trace_id,
         &bootstrap_config,
         workspace_startup_state.as_ref(),
+        native_sidebar_material,
     );
     startup_trace.record_step(
         "native_step_end",
@@ -633,22 +637,11 @@ pub fn create_main_window(
             }
         });
 
-    // The webview must be transparent for the OS material to reach the sidebar.
-    // Scene backgrounds and the startup tint remain owned by the frontend.
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
-    {
-        builder = builder
-            .transparent(true)
-            .background_color(tauri::window::Color(0, 0, 0, 0))
-            .effects(
-                tauri::window::EffectsBuilder::new()
-                    .effects([
-                        tauri::window::Effect::Acrylic,
-                        tauri::window::Effect::Sidebar,
-                    ])
-                    .build(),
-            );
-    }
+    builder = crate::window_material::configure_main_window(
+        builder,
+        native_sidebar_material,
+        appearance.to_tauri_color(),
+    );
 
     // The Linux window is transparent because the shell draws the frame radius
     // itself: WebKitGTK keeps the GTK frame square on Wayland.
@@ -696,11 +689,10 @@ pub fn create_main_window(
     builder =
         builder.on_navigation(move |url| navigation_workbench.should_allow_main_navigation(url));
 
-    // Windows and Linux both own their window chrome: the frontend renders the
-    // window controls and the drag regions, so GTK's header bar would add a
-    // second title bar above them. tao keeps a hidden CSD header on Wayland so
-    // the compositor does not paint server-side decorations instead.
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    // The Linux frontend renders window controls and drag regions, so GTK's
+    // header bar would add a second title bar. tao keeps a hidden CSD header on
+    // Wayland so the compositor does not paint server-side decorations instead.
+    #[cfg(target_os = "linux")]
     {
         builder = builder.decorations(false);
     }
