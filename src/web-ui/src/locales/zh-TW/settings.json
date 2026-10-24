@@ -36,6 +36,10 @@
         "label": "模型",
         "description": "連線模型服務，並選擇各類任務使用的模型"
       },
+      "context": {
+        "label": "上下文",
+        "description": "設定長對話如何自動壓縮，以保持在模型視窗範圍內"
+      },
       "execution": {
         "label": "執行與協作",
         "description": "設定工具執行時限、智慧體並行方式與審核容量"

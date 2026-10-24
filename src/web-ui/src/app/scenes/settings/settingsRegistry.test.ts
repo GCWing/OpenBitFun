@@ -23,12 +23,12 @@ describe('settings information architecture', () => {
   it('groups flat pages by ownership and keeps the pet independent', () => {
     expect(Object.fromEntries(SETTINGS_CATEGORIES.map(category => [category.id, category.pages.map(page => page.id)]))).toEqual({
       application: ['application.general', 'application.appearance', 'application.pet', 'application.input'],
-      ai: ['ai.models', 'ai.session-memory', 'ai.execution', 'ai.permissions'],
+      ai: ['ai.models', 'ai.context', 'ai.session-memory', 'ai.execution', 'ai.permissions'],
       development: ['development.editor', 'development.terminal', 'development.workspace'],
       tools: ['tools.web-search', 'tools.desktop-control', 'tools.mcp', 'tools.external-agents', 'tools.automation'],
       data: ['data.usage', 'data.archived', 'data.diagnostics'],
     });
-    expect(new Set(SETTINGS_PAGE_MANIFESTS.map(page => page.id)).size).toBe(19);
+    expect(new Set(SETTINGS_PAGE_MANIFESTS.map(page => page.id)).size).toBe(20);
     expect(SETTINGS_PAGE_MANIFESTS.filter(page => page.views?.length).map(page => page.id)).toEqual(['tools.external-agents']);
     expect(getSettingsPageManifest('tools.external-agents').views?.map(view => view.id)).toEqual(['local', 'ssh', 'json']);
     expect(getSettingsPageManifest('application.input').sections?.map(section => section.id)).toEqual(['voice', 'message-sending', 'text-selection', 'shortcuts']);

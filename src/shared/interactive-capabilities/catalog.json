@@ -7012,6 +7012,97 @@
       ]
     },
     {
+      "id": "setting.ai.context",
+      "kind": "setting",
+      "categoryId": "assistant",
+      "titleZh": "上下文设置",
+      "titleEn": "Context settings",
+      "summaryZh": "管理长对话的自动压缩行为，包括后台预取压缩与摘要请求的溢出保护。",
+      "summaryEn": "Manage automatic compression for long conversations, including background compression prefetch and summary-request overflow protection.",
+      "keywordsZh": [
+        "上下文设置",
+        "自动压缩",
+        "上下文压缩",
+        "预取",
+        "摘要",
+        "上下文窗口"
+      ],
+      "keywordsEn": [
+        "context settings",
+        "automatic compression",
+        "context compression",
+        "prefetch",
+        "summary",
+        "context window"
+      ],
+      "highlightsZh": [
+        "接近上限前于后台提前准备压缩",
+        "摘要请求无法缩小时自动折叠超大块",
+        "在设置页直接开关压缩预取"
+      ],
+      "highlightsEn": [
+        "Prepare compression early in the background",
+        "Fold oversized blocks when the summary request cannot shrink further",
+        "Toggle compression prefetch directly from the settings page"
+      ],
+      "items": [
+        {
+          "id": "compression-prefetch",
+          "titleZh": "控制是否在接近上下文上限前于后台提前准备压缩",
+          "titleEn": "Choose whether compression is prepared in the background before the context limit is reached",
+          "control": {
+            "kind": "open",
+            "reasonCode": "unstructuredInteraction",
+            "reasonZh": "“控制是否在接近上下文上限前于后台提前准备压缩”是设置页中的即时开关；智能体会打开精确入口，并把交互保留在用户可见界面。",
+            "reasonEn": "“Choose whether compression is prepared in the background before the context limit is reached” is an immediate toggle on the settings page; the Agent opens the exact entry and keeps the interaction visible to the user."
+          },
+          "evidence": [
+            "source:src/web-ui/src/locales/zh-CN/settings/context.json#compression.prefetch.label",
+            "source:src/crates/assembly/core/src/agentic/execution/AGENTS.md#ai.enable_context_compression_prefetch"
+          ]
+        },
+        {
+          "id": "request-elision",
+          "titleZh": "控制摘要请求无法再缩小时是否折叠超大围栏或 XML 块",
+          "titleEn": "Choose whether oversized fenced or XML blocks fold when the summary request cannot shrink further",
+          "control": {
+            "kind": "open",
+            "reasonCode": "unstructuredInteraction",
+            "reasonZh": "“控制摘要请求无法再缩小时是否折叠超大围栏或 XML 块”是设置页中的即时开关；智能体会打开精确入口，并把交互保留在用户可见界面。",
+            "reasonEn": "“Choose whether oversized fenced or XML blocks fold when the summary request cannot shrink further” is an immediate toggle on the settings page; the Agent opens the exact entry and keeps the interaction visible to the user."
+          },
+          "evidence": [
+            "source:src/web-ui/src/locales/zh-CN/settings/context.json#compression.sectionTitle",
+            "source:src/crates/assembly/core/src/agentic/session/compression/elision.rs#RequestElisionLadder"
+          ]
+        }
+      ],
+      "stepsZh": [
+        "打开设置",
+        "进入“AI > 上下文”",
+        "调整自动压缩选项,更改立即保存"
+      ],
+      "stepsEn": [
+        "Open Settings",
+        "Go to AI > Context",
+        "Adjust the automatic compression options; changes save immediately"
+      ],
+      "agentExamplesZh": [
+        "打开上下文设置",
+        "带我去上下文压缩设置"
+      ],
+      "agentExamplesEn": [
+        "Open context settings",
+        "Take me to the context compression settings"
+      ],
+      "destination": {
+        "kind": "settings",
+        "pageId": "ai.context"
+      },
+      "operations": [],
+      "options": []
+    },
+    {
       "id": "setting.ai.memory",
       "kind": "setting",
       "categoryId": "assistant",

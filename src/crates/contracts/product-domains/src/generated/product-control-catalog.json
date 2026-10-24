@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "c7c38fecfad3e83e4a9f6f451a37edbf7d42ef399409238253f9a0fd124f879b",
+  "digest": "f73b2d5ce1cc4824923459e1f2b24c58bba3d3ca930416b059136449aa522d0f",
   "ownerDigest": "103fc8646df7b35e9fac1c52149a35b86e9c6115b462b0aa36240a4600903ce4",
   "searchAcceptance": [
     {
@@ -145,13 +145,13 @@
   ],
   "counts": {
     "features": 23,
-    "settings": 21,
-    "userFacing": 44,
-    "documentedItems": 332,
+    "settings": 22,
+    "userFacing": 45,
+    "documentedItems": 334,
     "controlCoverage": {
       "direct": 51,
       "delegated": 65,
-      "interactive": 216,
+      "interactive": 218,
       "unsupported": 0
     }
   },
@@ -14600,6 +14600,144 @@
       }
     },
     {
+      "id": "setting.ai.context:query",
+      "capabilityId": "setting.ai.context",
+      "itemIds": [
+        "compression-prefetch",
+        "request-elision"
+      ],
+      "kind": "query",
+      "risk": "read",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "static"
+      },
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "ai.context"
+      }
+    },
+    {
+      "id": "setting.ai.context:open:compression-prefetch",
+      "capabilityId": "setting.ai.context",
+      "itemIds": [
+        "compression-prefetch"
+      ],
+      "kind": "open",
+      "risk": "ui",
+      "executionHost": "presentationSurface",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_presentation_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "openReason": "unstructuredInteraction",
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "ai.context"
+      }
+    },
+    {
+      "id": "setting.ai.context:open:request-elision",
+      "capabilityId": "setting.ai.context",
+      "itemIds": [
+        "request-elision"
+      ],
+      "kind": "open",
+      "risk": "ui",
+      "executionHost": "presentationSurface",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_presentation_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "openReason": "unstructuredInteraction",
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "ai.context"
+      }
+    },
+    {
       "id": "setting.ai.memory:query",
       "capabilityId": "setting.ai.memory",
       "itemIds": [
@@ -27882,6 +28020,122 @@
         "If no model is available or a provider is unhealthy, surface the specific configuration state and open model settings; never guess model IDs"
       ],
       "docsUrl": "https://playbook.openbitfun.com/capabilities/setting.ai.models/"
+    },
+    {
+      "id": "setting.ai.context",
+      "kind": "setting",
+      "categoryId": "assistant",
+      "titleZh": "上下文设置",
+      "titleEn": "Context settings",
+      "summaryZh": "管理长对话的自动压缩行为，包括后台预取压缩与摘要请求的溢出保护。",
+      "summaryEn": "Manage automatic compression for long conversations, including background compression prefetch and summary-request overflow protection.",
+      "keywordsZh": [
+        "上下文设置",
+        "自动压缩",
+        "上下文压缩",
+        "预取",
+        "摘要",
+        "上下文窗口"
+      ],
+      "keywordsEn": [
+        "context settings",
+        "automatic compression",
+        "context compression",
+        "prefetch",
+        "summary",
+        "context window"
+      ],
+      "highlightsZh": [
+        "接近上限前于后台提前准备压缩",
+        "摘要请求无法缩小时自动折叠超大块",
+        "在设置页直接开关压缩预取"
+      ],
+      "highlightsEn": [
+        "Prepare compression early in the background",
+        "Fold oversized blocks when the summary request cannot shrink further",
+        "Toggle compression prefetch directly from the settings page"
+      ],
+      "items": [
+        {
+          "id": "compression-prefetch",
+          "titleZh": "控制是否在接近上下文上限前于后台提前准备压缩",
+          "titleEn": "Choose whether compression is prepared in the background before the context limit is reached",
+          "control": {
+            "kind": "open",
+            "reasonCode": "unstructuredInteraction",
+            "reasonZh": "“控制是否在接近上下文上限前于后台提前准备压缩”是设置页中的即时开关；智能体会打开精确入口，并把交互保留在用户可见界面。",
+            "reasonEn": "“Choose whether compression is prepared in the background before the context limit is reached” is an immediate toggle on the settings page; the Agent opens the exact entry and keeps the interaction visible to the user."
+          }
+        },
+        {
+          "id": "request-elision",
+          "titleZh": "控制摘要请求无法再缩小时是否折叠超大围栏或 XML 块",
+          "titleEn": "Choose whether oversized fenced or XML blocks fold when the summary request cannot shrink further",
+          "control": {
+            "kind": "open",
+            "reasonCode": "unstructuredInteraction",
+            "reasonZh": "“控制摘要请求无法再缩小时是否折叠超大围栏或 XML 块”是设置页中的即时开关；智能体会打开精确入口，并把交互保留在用户可见界面。",
+            "reasonEn": "“Choose whether oversized fenced or XML blocks fold when the summary request cannot shrink further” is an immediate toggle on the settings page; the Agent opens the exact entry and keeps the interaction visible to the user."
+          }
+        }
+      ],
+      "stepsZh": [
+        "打开设置",
+        "进入“AI > 上下文”",
+        "调整自动压缩选项,更改立即保存"
+      ],
+      "stepsEn": [
+        "Open Settings",
+        "Go to AI > Context",
+        "Adjust the automatic compression options; changes save immediately"
+      ],
+      "agentExamplesZh": [
+        "打开上下文设置",
+        "带我去上下文压缩设置"
+      ],
+      "agentExamplesEn": [
+        "Open context settings",
+        "Take me to the context compression settings"
+      ],
+      "destination": {
+        "kind": "settings",
+        "pageId": "ai.context"
+      },
+      "operations": [],
+      "options": [],
+      "searchTerms": [
+        "setting.ai.context",
+        "上下文设置",
+        "Context settings",
+        "AI 与协作",
+        "AI & collaboration",
+        "自动压缩",
+        "上下文压缩",
+        "预取",
+        "摘要",
+        "上下文窗口",
+        "context settings",
+        "automatic compression",
+        "context compression",
+        "prefetch",
+        "summary",
+        "context window",
+        "接近上限前于后台提前准备压缩",
+        "摘要请求无法缩小时自动折叠超大块",
+        "在设置页直接开关压缩预取",
+        "Prepare compression early in the background",
+        "Fold oversized blocks when the summary request cannot shrink further",
+        "Toggle compression prefetch directly from the settings page",
+        "控制是否在接近上下文上限前于后台提前准备压缩",
+        "Choose whether compression is prepared in the background before the context limit is reached",
+        "控制摘要请求无法再缩小时是否折叠超大围栏或 XML 块",
+        "Choose whether oversized fenced or XML blocks fold when the summary request cannot shrink further",
+        "打开上下文设置",
+        "带我去上下文压缩设置",
+        "Open context settings",
+        "Take me to the context compression settings"
+      ],
+      "docsUrl": "https://playbook.openbitfun.com/capabilities/setting.ai.context/"
     },
     {
       "id": "setting.ai.memory",

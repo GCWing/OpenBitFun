@@ -28,6 +28,7 @@ export const runtimeSettingsAppearanceDescriptor: AppearanceSurfaceDescriptor = 
         'pet',
         'permissions',
         'execution',
+        'context',
         'browser-desktop-control',
       ],
     },

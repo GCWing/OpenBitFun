@@ -183,6 +183,24 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     load: () => import('./pages/ai/ModelSettingsPage'),
   }),
   definePage({
+    id: 'ai.context',
+    categoryId: 'ai',
+    labelKey: 'navigation.pages.context.label',
+    descriptionKey: 'navigation.pages.context.description',
+    keywords: [
+      'context', 'compression', 'compact', 'summarization', 'summary',
+      'memory', 'prune', 'token window', 'context window',
+    ],
+    namespaces: ['settings', 'settings/context'],
+    searchPhrases: [
+      phrase('settings/context', 'title'),
+      phrase('settings/context', 'subtitle'),
+      phrase('settings/context', 'compression.sectionTitle'),
+      phrase('settings/context', 'compression.prefetch.label'),
+    ],
+    load: () => import('./pages/ai/ContextSettingsPage'),
+  }),
+  definePage({
     id: 'ai.session-memory',
     categoryId: 'ai',
     labelKey: 'navigation.pages.sessionMemory.label',

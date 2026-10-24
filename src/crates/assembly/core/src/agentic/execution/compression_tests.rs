@@ -532,6 +532,92 @@ async fn compression_overflow_exhausts_four_plans_without_local_summary() {
     assert_eq!(server.requests.lock().unwrap().len(), 4);
 }
 
+/// The planner floors the cutoff above the first atomic unit, so a gigantic
+/// first message pins the summary input: the recent-tail ladder can never
+/// shrink it. Request-side elision folds the oversized fenced block in the
+/// request copy instead of failing the turn.
+fn dead_end_messages() -> Vec<Message> {
+    vec![
+        Message::system("system".into()),
+        Message::user(format!(
+            "Please work with this snapshot:\n```text\nMEGA_BLOCK_MARKER\n{}\n```\n",
+            "x".repeat(400_000)
+        )),
+        Message::assistant("Understood.".into()),
+        Message::user("Continue with the next step.".into()),
+        Message::assistant("Ready.".into()),
+    ]
+}
+
+#[tokio::test]
+async fn compression_dead_end_elides_the_summary_request_and_recovers() {
+    let (_temp, engine) = engine();
+    let server = RetryTestServer::new(vec![overflow(), retry_test_success()]);
+    let result = engine
+        .build_planned_compression_result(
+            "session",
+            "turn",
+            &dead_end_messages(),
+            128_000,
+            None,
+            server.client(),
+            &ModelRequestContext::default(),
+            &None,
+            &PrependedPromptReminders::default(),
+            false,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(result
+        .messages
+        .iter()
+        .any(|message| message.content.to_string().contains("Recovered")));
+    let requests = server.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    let unelided = requests[0].to_string();
+    let elided = requests[1].to_string();
+    assert!(unelided.contains("MEGA_BLOCK_MARKER"));
+    assert!(!elided.contains("MEGA_BLOCK_MARKER"));
+    assert!(elided.contains("[Elided "));
+    assert!(elided.contains("code block from message]"));
+}
+
+#[tokio::test]
+async fn compression_dead_end_elision_exhaustion_stays_terminal() {
+    let (_temp, engine) = engine();
+    let server = RetryTestServer::new(vec![overflow()]);
+    let error = engine
+        .build_planned_compression_result(
+            "session",
+            "turn",
+            &dead_end_messages(),
+            128_000,
+            None,
+            server.client(),
+            &ModelRequestContext::default(),
+            &None,
+            &PrependedPromptReminders::default(),
+            false,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("plan 4"), "{error}");
+    let requests = server.requests.lock().unwrap();
+    assert_eq!(requests.len(), 4);
+    assert!(requests[0].to_string().contains("MEGA_BLOCK_MARKER"));
+    assert!(!requests[0].to_string().contains("[Elided"));
+    for request in &requests[1..] {
+        assert!(request.to_string().contains("[Elided"));
+    }
+}
+
 #[tokio::test]
 async fn compression_failure_preserves_context_and_success_count() {
     let (_temp, engine) = engine();
