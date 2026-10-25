@@ -234,7 +234,43 @@ mod tests {
                 &history, channel, &changed, true
             )
             .is_err());
+            let mut projected = history.clone();
+            assert_eq!(
+                ChannelClientSource::project_replay_for_target(
+                    &mut projected,
+                    channel,
+                    &changed,
+                    None
+                ),
+                1
+            );
+            assert!(projected[0].thinking_signature.is_none());
+            assert!(projected[0].model_response_replay.is_none());
+            assert_eq!(projected[0].content, history[0].content);
+            assert!(ChannelClientSource::validate_replay_binding(
+                &projected, channel, &changed, true
+            )
+            .is_ok());
         }
+        let mut changed_model = client.clone();
+        changed_model.config.model = "another-model".into();
+        let mut mixed = history.clone();
+        let mut other = history[0].clone();
+        other
+            .model_response_replay
+            .as_mut()
+            .unwrap()
+            .channel_fingerprint = Some(changed_model.channel_replay_fingerprint());
+        mixed.push(other);
+        assert_eq!(
+            ChannelClientSource::project_replay_for_target(&mut mixed, "primary", &client, None),
+            1
+        );
+        assert_eq!(
+            serde_json::to_value(&mixed[0]).unwrap(),
+            serde_json::to_value(&history[0]).unwrap()
+        );
+        assert!(mixed[1].thinking_signature.is_none());
         let mut legacy = history[0].clone();
         legacy.model_response_replay = None;
         assert!(ChannelClientSource::validate_replay_binding(
@@ -248,6 +284,60 @@ mod tests {
             ChannelClientSource::validate_replay_binding(&[legacy], "primary", &client, false)
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn replay_projection_preserves_legacy_seat_provenance_but_drops_unknown_state() {
+        let client = AIClient::new(
+            openbitfun_core_types::AIConfig::try_from(AIModelConfig::default()).unwrap(),
+        );
+        let account = openbitfun_core_types::ModelAccountOrigin {
+            provider: "codex".into(),
+            account_id: "account-a".into(),
+            upstream_account_id: Some("seat-a".into()),
+        };
+        let mut message = openbitfun_core_types::Message::assistant("Saved answer".into());
+        message.thinking_signature = Some("original-signature".into());
+        message.reasoning_content = Some("Signed reasoning".into());
+        let mut unknown = vec![message.clone()];
+        assert_eq!(
+            ChannelClientSource::project_replay_for_target(&mut unknown, "primary", &client, None),
+            1
+        );
+        assert!(unknown[0].reasoning_content.is_none());
+        message.model_response_replay = Some(openbitfun_core_types::ModelResponseReplay {
+            protocol: "openai_responses".into(),
+            channel_origin: None,
+            channel_fingerprint: None,
+            account_origin: Some(account.clone()),
+            items: vec![],
+        });
+        let before = serde_json::to_value(&message).unwrap();
+        let mut projected = vec![message];
+        assert_eq!(
+            ChannelClientSource::project_replay_for_target(
+                &mut projected,
+                "primary",
+                &client,
+                Some(&account)
+            ),
+            0
+        );
+        assert_eq!(serde_json::to_value(&projected[0]).unwrap(), before);
+        let changed = openbitfun_core_types::ModelAccountOrigin {
+            upstream_account_id: Some("replacement-seat".into()),
+            ..account
+        };
+        assert_eq!(
+            ChannelClientSource::project_replay_for_target(
+                &mut projected,
+                "primary",
+                &client,
+                Some(&changed)
+            ),
+            1
+        );
+        assert!(projected[0].model_response_replay.is_none());
     }
 }
 
@@ -378,6 +468,51 @@ impl ChannelClientSource {
             .channel_routing
             .as_ref()
             .is_none_or(|route| route.manual_channel.is_none())
+    }
+
+    /// Project the request copy for the actual destination, including manually
+    /// selected models and fixed accounts. Keep compatible state per message so
+    /// switching back can still reuse the originals in durable history.
+    pub(crate) fn project_replay_for_target(
+        messages: &mut [openbitfun_core_types::Message],
+        channel: &str,
+        client: &AIClient,
+        account: Option<&openbitfun_core_types::ModelAccountOrigin>,
+    ) -> usize {
+        let fingerprint = client.channel_replay_fingerprint();
+        let mut stripped = 0;
+        for message in messages {
+            if !Self::has_nonportable_history(std::slice::from_ref(message)) {
+                continue;
+            }
+            let compatible = message
+                .model_response_replay
+                .as_ref()
+                .is_some_and(|replay| {
+                    let same_account = replay.account_origin.as_ref() == account
+                        && account.is_none_or(|origin| {
+                            origin
+                                .upstream_account_id
+                                .as_deref()
+                                .is_some_and(|id| !id.trim().is_empty())
+                        });
+                    let same_channel = match (&replay.channel_origin, &replay.channel_fingerprint) {
+                        (Some(origin), Some(original)) => {
+                            origin == channel && original == &fingerprint
+                        }
+                        // Older subscription history can prove its producing seat
+                        // without channel fields. Preserve that existing replay path.
+                        (None, None) => account.is_some(),
+                        _ => false,
+                    };
+                    same_channel && same_account
+                });
+            if !compatible {
+                Self::make_portable(message);
+                stripped += 1;
+            }
+        }
+        stripped
     }
     /// Removes provider-signed reasoning from one message. Text, tool calls
     /// and tool results stay; any account or channel can then replay it.

@@ -70,7 +70,7 @@ For cross-provider channels, run the real factory/round mock and replay-binding
 checks with the same minimal features:
 
 ```bash
-cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,subscription-auth --lib multi_channel_pool
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,subscription-auth --lib -- multi_channel_pool manual_model_switch_
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,subscription-auth --lib infrastructure::ai::channel_client_source::tests
 ```
 
@@ -99,9 +99,12 @@ signed reasoning text or opaque replay; text, tool calls and results stay).
 Every account or channel switch other than same-account authentication recovery
 uses portable history. Session records keep the originals. Anthropic requests
 whose last assistant tool turn lacks a signed thinking block run without
-thinking (adapter-owned). Fixed accounts and unrouted models keep the original
-replay binding and its `recovery_constraint` diagnostics; configuration/storage
-errors remain strict.
+thinking (adapter-owned). Fixed accounts and unrouted models select the configured
+destination without pinning it to historical account provenance. Before every
+send, project incompatible or unproven signed/opaque state per message against
+the actual channel fingerprint and account, then validate remaining replay state.
+Compatible state and durable history remain intact; legacy account-only provenance
+can still replay to its proven seat. Configuration/storage errors remain strict.
 
 
 Native turn initialization and manual compression scaffold preparation resolve
