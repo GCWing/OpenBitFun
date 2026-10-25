@@ -94,6 +94,15 @@
     "globalRulesEffects": { "allow": "允許", "ask": "詢問", "deny": "拒絕" },
     "modeDescription": "作為新工作階段的預設設定，可在輸入框中暫時切換。"
   },
+  "toolPresentation": {
+    "sectionTitle": "工具呈現",
+    "sectionDescription": "選擇模型存取工具的方式。",
+    "mode": "工具呈現模式",
+    "description": "選擇模型看到工具的方式，只對切換設定後新建的工作階段生效。",
+    "native": "原生工具",
+    "ptc": "PTC（TypeScript）",
+    "ptcTooltip": "PTC 透過 RunCode 執行 TypeScript。"
+  },
   "projectPermissions": {
     "description": "「始終允許」會儲存為目前專案的記憶授權；靜態專案規則會在工具執行前直接套用",
     "grantsTitle": "記憶授權",

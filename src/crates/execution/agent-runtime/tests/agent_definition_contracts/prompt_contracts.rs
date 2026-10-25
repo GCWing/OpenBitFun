@@ -50,6 +50,7 @@ fn tool_listing_sections_render_only_present_sections() {
                 .to_string(),
         ),
         deferred_tool_listing: Some("Search: summary".to_string()),
+        ptc_tool_calling_guide: None,
     };
 
     assert!(!sections.is_empty());
@@ -92,6 +93,7 @@ fn tool_listing_sections_render_only_present_sections() {
 fn prepended_prompt_reminders_keep_runtime_injection_order() {
     let reminders = PrependedPromptReminders {
         deferred_tool_listing: Some("deferred-tools".to_string()),
+        ptc_tool_calling_guide: None,
         skill_listing: Some("skills".to_string()),
         agent_listing: Some("agents".to_string()),
         runtime_context: Some("runtime-context".to_string()),
@@ -111,6 +113,23 @@ fn prepended_prompt_reminders_keep_runtime_injection_order() {
     assert!(PrependedPromptReminders::default()
         .ordered_reminders()
         .is_empty());
+}
+
+#[test]
+fn ptc_sdk_is_injected_as_a_separate_tool_calling_reminder() {
+    let reminders = PrependedPromptReminders {
+        ptc_tool_calling_guide: Some(
+            "# Tool Calling Guide\nGenerated SDK:\n```ts\nexport type ToolArgsMap = {};\n```"
+                .to_string(),
+        ),
+        ..Default::default()
+    };
+    assert_eq!(
+        reminders.ptc_tool_calling_guide.as_deref(),
+        Some("# Tool Calling Guide\nGenerated SDK:\n```ts\nexport type ToolArgsMap = {};\n```")
+    );
+    assert_eq!(reminders.ordered_reminders().len(), 1);
+    assert!(reminders.ordered_reminders()[0].contains("ToolArgsMap"));
 }
 
 #[test]

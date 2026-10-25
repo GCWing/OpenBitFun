@@ -3808,6 +3808,7 @@ mod tests {
                 "Reverted".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -3869,6 +3870,7 @@ mod tests {
                 "Parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -3928,6 +3930,7 @@ mod tests {
                 "External parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     model_id: Some("model-original".to_string()),
                     ..Default::default()
@@ -3983,6 +3986,7 @@ mod tests {
                 "Interrupted".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -4059,6 +4063,7 @@ mod tests {
                 "Goal parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -4190,6 +4195,7 @@ mod tests {
                 "Interrupted queue hold".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -4245,6 +4251,7 @@ mod tests {
                 "Parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4316,6 +4323,7 @@ mod tests {
                 "Owner".into(),
                 "Standard".into(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -4417,6 +4425,7 @@ mod tests {
                 "Queued".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4493,6 +4502,7 @@ mod tests {
                 "Delegated".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4552,6 +4562,7 @@ mod tests {
                 "Delegated".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4647,6 +4658,7 @@ mod tests {
                 "ACP".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4717,6 +4729,7 @@ mod tests {
                 "Duplicate".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4775,6 +4788,7 @@ mod tests {
                 "Workspace".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace_a.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4825,6 +4839,7 @@ mod tests {
                 "Invalid agent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4869,6 +4884,7 @@ mod tests {
                 "Known turn".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -4934,6 +4950,7 @@ mod tests {
                 "Steering".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -5548,6 +5565,7 @@ mod tests {
                 "Maintenance retire".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     ..Default::default()
                 },

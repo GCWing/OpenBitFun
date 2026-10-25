@@ -77,6 +77,11 @@ use openbitfun_agent_runtime::prompt_suggestion::{
     PROMPT_SUGGESTION_ELIGIBLE_CONTEXT_KEY,
 };
 use openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY;
+#[cfg(feature = "ptc-runtime")]
+use openbitfun_agent_tools::{
+    PTC_NESTED_ALLOWED_TOOLS_CONTEXT_KEY, PTC_TOOL_PRESENTATION_CONTEXT_KEY,
+    PTC_TOOL_PRESENTATION_MODE,
+};
 use openbitfun_ai_adapters::ModelExchangeTraceConfig;
 use openbitfun_core_types::{ModelRequestContext, SessionModelBindingPolicy};
 use openbitfun_runtime_ports::{resolve_permission_mode, PermissionMode, PermissionModeLayers};
@@ -1457,6 +1462,16 @@ impl ExecutionEngine {
             } else {
                 None
             },
+            ptc_tool_calling_guide: {
+                #[cfg(feature = "ptc-runtime")]
+                {
+                    manifest.ptc_tool_calling_guide.clone()
+                }
+                #[cfg(not(feature = "ptc-runtime"))]
+                {
+                    None
+                }
+            },
         }
     }
 
@@ -1670,6 +1685,7 @@ impl ExecutionEngine {
                 &current_tool_sections,
                 baseline_tool_sections.as_ref(),
             ),
+            ptc_tool_calling_guide: current_tool_sections.ptc_tool_calling_guide.clone(),
             skill_listing,
             agent_listing,
             runtime_context,
@@ -3439,6 +3455,20 @@ impl ExecutionEngine {
             deferred_tool_loading_enabled.to_string(),
         );
         execution_context_vars.insert("turn_index".to_string(), context.turn_index.to_string());
+        #[cfg(feature = "ptc-runtime")]
+        if context
+            .context
+            .get(PTC_TOOL_PRESENTATION_CONTEXT_KEY)
+            .is_some_and(|mode| mode.eq_ignore_ascii_case(PTC_TOOL_PRESENTATION_MODE))
+        {
+            // `resolve_tool_manifest` changes the model-facing list to only
+            // `RunCode`. Preserve the original Agent policy separately so the
+            // PTC host can authorize nested SDK calls against that policy.
+            execution_context_vars.insert(
+                PTC_NESTED_ALLOWED_TOOLS_CONTEXT_KEY.to_string(),
+                serde_json::to_string(&allowed_tools).unwrap_or_else(|_| "[]".to_string()),
+            );
+        }
         let tool_manifest_context_vars = execution_context_vars.clone();
 
         let tool_description_context = tool_context_runtime::build_tool_description_context(
@@ -5916,6 +5946,8 @@ mod tests {
                 .collect(),
             deferred_tool_names: Vec::new(),
             deferred_tool_summaries: Vec::new(),
+            #[cfg(feature = "ptc-runtime")]
+            ptc_tool_calling_guide: None,
             catalog_generation: 0,
         }
     }
@@ -5927,6 +5959,7 @@ mod tests {
             agent_listing: Some("<available_agents>Explore</available_agents>".to_string()),
             direct_tool_listing: None,
             deferred_tool_listing: None,
+            ptc_tool_calling_guide: None,
         };
 
         let (skill_listing, agent_listing) = skill_agent_listing_reminders(Some(&sections));

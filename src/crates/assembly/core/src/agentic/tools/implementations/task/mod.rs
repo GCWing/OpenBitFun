@@ -347,6 +347,20 @@ impl Tool for TaskTool {
         AgentExecutionTool::regular_input_schema()
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "status": {"type": "string"},
+                "agent_id": {"type": "string"},
+                "bg_task_id": {"type": "string"},
+                "result": {"type": "string"},
+                "error": {"type": "string"}
+            },
+            "additionalProperties": true
+        })
+    }
+
     async fn input_schema_for_model_with_context(
         &self,
         _context: Option<&ToolUseContext>,

@@ -64,6 +64,21 @@ Preview a version at /p/{username}/{slug}/@v/{version_id}."#
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string"},
+                "version_id": {"type": "string"},
+                "visibility": {"type": "string"},
+                "deployed": {"type": "boolean"},
+                "url": {"type": "string"}
+            },
+            "required": ["slug", "version_id", "visibility", "deployed"],
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

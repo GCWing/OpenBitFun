@@ -85,6 +85,11 @@ pub struct MessageMetadata {
     /// Execution identity for provider-private replay data produced by a pool member.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_pool_replay_fingerprint: Option<String>,
+    /// Deferred tool definitions loaded from inside a PTC RunCode call.
+    /// This is history-scoped: compaction drops it together with the outer
+    /// RunCode message, requiring the model to load the definition again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ptc_loaded_deferred_tool_specs: Vec<openbitfun_agent_tools::LoadedDeferredToolSpec>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

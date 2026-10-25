@@ -103,6 +103,18 @@ Returns app_id and the app root directory. Use the root directory and file names
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "app_id": {"type": "string"},
+                "path": {"type": "string"}
+            },
+            "required": ["app_id", "path"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

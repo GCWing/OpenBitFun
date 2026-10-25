@@ -4,8 +4,8 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "da8a1c7e721910916da62280a534391c89f6457098aadf9200e85e797145a12a",
-  "ownerDigest": "103fc8646df7b35e9fac1c52149a35b86e9c6115b462b0aa36240a4600903ce4",
+  "digest": "65f1a11c6d994c382da25f2b9ad995ad0f443a5d352c2eafa10a8b9bcbf849e5",
+  "ownerDigest": "4e1ace270088acecbd333d2c8aced0547dddb0fd6bae778bec24f2b0fb48ea91",
   "searchAcceptance": [
     {
       "id": "companion-pet-mixed",
@@ -147,9 +147,9 @@
     "features": 23,
     "settings": 21,
     "userFacing": 44,
-    "documentedItems": 332,
+    "documentedItems": 333,
     "controlCoverage": {
-      "direct": 51,
+      "direct": 52,
       "delegated": 65,
       "interactive": 216,
       "unsupported": 0
@@ -16039,6 +16039,7 @@
         "global-project-rules",
         "remembered-grants",
         "deferred-tools",
+        "tool-presentation",
         "parallelism",
         "timeouts",
         "review-capacity",
@@ -16162,6 +16163,54 @@
       },
       "inputSchema": {
         "type": "boolean"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "static"
+      },
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "tools.execution"
+      }
+    },
+    {
+      "id": "setting.tools.execution:option:tool-presentation-mode",
+      "capabilityId": "setting.tools.execution",
+      "itemIds": [
+        "tool-presentation"
+      ],
+      "kind": "option",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "type": "string",
+        "enum": [
+          "native",
+          "ptc"
+        ]
       },
       "outputSchema": {
         "type": "object",
@@ -28870,13 +28919,15 @@
       "categoryId": "assistant",
       "titleZh": "执行与权限控制",
       "titleEn": "Execution & permissions",
-      "summaryZh": "管理智能体工具权限、并行度、超时、延迟加载、Computer Use 与浏览器控制。",
-      "summaryEn": "Manage agent tool permissions, concurrency, timeouts, deferred loading, Computer Use, and browser control.",
+      "summaryZh": "管理智能体工具权限、呈现模式、并行度、超时、延迟加载、Computer Use 与浏览器控制。",
+      "summaryEn": "Manage agent tool permissions, presentation mode, concurrency, timeouts, deferred loading, Computer Use, and browser control.",
       "keywordsZh": [
         "执行控制",
         "工具权限",
         "工具调用超时",
         "延迟加载工具",
+        "工具呈现模式",
+        "PTC",
         "审批",
         "并行",
         "超时",
@@ -28888,6 +28939,8 @@
         "execution control",
         "tool permissions",
         "deferred tool loading",
+        "tool presentation",
+        "PTC",
         "approval",
         "parallel",
         "timeout",
@@ -28988,6 +29041,25 @@
             "options": [
               {
                 "id": "deferred-tool-loading"
+              }
+            ]
+          }
+        },
+        {
+          "id": "tool-presentation",
+          "titleZh": "选择模型使用原生模式还是 PTC TypeScript 模式",
+          "titleEn": "Choose native mode or PTC TypeScript mode for the model",
+          "destination": {
+            "kind": "settings",
+            "pageId": "tools.execution",
+            "viewId": "advanced"
+          },
+          "control": {
+            "kind": "direct",
+            "operations": [],
+            "options": [
+              {
+                "id": "tool-presentation-mode"
               }
             ]
           }
@@ -29176,6 +29248,24 @@
           }
         },
         {
+          "id": "tool-presentation-mode",
+          "titleZh": "工具呈现模式",
+          "titleEn": "Tool presentation mode",
+          "descriptionZh": "选择模型直接调用原生工具，或通过 PTC TypeScript 调用工具。",
+          "descriptionEn": "Choose whether the model calls native tools directly or uses PTC TypeScript.",
+          "valueSchema": {
+            "type": "string",
+            "enum": [
+              "native",
+              "ptc"
+            ]
+          },
+          "handler": {
+            "kind": "config",
+            "path": "ai.tool_presentation_mode"
+          }
+        },
+        {
           "id": "subagent-batch-policy",
           "titleZh": "子智能体批量执行策略",
           "titleEn": "Subagent batch policy",
@@ -29296,6 +29386,8 @@
         "工具权限",
         "工具调用超时",
         "延迟加载工具",
+        "工具呈现模式",
+        "PTC",
         "审批",
         "并行",
         "超时",
@@ -29305,6 +29397,7 @@
         "execution control",
         "tool permissions",
         "deferred tool loading",
+        "tool presentation",
         "approval",
         "parallel",
         "timeout",
@@ -29327,6 +29420,8 @@
         "Review, revoke, or clear remembered project permission grants and audit records",
         "按需延迟加载工具定义以减少智能体初始上下文",
         "Deferred tool loading on demand to reduce initial agent context",
+        "选择模型使用原生模式还是 PTC TypeScript 模式",
+        "Choose native mode or PTC TypeScript mode for the model",
         "设置子智能体与 Swarm 最大并发及安全、强制并行或串行策略",
         "Set subagent and swarm concurrency plus safe-only, forced-parallel, or serial policy",
         "设置或取消单次工具调用超时",

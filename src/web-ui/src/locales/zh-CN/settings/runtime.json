@@ -94,6 +94,15 @@
     "globalRulesEffects": { "allow": "允许", "ask": "询问", "deny": "拒绝" },
     "modeDescription": "作为新会话的默认设置，可在输入框中临时切换。"
   },
+  "toolPresentation": {
+    "sectionTitle": "工具呈现",
+    "sectionDescription": "选择模型访问工具的方式。",
+    "mode": "工具呈现模式",
+    "description": "选择模型看到工具的方式，只对切换设置后新建的会话生效。",
+    "native": "原生工具",
+    "ptc": "PTC（TypeScript）",
+    "ptcTooltip": "PTC 通过 RunCode 执行 TypeScript。"
+  },
   "projectPermissions": {
     "description": "“始终允许”会保存为当前项目的记忆授权；静态项目规则会在工具执行前直接应用",
     "grantsTitle": "记忆授权",

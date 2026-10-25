@@ -190,6 +190,14 @@ Narrower local guides already exist for some subtrees:
 
 ## Verification
 
+For tool catalog feature gates, loaded-spec collection, and native/PTC
+presentation, check both the native baseline and the optional PTC owner:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::tools::product_runtime::
+cargo test --locked -p openbitfun-core --no-default-features --features ptc-runtime --lib agentic::tools::product_runtime::
+```
+
 For config-backed product-control option defaults, typed binding, and persisted readback:
 
 ```bash

@@ -18,6 +18,7 @@ pub mod speech;
 pub mod subscription;
 pub mod surface;
 pub mod tool_image_attachment;
+pub mod tool_presentation;
 pub mod worktree;
 
 pub use ai::{
@@ -51,6 +52,7 @@ pub use surface::{
     RuntimeArtifactKind, RuntimeArtifactRef, SurfaceKind, ThreadEnvironment, ThreadEnvironmentKind,
 };
 pub use tool_image_attachment::ToolImageAttachment;
+pub use tool_presentation::ToolPresentationMode;
 pub use worktree::{
     SessionExecutionTarget, SessionExecutionTargetKind, SessionExecutionTargetRequest,
     WorktreeError, WorktreeErrorCode, WorktreeLifecycle, WorktreeSessionSummary, WorktreeSettings,

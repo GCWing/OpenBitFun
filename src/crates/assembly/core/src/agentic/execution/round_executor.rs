@@ -46,6 +46,7 @@ use openbitfun_ai_adapters::{
 use openbitfun_core_types::errors::{AiProviderError, ErrorCategory};
 use openbitfun_core_types::ModelResponseReplay;
 use openbitfun_runtime_ports::PermissionRule;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
@@ -1983,6 +1984,7 @@ impl RoundExecutor {
         );
 
         let tool_phase_started_at = Instant::now();
+        let mut ptc_loaded_deferred_tool_specs_by_tool_id = HashMap::new();
         let tool_results = if let Some(tool_pipeline) = &self.tool_pipeline {
             // Create tool execution context
             let allowed_tools = context.available_tools.clone();
@@ -2114,16 +2116,26 @@ impl RoundExecutor {
                                 duration_ms: None,
                                 image_attachments: None,
                             },
+                            ptc_loaded_deferred_tool_specs: Vec::new(),
                             execution_time_ms: 0,
                         })
                         .collect()
                 }
             };
 
+            // Keep PTC's loaded-definition receipt alongside the model result. It is
+            // projected onto the persisted outer RunCode message below, while the
+            // assistant-facing result remains unchanged.
             // Convert to ToolResult, then enforce the aggregate budget for this model round.
             let tool_results = execution_results
                 .into_iter()
                 .map(|mut execution_result| {
+                    if !execution_result.ptc_loaded_deferred_tool_specs.is_empty() {
+                        ptc_loaded_deferred_tool_specs_by_tool_id.insert(
+                            execution_result.tool_id.clone(),
+                            execution_result.ptc_loaded_deferred_tool_specs.clone(),
+                        );
+                    }
                     execution_result.result.effective_tool_name = (execution_result.tool_name
                         != execution_result.effective_tool_name)
                         .then_some(execution_result.effective_tool_name);
@@ -2153,9 +2165,15 @@ impl RoundExecutor {
         let tool_result_messages: Vec<Message> = tool_results
             .iter()
             .map(|result| {
-                Message::tool_result(result.clone())
+                let mut message = Message::tool_result(result.clone())
                     .with_turn_id(dialog_turn_id.clone())
-                    .with_round_id(round_id_clone.clone())
+                    .with_round_id(round_id_clone.clone());
+                if let Some(loaded_specs) =
+                    ptc_loaded_deferred_tool_specs_by_tool_id.get(&result.tool_id)
+                {
+                    message.metadata.ptc_loaded_deferred_tool_specs = loaded_specs.clone();
+                }
+                message
             })
             .collect();
 
@@ -4704,6 +4722,7 @@ pub(super) mod tests {
                     "Restart subscription session".into(),
                     "Standard".into(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace.to_string_lossy().into_owned()),
                         workspace_id: Some(workspace_record.id.clone()),
                         model_id: Some(model.id.clone()),

@@ -48,6 +48,20 @@ This tool takes no parameters."#
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "local_time": {"type": "string"},
+                "weekday": {"type": "string"},
+                "unix_timestamp_seconds": {"type": "integer"}
+            },
+            "required": ["success", "local_time", "weekday", "unix_timestamp_seconds"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         true
     }
@@ -86,13 +100,10 @@ This tool takes no parameters."#
             "success": true,
             "local_time": local_time,
             "utc_time": utc_time,
-            "date": now.format("%Y-%m-%d").to_string(),
-            "time": now.format("%H:%M:%S").to_string(),
             "weekday": weekday,
             "weekday_number_from_monday": now.weekday().number_from_monday(),
             "unix_timestamp_seconds": unix_timestamp_seconds,
             "unix_timestamp_millis": unix_timestamp_millis,
-            "timestamp": unix_timestamp_seconds,
             "timezone_offset": timezone_offset,
         });
         let result_for_assistant = format!(
@@ -161,6 +172,9 @@ mod tests {
             .is_some_and(|value| !value.is_empty()));
         assert!(data["unix_timestamp_seconds"].as_i64().is_some());
         assert!(data["unix_timestamp_millis"].as_i64().is_some());
+        assert!(data.get("timestamp").is_none());
+        assert!(data.get("date").is_none());
+        assert!(data.get("time").is_none());
         assert!(result_for_assistant
             .as_ref()
             .is_some_and(|value| value.contains("Current local time")));

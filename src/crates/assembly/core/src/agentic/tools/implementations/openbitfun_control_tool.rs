@@ -398,6 +398,31 @@ impl Tool for OpenBitFunControlTool {
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "action": {"type": "string", "enum": ["list", "search", "get", "open", "execute", "configure"]},
+                "capabilities": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "items": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "operations": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "options": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "count": {"type": "integer"},
+                "nextCursor": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                "capabilityId": {"type": "string"},
+                "capability": {"type": "object", "additionalProperties": true},
+                "toolInput": {"type": "object", "additionalProperties": true},
+                "nextToolCalls": {"type": "object", "additionalProperties": true},
+                "idNamespaceRules": {"type": "object", "additionalProperties": true},
+                "value": {},
+                "result": {},
+                "message": {"type": "string"}
+            },
+            "additionalProperties": true
+        })
+    }
+
     async fn is_available_in_context(&self, _context: Option<&ToolUseContext>) -> bool {
         openbitfun_product_domains::product_control::catalog().is_ok()
     }

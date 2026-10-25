@@ -26,6 +26,11 @@ path = "tests/script_tool_port_contracts.rs"
 required-features = ["script-tool-runtime"]
 
 [[test]]
+name = "ptc_tool_port_contracts"
+path = "tests/ptc_tool_port_contracts.rs"
+required-features = ["ptc-runtime"]
+
+[[test]]
 name = "hook_function_runtime_contracts"
 path = "tests/hook_function_runtime_contracts.rs"
 required-features = ["hook-function-runtime"]
@@ -52,6 +57,7 @@ agent-api = ["dep:openbitfun-core-types"]
 plugin-runtime = []
 hook-function-runtime = []
 script-tool-runtime = []
+ptc-runtime = []
 web-search-port = []
 workspace-ports = ["dep:anyhow", "dep:tokio-util", "dep:tokio", "tokio/io-util"]
 terminal-port = ["dep:tokio"]

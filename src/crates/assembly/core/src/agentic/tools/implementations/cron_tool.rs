@@ -809,6 +809,42 @@ Patch schema for "update":
         })
     }
 
+    fn output_schema(&self) -> Value {
+        let job = json!({
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "name": {"type": "string"},
+                "schedule": {"type": "object", "additionalProperties": true},
+                "enabled": {"type": "boolean"},
+                "sessionId": {"type": "string"},
+                "workspacePath": {"type": "string"}
+            },
+            "required": ["id", "name", "schedule", "enabled", "sessionId", "workspacePath"],
+            "additionalProperties": false
+        });
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "action": {"type": "string", "enum": ["get_time", "list", "add", "update", "remove", "run", "report"]},
+                "now": {"type": "string", "description": "Current local time in RFC 3339 format for get_time."},
+                "workspace": {"type": "string"},
+                "session_id": {"type": "string"},
+                "count": {"type": "integer"},
+                "job_id": {"type": "string"},
+                "deleted": {"type": "boolean"},
+                "report": {"type": "object", "additionalProperties": true},
+                "jobs": {
+                    "type": "array",
+                    "items": job
+                },
+                "job": job
+            },
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

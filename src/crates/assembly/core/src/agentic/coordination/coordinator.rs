@@ -103,6 +103,7 @@ use openbitfun_agent_runtime::remote_file_delivery::{
 };
 use openbitfun_agent_runtime::sdk::PermissionReply;
 use openbitfun_agent_runtime::user_questions::USER_INPUT_AVAILABLE_CONTEXT_KEY;
+use openbitfun_agent_tools::{PTC_TOOL_PRESENTATION_CONTEXT_KEY, PTC_TOOL_PRESENTATION_MODE};
 use openbitfun_config_contracts::model_pool::AgentModelSelection;
 use openbitfun_config_contracts::model_pool::AgentModelSelections;
 use openbitfun_core_types::model_pool::ModelSelection;
@@ -1428,6 +1429,7 @@ impl ConversationCoordinator {
         model_id: Option<String>,
     ) -> OpenBitFunResult<SessionConfig> {
         let mut config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_id: Some(workspace_id),
             model_id,
             ..Default::default()
@@ -7143,6 +7145,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
 
         // Pass turn_index (for operation history/rollback)
         context_vars.insert("turn_index".to_string(), turn_index.to_string());
+        if session.config.tool_presentation_mode.is_ptc() {
+            context_vars.insert(
+                PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
+                PTC_TOOL_PRESENTATION_MODE.to_string(),
+            );
+        }
         let review_agent = is_review_agent_type(&effective_agent_type);
         let turn_review_manifest =
             turn_review_manifest_for_agent(user_message_metadata.as_ref(), &effective_agent_type);
@@ -7748,6 +7756,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         }
         if let Some(snapshot_id) = &session.snapshot_session_id {
             context_vars.insert("snapshot_session_id".to_string(), snapshot_id.clone());
+        }
+        if session.config.tool_presentation_mode.is_ptc() {
+            context_vars.insert(
+                PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
+                PTC_TOOL_PRESENTATION_MODE.to_string(),
+            );
         }
         if let Some(user_input_available) = metadata_bool(
             plan.user_message_metadata.as_ref(),
@@ -14031,6 +14045,7 @@ async fn create_agent_session_from_runtime_request(
             session_name,
             request.agent_type,
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 agent_route_key: request.agent_route_key,
                 workspace_path: Some(workspace_path.clone()),
                 project_workspace_path: request.project_workspace_path,
@@ -16361,6 +16376,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn remote_session_metadata_never_falls_back_to_a_local_workspace_binding() {
         let binding = ConversationCoordinator::build_workspace_binding(&SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_path: Some("/srv/remote-project".to_string()),
             remote_connection_id: Some("ssh-user@example.test:22".to_string()),
             remote_ssh_host: Some("example.test".to_string()),
@@ -16380,11 +16396,13 @@ pub(crate) mod tests {
 
         for incomplete in [
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some("/srv/remote-project".to_string()),
                 remote_connection_id: Some("ssh-user@example.test:22".to_string()),
                 ..SessionConfig::default()
             },
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some("/srv/remote-project".to_string()),
                 remote_ssh_host: Some("example.test".to_string()),
                 ..SessionConfig::default()
@@ -16408,6 +16426,7 @@ pub(crate) mod tests {
         )
         .await;
         let binding = ConversationCoordinator::build_workspace_binding(&SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_path: Some("/srv/remote-project".to_string()),
             remote_connection_id: Some("ssh-user@example.test:22".to_string()),
             remote_ssh_host: Some("example.test".to_string()),
@@ -16475,6 +16494,7 @@ pub(crate) mod tests {
         assert_eq!(omitted.model_id.as_deref(), Some("provider/profile-model"));
 
         let mut defaulted = SessionConfig {
+            tool_presentation_mode: Default::default(),
             model_id: Some("default".to_string()),
             ..SessionConfig::default()
         };
@@ -16485,6 +16505,7 @@ pub(crate) mod tests {
         );
 
         let mut legacy_auto = SessionConfig {
+            tool_presentation_mode: Default::default(),
             model_id: Some("auto".to_string()),
             ..SessionConfig::default()
         };
@@ -16495,6 +16516,7 @@ pub(crate) mod tests {
         );
 
         let mut explicit = SessionConfig {
+            tool_presentation_mode: Default::default(),
             model_id: Some("provider/user-model".to_string()),
             ..SessionConfig::default()
         };
@@ -16560,6 +16582,7 @@ pub(crate) mod tests {
     #[test]
     fn retired_auto_model_input_is_not_snapshotted_into_new_sessions() {
         let mut config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             model_id: Some("auto".to_string()),
             ..SessionConfig::default()
         };
@@ -16721,6 +16744,7 @@ pub(crate) mod tests {
                 "Cancellation fault".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -16912,6 +16936,7 @@ pub(crate) mod tests {
                 "External compaction".to_string(),
                 external_agent_id.clone(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -16958,6 +16983,7 @@ pub(crate) mod tests {
                 "External to local".to_string(),
                 external_agent_id.clone(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -17206,6 +17232,7 @@ pub(crate) mod tests {
                         "Delegated child".to_string(),
                         agent_type.to_string(),
                         SessionConfig {
+                            tool_presentation_mode: Default::default(),
                             workspace_path: Some(workspace_path.clone()),
                             model_id: Some("child-model".to_string()),
                             continuation_policy: policy,
@@ -17463,6 +17490,7 @@ pub(crate) mod tests {
                 "Cancelled compaction".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..SessionConfig::default()
                 },
@@ -17543,6 +17571,7 @@ pub(crate) mod tests {
                 "Persistence failure".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -18010,6 +18039,7 @@ pub(crate) mod tests {
                     "Runtime mode validation".to_string(),
                     "Standard".to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace_path_string.clone()),
                         ..Default::default()
                     },
@@ -18057,6 +18087,7 @@ pub(crate) mod tests {
                     "Runtime mode validation".to_string(),
                     "Standard".to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace_path_string.clone()),
                         ..Default::default()
                     },
@@ -18105,6 +18136,7 @@ pub(crate) mod tests {
                     "Runtime mode update".to_string(),
                     "Standard".to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace_path_string.clone()),
                         ..Default::default()
                     },
@@ -18159,6 +18191,7 @@ pub(crate) mod tests {
                     "Runtime model update".to_string(),
                     "Standard".to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace_path_string.clone()),
                         model_id: Some("primary".to_string()),
                         ..Default::default()
@@ -18531,6 +18564,7 @@ pub(crate) mod tests {
                 "Durable completion".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -18605,6 +18639,7 @@ pub(crate) mod tests {
                 "Durable completion".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -18686,6 +18721,7 @@ pub(crate) mod tests {
                 "Host stream observer".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -18787,6 +18823,7 @@ pub(crate) mod tests {
                 "Transient completion".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -18912,6 +18949,7 @@ pub(crate) mod tests {
                 "Reverted".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -19384,6 +19422,7 @@ pub(crate) mod tests {
                 "Transient transcript".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -19451,6 +19490,7 @@ pub(crate) mod tests {
                 "blocked".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().to_string()),
                     ..Default::default()
                 },
@@ -19477,6 +19517,7 @@ pub(crate) mod tests {
                     format!("Review child: {agent_type}"),
                     agent_type.to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                         ..Default::default()
                     },
@@ -19501,6 +19542,7 @@ pub(crate) mod tests {
                 "Deep review remediation".to_string(),
                 "DeepReview".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace_path.clone()),
                     model_id: Some("review-model".to_string()),
                     enable_tools: true,
@@ -19944,6 +19986,7 @@ pub(crate) mod tests {
                 "Lifecycle child".into(),
                 "GeneralPurpose".into(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.to_string_lossy().into_owned()),
                     continuation_policy: policy,
                     ..Default::default()
@@ -20240,6 +20283,7 @@ pub(crate) mod tests {
                 "Parent".into(),
                 "Standard".into(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -20310,6 +20354,7 @@ pub(crate) mod tests {
                 "Parent".into(),
                 "Standard".into(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -20495,6 +20540,7 @@ pub(crate) mod tests {
                 "Shell turn".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -20592,6 +20638,7 @@ pub(crate) mod tests {
                 "Denied shell turn".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -20651,6 +20698,7 @@ pub(crate) mod tests {
                 "Failed shell turn".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -20707,6 +20755,7 @@ pub(crate) mod tests {
                 "Cancelled shell turn".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -21951,6 +22000,7 @@ pub(crate) mod tests {
                 "Loaded remote A".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(logical_workspace_path.to_string()),
                     remote_connection_id: Some(remote_identities[0].0.clone()),
                     remote_ssh_host: Some(remote_identities[0].1.clone()),
@@ -22072,6 +22122,7 @@ pub(crate) mod tests {
                 "Remote goal mutation".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(logical_workspace_path.clone()),
                     remote_connection_id: Some(remote_connection_id),
                     remote_ssh_host: Some(remote_ssh_host),
@@ -22202,6 +22253,7 @@ pub(crate) mod tests {
                     "First".to_string(),
                     "Standard".to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace_path_string.clone()),
                         ..Default::default()
                     },
@@ -22224,6 +22276,7 @@ pub(crate) mod tests {
                     "Second".to_string(),
                     "Standard".to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace_path_string.clone()),
                         ..Default::default()
                     },
@@ -22261,6 +22314,7 @@ pub(crate) mod tests {
                     "Explicit".to_string(),
                     "Standard".to_string(),
                     SessionConfig {
+                        tool_presentation_mode: Default::default(),
                         workspace_path: Some(workspace_path_string.clone()),
                         model_id: Some("explicit-model".to_string()),
                         ..Default::default()
@@ -22406,6 +22460,7 @@ pub(crate) mod tests {
                 "Transient child".to_string(),
                 "Explore".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.clone()),
                     ..Default::default()
                 },
@@ -22420,6 +22475,7 @@ pub(crate) mod tests {
                 "Transient grandchild".to_string(),
                 "Explore".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.clone()),
                     ..Default::default()
                 },
@@ -22572,6 +22628,7 @@ pub(crate) mod tests {
                 "Parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     model_id: Some("primary".to_string()),
                     workspace_path: Some(workspace_path.to_string_lossy().into_owned()),
                     ..Default::default()
@@ -22693,6 +22750,7 @@ pub(crate) mod tests {
                 "Parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     model_id: Some("primary".to_string()),
                     workspace_path: Some(workspace_path.clone()),
                     project_workspace_path: Some(project_workspace_path.clone()),
@@ -22777,6 +22835,7 @@ pub(crate) mod tests {
                 "Transient parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     model_id: Some("primary".to_string()),
                     workspace_path: Some(workspace.clone()),
                     workspace_id: Some(workspace_record.id.clone()),
@@ -22906,6 +22965,7 @@ pub(crate) mod tests {
         std::fs::create_dir_all(&workspace).unwrap();
         crate::service::workspace::legacy_compat::register_local_fixture_blocking(&workspace);
         let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             model_id: Some("primary".into()),
             workspace_path: Some(workspace.to_string_lossy().into_owned()),
             ..Default::default()
@@ -23009,6 +23069,7 @@ pub(crate) mod tests {
                 "Parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     model_id: Some("primary".to_string()),
                     workspace_path: Some(workspace_path.to_string_lossy().into_owned()),
                     ..Default::default()
@@ -23023,6 +23084,7 @@ pub(crate) mod tests {
                 "Reusable subagent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     model_id: Some("parent-model".to_string()),
                     workspace_path: Some(workspace_path.to_string_lossy().into_owned()),
                     ..Default::default()
@@ -23174,6 +23236,7 @@ pub(crate) mod tests {
                 "Parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     model_id: Some("primary".to_string()),
                     workspace_path: Some(workspace_path.to_string_lossy().into_owned()),
                     ..Default::default()
@@ -23286,6 +23349,7 @@ pub(crate) mod tests {
                 "Internal worker".to_string(),
                 "MemoryPhase2".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace_path.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -23328,6 +23392,7 @@ pub(crate) mod tests {
                 "Reusable subagent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace_path.to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -23402,6 +23467,7 @@ pub(crate) mod tests {
                 "Parent".to_string(),
                 "Standard".to_string(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_id: Some(remote_workspace.id.clone()),
                     workspace_path: Some(remote_workspace.root_path.to_string_lossy().into_owned()),
                     remote_connection_id: Some("ssh-user@example.test:22".to_string()),

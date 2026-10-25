@@ -518,13 +518,14 @@
         "tools": {
           "execution": {
             "title": "Execution & permissions",
-            "summary": "Manage agent tool permissions, concurrency, timeouts, deferred loading, Computer Use, and browser control.",
+            "summary": "Manage agent tool permissions, presentation mode, concurrency, timeouts, deferred loading, Computer Use, and browser control.",
             "items": {
               "permission-mode": "Choose Ask, Auto-approve, or Full Access permission mode and acknowledge high-risk warnings",
               "permission-selector": "Choose whether the permission-mode selector appears below the chat composer",
               "global-project-rules": "Create, reorder, and save global or project-level Allow, Ask, and Deny rules",
               "remembered-grants": "Review, revoke, or clear remembered project permission grants and audit records",
               "deferred-tools": "Deferred tool loading on demand to reduce initial agent context",
+              "tool-presentation": "Choose native mode or PTC TypeScript mode for the model",
               "parallelism": "Set subagent and swarm concurrency plus safe-only, forced-parallel, or serial policy",
               "timeouts": "Set or disable the per-tool execution timeout",
               "review-capacity": "Set the maximum parallel Deep Review workers and queue wait time",

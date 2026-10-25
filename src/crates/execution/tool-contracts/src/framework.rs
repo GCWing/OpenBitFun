@@ -153,14 +153,10 @@ pub fn validate_deferred_tool_usage(
     current_catalog_generation: u64,
     get_tool_spec_tool_name: &str,
 ) -> Result<(), DeferredToolUsageError> {
-    if tool_name == get_tool_spec_tool_name {
-        return Ok(());
-    }
-
-    if !deferred_tools
-        .iter()
-        .any(|deferred_tool| deferred_tool == tool_name)
-    {
+    // The admission helper is shared by direct and deferred calls. A receipt
+    // for a tool that is no longer deferred must not affect ordinary direct
+    // execution.
+    if !deferred_tools.iter().any(|name| name == tool_name) {
         return Ok(());
     }
 
@@ -179,10 +175,10 @@ pub fn validate_deferred_tool_usage(
         });
     }
 
-    Err(DeferredToolUsageError::RequiresGetToolSpec {
-        tool_name: tool_name.to_string(),
-        get_tool_spec_tool_name: get_tool_spec_tool_name.to_string(),
-    })
+    // Deferred exposure is a model-facing optimization. Execution remains
+    // authorized by the allowlist, runtime restrictions, and the tool's own
+    // validation; a missing spec is no longer a hard execution prerequisite.
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -545,7 +541,7 @@ pub struct GetToolSpecLoadObservation<'a> {
     pub is_error: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LoadedDeferredToolSpec {
     pub tool_name: String,
     pub catalog_generation: u64,
@@ -688,6 +684,18 @@ pub trait ToolRegistryItem: Send + Sync {
     async fn description(&self) -> Result<String, String>;
 
     fn input_schema(&self) -> Value;
+
+    /// JSON Schema for the compact assistant-facing projection of the value
+    /// returned to a PTC program.
+    ///
+    /// Keep fields that appear in `result_for_assistant` or are needed for
+    /// model control flow, and omit UI, diagnostic, persistence, and transport
+    /// metadata from the generated SDK. Existing tools may omit a stronger
+    /// contract; the empty schema projects to `unknown` and does not change
+    /// native tool behavior.
+    fn output_schema(&self) -> Value {
+        Value::Object(serde_json::Map::new())
+    }
 
     fn short_description(&self) -> String {
         self.name().to_string()

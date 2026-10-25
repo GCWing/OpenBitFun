@@ -184,6 +184,7 @@ product-full = [
     "workspace-watch",
     "ssh-remote",
     "dispatch-store",
+    "ptc-runtime",
     "filesystem",
     "git",
     "local-storage",
@@ -335,6 +336,12 @@ deep-research = [
 script-tool-runtime = [
     "openbitfun-runtime-ports/script-tool-runtime",
     "openbitfun-services-integrations/script-tool-runtime",
+]
+ptc-runtime = [
+    "agent-runtime",
+    "git",
+    "openbitfun-runtime-ports/ptc-runtime",
+    "openbitfun-services-integrations/ptc-runtime",
 ]
 scheduled-jobs = [
     "dep:chrono-tz",

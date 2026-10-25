@@ -23,6 +23,8 @@ mod permission;
 mod plugin;
 #[cfg(feature = "product-search")]
 mod product_search;
+#[cfg(feature = "ptc-runtime")]
+mod ptc_tool;
 #[cfg(feature = "script-tool-runtime")]
 mod script_tool;
 #[cfg(feature = "web-search-port")]
@@ -74,6 +76,11 @@ pub use plugin::{
 };
 #[cfg(feature = "product-search")]
 pub use product_search::ProductSearchPort;
+#[cfg(feature = "ptc-runtime")]
+pub use ptc_tool::{
+    PtcExecutionRequest, PtcExecutionResponse, PtcNestedToolCall, PtcRuntime,
+    PtcRuntimeAvailability, PtcToolBinding, PtcToolCallHandler, PtcToolSpecRequest,
+};
 #[cfg(feature = "script-tool-runtime")]
 pub use script_tool::{
     ScriptToolDescriptor, ScriptToolExpectedExport, ScriptToolInvokeRequest,
@@ -149,6 +156,7 @@ pub enum RuntimeServiceCapability {
     RemoteWorkspace,
     RemoteProjection,
     RemoteCapabilities,
+    PtcRuntime,
 }
 
 impl RuntimeServiceCapability {
@@ -169,6 +177,7 @@ impl RuntimeServiceCapability {
             Self::RemoteWorkspace => "remote_workspace",
             Self::RemoteProjection => "remote_projection",
             Self::RemoteCapabilities => "remote_capabilities",
+            Self::PtcRuntime => "ptc_runtime",
         }
     }
 }

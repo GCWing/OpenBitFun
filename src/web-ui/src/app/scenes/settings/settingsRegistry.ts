@@ -225,11 +225,12 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     categoryId: 'ai',
     labelKey: 'navigation.pages.execution.label',
     descriptionKey: 'navigation.pages.execution.description',
-    keywords: ['tool', 'timeout', 'parallel', 'review', 'json repair'],
+    keywords: ['tool', 'presentation', 'ptc', 'timeout', 'parallel', 'review', 'json repair'],
     namespaces: ['settings', 'settings/runtime', 'settings/agentic-tools', 'settings/review-capacity', 'settings/models'],
     searchPhrases: [
       phrase('settings/runtime', 'toolExecution.sectionTitle'),
       phrase('settings/runtime', 'deferredToolLoading.sectionTitle'),
+      phrase('settings/runtime', 'toolPresentation.mode'),
       phrase('settings/review-capacity', 'capacity.title'),
       phrase('settings/models', 'toolArgumentJsonRepair.title'),
     ],

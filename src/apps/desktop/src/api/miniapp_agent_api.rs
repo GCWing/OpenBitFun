@@ -305,6 +305,7 @@ async fn create_miniapp_agent_session(
     requested_model: Option<String>,
 ) -> Result<Session, String> {
     let config = SessionConfig {
+        tool_presentation_mode: Default::default(),
         enable_tools: submission_plan.enable_tools,
         safe_mode: true,
         auto_compact: true,

@@ -1671,6 +1671,30 @@ Use ExecCommand for genuine shell work, never ad hoc GUI capture, clipboard or i
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "action": {"type": "string"},
+                "status": {"type": "string"},
+                "observation": {"type": "object", "additionalProperties": true},
+                "screenshot": {"type": "object", "additionalProperties": true},
+                "screenshot_meta": {"type": "object", "additionalProperties": true},
+                "screenshot_id": {"type": "string"},
+                "windows": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "apps": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "steps": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "partial": {"type": "boolean"},
+                "warning": {"type": "string"},
+                "error": {"type": "string"},
+                "control_guidance": {"type": "string"},
+                "suggested_next_action": {"type": "object", "additionalProperties": true}
+            },
+            "additionalProperties": true
+        })
+    }
+
     async fn input_schema_for_model_with_context(&self, context: Option<&ToolUseContext>) -> Value {
         let vision = context
             .map(|c| c.primary_model_supports_image_understanding())

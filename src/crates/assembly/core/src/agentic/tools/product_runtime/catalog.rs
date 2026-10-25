@@ -6,6 +6,13 @@ use crate::agentic::tools::registry::{get_global_tool_registry, ToolRef};
 use crate::agentic::tools::tool_context_runtime::ToolUseContext;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use crate::util::types::ToolDefinition;
+#[cfg(feature = "ptc-runtime")]
+use openbitfun_agent_tools::{
+    ptc_run_code_description, ptc_run_code_input_schema,
+    render_ptc_tool_calling_guide_with_options, render_ptc_typescript_sdk_with_options,
+    PtcToolContract, PTC_RUN_CODE_TOOL_NAME, PTC_TOOL_PRESENTATION_CONTEXT_KEY,
+    PTC_TOOL_PRESENTATION_MODE,
+};
 use openbitfun_agent_tools::{
     resolve_contextual_tool_manifest, resolve_contextual_visible_tools, ContextualToolManifest,
     ContextualVisibleTools, DynamicToolInfo, GetToolSpecCatalogProvider,
@@ -14,6 +21,8 @@ use openbitfun_agent_tools::{
     CALL_DEFERRED_TOOL_NAME, GET_TOOL_SPEC_TOOL_NAME,
 };
 use serde::Serialize;
+#[cfg(feature = "ptc-runtime")]
+use serde_json::json;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -31,6 +40,8 @@ pub struct ToolInfoDto {
     pub name: String,
     pub description: String,
     pub input_schema: Value,
+    #[serde(default)]
+    pub output_schema: Value,
     pub is_readonly: bool,
     pub is_concurrency_safe: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -52,6 +63,7 @@ pub async fn build_tool_info(tool: &Arc<dyn Tool>) -> ToolInfoDto {
         name: tool.name().to_string(),
         description,
         input_schema: tool.input_schema_for_model().await,
+        output_schema: tool.output_schema(),
         is_readonly: tool.is_readonly(),
         is_concurrency_safe: tool.is_concurrency_safe(None),
         dynamic_info: tool.dynamic_tool_info(),
@@ -76,6 +88,8 @@ pub struct ResolvedToolManifest {
     pub tool_definitions: Vec<ToolDefinition>,
     pub deferred_tool_names: Vec<String>,
     pub deferred_tool_summaries: Vec<GetToolSpecDeferredToolSummary>,
+    #[cfg(feature = "ptc-runtime")]
+    pub ptc_tool_calling_guide: Option<String>,
     pub catalog_generation: u64,
 }
 
@@ -125,6 +139,8 @@ impl From<ContextualToolManifest<dyn Tool>> for ResolvedToolManifest {
                 .collect(),
             deferred_tool_names: value.deferred_tool_names,
             deferred_tool_summaries,
+            #[cfg(feature = "ptc-runtime")]
+            ptc_tool_calling_guide: None,
             catalog_generation: 0,
         }
     }
@@ -329,14 +345,132 @@ pub(crate) async fn resolve_product_tool_manifest(
         );
     let tool_snapshot = contextual_tool_snapshot(context).await;
     append_selected_plugin_tool_names(&mut allowed_tools, &tool_snapshot, context).await;
-    resolve_contextual_tool_manifest(
+    let mut manifest = resolve_contextual_tool_manifest(
         &tool_snapshot,
         &allowed_tools,
         &exposure_overrides,
         context,
         GET_TOOL_SPEC_TOOL_NAME,
     )
-    .await
+    .await;
+
+    #[cfg(feature = "ptc-runtime")]
+    if context_is_ptc_mode(context) {
+        // PTC keeps deferred tools out of the initial full schema. Their
+        // generated SDK is attached to the prompt reminder by the resolved
+        // manifest facade below.
+        manifest.tool_definitions = vec![ToolManifestDefinition::new(
+            PTC_RUN_CODE_TOOL_NAME,
+            ptc_run_code_description(),
+            ptc_run_code_input_schema(),
+        )];
+        if !manifest
+            .allowed_tool_names
+            .iter()
+            .any(|name| name == PTC_RUN_CODE_TOOL_NAME)
+        {
+            manifest
+                .allowed_tool_names
+                .push(PTC_RUN_CODE_TOOL_NAME.to_string());
+        }
+    }
+
+    manifest
+}
+
+#[cfg(feature = "ptc-runtime")]
+fn context_is_ptc_mode(context: &ToolUseContext) -> bool {
+    context
+        .custom_data
+        .get(PTC_TOOL_PRESENTATION_CONTEXT_KEY)
+        .and_then(Value::as_str)
+        .is_some_and(|mode| mode.eq_ignore_ascii_case(PTC_TOOL_PRESENTATION_MODE))
+        || context
+            .agent_type
+            .as_deref()
+            .is_some_and(|agent| agent.eq_ignore_ascii_case("PTC"))
+}
+
+#[cfg(feature = "ptc-runtime")]
+async fn build_ptc_contracts(
+    tools: &[ToolRef],
+    deferred_tool_names: &[String],
+    context: &ToolUseContext,
+) -> Vec<PtcToolContract> {
+    let mut contracts = Vec::with_capacity(tools.len());
+    for tool in tools {
+        // The deferred gateways are host implementation details. PTC programs
+        // receive the same direct snapshot as native model calls and must use
+        // the generated binding for a concrete tool, never the gateway itself.
+        if matches!(
+            tool.name(),
+            GET_TOOL_SPEC_TOOL_NAME | CALL_DEFERRED_TOOL_NAME | PTC_RUN_CODE_TOOL_NAME
+        ) {
+            continue;
+        }
+        let is_deferred = deferred_tool_names.iter().any(|name| name == tool.name());
+        let description = if is_deferred {
+            // MCP descriptions are often long provider-authored prose. The
+            // initial PTC SDK only needs to identify the binding as deferred;
+            // the full description and schema arrive from getToolSpec.
+            if tool
+                .dynamic_tool_info()
+                .is_some_and(|info| info.mcp.is_some())
+            {
+                String::new()
+            } else {
+                tool.short_description()
+            }
+        } else {
+            tool.description_with_context(Some(context))
+                .await
+                .unwrap_or_else(|_| "No description available".to_string())
+        };
+        let output_schema = if is_deferred {
+            // The full result contract is loaded by tools.getToolSpec. Keeping
+            // this placeholder also prevents dynamic providers from doing
+            // definition work while the initial PTC SDK is rendered.
+            json!({})
+        } else {
+            tool.output_schema()
+        };
+        let output_schema = if output_schema
+            .as_object()
+            .is_some_and(serde_json::Map::is_empty)
+        {
+            // Keep tools without a stable contract callable in PTC while making
+            // the fallback explicit in the generated SDK, matching the
+            // provider-neutral JsonValue contract used by the reference
+            // harness.
+            json!({
+                "anyOf": [
+                    {"type": "null"},
+                    {"type": "boolean"},
+                    {"type": "number"},
+                    {"type": "string"},
+                    {"type": "array", "items": {}},
+                    {"type": "object", "additionalProperties": true}
+                ]
+            })
+        } else {
+            output_schema
+        };
+        contracts.push(PtcToolContract {
+            name: tool.name().to_string(),
+            description,
+            input_schema: if is_deferred {
+                json!({})
+            } else {
+                tool.input_schema_for_model_with_context(Some(context))
+                    .await
+            },
+            output_schema,
+            is_readonly: tool.is_readonly(),
+            is_concurrency_safe: tool.is_concurrency_safe(None),
+            is_deferred,
+        });
+    }
+    contracts
 }
 
 async fn append_selected_plugin_tool_names(
@@ -402,12 +536,45 @@ pub(crate) async fn resolve_product_resolved_tool_manifest(
     exposure_overrides: &AgentToolPolicyOverrides,
     context: &ToolUseContext,
 ) -> ResolvedToolManifest {
-    let mut manifest: ResolvedToolManifest =
-        resolve_product_tool_manifest(allowed_tools, exposure_overrides, context)
-            .await
-            .into();
+    let contextual_manifest =
+        resolve_product_tool_manifest(allowed_tools, exposure_overrides, context).await;
+    #[cfg(feature = "ptc-runtime")]
+    let ptc_tool_calling_guide = if context_is_ptc_mode(context) {
+        let include_deferred_tool_apis =
+            ProductToolCatalogProvider::deferred_tool_loading_enabled(context)
+                && !contextual_manifest.deferred_tool_names.is_empty();
+        let mut ptc_tools = contextual_manifest.direct_tools.clone();
+        for tool in &contextual_manifest.deferred_tools {
+            if !ptc_tools
+                .iter()
+                .any(|existing| existing.name() == tool.name())
+            {
+                ptc_tools.push(tool.clone());
+            }
+        }
+        let contracts = build_ptc_contracts(
+            &ptc_tools,
+            &contextual_manifest.deferred_tool_names,
+            context,
+        )
+        .await;
+        let sdk_source =
+            render_ptc_typescript_sdk_with_options(&contracts, include_deferred_tool_apis);
+        Some(render_ptc_tool_calling_guide_with_options(
+            &sdk_source,
+            include_deferred_tool_apis,
+        ))
+    } else {
+        None
+    };
+
+    let mut manifest: ResolvedToolManifest = contextual_manifest.into();
     let provider = ProductToolCatalogProvider;
     manifest.catalog_generation = provider.catalog_generation().await;
+    #[cfg(feature = "ptc-runtime")]
+    {
+        manifest.ptc_tool_calling_guide = ptc_tool_calling_guide;
+    }
     manifest
 }
 
@@ -431,6 +598,8 @@ pub(crate) async fn resolve_product_get_tool_spec_results(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "ptc-runtime")]
+    use super::build_ptc_contracts;
     use super::{
         append_selected_plugin_tool_names, resolve_product_get_tool_spec_results,
         resolve_product_readonly_enabled_tools, resolve_product_resolved_tool_manifest,
@@ -446,9 +615,11 @@ mod tests {
     use crate::agentic::tools::ToolRuntimeRestrictions;
     #[cfg(feature = "external-sources")]
     use crate::agentic::WorkspaceBinding;
+    #[cfg(feature = "ptc-runtime")]
+    use openbitfun_agent_tools::PTC_TOOL_PRESENTATION_CONTEXT_KEY;
     use openbitfun_agent_tools::{
         GetToolSpecCatalogProvider, ToolCatalogSnapshotProvider, CALL_DEFERRED_TOOL_NAME,
-        GET_TOOL_SPEC_TOOL_NAME,
+        GET_TOOL_SPEC_TOOL_NAME, PTC_RUN_CODE_TOOL_NAME,
     };
     use serde_json::{json, Value};
     use std::collections::HashMap;
@@ -568,6 +739,205 @@ mod tests {
 
     fn context_without_agent_type() -> ToolUseContext {
         tool_context(None)
+    }
+
+    #[cfg(feature = "ptc-runtime")]
+    #[tokio::test]
+    async fn ptc_manifest_exposes_only_run_code_and_keeps_snapshot_allowlist() {
+        let mut context = tool_context(Some("Standard"));
+        context.custom_data.insert(
+            PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
+            Value::String("ptc".to_string()),
+        );
+        let allowed_tools = vec!["Read".to_string(), "SessionHistory".to_string()];
+
+        let manifest = resolve_product_tool_manifest(
+            &allowed_tools,
+            &AgentToolPolicyOverrides::default(),
+            &context,
+        )
+        .await;
+
+        assert_eq!(
+            manifest
+                .tool_definitions
+                .iter()
+                .map(|definition| definition.name.as_str())
+                .collect::<Vec<_>>(),
+            vec![PTC_RUN_CODE_TOOL_NAME]
+        );
+        assert!(manifest
+            .allowed_tool_names
+            .iter()
+            .any(|name| name == PTC_RUN_CODE_TOOL_NAME));
+        assert!(manifest
+            .allowed_tool_names
+            .iter()
+            .any(|name| name == "Read"));
+        assert!(manifest
+            .tool_definitions
+            .iter()
+            .find(|definition| definition.name == PTC_RUN_CODE_TOOL_NAME)
+            .is_some_and(|definition| {
+                definition.description.contains("TypeScript program")
+                    && !definition.description.contains("Generated SDK")
+                    && !definition.description.contains("ToolArgsMap")
+            }));
+    }
+
+    #[cfg(feature = "ptc-runtime")]
+    #[tokio::test]
+    async fn resolved_ptc_manifest_moves_sdk_to_tool_calling_guide() {
+        let mut context = tool_context(Some("Standard"));
+        context.custom_data.insert(
+            PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
+            Value::String("ptc".to_string()),
+        );
+        let manifest = resolve_product_resolved_tool_manifest(
+            &["Read".to_string(), "SessionHistory".to_string()],
+            &AgentToolPolicyOverrides::default(),
+            &context,
+        )
+        .await;
+
+        let run_code = manifest
+            .tool_definitions
+            .iter()
+            .find(|definition| definition.name == PTC_RUN_CODE_TOOL_NAME)
+            .expect("PTC manifest should expose RunCode");
+        assert!(!run_code.description.contains("ToolArgsMap"));
+        let guide = manifest
+            .ptc_tool_calling_guide
+            .as_deref()
+            .expect("resolved PTC manifest should carry the SDK guide");
+        assert!(guide.starts_with("# Tool Calling Guide\n"));
+        assert!(guide.contains("ToolArgsMap"));
+        assert!(guide.contains("SessionHistory"));
+    }
+
+    #[cfg(feature = "ptc-runtime")]
+    #[tokio::test]
+    async fn ptc_sdk_uses_only_deferred_marker_for_mcp_tools() {
+        let tool = Arc::new(DeferredMcpCatalogTool) as Arc<dyn Tool>;
+        let contracts = build_ptc_contracts(
+            &[tool],
+            &["mcp__github__search_repos".to_string()],
+            &tool_context(Some("Standard")),
+        )
+        .await;
+        let sdk = openbitfun_agent_tools::render_ptc_typescript_sdk(&contracts);
+
+        assert!(sdk.contains(
+            "/** Deferred tool: load its definition with tools.getToolSpec(\"mcp__github__search_repos\") first"
+        ));
+        assert!(!sdk.contains("Search repositories through GitHub MCP"));
+        assert!(!sdk.contains(" (GitHub)"));
+    }
+
+    #[cfg(feature = "ptc-runtime")]
+    #[tokio::test]
+    async fn resolved_ptc_manifest_omits_deferred_apis_when_loading_is_disabled() {
+        let mut context = tool_context(Some("Standard"));
+        context.custom_data.insert(
+            PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
+            Value::String("ptc".to_string()),
+        );
+        context.custom_data.insert(
+            DEFERRED_TOOL_LOADING_CONTEXT_KEY.to_string(),
+            Value::Bool(false),
+        );
+        let manifest = resolve_product_resolved_tool_manifest(
+            &["Read".to_string(), "SessionHistory".to_string()],
+            &AgentToolPolicyOverrides::default(),
+            &context,
+        )
+        .await;
+
+        assert!(manifest.deferred_tool_names.is_empty());
+        let guide = manifest
+            .ptc_tool_calling_guide
+            .as_deref()
+            .expect("resolved PTC manifest should carry the SDK guide");
+        assert!(!guide.contains("getToolSpec(name: string)"));
+        assert!(!guide.contains("callTool(name: string, args: Record<string, unknown>)"));
+        assert!(!guide.contains("deferred tools"));
+    }
+
+    #[tokio::test]
+    async fn missing_presentation_mode_keeps_native_manifest() {
+        let manifest = resolve_product_tool_manifest(
+            &["Read".to_string()],
+            &AgentToolPolicyOverrides::default(),
+            &tool_context(Some("Standard")),
+        )
+        .await;
+
+        assert!(manifest
+            .tool_definitions
+            .iter()
+            .any(|definition| definition.name == "Read"));
+        assert!(!manifest
+            .tool_definitions
+            .iter()
+            .any(|definition| definition.name == PTC_RUN_CODE_TOOL_NAME));
+    }
+
+    #[test]
+    fn builtin_tools_expose_non_empty_output_schemas() {
+        let registry = create_tool_registry();
+        let missing = registry
+            .get_all_tools()
+            .into_iter()
+            .filter(|tool| {
+                tool.output_schema()
+                    .as_object()
+                    .is_some_and(serde_json::Map::is_empty)
+            })
+            .map(|tool| tool.name().to_string())
+            .collect::<Vec<_>>();
+        assert!(
+            missing.is_empty(),
+            "built-in tools without output schemas: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn ptc_output_schemas_keep_assistant_fields_and_drop_internal_metadata() {
+        let registry = create_tool_registry();
+        let schema_for = |name: &str| {
+            registry
+                .get_all_tools()
+                .into_iter()
+                .find(|tool| tool.name() == name)
+                .unwrap_or_else(|| panic!("missing built-in tool {name}"))
+                .output_schema()
+        };
+
+        let read = schema_for("Read");
+        assert!(read["properties"].get("content").is_some());
+        assert!(read["properties"].get("next_offset").is_some());
+        assert!(read["properties"].get("hit_total_char_limit").is_none());
+        assert!(read["properties"].get("truncated_lines").is_some());
+        assert_eq!(read["additionalProperties"], false);
+
+        let glob = schema_for("Glob");
+        assert!(glob["properties"].get("effective_pattern").is_none());
+        assert!(glob["properties"].get("workspace_probe_pending").is_none());
+
+        let grep = schema_for("Grep");
+        assert!(grep["properties"].get("search_backend").is_none());
+        assert!(grep["properties"].get("backend").is_none());
+
+        let exec = schema_for("ExecCommand");
+        assert!(exec["properties"].get("output").is_some());
+        assert!(exec["properties"].get("exit_code").is_some());
+        assert!(exec["properties"].get("chunk_id").is_none());
+        assert!(exec["properties"].get("shell").is_none());
+
+        let time = schema_for("GetTime");
+        assert!(time["properties"].get("local_time").is_some());
+        assert!(time["properties"].get("unix_timestamp_seconds").is_some());
+        assert!(time["properties"].get("unix_timestamp_millis").is_none());
     }
 
     #[cfg(feature = "opencode-plugin-host")]

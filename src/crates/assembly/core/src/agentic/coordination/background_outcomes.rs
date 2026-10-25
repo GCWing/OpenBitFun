@@ -762,6 +762,7 @@ mod tests {
             },
         ));
         let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             workspace_path: Some(workspace.to_string_lossy().into_owned()),
             ..Default::default()
         };

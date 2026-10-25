@@ -2992,7 +2992,7 @@ export function runManifestParserSelfTest({
         'exec_command_input_policy_applies_defaults_without_trimming_command',
         'write_stdin_input_policy_applies_poll_defaults',
         'exec_control_input_policy_keeps_wait_optional',
-        'exec_command_result_builder_preserves_existing_wire_shape',
+        'exec_command_result_builder_exposes_only_model_result_fields',
         'write_stdin_and_control_result_builders_preserve_remote_shape',
         'remote_env_snapshot_capture_policy_keeps_existing_bounds',
         'remote_env_snapshot_cache_owns_key_and_ttl_policy',

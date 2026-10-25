@@ -101,6 +101,9 @@ pub(crate) mod review_platform_http;
 
 #[cfg(feature = "script-tool-runtime")]
 pub mod script_tool;
+
+#[cfg(feature = "ptc-runtime")]
+pub mod ptc_runtime;
 #[cfg(feature = "speech")]
 pub mod speech;
 

@@ -518,13 +518,14 @@
         "tools": {
           "execution": {
             "title": "执行与权限控制",
-            "summary": "管理智能体工具权限、并行度、超时、延迟加载、Computer Use 与浏览器控制。",
+            "summary": "管理智能体工具权限、呈现模式、并行度、超时、延迟加载、Computer Use 与浏览器控制。",
             "items": {
               "permission-mode": "选择询问、自动批准或完全访问权限模式，并确认高风险警告",
               "permission-selector": "控制权限模式选择器是否显示在聊天输入框下方",
               "global-project-rules": "创建、排序和保存全局或项目级 Allow、Ask、Deny 规则",
               "remembered-grants": "查看、撤销或清空项目中记住的权限授权与审计记录",
               "deferred-tools": "按需延迟加载工具定义以减少智能体初始上下文",
+              "tool-presentation": "选择模型使用原生模式还是 PTC TypeScript 模式",
               "parallelism": "设置子智能体与 Swarm 最大并发及安全、强制并行或串行策略",
               "timeouts": "设置或取消单次工具调用超时",
               "review-capacity": "设置 Deep Review 最大并行评审者和队列等待时间",

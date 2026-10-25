@@ -23,6 +23,7 @@ pub mod input_validator;
 #[cfg(feature = "mcp-bridge")]
 pub mod mcp_tool_bridge;
 pub mod permission_intent;
+pub mod ptc;
 pub mod tool_execution_presentation;
 pub mod tool_result_storage;
 pub mod tool_snapshot;
@@ -111,6 +112,14 @@ pub use openbitfun_runtime_ports::{
     DynamicToolDescriptor, DynamicToolProvider, PortError, PortErrorKind, PortResult, ToolDecorator,
 };
 pub use permission_intent::PermissionIntent;
+pub use ptc::{
+    json_schema_to_typescript, ptc_run_code_description, ptc_run_code_input_schema,
+    render_ptc_loaded_tool_typescript_sdk, render_ptc_tool_calling_guide,
+    render_ptc_tool_calling_guide_with_options, render_ptc_typescript_sdk,
+    render_ptc_typescript_sdk_with_options, PtcToolCallError, PtcToolContract,
+    PTC_NESTED_ALLOWED_TOOLS_CONTEXT_KEY, PTC_RUN_CODE_TOOL_NAME,
+    PTC_TOOL_PRESENTATION_CONTEXT_KEY, PTC_TOOL_PRESENTATION_MODE,
+};
 pub use tool_execution_presentation::{
     build_invalid_tool_call_error_message, build_normal_tool_json_repair_notice,
     build_permission_denied_tool_presentation, build_tool_call_truncation_recovery_notice,

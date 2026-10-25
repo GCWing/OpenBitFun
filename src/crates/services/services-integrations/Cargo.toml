@@ -467,6 +467,17 @@ script-tool-runtime = [
     "tokio/time",
     "which",
 ]
+ptc-runtime = [
+    "async-trait",
+    "openbitfun-runtime-ports/ptc-runtime",
+    "process-tree",
+    "tokio/io-util",
+    "tokio/process",
+    "tokio/rt",
+    "tokio/sync",
+    "tokio/time",
+    "which",
+]
 web-tools = [
     "async-trait",
     "openbitfun-runtime-ports/web-search-port",

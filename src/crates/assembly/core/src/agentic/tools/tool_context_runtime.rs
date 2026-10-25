@@ -49,6 +49,7 @@ use openbitfun_agent_runtime::user_questions::{
 };
 use openbitfun_agent_tools::{
     LoadedDeferredToolSpec, PortableToolContextProvider, ToolContextFacts, ToolWorkspaceKind,
+    PTC_TOOL_PRESENTATION_CONTEXT_KEY,
 };
 #[cfg(feature = "canvas-runtime")]
 use openbitfun_product_domains::canvas::CanvasStoragePort;
@@ -413,6 +414,12 @@ fn build_tool_context_custom_data(context: &ToolExecutionContext) -> HashMap<Str
         extension_custom_data.insert(
             PERMISSION_MODE_CONTEXT_KEY.to_string(),
             Value::String(mode.as_str().to_string()),
+        );
+    }
+    if let Some(mode) = context.context_vars.get(PTC_TOOL_PRESENTATION_CONTEXT_KEY) {
+        extension_custom_data.insert(
+            PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
+            Value::String(mode.clone()),
         );
     }
     for key in [
@@ -1646,6 +1653,7 @@ mod task_context_tests {
         USER_INPUT_AVAILABLE_CONTEXT_KEY, USER_INPUT_MODEL_ROUND_CONTEXT_KEY,
     };
     use openbitfun_agent_tools::LoadedDeferredToolSpec;
+    use openbitfun_agent_tools::PTC_TOOL_PRESENTATION_CONTEXT_KEY;
     use openbitfun_runtime_ports::DelegationPolicy;
     use serde_json::json;
     use std::collections::{BTreeSet, HashMap};
@@ -1674,6 +1682,10 @@ mod task_context_tests {
         context_vars.insert(
             PERMISSION_MODE_CONTEXT_KEY.to_string(),
             "auto_approve".to_string(),
+        );
+        context_vars.insert(
+            PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
+            "ptc".to_string(),
         );
         context_vars.insert(
             "deep_review_run_manifest".to_string(),
@@ -1806,6 +1818,10 @@ mod task_context_tests {
         assert_eq!(
             context.custom_data[PERMISSION_MODE_CONTEXT_KEY],
             json!("auto_approve")
+        );
+        assert_eq!(
+            context.custom_data[PTC_TOOL_PRESENTATION_CONTEXT_KEY],
+            json!("ptc")
         );
         assert_eq!(
             context.custom_data["deep_review_run_manifest"],

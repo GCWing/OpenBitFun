@@ -104,6 +104,22 @@ Use PageDeploy only to switch an already-saved version_id (rollback / promote a 
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string"},
+                "version_id": {"type": "string"},
+                "visibility": {"type": "string"},
+                "deployed": {"type": "boolean"},
+                "url": {"type": "string"},
+                "preview_url": {"type": "string"}
+            },
+            "required": ["slug", "version_id", "visibility", "deployed"],
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

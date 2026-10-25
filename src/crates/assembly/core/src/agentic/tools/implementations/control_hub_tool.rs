@@ -3648,6 +3648,30 @@ impl Tool for ControlHubTool {
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "domain": {"type": "string", "enum": ["browser", "terminal", "meta"]},
+                "action": {"type": "string"},
+                "summary": {"type": "string"},
+                "data": {
+                    "anyOf": [
+                        {"type": "null"}, {"type": "boolean"}, {"type": "number"},
+                        {"type": "string"}, {"type": "array", "items": {}},
+                        {"type": "object", "additionalProperties": true}
+                    ]
+                },
+                "error": {"type": "object", "additionalProperties": true},
+                "target": {"type": "string"},
+                "session_id": {"type": "string"}
+            },
+            "required": ["ok", "domain", "action"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_concurrency_safe(&self, _input: Option<&Value>) -> bool {
         false
     }

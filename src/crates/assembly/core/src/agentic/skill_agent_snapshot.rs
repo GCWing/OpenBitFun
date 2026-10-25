@@ -166,6 +166,16 @@ fn build_tool_listing_sections(
         } else {
             None
         },
+        ptc_tool_calling_guide: {
+            #[cfg(feature = "ptc-runtime")]
+            {
+                manifest.ptc_tool_calling_guide.clone()
+            }
+            #[cfg(not(feature = "ptc-runtime"))]
+            {
+                None
+            }
+        },
     }
 }
 
@@ -301,6 +311,8 @@ mod tests {
                 name: "WebFetch".to_string(),
                 short_description: Some("Fetch a web page".to_string()),
             }],
+            #[cfg(feature = "ptc-runtime")]
+            ptc_tool_calling_guide: None,
             catalog_generation: 7,
         };
 

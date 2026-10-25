@@ -32,15 +32,24 @@ use openbitfun_agent_tools::{
     build_tool_execution_timeout_presentation,
     build_user_rejected_tool_presentation_with_instruction,
     build_user_steering_interrupted_presentation, build_write_tail_closure_notice,
-    render_tool_result_for_assistant, validate_tool_execution_admission, DynamicToolInfo,
-    PermissionIntent, ResolvedToolInvocation, ToolExecutionAdmissionRejection,
-    ToolExecutionAdmissionRequest, ToolExecutionErrorPresentation, GET_TOOL_SPEC_TOOL_NAME,
+    render_ptc_loaded_tool_typescript_sdk, render_tool_result_for_assistant,
+    validate_tool_execution_admission, DynamicToolInfo, LoadedDeferredToolSpec, PermissionIntent,
+    PtcToolContract, ResolvedToolInvocation, ToolExecutionAdmissionRejection,
+    ToolExecutionAdmissionRequest, ToolExecutionErrorPresentation, CALL_DEFERRED_TOOL_NAME,
+    GET_TOOL_SPEC_TOOL_NAME, PTC_NESTED_ALLOWED_TOOLS_CONTEXT_KEY,
     USER_STEERING_INTERRUPTED_MESSAGE,
 };
 use openbitfun_runtime_ports::{
     PermissionReply, PermissionRequest, PermissionRequestSource, PermissionRequestSourceKind,
     PermissionResourceCaseSensitivity, RoundInjectionToolPreemption,
 };
+#[cfg(feature = "ptc-runtime")]
+use openbitfun_runtime_ports::{
+    PortError, PortErrorKind, PtcExecutionRequest, PtcNestedToolCall, PtcRuntime, PtcToolBinding,
+    PtcToolCallHandler, PtcToolSpecRequest,
+};
+#[cfg(feature = "ptc-runtime")]
+use openbitfun_services_integrations::ptc_runtime::NodePtcRuntime;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
@@ -132,18 +141,52 @@ fn convert_tool_result(
     effective_tool_name: &str,
     dynamic_tool_info: Option<&DynamicToolInfo>,
 ) -> ModelToolResult {
+    convert_tool_result_with_metadata(
+        framework_result,
+        tool_id,
+        wire_tool_name,
+        effective_tool_name,
+        dynamic_tool_info,
+    )
+    .0
+}
+
+fn convert_tool_result_with_metadata(
+    framework_result: FrameworkToolResult,
+    tool_id: &str,
+    wire_tool_name: &str,
+    effective_tool_name: &str,
+    dynamic_tool_info: Option<&DynamicToolInfo>,
+) -> (ModelToolResult, Vec<LoadedDeferredToolSpec>) {
     match framework_result {
         FrameworkToolResult::Result {
             data,
             result_for_assistant,
             image_attachments,
         } => {
+            let loaded_specs = data
+                .get("__ptc_loaded_deferred_tool_specs")
+                .cloned()
+                .and_then(|value| serde_json::from_value(value).ok())
+                .unwrap_or_default();
+            let assistant_data = data
+                .as_object()
+                .map(|object| {
+                    let mut object = object.clone();
+                    object.remove("__ptc_loaded_deferred_tool_specs");
+                    serde_json::Value::Object(object)
+                })
+                .unwrap_or_else(|| data.clone());
             // If the tool does not provide result_for_assistant, pass the full
             // structured result through to the model. Summaries like
             // "completed successfully" can hide fields the model needs for the
             // next decision.
-            let assistant_text = result_for_assistant
-                .or_else(|| Some(render_tool_result_for_assistant(effective_tool_name, &data)));
+            let assistant_text = result_for_assistant.or_else(|| {
+                Some(render_tool_result_for_assistant(
+                    effective_tool_name,
+                    &assistant_data,
+                ))
+            });
             // Tools with a typed response envelope can report a recoverable
             // domain failure without throwing away their structured error and
             // hints. Preserve that payload, but propagate its semantic status
@@ -155,19 +198,22 @@ fn convert_tool_result(
                 || (dynamic_tool_info.is_some_and(|info| info.mcp.is_some())
                     && data.get("isError").and_then(|value| value.as_bool()) == Some(true));
 
-            ModelToolResult {
-                tool_id: tool_id.to_string(),
-                tool_name: wire_tool_name.to_string(),
-                effective_tool_name: persisted_effective_tool_name(
-                    wire_tool_name,
-                    effective_tool_name,
-                ),
-                result: data,
-                result_for_assistant: assistant_text,
-                is_error,
-                duration_ms: None,
-                image_attachments,
-            }
+            (
+                ModelToolResult {
+                    tool_id: tool_id.to_string(),
+                    tool_name: wire_tool_name.to_string(),
+                    effective_tool_name: persisted_effective_tool_name(
+                        wire_tool_name,
+                        effective_tool_name,
+                    ),
+                    result: assistant_data,
+                    result_for_assistant: assistant_text,
+                    is_error,
+                    duration_ms: None,
+                    image_attachments,
+                },
+                loaded_specs,
+            )
         }
         FrameworkToolResult::Progress { content, .. } => {
             let assistant_text = Some(render_tool_result_for_assistant(
@@ -175,38 +221,49 @@ fn convert_tool_result(
                 &content,
             ));
 
-            ModelToolResult {
-                tool_id: tool_id.to_string(),
-                tool_name: wire_tool_name.to_string(),
-                effective_tool_name: persisted_effective_tool_name(
-                    wire_tool_name,
-                    effective_tool_name,
-                ),
-                result: content,
-                result_for_assistant: assistant_text,
-                is_error: false,
-                duration_ms: None,
-                image_attachments: None,
-            }
+            (
+                ModelToolResult {
+                    tool_id: tool_id.to_string(),
+                    tool_name: wire_tool_name.to_string(),
+                    effective_tool_name: persisted_effective_tool_name(
+                        wire_tool_name,
+                        effective_tool_name,
+                    ),
+                    result: content,
+                    result_for_assistant: assistant_text,
+                    is_error: false,
+                    duration_ms: None,
+                    image_attachments: None,
+                },
+                Vec::new(),
+            )
         }
         FrameworkToolResult::StreamChunk { data, .. } => {
             let assistant_text = Some(render_tool_result_for_assistant(effective_tool_name, &data));
 
-            ModelToolResult {
-                tool_id: tool_id.to_string(),
-                tool_name: wire_tool_name.to_string(),
-                effective_tool_name: persisted_effective_tool_name(
-                    wire_tool_name,
-                    effective_tool_name,
-                ),
-                result: data,
-                result_for_assistant: assistant_text,
-                is_error: false,
-                duration_ms: None,
-                image_attachments: None,
-            }
+            (
+                ModelToolResult {
+                    tool_id: tool_id.to_string(),
+                    tool_name: wire_tool_name.to_string(),
+                    effective_tool_name: persisted_effective_tool_name(
+                        wire_tool_name,
+                        effective_tool_name,
+                    ),
+                    result: data,
+                    result_for_assistant: assistant_text,
+                    is_error: false,
+                    duration_ms: None,
+                    image_attachments: None,
+                },
+                Vec::new(),
+            )
         }
     }
+}
+
+struct ExecutedToolResult {
+    result: ModelToolResult,
+    ptc_loaded_deferred_tool_specs: Vec<LoadedDeferredToolSpec>,
 }
 
 fn resolve_pipeline_invocation(
@@ -332,6 +389,7 @@ fn build_error_execution_result(
             duration_ms: Some(execution_time_ms),
             image_attachments: None,
         },
+        ptc_loaded_deferred_tool_specs: Vec::new(),
         execution_time_ms,
     }
 }
@@ -379,6 +437,7 @@ fn build_user_steering_interrupted_result(
             duration_ms: Some(execution_time_ms),
             image_attachments: None,
         },
+        ptc_loaded_deferred_tool_specs: Vec::new(),
         execution_time_ms,
     }
 }
@@ -447,6 +506,7 @@ fn build_permission_rejected_tool_result(
             duration_ms: Some(execution_time_ms),
             image_attachments: None,
         },
+        ptc_loaded_deferred_tool_specs: Vec::new(),
         execution_time_ms,
     }
 }
@@ -489,6 +549,17 @@ fn map_tool_execution_admission_rejection(
         ToolExecutionAdmissionRejection::Deferred(error) => {
             OpenBitFunError::Validation(error.to_string())
         }
+    }
+}
+
+#[cfg(feature = "ptc-runtime")]
+fn map_ptc_runtime_error(error: PortError) -> OpenBitFunError {
+    match error.kind {
+        PortErrorKind::Cancelled => OpenBitFunError::Cancelled(error.message),
+        PortErrorKind::Timeout => OpenBitFunError::Timeout(error.message),
+        PortErrorKind::InvalidRequest => OpenBitFunError::Validation(error.message),
+        PortErrorKind::NotAvailable => OpenBitFunError::Service(error.message),
+        _ => OpenBitFunError::ProcessError(error.message),
     }
 }
 
@@ -671,6 +742,169 @@ pub struct ToolPipeline {
     /// interactive permission prompt only; policy denials still apply.
     hook_preapprovals: Arc<TokioMutex<HashSet<String>>>,
     hook_asks: Arc<TokioMutex<HashMap<String, String>>>,
+}
+
+#[cfg(feature = "ptc-runtime")]
+struct PtcPipelineToolCallHandler {
+    pipeline: Arc<ToolPipeline>,
+    context: ToolExecutionContext,
+    options: ToolExecutionOptions,
+    parent_tool_id: String,
+    loaded_deferred_tool_specs: Arc<TokioMutex<Vec<LoadedDeferredToolSpec>>>,
+}
+
+#[cfg(feature = "ptc-runtime")]
+#[async_trait::async_trait]
+impl PtcToolCallHandler for PtcPipelineToolCallHandler {
+    async fn call(&self, request: PtcNestedToolCall) -> Result<serde_json::Value, PortError> {
+        if matches!(
+            request.tool_name.as_str(),
+            openbitfun_agent_tools::PTC_RUN_CODE_TOOL_NAME
+                | GET_TOOL_SPEC_TOOL_NAME
+                | CALL_DEFERRED_TOOL_NAME
+        ) {
+            return Err(PortError::new(
+                PortErrorKind::InvalidRequest,
+                "PTC gateway tools must be accessed through the PTC SDK APIs",
+            ));
+        }
+        let tool_id = format!("{}:nested:{}", self.parent_tool_id, request.operation_id);
+        let call = ToolCall {
+            tool_id,
+            tool_name: request.tool_name,
+            arguments: request.arguments,
+            ..ToolCall::default()
+        };
+        let mut nested_context = self.context.clone();
+        nested_context.loaded_deferred_tool_specs =
+            self.loaded_deferred_tool_specs.lock().await.clone();
+        for loaded in &nested_context.loaded_deferred_tool_specs {
+            if !nested_context
+                .deferred_tools
+                .iter()
+                .any(|name| name == &loaded.tool_name)
+            {
+                nested_context.deferred_tools.push(loaded.tool_name.clone());
+            }
+        }
+        if let Some(allowed_tools) = ToolPipeline::ptc_nested_allowed_tools(&nested_context) {
+            nested_context.allowed_tools = allowed_tools;
+        }
+        let results = self
+            .pipeline
+            .execute_tools(vec![call], nested_context, self.options.clone())
+            .await
+            .map_err(|error| PortError::new(PortErrorKind::Backend, error.to_string()))?;
+        results
+            .into_iter()
+            .next()
+            .map(|result| result.result.result)
+            .ok_or_else(|| PortError::new(PortErrorKind::Backend, "nested tool returned no result"))
+    }
+
+    async fn get_tool_spec(
+        &self,
+        request: PtcToolSpecRequest,
+    ) -> Result<serde_json::Value, PortError> {
+        let mut execution_context = self.context.clone();
+        execution_context.loaded_deferred_tool_specs =
+            self.loaded_deferred_tool_specs.lock().await.clone();
+        if let Some(allowed_tools) = ToolPipeline::ptc_nested_allowed_tools(&execution_context) {
+            execution_context.allowed_tools = allowed_tools;
+        }
+        let mut context = tool_context_runtime::build_tool_use_context_for_execution_context(
+            &execution_context,
+            None,
+            self.pipeline.computer_use_host.clone(),
+            CancellationToken::new(),
+            None,
+        );
+        context.loaded_deferred_tool_specs = execution_context.loaded_deferred_tool_specs.clone();
+
+        let input = serde_json::json!({ "tool_name": request.tool_name });
+        let results =
+            crate::agentic::tools::product_runtime::resolve_product_get_tool_spec_results(
+                &input,
+                &context,
+                GET_TOOL_SPEC_TOOL_NAME,
+            )
+            .await
+            .map_err(|error| PortError::new(PortErrorKind::InvalidRequest, error.to_string()))?;
+        let value = results
+            .into_iter()
+            .find_map(|result| match result {
+                FrameworkToolResult::Result { data, .. } => Some(data),
+                FrameworkToolResult::StreamChunk { .. } | FrameworkToolResult::Progress { .. } => {
+                    None
+                }
+            })
+            .ok_or_else(|| {
+                PortError::new(PortErrorKind::Backend, "GetToolSpec returned no definition")
+            })?;
+
+        let catalog_generation = value
+            .get("catalog_generation")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| {
+                PortError::new(
+                    PortErrorKind::Backend,
+                    "GetToolSpec result has no catalog generation",
+                )
+            })?;
+        let tool_name = value
+            .get("tool_name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+
+        let tool = self
+            .pipeline
+            .tool_registry
+            .read()
+            .await
+            .get_tool(&tool_name)
+            .ok_or_else(|| {
+                PortError::new(
+                    PortErrorKind::Backend,
+                    format!("GetToolSpec returned no registered tool: {tool_name}"),
+                )
+            })?;
+        let object = value.as_object().ok_or_else(|| {
+            PortError::new(
+                PortErrorKind::Backend,
+                "GetToolSpec result is not an object",
+            )
+        })?;
+        let description = object
+            .get("description")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let input_schema = object
+            .get("input_schema")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        let output_schema = tool.output_schema();
+        let typescript_sdk = render_ptc_loaded_tool_typescript_sdk(&PtcToolContract::new(
+            tool_name.clone(),
+            description,
+            input_schema,
+            output_schema,
+        ));
+
+        let mut loaded = self.loaded_deferred_tool_specs.lock().await;
+        if let Some(existing) = loaded.iter_mut().find(|spec| spec.tool_name == tool_name) {
+            existing.catalog_generation = catalog_generation;
+        } else {
+            loaded.push(LoadedDeferredToolSpec {
+                tool_name,
+                catalog_generation,
+            });
+        }
+        Ok(serde_json::json!({
+            "typescript_sdk": typescript_sdk,
+        }))
+    }
 }
 
 impl ToolPipeline {
@@ -2084,7 +2318,22 @@ impl ToolPipeline {
                 current_catalog_generation: registry.current_snapshot_generation(),
                 get_tool_spec_tool_name: GET_TOOL_SPEC_TOOL_NAME,
             });
-            (admission, registry.get_tool(&tool_name))
+            (
+                admission,
+                registry.get_tool(&tool_name).or_else(|| {
+                    #[cfg(feature = "ptc-runtime")]
+                    {
+                        (tool_name == openbitfun_agent_tools::PTC_RUN_CODE_TOOL_NAME).then(|| {
+                            Arc::new(crate::agentic::tools::implementations::PtcRunCodeTool::new())
+                                as Arc<dyn crate::agentic::tools::framework::Tool>
+                        })
+                    }
+                    #[cfg(not(feature = "ptc-runtime"))]
+                    {
+                        None
+                    }
+                }),
+            )
         };
 
         if let Err(err) = admission {
@@ -2347,9 +2596,12 @@ impl ToolPipeline {
         self.cancellation_tokens.remove(&tool_id);
 
         match result {
-            Ok(tool_result) => {
+            Ok(executed_result) => {
                 let duration_ms = elapsed_ms_u64(start_time);
-                let mut tool_result = tool_result;
+                let ExecutedToolResult {
+                    result: mut tool_result,
+                    ptc_loaded_deferred_tool_specs,
+                } = executed_result;
                 tool_result.duration_ms = Some(duration_ms);
 
                 self.apply_plugin_post_tool_use_hook(&task, &tool_name, &tool_id, &mut tool_result)
@@ -2421,6 +2673,7 @@ impl ToolPipeline {
                     tool_name: wire_tool_name,
                     effective_tool_name: tool_name,
                     result: tool_result,
+                    ptc_loaded_deferred_tool_specs,
                     execution_time_ms: duration_ms,
                 })
             }
@@ -2507,6 +2760,7 @@ impl ToolPipeline {
                             duration_ms: Some(duration_ms),
                             image_attachments: None,
                         },
+                        ptc_loaded_deferred_tool_specs: Vec::new(),
                         execution_time_ms: duration_ms,
                     });
                 }
@@ -2552,7 +2806,7 @@ impl ToolPipeline {
         task: &ToolTask,
         cancellation_token: CancellationToken,
         tool: Arc<dyn crate::agentic::tools::framework::Tool>,
-    ) -> OpenBitFunResult<ModelToolResult> {
+    ) -> OpenBitFunResult<ExecutedToolResult> {
         let mut attempts = 0;
         let max_attempts = task.options.max_retries + 1;
 
@@ -2599,7 +2853,7 @@ impl ToolPipeline {
         task: &ToolTask,
         cancellation_token: CancellationToken,
         tool: Arc<dyn crate::agentic::tools::framework::Tool>,
-    ) -> OpenBitFunResult<ModelToolResult> {
+    ) -> OpenBitFunResult<ExecutedToolResult> {
         // Check cancellation token
         if cancellation_token.is_cancelled() {
             return Err(OpenBitFunError::Cancelled(
@@ -2609,7 +2863,13 @@ impl ToolPipeline {
 
         let tool_context = self.build_tool_use_context(task, cancellation_token);
 
-        let execution_future = tool.call(task.effective_arguments(), &tool_context);
+        let execution_future = async {
+            #[cfg(feature = "ptc-runtime")]
+            if tool.name() == openbitfun_agent_tools::PTC_RUN_CODE_TOOL_NAME {
+                return self.execute_ptc_program(task, &tool_context).await;
+            }
+            tool.call(task.effective_arguments(), &tool_context).await
+        };
 
         let execution_owner = resolve_contextual_tool(Arc::clone(&tool), &tool_context);
         let dynamic_tool_info = execution_owner
@@ -2648,13 +2908,17 @@ impl ToolPipeline {
             .into_iter()
             .last()
             .map(|r| {
-                convert_tool_result(
+                let (result, ptc_loaded_deferred_tool_specs) = convert_tool_result_with_metadata(
                     r,
                     &task.tool_call.tool_id,
                     &task.tool_call.tool_name,
                     task.effective_tool_name(),
                     dynamic_tool_info.as_ref(),
-                )
+                );
+                ExecutedToolResult {
+                    result,
+                    ptc_loaded_deferred_tool_specs,
+                }
             })
             .ok_or_else(|| {
                 OpenBitFunError::Tool(format!(
@@ -2662,6 +2926,163 @@ impl ToolPipeline {
                     task.effective_tool_name()
                 ))
             })
+    }
+
+    #[cfg(feature = "ptc-runtime")]
+    async fn execute_ptc_program(
+        &self,
+        task: &ToolTask,
+        context: &ToolUseContext,
+    ) -> OpenBitFunResult<Vec<FrameworkToolResult>> {
+        let code = task
+            .effective_arguments()
+            .get("code")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| OpenBitFunError::Validation("RunCode requires code".to_string()))?;
+        let working_directory = context
+            .workspace_root()
+            .map(|path| path.to_string_lossy().into_owned())
+            .or_else(|| {
+                std::env::current_dir()
+                    .ok()
+                    .map(|path| path.to_string_lossy().into_owned())
+            })
+            .ok_or_else(|| OpenBitFunError::Service("PTC has no working directory".to_string()))?;
+        let bindings = {
+            let registry = self.tool_registry.read().await;
+            let allowed = Self::ptc_nested_allowed_tools(&task.context);
+            let mut names = Vec::new();
+            for tool in registry.get_all_tools() {
+                let name = tool.name();
+                if name == openbitfun_agent_tools::PTC_RUN_CODE_TOOL_NAME
+                    || allowed.as_ref().is_some_and(|allowed| {
+                        !allowed.is_empty() && !allowed.iter().any(|allowed| allowed == name)
+                    })
+                    || !context.runtime_tool_restrictions.is_tool_allowed(name)
+                    || !tool.is_available_in_context(Some(context)).await
+                {
+                    continue;
+                }
+                names.push(PtcToolBinding {
+                    name: name.to_string(),
+                });
+            }
+            names
+        };
+        let timeout_ms = task
+            .effective_arguments()
+            .get("timeout_ms")
+            .and_then(serde_json::Value::as_u64);
+        let runtime = if context.is_remote() {
+            #[cfg(feature = "ssh-remote")]
+            {
+                let workspace = context.workspace.as_ref().ok_or_else(|| {
+                    OpenBitFunError::NotImplemented(
+                        "PTC execution requires a resolved remote workspace".to_string(),
+                    )
+                })?;
+                let connection_id = workspace.connection_id().ok_or_else(|| {
+                    OpenBitFunError::NotImplemented(
+                        "PTC execution requires a remote SSH connection".to_string(),
+                    )
+                })?;
+                let remote_workspace_manager =
+                    crate::service::remote_ssh::workspace_state::get_remote_workspace_manager()
+                        .ok_or_else(|| {
+                            OpenBitFunError::Service(
+                                "Remote workspace services are not initialized".to_string(),
+                            )
+                        })?;
+                let ssh_manager = remote_workspace_manager
+                    .get_ssh_manager()
+                    .await
+                    .ok_or_else(|| {
+                        OpenBitFunError::Service(
+                            "Remote SSH services are not initialized".to_string(),
+                        )
+                    })?;
+                NodePtcRuntime::for_remote(ssh_manager, connection_id)
+            }
+            #[cfg(not(feature = "ssh-remote"))]
+            {
+                return Err(OpenBitFunError::NotImplemented(
+                    "PTC execution requires the SSH remote runtime".to_string(),
+                ));
+            }
+        } else {
+            NodePtcRuntime::discover()
+        };
+        let operation_id = task.tool_call.tool_id.clone();
+        let handler = Arc::new(PtcPipelineToolCallHandler {
+            pipeline: Arc::new(self.clone()),
+            context: task.context.clone(),
+            options: ToolExecutionOptions {
+                parent_cancellation_token: context.cancellation_token().cloned(),
+                ..task.options.clone()
+            },
+            parent_tool_id: operation_id.clone(),
+            loaded_deferred_tool_specs: Arc::new(TokioMutex::new(
+                task.context.loaded_deferred_tool_specs.clone(),
+            )),
+        });
+        let request = PtcExecutionRequest {
+            operation_id: operation_id.clone(),
+            source: code.to_string(),
+            bindings,
+            working_directory,
+            session_id: Some(task.context.session_id.clone()),
+            timeout_ms,
+            max_output_bytes: None,
+        };
+        let execute = runtime.execute(request, handler.clone());
+        let response = if let Some(cancellation_token) = context.cancellation_token().cloned() {
+            tokio::select! {
+                result = execute => result.map_err(map_ptc_runtime_error)?,
+                _ = cancellation_token.cancelled() => {
+                    let _ = runtime.cancel(&operation_id).await;
+                    return Err(OpenBitFunError::Cancelled("PTC execution was cancelled".to_string()));
+                }
+            }
+        } else {
+            execute.await.map_err(map_ptc_runtime_error)?
+        };
+        let mut data = if response.logs.is_empty() {
+            response.value
+        } else {
+            serde_json::json!({
+                "value": response.value,
+                "logs": response.logs,
+            })
+        };
+        let loaded_deferred_tool_specs = handler.loaded_deferred_tool_specs.lock().await.clone();
+        if !loaded_deferred_tool_specs.is_empty() {
+            let loaded_specs_value = serde_json::to_value(&loaded_deferred_tool_specs)
+                .unwrap_or_else(|_| serde_json::Value::Array(Vec::new()));
+            if let Some(object) = data.as_object_mut() {
+                object.insert(
+                    "__ptc_loaded_deferred_tool_specs".to_string(),
+                    loaded_specs_value,
+                );
+            } else {
+                data = serde_json::json!({
+                    "value": data,
+                    "__ptc_loaded_deferred_tool_specs": loaded_specs_value,
+                });
+            }
+        }
+        Ok(vec![FrameworkToolResult::Result {
+            data,
+            result_for_assistant: None,
+            image_attachments: None,
+        }])
+    }
+
+    #[cfg(feature = "ptc-runtime")]
+    fn ptc_nested_allowed_tools(context: &ToolExecutionContext) -> Option<Vec<String>> {
+        context
+            .context_vars
+            .get(PTC_NESTED_ALLOWED_TOOLS_CONTEXT_KEY)
+            .and_then(|value| serde_json::from_str(value).ok())
     }
 
     fn build_tool_use_context(
@@ -3935,6 +4356,55 @@ mod tests {
                 name: name.to_string(),
                 received_arguments,
             }));
+    }
+
+    #[cfg(feature = "ptc-runtime")]
+    #[tokio::test]
+    async fn ptc_run_code_dispatches_nested_calls_through_the_pipeline() {
+        let pipeline = test_tool_pipeline();
+        register_static_test_tool(&pipeline, "Read", json!({"content": "ok"}), 0).await;
+        let workspace_root = std::env::temp_dir().join("openbitfun-ptc-pipeline-test");
+        std::fs::create_dir_all(&workspace_root).expect("PTC test workspace should exist");
+        let mut context = permission_test_context();
+        context.workspace = Some(WorkspaceBinding::new(None, workspace_root));
+        context.allowed_tools = vec![openbitfun_agent_tools::PTC_RUN_CODE_TOOL_NAME.to_string()];
+        context.context_vars.insert(
+            PTC_NESTED_ALLOWED_TOOLS_CONTEXT_KEY.to_string(),
+            serde_json::to_string(&vec!["Read"]).expect("nested allowlist should serialize"),
+        );
+
+        let results = pipeline
+            .execute_tools(
+                vec![ToolCall {
+                    tool_id: "outer-ptc".to_string(),
+                    tool_name: openbitfun_agent_tools::PTC_RUN_CODE_TOOL_NAME.to_string(),
+                    arguments: json!({
+                        "code": "return await tools.Read({ path: 'src/lib.rs' });"
+                    }),
+                    ..ToolCall::default()
+                }],
+                context,
+                ToolExecutionOptions::default(),
+            )
+            .await
+            .expect("PTC program should execute");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].tool_id, "outer-ptc");
+        assert_eq!(
+            results[0].tool_name,
+            openbitfun_agent_tools::PTC_RUN_CODE_TOOL_NAME
+        );
+        assert_eq!(results[0].result.result, json!({"content": "ok"}));
+
+        let nested = pipeline
+            .state_manager
+            .get_session_tasks("session_1")
+            .into_iter()
+            .find(|task| task.tool_call.tool_id != "outer-ptc")
+            .expect("nested call should be tracked");
+        assert!(nested.tool_call.tool_id.starts_with("outer-ptc:nested:"));
+        assert_eq!(nested.tool_call.tool_name, "Read");
     }
 
     async fn current_registry_generation(pipeline: &ToolPipeline) -> u64 {
@@ -5404,7 +5874,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn deferred_gateway_requires_loaded_get_tool_spec_result() {
+    async fn deferred_gateway_executes_without_loaded_get_tool_spec_result() {
         let pipeline = test_tool_pipeline();
         register_capturing_test_tool(&pipeline, "get_weather", Arc::new(Mutex::new(None))).await;
 
@@ -5424,18 +5894,13 @@ mod tests {
         let results = pipeline
             .execute_tools(vec![call], context, ToolExecutionOptions::default())
             .await
-            .expect("pipeline should return a per-tool error result");
+            .expect("pipeline should execute the deferred target");
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].tool_name, CALL_DEFERRED_TOOL_NAME);
         assert_eq!(results[0].effective_tool_name, "get_weather");
-        assert!(results[0].result.is_error);
-        assert!(results[0]
-            .result
-            .result_for_assistant
-            .as_deref()
-            .unwrap_or_default()
-            .contains("Call GetToolSpec with {\"tool_name\":\"get_weather\"}"));
+        assert!(!results[0].result.is_error);
+        assert_eq!(results[0].result.result["received"]["city"], "Shanghai");
     }
 
     #[tokio::test]
@@ -5660,30 +6125,6 @@ mod tests {
             &pipeline,
             "tool_1",
             "Tool 'Read' is denied by runtime restrictions",
-        );
-    }
-
-    #[tokio::test]
-    async fn pipeline_admission_direct_deferred_tool_requires_get_tool_spec() {
-        let pipeline = test_tool_pipeline();
-        let mut context = test_tool_execution_context();
-        context.deferred_tools = vec!["WebFetch".to_string()];
-
-        let results = pipeline
-            .execute_tools(
-                vec![test_tool_call("tool_1", "WebFetch")],
-                context,
-                ToolExecutionOptions::default(),
-            )
-            .await
-            .expect("admission rejection should be returned as an error result");
-
-        assert_eq!(results.len(), 1);
-        assert!(results[0].result.is_error);
-        assert_failed_task_contains(
-            &pipeline,
-            "tool_1",
-            "Call GetToolSpec with {\"tool_name\":\"WebFetch\"}",
         );
     }
 
@@ -6276,11 +6717,11 @@ mod tests {
     }
 
     #[test]
-    fn deferred_tool_requires_loaded_catalog_spec() {
+    fn deferred_tool_admission_allows_missing_catalog_spec() {
         let mut task = test_tool_task("tool_1", "WebFetch");
         task.context.deferred_tools = vec!["WebFetch".to_string()];
 
-        let err = validate_tool_execution_admission(ToolExecutionAdmissionRequest {
+        validate_tool_execution_admission(ToolExecutionAdmissionRequest {
             tool_name: &task.tool_call.tool_name,
             allowed_tools: &task.context.allowed_tools,
             runtime_tool_restrictions: &task.context.runtime_tool_restrictions,
@@ -6289,11 +6730,7 @@ mod tests {
             current_catalog_generation: 0,
             get_tool_spec_tool_name: GET_TOOL_SPEC_TOOL_NAME,
         })
-        .expect_err("deferred tool should require a loaded GetToolSpec result");
-
-        assert!(err
-            .to_string()
-            .contains("Call GetToolSpec with {\"tool_name\":\"WebFetch\"}"));
+        .expect("deferred exposure must not block execution when no spec is loaded");
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //!
 //! Defines all configuration-related types shared between backend and frontend.
 
-use openbitfun_core_types::{product_identity, WorktreeSettings};
+use openbitfun_core_types::{product_identity, ToolPresentationMode, WorktreeSettings};
 pub use openbitfun_core_types::{ReasoningConfig, ReasoningPreset, ReasoningPresetAction};
 use openbitfun_product_domains::tool_permissions::{PermissionRule, ToolPermissionConfig};
 use serde::{Deserialize, Serialize};
@@ -1098,6 +1098,11 @@ pub struct AIConfig {
     /// All configured models.
     pub models: Vec<AIModelConfig>,
 
+    /// Tool presentation used by sessions created after this setting changes.
+    /// Existing sessions retain their persisted presentation mode.
+    #[serde(default)]
+    pub tool_presentation_mode: ToolPresentationMode,
+
     #[serde(default)]
     pub model_pools: crate::model_pool::ModelPoolDocument,
 
@@ -2124,6 +2129,7 @@ impl Default for AIConfig {
         Self {
             model_pools: crate::model_pool::ModelPoolDocument::default(),
             models: vec![],
+            tool_presentation_mode: ToolPresentationMode::default(),
             task_models: TaskModelsConfig::default(),
             default_models: DefaultModelsConfig::default(),
             agent_model_defaults: AgentModelDefaultsConfig::default(),
@@ -3257,6 +3263,66 @@ mod tests {
             hidden_serialized["app"]["flow_chat"]["show_permission_mode_control"],
             false
         );
+    }
+
+    #[test]
+    fn ai_tool_presentation_defaults_to_native_and_round_trips_ptc() {
+        let legacy: super::AIConfig = serde_json::from_value(serde_json::json!({
+            "models": []
+        }))
+        .expect("AI config without tool presentation should deserialize");
+        assert_eq!(
+            legacy.tool_presentation_mode,
+            openbitfun_core_types::ToolPresentationMode::Native
+        );
+        assert_eq!(
+            serde_json::to_value(&legacy).unwrap()["tool_presentation_mode"],
+            "native"
+        );
+
+        let ptc: super::AIConfig = serde_json::from_value(serde_json::json!({
+            "models": [],
+            "tool_presentation_mode": "ptc"
+        }))
+        .expect("PTC AI config should deserialize");
+        assert_eq!(
+            ptc.tool_presentation_mode,
+            openbitfun_core_types::ToolPresentationMode::Ptc
+        );
+        let written = serde_json::to_value(ptc).unwrap();
+        assert_eq!(written["tool_presentation_mode"], "ptc");
+        let restored: super::AIConfig = serde_json::from_value(written).unwrap();
+        assert_eq!(
+            restored.tool_presentation_mode,
+            openbitfun_core_types::ToolPresentationMode::Ptc
+        );
+
+        let future: super::AIConfig = serde_json::from_value(serde_json::json!({
+            "models": [],
+            "tool_presentation_mode": "future_mode"
+        }))
+        .expect("future tool presentation values should degrade to native");
+        assert_eq!(
+            future.tool_presentation_mode,
+            openbitfun_core_types::ToolPresentationMode::Native
+        );
+
+        let global: super::GlobalConfig =
+            serde_json::from_value(current_global_config_with(serde_json::json!({
+                "ai": {
+                    "tool_presentation_mode": "ptc"
+                }
+            })))
+            .expect("global config should read the runtime tool presentation setting");
+        assert_eq!(
+            global.ai.tool_presentation_mode,
+            openbitfun_core_types::ToolPresentationMode::Ptc
+        );
+        let global_written = serde_json::to_value(global).unwrap();
+        assert_eq!(global_written["ai"]["tool_presentation_mode"], "ptc");
+        assert!(global_written["app"]["flow_chat"]
+            .get("tool_presentation_mode")
+            .is_none());
     }
 
     #[test]

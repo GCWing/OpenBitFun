@@ -2,7 +2,7 @@ use crate::session_state::SessionState;
 pub use openbitfun_core_types::SessionKind;
 pub use openbitfun_core_types::{
     SessionAgentRouteOwner, SessionContinuationPolicy, SessionExecutionTarget,
-    SessionModelBindingPolicy,
+    SessionModelBindingPolicy, ToolPresentationMode,
 };
 pub use openbitfun_runtime_ports::PermissionMode;
 use serde::{Deserialize, Serialize};
@@ -245,6 +245,10 @@ pub struct SessionConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub permission_mode: Option<PermissionMode>,
+    /// Frozen tool presentation for this session. Legacy sessions default to
+    /// native tool calls when this field is absent on disk.
+    #[serde(default, skip_serializing_if = "ToolPresentationMode::is_native")]
+    pub tool_presentation_mode: ToolPresentationMode,
     /// Whether this child session accepts another delegated turn.
     #[serde(default, skip_serializing_if = "is_reusable_continuation_policy")]
     pub continuation_policy: SessionContinuationPolicy,
@@ -322,6 +326,7 @@ impl Default for SessionConfig {
             model_pool_binding: None,
             reasoning_preset: None,
             permission_mode: None,
+            tool_presentation_mode: ToolPresentationMode::default(),
             continuation_policy: SessionContinuationPolicy::default(),
             model_binding_policy: SessionModelBindingPolicy::default(),
             model_binding_fingerprint: None,
@@ -414,7 +419,7 @@ mod tests {
     use super::{
         sanitize_persisted_session_state, CompressionState, PermissionMode,
         PersistedSessionStateFile, Session, SessionAgentRouteOwner, SessionConfig,
-        SessionContinuationPolicy, SessionModelBindingPolicy,
+        SessionContinuationPolicy, SessionModelBindingPolicy, ToolPresentationMode,
     };
     use crate::session_state::{ProcessingPhase, SessionState};
 
@@ -515,6 +520,7 @@ mod tests {
         assert!(config.remote_ssh_host.is_none());
         assert!(config.model_id.is_none());
         assert!(config.reasoning_preset.is_none());
+        assert_eq!(config.tool_presentation_mode, ToolPresentationMode::Native);
         assert_eq!(
             config.continuation_policy,
             SessionContinuationPolicy::Reusable
@@ -528,8 +534,28 @@ mod tests {
     }
 
     #[test]
+    fn session_tool_presentation_mode_is_frozen_and_legacy_data_defaults_native() {
+        let config = SessionConfig {
+            tool_presentation_mode: ToolPresentationMode::Ptc,
+            ..SessionConfig::default()
+        };
+        let mut serialized = serde_json::to_value(&config).expect("serialize session config");
+        assert_eq!(serialized["tool_presentation_mode"], "ptc");
+        let restored: SessionConfig = serde_json::from_value(serialized.clone()).unwrap();
+        assert_eq!(restored.tool_presentation_mode, ToolPresentationMode::Ptc);
+
+        serialized
+            .as_object_mut()
+            .expect("session config object")
+            .remove("tool_presentation_mode");
+        let legacy: SessionConfig = serde_json::from_value(serialized).unwrap();
+        assert_eq!(legacy.tool_presentation_mode, ToolPresentationMode::Native);
+    }
+
+    #[test]
     fn external_agent_route_owner_persists_and_legacy_sessions_default_local() {
         let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             agent_route_owner: SessionAgentRouteOwner::External,
             agent_route_key: Some("opencode:plugin:build".to_string()),
             ..SessionConfig::default()
@@ -555,6 +581,7 @@ mod tests {
     #[test]
     fn non_default_subagent_session_policies_are_persisted_and_legacy_defaults_remain_compatible() {
         let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
             continuation_policy: SessionContinuationPolicy::FreshOnly,
             model_binding_policy: SessionModelBindingPolicy::ApprovedImmutable,
             ..SessionConfig::default()
@@ -619,6 +646,7 @@ mod tests {
             "Main".to_string(),
             "Standard".to_string(),
             SessionConfig {
+                tool_presentation_mode: Default::default(),
                 model_id: Some("provider/model".to_string()),
                 workspace_path: Some("/worktrees/session_1".to_string()),
                 workspace_id: Some("workspace_1".to_string()),
@@ -671,6 +699,7 @@ mod tests {
         let file = PersistedSessionStateFile {
             schema_version: 1,
             config: SessionConfig {
+                tool_presentation_mode: Default::default(),
                 workspace_path: Some("/workspace".to_string()),
                 model_id: Some("model-a".to_string()),
                 ..SessionConfig::default()

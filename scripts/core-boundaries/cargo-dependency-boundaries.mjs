@@ -168,6 +168,7 @@ const SERVICES_INTEGRATIONS_TOKIO_FEATURES = new Map([
   ['speech-realtime', ['fs', 'io-util', 'macros', 'net', 'rt', 'sync', 'time']],
   ['workspace-search', ['io-util', 'rt', 'sync', 'time']],
   ['script-tool-runtime', ['io-util', 'process', 'rt', 'sync', 'time']],
+  ['ptc-runtime', ['io-util', 'process', 'rt', 'sync', 'time']],
 ]);
 
 const SERVICES_CORE_TOKIO_FEATURES = new Map([
@@ -198,6 +199,8 @@ const CORE_TOKIO_FEATURES = new Map([
   ['browser-control', ['net', 'rt', 'time']],
 ]);
 const CORE_TOKIO_AGGREGATES = new Set([
+  // PTC composes the Agent Runtime baseline and the service-owned Node runtime.
+  'ptc-runtime',
   'external-sources',
   'plugin-runtime',
   'product-search',

@@ -478,6 +478,11 @@ impl PromptBuilder {
     ) -> PrependedPromptReminders {
         PrependedPromptReminders {
             deferred_tool_listing: self.build_deferred_tool_listing_reminder(),
+            ptc_tool_calling_guide: self
+                .context
+                .tool_listing_sections
+                .ptc_tool_calling_guide
+                .clone(),
             skill_listing: self.build_skill_listing_reminder(),
             agent_listing: self.build_agent_listing_reminder(),
             runtime_context: self.build_runtime_context_reminder().await,
@@ -680,6 +685,7 @@ mod tests {
             deferred_tool_listing: Some(
                 "<deferred_tools>\n- WebFetch\n</deferred_tools>".to_string(),
             ),
+            ptc_tool_calling_guide: None,
         };
         let context = PromptBuilderContext::new(r"workspace\root", None, None)
             .with_tool_listing_sections(tool_sections)

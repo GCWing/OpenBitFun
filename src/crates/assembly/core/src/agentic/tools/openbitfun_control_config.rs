@@ -762,6 +762,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn tool_presentation_mode_product_control_round_trips_from_native_default() {
+        let (service, _dir) = test_service("product-control-tool-presentation-mode").await;
+        let capability = product_capability("setting.tools.execution").unwrap();
+        let option = capability
+            .options
+            .iter()
+            .find(|option| option.id == "tool-presentation-mode")
+            .expect("tool presentation mode option");
+
+        assert_eq!(
+            read_config_backed_option(&service, option)
+                .await
+                .expect("native default should be readable"),
+            Some(Value::String("native".to_string()))
+        );
+
+        let applied =
+            configure_config_backed_option(&service, option, &Value::String("ptc".to_string()))
+                .await
+                .expect("PTC should be accepted")
+                .expect("tool presentation mode is config-backed");
+        assert_eq!(applied.changed_path, "ai.tool_presentation_mode");
+        assert_eq!(applied.effective_value, Value::String("ptc".to_string()));
+    }
+
+    #[tokio::test]
     async fn shared_executor_orders_typed_and_legacy_callers_in_one_revision_stream() {
         let (service, _dir) = test_service("product-control-shared-executor").await;
         let executor = SharedProductControlExecutor::new(Arc::new(service));

@@ -398,6 +398,7 @@ export interface AgentModelDefaultsConfig {
 
 export interface AIConfig {
   models: AIModelConfig[];
+  tool_presentation_mode?: 'native' | 'ptc';
   default_models: DefaultModelsConfig;
   agent_model_defaults: AgentModelDefaultsConfig;
   agent_model_selections?: AgentModelSelections;
@@ -719,6 +720,7 @@ export type ConfigPath =
   | 'app.flow_chat.default_mode_id'
   | 'app.flow_chat.last_mode_id'
   | 'app.flow_chat.show_permission_mode_control'
+  | 'ai.tool_presentation_mode'
   | 'app.flow_chat.auto_show_selection_toolbar'
   | 'app.flow_chat.send_during_turn'
   | 'app.sidebar'

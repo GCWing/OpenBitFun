@@ -557,6 +557,7 @@ test('portable contract crates expose only capability-local feature slices', asy
       'permission',
       'plugin-runtime',
       'product-search',
+      'ptc-runtime',
       'remote-exec-port',
       'remote-workspace-ports',
       'runtime-event-port',
@@ -573,6 +574,7 @@ test('portable contract crates expose only capability-local feature slices', asy
   assert.deepEqual(runtimePortFeatures['plugin-runtime'], []);
   assert.deepEqual(runtimePortFeatures['product-search'], ['dep:openbitfun-product-domains']);
   assert.deepEqual(runtimePortFeatures['script-tool-runtime'], []);
+  assert.deepEqual(runtimePortFeatures['ptc-runtime'], []);
   assert.deepEqual(runtimePortFeatures['web-search-port'], []);
   // Workspace byte readers expose AsyncRead/AsyncSeek without selecting a
   // process, network, scheduler, or full Tokio runtime at the contract layer.
@@ -783,6 +785,7 @@ const RUNTIME_PORT_FEATURE_PROFILES = {
   permission: ['dep:openbitfun-product-domains'],
   'plugin-runtime': [],
   'product-search': ['dep:openbitfun-product-domains'],
+  'ptc-runtime': [],
   'remote-exec-port': ['dep:tokio'],
   'remote-workspace-ports': [],
   'runtime-event-port': [],
@@ -1033,6 +1036,11 @@ test('contract and AI adapter tests keep reviewed feature and failure-domain top
       name: 'script_tool_port_contracts',
       path: 'tests/script_tool_port_contracts.rs',
       requiredFeatures: ['script-tool-runtime'],
+    },
+    {
+      name: 'ptc_tool_port_contracts',
+      path: 'tests/ptc_tool_port_contracts.rs',
+      requiredFeatures: ['ptc-runtime'],
     },
     {
       name: 'session_store_contracts',

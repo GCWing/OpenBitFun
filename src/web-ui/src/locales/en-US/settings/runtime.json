@@ -94,6 +94,15 @@
     "globalRulesEffects": { "allow": "Allow", "ask": "Ask", "deny": "Deny" },
     "modeDescription": "Used for new sessions and can be changed temporarily from the chat input."
   },
+  "toolPresentation": {
+    "sectionTitle": "Tool presentation",
+    "sectionDescription": "Choose how the model accesses tools.",
+    "mode": "Tool presentation",
+    "description": "Choose how tools are exposed to the model. This setting applies only to sessions created after it changes.",
+    "native": "Native tools",
+    "ptc": "PTC (TypeScript)",
+    "ptcTooltip": "PTC executes TypeScript through RunCode."
+  },
   "projectPermissions": {
     "description": "Always allow decisions are saved as remembered grants for the current project; static project rules apply before a tool runs.",
     "grantsTitle": "Remembered grants",

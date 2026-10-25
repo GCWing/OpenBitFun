@@ -7745,13 +7745,15 @@
       "categoryId": "assistant",
       "titleZh": "执行与权限控制",
       "titleEn": "Execution & permissions",
-      "summaryZh": "管理智能体工具权限、并行度、超时、延迟加载、Computer Use 与浏览器控制。",
-      "summaryEn": "Manage agent tool permissions, concurrency, timeouts, deferred loading, Computer Use, and browser control.",
+      "summaryZh": "管理智能体工具权限、呈现模式、并行度、超时、延迟加载、Computer Use 与浏览器控制。",
+      "summaryEn": "Manage agent tool permissions, presentation mode, concurrency, timeouts, deferred loading, Computer Use, and browser control.",
       "keywordsZh": [
         "执行控制",
         "工具权限",
         "工具调用超时",
         "延迟加载工具",
+        "工具呈现模式",
+        "PTC",
         "审批",
         "并行",
         "超时",
@@ -7763,6 +7765,8 @@
         "execution control",
         "tool permissions",
         "deferred tool loading",
+        "tool presentation",
+        "PTC",
         "approval",
         "parallel",
         "timeout",
@@ -7886,6 +7890,28 @@
           },
           "evidence": [
             "source:src/web-ui/src/locales/zh-CN/settings/runtime.json#deferredToolLoading.sectionTitle"
+          ]
+        },
+        {
+          "id": "tool-presentation",
+          "titleZh": "选择模型使用原生模式还是 PTC TypeScript 模式",
+          "titleEn": "Choose native mode or PTC TypeScript mode for the model",
+          "destination": {
+            "kind": "settings",
+            "pageId": "tools.execution",
+            "viewId": "advanced"
+          },
+          "control": {
+            "kind": "direct",
+            "operations": [],
+            "options": [
+              {
+                "id": "tool-presentation-mode"
+              }
+            ]
+          },
+          "evidence": [
+            "source:src/web-ui/src/locales/zh-CN/settings/runtime.json#toolPresentation.mode"
           ]
         },
         {
@@ -8085,6 +8111,13 @@
           "titleEn": "Deferred tool loading",
           "descriptionZh": "按需加载大型工具定义，减少智能体初始上下文。",
           "descriptionEn": "Load large tool definitions on demand to reduce initial agent context."
+        },
+        {
+          "id": "tool-presentation-mode",
+          "titleZh": "工具呈现模式",
+          "titleEn": "Tool presentation mode",
+          "descriptionZh": "选择模型直接调用原生工具，或通过 PTC TypeScript 调用工具。",
+          "descriptionEn": "Choose whether the model calls native tools directly or uses PTC TypeScript."
         },
         {
           "id": "subagent-batch-policy",

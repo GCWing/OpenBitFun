@@ -1032,6 +1032,23 @@ Cards are shown only on this desktop. They are unavailable for remote mobile or 
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "action": {"type": "string", "enum": ["create", "update", "list", "get", "show", "hide", "delete", "refresh", "presets"]},
+                "card": {"type": "object", "additionalProperties": true},
+                "cards": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "presets": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+                "card_id": {"type": "string"},
+                "visible": {"type": "boolean"},
+                "data": {"type": "object", "additionalProperties": true}
+            },
+            "additionalProperties": true
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

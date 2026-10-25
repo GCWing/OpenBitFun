@@ -251,6 +251,41 @@ impl Tool for ListWorkspacesTool {
             "cursor":{"type":"string", "description":"Opaque next_cursor from the preceding page; keep query and kind unchanged."}
         }, "additionalProperties":false})
     }
+
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "scope": {"type": "string"},
+                "current_workspace_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "count": {"type": "integer"},
+                "total": {"type": "integer"},
+                "workspaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "kind": {"type": "string"},
+                            "is_current": {"type": "boolean"},
+                            "workspace_id": {"type": "string"},
+                            "project_workspace_id": {"type": "string"},
+                            "root_path": {"type": "string"},
+                            "last_accessed_at_ms": {"type": "integer"},
+                            "remote": {"type": "object", "additionalProperties": true},
+                            "binding_error": {"type": "string"}
+                        },
+                        "required": ["name", "kind", "workspace_id", "root_path"],
+                        "additionalProperties": false
+                    }
+                },
+                "next_cursor": {"anyOf": [{"type": "string"}, {"type": "null"}]}
+            },
+            "required": ["success", "scope", "current_workspace_id", "count", "total", "workspaces", "next_cursor"],
+            "additionalProperties": false
+        })
+    }
     fn is_readonly(&self) -> bool {
         true
     }
