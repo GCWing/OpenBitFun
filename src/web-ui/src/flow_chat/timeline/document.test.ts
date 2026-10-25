@@ -4,6 +4,8 @@ import { FlowChatReaderState } from './readerState';
 import type { FlowItem, FlowToolItem } from '../types/flow-chat';
 import type { VirtualItem } from '../types/flow-chat-projection';
 import { estimateVirtualItemHeight } from '../components/modern/virtualItemHeightEstimators';
+import { buildInlineToolGroupData } from '../grouping/roundGroups';
+import { toolCapsuleStateKey } from '../tool-cards/toolCapsuleModel';
 
 const tool = (id: string, status: FlowToolItem['status'] = 'completed'): FlowToolItem => ({
   id, type: 'tool', toolName: 'Read', timestamp: 1, status,
@@ -127,6 +129,32 @@ describe('desktop conversation document', () => {
     expect(projection.project([input], { ...folded, pendingPermissionToolCallIds: new Set(['b']) })
       .some(item => item.timeline?.memberIds.includes('b'))).toBe(true);
     release();
+  });
+
+  it('opens a group when one member holds an expanded capsule key of this session', () => {
+    const projection = new ConversationDocumentProjection();
+    const input = source([tool('a'), tool('b')]);
+    const open = (sessionId: string | undefined, keys: string[]) => projection
+      .project([input], { ...options(), sessionId, expandedToolCapsules: new Set(keys) })
+      .some(row => row.timeline?.kind === 'group-members');
+    expect(projection.project([input], { ...options(), sessionId: 'session' })
+      .some(row => row.timeline?.kind === 'group-members')).toBe(false);
+    expect(open('session', [toolCapsuleStateKey('session', 'turn', 'b')])).toBe(true);
+    // A foreign session or an unreadable key never opens this transcript.
+    expect(open('session', [toolCapsuleStateKey('other', 'turn', 'b'), 'unreadable'])).toBe(false);
+  });
+
+  it('reuses unchanged member rows and replaces only the one that changed', () => {
+    const projection = new ConversationDocumentProjection();
+    const items = [tool('a'), tool('b')];
+    const groupId = buildInlineToolGroupData('round', { type: 'explore', items, isLast: true }).groupId;
+    const opts = () => ({ ...options(), groupStates: new Map([[groupId, true]]) });
+    const members = (rows: VirtualItem[]) => rows.filter(row => row.timeline?.kind === 'group-members');
+    const first = members(projection.project([source(items)], opts()));
+    expect(first).toHaveLength(2);
+    expect(members(projection.project([source(items)], opts())).map(row => first.includes(row))).toEqual([true, true]);
+    const changed = members(projection.project([source([items[0], { ...items[1], partialParams: { file_path: '/b' } }])], opts()));
+    expect(changed.map(row => first.includes(row))).toEqual([true, false]);
   });
 
   it('applies remembered filters before materialization and supports legacy group sources', () => {
