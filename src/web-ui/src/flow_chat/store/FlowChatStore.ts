@@ -6587,7 +6587,16 @@ export class FlowChatStore {
       const updatedModelRounds = turn.modelRounds.map(modelRound => {
         if (updated) return modelRound;
 
-        const activeAttempts = modelRound.attempts ?? deriveRoundAttemptsFromItems(modelRound.items);
+        const recordedAttempts = modelRound.attempts;
+        if (!recordedAttempts && !modelRound.items.some((item: any) => itemMatchesIdentity(item, itemId))) {
+          // Derived attempts only repackage these same items, so a round that
+          // does not hold the item cannot hold it after derivation either. A
+          // streamed token lands in the last round; without this probe every
+          // earlier round re-derives its attempts on every flush.
+          return modelRound;
+        }
+
+        const activeAttempts = recordedAttempts ?? deriveRoundAttemptsFromItems(modelRound.items);
         if (activeAttempts && activeAttempts.length > 0) {
           let foundInAttempts = false;
           const nextAttempts = activeAttempts.map(attempt => {

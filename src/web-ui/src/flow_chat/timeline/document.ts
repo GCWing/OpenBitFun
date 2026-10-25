@@ -60,9 +60,45 @@ const emptyItems: FlowItem[] = [];
  */
 export class ConversationDocumentProjection {
   private previous = new Map<string, VirtualItem>();
-  private sourceCache = new WeakMap<VirtualItem, { revision: string; items: VirtualItem[] }>();
+  private sourceCache = new WeakMap<VirtualItem, { viewStamp: number; sourceIndex: number; items: VirtualItem[] }>();
   private next = new Map<string, VirtualItem>();
   private labels?: ReadonlyMap<string, string>;
+  private viewStamp = 0;
+  private viewInputs?: {
+    readerRevision: number;
+    groupStates?: ReadonlyMap<string, boolean>;
+    expandedToolCapsules?: ReadonlySet<string>;
+    pendingPermissionToolCallIds?: ReadonlySet<string>;
+    stamp: number;
+  };
+
+  /**
+   * A stamp for the reader and group inputs, reused while they keep their
+   * identity. Text streaming refreshes `sources` on every flush while these
+   * stay the same object, so a quiet flush compares one number per source
+   * instead of rebuilding a state-sized string and matching it by content.
+   * Identity is what the caller already keys its own memo on.
+   */
+  private viewStampFor(options: TimelineProjectionOptions): number {
+    const readerRevision = options.reader.getProjectionRevision();
+    const cached = this.viewInputs;
+    if (cached && cached.readerRevision === readerRevision
+      && cached.groupStates === options.groupStates
+      && cached.expandedToolCapsules === options.expandedToolCapsules
+      && cached.pendingPermissionToolCallIds === options.pendingPermissionToolCallIds) {
+      return cached.stamp;
+    }
+
+    const stamp = ++this.viewStamp;
+    this.viewInputs = {
+      readerRevision,
+      groupStates: options.groupStates,
+      expandedToolCapsules: options.expandedToolCapsules,
+      pendingPermissionToolCallIds: options.pendingPermissionToolCallIds,
+      stamp,
+    };
+    return stamp;
+  }
 
   project(sources: readonly VirtualItem[], options: TimelineProjectionOptions): VirtualItem[] {
     if (this.labels !== options.toolLabels) {
@@ -71,7 +107,7 @@ export class ConversationDocumentProjection {
     }
     this.next = new Map();
     const result: VirtualItem[] = [];
-    const viewRevision = `${options.reader.getProjectionRevision()}:${[...(options.groupStates ?? [])].map(([id, value]) => `${id}:${value}`).join('|')}:${[...(options.expandedToolCapsules ?? [])].join('|')}:${[...(options.pendingPermissionToolCallIds ?? [])].join('|')}`;
+    const viewStamp = this.viewStampFor(options);
     sources.forEach((original, sourceIndex) => {
       // Legacy whole-round groups obey the same residency contract. This is a
       // render adapter only; neither their recorded rounds nor ids are changed.
@@ -86,19 +122,18 @@ export class ConversationDocumentProjection {
       if (source.type !== 'model-round') {
         const key = getVirtualItemStableKey(source);
         const cached = this.sourceCache.get(source);
-        const row = cached?.revision === String(sourceIndex) ? cached.items[0] : {
+        const row = cached?.sourceIndex === sourceIndex ? cached.items[0] : {
           ...source, timeline: { key, kind: 'content' as const, sourceIndex, memberIds: source.type === 'background-run' ? source.turn.modelRounds.flatMap(round => round.items.map(item => item.id)) : [] },
         };
-        this.sourceCache.set(source, { revision: String(sourceIndex), items: [row] });
+        this.sourceCache.set(source, { viewStamp, sourceIndex, items: [row] });
         this.next.set(key, row);
         result.push(row);
         return;
       }
       // Source identity is already shared by completed immutable Turns. Reader
       // changes only invalidate their projection, never their payloads.
-      const revision = `${sourceIndex}:${viewRevision}`;
       const cached = this.sourceCache.get(original);
-      if (cached?.revision === revision) {
+      if (cached?.viewStamp === viewStamp && cached.sourceIndex === sourceIndex) {
         for (const row of cached.items) this.next.set(row.timeline!.key, row);
         result.push(...cached.items);
         return;
@@ -178,7 +213,7 @@ export class ConversationDocumentProjection {
       if ((source.isLastRound && source.isTurnComplete) || source.canvasArtifactItems?.length) {
         add('round-footer', `${source.data.id}:footer`, emptyItems);
       }
-      this.sourceCache.set(original, { revision, items: rows });
+      this.sourceCache.set(original, { viewStamp, sourceIndex, items: rows });
       result.push(...rows);
     });
     this.previous = this.next;

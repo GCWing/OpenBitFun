@@ -524,6 +524,16 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   const interactionKeys = useTimelineInteraction(scrollerElementRef, reader, () => viewportOwner.currentOwner() === 'follow-output', undefined, kind => readerInteractionRef.current(kind));
   const pinnedKeys = useMemo(() => submissionKey
     ? new Set([...interactionKeys, submissionKey]) : interactionKeys, [interactionKeys, submissionKey]);
+  // A quiet stream re-renders this list on every flush; collator-sorting the
+  // disclosure map is only worth paying when the map itself changed.
+  const estimateContextRevision = useMemo(() => [
+    viewportWidthPx,
+    activeSession?.isHistorical === true ? 'historical' : 'live',
+    [...(exploreGroupStates?.entries() ?? [])]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([groupId, expanded]) => `${groupId}:${expanded ? 1 : 0}`)
+      .join(','),
+  ].join('|'), [viewportWidthPx, activeSession?.isHistorical, exploreGroupStates]);
   const virtualizer = useFlowChatVirtualizer({
     pinnedKeys,
     items: virtualItems,
@@ -539,14 +549,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       isHistorical: activeSession?.isHistorical === true,
       exploreGroupStates,
     } satisfies VirtualItemHeightEstimateContext,
-    estimateContextRevision: [
-      viewportWidthPx,
-      activeSession?.isHistorical === true ? 'historical' : 'live',
-      [...(exploreGroupStates?.entries() ?? [])]
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([groupId, expanded]) => `${groupId}:${expanded ? 1 : 0}`)
-        .join(','),
-    ].join('|'),
+    estimateContextRevision,
     isViewportSuspended: () => isViewportSuspendedRef.current,
     measurementSuspended,
     scrollPaddingStartPx: FLOWCHAT_TURN_TOP_GAP_PX,
