@@ -7,6 +7,25 @@
     "split": "并排",
     "overlay": "覆盖"
   },
+  "sessionMenu": {
+    "title": "会话菜单与操作",
+    "description": "自定义会话右键菜单，并选择是否显示操作提示与确认。关闭 BTW 确认后，有可保存内容时将自动保存为分支。",
+    "actions": {
+      "rename": "重命名",
+      "copyId": "复制 ID",
+      "duplicate": "复制会话",
+      "openStorage": "打开会话存储目录",
+      "export": "导出为 Markdown",
+      "scheduledJobs": "定时任务",
+      "archive": "归档",
+      "manage": "批量管理会话",
+      "openWorktreeWorkspace": "打开 Worktree 工作区",
+      "delete": "删除"
+    },
+    "showArchiveNotice": "显示归档成功提示",
+    "confirmDelete": "删除会话前确认",
+    "confirmBtwClose": "关闭 BTW 子会话前确认"
+  },
   "package": {
     "title": "外观",
     "description": "外观包保存在当前设备；悬停缩略图可预览",

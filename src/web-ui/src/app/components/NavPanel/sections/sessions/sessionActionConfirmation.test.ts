@@ -24,7 +24,7 @@ describe('session action confirmation policy', () => {
 
     expect(source).toContain("import { confirmDanger } from '@/infrastructure/confirm-dialog';");
     expect(source).not.toContain('confirmWarning');
-    expect(deleteHandler).toContain('await confirmDanger(');
+    expect(deleteHandler).toContain('!sessionMenuPreferences.confirmDelete || await confirmDanger(');
     expect(deleteHandler).toContain("t('nav.sessions.deleteConfirmTitle')");
     expect(deleteHandler).toContain("t('nav.sessions.deleteConfirmMessage', {");
     expect(deleteHandler).toContain("{ confirmText: sourceView ? t('nav.sessions.removeSource') : t('nav.sessions.delete') }");
