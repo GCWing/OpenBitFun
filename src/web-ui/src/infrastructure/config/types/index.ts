@@ -201,11 +201,13 @@ export type ModelCapability =
   | 'text_chat'
   | 'function_calling'
   | 'image_understanding'
+  | 'image_generation'
   | 'speech_recognition';
 
 export type ModelCategory =
   | 'general_chat'
   | 'multimodal'
+  | 'image_generation'
   | 'speech_recognition';
 
 export type ReasoningCatalogBinding =
@@ -262,12 +264,14 @@ export interface ModelMetadata {
 export const CATEGORY_LABELS: Record<ModelCategory, string> = {
   general_chat: t('settings/models:category.general_chat'),
   multimodal: t('settings/models:category.multimodal'),
+  image_generation: t('settings/models:category.image_generation'),
   speech_recognition: t('settings/models:category.speech_recognition')
 };
 
 export const CATEGORY_ICONS: Record<ModelCategory, string> = {
   general_chat: t('settings/models:categoryIcons.general_chat'),
   multimodal: t('settings/models:categoryIcons.multimodal'),
+  image_generation: t('settings/models:categoryIcons.image_generation'),
   speech_recognition: t('settings/models:categoryIcons.speech_recognition')
 };
 
@@ -360,6 +364,7 @@ export interface DefaultModelsConfig {
   primary?: string | null;
   fast?: string | null;
   image_understanding?: string | null;
+  image_generation?: string | null;
   speech_recognition?: string | null;
 }
 
