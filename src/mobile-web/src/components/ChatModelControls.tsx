@@ -5,8 +5,6 @@ import { useI18n } from '../i18n';
 import type { RemoteModelCatalog, RemoteModelConfig } from '../services/RemoteSessionManager';
 import ComposerSelectionSurface from './ComposerSelectionSurface';
 
-const MOBILE_LAST_SELECTED_MODEL_ID_KEY = 'openbitfun.mobile.last_selected_model_id';
-
 const SparklesIcon: React.FC<{ className?: string; size?: number }> = ({ className, size = 10 }) => (
   <LucideSparkles className={className} width={size} height={size} stroke="currentColor" aria-hidden="true" />
 );
@@ -32,52 +30,10 @@ function isChatCapableModel(model: RemoteModelConfig): boolean {
   return model.enabled && Array.isArray(model.capabilities) && model.capabilities.includes('text_chat');
 }
 
-export function normalizeSelectedModelId(
-  selectedModelId: string | null | undefined,
-  catalog: RemoteModelCatalog | null,
-): string {
+export function normalizeSelectedModelId(selectedModelId: string | null | undefined): string {
   const value = selectedModelId?.trim();
-  if (!value || value === 'auto' || value === 'default') return 'auto';
-  if (value === 'primary' || value === 'fast') {
-    const defaultId = value === 'primary'
-      ? catalog?.default_models?.primary
-      : catalog?.default_models?.fast;
-    return defaultId && resolveModelSelection(defaultId, catalog) ? value : 'auto';
-  }
-  return resolveModelSelection(value, catalog) ? value : 'auto';
-}
-
-export function loadLastSelectedModelId(): string | null {
-  if (typeof window === 'undefined') return null;
-  const value = window.localStorage.getItem(MOBILE_LAST_SELECTED_MODEL_ID_KEY)?.trim();
-  return value || null;
-}
-
-export function persistLastSelectedModelId(modelId: string): void {
-  if (typeof window === 'undefined') return;
-  const value = modelId.trim();
-  if (!value) {
-    window.localStorage.removeItem(MOBILE_LAST_SELECTED_MODEL_ID_KEY);
-    return;
-  }
-  window.localStorage.setItem(MOBILE_LAST_SELECTED_MODEL_ID_KEY, value);
-}
-
-export function resolvePreferredModelSelection(
-  preferredModelId: string | null,
-  catalog: RemoteModelCatalog | null,
-): { modelId: string | null; fellBackToAuto: boolean } {
-  const value = preferredModelId?.trim();
-  if (!value) {
-    return { modelId: null, fellBackToAuto: false };
-  }
-
-  const normalizedModelId = normalizeSelectedModelId(value, catalog);
-  const fellBackToAuto = normalizedModelId === 'auto' && value !== 'auto' && value !== 'default';
-  return {
-    modelId: normalizedModelId,
-    fellBackToAuto,
-  };
+  // Keep unavailable references intact; a display fallback must not become a write.
+  return !value || value === 'auto' || value === 'default' ? 'auto' : value;
 }
 
 function resolveModelSelection(
@@ -85,14 +41,14 @@ function resolveModelSelection(
   catalog: RemoteModelCatalog | null,
 ): RemoteModelConfig | null {
   if (!catalog) return null;
-  return catalog.models.find(model => model.id === modelId) || null;
+  return catalog.models.find(model => model.id === modelId && isChatCapableModel(model)) || null;
 }
 
 function resolveConcreteModelSelection(
   modelId: string,
   catalog: RemoteModelCatalog | null,
 ): RemoteModelConfig | null {
-  const normalizedModelId = normalizeSelectedModelId(modelId, catalog);
+  const normalizedModelId = normalizeSelectedModelId(modelId);
   if (normalizedModelId === 'auto' || normalizedModelId === 'primary') {
     return resolveModelSelection(catalog?.default_models?.primary || '', catalog);
   }
@@ -139,8 +95,8 @@ function getSelectedModelInfo(
     return {
       label: resolved
         ? (selectedModelId === 'primary' ? t('chat.modelPrimary') : t('chat.modelFast'))
-        : t('chat.modelAuto'),
-      meta: buildModelProviderMeta(resolved) || t('chat.modelAutoDesc'),
+        : t('chat.modelUnavailable'),
+      meta: buildModelProviderMeta(resolved) || selectedModelId,
       enableThinking: resolved?.reasoning?.status === 'known',
     };
   }
@@ -148,8 +104,8 @@ function getSelectedModelInfo(
   const resolved = resolveModelSelection(selectedModelId, catalog);
   if (!resolved) {
     return {
-      label: t('chat.modelAuto'),
-      meta: t('chat.modelAutoDesc'),
+      label: t('chat.modelUnavailable'),
+      meta: selectedModelId,
       enableThinking: false,
     };
   }
@@ -174,8 +130,8 @@ export const ModelSelectorPill: React.FC<{
   const rootRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
   const normalizedSelectedModelId = useMemo(
-    () => normalizeSelectedModelId(selectedModelId, catalog),
-    [catalog, selectedModelId],
+    () => normalizeSelectedModelId(selectedModelId),
+    [selectedModelId],
   );
 
   const availableModels = useMemo(

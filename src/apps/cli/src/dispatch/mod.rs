@@ -724,6 +724,8 @@ async fn inspect_model_readiness() -> Result<ModelReadiness> {
                 default_models: Default::default(),
                 models_dev_reasoning_catalog: None,
                 reasoning_preset_selection_supported: true,
+                session_model_write_fence_supported: false,
+                session_model_write_token: None,
                 session_model_id: None,
                 session_reasoning_preset: None,
             });
