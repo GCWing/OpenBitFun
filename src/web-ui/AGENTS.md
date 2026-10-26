@@ -172,6 +172,15 @@ also run the focused state contracts:
 pnpm --dir src/web-ui run test:run src/app/services/sessionSceneLifecycle.test.ts src/flow_chat/services/sessionActivation.test.ts src/flow_chat/services/storeSync.test.ts src/app/stores/sceneStore.test.ts
 ```
 
+For composer mode restoration, passive synchronization, or explicit mode selection:
+
+```bash
+pnpm --dir src/web-ui run test:run src/flow_chat/hooks/useChatInputModeSync.test.tsx src/flow_chat/hooks/useSessionModeSelection.test.tsx src/flow_chat/utils/chatInputMode.test.ts
+```
+
+These state/hook fixtures cover delayed session loading and selected peer-surface
+replacement; they do not establish native rendering or live remote behavior.
+
 For cross-device undo/redo/rollback history invalidation and settled-Turn fences,
 run `pnpm --dir src/web-ui run test:run src/flow_chat/services/flow-chat-manager/EventHandlerModule.test.ts`.
 Missing fence identities (including legacy payloads) must reload authoritative
