@@ -708,6 +708,8 @@ export interface QueuedComposerDraft {
 }
 
 export interface QueuedMessage {
+  /** Reserved execution identity; absent in older persisted queues. */
+  turnId?: string;
   id: string;
   sessionId: string;
   /** Rendered content sent to the model (may equal `displayMessage`). */

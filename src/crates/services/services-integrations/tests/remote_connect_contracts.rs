@@ -1009,6 +1009,7 @@ impl RemoteCancelRuntimeHost for RecordingCancelHost {
 
 #[derive(Default)]
 struct RecordingCommandHost {
+    plan_language: Option<String>,
     events: Mutex<Vec<String>>,
     submitted_dialog: Mutex<Option<RemoteDialogSubmissionRequest<String>>>,
     steered_dialog: Mutex<Option<RemoteDialogSteerRequest<String>>>,
@@ -1050,6 +1051,10 @@ impl RecordingCommandHost {
 #[async_trait::async_trait]
 impl RemoteCommandRuntimeHost for RecordingCommandHost {
     type ImageContext = String;
+
+    async fn plan_build_language(&self) -> Option<String> {
+        self.plan_language.clone()
+    }
 
     async fn handle_workspace_command(&self, _command: &RemoteCommand) -> RemoteResponse {
         self.events.lock().unwrap().push("workspace".to_string());
@@ -1220,7 +1225,10 @@ async fn remote_connect_command_owner_routes_send_message_and_prefers_explicit_i
 
 #[tokio::test]
 async fn remote_connect_command_owner_builds_a_projected_plan_with_hidden_execution_copy() {
-    let host = RecordingCommandHost::default();
+    let host = RecordingCommandHost {
+        plan_language: Some("Simplified Chinese (zh-CN)".into()),
+        ..Default::default()
+    };
     let response = handle_remote_command(
         &host,
         &RemoteCommand::BuildPlan {
@@ -1243,13 +1251,31 @@ async fn remote_connect_command_owner_builds_a_projected_plan_with_hidden_execut
     let submitted = host.submitted_dialog();
     assert_eq!(
         submitted.content,
-        remote_plan_build_content("/repo/.openbitfun/plans/mobile.plan.md")
+        remote_plan_build_content(
+            "/repo/.openbitfun/plans/mobile.plan.md",
+            host.plan_language.as_deref(),
+        )
     );
+    assert!(submitted
+        .content
+        .contains("Language Preference: Use Simplified Chinese (zh-CN)"));
+    assert!(!submitted.content.contains("TodoWrite"));
+    assert!(!submitted.content.contains("todo IDs"));
     assert_eq!(
         submitted.display_content.as_deref(),
         Some("Build Plan: Mobile plan")
     );
     assert!(submitted.image_contexts.is_empty());
+}
+
+#[test]
+fn remote_plan_build_without_host_language_defers_to_system_preference() {
+    let prompt = remote_plan_build_content("/repo/example.plan.md", None);
+    assert!(
+        prompt.contains("Use the language specified by the system prompt's Language Preference")
+    );
+    assert!(prompt.contains("unless the user explicitly requests another language"));
+    assert!(prompt.is_ascii());
 }
 
 #[test]

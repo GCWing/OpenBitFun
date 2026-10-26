@@ -3153,6 +3153,12 @@ pub enum RemoteResponse {
 pub trait RemoteCommandRuntimeHost: Send + Sync {
     type ImageContext: Send + Sync + 'static;
 
+    /// Model-facing language name from the product host's current app setting.
+    /// Hosts without this setting defer to the session's system prompt.
+    async fn plan_build_language(&self) -> Option<String> {
+        None
+    }
+
     async fn handle_workspace_command(&self, command: &RemoteCommand) -> RemoteResponse;
     async fn handle_session_command(&self, command: &RemoteCommand) -> RemoteResponse;
     async fn handle_poll_command(&self, command: &RemoteCommand) -> RemoteResponse;
@@ -3290,10 +3296,11 @@ where
                 };
             }
             info!("Remote build_plan: session={session_id}");
+            let language = host.plan_build_language().await;
             remote_dialog_submit_response(
                 host.submit_dialog(RemoteDialogSubmissionRequest {
                     session_id: session_id.clone(),
-                    content: remote_plan_build_content(plan_file_path),
+                    content: remote_plan_build_content(plan_file_path, language.as_deref()),
                     display_content: Some(remote_plan_build_display(
                         plan_name.as_deref(),
                         plan_file_path,
@@ -3461,9 +3468,11 @@ fn remote_plan_name_from_path(path: &str) -> String {
         .to_string()
 }
 
-pub fn remote_plan_build_content(plan_file_path: &str) -> String {
+pub fn remote_plan_build_content(plan_file_path: &str, language: Option<&str>) -> String {
+    let language =
+        language.unwrap_or("the language specified by the system prompt's Language Preference");
     format!(
-        "Implement the plan at `{plan_file_path}`.\n\nRead the plan file before making changes and treat it as the source of truth. Do not edit the plan file directly. Track progress with TodoWrite using the existing todo IDs from the plan frontmatter; do not rename or invent IDs. Start with the first pending todo and continue until all todos are completed."
+        "Implement the plan at `{plan_file_path}`.\n\nRead the plan file before making changes and treat it as the source of truth. Implement the plan and verify the result. Do not edit the plan file unless the user requests a plan revision.\n\nLanguage Preference: Use {language} for all user-facing communication, including progress updates and the final response, unless the user explicitly requests another language. The language of these instructions or the plan file does not override this preference."
     )
 }
 

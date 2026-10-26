@@ -363,7 +363,7 @@ async function sendMessageInternal(
           const accepted = await queue.submit({ content: message, displayContent: displayMessage,
             agentType: agentType?.trim() || session.mode || 'Standard',
             attachments: queueImageAttachments(options?.imageContexts), metadata: options?.userMessageMetadata ?? {} },
-            { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts, imageDisplayData: options?.imageDisplayData });
+            { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts, imageDisplayData: options?.imageDisplayData }, options?.turnId);
           surfaceScopeAtSend.assertCurrent('accept queued message');
           if (options?.sendImmediately) {
             await promoteAcceptedHostMessage(queue, accepted);
@@ -393,6 +393,7 @@ async function sendMessageInternal(
       try {
         const item = pendingQueueManager.enqueue({
           sessionId,
+          turnId: options?.turnId,
           content: message,
           displayMessage,
           agentType,
@@ -806,6 +807,7 @@ export async function drainPendingQueue(
               mimeType?: string;
             }>
           | undefined,
+        turnId: next.turnId,
         pendingQueueDraft: next.composerDraft,
         userMessageMetadata: next.userMessageMetadata,
         bypassPendingQueue: true,
