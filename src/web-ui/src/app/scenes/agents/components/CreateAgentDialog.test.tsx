@@ -47,6 +47,7 @@ const tools = [
   { name: 'Read', description: 'Read files', is_readonly: true },
   { name: 'Write', description: 'Write files', is_readonly: false },
   { name: 'WebFetch', description: 'Fetch pages', is_readonly: true },
+  { name: 'mcp__github__list_issues', description: 'List GitHub issues', is_readonly: true },
 ];
 let container: HTMLDivElement;
 let root: Root;
@@ -143,6 +144,8 @@ describe('guided agent creation', () => {
     await submit();
     expect(mocks.create).not.toHaveBeenCalled();
     expect(dialog().querySelector('[data-testid="custom-agent-tool-groups"]')).not.toBeNull();
+    expect(dialog().querySelector('.tool-group-picker__sections')).not.toBeNull();
+    expect(dialog().querySelector('input[aria-label^="mcp__github__list_issues"]')).toBeNull();
     const write = dialog().querySelector<HTMLInputElement>('input[aria-label^="Write"]')!;
     expect(write.checked).toBe(true);
     act(() => write.click());

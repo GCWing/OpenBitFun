@@ -17,6 +17,7 @@ import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext'
 import { useNotification } from '@/shared/notification-system';
 import { isUserSelectableToolName } from '@/shared/utils/toolVisibility';
 import { useAgentsStore } from '../agentsStore';
+import { isAgentProfileConfigurableToolName } from '../agentToolVisibility';
 import {
   filterToolsForReviewMode,
   normalizeReviewModeState,
@@ -356,7 +357,8 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
   );
 
   const selectableTools = useMemo(
-    () => filterToolsForReviewMode(toolInfos, kind === 'subagent' && review),
+    () => filterToolsForReviewMode(toolInfos, kind === 'subagent' && review)
+      .filter((tool) => isAgentProfileConfigurableToolName(tool.name)),
     [kind, review, toolInfos],
   );
   const selectableGroupTools = useMemo(() => selectableTools.map((tool) => ({
@@ -366,13 +368,18 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
     needs_permissions: tool.needsPermissions,
     dynamic_info: tool.dynamicInfo,
   })), [selectableTools]);
-  const managementGroupTools = useMemo(() => toolInfos.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    is_readonly: tool.isReadonly,
-    needs_permissions: tool.needsPermissions,
-    dynamic_info: tool.dynamicInfo,
-  })), [toolInfos]);
+  const managementGroupTools = useMemo(
+    () => toolInfos
+      .filter((tool) => isAgentProfileConfigurableToolName(tool.name))
+      .map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        is_readonly: tool.isReadonly,
+        needs_permissions: tool.needsPermissions,
+        dynamic_info: tool.dynamicInfo,
+      })),
+    [toolInfos],
+  );
 
   const contextSectionLabels: Record<UserContextSection, string> = {
     workspace_context: t('agentsOverview.form.contextWorkspaceContext'),
