@@ -6279,6 +6279,17 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .session_manager
             .get_session(session_id)
             .ok_or_else(|| OpenBitFunError::NotFound(format!("Session not found: {session_id}")))?;
+        // Queueing and live steering must reject an oversized user attachment
+        // batch while the sender still owns it. Do not guess unresolved defaults;
+        // a selected pool has a common limit independent of its current member.
+        if let Some(ai_config) = SessionManager::load_ai_config_for_model_resolution().await {
+            Self::validate_input_image_count(
+                &ai_config,
+                session.config.model_id.as_deref(),
+                Self::input_image_pool_id(&session.config),
+                images.len(),
+            )?;
+        }
         let workspace = Self::build_workspace_binding(&session.config).await;
         let context =
             crate::agentic::tools::framework::ToolUseContext::for_tool_listing(workspace, None);
@@ -6286,6 +6297,83 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             images, &context,
         )
         .await
+    }
+
+    fn input_image_pool_id(config: &SessionConfig) -> Option<&str> {
+        if config.model_binding_policy != SessionModelBindingPolicy::Pool {
+            return None;
+        }
+        config.model_pool_id.as_deref().or_else(|| {
+            config
+                .model_pool_binding
+                .as_ref()
+                .map(|binding| binding.pool_id.as_str())
+        })
+    }
+
+    fn validate_input_image_count(
+        ai_config: &AIConfig,
+        resolved_model_id: Option<&str>,
+        pool_id: Option<&str>,
+        image_count: usize,
+    ) -> OpenBitFunResult<()> {
+        let roots: Vec<_> = if let Some(pool_id) = pool_id {
+            let pool = ai_config
+                .model_pools
+                .get(pool_id)
+                .map_err(OpenBitFunError::validation)?;
+            ai_config
+                .models
+                .iter()
+                .filter(|model| pool.member_model_ids.contains(&model.id))
+                .collect()
+        } else {
+            ai_config
+                .models
+                .iter()
+                .filter(|model| Some(model.id.as_str()) == resolved_model_id)
+                .collect()
+        };
+        // The complete new user batch must fit every native-image destination
+        // that the turn may use. Health and cooldown never widen this budget.
+        let mut limiting_model = None;
+        for root in roots
+            .into_iter()
+            .filter(|model| model.enabled && model.supports_text_generation())
+        {
+            let route = root.channel_routing.as_ref();
+            for candidate in ai_config.models.iter().filter(|candidate| {
+                candidate.enabled
+                    && candidate.supports_text_generation()
+                    && candidate.supports_image_understanding()
+            }) {
+                let selected = match route.and_then(|route| route.manual_channel.as_deref()) {
+                    Some(manual) => candidate.id == manual,
+                    None => {
+                        candidate.id == root.id
+                            || route.is_some_and(|route| {
+                                route.fallback_model_ids.contains(&candidate.id)
+                            })
+                    }
+                };
+                if selected {
+                    if let Some(limit) = candidate.max_images_per_request {
+                        if limiting_model.is_none_or(|(_, current)| limit < current) {
+                            limiting_model = Some((candidate, limit));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some((model, limit)) = limiting_model {
+            if image_count > limit {
+                return Err(OpenBitFunError::validation(format!(
+                    "Too many images attached for model '{}': {} > {}. Send no more than {} images at a time.",
+                    model.name, image_count, limit, limit
+                )));
+            }
+        }
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -6802,6 +6890,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             let ai_config: crate::service::config::types::AIConfig =
                 config_service.get_config(Some("ai")).await?;
             image_requirement.validate(&ai_config, &resolved_model_id)?;
+            Self::validate_input_image_count(
+                &ai_config,
+                Some(&resolved_model_id),
+                Self::input_image_pool_id(&session.config),
+                image_contexts.as_ref().map_or(0, Vec::len),
+            )?;
         }
         let reasoning_preset = self
             .session_manager
@@ -16327,6 +16421,229 @@ pub(crate) mod tests {
     use openbitfun_runtime_services::test_support::FakeRuntimePort;
     use openbitfun_services_core::permission_store::ProjectPermissionSqliteStore;
     use std::path::Path;
+
+    #[test]
+    fn input_image_count_admission_ignores_stale_pool_pointers_for_fixed_models() {
+        let mut config = SessionConfig {
+            model_id: Some("fixed-vision".into()),
+            model_pool_id: Some("stale-pool".into()),
+            model_pool_binding: Some(openbitfun_core_types::model_pool::ModelPoolBinding {
+                pool_id: "bound-pool".into(),
+                model_id: "previous-member".into(),
+                configuration_fingerprint: String::new(),
+                generation: 0,
+            }),
+            ..Default::default()
+        };
+        for policy in [
+            SessionModelBindingPolicy::Mutable,
+            SessionModelBindingPolicy::ApprovedImmutable,
+        ] {
+            config.model_binding_policy = policy;
+            assert_eq!(ConversationCoordinator::input_image_pool_id(&config), None);
+        }
+        config.model_binding_policy = SessionModelBindingPolicy::Pool;
+        assert_eq!(
+            ConversationCoordinator::input_image_pool_id(&config),
+            Some("stale-pool")
+        );
+        config.model_pool_id = None;
+        assert_eq!(
+            ConversationCoordinator::input_image_pool_id(&config),
+            Some("bound-pool")
+        );
+    }
+
+    #[test]
+    fn input_image_count_admission_uses_the_resolved_native_model_limit() {
+        use crate::service::config::types::{AIConfig, AIModelConfig, ModelCapability};
+
+        let mut config = AIConfig {
+            models: vec![AIModelConfig {
+                id: "limited-vision".into(),
+                name: "Limited vision".into(),
+                enabled: true,
+                capabilities: vec![
+                    ModelCapability::TextChat,
+                    ModelCapability::ImageUnderstanding,
+                ],
+                max_images_per_request: Some(3),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("limited-vision"),
+            None,
+            3,
+        )
+        .expect("the entire user batch fits");
+        let error = ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("limited-vision"),
+            None,
+            4,
+        )
+        .expect_err("a user batch must not be silently truncated");
+        assert!(matches!(error, OpenBitFunError::Validation(message) if message.contains("4 > 3")));
+
+        config.models[0].max_images_per_request = None;
+        ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("limited-vision"),
+            None,
+            20,
+        )
+        .expect("legacy models retain their existing behavior");
+        config.models[0].max_images_per_request = Some(3);
+        config.models[0].capabilities = vec![ModelCapability::TextChat];
+        ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("limited-vision"),
+            None,
+            4,
+        )
+        .expect("text-only models receive analyze_image paths instead of a pixel batch");
+    }
+
+    fn image_admission_model(
+        id: &str,
+        limit: Option<usize>,
+    ) -> crate::service::config::types::AIModelConfig {
+        use crate::service::config::types::{AIModelConfig, ModelCapability};
+        AIModelConfig {
+            id: id.into(),
+            name: id.into(),
+            enabled: true,
+            capabilities: vec![
+                ModelCapability::TextChat,
+                ModelCapability::ImageUnderstanding,
+            ],
+            max_images_per_request: limit,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn input_image_count_admission_uses_all_automatic_channels_but_only_the_manual_channel() {
+        use crate::service::config::types::AIConfig;
+        use openbitfun_config_contracts::channel_routing::ModelChannelRouting;
+        let mut primary = image_admission_model("primary-vision", Some(5));
+        primary.channel_routing = Some(ModelChannelRouting {
+            fallback_model_ids: vec!["backup-vision".into(), "legacy-vision".into()],
+            ..Default::default()
+        });
+        let mut config = AIConfig {
+            models: vec![
+                primary,
+                image_admission_model("backup-vision", Some(3)),
+                image_admission_model("legacy-vision", None),
+            ],
+            ..Default::default()
+        };
+        let error = ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("primary-vision"),
+            None,
+            5,
+        )
+        .expect_err("new user pixels must survive a later fallback");
+        assert!(matches!(error, OpenBitFunError::Validation(message) if message.contains("5 > 3")));
+        ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("primary-vision"),
+            None,
+            3,
+        )
+        .unwrap();
+
+        config.models[0]
+            .channel_routing
+            .as_mut()
+            .unwrap()
+            .manual_channel = Some("primary-vision".into());
+        ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("primary-vision"),
+            None,
+            5,
+        )
+        .expect("manual channels do not spill to the smaller backup");
+        config.models[1].max_images_per_request = Some(6);
+        config.models[0]
+            .channel_routing
+            .as_mut()
+            .unwrap()
+            .manual_channel = Some("backup-vision".into());
+        ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("primary-vision"),
+            None,
+            6,
+        )
+        .expect("an unselected primary cannot restrict the manual backup");
+    }
+
+    #[test]
+    fn input_image_count_admission_uses_the_pool_and_member_channel_common_budget() {
+        use crate::service::config::types::{AIConfig, ModelCapability};
+        use openbitfun_config_contracts::channel_routing::ModelChannelRouting;
+        let mut disabled = image_admission_model("disabled", Some(1));
+        disabled.enabled = false;
+        disabled.channel_routing = Some(ModelChannelRouting {
+            fallback_model_ids: vec!["unrelated-vision".into()],
+            ..Default::default()
+        });
+        let mut text_only = image_admission_model("text-only", Some(1));
+        text_only.capabilities = vec![ModelCapability::TextChat];
+        let mut config = AIConfig {
+            models: vec![
+                image_admission_model("large-vision", Some(5)),
+                image_admission_model("small-vision", Some(3)),
+                image_admission_model("legacy-vision", None),
+                disabled,
+                text_only,
+                image_admission_model("unrelated-vision", Some(1)),
+                image_admission_model("member-backup", Some(2)),
+            ],
+            ..Default::default()
+        };
+        config.model_pools.pools.push(serde_json::json!({
+            "id": "vision-pool", "name": "Vision pool", "strategy": "balanced",
+            "member_model_ids": ["large-vision", "small-vision", "legacy-vision", "disabled", "text-only"]
+        }));
+        let error = ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("large-vision"),
+            Some("vision-pool"),
+            5,
+        )
+        .expect_err("the first selected member cannot widen the pool budget");
+        assert!(matches!(error, OpenBitFunError::Validation(message) if message.contains("5 > 3")));
+        ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("large-vision"),
+            Some("vision-pool"),
+            3,
+        )
+        .expect("disabled, unrelated, text-only and unspecified limits do not tighten the pool");
+        ConversationCoordinator::validate_input_image_count(&config, None, Some("vision-pool"), 3)
+            .expect("queue and steering admission need no current pool member");
+
+        config.models[0].channel_routing = Some(ModelChannelRouting {
+            fallback_model_ids: vec!["member-backup".into()],
+            ..Default::default()
+        });
+        let error = ConversationCoordinator::validate_input_image_count(
+            &config,
+            Some("small-vision"),
+            Some("vision-pool"),
+            3,
+        )
+        .expect_err("every enabled member's fallback also participates in the common budget");
+        assert!(matches!(error, OpenBitFunError::Validation(message) if message.contains("3 > 2")));
+    }
 
     #[test]
     fn interrupted_turn_intent_commit_wins_over_timeout_revocation() {

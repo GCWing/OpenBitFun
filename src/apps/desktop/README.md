@@ -714,6 +714,24 @@ scheduled-job and desktop-result notifications are unavailable there. Ordinary
 WeChat-initiated requests keep their existing cross-device reply path. This feature
 does not add cross-host Peer Device or Detached Dispatch result delivery.
 
+## Image input limits
+
+For a vision model that accepts only a limited number of images, set **Images
+per request** in its model settings (for example, `3`). Leave it empty to
+keep the existing image-history behavior. The saved model field is
+`max_images_per_request`; it limits input images, including user attachments,
+retained history, and tool results, rather than generated images.
+
+User submissions above the configured limit are rejected before entering the
+conversation. Pools and channel routes use the smallest configured limit among
+their enabled vision models when admitting new attachments, so fallback models
+can accept the same batch. Each model request keeps the newest image-bearing
+messages within that limit and includes an omission notice for pixels left out. The Agent can
+read omitted files again in smaller batches; the original conversation is retained.
+Plain text continuation also applies the limit, including to old tool-image history.
+Each selected model or fallback channel uses its own limit at the executing host;
+older hosts must be upgraded to enforce this optional setting.
+
 ## Model pools
 
 In **Settings → AI models → Model pools**, create named pools from existing model

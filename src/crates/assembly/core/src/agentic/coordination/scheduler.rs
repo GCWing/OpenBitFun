@@ -553,16 +553,17 @@ impl DialogScheduler {
         display_content: Option<String>,
         mut attachments: Vec<AgentInputAttachment>,
         metadata: serde_json::Map<String, serde_json::Value>,
-    ) -> Result<DialogSteerOutcome, String> {
+    ) -> PortResult<DialogSteerOutcome> {
         if content.trim().is_empty() && attachments.is_empty() {
-            return Err("Steering content cannot be empty".to_string());
+            return Err(PortError::new(
+                PortErrorKind::InvalidRequest,
+                "Steering content cannot be empty",
+            ));
         }
         // Reject a malformed attachment here rather than at the round boundary:
         // the caller is still holding the user's message and can surface the
         // failure, whereas the injection consumer would have to drop it.
-        let mut images = agent_dialog_turn_image_contexts(&attachments)
-            .map_err(|error| error.to_string())?
-            .unwrap_or_default();
+        let mut images = agent_dialog_turn_image_contexts(&attachments)?.unwrap_or_default();
         let _operation_guard = self.lock_session_operation(&session_id).await;
         let active_turn_id = match self
             .session_manager
@@ -584,7 +585,7 @@ impl DialogScheduler {
             self.coordinator
                 .prepare_input_images(&session_id, &mut images)
                 .await
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| SchedulerSubmitError::Core(error).into_port_error())?;
             for (attachment, image) in attachments.iter_mut().zip(&images) {
                 if let Some(path) = &image.image_path {
                     attachment
@@ -614,14 +615,15 @@ impl DialogScheduler {
                     "Steering rejected: target turn is not running: session_id={}, turn_id={}",
                     session_id, turn_id
                 );
-                Err(error)
+                Err(PortError::new(PortErrorKind::SessionInUse, error))
             }
             DialogSteeringAction::Buffer {
                 mut injection,
                 outcome,
             } => {
                 self.prepare_goal_steering(&session_id, &turn_id, &mut injection)
-                    .await?;
+                    .await
+                    .map_err(|error| PortError::new(PortErrorKind::SessionInUse, error))?;
                 self.round_injection_buffer.push(&session_id, injection);
                 let DialogSteerOutcome::Buffered { steering_id, .. } = &outcome;
                 info!(
@@ -3274,10 +3276,6 @@ impl AgentDialogTurnPort for DialogScheduler {
         &self,
         request: AgentDialogSteerRequest,
     ) -> PortResult<DialogSteerOutcome> {
-        // An empty-but-attachment-free message and a malformed attachment are
-        // both bad requests; only a live-turn mismatch means "session in use".
-        let invalid_request = request.content.trim().is_empty() && request.attachments.is_empty()
-            || agent_dialog_turn_image_contexts(&request.attachments).is_err();
         DialogScheduler::buffer_steering(
             self,
             request.session_id,
@@ -3288,16 +3286,6 @@ impl AgentDialogTurnPort for DialogScheduler {
             request.metadata,
         )
         .await
-        .map_err(|error| {
-            PortError::new(
-                if invalid_request {
-                    PortErrorKind::InvalidRequest
-                } else {
-                    PortErrorKind::SessionInUse
-                },
-                error,
-            )
-        })
     }
 
     async fn recover_interrupted_turn(
@@ -4988,7 +4976,7 @@ mod tests {
             .await
             .expect_err("stale processing state must not accept steering");
 
-        assert!(error.contains("no longer running"), "{error}");
+        assert!(error.message.contains("no longer running"), "{error}");
         assert!(scheduler
             .round_injection_monitor()
             .take_pending(session_id, turn_id)
@@ -5014,6 +5002,136 @@ mod tests {
         .expect_err("empty steering must fail");
 
         assert_eq!(error.kind, PortErrorKind::InvalidRequest);
+    }
+
+    #[tokio::test]
+    async fn input_image_count_rejection_preserves_context_and_allows_plain_continuation() {
+        use crate::service::config::types::ModelCapability;
+
+        for steer in [false, true] {
+            let (scheduler, sessions, _, root) = test_scheduler();
+            let session_id = "limited-image-input";
+            let workspace = fixture_workspace_dir(root.path().join("limited-image-input"));
+            sessions
+                .create_session_with_id(
+                    Some(session_id.into()),
+                    "Limited image input".into(),
+                    "Standard".into(),
+                    SessionConfig {
+                        workspace_path: Some(workspace.to_string_lossy().into_owned()),
+                        model_id: Some("limited-vision".into()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            sessions
+                .update_session_state(
+                    session_id,
+                    SessionState::Processing {
+                        current_turn_id: "active-turn".into(),
+                        phase: ProcessingPhase::Thinking,
+                    },
+                )
+                .await
+                .unwrap();
+            scheduler
+                .active_turns
+                .insert(session_id, desktop_active_turn("active-turn"));
+            let context_before =
+                serde_json::to_value(sessions.get_context_messages(session_id).await.unwrap())
+                    .unwrap();
+            let attachments = (0..4)
+                .map(|index| {
+                    AgentInputAttachment::image_context(
+                        format!("image-{index}"),
+                        Some(format!("/runtime/image-{index}.png")),
+                        None,
+                        "image/png",
+                        None,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let config = AIConfig {
+                models: vec![AIModelConfig {
+                    id: "limited-vision".into(),
+                    name: "Limited vision".into(),
+                    enabled: true,
+                    capabilities: vec![
+                        ModelCapability::TextChat,
+                        ModelCapability::ImageUnderstanding,
+                    ],
+                    max_images_per_request: Some(3),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            let turn_request = |attachments| AgentDialogTurnRequest {
+                session_id: session_id.into(),
+                message: "Continue".into(),
+                original_message: None,
+                turn_id: Some("next-turn".into()),
+                agent_type: "Standard".into(),
+                workspace_path: None,
+                workspace_id: None,
+                remote_connection_id: None,
+                remote_ssh_host: None,
+                policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::Cli),
+                execution: Default::default(),
+                output_schema: None,
+                reply_route: None,
+                prepended_reminders: Vec::new(),
+                attachments,
+                metadata: Default::default(),
+            };
+            let error = TEST_MODEL_RESOLUTION_AI_CONFIG
+                .scope(config, async {
+                    if steer {
+                        scheduler
+                            .steer_dialog_turn(AgentDialogSteerRequest {
+                                session_id: session_id.into(),
+                                turn_id: "active-turn".into(),
+                                content: "Compare these images".into(),
+                                display_content: None,
+                                attachments,
+                                metadata: Default::default(),
+                            })
+                            .await
+                            .expect_err("oversized steering must stay with its sender")
+                    } else {
+                        scheduler
+                            .submit_dialog_turn(turn_request(attachments))
+                            .await
+                            .expect_err("oversized input must not enter the queue")
+                    }
+                })
+                .await;
+            assert_eq!(error.kind, PortErrorKind::InvalidRequest);
+            assert!(error.message.contains("4 > 3"), "{error}");
+            assert_eq!(scheduler.queue_depth(session_id), 0);
+            assert_eq!(
+                scheduler.round_injection_buffer.pending_count(session_id),
+                0
+            );
+            assert_eq!(
+                serde_json::to_value(sessions.get_context_messages(session_id).await.unwrap())
+                    .unwrap(),
+                context_before,
+                "rejecting attachments must leave model history intact"
+            );
+            assert!(sessions
+                .get_session(session_id)
+                .unwrap()
+                .dialog_turn_ids
+                .is_empty());
+
+            let outcome = scheduler
+                .submit_dialog_turn(turn_request(Vec::new()))
+                .await
+                .expect("a plain continuation must remain admissible after rejection");
+            assert!(matches!(outcome, DialogSubmitOutcome::Queued { .. }));
+            assert_eq!(scheduler.queue_depth(session_id), 1);
+        }
     }
 
     #[tokio::test]

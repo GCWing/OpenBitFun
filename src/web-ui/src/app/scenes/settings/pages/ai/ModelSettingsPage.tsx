@@ -3034,6 +3034,30 @@ const ModelSettingsPage: React.FC = () => {
               {modelRoute?.request_url || resolveRequestUrl(editingConfig.base_url || '', manualFormat, draft.modelName)}
             </span>,
           )}
+          {renderModelField(
+            t('form.maxImagesPerRequest'),
+            <Input
+              aria-label={t('form.maxImagesPerRequest')}
+              data-testid="settings-model-image-limit"
+              type="number"
+              min={1}
+              step={1}
+              size="sm"
+              value={draft.requestSettings.max_images_per_request ?? ''}
+              onChange={event => {
+                const value = event.target.value;
+                const count = Number(value);
+                if (value === '' || (Number.isSafeInteger(count) && count > 0)) {
+                  setSelectedModelDrafts(drafts => updateModelEditorRequestSettings(
+                    drafts,
+                    { max_images_per_request: value === '' ? undefined : count },
+                    draft.key,
+                  ));
+                }
+              }}
+            />,
+            { hint: t('form.maxImagesPerRequestHint') },
+          )}
           <ModelTagsField
             key={draft.key}
             layout="row"

@@ -1515,6 +1515,33 @@ describe('ModelSelector provider levels', () => {
     });
   });
 
+  it('reports the narrowest image ceiling across a primary selection and its fallback', async () => {
+    const onAvailabilityChange = vi.fn();
+    vi.mocked(configManager.getConfigs).mockResolvedValue({
+      'ai.models': [{
+        ...model('limited-vision', 'Limited', 'provider-local', 'https://local.test/v1'),
+        capabilities: ['text_chat', 'image_understanding'],
+        max_images_per_request: 5,
+        channel_routing: { version: 1, fallback_model_ids: ['backup-vision'] },
+      }, {
+        ...model('backup-vision', 'Backup', 'provider-backup', 'https://backup.test/v1'),
+        capabilities: ['text_chat', 'image_understanding'],
+        max_images_per_request: 3,
+      }],
+      'ai.default_models': { primary: 'limited-vision' },
+      'ai.agent_model_selections': { mode: { kind: 'model', model_ref: 'primary' }, subagents: { default: { kind: 'model', model_ref: 'fast' }, builtin: {}, fork: { kind: 'inherit' } } },
+    });
+    await act(async () => {
+      root.render(<ModelSelector currentMode="Standard" onAvailabilityChange={onAvailabilityChange} />);
+      await Promise.resolve();
+    });
+    expect(onAvailabilityChange).toHaveBeenLastCalledWith({
+      status: 'ready',
+      canSend: true,
+      maxImagesPerRequest: 3,
+    });
+  });
+
   it('treats empty capabilities as the category default for legacy chat models', async () => {
     const onAvailabilityChange = vi.fn();
     vi.mocked(configManager.getConfigs).mockResolvedValue({

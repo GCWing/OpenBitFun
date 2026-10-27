@@ -19,6 +19,7 @@ import { modelSelectionsConfigPath, effectiveModelSelections, rememberModeSelect
 import { getRecentModelPool, setRecentModelPool, isSelectablePool, poolForModeSwitch } from '../utils/recentModelPool';
 import { modelPoolAPI, readableModelPools, supportsModelPools, supportsBtwModelPools, type ModelPoolDefinition, type ModelPoolMemberStatus } from '@/infrastructure/api/service-api/ModelPoolAPI';
 import { getModelPoolContextBudget } from '../utils/modelPoolContextBudget';
+import { modelSelectionImageLimit } from '../utils/modelImageBudget';
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 import {
   type AIModelCatalog,
@@ -107,6 +108,7 @@ export interface ExternalModelSelection {
 export interface ModelSelectorAvailability {
   status: ModelAvailabilityStatus;
   canSend: boolean;
+  maxImagesPerRequest?: number;
 }
 
 interface ModelSelectorProps {
@@ -999,9 +1001,11 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   const availablePoolModelIds = useMemo(() => new Set(availableModels.map(model => model.id)), [availableModels]);
   const canSelectPool = (pool: ModelPoolDefinition) => isSelectablePool(pool, availablePoolModelIds);
   const nativeAvailability = useMemo((): ModelSelectorAvailability => {
+    const imageLimit = modelSelectionImageLimit(allModels, nativeModelResolution.model, poolId ? selectedPool?.member_model_ids ?? [] : undefined);
+    const imageBudget = imageLimit === undefined ? {} : { maxImagesPerRequest: imageLimit };
     if (poolId) {
       const ready = poolSupported && !poolError && Boolean(selectedPool && isSelectablePool(selectedPool, availablePoolModelIds));
-      return { status: poolsLoading ? 'loading' : ready ? 'ready' : 'target-model-unavailable', canSend: ready };
+      return { status: poolsLoading ? 'loading' : ready ? 'ready' : 'target-model-unavailable', canSend: ready, ...imageBudget };
     }
     let status: ModelAvailabilityStatus;
     if (configLoadState === 'loading') {
@@ -1025,9 +1029,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     return {
       status,
       canSend: configLoadState === 'ready' && nativeModelResolution.model !== null,
+      ...imageBudget,
     };
   }, [
-    allModels.length,
+    allModels,
     availableModels.length,
     catalogLoadState,
     configLoadState,

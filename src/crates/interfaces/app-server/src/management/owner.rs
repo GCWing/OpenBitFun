@@ -441,6 +441,7 @@ fn model_from_mutation(
         api_key,
         context_window: mutation.context_window,
         max_tokens: mutation.max_tokens,
+        max_images_per_request: current.max_images_per_request,
         temperature: current.temperature,
         top_p: current.top_p,
         enabled: mutation.enabled,
@@ -1891,6 +1892,7 @@ mod tests {
     fn model_mutation_preserves_and_replaces_write_only_values() {
         let existing = openbitfun_core::service::config::AIModelConfig {
             api_key: "existing-key".to_string(),
+            max_images_per_request: Some(3),
             custom_headers: Some(HashMap::from([(
                 "Authorization".to_string(),
                 "existing-header".to_string(),
@@ -1908,6 +1910,7 @@ mod tests {
         let preserved = model_from_mutation(mutation(), Some(existing.clone()))
             .expect("preserve existing model secrets");
         assert_eq!(preserved.api_key, "existing-key");
+        assert_eq!(preserved.max_images_per_request, Some(3));
         assert_eq!(preserved.custom_headers, existing.custom_headers);
         assert_eq!(
             preserved.channel_routing, existing.channel_routing,
@@ -1926,6 +1929,7 @@ mod tests {
         let replaced =
             model_from_mutation(replacement, Some(existing)).expect("replace model secrets");
         assert_eq!(replaced.api_key, "new-key");
+        assert_eq!(replaced.max_images_per_request, Some(3));
         assert!(replaced.custom_headers.is_none());
         assert_eq!(replaced.custom_request_body.as_deref(), Some("new-body"));
         assert_eq!(replaced.channel_routing, original_route);

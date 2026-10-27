@@ -36,6 +36,12 @@ provider-neutral contracts owned by `openbitfun-agent-stream`.
   `cargo test --locked -p openbitfun-ai-adapters --lib providers::openai::chat::tests`.
 - Do not move provider-neutral stream DTOs, replay policy, or tool-call
   accumulation ownership back into this crate.
+- Optional model image-input ceilings are applied to outgoing message copies at
+  the shared AIClient send boundary, including single-attempt Responses calls.
+  Count user image parts and tool attachments together; preserve durable history,
+  tool-result identities, opaque tool text and non-image media. Newer messages
+  keep their pixels first, with explicit omission text for older pixels. Verify
+  with `cargo test --locked -p openbitfun-ai-adapters --lib client::image_budget::tests`.
 - Normalize explicitly reported response models into the typed stream
   `response_model` observation. Responses/Codex lifecycle metadata is emitted
   before an associated error, and Chat Completions model identifiers remain

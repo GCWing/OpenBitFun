@@ -287,6 +287,8 @@ export interface AIModelConfig {
   model_name: string;
   context_window?: number;
   max_tokens?: number;
+  /** Optional image input ceiling across history, attachments, and tool results. */
+  max_images_per_request?: number;
   temperature?: number;
   top_p?: number;
   enabled: boolean;

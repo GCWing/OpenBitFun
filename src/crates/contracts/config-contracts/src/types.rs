@@ -1821,6 +1821,10 @@ pub struct AIModelConfig {
     /// Optional advanced override for the request output limit. When absent,
     /// OpenBitFun derives a tiered limit from the context window at runtime.
     pub max_tokens: Option<u32>,
+    /// Optional image input ceiling across the complete request, including history
+    /// and tool results. Missing preserves the existing provider behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_images_per_request: Option<usize>,
     pub temperature: Option<f64>,
     pub top_p: Option<f64>,
     pub enabled: bool,
@@ -2310,6 +2314,7 @@ impl Default for AIModelConfig {
             api_key: String::new(),
             context_window: None,
             max_tokens: None,
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             enabled: false,

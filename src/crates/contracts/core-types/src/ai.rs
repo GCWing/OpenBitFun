@@ -637,6 +637,9 @@ pub struct AIConfig {
     pub format: String,
     pub context_window: u32,
     pub max_tokens: Option<u32>,
+    /// Optional host-side image input ceiling across the complete request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_images_per_request: Option<usize>,
     pub temperature: Option<f64>,
     pub top_p: Option<f64>,
     pub inline_think_in_text: bool,

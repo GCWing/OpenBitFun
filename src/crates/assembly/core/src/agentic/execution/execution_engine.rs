@@ -5607,6 +5607,136 @@ mod tests {
         assert_eq!(image_attachments.unwrap()[0].data_base64, pixels);
     }
 
+    #[tokio::test]
+    async fn configured_image_limit_recovers_legacy_tool_history_on_plain_continue() {
+        use crate::agentic::execution::round_executor::tests::{
+            retry_test_success, RetryTestServer,
+        };
+        use openbitfun_core_types::errors::{AiProviderError, ErrorCategory};
+
+        let server = RetryTestServer::new(vec![
+            (
+                400,
+                json!({"error": {"code": "invalid_request_error", "message": "At most 3 images per request"}}).to_string(),
+            ),
+            retry_test_success(),
+            retry_test_success(),
+        ]);
+        let image = crate::agentic::image_analysis::attachments::test_image();
+        let pixels = image
+            .data_url
+            .unwrap()
+            .split_once(',')
+            .unwrap()
+            .1
+            .to_owned();
+        let mut original = vec![Message::user("Inspect these files".into())];
+        for index in 0..4 {
+            let call = ToolCall {
+                tool_id: format!("view-{index}"),
+                tool_name: "view_image".into(),
+                arguments: json!({"path": format!("image-{index}.png")}),
+                raw_arguments: None,
+                is_error: false,
+                parse_error: None,
+                recovered_from_truncation: false,
+                repair_kind: Default::default(),
+            };
+            original.push(Message::assistant_with_tools(
+                String::new(),
+                vec![call.clone()],
+            ));
+            original.push(Message::tool_result(ToolResult {
+                tool_id: call.tool_id,
+                tool_name: "view_image".into(),
+                effective_tool_name: None,
+                result: json!({"path": format!("image-{index}.png")}),
+                result_for_assistant: Some("Image attached for model vision.".into()),
+                is_error: false,
+                duration_ms: None,
+                image_attachments: Some(vec![crate::util::types::ToolImageAttachment {
+                    mime_type: "image/png".into(),
+                    data_base64: pixels.clone(),
+                }]),
+            }));
+        }
+        // Restore a pre-existing context, including pixels from a failed turn.
+        let snapshot = serde_json::to_value(&original).unwrap();
+        let store = SessionContextStore::new();
+        store.add_messages(
+            "image-limit",
+            serde_json::from_value(snapshot.clone()).unwrap(),
+        );
+        let uncapped = server.client();
+        let mut capped = (*uncapped).clone();
+        capped.config.max_images_per_request = Some(3);
+
+        for attempt in 0..3 {
+            if attempt > 0 {
+                store.add_message("image-limit", Message::user("Continue".into()));
+            }
+            let messages = ExecutionEngine::build_ai_messages_for_send(
+                &store.get_context_messages("image-limit"),
+                "openai",
+                None,
+                None,
+                "continued-turn",
+                true,
+                &[],
+            )
+            .await
+            .unwrap();
+            let client = if attempt == 0 {
+                uncapped.as_ref()
+            } else {
+                &capped
+            };
+            let result = tokio::time::timeout(
+                Duration::from_secs(5),
+                client.send_message_once_with_trace_and_request_context(messages, None, None, None),
+            )
+            .await
+            .expect("image request must settle");
+            if attempt == 0 {
+                let error = result.expect_err("the uncapped request reproduces provider rejection");
+                assert_eq!(
+                    error.downcast_ref::<AiProviderError>().unwrap().category,
+                    ErrorCategory::InvalidRequest,
+                );
+            } else {
+                result.expect("plain continuation must fit the configured image limit");
+            }
+        }
+
+        let requests = server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        for (request, expected) in requests.iter().zip([4, 3, 3]) {
+            let images = request["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|message| message["content"].as_array())
+                .flatten()
+                .filter(|part| part["type"] == "image_url")
+                .count();
+            assert_eq!(images, expected, "{request}");
+            assert_eq!(
+                request["messages"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|message| message["role"] == "tool")
+                    .count(),
+                4
+            );
+        }
+        let preserved = store.get_context_messages("image-limit");
+        assert_eq!(
+            serde_json::to_value(&preserved[..original.len()]).unwrap(),
+            snapshot
+        );
+    }
+
     #[test]
     fn image_input_requirement_tracks_inherited_steered_and_retained_images() {
         use super::ImageInputRequirement as Requirement;

@@ -456,6 +456,7 @@ mod tests {
             format: "openai".into(),
             context_window: 4096,
             max_tokens: Some(32),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,

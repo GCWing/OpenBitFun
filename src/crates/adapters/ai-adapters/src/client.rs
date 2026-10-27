@@ -7,6 +7,7 @@
 pub(crate) mod format;
 pub(crate) mod healthcheck;
 pub(crate) mod http;
+mod image_budget;
 #[cfg(feature = "image-generation")]
 pub mod image_generation;
 pub(crate) mod quirks;
@@ -401,22 +402,6 @@ impl AIClient {
         trace: Option<ModelExchangeTraceConfig>,
     ) -> Result<StreamResponse> {
         let custom_body = self.config.custom_request_body.clone();
-        if matches!(
-            ApiFormat::parse(&self.config.format)?,
-            ApiFormat::OpenAIResponses
-        ) {
-            return openai::responses::send_stream(
-                self,
-                messages,
-                tools,
-                custom_body,
-                1,
-                trace,
-                request_context,
-            )
-            .await;
-        }
-
         self.send_message_stream_with_extra_body_and_max_attempts(
             messages,
             tools,
@@ -611,6 +596,10 @@ impl AIClient {
         trace: Option<ModelExchangeTraceConfig>,
         request_context: Option<ModelRequestContext>,
     ) -> Result<StreamResponse> {
+        // Project only the outgoing copy, against the actual selected client.
+        // Account/channel failover and direct analysis calls share this boundary.
+        let messages = image_budget::project(messages, self.config.max_images_per_request)?;
+        image_budget::validate_extra_body(self.config.max_images_per_request, extra_body.as_ref())?;
         match ApiFormat::parse(&self.config.format)? {
             ApiFormat::OpenAIChat => {
                 openai::chat::send_stream(
@@ -871,6 +860,7 @@ mod tests {
             format: format.to_string(),
             context_window: 128000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1335,6 +1325,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1368,6 +1359,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1400,6 +1392,7 @@ mod tests {
             format: "gemini".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: Some(0.2),
             top_p: Some(0.8),
             inline_think_in_text: false,
@@ -1482,6 +1475,7 @@ mod tests {
             format: "gemini".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1529,6 +1523,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1566,6 +1561,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1605,6 +1601,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1642,6 +1639,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1683,6 +1681,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1860,6 +1859,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128_000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1899,6 +1899,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1936,6 +1937,7 @@ mod tests {
             format: "responses".to_string(),
             context_window: 128000,
             max_tokens: Some(4096),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -1977,6 +1979,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2017,6 +2020,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2056,6 +2060,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2095,6 +2100,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2136,6 +2142,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2170,6 +2177,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2211,6 +2219,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2253,6 +2262,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2293,6 +2303,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2331,6 +2342,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2371,6 +2383,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 1_000_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2413,6 +2426,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(4000),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2451,6 +2465,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2485,6 +2500,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
@@ -2523,6 +2539,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,

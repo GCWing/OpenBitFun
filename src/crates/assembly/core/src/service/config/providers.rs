@@ -44,6 +44,8 @@ fn ai_validation_error_location(message: &str) -> (String, String) {
         Some(("context_window", "MODEL_CONTEXT_WINDOW_INVALID"))
     } else if message.contains("max_tokens") {
         Some(("max_tokens", "MODEL_MAX_TOKENS_INVALID"))
+    } else if message.contains("max_images_per_request") {
+        Some(("max_images_per_request", "MODEL_MAX_IMAGES_INVALID"))
     } else if message.contains("temperature") {
         Some(("temperature", "MODEL_TEMPERATURE_INVALID"))
     } else if message.contains("top_p") {
@@ -1041,6 +1043,25 @@ mod tests {
         assert_eq!(result.errors[0].path, "ai.models[0].context_window");
         assert_eq!(result.errors[0].code, "MODEL_CONTEXT_WINDOW_INVALID");
         assert_eq!(result.diagnostics[0].path, "ai.models[0].context_window");
+    }
+
+    #[tokio::test]
+    async fn registry_reports_image_budget_validation_path() {
+        let mut config = GlobalConfig::default();
+        config.ai.models.push(AIModelConfig {
+            id: "limited".into(),
+            name: "Limited vision".into(),
+            provider: "openai".into(),
+            enabled: true,
+            max_images_per_request: Some(0),
+            ..AIModelConfig::default()
+        });
+        let result = ConfigProviderRegistry::new()
+            .validate_config(&config)
+            .await
+            .unwrap();
+        assert_eq!(result.errors[0].path, "ai.models[0].max_images_per_request");
+        assert_eq!(result.errors[0].code, "MODEL_MAX_IMAGES_INVALID");
     }
 
     #[tokio::test]

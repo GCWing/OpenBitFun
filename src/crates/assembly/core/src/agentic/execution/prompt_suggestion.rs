@@ -713,6 +713,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 4096,
             max_tokens: Some(128),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,

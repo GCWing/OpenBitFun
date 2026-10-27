@@ -296,6 +296,16 @@ and coordinate metadata through the provider wire converters:
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,git,tools-computer-use --lib computer_use_pixels_and_geometry_reach_real_provider_wire
 ```
 
+For configured image limits, legacy tool-image history, plain continuation after
+a provider rejection, and user attachment admission:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib -- configured_image_limit input_image_count
+```
+
+These fixtures use an isolated loopback model and temporary session state. They
+do not exercise live providers, SSH, relay, peer, or detached dispatch transports.
+
 ## Background result delivery
 
 Portable decisions are owned by `openbitfun-agent-runtime::scheduler::result_delivery`;

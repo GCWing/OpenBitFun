@@ -173,6 +173,42 @@ describe('ModelSettingsPage loading and provider actions', () => {
     expect(configManager.getConfig).not.toHaveBeenCalled();
   });
 
+  it.each([undefined, 3])('saves and clears the per-model image ceiling (previous: %s)', async previous => {
+    const configured: AIModelConfig = {
+      ...model, api_key: 'fixture-key', context_window: 128_000,
+      max_images_per_request: previous,
+      capabilities: ['text_chat', 'image_understanding'],
+    };
+    const models = [configured];
+    const values: Record<string, unknown> = {
+      'ai.models': models, 'ai.default_models': { primary: configured.id },
+      'ai.proxy': { enabled: false, url: '', username: '', password: '' },
+      'ai.stream_idle_timeout_secs': 120, 'ai.stream_ttft_timeout_secs': 60,
+    };
+    vi.spyOn(configManager, 'hasCachedConfig').mockImplementation(path => path in values);
+    vi.spyOn(configManager, 'getCachedConfig').mockImplementation(<T,>(path: string) => values[path] as T);
+    const update = vi.spyOn(configManager, 'updateConfig').mockImplementation(
+      async <T,>(_path: string, transform: (current: T) => T) => transform(models as T),
+    );
+    vi.spyOn(aiApi, 'testAIConfigConnection').mockImplementation(() => new Promise(() => {}));
+    await act(async () => root.render(<ModelSettingsPage />));
+    await act(async () => container.querySelector<HTMLButtonElement>(
+      `[data-config-id="${configured.id}"] button[aria-label="${copy('actions.edit')}"]`,
+    )!.click());
+    const editor = document.querySelector<HTMLElement>('.openbitfun-model-settings__editor-dialog')!;
+    const input = editor.querySelector<HTMLInputElement>('[data-testid="settings-model-image-limit"]')!;
+    expect(input.value).toBe(previous === undefined ? '' : '3');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, previous === undefined ? '3' : '');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => editor.querySelector<HTMLButtonElement>('[data-testid="settings-model-save-btn"]')!.click());
+    expect(update).toHaveBeenCalledOnce();
+    const saved = await update.mock.results[0].value as AIModelConfig[];
+    expect(saved[0].max_images_per_request).toBe(previous === undefined ? 3 : undefined);
+    expect(saved[0].api_key).toBe(configured.api_key);
+  });
+
   it.each(['add', 'remove', 'reorder', 'manual'] as const)('protects a channel-only %s edit and saves its original model snapshot', async operation => {
     const primary: AIModelConfig = {
       ...model, api_key: 'fixture-key', context_window: 128_000, max_tokens: 8_000,

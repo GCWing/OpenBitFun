@@ -393,6 +393,8 @@
     "provider": "Request Format",
     "providerPlaceholder": "Select request format",
     "contextWindow": "Context Window Size",
+    "maxImagesPerRequest": "Images per request",
+    "maxImagesPerRequestHint": "Optional maximum image count, including conversation history and tool results. Leave blank to keep the existing behavior.",
     "contextWindowHint": "Determines when context is compacted; may be lower than the model's supported limit",
     "contextWindowLongWarning": "Context above 400K may reduce quality. Around 300K is recommended.",
     "maxTokens": "Max Output Tokens",

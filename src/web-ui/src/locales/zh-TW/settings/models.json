@@ -393,6 +393,8 @@
     "provider": "請求格式",
     "providerPlaceholder": "選擇請求格式",
     "contextWindow": "上下文視窗大小",
+    "maxImagesPerRequest": "每次請求圖片上限",
+    "maxImagesPerRequestHint": "可選的圖片張數上限，包含歷史訊息和工具結果。留空保留現有行為。",
     "contextWindowHint": "用於判斷何時壓縮上下文，可小於模型實際支援的上限",
     "contextWindowLongWarning": "上下文超過 400K，可能影響效果，建議約 300K。",
     "maxTokens": "最大輸出Tokens",

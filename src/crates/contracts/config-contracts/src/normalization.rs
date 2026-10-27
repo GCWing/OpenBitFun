@@ -4,6 +4,26 @@ use crate::types::{
 };
 use std::collections::HashSet;
 
+/// Custom wire messages bypass the host's image selection and cannot be mixed
+/// with a host-enforced image budget. Other request options remain editable.
+pub(crate) fn validate_image_budget_request_body(
+    max_images_per_request: Option<usize>,
+    body: Option<&serde_json::Value>,
+) -> Result<(), &'static str> {
+    if max_images_per_request.is_some()
+        && body
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(|body| {
+                ["messages", "input", "contents"]
+                    .iter()
+                    .any(|key| body.contains_key(*key))
+            })
+    {
+        return Err("custom_request_body cannot override messages, input, or contents when max_images_per_request is configured");
+    }
+    Ok(())
+}
+
 /// Provider-neutral model validation, shared by startup and offline import.
 pub fn validate_model_config(model: &crate::AIModelConfig, index: usize) -> Result<(), String> {
     if !model.supports_text_generation() {
@@ -23,6 +43,20 @@ pub fn validate_model_config(model: &crate::AIModelConfig, index: usize) -> Resu
     }
     if !model.enabled {
         return Ok(());
+    }
+    if model.max_images_per_request == Some(0) {
+        return Err(format!(
+            "Model '{}' max_images_per_request must be greater than 0 at index {index}",
+            model.name
+        ));
+    }
+    if model.max_images_per_request.is_some() {
+        let body = model
+            .custom_request_body
+            .as_deref()
+            .and_then(|body| serde_json::from_str::<serde_json::Value>(body).ok());
+        validate_image_budget_request_body(model.max_images_per_request, body.as_ref())
+            .map_err(|error| format!("Model '{}' {error} at index {index}", model.name))?;
     }
     if model.name.trim().is_empty() {
         return Err(format!("Model name is required at index {index}"));

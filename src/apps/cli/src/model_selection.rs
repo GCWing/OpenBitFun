@@ -95,6 +95,7 @@ pub(crate) fn model_from_mutation(
         api_key,
         context_window: mutation.context_window,
         max_tokens: mutation.max_tokens,
+        max_images_per_request: current.max_images_per_request,
         temperature: current.temperature,
         top_p: current.top_p,
         enabled: mutation.enabled,
@@ -198,12 +199,14 @@ mod tests {
         .unwrap();
         let existing = openbitfun_core::service::config::AIModelConfig {
             api_key: "synthetic-existing".into(),
+            max_images_per_request: Some(3),
             channel_routing: Some(serde_json::from_value(serde_json::json!({"version":1,"fallback_model_ids":["backup"],"manual_channel":"backup"})).unwrap()),
             ..Default::default()
         };
         let preserved = model_from_mutation(mutation, Some(existing.clone())).unwrap();
         assert_eq!(preserved.channel_routing, existing.channel_routing);
         assert_eq!(preserved.api_key, existing.api_key);
+        assert_eq!(preserved.max_images_per_request, Some(3));
         assert_eq!(preserved.name, "Edited");
     }
 
