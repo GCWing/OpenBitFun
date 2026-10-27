@@ -27,7 +27,6 @@ export function useConversationTimeline(sources: VirtualItem[], sessionId: strin
   const prewarmedTextsRef = useRef<WeakSet<object>>(new WeakSet());
   useEffect(() => {
     const seen = prewarmedTextsRef.current;
-    const cancel: Array<() => void> = [];
     const texts = new Set<string>();
     for (const source of sources) {
       const members = source.type === 'explore-group' ? source.data.allItems
@@ -36,13 +35,17 @@ export function useConversationTimeline(sources: VirtualItem[], sessionId: strin
       for (const member of members) {
         if (member.type !== 'text' || !('content' in member) || typeof member.content !== 'string') continue;
         if ('isStreaming' in member && member.isStreaming) continue;
+        if (member.content.length < 2000) continue;
         if (seen.has(member)) continue;
         seen.add(member);
-        if (member.content.length >= 2000) texts.add(member.content);
+        texts.add(member.content);
       }
     }
-    for (const text of texts) cancel.push(prewarmMarkdownParse(text));
-    return () => cancel.forEach(stop => stop());
+    // Members are complete, immutable text items, so their warmup remains
+    // useful even if this view unmounts or sources change. The cache and worker
+    // queue are bounded; cancelling here would make a later flush permanently
+    // skip a job that never completed.
+    for (const text of texts) prewarmMarkdownParse(text);
   }, [sources]);
   const items = useMemo(() => {
     // Reader mutations can change a projection while the source array is stable.

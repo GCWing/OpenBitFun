@@ -31,16 +31,17 @@ function resolveAttemptStreamKey(roundId: string, attemptId?: string, attemptInd
  */
 const NEWLINE_JOIN_OVERLAP_CHARS = 2;
 
-function coalesceNewlineRuns(content: string): string {
+/** Normalize a recovered/seeded stream buffer before incremental appends. */
+export function normalizeStreamContent(content: string): string {
   return content.replace(/\n{3,}/g, '\n\n');
 }
 
 function appendCoalescingNewlines(current: string, text: string): string {
-  if (!current) return coalesceNewlineRuns(text);
+  if (!current) return normalizeStreamContent(text);
   if (!text) return current;
   const splitAt = Math.min(current.length, NEWLINE_JOIN_OVERLAP_CHARS);
   return current.slice(0, current.length - splitAt)
-    + coalesceNewlineRuns(current.slice(current.length - splitAt) + text);
+    + normalizeStreamContent(current.slice(current.length - splitAt) + text);
 }
 
 function activeTextHasLaterRoundItem(
@@ -148,7 +149,7 @@ export function processNormalTextChunkInternal(
 
     if (reusableTextItem) {
       textItemId = reusableTextItem.id;
-      recoveredExistingContent = coalesceNewlineRuns(reusableTextItem.content || '');
+      recoveredExistingContent = normalizeStreamContent(reusableTextItem.content || '');
       sessionActiveTextItems.set(streamKey, textItemId);
       if (!sessionContentBuffer.has(streamKey) && recoveredExistingContent) {
         sessionContentBuffer.set(streamKey, recoveredExistingContent);
@@ -236,7 +237,7 @@ export function processThinkingChunkInternal(
 
     if (reusableThinkingItem) {
       thinkingItemId = reusableThinkingItem.id;
-      recoveredExistingContent = coalesceNewlineRuns(reusableThinkingItem.content || '');
+      recoveredExistingContent = normalizeStreamContent(reusableThinkingItem.content || '');
       sessionActiveTextItems.set(thinkingKey, thinkingItemId);
       if (!sessionContentBuffer.has(thinkingKey) && recoveredExistingContent) {
         sessionContentBuffer.set(thinkingKey, recoveredExistingContent);

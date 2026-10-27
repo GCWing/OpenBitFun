@@ -234,14 +234,13 @@ export class EventBatcher {
       payload
     }));
 
-    // Build the diagnostic payload only when trace output can reach a sink;
-    // otherwise every flush pays a full event map for a dropped log entry.
-    // `rawEventCount` stays 0 when skipped: the count is only consumed by the
-    // trace entry and the slow-flush warning below reports the duration.
+    // Build the detailed diagnostic payload only when trace output can reach a
+    // sink; the cheap source count is still needed by the slow-flush warning.
+    const rawEventCount = bufferedEvents.reduce((count, event) => count + event.sourceCount, 0);
     const logPayload = logger.getLevel() > LogLevel.TRACE
-      ? { rawEventCount: 0, mergedEventCount: bufferedEvents.length }
+      ? { rawEventCount, mergedEventCount: bufferedEvents.length }
       : getBatchedEventsLogPayload(bufferedEvents);
-    const { rawEventCount, mergedEventCount } = logPayload;
+    const mergedEventCount = logPayload.mergedEventCount;
 
     log.trace('Flushing batched events', logPayload);
 
