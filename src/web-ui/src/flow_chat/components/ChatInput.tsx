@@ -3156,7 +3156,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     return () => {
       globalEventBus.off('mcp-app:message', handleMcpAppMessage);
     };
-  }, [addContext, clearPendingLargePastes, conversationScope, currentImageCount, dispatchInput, maxImageCount]);
+  }, [addContext, clearPendingLargePastes, conversationScope, currentImageCount, dispatchInput, maxImageCount, t]);
 
   React.useEffect(() => {
     const handleInsertContextTag = (event: Event) => {
