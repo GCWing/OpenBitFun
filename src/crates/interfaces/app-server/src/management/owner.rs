@@ -441,7 +441,9 @@ fn model_from_mutation(
         api_key,
         context_window: mutation.context_window,
         max_tokens: mutation.max_tokens,
-        max_images_per_request: current.max_images_per_request,
+        max_images_per_request: mutation
+            .max_images_per_request
+            .unwrap_or(current.max_images_per_request),
         temperature: current.temperature,
         top_p: current.top_p,
         enabled: mutation.enabled,
@@ -1880,6 +1882,7 @@ mod tests {
             custom_request_body: Some(SecretUpdate::Preserve),
             context_window: Some(128_000),
             max_tokens: Some(8_192),
+            max_images_per_request: None,
             enabled: true,
             reasoning: None,
             inline_think_in_text: true,
@@ -1926,13 +1929,30 @@ mod tests {
         replacement.api_key = Some(SecretUpdate::Replace("new-key".to_string()));
         replacement.custom_headers = Some(SecretUpdate::Clear);
         replacement.custom_request_body = Some(SecretUpdate::Replace("new-body".to_string()));
-        let replaced =
-            model_from_mutation(replacement, Some(existing)).expect("replace model secrets");
+        let replaced = model_from_mutation(replacement, Some(existing.clone()))
+            .expect("replace model secrets");
         assert_eq!(replaced.api_key, "new-key");
         assert_eq!(replaced.max_images_per_request, Some(3));
         assert!(replaced.custom_headers.is_none());
         assert_eq!(replaced.custom_request_body.as_deref(), Some("new-body"));
         assert_eq!(replaced.channel_routing, original_route);
+
+        let mut limited = mutation();
+        limited.max_images_per_request = Some(Some(5));
+        let updated = model_from_mutation(limited, Some(existing)).expect("update image limit");
+        assert_eq!(updated.max_images_per_request, Some(5));
+
+        let mut cleared = mutation();
+        cleared.max_images_per_request = Some(None);
+        let cleared = model_from_mutation(
+            cleared,
+            Some(openbitfun_core::service::config::AIModelConfig {
+                max_images_per_request: Some(3),
+                ..Default::default()
+            }),
+        )
+        .expect("clear image limit");
+        assert_eq!(cleared.max_images_per_request, None);
     }
 
     #[test]
@@ -1990,6 +2010,7 @@ mod tests {
     fn model_summary_exposes_only_sorted_header_names() {
         let model = openbitfun_core::service::config::AIModelConfig {
             api_key: "secret-key".to_string(),
+            max_images_per_request: Some(3),
             custom_headers: Some(HashMap::from([
                 ("Z-Header".to_string(), "secret-z".to_string()),
                 ("A-Header".to_string(), "secret-a".to_string()),
@@ -1999,6 +2020,7 @@ mod tests {
 
         let summary = openbitfun_core::service::config::model_projection::model_summary(&model);
         assert!(summary.api_key_configured);
+        assert_eq!(summary.max_images_per_request, Some(3));
         assert_eq!(summary.custom_header_names, ["A-Header", "Z-Header"]);
         let debug = format!("{summary:?}");
         assert!(!debug.contains("secret-key"));

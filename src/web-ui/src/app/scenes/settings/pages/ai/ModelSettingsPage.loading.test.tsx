@@ -196,6 +196,12 @@ describe('ModelSettingsPage loading and provider actions', () => {
       `[data-config-id="${configured.id}"] button[aria-label="${copy('actions.edit')}"]`,
     )!.click());
     const editor = document.querySelector<HTMLElement>('.openbitfun-model-settings__editor-dialog')!;
+    const advancedSection = editor.querySelector<HTMLElement>('[data-testid="settings-model-advanced-toggle"]');
+    const advancedToggle = advancedSection?.querySelector<HTMLButtonElement>('button');
+    expect(advancedToggle).not.toBeNull();
+    if (advancedToggle?.getAttribute('aria-expanded') !== 'true') {
+      await act(async () => advancedToggle?.click());
+    }
     const input = editor.querySelector<HTMLInputElement>('[data-testid="settings-model-image-limit"]')!;
     expect(input.value).toBe(previous === undefined ? '' : '3');
     await act(async () => {

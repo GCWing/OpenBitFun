@@ -36,6 +36,8 @@ pub struct ModelSummary {
     pub context_window: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_images_per_request: Option<usize>,
     #[serde(default)]
     pub api_key_configured: bool,
     #[serde(default)]
@@ -78,6 +80,10 @@ pub struct ModelMutation {
     pub context_window: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
+    /// `None` means the caller omitted this field and an update should keep
+    /// the current value. `Some(None)` explicitly clears the limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_images_per_request: Option<Option<usize>>,
     #[serde(default)]
     pub enabled: bool,
     #[serde(default)]
@@ -110,6 +116,7 @@ impl std::fmt::Debug for ModelMutation {
             )
             .field("context_window", &self.context_window)
             .field("max_tokens", &self.max_tokens)
+            .field("max_images_per_request", &self.max_images_per_request)
             .field("enabled", &self.enabled)
             .finish()
     }

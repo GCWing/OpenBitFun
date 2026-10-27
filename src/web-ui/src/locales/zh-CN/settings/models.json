@@ -394,7 +394,7 @@
     "providerPlaceholder": "选择请求格式",
     "contextWindow": "上下文窗口大小",
     "maxImagesPerRequest": "每次请求图片上限",
-    "maxImagesPerRequestHint": "可选的图片张数上限，包含历史消息和工具结果。留空保留现有行为。",
+    "maxImagesPerRequestHint": "可选：限制单次请求中发送的图片数量，包括对话历史和工具结果；留空表示不设置额外上限。",
     "contextWindowHint": "用于判断何时压缩上下文，可小于模型实际支持的上限",
     "contextWindowLongWarning": "上下文超过 400K，可能影响效果，建议约 300K。",
     "maxTokens": "最大输出Tokens",
@@ -675,6 +675,10 @@
   },
   "advancedSettings": {
     "title": "高级设置",
+    "maxImagesPerRequest": {
+      "label": "每次请求图片上限",
+      "hint": "可选：限制单次请求中发送的图片数量，包括对话历史和工具结果；留空表示不设置额外上限。"
+    },
     "inlineThinkInText": {
       "label": "解析文本中的 <think> 标签",
       "hint": "将响应中的 <think>...</think> 内容显示为思考过程"

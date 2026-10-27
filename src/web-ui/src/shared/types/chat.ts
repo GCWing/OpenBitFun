@@ -47,6 +47,7 @@ export interface ModelConfig {
   isBuiltIn?: boolean;
   contextWindow?: number; 
   maxTokens?: number; 
+  maxImagesPerRequest?: number;
   category?: 'general_chat' | 'multimodal' | 'speech_recognition';
   capabilities?: Array<'text_chat' | 'function_calling' | 'image_understanding' | 'speech_recognition'>;
 }

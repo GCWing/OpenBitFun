@@ -72,6 +72,14 @@ describe('ModelSettingsPage presentation', () => {
     expect(styles).toMatch(/&__inline-header-actions\s*\{[\s\S]*?margin-left: auto;/);
   });
 
+  it('keeps the per-request image limit inside advanced settings', () => {
+    const advancedStart = source.indexOf('const renderAdvancedSettings = () =>');
+    const imageLimit = source.indexOf('data-testid="settings-model-image-limit"');
+
+    expect(advancedStart).toBeGreaterThan(-1);
+    expect(imageLimit).toBeGreaterThan(advancedStart);
+  });
+
   it('keeps subscription actions right-aligned through the shared compact breakpoint', () => {
     expect(styles).toMatch(
       /@container config-panel \(max-width: 520px\)\s*\{\s*&__cli-account\.openbitfun-config-page-row\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto;[\s\S]*?gap: var\(--openbitfun-space-4\);[\s\S]*?justify-content: flex-end;/,

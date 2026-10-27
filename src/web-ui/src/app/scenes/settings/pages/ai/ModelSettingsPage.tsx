@@ -1161,6 +1161,7 @@ const ModelSettingsPage: React.FC = () => {
       !!settings.skip_ssl_verify
       || settings.custom_request_body_mode === 'trim'
       || !!settings.custom_request_body?.trim()
+      || settings.max_images_per_request !== undefined
       || Object.keys(settings.custom_headers || {}).length > 0,
     );
   };
@@ -1947,6 +1948,7 @@ const ModelSettingsPage: React.FC = () => {
         !!config.skip_ssl_verify ||
         config.custom_request_body_mode === 'trim' ||
         (!!config.custom_request_body && config.custom_request_body.trim() !== '') ||
+        configuredProviderModels.some(model => model.max_images_per_request !== undefined) ||
         (!!config.custom_headers && Object.keys(config.custom_headers).length > 0)
       );
       setCreationMode('form');
@@ -1979,7 +1981,8 @@ const ModelSettingsPage: React.FC = () => {
         hasCustomHeaders ||
         hasCustomBody ||
         config.custom_request_body_mode === 'trim' ||
-        !!config.skip_ssl_verify
+        !!config.skip_ssl_verify ||
+        config.max_images_per_request !== undefined
       );
       setIsEditing(true);
     });
@@ -3034,30 +3037,6 @@ const ModelSettingsPage: React.FC = () => {
               {modelRoute?.request_url || resolveRequestUrl(editingConfig.base_url || '', manualFormat, draft.modelName)}
             </span>,
           )}
-          {renderModelField(
-            t('form.maxImagesPerRequest'),
-            <Input
-              aria-label={t('form.maxImagesPerRequest')}
-              data-testid="settings-model-image-limit"
-              type="number"
-              min={1}
-              step={1}
-              size="sm"
-              value={draft.requestSettings.max_images_per_request ?? ''}
-              onChange={event => {
-                const value = event.target.value;
-                const count = Number(value);
-                if (value === '' || (Number.isSafeInteger(count) && count > 0)) {
-                  setSelectedModelDrafts(drafts => updateModelEditorRequestSettings(
-                    drafts,
-                    { max_images_per_request: value === '' ? undefined : count },
-                    draft.key,
-                  ));
-                }
-              }}
-            />,
-            { hint: t('form.maxImagesPerRequestHint') },
-          )}
           <ModelTagsField
             key={draft.key}
             layout="row"
@@ -3661,6 +3640,7 @@ const ModelSettingsPage: React.FC = () => {
     const renderAdvancedSettings = () => (
       !authIsSubscription && (
         <Disclosure
+          data-testid="settings-model-advanced-toggle"
           summary={t('advancedSettings.title')}
           description={isProviderScopedEditing ? t('advancedSettings.description') : undefined}
           className={isProviderScopedEditing
@@ -3685,6 +3665,28 @@ const ModelSettingsPage: React.FC = () => {
                   />
                 </ConfigPageRow>
               )}
+              <ConfigPageRow
+                label={t('advancedSettings.maxImagesPerRequest.label')}
+                description={t('advancedSettings.maxImagesPerRequest.hint')}
+                align="center"
+              >
+                <Input
+                  aria-label={t('advancedSettings.maxImagesPerRequest.label')}
+                  data-testid="settings-model-image-limit"
+                  type="number"
+                  min={1}
+                  step={1}
+                  size="sm"
+                  value={requestSettings.max_images_per_request ?? ''}
+                  onChange={event => {
+                    const value = event.target.value;
+                    const count = Number(value);
+                    if (value === '' || (Number.isSafeInteger(count) && count > 0)) {
+                      updateRequestSettings({ max_images_per_request: value === '' ? undefined : count });
+                    }
+                  }}
+                />
+              </ConfigPageRow>
               <ConfigPageRow
                 label={t('advancedSettings.skipSslVerify.label')}
                 description={requestSettings.skip_ssl_verify ? (

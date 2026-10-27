@@ -394,7 +394,7 @@
     "providerPlaceholder": "Select request format",
     "contextWindow": "Context Window Size",
     "maxImagesPerRequest": "Images per request",
-    "maxImagesPerRequestHint": "Optional maximum image count, including conversation history and tool results. Leave blank to keep the existing behavior.",
+    "maxImagesPerRequestHint": "Optional limit on the number of images sent in one request, including conversation history and tool results. Leave blank to apply no additional limit.",
     "contextWindowHint": "Determines when context is compacted; may be lower than the model's supported limit",
     "contextWindowLongWarning": "Context above 400K may reduce quality. Around 300K is recommended.",
     "maxTokens": "Max Output Tokens",
@@ -675,6 +675,10 @@
   },
   "advancedSettings": {
     "title": "Advanced Settings",
+    "maxImagesPerRequest": {
+      "label": "Images per request",
+      "hint": "Optional limit on the number of images sent in one request, including conversation history and tool results. Leave blank to apply no additional limit."
+    },
     "inlineThinkInText": {
       "label": "Parse <think> Tags In Text",
       "hint": "Display content inside <think>...</think> tags as reasoning"

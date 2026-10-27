@@ -812,6 +812,7 @@ mod tests {
             format: "anthropic".to_string(),
             context_window: 200_000,
             max_tokens: Some(8192),
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,
