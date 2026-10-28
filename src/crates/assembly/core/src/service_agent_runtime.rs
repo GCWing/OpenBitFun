@@ -1058,10 +1058,14 @@ fn ensure_remote_model_strategy_editable(session: &Session) -> Result<(), String
     if session.kind == SessionKind::Subagent {
         return Err("Subagent models are configured independently. Editing them is not supported from mobile or bot controls; use the GUI model selector".into());
     }
-    if session_eligible(session)
-        && routing_enabled(session.config.model_routing.as_deref())
-            .map_err(|error| error.to_string())?
-    {
+    // A persisted smart route must stay read-only even when this host currently
+    // disables smart-mode activation; otherwise a remote caller could rewrite
+    // the strategy behind the GUI's back.
+    let smart_routing = match session.config.model_routing.as_deref() {
+        Some("smart") => true,
+        mode => routing_enabled(mode).map_err(|error| error.to_string())?,
+    };
+    if session_eligible(session) && smart_routing {
         return Err("Smart routing is active. Model strategy editing is not supported from mobile or bot controls; use the GUI model selector".into());
     }
     Ok(())
