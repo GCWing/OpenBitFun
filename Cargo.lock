@@ -6949,6 +6949,7 @@ dependencies = [
  "dunce",
  "filetime",
  "fs2",
+ "futures",
  "git2",
  "globset",
  "ignore",

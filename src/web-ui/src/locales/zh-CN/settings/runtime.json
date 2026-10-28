@@ -240,8 +240,8 @@
     "full": "完整运行",
     "skillMdOnlyDescription": "默认仅加载本机 SKILL.md，不复制脚本、参考文档和模板，这些资源在远端可能不可用。",
     "disabledDescription": "不在远程工作区的 Agent 提示词中注入本机用户级 Skill，也不允许加载这些 Skill。",
-    "fullDescription": "使用用户级 Skill 时，将其完整目录复制到远端并提供远端路径；文件未变更时复用已有副本，变更后重新同步。远端需安装 Python 3，并准备好 Skill 所需的其他运行环境。",
-    "syncHint": "Skill 包含大量细碎文件时，同步可能耗时较长。等待期间可在 Skill 工具卡片中查看进度。命令和项目操作仍在远端执行。",
+    "fullDescription": "使用用户级 Skill 时，通过工作区连接同步完整目录并提供远端路径；文件未变更时复用已有副本，变更后重新同步。同步无需在远端另装软件，Skill 自身所需的运行环境仍需具备。",
+    "syncHint": "Skill 包含大量细碎文件时，校验和同步可能耗时较长。等待期间可在工具卡片中查看进度。命令和项目操作仍在远端执行。",
     "loadFailed": "无法读取此设置，请重试后再修改。",
     "saveFailed": "保存远程用户级 Skill 设置失败",
     "unsupported": "请更新当前主机后再配置远程工作区的用户级 Skill。"

@@ -1,9 +1,11 @@
 use super::*;
 
 #[test]
-fn remote_cache_paths_use_posix_syntax_on_every_controller() {
-    assert!(validate_remote_root("/home/user/project/cache").is_ok());
-    assert!(validate_remote_root("/home/user/a\\b/cache").is_ok());
+fn remote_cache_paths_use_posix_syntax_and_stay_inside_selected_workspace() {
+    assert!(
+        validate_remote_cache_location("/home/user/project/cache", "/home/user/project").is_ok()
+    );
+    assert!(validate_remote_cache_location("/home/user/a\\b/cache", "/home/user/a\\b").is_ok());
     for path in [
         "C:\\Users\\me\\cache",
         "relative/cache",
@@ -12,69 +14,24 @@ fn remote_cache_paths_use_posix_syntax_on_every_controller() {
     ] {
         assert!(validate_remote_root(path).is_err(), "{path}");
     }
-    assert_eq!(quote("a'b\n$HOME`x`"), "'a'\\''b\n$HOME`x`'");
-    assert!(validate_remote_cache_location("/workspace/.openbitfun/cache", "/workspace").is_ok());
-    assert!(
-        validate_remote_cache_location("/workspace/.openbitfun/cache", "/workspace-other").is_err()
-    );
+    assert!(validate_remote_cache_location("/workspace-other/cache", "/workspace").is_err());
     assert!(validate_remote_cache_location("/workspace", "/workspace").is_err());
-    assert!(validate_remote_cache_location("/outside/cache", "/workspace").is_err());
-}
-
-#[test]
-fn scanning_skips_compression_and_packing_rejects_source_changes() {
-    let temp = tempfile::tempdir().unwrap();
-    fs::write(temp.path().join("SKILL.md"), b"before").unwrap();
-    let package = scan_package(
-        temp.path(),
-        "user::fixture",
-        &None,
-        Arc::new(AtomicBool::new(false)),
-    )
-    .unwrap();
-    assert!(
-        !package.path.exists(),
-        "cache checking must not create a compressed archive"
-    );
-    fs::write(temp.path().join("SKILL.md"), b"after!").unwrap();
-    let error = build_archive(package)
-        .err()
-        .expect("changed source must fail");
-    assert!(
-        error.to_string().contains("changed while preparing"),
-        "{error:#}"
-    );
 }
 
 #[cfg(all(unix, feature = "workspace-runtime"))]
 mod posix {
     use super::*;
     use crate::workspace::{LocalWorkspaceFs, LocalWorkspaceShell};
-    use openbitfun_runtime_ports::{WorkspaceCommandResult, WorkspaceDirEntry};
+    use openbitfun_runtime_ports::{
+        WorkspaceDirEntry, WorkspaceReader, WorkspaceShell, WorkspaceWriter,
+    };
     use std::{
         os::unix::fs::{symlink, PermissionsExt},
-        sync::{
-            atomic::{AtomicUsize, Ordering},
-            Mutex,
-        },
+        pin::Pin,
+        sync::atomic::AtomicUsize,
+        task::{Context as TaskContext, Poll},
     };
-
-    struct CountingShell {
-        inner: LocalWorkspaceShell,
-        calls: AtomicUsize,
-    }
-
-    #[async_trait::async_trait]
-    impl WorkspaceShell for CountingShell {
-        async fn exec_with_options(
-            &self,
-            command: &str,
-            options: WorkspaceCommandOptions,
-        ) -> Result<WorkspaceCommandResult> {
-            self.calls.fetch_add(1, Ordering::Relaxed);
-            self.inner.exec_with_options(command, options).await
-        }
-    }
+    use tokio::io::AsyncWrite;
 
     fn write(root: &Path, name: &str, bytes: &[u8]) {
         let path = root.join(name);
@@ -82,8 +39,156 @@ mod posix {
         fs::write(path, bytes).unwrap();
     }
 
+    fn mode(path: &Path, value: u32) {
+        fs::set_permissions(path, fs::Permissions::from_mode(value)).unwrap();
+    }
+
+    #[derive(Default)]
+    struct TransferCounts {
+        active: AtomicUsize,
+        peak: AtomicUsize,
+        writes: AtomicUsize,
+    }
+
+    #[derive(Default)]
+    struct PublicationGate {
+        pause: AtomicBool,
+        started: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+    }
+
+    #[derive(Default)]
+    struct UploadBlock {
+        blocked: AtomicBool,
+        started: tokio::sync::Notify,
+    }
+
+    struct CountedWriter {
+        inner: WorkspaceWriter,
+        counts: Arc<TransferCounts>,
+        upload_block: Option<Arc<UploadBlock>>,
+    }
+    impl Drop for CountedWriter {
+        fn drop(&mut self) {
+            self.counts.active.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    impl AsyncWrite for CountedWriter {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            cx: &mut TaskContext<'_>,
+            data: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            if let Some(block) = &self.upload_block {
+                if block.blocked.load(Ordering::SeqCst) {
+                    block.started.notify_one();
+                    return Poll::Pending;
+                }
+            }
+            Pin::new(&mut self.inner).poll_write(cx, data)
+        }
+        fn poll_flush(
+            mut self: Pin<&mut Self>,
+            cx: &mut TaskContext<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Pin::new(&mut self.inner).poll_flush(cx)
+        }
+        fn poll_shutdown(
+            mut self: Pin<&mut Self>,
+            cx: &mut TaskContext<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Pin::new(&mut self.inner).poll_shutdown(cx)
+        }
+    }
+
+    #[derive(Default)]
+    struct InstrumentedFs {
+        counts: Arc<TransferCounts>,
+        fail_upload: AtomicBool,
+        fail_publish: AtomicBool,
+        mutate_source: Mutex<Option<PathBuf>>,
+        publication_gate: Mutex<Option<Arc<PublicationGate>>>,
+        upload_block: Mutex<Option<Arc<UploadBlock>>>,
+        fail_metadata: AtomicBool,
+        bogus_listing_paths: AtomicBool,
+    }
+    #[async_trait::async_trait]
+    impl WorkspaceFileSystem for InstrumentedFs {
+        async fn open_read(&self, path: &str) -> Result<WorkspaceReader> {
+            LocalWorkspaceFs.open_read(path).await
+        }
+        async fn open_write_new(&self, path: &str) -> Result<WorkspaceWriter> {
+            if self.fail_upload.load(Ordering::SeqCst) {
+                bail!("fixture rejects streamed upload");
+            }
+            if let Some(source) = self.mutate_source.lock().unwrap().take() {
+                fs::write(source, b"after!")?;
+            }
+            let inner = LocalWorkspaceFs.open_write_new(path).await?;
+            self.counts.writes.fetch_add(1, Ordering::SeqCst);
+            let active = self.counts.active.fetch_add(1, Ordering::SeqCst) + 1;
+            self.counts.peak.fetch_max(active, Ordering::SeqCst);
+            Ok(Box::new(CountedWriter {
+                inner,
+                counts: self.counts.clone(),
+                upload_block: self.upload_block.lock().unwrap().clone(),
+            }))
+        }
+        async fn metadata(&self, path: &str, follow: bool) -> Result<Option<WorkspaceMetadata>> {
+            if self.fail_metadata.load(Ordering::SeqCst) {
+                bail!("fixture transport unavailable");
+            }
+            LocalWorkspaceFs.metadata(path, follow).await
+        }
+        async fn create_dir_new(&self, path: &str) -> Result<()> {
+            LocalWorkspaceFs.create_dir_new(path).await
+        }
+        async fn set_permissions(&self, path: &str, permissions: u32) -> Result<()> {
+            LocalWorkspaceFs.set_permissions(path, permissions).await
+        }
+        async fn rename(&self, from: &str, to: &str) -> Result<()> {
+            if self.fail_publish.load(Ordering::SeqCst)
+                && from.rsplit('/').next().unwrap().starts_with(".staging-")
+            {
+                bail!("fixture rejects publication");
+            }
+            let gate = self.publication_gate.lock().unwrap().clone();
+            if let Some(gate) = gate {
+                if gate.pause.swap(false, Ordering::SeqCst) {
+                    gate.started.notify_one();
+                    gate.release.notified().await;
+                }
+            }
+            LocalWorkspaceFs.rename(from, to).await
+        }
+        async fn remove_dir(&self, path: &str, recursive: bool) -> Result<()> {
+            LocalWorkspaceFs.remove_dir(path, recursive).await
+        }
+        async fn read_file(&self, path: &str) -> Result<Vec<u8>> {
+            LocalWorkspaceFs.read_file(path).await
+        }
+        async fn read_file_text(&self, path: &str) -> Result<String> {
+            LocalWorkspaceFs.read_file_text(path).await
+        }
+        async fn write_file(&self, path: &str, content: &[u8]) -> Result<()> {
+            LocalWorkspaceFs.write_file(path, content).await
+        }
+        async fn exists(&self, path: &str) -> Result<bool> {
+            LocalWorkspaceFs.exists(path).await
+        }
+        async fn is_file(&self, path: &str) -> Result<bool> {
+            LocalWorkspaceFs.is_file(path).await
+        }
+        async fn is_dir(&self, path: &str) -> Result<bool> {
+            LocalWorkspaceFs.is_dir(path).await
+        }
+        async fn read_dir(&self, path: &str) -> Result<Vec<WorkspaceDirEntry>> {
+            LocalWorkspaceFs.read_dir(path).await
+        }
+    }
+
     #[tokio::test]
-    async fn deploys_complete_package_in_two_commands_and_preserves_executables() {
+    async fn streams_complete_package_with_bounded_parallelism_and_preserves_executables() {
         let temp = tempfile::tempdir().unwrap();
         let local = temp.path().join("local user's skill");
         let remote = temp.path().join("remote workspace");
@@ -91,7 +196,7 @@ mod posix {
         write(
             &local,
             "SKILL.md",
-            b"Run scripts/hello.sh, read references/guide.md",
+            b"Run scripts/hello.sh and read references/guide.md",
         );
         write(
             &local,
@@ -102,42 +207,38 @@ mod posix {
         write(
             &local,
             "scripts/hello.sh",
-            b"#!/bin/sh\nprintf '%s' remote-script-ok\n",
+            b"#!/bin/sh\nprintf remote-script-ok",
         );
-        fs::set_permissions(
-            local.join("scripts/hello.sh"),
-            fs::Permissions::from_mode(0o751),
-        )
-        .unwrap();
-        for number in 0..200 {
-            write(&local, &format!("many/{number}.txt"), b"tiny file");
+        mode(&local.join("scripts/hello.sh"), 0o751);
+        fs::create_dir(local.join("empty-directory")).unwrap();
+        for index in 0..200 {
+            write(&local, &format!("tiny/{index}.txt"), b"small");
         }
-        let shell = CountingShell {
-            inner: LocalWorkspaceShell::new(remote.to_string_lossy().into_owned()),
-            calls: AtomicUsize::new(0),
-        };
+        let target_fs = InstrumentedFs::default();
+        target_fs.bogus_listing_paths.store(true, Ordering::SeqCst);
         let phases = Arc::new(Mutex::new(Vec::new()));
         let observed = phases.clone();
+        let cache = remote.join("cache");
         let result = sync_local_skill_package(
             &local,
-            remote.join("cache 'target'\n$literal").to_str().unwrap(),
+            cache.to_str().unwrap(),
             remote.to_str().unwrap(),
-            "user::test",
-            &LocalWorkspaceFs,
-            &shell,
-            Some(Arc::new(move |progress| {
-                observed.lock().unwrap().push(progress.phase)
+            "user::fixture",
+            &target_fs,
+            Some(Arc::new(move |event| {
+                observed.lock().unwrap().push(event.phase);
             })),
         )
         .await
         .unwrap();
         assert!(!result.reused);
         assert_eq!(result.file_count, 204);
-        assert_eq!(
-            shell.calls.load(Ordering::Relaxed),
-            2,
-            "file count must not multiply SSH commands"
+        assert!(
+            target_fs.counts.peak.load(Ordering::SeqCst) > 1,
+            "small files should overlap transfers"
         );
+        assert!(target_fs.counts.peak.load(Ordering::SeqCst) <= MAX_FILE_TRANSFERS);
+        assert_eq!(target_fs.counts.active.load(Ordering::SeqCst), 0);
         assert_eq!(
             fs::read(Path::new(&result.path).join("references/guide 'one' \u{4e2d}.md")).unwrap(),
             b"full reference\n"
@@ -146,12 +247,14 @@ mod posix {
             fs::read(Path::new(&result.path).join("templates/example.bin")).unwrap(),
             [0, 255, 1, 2]
         );
-        let (output, _, status) = shell
-            .exec(&quote(&format!("{}/scripts/hello.sh", result.path)), None)
+        assert!(Path::new(&result.path).join("empty-directory").is_dir());
+        let shell = LocalWorkspaceShell::new(remote.to_string_lossy().into_owned());
+        let (stdout, stderr, exit) = shell
+            .exec(&format!("'{}/scripts/hello.sh'", result.path), None)
             .await
             .unwrap();
-        assert_eq!(status, 0);
-        assert_eq!(output, "remote-script-ok");
+        assert_eq!(exit, 0, "{stderr}");
+        assert_eq!(stdout, "remote-script-ok");
         assert_eq!(
             fs::metadata(Path::new(&result.path).join("scripts/hello.sh"))
                 .unwrap()
@@ -160,61 +263,88 @@ mod posix {
                 & 0o777,
             0o751
         );
-        let phases = phases.lock().unwrap();
         for phase in [
             SkillPackageSyncPhase::Scanning,
             SkillPackageSyncPhase::Checking,
             SkillPackageSyncPhase::Uploading,
-            SkillPackageSyncPhase::Extracting,
+            SkillPackageSyncPhase::Verifying,
             SkillPackageSyncPhase::Complete,
         ] {
-            assert!(phases.contains(&phase));
+            assert!(phases.lock().unwrap().contains(&phase));
         }
+        let before = target_fs.counts.writes.load(Ordering::SeqCst);
+        let reused = sync_local_skill_package(
+            &local,
+            cache.to_str().unwrap(),
+            remote.to_str().unwrap(),
+            "user::fixture",
+            &target_fs,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(reused.reused);
+        assert_eq!(
+            target_fs.counts.writes.load(Ordering::SeqCst),
+            before,
+            "verified cache reuse does not upload files"
+        );
     }
 
     #[tokio::test]
-    async fn cache_reuse_verifies_bytes_modes_missing_and_extra_files_then_tracks_local_changes() {
+    async fn cache_integrity_detects_bytes_modes_missing_extra_files_and_source_changes() {
         let temp = tempfile::tempdir().unwrap();
         let local = temp.path().join("local");
         write(&local, "SKILL.md", b"skill body");
         write(&local, "references/guide.md", b"original");
         write(&local, "templates/deleted.txt", b"delete locally later");
-        let cache = temp.path().join("cache").to_string_lossy().into_owned();
-        let shell = LocalWorkspaceShell::new(temp.path().to_string_lossy().into_owned());
+        let cache = temp.path().join("cache");
         let deploy = || {
             sync_local_skill_package(
                 &local,
-                &cache,
+                cache.to_str().unwrap(),
                 temp.path().to_str().unwrap(),
                 "user::fixture",
                 &LocalWorkspaceFs,
-                &shell,
                 None,
             )
         };
-        let original = deploy().await.unwrap();
-        assert!(!original.reused);
-        let again = deploy().await.unwrap();
-        assert!(again.reused);
-        assert_eq!(again.path, original.path);
-        let guide = Path::new(&original.path).join("references/guide.md");
-        fs::write(&guide, b"tampered").unwrap();
-        assert!(!deploy().await.unwrap().reused);
-        assert_eq!(fs::read(&guide).unwrap(), b"original");
-        fs::remove_file(&guide).unwrap();
-        assert!(!deploy().await.unwrap().reused);
-        assert!(guide.is_file());
-        let extra = Path::new(&original.path).join("extra.txt");
-        fs::write(&extra, b"not in source").unwrap();
-        assert!(!deploy().await.unwrap().reused);
-        assert!(!extra.exists());
-        fs::set_permissions(&guide, fs::Permissions::from_mode(0o700)).unwrap();
-        assert!(!deploy().await.unwrap().reused);
+        let first = deploy().await.unwrap();
+        assert!(!first.reused);
+        assert!(deploy().await.unwrap().reused);
+        let mut current = first.clone();
+        for mutation in 0..4 {
+            let guide = Path::new(&current.path).join("references/guide.md");
+            match mutation {
+                0 => fs::write(&guide, b"tampered").unwrap(),
+                1 => fs::remove_file(&guide).unwrap(),
+                2 => fs::write(Path::new(&current.path).join("extra.txt"), b"extra").unwrap(),
+                _ => mode(&guide, 0o700),
+            }
+            let corrupted_path = current.path.clone();
+            current = deploy().await.unwrap();
+            assert!(!current.reused);
+            assert_ne!(
+                current.path, corrupted_path,
+                "repair publishes a new immutable generation"
+            );
+            assert!(
+                Path::new(&corrupted_path).is_dir(),
+                "target-side data is preserved"
+            );
+            assert_eq!(
+                fs::read(Path::new(&current.path).join("references/guide.md")).unwrap(),
+                b"original"
+            );
+            assert!(!Path::new(&current.path).join("extra.txt").exists());
+            let again = deploy().await.unwrap();
+            assert!(again.reused);
+            assert_eq!(again.path, current.path);
+        }
         write(&local, "references/guide.md", b"updated locally");
         fs::remove_file(local.join("templates/deleted.txt")).unwrap();
         let updated = deploy().await.unwrap();
-        assert!(!updated.reused);
-        assert_ne!(updated.content_hash, original.content_hash);
+        assert_ne!(updated.content_hash, first.content_hash);
         assert_eq!(
             fs::read(Path::new(&updated.path).join("references/guide.md")).unwrap(),
             b"updated locally"
@@ -222,42 +352,84 @@ mod posix {
         assert!(!Path::new(&updated.path)
             .join("templates/deleted.txt")
             .exists());
-        assert_eq!(
-            fs::read(&guide).unwrap(),
-            b"original",
-            "older content-addressed deployments stay intact"
+        assert!(
+            Path::new(&current.path)
+                .join("templates/deleted.txt")
+                .is_file(),
+            "old source versions remain available"
         );
     }
 
     #[tokio::test]
-    async fn accepts_symlinked_package_root_but_rejects_nested_links_without_success() {
+    async fn reuses_legacy_version_one_manifest_and_fixed_digest_directory() {
         let temp = tempfile::tempdir().unwrap();
         let local = temp.path().join("local");
-        write(&local, "SKILL.md", b"skill body");
-        let link = temp.path().join("linked-root");
-        symlink(&local, &link).unwrap();
-        let cache = temp.path().join("cache").to_string_lossy().into_owned();
-        let shell = LocalWorkspaceShell::new(temp.path().to_string_lossy().into_owned());
-        let first = sync_local_skill_package(
-            &link,
-            &cache,
+        write(&local, "SKILL.md", b"legacy body");
+        mode(&local.join("SKILL.md"), 0o640);
+        let package = scan_package(
+            &local,
+            "user::fixture",
+            &None,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        let legacy = format!("{{\"version\":1,\"entries\":[{{\"path\":\"SKILL.md\",\"kind\":\"file\",\"mode\":416,\"size\":11,\"sha256\":\"{:x}\"}}]}}", Sha256::digest(b"legacy body"));
+        assert_eq!(package.manifest_bytes, legacy.as_bytes());
+        let cache = temp.path().join("cache");
+        let target = cache.join(&package.package_id).join(&package.content_hash);
+        fs::create_dir_all(&target).unwrap();
+        mode(&target, 0o700);
+        write(&target, "SKILL.md", b"legacy body");
+        mode(&target.join("SKILL.md"), 0o640);
+        write(&target, MANIFEST_NAME, legacy.as_bytes());
+        mode(&target.join(MANIFEST_NAME), 0o644);
+        let fs = InstrumentedFs::default();
+        let loaded = sync_local_skill_package(
+            &local,
+            cache.to_str().unwrap(),
             temp.path().to_str().unwrap(),
             "user::fixture",
-            &LocalWorkspaceFs,
-            &shell,
+            &fs,
             None,
         )
         .await
         .unwrap();
-        assert!(!first.reused);
+        assert!(loaded.reused);
+        assert_eq!(loaded.path, target.to_str().unwrap());
+        assert_eq!(fs.counts.writes.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn supports_trusted_symlink_roots_and_rejects_managed_cache_escape() {
+        let temp = tempfile::tempdir().unwrap();
+        let local = temp.path().join("local");
+        write(&local, "SKILL.md", b"skill body");
+        let source_link = temp.path().join("source-link");
+        symlink(&local, &source_link).unwrap();
+        let real = temp.path().join("real");
+        fs::create_dir_all(real.join("workspace")).unwrap();
+        let alias = temp.path().join("alias");
+        symlink(&real, &alias).unwrap();
+        let workspace = alias.join("workspace");
+        let cache = workspace.join(".openbitfun/cache/user-skills");
+        let first = sync_local_skill_package(
+            &source_link,
+            cache.to_str().unwrap(),
+            workspace.to_str().unwrap(),
+            "user::fixture",
+            &LocalWorkspaceFs,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(first.path.starts_with(cache.to_str().unwrap()));
         assert!(
             sync_local_skill_package(
                 &local,
-                &cache,
-                temp.path().to_str().unwrap(),
+                cache.to_str().unwrap(),
+                workspace.to_str().unwrap(),
                 "user::fixture",
                 &LocalWorkspaceFs,
-                &shell,
                 None
             )
             .await
@@ -267,154 +439,71 @@ mod posix {
         symlink(temp.path(), local.join("escaping-link")).unwrap();
         let error = sync_local_skill_package(
             &local,
-            &cache,
-            temp.path().to_str().unwrap(),
+            cache.to_str().unwrap(),
+            workspace.to_str().unwrap(),
             "user::fixture",
             &LocalWorkspaceFs,
-            &shell,
             None,
         )
         .await
         .unwrap_err();
-        assert!(
-            error.to_string().contains("nested symbolic links"),
-            "{error:#}"
-        );
-        assert!(Path::new(&first.path).join("SKILL.md").is_file());
-    }
-
-    #[tokio::test]
-    async fn supports_symlinked_workspace_ancestors_but_rejects_managed_cache_links() {
-        let temp = tempfile::tempdir().unwrap();
-        let local = temp.path().join("local");
-        write(&local, "SKILL.md", b"skill body");
-        write(&local, "references/guide.md", b"deployed reference");
-        let real = temp.path().join("real");
-        fs::create_dir_all(real.join("workspace")).unwrap();
-        let alias = temp.path().join("alias");
-        symlink(&real, &alias).unwrap();
-        let workspace = alias.join("workspace");
-        let cache = workspace.join(".openbitfun/cache/user-skills");
-        let shell = LocalWorkspaceShell::new(workspace.to_string_lossy().into_owned());
-        let deploy = || {
-            sync_local_skill_package(
-                &local,
-                cache.to_str().unwrap(),
-                workspace.to_str().unwrap(),
-                "user::fixture",
-                &LocalWorkspaceFs,
-                &shell,
-                None,
-            )
-        };
-        let first = deploy().await.unwrap();
-        assert!(first.path.starts_with(cache.to_str().unwrap()));
-        assert_eq!(
-            fs::read(Path::new(&first.path).join("references/guide.md")).unwrap(),
-            b"deployed reference"
-        );
-        assert!(deploy().await.unwrap().reused);
-
-        // Resolving the trusted workspace must not authorize a repository's
-        // .openbitfun/cache link to escape to an unrelated directory.
+        assert!(error.to_string().contains("nested symbolic links"));
+        fs::remove_file(local.join("escaping-link")).unwrap();
         fs::remove_dir_all(workspace.join(".openbitfun")).unwrap();
         fs::create_dir(workspace.join(".openbitfun")).unwrap();
         let outside = temp.path().join("outside");
         fs::create_dir(&outside).unwrap();
         write(&outside, "sentinel", b"untouched");
         symlink(&outside, workspace.join(".openbitfun/cache")).unwrap();
-        let error = deploy().await.unwrap_err();
-        assert!(
-            error.to_string().contains("without symbolic links"),
-            "{error:#}"
-        );
-        assert_eq!(fs::read(outside.join("sentinel")).unwrap(), b"untouched");
-        assert!(!outside.join("user-skills").exists());
-    }
-
-    struct NoPython;
-    #[async_trait::async_trait]
-    impl WorkspaceShell for NoPython {
-        async fn exec_with_options(
-            &self,
-            _: &str,
-            _: WorkspaceCommandOptions,
-        ) -> Result<WorkspaceCommandResult> {
-            Ok(WorkspaceCommandResult {
-                stdout: String::new(),
-                stderr: "Full user Skill sync requires Python 3 on the remote target".into(),
-                exit_code: 127,
-                interrupted: false,
-                timed_out: false,
-            })
-        }
-    }
-
-    struct NoUploads;
-    #[async_trait::async_trait]
-    impl WorkspaceFileSystem for NoUploads {
-        async fn read_file(&self, _: &str) -> Result<Vec<u8>> {
-            bail!("unexpected read")
-        }
-        async fn read_file_text(&self, _: &str) -> Result<String> {
-            bail!("unexpected read")
-        }
-        async fn write_file(&self, _: &str, _: &[u8]) -> Result<()> {
-            bail!("unexpected write")
-        }
-        async fn exists(&self, _: &str) -> Result<bool> {
-            bail!("unexpected exists")
-        }
-        async fn is_file(&self, _: &str) -> Result<bool> {
-            bail!("unexpected stat")
-        }
-        async fn is_dir(&self, _: &str) -> Result<bool> {
-            bail!("unexpected stat")
-        }
-        async fn read_dir(&self, _: &str) -> Result<Vec<WorkspaceDirEntry>> {
-            bail!("unexpected listing")
-        }
-    }
-
-    #[tokio::test]
-    async fn unsupported_targets_and_failed_uploads_never_return_a_loaded_package() {
-        let temp = tempfile::tempdir().unwrap();
-        let local = temp.path().join("local");
-        write(&local, "SKILL.md", b"original");
-        let cache = temp.path().join("cache").to_string_lossy().into_owned();
         let error = sync_local_skill_package(
             &local,
-            &cache,
-            temp.path().to_str().unwrap(),
+            cache.to_str().unwrap(),
+            workspace.to_str().unwrap(),
             "user::fixture",
-            &NoUploads,
-            &NoPython,
+            &LocalWorkspaceFs,
             None,
         )
         .await
         .unwrap_err();
-        assert!(error.to_string().contains("requires Python 3"));
-        assert!(!Path::new(&cache).exists());
-        let shell = LocalWorkspaceShell::new(temp.path().to_string_lossy().into_owned());
-        let original = sync_local_skill_package(
+        assert!(error.to_string().contains("without symbolic links"));
+        assert_eq!(fs::read(outside.join("sentinel")).unwrap(), b"untouched");
+        assert!(!outside.join("user-skills").exists());
+    }
+
+    #[tokio::test]
+    async fn source_mutation_upload_failure_and_publication_failure_never_report_success() {
+        let temp = tempfile::tempdir().unwrap();
+        let local = temp.path().join("local");
+        write(&local, "SKILL.md", b"before");
+        let cache = temp.path().join("cache");
+        let fault = InstrumentedFs::default();
+        fault
+            .mutate_source
+            .lock()
+            .unwrap()
+            .replace(local.join("SKILL.md"));
+        let error = sync_local_skill_package(
             &local,
-            &cache,
+            cache.to_str().unwrap(),
             temp.path().to_str().unwrap(),
             "user::fixture",
-            &LocalWorkspaceFs,
-            &shell,
+            &fault,
             None,
         )
         .await
-        .unwrap();
-        write(&local, "SKILL.md", b"updated locally");
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("changed while preparing"),
+            "{error:#}"
+        );
+        write(&local, "SKILL.md", b"before");
+        fault.fail_upload.store(true, Ordering::SeqCst);
         let error = sync_local_skill_package(
             &local,
-            &cache,
+            cache.to_str().unwrap(),
             temp.path().to_str().unwrap(),
             "user::fixture",
-            &NoUploads,
-            &shell,
+            &fault,
             None,
         )
         .await
@@ -422,9 +511,238 @@ mod posix {
         assert!(error
             .to_string()
             .contains("streaming Skill package uploads"));
+        fault.fail_upload.store(false, Ordering::SeqCst);
+        let first = sync_local_skill_package(
+            &local,
+            cache.to_str().unwrap(),
+            temp.path().to_str().unwrap(),
+            "user::fixture",
+            &fault,
+            None,
+        )
+        .await
+        .unwrap();
+        fs::write(Path::new(&first.path).join("SKILL.md"), b"target change").unwrap();
+        fault.fail_publish.store(true, Ordering::SeqCst);
+        let error = sync_local_skill_package(
+            &local,
+            cache.to_str().unwrap(),
+            temp.path().to_str().unwrap(),
+            "user::fixture",
+            &fault,
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("publication failed"),
+            "{error:#}"
+        );
+        assert_eq!(
+            fs::read(Path::new(&first.path).join("SKILL.md")).unwrap(),
+            b"target change",
+            "failed repair preserves target-side data"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancellation_during_streaming_preserves_prior_version_and_allows_retry() {
+        let temp = tempfile::tempdir().unwrap();
+        let local = temp.path().join("local");
+        write(&local, "SKILL.md", b"original body");
+        let cache = temp.path().join("cache");
+        let original = sync_local_skill_package(
+            &local,
+            cache.to_str().unwrap(),
+            temp.path().to_str().unwrap(),
+            "user::fixture",
+            &LocalWorkspaceFs,
+            None,
+        )
+        .await
+        .unwrap();
+        write(&local, "SKILL.md", b"new body");
+        let blocked = Arc::new(UploadBlock::default());
+        blocked.blocked.store(true, Ordering::SeqCst);
+        let target_fs = Arc::new(InstrumentedFs::default());
+        target_fs
+            .upload_block
+            .lock()
+            .unwrap()
+            .replace(blocked.clone());
+        let source = local.clone();
+        let cache_string = cache.to_string_lossy().into_owned();
+        let workspace = temp.path().to_string_lossy().into_owned();
+        let fs_clone = target_fs.clone();
+        let task = tokio::spawn(async move {
+            sync_local_skill_package(
+                &source,
+                &cache_string,
+                &workspace,
+                "user::fixture",
+                fs_clone.as_ref(),
+                None,
+            )
+            .await
+        });
+        tokio::time::timeout(Duration::from_secs(5), blocked.started.notified())
+            .await
+            .unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert_eq!(
+            target_fs.counts.active.load(Ordering::SeqCst),
+            0,
+            "cancel releases every opened writer"
+        );
         assert_eq!(
             fs::read(Path::new(&original.path).join("SKILL.md")).unwrap(),
-            b"original"
+            b"original body"
         );
+        target_fs.upload_block.lock().unwrap().take();
+        let retried = sync_local_skill_package(
+            &local,
+            cache.to_str().unwrap(),
+            temp.path().to_str().unwrap(),
+            "user::fixture",
+            target_fs.as_ref(),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            fs::read(Path::new(&retried.path).join("SKILL.md")).unwrap(),
+            b"new body"
+        );
+        target_fs.fail_metadata.store(true, Ordering::SeqCst);
+        let error = sync_local_skill_package(
+            &local,
+            cache.to_str().unwrap(),
+            temp.path().to_str().unwrap(),
+            "user::fixture",
+            target_fs.as_ref(),
+            None,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("transport unavailable"),
+            "offline metadata cannot fabricate a cache hit"
+        );
+    }
+
+    #[tokio::test]
+    async fn paused_repair_cannot_move_a_generation_returned_by_another_publisher() {
+        let temp = tempfile::tempdir().unwrap();
+        let local = temp.path().join("local");
+        write(&local, "SKILL.md", b"expected body");
+        let cache = temp.path().join("cache");
+        let original = sync_local_skill_package(
+            &local,
+            cache.to_str().unwrap(),
+            temp.path().to_str().unwrap(),
+            "user::fixture",
+            &LocalWorkspaceFs,
+            None,
+        )
+        .await
+        .unwrap();
+        fs::write(Path::new(&original.path).join("SKILL.md"), b"target edits").unwrap();
+        let gate = Arc::new(PublicationGate::default());
+        gate.pause.store(true, Ordering::SeqCst);
+        let paused_fs = Arc::new(InstrumentedFs::default());
+        paused_fs
+            .publication_gate
+            .lock()
+            .unwrap()
+            .replace(gate.clone());
+        let source = local.clone();
+        let cache_string = cache.to_string_lossy().into_owned();
+        let workspace = temp.path().to_string_lossy().into_owned();
+        let fs_clone = paused_fs.clone();
+        let first = tokio::spawn(async move {
+            sync_local_skill_package(
+                &source,
+                &cache_string,
+                &workspace,
+                "user::fixture",
+                fs_clone.as_ref(),
+                None,
+            )
+            .await
+        });
+        tokio::time::timeout(Duration::from_secs(5), gate.started.notified())
+            .await
+            .unwrap();
+        let winner = sync_local_skill_package(
+            &local,
+            cache.to_str().unwrap(),
+            temp.path().to_str().unwrap(),
+            "user::fixture",
+            &LocalWorkspaceFs,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            fs::read(Path::new(&winner.path).join("SKILL.md")).unwrap(),
+            b"expected body"
+        );
+        gate.release.notify_one();
+        let other = first.await.unwrap().unwrap();
+        assert_ne!(other.path, winner.path);
+        assert_eq!(
+            fs::read(Path::new(&winner.path).join("SKILL.md")).unwrap(),
+            b"expected body",
+            "a previously returned resource root stays reachable"
+        );
+        assert_eq!(
+            fs::read(Path::new(&original.path).join("SKILL.md")).unwrap(),
+            b"target edits",
+            "corrupt target-side state is preserved"
+        );
+        assert!(
+            sync_local_skill_package(
+                &local,
+                cache.to_str().unwrap(),
+                temp.path().to_str().unwrap(),
+                "user::fixture",
+                &LocalWorkspaceFs,
+                None
+            )
+            .await
+            .unwrap()
+            .reused
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrent_publishers_leave_verified_deployments_and_remain_reusable() {
+        let temp = tempfile::tempdir().unwrap();
+        let local = temp.path().join("local");
+        write(&local, "SKILL.md", b"concurrent body");
+        for index in 0..20 {
+            write(&local, &format!("references/{index}.txt"), b"content");
+        }
+        let cache = temp.path().join("cache");
+        let deploy = || {
+            sync_local_skill_package(
+                &local,
+                cache.to_str().unwrap(),
+                temp.path().to_str().unwrap(),
+                "user::fixture",
+                &LocalWorkspaceFs,
+                None,
+            )
+        };
+        let (left, right) = tokio::join!(deploy(), deploy());
+        assert!(left.is_ok() || right.is_ok(), "{left:?}; {right:?}");
+        for result in [left, right].into_iter().flatten() {
+            assert_eq!(
+                fs::read(Path::new(&result.path).join("SKILL.md")).unwrap(),
+                b"concurrent body"
+            );
+        }
+        assert!(deploy().await.unwrap().reused);
     }
 }

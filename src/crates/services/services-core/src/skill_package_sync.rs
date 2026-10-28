@@ -1,27 +1,31 @@
-//! Verified, staged deployment of a local directory through workspace IO ports.
+//! Verified, staged directory deployment through workspace filesystem ports.
 //!
-//! The caller owns Skill selection and the cache location. This owner supplies
-//! the concrete archive, transfer, integrity and publication behavior.
+//! Hashing and synchronization run on the host. The target needs only its bound
+//! filesystem provider (SFTP for SSH); no interpreter or remote command runs.
 
 use anyhow::{bail, Context, Result};
-use openbitfun_runtime_ports::{WorkspaceCommandOptions, WorkspaceFileSystem, WorkspaceShell};
-use serde::{Deserialize, Serialize};
+use futures::{stream, FutureExt, StreamExt, TryStreamExt};
+use openbitfun_runtime_ports::{WorkspaceFileSystem, WorkspaceMetadata, WorkspacePathKind};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
+    collections::{HashMap, HashSet},
     fs::{self, File},
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
     time::{Duration, Instant},
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 
 const MANIFEST_NAME: &str = ".openbitfun-package-manifest.json";
-const REMOTE_HELPER: &str = include_str!("skill_package_sync.py");
+// A bounded number of independent streams hides small-file round-trip latency
+// without exhausting a connection's SFTP handle budget.
+const MAX_FILE_TRANSFERS: usize = 4;
+const STREAM_BUFFER_BYTES: usize = 64 * 1024;
 
 #[cfg(test)]
 #[path = "skill_package_sync_tests.rs"]
@@ -32,7 +36,7 @@ pub enum SkillPackageSyncPhase {
     Scanning,
     Checking,
     Uploading,
-    Extracting,
+    Verifying,
     Complete,
 }
 
@@ -71,8 +75,7 @@ struct ManifestEntry {
     sha256: String,
 }
 
-struct LocalArchive {
-    path: PathBuf,
+struct LocalPackage {
     root: PathBuf,
     manifest: Manifest,
     manifest_bytes: Vec<u8>,
@@ -80,13 +83,10 @@ struct LocalArchive {
     content_hash: String,
     file_count: usize,
     total_bytes: u64,
-    archive_bytes: u64,
-    archive_created: bool,
     cancelled: Arc<AtomicBool>,
 }
 
 struct CancelLocalWork(Arc<AtomicBool>);
-
 impl Drop for CancelLocalWork {
     fn drop(&mut self) {
         self.0.store(true, Ordering::Relaxed);
@@ -98,14 +98,6 @@ fn check_cancelled(cancelled: &AtomicBool) -> Result<()> {
         bail!("Local Skill package preparation was cancelled");
     }
     Ok(())
-}
-
-impl Drop for LocalArchive {
-    fn drop(&mut self) {
-        if self.archive_created {
-            let _ = fs::remove_file(&self.path);
-        }
-    }
 }
 
 fn report(
@@ -125,26 +117,23 @@ fn report(
     }
 }
 
-/// Copy a complete local package only when the target does not contain a
-/// byte-for-byte, mode-for-mode matching tree. No workspace file IO is redirected
-/// to the local host. Python 3 on the POSIX target is an explicit prerequisite.
-/// The selected workspace is the trusted boundary for symlink resolution;
-/// the managed cache must be nested inside it and contain no symlink components.
+/// Deploy a complete local directory through filesystem operations only. Cache
+/// hits still verify all bytes, modes and directory entries. Misses stream files
+/// concurrently into an exclusive staging directory and publish only after full
+/// target verification. The target needs no Python, shell, tar, unzip or rsync.
 ///
-/// Files are compressed once and sent in one streamed upload, avoiding one SSH
-/// round trip per small file. Target verification also runs in one command.
+/// The selected workspace is trusted and may have symlink ancestors; every
+/// managed cache component below that boundary must be a plain directory. Old
+/// version-1 manifest/digest directories remain readable and reusable.
 pub async fn sync_local_skill_package(
     local_root: &Path,
     remote_cache_root: &str,
     remote_workspace_root: &str,
     package_key: &str,
     fs: &dyn WorkspaceFileSystem,
-    shell: &dyn WorkspaceShell,
     progress: Option<SkillPackageProgressCallback>,
 ) -> Result<SkillPackageDeployment> {
     validate_remote_cache_location(remote_cache_root, remote_workspace_root)?;
-    // Dropping the async invocation stops the blocking scan/packing worker at
-    // its next entry/chunk rather than leaving a large package running.
     let cancelled = Arc::new(AtomicBool::new(false));
     let _cancel_local_work = CancelLocalWork(cancelled.clone());
     let progress: Option<SkillPackageProgressCallback> = progress.map(|callback| {
@@ -166,131 +155,78 @@ pub async fn sync_local_skill_package(
     let root = local_root.to_owned();
     let key = package_key.to_owned();
     let callback = progress.clone();
-    let archive =
+    let package =
         tokio::task::spawn_blocking(move || scan_package(&root, &key, &callback, cancelled))
             .await
             .context("Local Skill package scan failed")??;
-
     report(
         &progress,
         SkillPackageSyncPhase::Checking,
-        archive.file_count,
-        archive.total_bytes,
+        package.file_count,
+        package.total_bytes,
         0,
     );
-    let check = remote_command(
-        shell,
-        "check",
-        remote_cache_root,
-        remote_workspace_root,
-        &archive,
-        "",
-    )
-    .await?;
-    let destination = check.path;
-    if check.reused {
+    ensure_cache_root(fs, remote_cache_root, remote_workspace_root).await?;
+    let parent = remote_join(remote_cache_root, &package.package_id);
+    ensure_plain_directory(fs, &parent).await?;
+    if let Some(target) = find_verified_deployment(fs, &parent, &package).await? {
         report(
             &progress,
             SkillPackageSyncPhase::Complete,
-            archive.file_count,
-            archive.total_bytes,
+            package.file_count,
+            package.total_bytes,
             0,
         );
-        return Ok(deployment(&archive, destination, true));
+        return Ok(deployment(&package, target, true));
     }
 
-    // Compression and temporary archive IO are unnecessary on a cache hit.
-    // Re-read and hash while packing so a source edit cannot pair stale
-    // instructions with newer resources.
-    report(
-        &progress,
-        SkillPackageSyncPhase::Scanning,
-        archive.file_count,
-        archive.total_bytes,
-        0,
-    );
-    let archive = tokio::task::spawn_blocking(move || build_archive(archive))
+    let staging = remote_join(&parent, &format!(".staging-{}", uuid::Uuid::new_v4()));
+    fs.create_dir_new(&staging)
         .await
-        .context("Local Skill package preparation failed")??;
-    let upload_name = format!(".upload-{}.zip", uuid::Uuid::new_v4());
-    let remote_archive = format!(
-        "{}/{}/{}",
-        remote_cache_root.trim_end_matches('/'),
-        archive.package_id,
-        upload_name
-    );
-    let transfer = async {
+        .context("Target does not support exclusive Skill staging directories")?;
+    let result = async {
+        fs.set_permissions(&staging, 0o700).await?;
+        upload_package(fs, &staging, &package, &progress).await?;
         report(
             &progress,
-            SkillPackageSyncPhase::Uploading,
-            archive.file_count,
-            archive.total_bytes,
-            0,
+            SkillPackageSyncPhase::Verifying,
+            package.file_count,
+            package.total_bytes,
+            package.total_bytes,
         );
-        let mut output = fs
-            .open_write_new(&remote_archive)
-            .await
-            .context("Target does not support streaming Skill package uploads")?;
-        let mut input = tokio::fs::File::open(&archive.path).await?;
-        let mut buffer = vec![0; 64 * 1024];
-        let mut transferred = 0;
-        loop {
-            let read = input.read(&mut buffer).await?;
-            if read == 0 {
-                break;
-            }
-            output.write_all(&buffer[..read]).await?;
-            transferred += read as u64;
-            report(
-                &progress,
-                SkillPackageSyncPhase::Uploading,
-                archive.file_count,
-                archive.archive_bytes,
-                transferred,
-            );
+        if !verify_remote_package(fs, &staging, &package).await? {
+            bail!("Uploaded Skill package failed full integrity verification");
         }
-        output.shutdown().await?;
-        drop(output);
-        report(
-            &progress,
-            SkillPackageSyncPhase::Extracting,
-            archive.file_count,
-            archive.total_bytes,
-            transferred,
-        );
-        remote_command(
-            shell,
-            "publish",
-            remote_cache_root,
-            remote_workspace_root,
-            &archive,
-            &upload_name,
-        )
-        .await
+        let (target, reused) = publish_package(fs, &staging, &parent, &package).await?;
+        Ok::<_, anyhow::Error>(deployment(&package, target, reused))
     }
     .await;
-    // Never remove a published directory when an observer or transfer fails.
-    // A hard disconnect can leave only an unreferenced upload/staging sibling.
-    let _ = fs.remove_file(&remote_archive).await;
-    let published = transfer?;
+    // Never remove a published directory on failure. Interrupted transfers may
+    // leave an unreferenced staging sibling if the target is disconnected.
+    let _ = fs.remove_dir(&staging, true).await;
+    let deployed = result?;
     report(
         &progress,
         SkillPackageSyncPhase::Complete,
-        archive.file_count,
-        archive.total_bytes,
-        archive.archive_bytes,
+        package.file_count,
+        package.total_bytes,
+        package.total_bytes,
     );
-    Ok(deployment(&archive, published.path, published.reused))
+    Ok(deployed)
 }
 
-fn deployment(archive: &LocalArchive, path: String, reused: bool) -> SkillPackageDeployment {
+fn deployment(package: &LocalPackage, path: String, reused: bool) -> SkillPackageDeployment {
     SkillPackageDeployment {
         path,
-        content_hash: archive.content_hash.clone(),
-        file_count: archive.file_count,
-        total_bytes: archive.total_bytes,
+        content_hash: package.content_hash.clone(),
+        file_count: package.file_count,
+        total_bytes: package.total_bytes,
         reused,
     }
+}
+
+fn remote_join(root: &str, relative: &str) -> String {
+    format!("{}/{}", root.trim_end_matches('/'), relative)
 }
 
 fn validate_remote_root(root: &str) -> Result<()> {
@@ -317,64 +253,380 @@ fn validate_remote_cache_location(cache: &str, workspace: &str) -> Result<()> {
     Ok(())
 }
 
-fn quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
+async fn ensure_plain_directory(fs: &dyn WorkspaceFileSystem, path: &str) -> Result<()> {
+    match fs.metadata(path, false).await? {
+        Some(metadata) if metadata.kind == WorkspacePathKind::Directory => Ok(()),
+        Some(_) => bail!("Skill cache path must be a directory without symbolic links: {path}"),
+        None => {
+            if let Err(error) = fs.create_dir_new(path).await {
+                // Another invocation may have created this shared component.
+                if fs
+                    .metadata(path, false)
+                    .await?
+                    .is_some_and(|m| m.kind == WorkspacePathKind::Directory)
+                {
+                    return Ok(());
+                }
+                return Err(error).context("Failed to create a plain Skill cache directory");
+            }
+            fs.set_permissions(path, 0o700).await?;
+            Ok(())
+        }
+    }
 }
 
-#[derive(Deserialize)]
-struct RemoteResult {
-    path: String,
-    reused: bool,
+async fn ensure_cache_root(
+    fs: &dyn WorkspaceFileSystem,
+    cache: &str,
+    workspace: &str,
+) -> Result<()> {
+    let root = fs
+        .metadata(workspace, true)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Selected remote workspace is unavailable"))?;
+    if root.kind != WorkspacePathKind::Directory {
+        bail!("Selected remote workspace is not a directory");
+    }
+    let root_parts = workspace.split('/').filter(|part| !part.is_empty()).count();
+    let mut path = workspace.trim_end_matches('/').to_string();
+    for component in cache
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .skip(root_parts)
+    {
+        path = remote_join(&path, component);
+        ensure_plain_directory(fs, &path).await?;
+    }
+    Ok(())
 }
 
-async fn remote_command(
-    shell: &dyn WorkspaceShell,
-    action: &str,
-    cache_root: &str,
-    workspace_root: &str,
-    archive: &LocalArchive,
-    upload_name: &str,
-) -> Result<RemoteResult> {
-    let arguments = [
-        REMOTE_HELPER,
-        action,
-        cache_root,
-        workspace_root,
-        &archive.package_id,
-        &archive.content_hash,
-        upload_name,
-    ]
-    .map(quote)
-    .join(" ");
-    let result = shell
-        .exec_with_options(
-            &format!(
-                "command -v python3 >/dev/null 2>&1 || {{ printf '%s\\n' 'Full user Skill sync requires Python 3 on the remote target' >&2; exit 127; }}; python3 -c {arguments}"
-            ),
-            // Hashing many files and extracting an archive may legitimately
-            // take minutes. The transport and turn owner handle cancellation.
-            WorkspaceCommandOptions::default(),
-        )
+fn permissions(metadata: &WorkspaceMetadata) -> Result<u32> {
+    metadata
+        .permissions
+        .map(|mode| mode & 0o777)
+        .ok_or_else(|| {
+            anyhow::anyhow!("Full user Skill sync requires filesystem POSIX permission metadata")
+        })
+}
+
+async fn verify_remote_package(
+    fs: &dyn WorkspaceFileSystem,
+    root: &str,
+    package: &LocalPackage,
+) -> Result<bool> {
+    let Some(metadata) = fs.metadata(root, false).await? else {
+        return Ok(false);
+    };
+    if metadata.kind != WorkspacePathKind::Directory || permissions(&metadata)? != 0o700 {
+        return Ok(false);
+    }
+    let marker = remote_join(root, MANIFEST_NAME);
+    let Some(metadata) = fs.metadata(&marker, false).await? else {
+        return Ok(false);
+    };
+    if metadata.kind != WorkspacePathKind::File {
+        return Ok(false);
+    }
+    let mut reader = fs
+        .open_read(&marker)
         .await
-        .context("Remote Skill package synchronization failed")?;
-    if result.exit_code != 0 || result.interrupted || result.timed_out {
-        bail!(
-            "Remote Skill package {action} failed: {}",
-            result.combined_output().trim()
+        .context("Target does not support streamed Skill verification")?;
+    let mut buffer = vec![0; STREAM_BUFFER_BYTES];
+    let mut offset = 0;
+    loop {
+        let read = reader.read(&mut buffer).await?;
+        if read == 0 {
+            break;
+        }
+        if offset + read > package.manifest_bytes.len()
+            || buffer[..read] != package.manifest_bytes[offset..offset + read]
+        {
+            return Ok(false);
+        }
+        offset += read;
+    }
+    if offset != package.manifest_bytes.len() {
+        return Ok(false);
+    }
+    drop(reader);
+
+    let expected: HashMap<_, _> = package
+        .manifest
+        .entries
+        .iter()
+        .map(|entry| (entry.path.as_str(), entry))
+        .collect();
+    let mut seen = HashSet::new();
+    let mut directories = vec![String::new()];
+    while let Some(relative) = directories.pop() {
+        let directory = if relative.is_empty() {
+            root.to_string()
+        } else {
+            remote_join(root, &relative)
+        };
+        let Some(metadata) = fs.metadata(&directory, false).await? else {
+            return Ok(false);
+        };
+        if metadata.kind != WorkspacePathKind::Directory {
+            return Ok(false);
+        }
+        if !relative.is_empty() && permissions(&metadata)? != expected[relative.as_str()].mode {
+            return Ok(false);
+        }
+        for child in fs.read_dir(&directory).await? {
+            if child.name.is_empty()
+                || matches!(child.name.as_str(), "." | "..")
+                || child.name.contains(['/', '\\', '\0'])
+            {
+                bail!("Target returned an invalid Skill package entry name");
+            }
+            let name = if relative.is_empty() {
+                child.name
+            } else {
+                format!("{relative}/{}", child.name)
+            };
+            if name == MANIFEST_NAME {
+                continue;
+            }
+            let Some(entry) = expected.get(name.as_str()) else {
+                return Ok(false);
+            };
+            if child.is_symlink || !seen.insert(name.clone()) {
+                return Ok(false);
+            }
+            if entry.kind == "directory" {
+                directories.push(name);
+            }
+        }
+    }
+    if seen.len() != expected.len() {
+        return Ok(false);
+    }
+    let checks: Vec<_> = package
+        .manifest
+        .entries
+        .iter()
+        .map(|entry| verify_remote_entry(fs, root, entry).boxed())
+        .collect();
+    let mut checks = stream::iter(checks).buffer_unordered(MAX_FILE_TRANSFERS);
+    while let Some(valid) = checks.next().await {
+        if !valid? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+async fn verify_remote_entry(
+    fs: &dyn WorkspaceFileSystem,
+    root: &str,
+    entry: &ManifestEntry,
+) -> Result<bool> {
+    let path = remote_join(root, &entry.path);
+    let Some(metadata) = fs.metadata(&path, false).await? else {
+        return Ok(false);
+    };
+    let kind = if entry.kind == "directory" {
+        WorkspacePathKind::Directory
+    } else {
+        WorkspacePathKind::File
+    };
+    if metadata.kind != kind || permissions(&metadata)? != entry.mode {
+        return Ok(false);
+    }
+    if entry.kind == "directory" {
+        return Ok(true);
+    }
+    if metadata.size.is_some_and(|size| size != entry.size) {
+        return Ok(false);
+    }
+    let mut reader = fs
+        .open_read(&path)
+        .await
+        .context("Target does not support streamed Skill verification")?;
+    let mut buffer = vec![0; STREAM_BUFFER_BYTES];
+    let mut digest = Sha256::new();
+    let mut size = 0;
+    loop {
+        let read = reader.read(&mut buffer).await?;
+        if read == 0 {
+            break;
+        }
+        size += read as u64;
+        if size > entry.size {
+            return Ok(false);
+        }
+        digest.update(&buffer[..read]);
+    }
+    Ok(size == entry.size && format!("{:x}", digest.finalize()) == entry.sha256)
+}
+
+async fn upload_package(
+    fs: &dyn WorkspaceFileSystem,
+    staging: &str,
+    package: &LocalPackage,
+    progress: &Option<SkillPackageProgressCallback>,
+) -> Result<()> {
+    let mut directories: Vec<_> = package
+        .manifest
+        .entries
+        .iter()
+        .filter(|entry| entry.kind == "directory")
+        .collect();
+    directories.sort_by_key(|entry| entry.path.split('/').count());
+    for entry in &directories {
+        let path = remote_join(staging, &entry.path);
+        fs.create_dir_new(&path).await?;
+        fs.set_permissions(&path, 0o700).await?;
+    }
+    report(
+        progress,
+        SkillPackageSyncPhase::Uploading,
+        package.file_count,
+        package.total_bytes,
+        0,
+    );
+    let transferred = AtomicU64::new(0);
+    let uploads: Vec<_> = package
+        .manifest
+        .entries
+        .iter()
+        .filter(|entry| entry.kind == "file")
+        .map(|entry| upload_file(fs, staging, package, entry, progress, &transferred).boxed())
+        .collect();
+    stream::iter(uploads)
+        .buffer_unordered(MAX_FILE_TRANSFERS)
+        .try_collect::<Vec<_>>()
+        .await?;
+    let marker = remote_join(staging, MANIFEST_NAME);
+    let mut writer = fs
+        .open_write_new(&marker)
+        .await
+        .context("Target does not support streaming Skill package uploads")?;
+    writer.write_all(&package.manifest_bytes).await?;
+    writer.shutdown().await?;
+    drop(writer);
+    fs.set_permissions(&marker, 0o600).await?;
+    for entry in directories.into_iter().rev() {
+        fs.set_permissions(&remote_join(staging, &entry.path), entry.mode)
+            .await?;
+    }
+    Ok(())
+}
+
+async fn upload_file(
+    fs: &dyn WorkspaceFileSystem,
+    staging: &str,
+    package: &LocalPackage,
+    entry: &ManifestEntry,
+    progress: &Option<SkillPackageProgressCallback>,
+    transferred: &AtomicU64,
+) -> Result<()> {
+    check_cancelled(&package.cancelled)?;
+    let path = package.root.join(&entry.path);
+    let metadata = tokio::fs::symlink_metadata(&path).await?;
+    if crate::bounded_fs::is_symlink_or_reparse(&metadata)
+        || !metadata.is_file()
+        || local_mode(&metadata) != entry.mode
+        || !tokio::fs::canonicalize(&path)
+            .await?
+            .starts_with(&package.root)
+    {
+        bail!("Local Skill package changed while preparing its transfer: {}. Try loading the Skill again", entry.path);
+    }
+    let mut input = tokio::fs::File::open(&path).await?;
+    let target = remote_join(staging, &entry.path);
+    let mut output = fs
+        .open_write_new(&target)
+        .await
+        .context("Target does not support streaming Skill package uploads")?;
+    let mut buffer = vec![0; STREAM_BUFFER_BYTES];
+    let mut digest = Sha256::new();
+    let mut size = 0;
+    loop {
+        check_cancelled(&package.cancelled)?;
+        let read = input.read(&mut buffer).await?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+        size += read as u64;
+        if size > entry.size {
+            bail!("Local Skill file changed while preparing its transfer: {}. Try loading the Skill again", entry.path);
+        }
+        output.write_all(&buffer[..read]).await?;
+        let transferred = transferred.fetch_add(read as u64, Ordering::Relaxed) + read as u64;
+        report(
+            progress,
+            SkillPackageSyncPhase::Uploading,
+            package.file_count,
+            package.total_bytes,
+            transferred,
         );
     }
-    let result: RemoteResult = serde_json::from_str(result.stdout.trim())
-        .context("Remote Skill package helper returned an invalid result")?;
-    let expected = format!(
-        "{}/{}/{}",
-        cache_root.trim_end_matches('/'),
-        archive.package_id,
-        archive.content_hash
-    );
-    if result.path != expected {
-        bail!("Remote Skill package helper returned an unexpected deployment path");
+    if size != entry.size || format!("{:x}", digest.finalize()) != entry.sha256 {
+        bail!("Local Skill file changed while preparing its transfer: {}. Try loading the Skill again", entry.path);
     }
-    Ok(result)
+    output.shutdown().await?;
+    drop(output);
+    fs.set_permissions(&target, entry.mode).await?;
+    Ok(())
+}
+
+async fn find_verified_deployment(
+    fs: &dyn WorkspaceFileSystem,
+    parent: &str,
+    package: &LocalPackage,
+) -> Result<Option<String>> {
+    let mut candidates: Vec<_> = fs
+        .read_dir(parent)
+        .await?
+        .into_iter()
+        .filter_map(|entry| {
+            let is_legacy = entry.name == package.content_hash;
+            let is_generation = entry
+                .name
+                .strip_prefix(&format!("{}-", package.content_hash))
+                .is_some_and(|suffix| {
+                    uuid::Uuid::parse_str(suffix)
+                        .is_ok_and(|id| id.hyphenated().to_string() == suffix)
+                });
+            (is_legacy || is_generation).then_some(entry.name)
+        })
+        .collect();
+    // Prefer newer-format generations over legacy fixed-digest directories.
+    // UUID order is not chronology; all verified generations contain the same
+    // immutable bytes. This merely makes the selection deterministic.
+    candidates.sort_by(|left, right| right.cmp(left));
+    for name in candidates {
+        let path = remote_join(parent, &name);
+        if verify_remote_package(fs, &path, package).await? {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
+}
+
+async fn publish_package(
+    fs: &dyn WorkspaceFileSystem,
+    staging: &str,
+    parent: &str,
+    package: &LocalPackage,
+) -> Result<(String, bool)> {
+    if let Some(winner) = find_verified_deployment(fs, parent, package).await? {
+        return Ok((winner, true));
+    }
+    let target = remote_join(
+        parent,
+        &format!("{}-{}", package.content_hash, uuid::Uuid::new_v4()),
+    );
+    fs.rename(staging, &target)
+        .await
+        .context("Skill package publication failed; existing deployments were preserved")?;
+    // Each publisher owns its UUID destination. A concurrent repair can never
+    // move a path another invocation has already returned. Corrupt generations
+    // remain intact, and readers discover any verified generation next time.
+    Ok((target, false))
 }
 
 fn scan_package(
@@ -382,7 +634,7 @@ fn scan_package(
     key: &str,
     progress: &Option<SkillPackageProgressCallback>,
     cancelled: Arc<AtomicBool>,
-) -> Result<LocalArchive> {
+) -> Result<LocalPackage> {
     check_cancelled(&cancelled)?;
     let root = fs::canonicalize(local_root)
         .with_context(|| format!("Cannot read local Skill directory {}", local_root.display()))?;
@@ -393,12 +645,7 @@ fn scan_package(
         "{:x}",
         Sha256::digest(serde_json::to_vec(&(key, root.to_string_lossy()))?)
     );
-    let archive_path = std::env::temp_dir().join(format!(
-        "openbitfun-skill-package-{}.zip",
-        uuid::Uuid::new_v4()
-    ));
-    let mut archive = LocalArchive {
-        path: archive_path,
+    let mut package = LocalPackage {
         root: root.clone(),
         manifest: Manifest {
             version: 1,
@@ -409,33 +656,31 @@ fn scan_package(
         content_hash: String::new(),
         file_count: 0,
         total_bytes: 0,
-        archive_bytes: 0,
-        archive_created: false,
         cancelled,
     };
     let mut manifest = Manifest {
         version: 1,
         entries: Vec::new(),
     };
-    scan_directory(&root, "", &mut manifest.entries, &mut archive, progress)?;
+    scan_directory(&root, "", &mut manifest.entries, &mut package, progress)?;
     manifest.entries.sort_by(|a, b| a.path.cmp(&b.path));
-    archive.manifest_bytes = serde_json::to_vec(&manifest)?;
-    archive.content_hash = format!("{:x}", Sha256::digest(&archive.manifest_bytes));
-    archive.manifest = manifest;
-    Ok(archive)
+    package.manifest_bytes = serde_json::to_vec(&manifest)?;
+    package.content_hash = format!("{:x}", Sha256::digest(&package.manifest_bytes));
+    package.manifest = manifest;
+    Ok(package)
 }
 
 fn scan_directory(
     directory: &Path,
     prefix: &str,
     manifest: &mut Vec<ManifestEntry>,
-    archive: &mut LocalArchive,
+    package: &mut LocalPackage,
     progress: &Option<SkillPackageProgressCallback>,
 ) -> Result<()> {
     let mut children = fs::read_dir(directory)?.collect::<std::io::Result<Vec<_>>>()?;
     children.sort_by_key(|entry| entry.file_name());
     for child in children {
-        check_cancelled(&archive.cancelled)?;
+        check_cancelled(&package.cancelled)?;
         let name = child
             .file_name()
             .into_string()
@@ -467,14 +712,14 @@ fn scan_directory(
             sha256: String::new(),
         };
         if metadata.is_dir() {
-            scan_directory(&path, &relative, manifest, archive, progress)?;
+            scan_directory(&path, &relative, manifest, package, progress)?;
         } else if metadata.is_file() {
             entry.kind = "file";
             let mut input = File::open(&path)?;
             let mut digest = Sha256::new();
             let mut buffer = [0; 64 * 1024];
             loop {
-                check_cancelled(&archive.cancelled)?;
+                check_cancelled(&package.cancelled)?;
                 let read = input.read(&mut buffer)?;
                 if read == 0 {
                     break;
@@ -488,13 +733,13 @@ fn scan_directory(
                 bail!("Local Skill file changed while preparing its package: {relative}. Try loading the Skill again");
             }
             entry.sha256 = format!("{:x}", digest.finalize());
-            archive.file_count += 1;
-            archive.total_bytes += entry.size;
+            package.file_count += 1;
+            package.total_bytes += entry.size;
             report(
                 progress,
                 SkillPackageSyncPhase::Scanning,
-                archive.file_count,
-                archive.total_bytes,
+                package.file_count,
+                package.total_bytes,
                 0,
             );
         } else {
@@ -503,71 +748,6 @@ fn scan_directory(
         manifest.push(entry);
     }
     Ok(())
-}
-
-fn build_archive(mut archive: LocalArchive) -> Result<LocalArchive> {
-    let mut options = File::options();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let file = options.open(&archive.path)?;
-    archive.archive_created = true;
-    let mut zip = ZipWriter::new(file);
-    for entry in &archive.manifest.entries {
-        check_cancelled(&archive.cancelled)?;
-        let path = archive.root.join(&entry.path);
-        let metadata = fs::symlink_metadata(&path)?;
-        if crate::bounded_fs::is_symlink_or_reparse(&metadata)
-            || local_mode(&metadata) != entry.mode
-            || !fs::canonicalize(&path)?.starts_with(&archive.root)
-        {
-            bail!("Local Skill package changed while preparing its archive: {}. Try loading the Skill again", entry.path);
-        }
-        let options = SimpleFileOptions::default()
-            .compression_method(CompressionMethod::Deflated)
-            .unix_permissions(entry.mode);
-        if entry.kind == "directory" {
-            if !metadata.is_dir() {
-                bail!(
-                    "Local Skill directory changed while preparing its archive: {}",
-                    entry.path
-                );
-            }
-            zip.add_directory(format!("{}/", entry.path), options)?;
-            continue;
-        }
-        if !metadata.is_file() {
-            bail!(
-                "Local Skill file changed while preparing its archive: {}",
-                entry.path
-            );
-        }
-        let mut input = File::open(&path)?;
-        let mut digest = Sha256::new();
-        let mut size = 0;
-        zip.start_file(&entry.path, options)?;
-        let mut buffer = [0; 64 * 1024];
-        loop {
-            check_cancelled(&archive.cancelled)?;
-            let read = input.read(&mut buffer)?;
-            if read == 0 {
-                break;
-            }
-            zip.write_all(&buffer[..read])?;
-            digest.update(&buffer[..read]);
-            size += read as u64;
-        }
-        if size != entry.size || format!("{:x}", digest.finalize()) != entry.sha256 {
-            bail!("Local Skill file changed while preparing its archive: {}. Try loading the Skill again", entry.path);
-        }
-    }
-    zip.start_file(MANIFEST_NAME, SimpleFileOptions::default())?;
-    zip.write_all(&archive.manifest_bytes)?;
-    archive.archive_bytes = zip.finish()?.metadata()?.len();
-    Ok(archive)
 }
 
 #[cfg(unix)]

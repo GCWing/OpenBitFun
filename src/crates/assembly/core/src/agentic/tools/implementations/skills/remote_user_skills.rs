@@ -1,7 +1,7 @@
 //! Execution-host preference and on-demand deployment of local user Skills.
 
 use super::types::{SkillData, SkillLocation};
-use crate::agentic::workspace::{WorkspaceFileSystem, WorkspaceShell};
+use crate::agentic::workspace::WorkspaceFileSystem;
 use crate::service::config::global::GlobalConfigManager;
 use crate::service::config::types::{RemoteUserSkillsMode, WorkspaceConfig};
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
@@ -43,7 +43,6 @@ pub(super) async fn prepare_remote_user_skill(
     skill: &mut SkillData,
     fs: &dyn WorkspaceFileSystem,
     remote_root: &str,
-    shell: Option<&dyn WorkspaceShell>,
     progress: Option<SkillLoadProgress>,
     parser_source_slot: &str,
 ) -> OpenBitFunResult<()> {
@@ -51,23 +50,14 @@ pub(super) async fn prepare_remote_user_skill(
         return Ok(());
     }
     let mode = remote_user_skills_mode().await?;
-    prepare_remote_user_skill_with_mode(
-        skill,
-        fs,
-        remote_root,
-        shell,
-        progress,
-        &mode,
-        parser_source_slot,
-    )
-    .await
+    prepare_remote_user_skill_with_mode(skill, fs, remote_root, progress, &mode, parser_source_slot)
+        .await
 }
 
 async fn prepare_remote_user_skill_with_mode(
     skill: &mut SkillData,
     fs: &dyn WorkspaceFileSystem,
     remote_root: &str,
-    shell: Option<&dyn WorkspaceShell>,
     progress: Option<SkillLoadProgress>,
     mode: &RemoteUserSkillsMode,
     parser_source_slot: &str,
@@ -94,16 +84,13 @@ async fn prepare_remote_user_skill_with_mode(
         use openbitfun_services_core::skill_package_sync::{
             sync_local_skill_package, SkillPackageSyncPhase,
         };
-        let shell = shell.ok_or_else(|| OpenBitFunError::tool(
-            "Full remote user Skill loading requires the bound remote shell; no local fallback is available.".to_string(),
-        ))?;
         let notify = progress.map(|callback| {
             Arc::new(move |state: openbitfun_services_core::skill_package_sync::SkillPackageSyncProgress| {
                 let stage = match state.phase {
                     SkillPackageSyncPhase::Scanning => "Preparing local Skill package",
                     SkillPackageSyncPhase::Checking => "Checking remote Skill package",
                     SkillPackageSyncPhase::Uploading => "Uploading Skill package",
-                    SkillPackageSyncPhase::Extracting => "Verifying and publishing remote Skill package",
+                    SkillPackageSyncPhase::Verifying => "Verifying and publishing remote Skill package",
                     SkillPackageSyncPhase::Complete => "Remote Skill package ready",
                 };
                 let percentage = (state.phase == SkillPackageSyncPhase::Uploading && state.total_bytes > 0)
@@ -124,7 +111,6 @@ async fn prepare_remote_user_skill_with_mode(
             remote_root,
             &skill.key,
             fs,
-            shell,
             notify,
         )
         .await
@@ -177,7 +163,7 @@ async fn prepare_remote_user_skill_with_mode(
     }
     #[cfg(not(feature = "remote-workspace"))]
     {
-        let _ = (skill, fs, remote_root, shell, progress, parser_source_slot);
+        let _ = (skill, fs, remote_root, progress, parser_source_slot);
         Err(OpenBitFunError::tool(
             "This runtime build does not support complete user Skill deployment to remote workspaces.".to_string(),
         ))
@@ -328,7 +314,6 @@ mod tests {
             &crate::agentic::workspace::LocalWorkspaceFs,
             "/nonexistent/remote",
             None,
-            None,
             &RemoteUserSkillsMode::SkillMdOnly,
             "openbitfun",
         )
@@ -348,7 +333,6 @@ mod tests {
             &mut skill,
             &crate::agentic::workspace::LocalWorkspaceFs,
             "/nonexistent/remote",
-            None,
             None,
             &RemoteUserSkillsMode::Disabled,
             "openbitfun",
@@ -371,7 +355,6 @@ mod tests {
             &crate::agentic::workspace::LocalWorkspaceFs,
             "/unavailable/remote",
             None,
-            None,
             &RemoteUserSkillsMode::Full,
             "openbitfun",
         )
@@ -386,42 +369,23 @@ mod tests {
     #[cfg(all(unix, feature = "remote-workspace"))]
     #[tokio::test]
     async fn full_user_skill_loads_deployed_snapshot_and_preserves_dialect_identity() {
-        use crate::agentic::workspace::{LocalWorkspaceFs, LocalWorkspaceShell};
+        use crate::agentic::workspace::{LocalWorkspaceFs, LocalWorkspaceShell, WorkspaceShell};
         let temp = tempfile::tempdir().unwrap();
         let source = temp.path().join("local user/review-package");
         let target = temp.path().join("remote project");
         std::fs::create_dir_all(source.join("scripts")).unwrap();
         std::fs::create_dir_all(source.join("references")).unwrap();
         std::fs::create_dir_all(&target).unwrap();
-        let original = format!("---\ndescription: Review package\narguments: target\n---\nRead {}/references/guide.txt and run scripts/hello.py for $target.", source.display());
+        let original = format!("---\ndescription: Review package\narguments: target\n---\nRead {}/references/guide.txt and run scripts/hello.sh for $target.", source.display());
         std::fs::write(source.join("SKILL.md"), &original).unwrap();
         std::fs::write(source.join("references/guide.txt"), "deployed reference").unwrap();
-        std::fs::write(
-            source.join("scripts/hello.py"),
-            "import os; print(os.getcwd())",
-        )
-        .unwrap();
+        std::fs::write(source.join("scripts/hello.sh"), "pwd -P\n").unwrap();
         let mut skill = user_skill(&source.to_string_lossy(), &original, "claude");
         let key = skill.key.clone();
-        let shell = LocalWorkspaceShell::new(target.to_string_lossy().into_owned());
-        let error = prepare_remote_user_skill_with_mode(
-            &mut skill,
-            &LocalWorkspaceFs,
-            &target.to_string_lossy(),
-            None,
-            None,
-            &RemoteUserSkillsMode::Full,
-            "claude",
-        )
-        .await
-        .unwrap_err();
-        assert!(error.to_string().contains("bound remote shell"));
-        assert!(!target.join(".openbitfun").exists());
         prepare_remote_user_skill_with_mode(
             &mut skill,
             &LocalWorkspaceFs,
             &target.to_string_lossy(),
-            Some(&shell),
             None,
             &RemoteUserSkillsMode::Full,
             "claude",
@@ -452,8 +416,9 @@ mod tests {
                 .unwrap(),
             "deployed reference"
         );
+        let shell = LocalWorkspaceShell::new(target.to_string_lossy().into_owned());
         let (stdout, stderr, exit) = shell
-            .exec(&format!("python3 '{}/scripts/hello.py'", skill.path), None)
+            .exec(&format!("sh '{}/scripts/hello.sh'", skill.path), None)
             .await
             .unwrap();
         assert_eq!(exit, 0, "{stderr}");

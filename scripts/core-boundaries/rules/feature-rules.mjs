@@ -45,7 +45,7 @@ export const optionalDependencyFeatureOwnerRules = [
       'services-core optional implementation dependencies must stay behind their exact owner capability',
     dependencies: [
       { depName: 'image', ownerFeatures: ['pet-packages'] },
-      { depName: 'zip', ownerFeatures: ['pet-packages', 'skill-package-sync'] },
+      { depName: 'zip', ownerFeatures: ['pet-packages'] },
       { depName: 'uuid', ownerFeatures: ['pet-packages', 'resource-capacity', 'skill-package-sync'] },
       { depName: 'aes-gcm', ownerFeatures: ['credential-vault'] },
       { depName: 'anyhow', ownerFeatures: ['credential-vault', 'dispatch-workspace', 'workspace-runtime', 'workspace-transfer', 'session-recovery', 'skill-package-sync'] },
@@ -61,6 +61,7 @@ export const optionalDependencyFeatureOwnerRules = [
       { depName: 'chrono-tz', ownerFeatures: ['token-usage-statistics'] },
       { depName: 'dunce', ownerFeatures: ['pet-packages', 'runtime-ownership', 'workspace-identity', 'workspace-runtime'] },
       { depName: 'fs2', ownerFeatures: ['pet-packages', 'credential-vault', 'json-io', 'local-storage', 'runtime-ownership'] },
+      { depName: 'futures', ownerFeatures: ['skill-package-sync'] },
       { depName: 'git2', ownerFeatures: ['session-git'] },
       { depName: 'globset', ownerFeatures: ['workspace-instructions'] },
       { depName: 'ignore', ownerFeatures: ['filesystem'] },
@@ -1680,11 +1681,11 @@ export const coreClosedFeatureProfileRules = [
     featureName: 'skill-package-sync',
     requiredFeatureRefs: [
       'dep:anyhow', 'dep:openbitfun-runtime-ports',
-      'openbitfun-runtime-ports/workspace-ports', 'dep:sha2', 'dep:zip', 'dep:uuid',
+      'openbitfun-runtime-ports/workspace-ports', 'dep:sha2', 'dep:futures', 'dep:uuid',
       'dep:tokio', 'tokio/fs', 'tokio/io-util', 'tokio/rt',
     ],
     exact: true,
-    reason: 'skill-package-sync owns package hashing, archive transfer and verification through injected workspace ports, without local process or transport implementations',
+    reason: 'skill-package-sync owns bounded concurrent file transfer and streamed verification through injected workspace filesystem ports, without archive, process or transport implementations',
   },
   {
     manifestPath: 'src/crates/services/services-core/Cargo.toml',

@@ -183,8 +183,10 @@ For full user Skill deployment, resource reads, executable scripts, content reus
 and stale-copy repair over the same real loopback SSH / OpenSSH SFTP fixture,
 run that command with the filter ending in
 `workspace_sftp::openssh_skill_package_sync_reads_executes_and_repairs_remote_resources -- --ignored`.
-The fixture executes a POSIX shell through SSH against test-owned directories;
-it does not establish external-host, ProxyJump, Docker or Windows-client coverage.
+The fixture asserts that synchronization, cache validation and repair perform
+zero remote command executions. Only the selected Skill's POSIX shell script is
+executed through SSH; neither synchronization nor that script requires Python.
+It does not establish external-host, ProxyJump, Docker or Windows-client coverage.
 
 For directory symlink browsing and workspace-path validation, use the same
 package/features with `--lib directory_symlink_browsing -- --include-ignored`

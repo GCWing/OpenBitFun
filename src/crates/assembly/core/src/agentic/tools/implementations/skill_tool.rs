@@ -274,7 +274,6 @@ impl Tool for SkillTool {
                             ws_fs,
                             &root,
                             context.agent_type.as_deref(),
-                            context.ws_shell(),
                             Some(progress.clone()),
                         )
                         .await?
@@ -285,7 +284,6 @@ impl Tool for SkillTool {
                             ws_fs,
                             &root,
                             context.agent_type.as_deref(),
-                            context.ws_shell(),
                             Some(progress.clone()),
                         )
                         .await?

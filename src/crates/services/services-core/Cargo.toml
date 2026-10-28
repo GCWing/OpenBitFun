@@ -34,6 +34,7 @@ thiserror = { workspace = true }
 log = { workspace = true }
 fs2 = { workspace = true, optional = true }
 filetime = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 ignore = { workspace = true, optional = true }
 globset = { workspace = true, optional = true }
@@ -163,7 +164,7 @@ skill-package-sync = [
     "dep:openbitfun-runtime-ports",
     "openbitfun-runtime-ports/workspace-ports",
     "dep:sha2",
-    "dep:zip",
+    "dep:futures",
     "dep:uuid",
     "dep:tokio",
     "tokio/fs",

@@ -243,11 +243,19 @@ and explicit invocation, without changing remote project Skills. See the
 [Desktop guide](../../src/apps/desktop/README.md#user-skills-in-remote-workspaces)
 for prerequisites and behavior.
 
-Full loading deploys the selected directory through the bound filesystem and
-shell providers, never through a local fallback. Deterministic file hashes and
-permissions identify package versions. Target verification checks the complete
-tree before reuse; otherwise one streamed archive is validated in a staging
-directory before publication. Returned Skill paths use target POSIX semantics,
+Full loading deploys the selected directory through the bound filesystem
+provider, never through a local fallback. SSH workspaces use the existing SFTP
+connection; synchronization does not execute a remote shell or require Python,
+an archive extractor or an external synchronization program. Deterministic file
+hashes and permissions identify package versions. Bounded parallel streamed
+reads check the complete remote tree before reuse; otherwise files are uploaded
+and verified in a staging directory before publication. Many small files can
+still take time over high-latency connections, so progress remains visible.
+Published directories are never moved or removed by synchronization. A changed
+or damaged cached copy leads to a new generation; matching verified generations
+can be reused. This preserves resource paths already returned to other turns
+without a persistent target-side lock.
+Returned Skill paths use target POSIX semantics,
 and references rooted in the original package are mapped to that deployment.
 The runtime reads instructions back from the deployed snapshot before reporting
 success. This copies package resources; it does not install interpreters,

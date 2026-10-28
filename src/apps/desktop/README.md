@@ -652,18 +652,26 @@ In **Settings → Workspace & Git → User Skills in remote workspaces**, choose
 - **Do not run**: omit host-local user Skills from remote session listings and
   reject their invocation. Remote project Skills remain available.
 - **Full**: on invocation, check the complete package against its remote copy;
-  upload changed packages as one compressed archive and expose a verified POSIX
-  resource path. The Skill card shows preparation, upload and verification progress.
+  transfer files through the bound workspace filesystem and expose a verified
+  POSIX resource path. SSH workspaces use SFTP over the existing SSH connection,
+  with bounded parallel file operations. The Skill card shows preparation,
+  upload and verification progress.
   Its completed state confirms package availability, not that runtime dependencies
   are installed or that the Skill has executed successfully.
 
-Full mode requires Python 3 and a streaming file-upload provider on the POSIX
-target, plus any runtime dependencies the Skill itself needs. Packages are cached
+Full mode needs a workspace file provider that supports streamed reads/writes,
+metadata, permissions and staging publication. It does not require Python, an
+archive extractor or another synchronization program on the target. Any runtime
+dependencies the Skill itself needs must still be available there. Packages are cached
 under `<remote-workspace>/.openbitfun/cache/user-skills`; exclude that cache from
 version control if your project tracks `.openbitfun`. Many small files or large
-packages can take time to hash and transfer. Nested symbolic links and special
+packages can take time to verify and transfer, especially on high-latency SSH
+connections. Reuse checks read and hash remote file contents before skipping
+uploads. Nested symbolic links and special
 files are rejected with an explicit error; files outside the Skill directory are
-not copied. Existing verified package versions remain available to active turns.
+not copied. Synchronization reuses a matching verified directory. If a cached
+copy was modified or damaged, it publishes a new generation and retains the old
+directory, so concurrent loads never move another turn's resource path.
 Project file operations and commands continue to run on the remote host.
 Standalone Markdown Skills in a shared directory must first be converted into
 an isolated `name/SKILL.md` package for Full mode; OpenBitFun never copies their

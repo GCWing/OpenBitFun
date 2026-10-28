@@ -15,6 +15,7 @@ struct State {
     closed: AtomicUsize,
     live: AtomicUsize,
     channels: AtomicUsize,
+    exec_calls: AtomicUsize,
     pause_open: AtomicBool,
     pause_read: AtomicBool,
     pause_dir: AtomicBool,
@@ -236,6 +237,7 @@ impl russh::server::Handler for SshServer {
     ) -> Result<(), Self::Error> {
         // This loopback fixture runs commands only against test-owned paths.
         // Keep the SSH execution path real while using the local POSIX shell.
+        self.state.exec_calls.fetch_add(1, Ordering::SeqCst);
         session.channel_success(channel);
         let output = process_manager::create_tokio_command("sh")
             .arg("-c")
@@ -1075,7 +1077,7 @@ async fn openssh_skill_package_sync_reads_executes_and_repairs_remote_resources(
     std::fs::create_dir(&remote_root).unwrap();
     std::fs::write(
         local_root.join("SKILL.md"),
-        "Read references/guide.md and run scripts/hello.py.",
+        "Read references/guide.md and run scripts/hello.sh.",
     )
     .unwrap();
     std::fs::write(local_root.join("references/guide.md"), "remote reference").unwrap();
@@ -1085,14 +1087,25 @@ async fn openssh_skill_package_sync_reads_executes_and_repairs_remote_resources(
         "quoted path",
     )
     .unwrap();
-    let script = local_root.join("scripts/hello.py");
-    std::fs::write(&script, "#!/usr/bin/env python3\nfrom pathlib import Path\nprint(Path(__file__).resolve().parents[1].joinpath('references/guide.md').read_text())\nprint(Path.cwd())\n").unwrap();
+    let script = local_root.join("scripts/hello.sh");
+    std::fs::write(&script, "#!/bin/sh\nscript_dir=${0%/*}\ncat \"$script_dir/../references/guide.md\"\nprintf '\\n'\npwd -P\n").unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let file_service = crate::remote_ssh::RemoteFileService::new(Arc::new(
         tokio::sync::RwLock::new(Some(fixture.manager.as_ref().clone())),
     ));
     let fs = RemoteWorkspaceFs::new("sftp-test".into(), file_service);
+    let exclusive_directory = remote_root.join("exclusive-directory");
+    fs.create_dir_new(exclusive_directory.to_str().unwrap())
+        .await
+        .unwrap();
+    assert!(fs
+        .create_dir_new(exclusive_directory.to_str().unwrap())
+        .await
+        .is_err());
+    fs.remove_dir(exclusive_directory.to_str().unwrap(), false)
+        .await
+        .unwrap();
     let shell = RemoteWorkspaceShell::new(
         "sftp-test".into(),
         fixture.manager.as_ref().clone(),
@@ -1105,11 +1118,15 @@ async fn openssh_skill_package_sync_reads_executes_and_repairs_remote_resources(
         remote_root.to_str().unwrap(),
         "user::test::hello",
         &fs,
-        &shell,
         None,
     )
     .await
     .unwrap();
+    assert_eq!(
+        fixture.state.exec_calls.load(Ordering::SeqCst),
+        0,
+        "Synchronization must use SSH/SFTP file IO without Python or shell execution"
+    );
     assert!(!first.reused);
     assert!(first.path.starts_with(cache));
     assert!(!first.path.contains("local user skill"));
@@ -1123,6 +1140,50 @@ async fn openssh_skill_package_sync_reads_executes_and_repairs_remote_resources(
         fs.read_file(&remote_template).await.unwrap(),
         [0, 255, 1, 13, 10]
     );
+    let reference_before = fs
+        .metadata(&remote_reference, false)
+        .await
+        .unwrap()
+        .unwrap();
+    let attributes_before = fixture
+        .manager
+        .sftp_stat("sftp-test", &remote_reference)
+        .await
+        .unwrap();
+    let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    fs.set_modified(&remote_reference, modified).await.unwrap();
+    let reference_after = fs
+        .metadata(&remote_reference, false)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(reference_after.modified, Some(modified));
+    let attributes_after = fixture
+        .manager
+        .sftp_stat("sftp-test", &remote_reference)
+        .await
+        .unwrap();
+    assert_eq!(
+        attributes_after.atime, attributes_before.atime,
+        "SFTP v3's paired access time must be preserved when changing modification time"
+    );
+    assert_eq!(
+        (attributes_after.uid, attributes_after.gid),
+        (attributes_before.uid, attributes_before.gid),
+        "Metadata updates must not change ownership"
+    );
+    assert_eq!(
+        reference_after.size, reference_before.size,
+        "SFTP mtime updates must not truncate the synchronized file"
+    );
+    assert_eq!(
+        reference_after.permissions, reference_before.permissions,
+        "SFTP mtime updates must not change executable or data permissions"
+    );
+    assert_eq!(
+        fs.read_file_text(&remote_reference).await.unwrap(),
+        "remote reference"
+    );
     assert_eq!(
         fs.read_file_text(&format!(
             "{}/references/quoted ' Unicode 你好.txt",
@@ -1133,9 +1194,14 @@ async fn openssh_skill_package_sync_reads_executes_and_repairs_remote_resources(
         "quoted path"
     );
     let script_command =
-        crate::remote_ssh::shell::quote_arg(&format!("{}/scripts/hello.py", first.path));
+        crate::remote_ssh::shell::quote_arg(&format!("{}/scripts/hello.sh", first.path));
     let (stdout, stderr, status) = shell.exec(&script_command, Some(30_000)).await.unwrap();
     assert_eq!(status, 0, "{stderr}");
+    assert_eq!(
+        fixture.state.exec_calls.load(Ordering::SeqCst),
+        1,
+        "The selected Skill script is the only remote command"
+    );
     assert_eq!(
         stdout,
         format!(
@@ -1150,7 +1216,6 @@ async fn openssh_skill_package_sync_reads_executes_and_repairs_remote_resources(
         remote_root.to_str().unwrap(),
         "user::test::hello",
         &fs,
-        &shell,
         None,
     )
     .await
@@ -1166,18 +1231,39 @@ async fn openssh_skill_package_sync_reads_executes_and_repairs_remote_resources(
         remote_root.to_str().unwrap(),
         "user::test::hello",
         &fs,
-        &shell,
         None,
     )
     .await
     .unwrap();
     assert!(!repaired.reused);
+    assert_ne!(
+        repaired.path, first.path,
+        "Repair must publish a new immutable generation instead of moving an active path"
+    );
+    assert_eq!(
+        fs.read_file_text(&remote_reference).await.unwrap(),
+        "remote corruption",
+        "Previously published generations must remain in place during repair"
+    );
     assert_eq!(
         fs.read_file_text(&format!("{}/references/guide.md", repaired.path))
             .await
             .unwrap(),
         "remote reference"
     );
+
+    let repaired_reuse = sync_local_skill_package(
+        &local_root,
+        cache,
+        remote_root.to_str().unwrap(),
+        "user::test::hello",
+        &fs,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(repaired_reuse.reused);
+    assert_eq!(repaired_reuse.path, repaired.path);
 
     std::fs::write(
         local_root.join("references/guide.md"),
@@ -1191,7 +1277,6 @@ async fn openssh_skill_package_sync_reads_executes_and_repairs_remote_resources(
         remote_root.to_str().unwrap(),
         "user::test::hello",
         &fs,
-        &shell,
         None,
     )
     .await
@@ -1208,4 +1293,9 @@ async fn openssh_skill_package_sync_reads_executes_and_repairs_remote_resources(
         .exists(&format!("{}/templates/binary.dat", updated.path))
         .await
         .unwrap());
+    assert_eq!(
+        fixture.state.exec_calls.load(Ordering::SeqCst),
+        1,
+        "Cache checking, corruption repair and updates must not execute target commands"
+    );
 }

@@ -231,6 +231,12 @@ impl WorkspaceFileSystem for RemoteWorkspaceFs {
             .await
     }
 
+    async fn create_dir_new(&self, path: &str) -> anyhow::Result<()> {
+        self.file_service
+            .create_dir(&self.connection_id, path)
+            .await
+    }
+
     #[cfg(feature = "remote-ssh-concrete")]
     async fn set_permissions(&self, path: &str, permissions: u32) -> anyhow::Result<()> {
         self.file_service

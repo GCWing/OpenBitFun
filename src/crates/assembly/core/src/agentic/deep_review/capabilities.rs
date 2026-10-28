@@ -372,7 +372,6 @@ async fn load_review_skill(
                 fs,
                 &root,
                 context.agent_type.as_deref(),
-                context.ws_shell(),
                 Some(crate::agentic::tools::implementations::skills::remote_skill_progress::skill_load_progress(context, "AgentSpawn")),
             )
             .await

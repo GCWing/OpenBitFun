@@ -518,7 +518,7 @@ export function runManifestParserSelfTest({
       'skill-package-sync',
       [
         'dep:anyhow', 'dep:openbitfun-runtime-ports',
-        'openbitfun-runtime-ports/workspace-ports', 'dep:sha2', 'dep:zip', 'dep:uuid',
+        'openbitfun-runtime-ports/workspace-ports', 'dep:sha2', 'dep:futures', 'dep:uuid',
         'dep:tokio', 'tokio/fs', 'tokio/io-util', 'tokio/rt',
       ],
     ],

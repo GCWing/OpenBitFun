@@ -227,11 +227,16 @@ cargo test --locked -p openbitfun-services-core --no-default-features --features
 ```
 
 These tests use local POSIX workspace providers. The real loopback SSH/SFTP
-exercise is documented in the services-integrations guide. Full deployment
-requires Python 3 on the POSIX target and rejects nested symlinks or reparse
-points; a symlinked package root is canonicalized before scanning.
+exercise is documented in the services-integrations guide. Deployment uses only
+injected workspace filesystem operations with bounded concurrency and streamed
+content checks; it never launches a target shell or requires target-side Python,
+archive tools or a synchronization executable. Nested symlinks or reparse points
+are rejected; a symlinked package root is canonicalized before scanning.
 The selected remote workspace may have symlink ancestors; only that trusted
 root is resolved. Managed cache components below it must remain plain directories.
+Synchronization never moves or removes a published generation. Corrupt or
+modified copies are retained, and repairs publish a new verified generation so
+concurrent invocations cannot invalidate each other's returned resource paths.
 
 Workspace catalog identity and upgrade deserialization (without live filesystem/SSH activation):
 

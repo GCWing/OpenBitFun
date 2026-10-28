@@ -5070,13 +5070,13 @@ test('workspace transfer admits IO without process or networking capabilities', 
     v.message.includes('workspace-transfer has unexpected effective Tokio capabilities')));
 });
 
-test('Skill package synchronization keeps injected workspace IO without local processes or broad runtime ports', async () => {
+test('Skill package synchronization keeps streamed workspace IO without archive or process owners', async () => {
   const manifestPath = 'src/crates/services/services-core/Cargo.toml';
   const manifest = await readFile(new URL(`../${manifestPath}`, import.meta.url), 'utf8');
   const features = parseManifestFeatures(manifest);
   const expected = [
     'dep:anyhow', 'dep:openbitfun-runtime-ports',
-    'openbitfun-runtime-ports/workspace-ports', 'dep:sha2', 'dep:zip', 'dep:uuid',
+    'openbitfun-runtime-ports/workspace-ports', 'dep:sha2', 'dep:futures', 'dep:uuid',
     'dep:tokio', 'tokio/fs', 'tokio/io-util', 'tokio/rt',
   ];
   const profile = coreClosedFeatureProfileRules.find(rule =>
@@ -5084,6 +5084,9 @@ test('Skill package synchronization keeps injected workspace IO without local pr
   assert.equal(profile?.exact, true);
   assert.deepEqual(profile.requiredFeatureRefs, expected);
   assert.deepEqual(features['skill-package-sync'], expected);
+  const serviceOwners = optionalDependencyFeatureOwnerRules.find(rule => rule.crateName === 'services-core');
+  assert.deepEqual(serviceOwners.dependencies.find(rule => rule.depName === 'zip').ownerFeatures, ['pet-packages']);
+  assert.deepEqual(serviceOwners.dependencies.find(rule => rule.depName === 'futures').ownerFeatures, ['skill-package-sync']);
 
   const pkg = {
     name: 'openbitfun-services-core',

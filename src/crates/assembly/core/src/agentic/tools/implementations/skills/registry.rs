@@ -18,7 +18,7 @@ use super::source_cache::{LocalSkillWatchMonitor, LocalSkillWatchRoot, Versioned
 use super::types::{
     ModeSkillInfo, SkillData, SkillInfo, SkillLocation, SkillScanDiagnostic, SkillScanReport,
 };
-use crate::agentic::workspace::{WorkspaceFileSystem, WorkspaceShell};
+use crate::agentic::workspace::WorkspaceFileSystem;
 #[cfg(feature = "external-sources")]
 use crate::external_sources::{
     opencode_configured_skill_roots, pi_configured_skill_roots,
@@ -2098,7 +2098,6 @@ impl SkillRegistry {
             remote_root,
             agent_type,
             None,
-            None,
         )
         .await
     }
@@ -2109,7 +2108,6 @@ impl SkillRegistry {
         fs: &dyn WorkspaceFileSystem,
         remote_root: &str,
         agent_type: Option<&str>,
-        shell: Option<&dyn WorkspaceShell>,
         progress: Option<SkillLoadProgress>,
     ) -> OpenBitFunResult<SkillData> {
         let info = self
@@ -2138,15 +2136,8 @@ impl SkillRegistry {
         data.source_id = info.source_id;
         data.source_label = info.source_label;
         data.dir_name = info.dir_name;
-        prepare_remote_user_skill(
-            &mut data,
-            fs,
-            remote_root,
-            shell,
-            progress,
-            &parser_source_slot,
-        )
-        .await?;
+        prepare_remote_user_skill(&mut data, fs, remote_root, progress, &parser_source_slot)
+            .await?;
         apply_builtin_runtime_settings(&mut data).await?;
         Ok(data)
     }
@@ -2164,7 +2155,6 @@ impl SkillRegistry {
             remote_root,
             agent_type,
             None,
-            None,
         )
         .await
     }
@@ -2175,7 +2165,6 @@ impl SkillRegistry {
         fs: &dyn WorkspaceFileSystem,
         remote_root: &str,
         agent_type: Option<&str>,
-        shell: Option<&dyn WorkspaceShell>,
         progress: Option<SkillLoadProgress>,
     ) -> OpenBitFunResult<SkillData> {
         if skill_key.starts_with("user::") {
@@ -2215,15 +2204,8 @@ impl SkillRegistry {
         data.source_id = info.source_id;
         data.source_label = info.source_label;
         data.dir_name = info.dir_name;
-        prepare_remote_user_skill(
-            &mut data,
-            fs,
-            remote_root,
-            shell,
-            progress,
-            &parser_source_slot,
-        )
-        .await?;
+        prepare_remote_user_skill(&mut data, fs, remote_root, progress, &parser_source_slot)
+            .await?;
         apply_builtin_runtime_settings(&mut data).await?;
         Ok(data)
     }
