@@ -51,7 +51,7 @@ clone、`crontab` 整表安装、市场 first-install 或空 volume 的 `deploy.
 | `/srv/openbitfun-skin-market` | Skin 专用 checkout / 数据 / 备份 |
 | `/etc/openbitfun-miniapp-market/market.env` | MiniApp secrets，`root:root` `0600` |
 | `/etc/openbitfun-skin-market/market.env` | Skin secrets，`root:root` `0600` |
-| `/root/repos/new_api_bak` | New API 镜像 tar + `data/` 卷。OpenBitFun 不管 |
+| `/root/repos/new_api` | New API 镜像 tar + `data/` 卷。OpenBitFun 不管 |
 
 Git remote 不要混用：
 
@@ -125,8 +125,8 @@ rsync -aH --numeric-ids \
   "$OLD_HOST:/etc/openbitfun-skin-market/" \
   "$NEW_HOST:/etc/openbitfun-skin-market/"
 rsync -aH --numeric-ids \
-  "$OLD_HOST:/root/repos/new_api_bak/" \
-  "$NEW_HOST:/root/repos/new_api_bak/"
+  "$OLD_HOST:/root/repos/new_api/" \
+  "$NEW_HOST:/root/repos/new_api/"
 ```
 
 验收：新机上 `test -s /root/openbitfun-host-export/relay-server_relay-db.tar.gz`、
@@ -479,17 +479,17 @@ Relay 是零知识存储，不能在服务端改写加密设置内容；停止�
 这是改过的 `new-api` 镜像，**OpenBitFun clone 恢复不了**。旧机事实：
 
 - 镜像：`new-api:v1.0.0-rc.14-openbitfun-mod`
-- 离线包：`/root/repos/new_api_bak/new-api-v1.0.0-rc.14-openbitfun-mod.tar`
-- 数据：`/root/repos/new_api_bak/data` → 容器 `/data`
-- 启动：`/root/repos/new_api_bak/start.sh`（宿主 `33292` → 容器 `3000`）
+- 离线包：`/root/repos/new_api/new-api-v1.0.0-rc.14-openbitfun-mod.tar`
+- 数据：`/root/repos/new_api/data` → 容器 `/data`
+- 启动：`/root/repos/new_api/start.sh`（宿主 `33292` → 容器 `3000`）
 
 ```bash
 NEW_HOST=new-openbitfun
 ssh "$NEW_HOST" 'set -eu
-test -f /root/repos/new_api_bak/new-api-v1.0.0-rc.14-openbitfun-mod.tar
-test -d /root/repos/new_api_bak/data
-/root/repos/new_api_bak/load_image.sh
-/root/repos/new_api_bak/start.sh
+test -f /root/repos/new_api/new-api-v1.0.0-rc.14-openbitfun-mod.tar
+test -d /root/repos/new_api/data
+/root/repos/new_api/load_image.sh
+/root/repos/new_api/start.sh
 install -m 0644 \
   /root/repos/OpenBitFun/deploy/openbitfun-host/nginx-api.openbit.fun.conf \
   /etc/nginx/sites-available/api.openbit.fun
