@@ -36,6 +36,7 @@ chrono = { workspace = true, optional = true }
 dunce = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
+glob = { workspace = true, optional = true }
 fs2 = { workspace = true, optional = true }
 git2 = { workspace = true, optional = true }
 hostname = { workspace = true, optional = true }
@@ -511,7 +512,7 @@ product-full = [
     "workspace-search",
 ]
 skillhub = ["openbitfun-services-core/tls-provider", "reqwest", "reqwest/json", "reqwest/query", "reqwest/rustls-no-provider", "reqwest/stream", "zip", "tempfile", "tokio/fs", "tokio/io-util"]
-ssh_config = ["dep:ssh_config"]
+ssh_config = ["dep:ssh_config", "dep:glob"]
 
 [dev-dependencies]
 tempfile = { workspace = true }

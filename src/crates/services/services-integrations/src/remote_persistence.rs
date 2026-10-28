@@ -618,6 +618,8 @@ pub struct SavedConnectionRecord {
     pub last_connected: Option<u64>,
     #[serde(default)]
     pub proxy_jump: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_command: Option<String>,
     #[serde(default)]
     pub container: Option<ContainerWorkspaceRecord>,
     #[serde(default)]

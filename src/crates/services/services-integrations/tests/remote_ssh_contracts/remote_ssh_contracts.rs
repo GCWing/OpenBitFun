@@ -85,6 +85,7 @@ fn remote_target_contract_uses_proxy_jump_and_kebab_case_container_access() {
         },
         default_workspace: Some("/workspace".to_string()),
         proxy_jump: Some("jump1,jump2".to_string()),
+        proxy_command: None,
         container: Some(ContainerWorkspaceConfig {
             name: "trainer-dev".to_string(),
             access: ContainerAccess::DockerExec,
@@ -107,6 +108,76 @@ fn remote_target_contract_uses_proxy_jump_and_kebab_case_container_access() {
         round_trip.container.unwrap().access,
         ContainerAccess::DockerExec
     );
+}
+
+#[test]
+fn remote_target_contract_carries_proxy_command_and_stays_back_compatible() {
+    // A payload that names a ProxyCommand must round-trip through the camelCase
+    // wire shape and mark the config as drift-changed when the command changes.
+    let config: SSHConnectionConfig = serde_json::from_value(serde_json::json!({
+        "id": "conn-1",
+        "name": "coder",
+        "host": "coder-vscode.coder.sage.org.ai--abc",
+        "port": 22,
+        "username": "alice",
+        "auth": { "type": "PrivateKey", "keyPath": "~/.ssh/coder_deploy" },
+        "defaultWorkspace": "/home/coder",
+        "proxyCommand": "\"coder\" --url https://coder.example:9443 ssh --stdio %h"
+    }))
+    .unwrap();
+    assert_eq!(
+        config.proxy_command.as_deref(),
+        Some("\"coder\" --url https://coder.example:9443 ssh --stdio %h")
+    );
+
+    let json = serde_json::to_value(&config).unwrap();
+    assert_eq!(
+        json["proxyCommand"],
+        "\"coder\" --url https://coder.example:9443 ssh --stdio %h"
+    );
+    let round_trip: SSHConnectionConfig = serde_json::from_value(json).unwrap();
+    assert_eq!(
+        round_trip.proxy_command.as_deref(),
+        config.proxy_command.as_deref()
+    );
+    assert!(config.connection_params_equal(&round_trip));
+
+    // Older clients and persisted files predate the field: it must deserialize
+    // as absent, and two such configs must still compare equal.
+    let legacy: SSHConnectionConfig = serde_json::from_value(serde_json::json!({
+        "id": "conn-1",
+        "name": "coder",
+        "host": "coder-vscode.coder.sage.org.ai--abc",
+        "port": 22,
+        "username": "alice",
+        "auth": { "type": "PrivateKey", "keyPath": "~/.ssh/coder_deploy" },
+        "defaultWorkspace": "/home/coder"
+    }))
+    .unwrap();
+    assert_eq!(legacy.proxy_command, None);
+    assert!(!config.connection_params_equal(&legacy));
+}
+
+#[test]
+#[cfg(feature = "remote-persistence")]
+fn saved_connection_record_tolerates_legacy_payloads_without_proxy_command() {
+    let saved: openbitfun_services_integrations::remote_persistence::SavedConnectionRecord =
+        serde_json::from_value(serde_json::json!({
+            "id": "conn-1",
+            "name": "coder",
+            "host": "coder-vscode.coder.sage.org.ai--abc",
+            "port": 22,
+            "username": "alice",
+            "authType": { "type": "PrivateKey", "keyPath": "~/.ssh/coder_deploy" },
+            "defaultWorkspace": "/home/coder",
+            "lastConnected": 1
+        }))
+        .unwrap();
+    assert_eq!(saved.proxy_command, None);
+    assert_eq!(saved.proxy_jump, None);
+
+    let written = serde_json::to_value(&saved).unwrap();
+    assert!(written.get("proxyCommand").is_none());
 }
 
 #[test]
