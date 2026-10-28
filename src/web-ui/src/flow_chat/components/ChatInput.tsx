@@ -3739,7 +3739,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
+    setHistoryIndex(-1);
+    setSavedDraft('');
     dispatchInput({ type: 'CLEAR_VALUE' });
+    clearPendingLargePastes();
+    // Clear the machine queue too; a stale queued value would be restored into
+    // the now-empty composer by the queuedInput sync effect.
     setQueuedInput(null);
     setSlashCommandState({ isActive: false, kind: 'all', query: '', selectedIndex: 0 });
 
@@ -3750,7 +3755,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         error,
         sessionId: effectiveTargetSessionId,
       });
-      dispatchInput({ type: 'SET_VALUE', payload: message });
+      // A submitted command is not a draft. The desktop /compact entry point
+      // settles only after the compaction reaches a terminal state, so
+      // restoring the text here would put "/compact" back into the composer
+      // long after the user submitted it - including when the compaction was
+      // already applied and only its terminal bookkeeping failed. Report the
+      // failure instead; the composer stays cleared and the outcome stays in
+      // the transcript.
       notificationService.error(
         error instanceof Error ? error.message : t('error.unknown'),
         {
@@ -3760,6 +3771,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       );
     }
   }, [
+    clearPendingLargePastes,
     derivedState?.isProcessing,
     dispatchInput,
     effectiveTargetSession,
