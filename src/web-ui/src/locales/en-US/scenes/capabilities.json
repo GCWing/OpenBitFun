@@ -469,6 +469,7 @@
               "available-models": "Let an agent inspect models available under the current configuration",
               "model-catalog": "Inspect models.dev catalog status, refresh it manually, and reveal its local cache",
               "advanced-request": "Add custom headers, request-body fields, and SSL behavior per provider",
+              "smart-routing": "View smart-mode availability (not released)",
               "connection-test": "Test model connections or image generation and refresh the runtime client",
               "model-pools": "Manage model pools, routing strategies, and session model selection"
             }

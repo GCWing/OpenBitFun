@@ -469,6 +469,7 @@
               "available-models": "让智能体查看当前配置下可用的模型",
               "model-catalog": "查看 models.dev 目录状态、手动刷新并定位本地缓存",
               "advanced-request": "为供应商添加自定义 Header、请求体字段与 SSL 行为",
+              "smart-routing": "查看智能模式可用状态（暂未开放）",
               "connection-test": "测试模型连接或图像生成，并刷新运行时客户端",
               "model-pools": "管理模型池、路由策略与会话模型选择"
             }
