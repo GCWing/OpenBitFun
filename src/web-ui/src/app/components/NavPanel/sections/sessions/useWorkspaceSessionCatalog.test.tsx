@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({ loadPage: vi.fn(), onPage: vi.fn() }));
 vi.mock('@/flow_chat/store/FlowChatStore', () => ({ flowChatStore: { loadSessionMetadataPage: mocks.loadPage } }));
 vi.mock('@/shared/utils/logger', () => ({ createLogger: () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() }) }));
 import { useWorkspaceSessionCatalog } from './useWorkspaceSessionCatalog';
+import { workspaceSessionCatalogTotal } from './workspaceSessionCatalogQuery';
 
 const page = (nextCursor?: string): SessionMetadataPage => ({
   sessions: [], totalTopLevelCount: 655, loadedTopLevelCount: 200, hasMore: Boolean(nextCursor), nextCursor,
@@ -21,10 +22,10 @@ const deferred = () => {
 };
 type Props = { workspaceId?: string; enabled?: boolean; refreshVersion?: number; agent?: string; query?: SessionCatalogQuery; targetCount?: number; firstPage?: SessionMetadataPage; getKnownCount?: () => number; captureQuery?: (query: SessionCatalogQuery) => SessionCatalogQuery };
 let current: ReturnType<typeof useWorkspaceSessionCatalog>;
-const renders: Array<{ workspaceId: string; complete: boolean }> = [];
+const renders: Array<{ workspaceId: string; complete: boolean; paged: boolean; total?: number }> = [];
 function Harness({ workspaceId = 'main', enabled = true, refreshVersion = 0, agent = 'all', query, targetCount, firstPage, getKnownCount, captureQuery }: Props) {
   current = useWorkspaceSessionCatalog({ workspaceId, enabled, refreshVersion, onPage: mocks.onPage, query, targetCount, firstPage, getKnownCount, captureQuery });
-  renders.push({ workspaceId, complete: current.complete });
+  renders.push({ workspaceId, complete: current.complete, paged: current.paged, total: current.total });
   return <output data-agent={agent}>{current.complete ? 'complete' : current.failed ? 'failed' : 'pending'}</output>;
 }
 
@@ -129,6 +130,96 @@ describe('workspace metadata catalog', () => {
   const query: SessionCatalogQuery = { workspaceId: 'main', ordering: 'updated', source: 'all' };
   const queriedPage = (loaded: number, nextCursor?: string, applied = query): SessionMetadataPage => ({
     ...page(nextCursor), loadedTopLevelCount: loaded, catalogQuery: applied,
+  });
+
+  it('keeps the settled catalog visible throughout a multi-page ordering-pin refresh', async () => {
+    let knownCount = 5;
+    const getKnownCount = () => knownCount;
+    mocks.loadPage.mockResolvedValueOnce(queriedPage(5, 'old-5'));
+    await render({ query, getKnownCount });
+    const pinned = { ...query, sortTimestamps: { running: 100 } };
+    const first = deferred();
+    const last = deferred();
+    mocks.loadPage.mockReturnValueOnce(first.promise).mockReturnValueOnce(last.promise);
+    const beforeRefresh = renders.length;
+    await render({ query: pinned, getKnownCount });
+    expect(current).toMatchObject({ complete: true, paged: true, loading: true, total: 655, loaded: 5, knownCount: 5 });
+    expect(mocks.loadPage).toHaveBeenLastCalledWith('main', 5, undefined,
+      'sessions_nav_catalog', { fresh: false, query: pinned });
+    mocks.onPage.mockImplementationOnce(() => { knownCount = 8; });
+    await act(async () => first.resolve({ ...queriedPage(3, 'new-3', pinned), totalTopLevelCount: 660 }));
+    expect(current).toMatchObject({ complete: true, paged: true, loading: true, total: 655, loaded: 5, knownCount: 8 });
+    expect(workspaceSessionCatalogTotal(knownCount, current)).toBe(655);
+    expect(renders.slice(beforeRefresh).every(value => value.complete && value.paged && value.total === 655)).toBe(true);
+    expect(mocks.loadPage).toHaveBeenLastCalledWith('main', 2, 'new-3',
+      'sessions_nav_catalog', { fresh: false, query: pinned });
+    mocks.onPage.mockImplementationOnce(() => { knownCount = 10; });
+    await act(async () => last.resolve({ ...queriedPage(2, 'new-5', pinned), totalTopLevelCount: 660 }));
+    expect(current).toMatchObject({ complete: true, paged: true, loading: false, total: 660,
+      loaded: 5, knownCount: 10, nextCursor: 'new-5', requestQuery: pinned });
+  });
+
+  it.each([false, true])('rejects stale pin refreshes when previous pins are restored: %s', async restorePrevious => {
+    const firstPins = { ...query, sortTimestamps: { running: 100 } };
+    const nextPins = { ...query, sortTimestamps: { running: 200 } };
+    mocks.loadPage.mockResolvedValueOnce(queriedPage(5, 'old-5', firstPins));
+    await render({ query: firstPins });
+    const stale = deferred();
+    const latest = deferred();
+    mocks.loadPage.mockReturnValueOnce(stale.promise).mockReturnValueOnce(latest.promise);
+    await render({ query: nextPins });
+    const latestQuery = restorePrevious ? firstPins : query;
+    await render({ query: latestQuery });
+    expect(current).toMatchObject({ complete: true, paged: true, loading: true, total: 655 });
+    await act(async () => stale.resolve({ ...queriedPage(5, 'stale-5', nextPins), totalTopLevelCount: 999 }));
+    expect(mocks.onPage).toHaveBeenCalledTimes(1);
+    expect(current.total).toBe(655);
+    await act(async () => latest.resolve({ ...queriedPage(5, 'latest-5', latestQuery), totalTopLevelCount: 660 }));
+    expect(current).toMatchObject({ complete: true, loading: false, total: 660, nextCursor: 'latest-5' });
+  });
+
+  it.each([
+    { name: 'workspace', props: { workspaceId: 'other', query: { ...query, workspaceId: 'other' } } },
+    { name: 'source', props: { query: { ...query, source: 'codex' } } },
+    { name: 'ordering', props: { query: { ...query, ordering: 'created' as const } } },
+    { name: 'client-side view', props: {} },
+    { name: 'explicit refresh', props: { query, refreshVersion: 1 } },
+    { name: 'peer device', props: { query }, peer: true },
+  ])('invalidates a settled paged catalog immediately on a $name change', async ({ props, ...scenario }) => {
+    mocks.loadPage.mockResolvedValueOnce(queriedPage(5, 'old-5'));
+    await render({ query });
+    const pending = deferred();
+    mocks.loadPage.mockReturnValueOnce(pending.promise);
+    if ('peer' in scenario) activateSurface('peer');
+    const beforeChange = renders.length;
+    await render(props);
+    expect(current).toMatchObject({ complete: false, paged: false, loading: true });
+    expect(current.total).toBeUndefined();
+    expect(renders.slice(beforeChange).every(value => !value.complete && !value.paged && value.total === undefined)).toBe(true);
+    await act(async () => pending.resolve(page()));
+  });
+
+  it('does not resurrect a settled total after the host falls back to legacy traversal', async () => {
+    mocks.loadPage.mockResolvedValueOnce(queriedPage(5, 'old-5'));
+    await render({ query });
+    const pinned = { ...query, sortTimestamps: { running: 100 } };
+    mocks.loadPage.mockResolvedValueOnce(page()).mockResolvedValueOnce(page());
+    await render({ query: pinned });
+    expect(current).toMatchObject({ complete: true, paged: false, total: undefined });
+    const pending = deferred();
+    mocks.loadPage.mockReturnValueOnce(pending.promise);
+    await render({ query });
+    expect(current).toMatchObject({ complete: false, paged: false });
+    expect(current.total).toBeUndefined();
+    await act(async () => pending.resolve(queriedPage(5, 'new-5')));
+  });
+
+  it('surfaces a failed pin refresh instead of reporting a completed catalog', async () => {
+    mocks.loadPage.mockResolvedValueOnce(queriedPage(5, 'old-5'));
+    await render({ query });
+    mocks.loadPage.mockRejectedValueOnce(new Error('Host unavailable'));
+    await render({ query: { ...query, sortTimestamps: { running: 100 } } });
+    expect(current).toMatchObject({ complete: false, loading: false, failed: true });
   });
 
   it('restarts loaded counts after a host revision change without draining the catalog', async () => {

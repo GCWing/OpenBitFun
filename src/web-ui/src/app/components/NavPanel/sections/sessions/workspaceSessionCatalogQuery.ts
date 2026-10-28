@@ -68,6 +68,11 @@ export function captureWorkspaceSessionCatalogQuery(
   return Object.keys(sortTimestamps).length ? { ...query, sortTimestamps } : query;
 }
 
+/** Ordering pins change the reader, while the selected view stays the same. */
+export function sessionCatalogViewKey(query?: SessionCatalogQuery): string {
+  return query ? JSON.stringify([query.workspaceId, query.ordering, query.source]) : '';
+}
+
 export function sessionCatalogQueryKey(query?: SessionCatalogQuery): string {
   return query ? JSON.stringify([query.workspaceId, query.ordering, query.source,
     Object.entries(query.sortTimestamps ?? {}).sort(([left], [right]) => left.localeCompare(right)),

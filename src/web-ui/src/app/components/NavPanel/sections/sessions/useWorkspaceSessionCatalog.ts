@@ -4,7 +4,7 @@ import type { SessionCatalogQuery, SessionMetadataPage } from '@/infrastructure/
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { createLogger } from '@/shared/utils/logger';
 import { loadWorkspaceSessionSourcePages } from './workspaceSessionSourcePages';
-import { sessionCatalogQueryKey } from './workspaceSessionCatalogQuery';
+import { sessionCatalogQueryKey, sessionCatalogViewKey } from './workspaceSessionCatalogQuery';
 
 const log = createLogger('useWorkspaceSessionCatalog');
 const PAGE_SIZE = 200;
@@ -45,7 +45,9 @@ export function useWorkspaceSessionCatalog({
   const surface = getActiveSurfaceScope();
   const queryKey = sessionCatalogQueryKey(query);
   const scopeKey = surface.key(workspaceId, surface.epoch, refreshVersion, queryKey);
+  const viewScopeKey = surface.key(workspaceId, surface.epoch, refreshVersion, sessionCatalogViewKey(query));
   const progress = useRef(initialState(''));
+  const settled = useRef<{ viewScopeKey: string; reader: CatalogState; snapshot: CatalogState } | undefined>(undefined);
   const queryRef = useRef(query);
   queryRef.current = query;
   const [state, setState] = useState(initialState(''));
@@ -61,7 +63,18 @@ export function useWorkspaceSessionCatalog({
         nextCursor: firstPage.nextCursor, hasMore: firstPage.hasMore, revision: firstPage.catalogRevision,
         requestQuery: firstPage.catalogQuery };
     }
+    const updateSettled = () => {
+      if (current.complete) {
+        settled.current = current.paged
+          ? { viewScopeKey, reader: current, snapshot: { ...current } } : undefined;
+      } else if (current.paged && settled.current?.viewScopeKey === viewScopeKey) {
+        // Hydrated rows already belong to the settled total, not local additions.
+        const previous = settled.current;
+        settled.current = { ...previous, snapshot: { ...previous.snapshot, knownCount: current.knownCount } };
+      }
+    };
     if (current.complete && (!current.paged || !current.hasMore || current.loaded >= targetCount)) {
+      updateSettled();
       if (progress.current !== current) { progress.current = current; setState({ ...current }); }
       return;
     }
@@ -71,6 +84,7 @@ export function useWorkspaceSessionCatalog({
       if (!isCurrent()) return;
       Object.assign(current, updates);
       progress.current = current;
+      updateSettled();
       setState({ ...current });
     };
     let requestQuery = current.requestQuery ?? queryRef.current;
@@ -129,9 +143,17 @@ export function useWorkspaceSessionCatalog({
       publish({ loading: false, failed: true, complete: false });
     });
     return () => { cancelled = true; };
-  }, [captureQuery, enabled, firstPage, getKnownCount, onPage, queryKey, refreshVersion, scopeKey, surface, targetCount, workspaceId]);
+  }, [captureQuery, enabled, firstPage, getKnownCount, onPage, queryKey, refreshVersion, scopeKey, surface, targetCount, viewScopeKey, workspaceId]);
 
-  return state.scopeKey === scopeKey
+  const visible = state.scopeKey === scopeKey
     ? state
     : { ...initialState(scopeKey), loading: enabled && Boolean(workspaceId) };
+  const previous = settled.current;
+  // Keep the acknowledged view while new ordering pins start a fresh reader.
+  // Reader identity also covers pins reverting to an earlier query key.
+  if (previous?.viewScopeKey === viewScopeKey && !visible.complete && !visible.failed
+    && (previous.reader !== progress.current || previous.snapshot.scopeKey !== scopeKey)) {
+    return { ...previous.snapshot, loading: visible.loading };
+  }
+  return visible;
 }
