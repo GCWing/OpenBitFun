@@ -2,7 +2,10 @@
 //!
 //! This module manages SSH connections using the pure-Russ SSH implementation
 
+use super::proxy_command::{expand_tokens, ProxyCommandChild};
 use super::sftp_file::ManagedSftpSession;
+#[cfg(feature = "ssh_config")]
+use super::ssh_config_loader::load_merged_config;
 use crate::remote_ssh::password_vault::SSHPasswordVault;
 use crate::remote_ssh::types::{
     ConnectionTestReport, ConnectionTestStage, ContainerAccess, ContainerWorkspaceConfig,
@@ -455,12 +458,23 @@ fn parse_ssh_config_value(value: &str) -> Option<&str> {
     value.split_whitespace().next()
 }
 
+/// Extract a whole-line command value such as `ProxyCommand`'s.
+///
+/// Unlike [`parse_ssh_config_value`], the value spans every remaining token of
+/// the line. A single pair of surrounding double quotes is stripped so
+/// `ProxyCommand "coder ssh --stdio %h"` keeps its inner quoting intact.
 #[cfg(feature = "ssh_config")]
-fn strip_utf8_bom(content: String) -> String {
-    content
-        .strip_prefix('\u{feff}')
-        .unwrap_or(&content)
-        .to_string()
+fn parse_ssh_config_command_value(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if let Some(inner) = value.strip_prefix('"') {
+        if let Some(stripped) = inner.strip_suffix('"') {
+            return Some(stripped.to_string());
+        }
+    }
+    Some(value.to_string())
 }
 
 /// Manually parse `~/.ssh/config` content into Host blocks with their direct settings.
@@ -484,6 +498,7 @@ fn parse_ssh_config_manually(content: &str) -> Vec<SSHConfigEntry> {
     let mut block_identity_file: Option<String> = None;
     let mut block_certificate_file: Option<String> = None;
     let mut block_proxy_jump: Option<String> = None;
+    let mut block_proxy_command: Option<String> = None;
 
     for line in content.lines() {
         let line = line.trim();
@@ -508,6 +523,7 @@ fn parse_ssh_config_manually(content: &str) -> Vec<SSHConfigEntry> {
                     agent: Some(true),
                     certificate_file: block_certificate_file.take(),
                     proxy_jump: block_proxy_jump.take(),
+                    proxy_command: block_proxy_command.take(),
                 });
             }
 
@@ -519,6 +535,7 @@ fn parse_ssh_config_manually(content: &str) -> Vec<SSHConfigEntry> {
             block_identity_file = None;
             block_certificate_file = None;
             block_proxy_jump = None;
+            block_proxy_command = None;
         } else if current_host.is_some() {
             // Track details within the current Host block
             if keyword.eq_ignore_ascii_case("HostName") {
@@ -535,6 +552,12 @@ fn parse_ssh_config_manually(content: &str) -> Vec<SSHConfigEntry> {
                     parse_ssh_config_value(value).map(|s| shellexpand::tilde(s).to_string());
             } else if keyword.eq_ignore_ascii_case("ProxyJump") {
                 block_proxy_jump = parse_ssh_config_value(value).map(ToOwned::to_owned);
+            } else if keyword.eq_ignore_ascii_case("ProxyCommand") {
+                // Keep the raw command text: `%h`/`%p`/`%r` tokens are expanded
+                // at connect time, and shell quoting must survive intact —
+                // unlike single-token directives, the whole remainder of the
+                // line is the value.
+                block_proxy_command = parse_ssh_config_command_value(value);
             }
         }
     }
@@ -550,6 +573,7 @@ fn parse_ssh_config_manually(content: &str) -> Vec<SSHConfigEntry> {
             agent: Some(true),
             certificate_file: block_certificate_file,
             proxy_jump: block_proxy_jump,
+            proxy_command: block_proxy_command,
         });
     }
 
@@ -582,6 +606,9 @@ struct ActiveConnection {
     bounded_sftp_session: Arc<BoundedSftpCache>,
     #[allow(dead_code)]
     server_key: Option<PublicKey>,
+    /// ProxyCommand process carrying the SSH transport; dropping it kills the
+    /// proxy. Absent for every non-proxy transport.
+    proxy_child: Option<ProxyCommandChild>,
     /// Liveness flag; flipped to false from `SSHHandler::disconnected`.
     /// Allows `is_connected` and SFTP/exec entry points to detect a dead session
     /// without waiting for the next failed I/O.
@@ -662,6 +689,9 @@ struct EstablishedSession {
     server_info: Option<ServerInfo>,
     effective_config: SSHConnectionConfig,
     unpublished: UnpublishedSshSession,
+    /// ProxyCommand process carrying the SSH transport, kept alive exactly as
+    /// long as the session. `None` for every non-proxy transport.
+    proxy_child: Option<ProxyCommandChild>,
 }
 
 /// Owns authenticated transports until the complete chain is published. A
@@ -672,6 +702,9 @@ struct UnpublishedSshSession {
     // Creation order is first jump through final target. One guard owns the
     // whole chain so cancellation cannot race independent hop cleanups.
     handles: Vec<Arc<Handle<SSHHandler>>>,
+    // ProxyCommand children spawned for transports that have not been
+    // published yet; the guard's Drop tears them down with the handles.
+    proxy_children: Vec<ProxyCommandChild>,
 }
 
 impl UnpublishedSshSession {
@@ -681,6 +714,11 @@ impl UnpublishedSshSession {
 
     fn disarm(&mut self) {
         self.handles.clear();
+        self.proxy_children.clear();
+    }
+
+    fn take_proxy_child(&mut self) -> Option<ProxyCommandChild> {
+        self.proxy_children.pop()
     }
 }
 
@@ -2410,18 +2448,13 @@ impl SSHConnectionManager {
             .map(|p| p.join(".ssh").join("config"))
             .unwrap_or_default();
 
-        if !ssh_config_path.exists() {
-            log::debug!("SSH config not found at {:?}", ssh_config_path);
-            return SSHConfigLookupResult {
-                found: false,
-                config: None,
-            };
-        }
-
-        let config_content = match tokio::fs::read_to_string(&ssh_config_path).await {
-            Ok(c) => strip_utf8_bom(c),
-            Err(e) => {
-                log::warn!("Failed to read SSH config: {:?}", e);
+        // Load the user config merged with its `Include` tree; ecosystem
+        // tooling (Coder, AtomGit, devenv) writes Host blocks into included
+        // files, and `ssh_config` 0.1 cannot expand them itself.
+        let config_content = match load_merged_config(&ssh_config_path) {
+            Some(content) => content,
+            None => {
+                log::debug!("SSH config not found at {:?}", ssh_config_path);
                 return SSHConfigLookupResult {
                     found: false,
                     config: None,
@@ -2455,6 +2488,8 @@ impl SSHConnectionManager {
                     .map(|f| shellexpand::tilde(f).to_string());
                 let has_proxy_command = ssh_cfg_has(&host_settings, "ProxyCommand");
                 let proxy_jump = ssh_cfg_get(&host_settings, "ProxyJump").map(ToOwned::to_owned);
+                let proxy_command =
+                    ssh_cfg_get(&host_settings, "ProxyCommand").map(ToOwned::to_owned);
 
                 return SSHConfigLookupResult {
                     found: true,
@@ -2467,6 +2502,7 @@ impl SSHConnectionManager {
                         agent: if has_proxy_command { None } else { Some(true) },
                         certificate_file,
                         proxy_jump,
+                        proxy_command,
                     }),
                 };
             }
@@ -2504,15 +2540,11 @@ impl SSHConnectionManager {
             .map(|p| p.join(".ssh").join("config"))
             .unwrap_or_default();
 
-        if !ssh_config_path.exists() {
-            log::debug!("SSH config not found at {:?}", ssh_config_path);
-            return Vec::new();
-        }
-
-        let config_content = match tokio::fs::read_to_string(&ssh_config_path).await {
-            Ok(c) => strip_utf8_bom(c),
-            Err(e) => {
-                log::warn!("Failed to read SSH config: {:?}", e);
+        // Merged view including the `Include` tree; see `get_ssh_config`.
+        let config_content = match load_merged_config(&ssh_config_path) {
+            Some(content) => content,
+            None => {
+                log::debug!("SSH config not found at {:?}", ssh_config_path);
                 return Vec::new();
             }
         };
@@ -2554,6 +2586,9 @@ impl SSHConnectionManager {
                     }
                     if let Some(proxy_jump) = ssh_cfg_get(&settings, "ProxyJump") {
                         entry.proxy_jump = Some(proxy_jump.to_string());
+                    }
+                    if let Some(proxy_command) = ssh_cfg_get(&settings, "ProxyCommand") {
+                        entry.proxy_command = Some(proxy_command.to_string());
                     }
                 }
             }
@@ -2959,6 +2994,7 @@ impl SSHConnectionManager {
             default_workspace: config.default_workspace.clone(),
             last_connected: Some(chrono::Utc::now().timestamp() as u64),
             proxy_jump: config.proxy_jump.clone(),
+            proxy_command: config.proxy_command.clone(),
             container: config.container.clone(),
             wsl: config.wsl.clone(),
             options: config.options.clone(),
@@ -3089,6 +3125,7 @@ impl SSHConnectionManager {
                     sftp_session: Arc::new(SftpCache::new()),
                     bounded_sftp_session: Arc::new(BoundedSftpCache::new()),
                     server_key: None,
+                    proxy_child: established.proxy_child,
                     alive: established.alive,
                 },
             )
@@ -3120,8 +3157,14 @@ impl SSHConnectionManager {
                     .proxy_jump
                     .as_deref()
                     .is_some_and(|jump| !jump.trim().is_empty())
+                || config
+                    .proxy_command
+                    .as_deref()
+                    .is_some_and(|command| !command.trim().is_empty())
             {
-                anyhow::bail!("WSL cannot be combined with Docker or SSH jump hosts");
+                anyhow::bail!(
+                    "WSL cannot be combined with Docker, SSH jump hosts, or ProxyCommand"
+                );
             }
             let server_info = super::wsl::probe(wsl, Duration::from_secs(timeout_secs)).await?;
             return Ok(EstablishedSession {
@@ -3131,6 +3174,7 @@ impl SSHConnectionManager {
                 server_info: Some(server_info),
                 effective_config: config.clone(),
                 unpublished: UnpublishedSshSession::default(),
+                proxy_child: None,
             });
         }
         if config.uses_local_docker() {
@@ -3158,7 +3202,34 @@ impl SSHConnectionManager {
                 server_info: Some(server_info),
                 effective_config: resolved_container_config(config, ContainerAccess::DockerExec),
                 unpublished: UnpublishedSshSession::default(),
+                proxy_child: None,
             });
+        }
+
+        if let Some(proxy_command) = config
+            .proxy_command
+            .as_deref()
+            .map(str::trim)
+            .filter(|command| !command.is_empty())
+        {
+            // Deliberately exclusive combinations for this release: a proxy
+            // command already owns the transport to the target, so layering a
+            // jump chain or a container target on top has no tested semantics.
+            if config
+                .proxy_jump
+                .as_deref()
+                .is_some_and(|jump| !jump.trim().is_empty())
+            {
+                anyhow::bail!(
+                    "ProxyCommand and ProxyJump cannot be combined; remove one of them from the connection"
+                );
+            }
+            if config.container.is_some() {
+                anyhow::bail!("ProxyCommand cannot be combined with a Docker container target");
+            }
+            return self
+                .establish_proxy_command_session(config, proxy_command, timeout_secs)
+                .await;
         }
 
         let mut unpublished = UnpublishedSshSession::default();
@@ -3192,6 +3263,7 @@ impl SSHConnectionManager {
                         server_info: container_info,
                         effective_config,
                         unpublished,
+                        proxy_child: None,
                     });
                 }
             }
@@ -3217,6 +3289,7 @@ impl SSHConnectionManager {
                     config.clone()
                 },
                 unpublished,
+                proxy_child: None,
             });
         }
 
@@ -3323,6 +3396,7 @@ impl SSHConnectionManager {
                     server_info: container_info,
                     effective_config,
                     unpublished,
+                    proxy_child: None,
                 });
             }
         }
@@ -3348,6 +3422,7 @@ impl SSHConnectionManager {
                 config.clone()
             },
             unpublished,
+            proxy_child: None,
         })
     }
 
@@ -3423,6 +3498,7 @@ impl SSHConnectionManager {
                     server_info,
                     effective_config,
                     unpublished,
+                    proxy_child: None,
                 })
             }
             Err(error) => {
@@ -3589,6 +3665,7 @@ impl SSHConnectionManager {
                 auth,
                 default_workspace: None,
                 proxy_jump: None,
+                proxy_command: None,
                 container: None,
                 wsl: None,
                 options: config.options.clone(),
@@ -3683,6 +3760,78 @@ impl SSHConnectionManager {
             unpublished,
         )
         .await
+    }
+
+    /// Build a fresh SSH session whose transport is the stdin/stdout of a
+    /// local ProxyCommand process (OpenSSH semantics).
+    ///
+    /// Reusing `establish_stream_session` keeps handshake timeout, known-hosts
+    /// verification, and authentication identical to the direct path. The child
+    /// process is owned by `UnpublishedSshSession` until the session is fully
+    /// established, so every failure path kills it; afterwards the guard moves
+    /// into the returned `EstablishedSession` (and from there into the
+    /// published connection record), so disconnects and app shutdown kill it.
+    async fn establish_proxy_command_session(
+        &self,
+        config: &SSHConnectionConfig,
+        proxy_command: &str,
+        timeout_secs: u64,
+    ) -> anyhow::Result<EstablishedSession> {
+        let stage = format!("proxy command {}", connection_label(config));
+        let mut unpublished = UnpublishedSshSession::default();
+
+        let expanded = expand_tokens(proxy_command, &config.host, config.port, &config.username);
+        let mut child = ProxyCommandChild::spawn(&expanded, &stage)
+            .map_err(|error| tag_failed_stage("proxy command", error))?;
+        let stream = child
+            .take_stream()
+            .map_err(|error| tag_failed_stage("proxy command", error))?;
+        unpublished.proxy_children.push(child);
+
+        let session = self
+            .establish_stream_session(config, stream, timeout_secs, &stage, &mut unpublished)
+            .await;
+        match session {
+            Ok((handle, alive, server_info)) => {
+                let proxy_child = unpublished
+                    .take_proxy_child()
+                    .expect("proxy child was pushed before the handshake");
+                Ok(EstablishedSession {
+                    handle: Some(handle),
+                    jump_handles: Vec::new(),
+                    alive,
+                    server_info,
+                    effective_config: config.clone(),
+                    unpublished,
+                    proxy_child: Some(proxy_child),
+                })
+            }
+            Err(error) => {
+                let detail = match unpublished.take_proxy_child() {
+                    Some(child) => {
+                        let (exit_code, stderr_tail) = child.finish().await;
+                        let mut parts = Vec::new();
+                        match exit_code {
+                            Some(code) => {
+                                parts.push(format!("proxy command exited with code {code}"))
+                            }
+                            None => parts
+                                .push("proxy command was terminated before completing".to_string()),
+                        }
+                        if !stderr_tail.is_empty() {
+                            parts.push(format!("stderr: {stderr_tail}"));
+                        }
+                        parts.join("; ")
+                    }
+                    None => String::new(),
+                };
+                if detail.is_empty() {
+                    Err(error)
+                } else {
+                    Err(anyhow!("{error} ({detail})"))
+                }
+            }
+        }
     }
 
     async fn probe_remote_container(
@@ -4409,6 +4558,7 @@ impl SSHConnectionManager {
             auth,
             default_workspace: saved.default_workspace,
             proxy_jump: saved.proxy_jump,
+            proxy_command: saved.proxy_command,
             container: saved.container,
             wsl: saved.wsl,
             options: saved.options,
@@ -4556,23 +4706,25 @@ impl SSHConnectionManager {
         // session is usually dead, but "usually" covers neither config drift
         // (where the old session is perfectly healthy) nor a half-open link the
         // server still counts against its session limit.
-        let (stale_handle, stale_jump_handles) = {
+        let (stale_handle, stale_jump_handles, stale_proxy_child) = {
             let mut guard = self.connections.write().await;
             established.unpublished.disarm();
             if let Some(conn) = guard.get_mut(connection_id) {
                 let stale_handle = conn.handle.take();
                 let stale_jump_handles = std::mem::take(&mut conn.jump_handles);
+                let stale_proxy_child = conn.proxy_child.take();
                 conn.handle = established.handle;
                 conn.jump_handles = established.jump_handles;
                 conn.config = config;
                 conn.effective_config = established.effective_config;
                 conn.alive = established.alive;
+                conn.proxy_child = established.proxy_child;
                 if let Some(si) = server_info.as_ref() {
                     conn.server_info = Some(si.clone());
                 }
                 conn.sftp_session = Arc::new(SftpCache::new());
                 conn.bounded_sftp_session = Arc::new(BoundedSftpCache::new());
-                (stale_handle, stale_jump_handles)
+                (stale_handle, stale_jump_handles, stale_proxy_child)
             } else {
                 let replaced = guard.insert(
                     connection_id.to_string(),
@@ -4585,12 +4737,16 @@ impl SSHConnectionManager {
                         sftp_session: Arc::new(SftpCache::new()),
                         bounded_sftp_session: Arc::new(BoundedSftpCache::new()),
                         server_key: None,
+                        proxy_child: established.proxy_child,
                         alive: established.alive,
                     },
                 );
                 match replaced {
-                    Some(previous) => (previous.handle, previous.jump_handles),
-                    None => (None, Vec::new()),
+                    Some(previous) => {
+                        let replaced_child = previous.proxy_child;
+                        (previous.handle, previous.jump_handles, replaced_child)
+                    }
+                    None => (None, Vec::new(), None),
                 }
             }
         };
@@ -4611,6 +4767,26 @@ impl SSHConnectionManager {
                 .map(Arc::as_ref),
         );
         Self::shutdown_handle_chain(stale_chain).await;
+
+        // The stale ProxyCommand process is the old transport's other half:
+        // close it only once that transport was actually unused, and keep it
+        // alive otherwise — the same lease the skipped goodbye grants the old
+        // handle while in-flight work drains.
+        if let Some(child) = stale_proxy_child {
+            if stale_handle
+                .as_ref()
+                .map_or(true, |handle| Arc::strong_count(handle) == 1)
+            {
+                drop(child);
+            } else {
+                log::info!(
+                    "SSH session {} reconnect keeps the previous ProxyCommand process alive \
+                     while its old transport still serves in-flight work",
+                    connection_id
+                );
+                std::mem::forget(child);
+            }
+        }
 
         log::info!("SSH session {} reconnected successfully", connection_id);
         Ok(())
@@ -7003,6 +7179,7 @@ mod tests {
                 },
                 default_workspace: None,
                 proxy_jump: None,
+                proxy_command: None,
                 container: None,
                 wsl: None,
                 options: Default::default(),
@@ -7503,6 +7680,7 @@ mod tests {
                 },
                 default_workspace: None,
                 proxy_jump: None,
+                proxy_command: None,
                 container: Some(ContainerWorkspaceConfig {
                     name: "fixture".into(),
                     access: ContainerAccess::DockerExec,
@@ -7526,6 +7704,7 @@ mod tests {
                     sftp_session: Arc::new(SftpCache::new()),
                     bounded_sftp_session: Arc::new(BoundedSftpCache::new()),
                     server_key: None,
+                    proxy_child: None,
                     alive: Arc::new(AtomicBool::new(true)),
                 },
             );
@@ -7751,6 +7930,7 @@ mod tests {
             },
             default_workspace: None,
             proxy_jump: None,
+            proxy_command: None,
             container: Some(ContainerWorkspaceConfig {
                 name: "fixture".into(),
                 access: ContainerAccess::DockerExec,
@@ -7775,6 +7955,7 @@ mod tests {
                 sftp_session: Arc::new(SftpCache::new()),
                 bounded_sftp_session: Arc::new(BoundedSftpCache::new()),
                 server_key: None,
+                proxy_child: None,
                 alive: Arc::new(AtomicBool::new(true)),
             },
         );
@@ -8231,7 +8412,7 @@ mod tests {
     #[test]
     #[cfg(feature = "ssh_config")]
     fn ssh_config_fallback_accepts_utf8_bom_and_defaults_to_agent() {
-        let content = strip_utf8_bom(
+        let content = crate::remote_ssh::ssh_config_loader::strip_utf8_bom(
             "\u{feff}Host 跳板\n  HostName jump.example.com\n  User 构建\n".to_string(),
         );
         let entries = parse_ssh_config_manually(&content);
@@ -8271,6 +8452,7 @@ mod tests {
             },
             default_workspace: Some("/srv/project".to_string()),
             proxy_jump: None,
+            proxy_command: None,
             container: None,
             wsl: None,
             options: Default::default(),
@@ -8292,6 +8474,7 @@ mod tests {
                 sftp_session: Arc::new(SftpCache::new()),
                 bounded_sftp_session: Arc::new(BoundedSftpCache::new()),
                 server_key: None,
+                proxy_child: None,
                 alive: alive.clone(),
             },
         );
@@ -8336,6 +8519,106 @@ mod tests {
                 "2001:db8::10".to_string(),
                 Some(2200)
             )
+        );
+    }
+
+    #[test]
+    fn parses_proxy_command_as_a_whole_line_value() {
+        let hosts = parse_ssh_config_manually(
+            "Host coder-x\n  ProxyCommand \"C:\\tools\\coder.exe\" ssh --stdio %h\n  IdentityFile ~/.ssh/id_ed25519\n",
+        );
+        assert_eq!(hosts.len(), 1);
+        // The full remainder of the line survives, inner quotes included.
+        assert_eq!(
+            hosts[0].proxy_command.as_deref(),
+            Some("\"C:\\tools\\coder.exe\" ssh --stdio %h")
+        );
+
+        let hosts =
+            parse_ssh_config_manually("Host quoted\n  ProxyCommand \"coder ssh --stdio %h\"\n");
+        assert_eq!(
+            hosts[0].proxy_command.as_deref(),
+            Some("coder ssh --stdio %h")
+        );
+
+        let hosts = parse_ssh_config_manually("Host plain\n  HostName plain.example\n");
+        assert_eq!(hosts[0].proxy_command, None);
+    }
+
+    fn proxy_command_fixture_config(command: &str) -> SSHConnectionConfig {
+        SSHConnectionConfig {
+            id: "proxy-fixture".to_string(),
+            name: "proxy fixture".to_string(),
+            host: "coder-vscode.coder.sage.org.ai--abc".to_string(),
+            port: 22,
+            username: "coder".to_string(),
+            auth: SSHAuthMethod::PrivateKey {
+                key_path: "/nonexistent/key".to_string(),
+                passphrase: None,
+                certificate_path: None,
+            },
+            default_workspace: None,
+            proxy_jump: None,
+            proxy_command: Some(command.to_string()),
+            container: None,
+            wsl: None,
+            options: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn proxy_command_transport_reports_proxy_exit_code() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = SSHConnectionManager::new(temp.path().into());
+        let config = proxy_command_fixture_config("exit 7");
+
+        let error = manager
+            .establish_session(&config, 10)
+            .await
+            .err()
+            .expect("a proxy that exits immediately cannot complete a handshake");
+        let message = error.to_string();
+        assert!(
+            message.contains("proxy command exited with code 7"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn proxy_command_rejects_jump_and_container_combinations() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = SSHConnectionManager::new(temp.path().into());
+
+        let mut config = proxy_command_fixture_config("exit 0");
+        config.proxy_jump = Some("jump.example".to_string());
+        let error = manager
+            .establish_session(&config, 10)
+            .await
+            .err()
+            .expect("ProxyCommand plus ProxyJump is rejected in this release");
+        assert!(
+            error.to_string().contains("ProxyCommand and ProxyJump"),
+            "unexpected error: {error}"
+        );
+
+        let mut config = proxy_command_fixture_config("exit 0");
+        config.container = Some(ContainerWorkspaceConfig {
+            name: "dev".to_string(),
+            access: ContainerAccess::DockerExec,
+            local: false,
+            docker_path: "docker".to_string(),
+            shell: "/bin/sh".to_string(),
+            user: None,
+            interactive: false,
+        });
+        let error = manager
+            .establish_session(&config, 10)
+            .await
+            .err()
+            .expect("ProxyCommand plus a container target is rejected in this release");
+        assert!(
+            error.to_string().contains("Docker container"),
+            "unexpected error: {error}"
         );
     }
 
@@ -8829,6 +9112,7 @@ mod tests {
                 },
                 default_workspace: Some("/tmp/openbitfun-remote-workspace".to_string()),
                 proxy_jump: None,
+                proxy_command: None,
                 container: Some(ContainerWorkspaceConfig {
                     name: container_name,
                     access: ContainerAccess::DockerExec,
@@ -9086,6 +9370,7 @@ mod tests {
                 },
                 default_workspace: None,
                 proxy_jump: None,
+                proxy_command: None,
                 container: None,
                 wsl: None,
                 options: Default::default(),
@@ -9115,6 +9400,7 @@ mod tests {
                 },
                 default_workspace: Some("/root/project".to_string()),
                 proxy_jump: Some("jump-a,jump-b".to_string()),
+                proxy_command: None,
                 container: None,
                 wsl: None,
                 options: Default::default(),
@@ -9205,6 +9491,7 @@ mod tests {
                 },
                 default_workspace: Some("/workspace".to_string()),
                 proxy_jump: Some("jump.example.com".to_string()),
+                proxy_command: None,
                 container: None,
                 wsl: None,
                 options: Default::default(),
@@ -9250,6 +9537,7 @@ mod tests {
                 },
                 default_workspace: None,
                 proxy_jump: None,
+                proxy_command: None,
                 container: None,
                 wsl: None,
                 options: Default::default(),

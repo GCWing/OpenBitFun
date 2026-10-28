@@ -52,6 +52,15 @@ pub struct SSHConnectionConfig {
     /// SSH config entry, so every hop may use a different user and identity.
     #[serde(default)]
     pub proxy_jump: Option<String>,
+    /// OpenSSH-compatible `ProxyCommand`: a local shell command whose stdin/stdout
+    /// carries the SSH transport to the target (e.g. `coder ssh --stdio`).
+    ///
+    /// `%h` (target host), `%p` (port), `%r` (user), and `%%` are expanded before
+    /// the command runs. Mutually exclusive with `proxy_jump` and container
+    /// targets; the target host is typically a bare `~/.ssh/config` alias with no
+    /// `HostName`, because the proxy command resolves the real endpoint itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_command: Option<String>,
     /// Optional Docker container that becomes the effective workspace target.
     #[serde(default)]
     pub container: Option<ContainerWorkspaceConfig>,
@@ -74,6 +83,7 @@ impl SSHConnectionConfig {
             && self.username == other.username
             && self.auth.connection_params_equal(&other.auth)
             && self.proxy_jump == other.proxy_jump
+            && self.proxy_command == other.proxy_command
             && self.container == other.container
             && self.wsl == other.wsl
             && self.options == other.options
@@ -361,6 +371,8 @@ pub struct SavedConnection {
     pub last_connected: Option<u64>,
     #[serde(default)]
     pub proxy_jump: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_command: Option<String>,
     #[serde(default)]
     pub container: Option<ContainerWorkspaceConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -608,6 +620,9 @@ pub struct SSHConfigEntry {
     /// OpenSSH ProxyJump chain, preserving aliases and order.
     #[serde(default)]
     pub proxy_jump: Option<String>,
+    /// OpenSSH ProxyCommand resolved for this host, if any.
+    #[serde(default)]
+    pub proxy_command: Option<String>,
 }
 
 /// Result of looking up SSH config for a host

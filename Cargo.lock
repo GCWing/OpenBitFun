@@ -6995,6 +6995,7 @@ dependencies = [
  "futures",
  "futures-util",
  "git2",
+ "glob",
  "hex",
  "hkdf",
  "hostname",
