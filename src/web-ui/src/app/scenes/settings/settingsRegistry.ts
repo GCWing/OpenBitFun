@@ -290,7 +290,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     categoryId: 'development',
     labelKey: 'navigation.pages.workspaceGit.label',
     descriptionKey: 'navigation.pages.workspaceGit.description',
-    keywords: ['workspace', 'git', 'worktree', 'isolation', 'branch'],
+    keywords: ['workspace', 'git', 'worktree', 'isolation', 'branch', 'remote', 'ssh', 'skill'],
     namespaces: ['settings', 'worktrees', 'settings/runtime', 'settings/quick-actions'],
     searchPhrases: [],
     sections: [
@@ -311,6 +311,12 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
         labelKey: 'navigation.sections.git',
         keywords: ['git', 'commit', 'co-author', 'coauthor', 'attribution', 'github'],
         searchPhrases: [phrase('settings/quick-actions', 'commitAttribution.title'), phrase('settings/quick-actions', 'commitAttribution.label')],
+      },
+      {
+        id: 'remote-user-skills',
+        labelKey: 'navigation.sections.remote-user-skills',
+        keywords: ['remote', 'ssh', 'skill', 'sync', 'scripts', 'references'],
+        searchPhrases: [phrase('settings/runtime', 'remoteUserSkills.title'), phrase('settings/runtime', 'remoteUserSkills.label')],
       },
     ],
     load: () => import('./pages/development/WorkspaceGitSettingsPage'),

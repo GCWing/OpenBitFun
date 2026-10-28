@@ -515,6 +515,15 @@ export function runManifestParserSelfTest({
     [servicesCoreManifest, 'session-git', ['local-storage', 'dep:git2']],
     [
       servicesCoreManifest,
+      'skill-package-sync',
+      [
+        'dep:anyhow', 'dep:openbitfun-runtime-ports',
+        'openbitfun-runtime-ports/workspace-ports', 'dep:sha2', 'dep:zip', 'dep:uuid',
+        'dep:tokio', 'tokio/fs', 'tokio/io-util', 'tokio/rt',
+      ],
+    ],
+    [
+      servicesCoreManifest,
       'token-usage-statistics',
       ['local-storage', 'dep:chrono-tz'],
     ],
@@ -555,6 +564,7 @@ export function runManifestParserSelfTest({
         'workspace-runtime',
         'dep:openbitfun-services-integrations',
         'openbitfun-services-integrations/remote-ssh',
+        'openbitfun-services-core/skill-package-sync',
       ],
     ],
     [

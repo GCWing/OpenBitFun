@@ -4,7 +4,7 @@ use crate::agentic::agents::{
 use crate::agentic::tools::framework::ToolUseContext;
 use crate::agentic::tools::implementations::skills::get_skill_registry;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
-use openbitfun_agent_runtime::skills::{SkillData, SkillInfo};
+use openbitfun_agent_runtime::skills::{SkillData, SkillInfo, SkillLocation};
 use sha2::{Digest, Sha256};
 
 const CAPABILITY_CATALOG_LIMIT: usize = 24;
@@ -202,15 +202,48 @@ pub async fn resolve_review_capability(
         });
     }
     if let Some(skill_key) = key.strip_prefix("skill:") {
+        let remote_user_source = if context.is_remote() {
+            implicitly_invocable_skills(context)
+                .await
+                .into_iter()
+                .find(|skill| skill.key == skill_key && skill.level == SkillLocation::User)
+        } else {
+            None
+        };
+        if let Some(info) = &remote_user_source {
+            let preview = load_discovered_review_skill(context, info).await?;
+            verify_review_skill_fingerprint(key, &preview, fingerprint)?;
+            // Remote command hooks are unsupported. Check the same contract as
+            // SkillTool before spending time deploying an unusable package.
+            crate::native_hooks::activate_skill_hooks(&preview, context).await?;
+        }
         let skill = load_review_skill(context, skill_key).await?;
         if !is_compatible_review_skill(&skill.dir_name) {
             return Err(capability_changed_error());
         }
         let guidance = bounded_selected_guidance(&skill.content)?;
-        ensure_capability_fingerprint(
-            &ReviewCapabilityDescriptor::new(key, &skill.name, &skill.description, &guidance),
+        verify_selected_review_skill_fingerprint(
+            context,
+            key,
+            &skill,
+            remote_user_source.as_ref(),
             fingerprint,
-        )?;
+        )
+        .await?;
+        let guidance = if let Some(info) = remote_user_source {
+            if info.path != skill.path {
+                format!(
+                    "Skill resources are relative to '{}'. Use that package root for scripts, references and templates; project operations still use the remote workspace.\n\n{guidance}",
+                    skill.path,
+                )
+            } else if !skill.compatibility_warnings.is_empty() {
+                format!("{}\n\n{guidance}", skill.compatibility_warnings.join("\n"))
+            } else {
+                guidance
+            }
+        } else {
+            guidance
+        };
         return Ok(ResolvedReviewCapability {
             guidance,
             preferred_model: None,
@@ -266,6 +299,37 @@ pub async fn resolve_review_capability(
     ))
 }
 
+fn verify_review_skill_fingerprint(
+    key: &str,
+    skill: &SkillData,
+    fingerprint: &str,
+) -> OpenBitFunResult<()> {
+    let guidance = bounded_selected_guidance(&skill.content)?;
+    ensure_capability_fingerprint(
+        &ReviewCapabilityDescriptor::new(key, &skill.name, &skill.description, &guidance),
+        fingerprint,
+    )
+}
+
+async fn verify_selected_review_skill_fingerprint(
+    context: &ToolUseContext,
+    key: &str,
+    skill: &SkillData,
+    source: Option<&SkillInfo>,
+    fingerprint: &str,
+) -> OpenBitFunResult<()> {
+    if let Some(info) = source.filter(|info| info.path != skill.path) {
+        // The admitted catalog fingerprints source guidance. Verify the raw
+        // deployed snapshot before comparing its path-mapped instructions;
+        // rereading the local source here would race the completed upload.
+        let markdown = read_remote_review_skill_markdown(context, &skill.path, info).await?;
+        let deployed_preview = parse_review_skill_preview(info, &markdown)?;
+        verify_review_skill_fingerprint(key, &deployed_preview, fingerprint)
+    } else {
+        verify_review_skill_fingerprint(key, skill, fingerprint)
+    }
+}
+
 fn explicit_preferred_model(agent: &AgentInfo) -> Option<String> {
     agent
         .model
@@ -303,11 +367,13 @@ async fn load_review_skill(
             .map(|workspace| workspace.root_path_string())
             .unwrap_or_default();
         registry
-            .find_and_load_skill_by_key_for_remote_workspace(
+            .find_and_load_skill_by_key_for_remote_workspace_with_progress(
                 skill_key,
                 fs,
                 &root,
                 context.agent_type.as_deref(),
+                context.ws_shell(),
+                Some(crate::agentic::tools::implementations::skills::remote_skill_progress::skill_load_progress(context, "AgentSpawn")),
             )
             .await
     } else {
@@ -325,28 +391,42 @@ async fn load_discovered_review_skill(
     context: &ToolUseContext,
     info: &SkillInfo,
 ) -> OpenBitFunResult<SkillData> {
-    let skill_file = format!("{}/SKILL.md", info.path.trim_end_matches(['/', '\\']));
-    let markdown = if context.is_remote() {
-        context
-            .ws_fs()
-            .ok_or_else(|| {
-                OpenBitFunError::tool("Remote review skill loading is unavailable".to_string())
-            })?
-            .read_file_text(&skill_file)
-            .await
-            .map_err(|error| {
-                OpenBitFunError::tool(format!("Failed to read review skill: {error}"))
-            })?
+    let entry_file = info.entry_file.as_deref().unwrap_or("SKILL.md");
+    // Catalog construction previews guidance; deployment happens only when a
+    // capability is selected through the registry above.
+    let markdown = if context.is_remote() && info.level == SkillLocation::Project {
+        read_remote_review_skill_markdown(context, &info.path, info).await?
     } else {
-        tokio::fs::read_to_string(&skill_file)
+        tokio::fs::read_to_string(std::path::Path::new(&info.path).join(entry_file))
             .await
             .map_err(|error| {
                 OpenBitFunError::tool(format!("Failed to read review skill: {error}"))
             })?
     };
+    parse_review_skill_preview(info, &markdown)
+}
+
+async fn read_remote_review_skill_markdown(
+    context: &ToolUseContext,
+    path: &str,
+    info: &SkillInfo,
+) -> OpenBitFunResult<String> {
+    let entry_file = info.entry_file.as_deref().unwrap_or("SKILL.md");
+    let skill_file = format!("{}/{}", path.trim_end_matches('/'), entry_file);
+    context
+        .ws_fs()
+        .ok_or_else(|| {
+            OpenBitFunError::tool("Remote review skill loading is unavailable".to_string())
+        })?
+        .read_file_text(&skill_file)
+        .await
+        .map_err(|error| OpenBitFunError::tool(format!("Failed to read review skill: {error}")))
+}
+
+fn parse_review_skill_preview(info: &SkillInfo, markdown: &str) -> OpenBitFunResult<SkillData> {
     let mut data = SkillData::from_markdown_for_source_slot(
-        info.path.clone(),
-        &markdown,
+        info.parser_path(),
+        markdown,
         info.level,
         true,
         info.parser_source_slot(),
@@ -554,6 +634,122 @@ mod tests {
         assert!(rendered.contains("Testing"));
         assert!(rendered.len() < 800);
         assert!(!rendered.contains("full guidance"));
+    }
+
+    #[tokio::test]
+    async fn remote_catalog_previews_local_user_markdown_without_remote_io_or_deployment() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("custom-entry.md"),
+            "---\nname: review-local\ndescription: User guidance\n---\nCheck scripts/check.py.\n",
+        )
+        .unwrap();
+        let info: SkillInfo = serde_json::from_value(serde_json::json!({
+            "key": "user::openbitfun-user::code-review-local",
+            "name": "review-local",
+            "description": "User guidance",
+            "path": temp.path().to_str().unwrap(),
+            "entryFile": "custom-entry.md",
+            "level": "user",
+            "sourceSlot": "openbitfun-user",
+            "dirName": "code-review-local"
+        }))
+        .unwrap();
+        let identity = crate::service::remote_ssh::workspace_state::workspace_session_identity(
+            "/remote/project",
+            Some("catalog-test-connection"),
+            Some("catalog-test-host"),
+        )
+        .unwrap();
+        let mut context = local_tool_context(temp.path().to_path_buf());
+        context.workspace = Some(WorkspaceBinding::new_remote(
+            None,
+            "/remote/project".into(),
+            "catalog-test-connection".into(),
+            "Remote".into(),
+            identity,
+        ));
+        assert!(context.ws_fs().is_none());
+        let data = load_discovered_review_skill(&context, &info).await.unwrap();
+        assert_eq!(data.content.trim(), "Check scripts/check.py.");
+        assert_eq!(data.key, info.key);
+        let mut project = info;
+        project.level = SkillLocation::Project;
+        assert!(load_discovered_review_skill(&context, &project)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn deployed_review_guidance_verifies_raw_snapshot_before_path_mapping() {
+        let temp = tempfile::tempdir().unwrap();
+        let source_dir = temp.path().join("source");
+        let remote_dir = temp.path().join("remote");
+        std::fs::create_dir(&source_dir).unwrap();
+        std::fs::create_dir(&remote_dir).unwrap();
+        let source_path = source_dir.to_string_lossy().to_string();
+        let remote_path = remote_dir.to_string_lossy().to_string();
+        let info: SkillInfo = serde_json::from_value(serde_json::json!({
+            "key": "user::openbitfun-user::code-review-local",
+            "name": "review-local",
+            "description": "User guidance",
+            "path": source_path,
+            "level": "user",
+            "sourceSlot": "openbitfun-user",
+            "dirName": "code-review-local"
+        }))
+        .unwrap();
+        let markdown = format!(
+            "---\nname: review-local\ndescription: User guidance\n---\nRead {}/references/guide.md.\n",
+            info.path
+        );
+        std::fs::write(source_dir.join("SKILL.md"), &markdown).unwrap();
+        std::fs::write(remote_dir.join("SKILL.md"), &markdown).unwrap();
+        let preview = parse_review_skill_preview(&info, &markdown).unwrap();
+        let key = format!("skill:{}", info.key);
+        let descriptor = ReviewCapabilityDescriptor::new(
+            &key,
+            &preview.name,
+            &preview.description,
+            &bounded_selected_guidance(&preview.content).unwrap(),
+        );
+        let mut loaded = preview;
+        loaded.content = loaded.content.replace(&info.path, &remote_path);
+        loaded.path = remote_path.clone();
+        assert!(verify_review_skill_fingerprint(&key, &loaded, descriptor.fingerprint()).is_err());
+
+        let mut context = local_tool_context(temp.path().to_path_buf());
+        context.runtime_handles = openbitfun_runtime_ports::ToolRuntimeHandles::new(
+            Some(crate::agentic::workspace::local_workspace_services(
+                remote_path,
+            )),
+            None,
+        );
+        // A later local edit does not change the snapshot already deployed.
+        std::fs::write(source_dir.join("SKILL.md"), "changed local source").unwrap();
+        verify_selected_review_skill_fingerprint(
+            &context,
+            &key,
+            &loaded,
+            Some(&info),
+            descriptor.fingerprint(),
+        )
+        .await
+        .unwrap();
+        std::fs::write(
+            remote_dir.join("SKILL.md"),
+            markdown.replace("Read ", "Execute "),
+        )
+        .unwrap();
+        assert!(verify_selected_review_skill_fingerprint(
+            &context,
+            &key,
+            &loaded,
+            Some(&info),
+            descriptor.fingerprint(),
+        )
+        .await
+        .is_err());
     }
 
     #[tokio::test]

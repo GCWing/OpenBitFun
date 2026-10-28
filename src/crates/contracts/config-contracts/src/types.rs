@@ -812,6 +812,8 @@ pub struct TerminalConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorkspaceConfig {
+    /// Availability and resource deployment of host-local user Skills in remote workspaces.
+    pub remote_user_skills: RemoteUserSkillsMode,
     pub exclude_patterns: Vec<String>,
     pub include_patterns: Vec<String>,
     pub watch_ignore: Vec<String>,
@@ -821,6 +823,39 @@ pub struct WorkspaceConfig {
     pub line_ending: String,
     pub trim_trailing_whitespace: bool,
     pub insert_final_newline: bool,
+}
+
+/// Keep unknown future values intact on disk; runtime callers must reject them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum RemoteUserSkillsMode {
+    Disabled,
+    #[default]
+    SkillMdOnly,
+    Full,
+    Unsupported(String),
+}
+
+impl From<String> for RemoteUserSkillsMode {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "disabled" => Self::Disabled,
+            "skill_md_only" => Self::SkillMdOnly,
+            "full" => Self::Full,
+            _ => Self::Unsupported(value),
+        }
+    }
+}
+
+impl From<RemoteUserSkillsMode> for String {
+    fn from(value: RemoteUserSkillsMode) -> Self {
+        match value {
+            RemoteUserSkillsMode::Disabled => "disabled".into(),
+            RemoteUserSkillsMode::SkillMdOnly => "skill_md_only".into(),
+            RemoteUserSkillsMode::Full => "full".into(),
+            RemoteUserSkillsMode::Unsupported(value) => value,
+        }
+    }
 }
 
 /// Model capability type (a model can have multiple capabilities).
@@ -2260,6 +2295,7 @@ impl Default for TerminalConfig {
 impl Default for WorkspaceConfig {
     fn default() -> Self {
         Self {
+            remote_user_skills: RemoteUserSkillsMode::default(),
             exclude_patterns: vec![
                 "**/node_modules/**".to_string(),
                 "**/target/**".to_string(),
@@ -2492,6 +2528,29 @@ impl AIModelConfig {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn remote_user_skills_preserves_legacy_workspace_settings_and_future_modes() {
+        use super::{RemoteUserSkillsMode, WorkspaceConfig};
+        let legacy = serde_json::json!({
+            "exclude_patterns": ["legacy/**"], "encoding": "utf8", "max_file_size": 1234
+        });
+        let config: WorkspaceConfig = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(config.remote_user_skills, RemoteUserSkillsMode::SkillMdOnly);
+        let saved = serde_json::to_value(config).unwrap();
+        for (key, value) in legacy.as_object().unwrap() {
+            assert_eq!(&saved[key], value);
+        }
+        for mode in ["skill_md_only", "disabled", "full", "future_mode"] {
+            let mut payload = legacy.clone();
+            payload["remote_user_skills"] = mode.into();
+            let config: WorkspaceConfig = serde_json::from_value(payload).unwrap();
+            let saved = serde_json::to_value(&config).unwrap();
+            assert_eq!(saved["remote_user_skills"], mode);
+            let restored: WorkspaceConfig = serde_json::from_value(saved).unwrap();
+            assert_eq!(restored.remote_user_skills, config.remote_user_skills);
+        }
+    }
+
     #[test]
     fn model_routing_summary_defaults_to_automatic_and_preserves_old_switch_values() {
         let legacy: super::ModelRoutingConfig =

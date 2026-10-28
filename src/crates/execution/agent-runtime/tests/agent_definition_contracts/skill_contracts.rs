@@ -835,6 +835,7 @@ Use the pdf workflow.
     assert_eq!(data.description, "Work with PDF files.");
     assert_eq!(data.dir_name, "pdf");
     assert_eq!(data.content, "Use the pdf workflow.\n");
+    assert_eq!(data.resource_availability, None);
 
     let assistant = render_loaded_skill_for_assistant(&data, false);
     assert!(assistant.contains("Skill 'pdf' loaded successfully."));

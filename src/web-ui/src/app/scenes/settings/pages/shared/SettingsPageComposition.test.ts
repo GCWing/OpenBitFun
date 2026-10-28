@@ -8,7 +8,7 @@ describe('merged settings pages', () => {
     ['../application/PetAssistantSettingsPage.tsx', ['../application/PetSettingsSection.tsx', '../application/RealtimeVoiceSettingsSection.tsx']],
     ['../application/InputSettingsPage.tsx', ['../application/VoiceSettingsSection.tsx', '../application/KeyboardShortcutsSection.tsx']],
     ['../ai/SessionMemorySettingsPage.tsx', ['../ai/DefaultHarnessSection.tsx', '../ai/SessionTitleSection.tsx', '../ai/PromptSuggestionSection.tsx', '../ai/MemorySettingsSection.tsx']],
-    ['../development/WorkspaceGitSettingsPage.tsx', ['../development/WorkspaceSearchSection.tsx', '../development/GitCommitSettingsSection.tsx', '../development/WorktreeSettingsSection.tsx']],
+    ['../development/WorkspaceGitSettingsPage.tsx', ['../development/WorkspaceSearchSection.tsx', '../development/RemoteUserSkillsSection.tsx', '../development/GitCommitSettingsSection.tsx', '../development/WorktreeSettingsSection.tsx']],
     ['../tools/AutomationSettingsPage.tsx', ['../tools/QuickActionsSettingsSection.tsx', '../tools/HooksSettingsSection.tsx']],
   ])('keeps one page header and scroll owner for %s', (page, sections) => {
     expect(source(page).match(/<SettingsPage\b/g)).toHaveLength(1);

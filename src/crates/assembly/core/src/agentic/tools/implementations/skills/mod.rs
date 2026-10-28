@@ -7,6 +7,9 @@ pub mod catalog;
 pub mod mode_overrides;
 pub mod policy;
 pub mod registry;
+pub(crate) mod remote_skill_progress;
+pub(crate) mod remote_user_skills;
+pub use remote_user_skills::SkillLoadProgress;
 pub mod resolver;
 mod runtime_settings;
 #[cfg(feature = "file-watch")]

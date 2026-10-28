@@ -4,6 +4,7 @@
 
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { OverflowText } from '@openbitfun/ui';
 import {
   SkillToolCard,
   type FlowChatToolStatus,
@@ -34,13 +35,29 @@ export const SkillDisplay: React.FC<ToolCardProps> = React.memo(({ toolItem }) =
     t('toolCards.skill.unknown');
 
   const displayName = status === 'completed' && loadedSkillName ? loadedSkillName : commandName;
+  const isLoading = ['preparing', 'running', 'streaming', 'receiving'].includes(status);
+  const progressMessage = isLoading
+    ? nonEmptyString((toolItem as typeof toolItem & { _progressMessage?: unknown })._progressMessage)
+    : undefined;
+  const result = toolResult?.result as Record<string, unknown> | undefined;
+  const resourceNote = status === 'completed'
+    ? result?.resource_availability === 'markdown_only'
+      ? t('toolCards.skill.markdownOnlyResources')
+      : result?.resource_availability === 'remote_package'
+        ? t('toolCards.skill.remotePackageResources')
+        : undefined
+    : undefined;
+  const detail = progressMessage ?? resourceNote;
 
   return (
     <SkillToolCard
       status={status as FlowChatToolStatus}
       action={t('toolCards.skill.action')}
       summary={displayName}
-      statusDescription={getToolCardStatusDescription(status, t, toolResult?.error)}
+      statusDescription={detail ?? getToolCardStatusDescription(status, t, toolResult?.error)}
+      extra={detail ? (
+        <span role={progressMessage ? 'status' : 'note'}><OverflowText>{detail}</OverflowText></span>
+      ) : undefined}
     />
   );
 });

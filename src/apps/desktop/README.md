@@ -642,6 +642,38 @@ setup. Detached Dispatch does not provision WSL connections. SSH port forwarding
 is unavailable for native WSL targets; use Windows WSL networking to reach a
 Linux service.
 
+## User Skills in remote workspaces
+
+In **Settings → Workspace & Git → User Skills in remote workspaces**, choose:
+
+- **Only inject SKILL.md** (default): load local user instructions without copying
+  their resources. The loaded Skill and its completed tool card explicitly report
+  that supporting files have not been synced.
+- **Do not run**: omit host-local user Skills from remote session listings and
+  reject their invocation. Remote project Skills remain available.
+- **Full**: on invocation, check the complete package against its remote copy;
+  upload changed packages as one compressed archive and expose a verified POSIX
+  resource path. The Skill card shows preparation, upload and verification progress.
+  Its completed state confirms package availability, not that runtime dependencies
+  are installed or that the Skill has executed successfully.
+
+Full mode requires Python 3 and a streaming file-upload provider on the POSIX
+target, plus any runtime dependencies the Skill itself needs. Packages are cached
+under `<remote-workspace>/.openbitfun/cache/user-skills`; exclude that cache from
+version control if your project tracks `.openbitfun`. Many small files or large
+packages can take time to hash and transfer. Nested symbolic links and special
+files are rejected with an explicit error; files outside the Skill directory are
+not copied. Existing verified package versions remain available to active turns.
+Project file operations and commands continue to run on the remote host.
+Standalone Markdown Skills in a shared directory must first be converted into
+an isolated `name/SKILL.md` package for Full mode; OpenBitFun never copies their
+entire shared parent directory implicitly.
+
+This preference belongs to the OpenBitFun runtime host. A mobile or peer
+controller uses that host's setting and Skills; it does not upload its own local
+Skill library. Older hosts without this setting show an unsupported state in the
+settings UI.
+
 ## Remote SSH file handle errors
 
 If writing files and browsing directories both start failing with

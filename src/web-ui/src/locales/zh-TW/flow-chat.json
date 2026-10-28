@@ -2488,7 +2488,9 @@
       "loadSkillFailed": "載入技能失敗",
       "skillAction": "載入技能：{{name}}",
       "loadingSkill": "正在載入",
-      "preparingSkill": "準備載入"
+      "preparingSkill": "準備載入",
+      "markdownOnlyResources": "僅載入 SKILL.md；腳本等附屬資源未同步到遠端。",
+      "remotePackageResources": "Skill 套件已同步到遠端；仍需準備所需執行環境。"
     },
     "readFile": {
       "parsingParams": "解析參數中...",

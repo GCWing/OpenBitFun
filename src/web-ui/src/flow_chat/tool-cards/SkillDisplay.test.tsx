@@ -20,6 +20,8 @@ vi.mock('react-i18next', () => ({
         'toolCards.skill.loadSkillFailed': 'Failed to load skill',
         'toolCards.skill.loadingSkill': 'Loading skill',
         'toolCards.skill.preparingSkill': 'Preparing skill',
+        'toolCards.skill.markdownOnlyResources': 'Only SKILL.md loaded; supporting files were not synced to the remote host.',
+        'toolCards.skill.remotePackageResources': 'Skill package synced to the remote host; required runtimes still need to be available.',
       };
       return (messages[key] ?? key).replace('{{name}}', options?.name ?? '');
     },
@@ -124,6 +126,8 @@ describe('SkillDisplay', () => {
     [{ skill_name: 'deep-research', source_label: ' ', source_id: null }, 'Load skill: deep-research'],
     [{ skill_name: 'deep-research', source_label: 42, source_id: {}, source_slot: 'codex' }, 'Load skill: deep-research'],
     [{ skill_name: {}, name: 'legacy-name' }, 'Load skill: legacy-name'],
+    [{ skill_name: 'deep-research', resource_availability: 'future_mode' }, 'Load skill: deep-research'],
+    [{ skill_name: 'deep-research', resource_availability: {} }, 'Load skill: deep-research'],
     [{}, 'Load skill: Unknown skill'],
   ])('renders compatible tool result %j', (result, summary) => {
     const toolItem: FlowToolItem = {
@@ -162,5 +166,72 @@ describe('SkillDisplay', () => {
     });
 
     expect(container.textContent).toBe(summary);
+  });
+
+  it('shows synchronization progress while loading and clears it when the operation settles', () => {
+    const progress = 'Uploading skill package: 2,048 files; many small files may take a while.';
+    const toolItem = {
+      id: 'syncing-skill',
+      type: 'tool',
+      toolName: 'Skill',
+      status: 'running',
+      timestamp: 0,
+      toolCall: { id: 'call', input: { command: 'scripted-skill' } },
+      _progressMessage: progress,
+    } as FlowToolItem;
+
+    act(() => {
+      root.render(<SkillDisplay toolItem={toolItem} config={skillConfig} />);
+    });
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(progress);
+    expect(container.textContent).toContain('scripted-skill');
+
+    for (const status of ['completed', 'error', 'cancelled'] as const) {
+      act(() => {
+        root.render(<SkillDisplay toolItem={{ ...toolItem, status }} config={skillConfig} />);
+      });
+      expect(container.querySelector('[role="status"]')).toBeNull();
+      expect(container.textContent).not.toContain(progress);
+    }
+  });
+
+  it.each([
+    ['markdown_only', 'Only SKILL.md loaded; supporting files were not synced to the remote host.'],
+    ['remote_package', 'Skill package synced to the remote host; required runtimes still need to be available.'],
+  ])('explains resource availability after a completed %s load', (availability, message) => {
+    const toolItem: FlowToolItem = {
+      id: 'remote-skill', type: 'tool', toolName: 'Skill', status: 'completed', timestamp: 0,
+      toolCall: { id: 'call', input: { command: 'scripted-skill' } },
+      toolResult: {
+        id: 'result', timestamp: 0,
+        result: { skill_name: 'scripted-skill', resource_availability: availability },
+      },
+    };
+    act(() => root.render(<SkillDisplay toolItem={toolItem} config={skillConfig} />));
+    expect(container.querySelector('[role="note"]')?.textContent).toBe(message);
+    expect(container.textContent).toContain('Load skill: scripted-skill');
+    expect(container.querySelector(`[aria-label="${message}"]`)).not.toBeNull();
+
+    for (const status of ['running', 'error', 'cancelled'] as const) {
+      act(() => root.render(<SkillDisplay toolItem={{ ...toolItem, status }} config={skillConfig} />));
+      expect(container.querySelector('[role="note"]')).toBeNull();
+      expect(container.textContent).not.toContain(message);
+    }
+  });
+
+  it.each([undefined, '  ', 42, {}])('ignores an absent or malformed progress message %j', (progress) => {
+    const toolItem = {
+      id: 'syncing-skill',
+      type: 'tool',
+      toolName: 'Skill',
+      status: 'running',
+      timestamp: 0,
+      toolCall: { id: 'call', input: { command: 'scripted-skill' } },
+      _progressMessage: progress,
+    } as FlowToolItem;
+    act(() => {
+      root.render(<SkillDisplay toolItem={toolItem} config={skillConfig} />);
+    });
+    expect(container.querySelector('[role="status"]')).toBeNull();
   });
 });

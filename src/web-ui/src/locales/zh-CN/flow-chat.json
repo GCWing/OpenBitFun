@@ -2488,7 +2488,9 @@
       "loadSkillFailed": "加载技能失败",
       "skillAction": "加载技能：{{name}}",
       "loadingSkill": "正在加载",
-      "preparingSkill": "准备加载"
+      "preparingSkill": "准备加载",
+      "markdownOnlyResources": "仅加载 SKILL.md；脚本等附属资源未同步到远端。",
+      "remotePackageResources": "Skill 包已同步到远端；仍需准备所需运行环境。"
     },
     "readFile": {
       "parsingParams": "解析参数中...",

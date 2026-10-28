@@ -475,7 +475,13 @@ const TaskLaunchDisplay: React.FC<ToolCardProps> = ({
         : effectiveIsRunning ? 'running'
           : displayStatus === 'completed' || displayStatus === 'confirmed' ? 'completed'
             : subagentAvatarStatus;
-  const statusLabel = reviewOutcome
+  // Skill package preparation happens before the child session is launched.
+  // Keep these parent-tool updates visible, then retire them with the spawn.
+  const preparationProgress = !linkedSubagentSessionId
+    && ['pending', 'queued', 'preparing', 'streaming', 'receiving', 'running'].includes(status)
+    ? readStringValue((toolItem as FlowToolItem & { _progressMessage?: unknown })._progressMessage)
+    : '';
+  const statusLabel = preparationProgress || (reviewOutcome
     ? t(reviewOutcome.key)
     : hasFailedOutcome
       ? t('toolCards.taskTool.failed')
@@ -483,7 +489,7 @@ const TaskLaunchDisplay: React.FC<ToolCardProps> = ({
         ? t('flowChatHeader.agentTreeStatus.cancelled')
         : capsuleLifecycle === 'completed'
           ? undefined
-          : t(`flowChatHeader.agentTreeStatus.${capsuleLifecycle === 'finishing' ? 'running' : capsuleLifecycle}`);
+          : t(`flowChatHeader.agentTreeStatus.${capsuleLifecycle === 'finishing' ? 'running' : capsuleLifecycle}`));
   const statusTone = hasFailedOutcome
     ? isReviewPartialTimeout ? 'warning' : 'danger'
     : 'neutral';

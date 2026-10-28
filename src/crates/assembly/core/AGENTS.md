@@ -192,6 +192,17 @@ Narrower local guides already exist for some subtrees:
 
 ## Verification
 
+For remote user Skill availability, Markdown-only warnings, package path mapping,
+and on-demand deployment, use:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,remote-workspace --lib remote_user_skills
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,remote-workspace --lib skill_tool::tests
+```
+
+These owner fixtures use local providers or mocks. The live SSH package resource
+fixture is documented in `services-integrations/AGENTS.md`.
+
 For smart routing, unchanged subagent model policy and resumed subagent choices:
 
 ```bash

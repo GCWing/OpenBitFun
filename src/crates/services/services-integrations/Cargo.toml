@@ -514,6 +514,7 @@ ssh_config = ["dep:ssh_config"]
 
 [dev-dependencies]
 tempfile = { workspace = true }
+openbitfun-services-core = { path = "../services-core", features = ["skill-package-sync"] }
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "test-util"] }
 # Used by contract tests that implement the `EventEmitter` port to observe
 # emitted product events.

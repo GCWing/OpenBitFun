@@ -219,6 +219,20 @@ For bounded workspace upload ownership, offset recovery, conflict detection, and
 cargo test -p openbitfun-services-core --no-default-features --features workspace-transfer,workspace-runtime --lib workspace_transfer::tests
 ```
 
+For complete local Skill package deployment, cache integrity, source changes,
+executable modes and unsupported targets:
+
+```bash
+cargo test --locked -p openbitfun-services-core --no-default-features --features skill-package-sync,workspace-runtime --lib skill_package_sync::tests
+```
+
+These tests use local POSIX workspace providers. The real loopback SSH/SFTP
+exercise is documented in the services-integrations guide. Full deployment
+requires Python 3 on the POSIX target and rejects nested symlinks or reparse
+points; a symlinked package root is canonicalized before scanning.
+The selected remote workspace may have symlink ancestors; only that trusted
+root is resolved. Managed cache components below it must remain plain directories.
+
 Workspace catalog identity and upgrade deserialization (without live filesystem/SSH activation):
 
 ```bash

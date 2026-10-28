@@ -705,7 +705,11 @@ export interface TerminalConfig {
 
 export type TerminalPanelPosition = 'right' | 'bottom';
 
+export type RemoteUserSkillsMode = 'skill_md_only' | 'disabled' | 'full';
+
 export interface WorkspaceConfig {
+  /** Absent on hosts that do not support remote user Skill modes. */
+  remote_user_skills?: RemoteUserSkillsMode;
   recent_workspaces: string[];
   max_recent_workspaces: number;
   auto_open_last_workspace: boolean;

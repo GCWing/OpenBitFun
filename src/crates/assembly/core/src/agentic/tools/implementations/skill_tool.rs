@@ -12,6 +12,8 @@ use log::debug;
 use openbitfun_services_core::markdown::expand_prompt_template_arguments_with_names;
 use serde_json::{json, Value};
 
+use super::skills::remote_skill_progress::skill_load_progress;
+
 // Use skills module
 use super::skills::{get_skill_registry, render_loaded_skill_for_assistant};
 
@@ -65,9 +67,7 @@ Important:
                         )
                         .await
                 } else {
-                    registry
-                        .get_resolved_skills_xml_for_workspace(None, ctx.agent_type.as_deref())
-                        .await
+                    vec!["<skill_discovery_warning>Remote workspace Skill loading is unavailable because its filesystem provider is missing. No local fallback is available.</skill_discovery_warning>".to_string()]
                 }
             }
             Some(ctx) => {
@@ -161,7 +161,8 @@ impl Tool for SkillTool {
                 "description": {"type": "string"},
                 "location": {"type": "string"},
                 "content": {"type": "string"},
-                "compatibility_warnings": {"type": "array", "items": {"type": "string"}}
+                "compatibility_warnings": {"type": "array", "items": {"type": "string"}},
+                "resource_availability": {"type": ["string", "null"], "enum": ["markdown_only", "remote_package", null]}
             },
             "required": ["success", "skill_name", "skill_key", "content"],
             "additionalProperties": false
@@ -236,7 +237,7 @@ impl Tool for SkillTool {
 
     fn render_tool_use_message(&self, input: &Value, _options: &ToolRenderOptions) -> String {
         if let Some(command) = input.get("command").and_then(|v| v.as_str()) {
-            format!("The \"{}\" skill is loaded.", command)
+            format!("Loading the \"{}\" skill...", command)
         } else {
             "Loading skill...".to_string()
         }
@@ -258,6 +259,7 @@ impl Tool for SkillTool {
         let registry = get_skill_registry();
         let use_stable_key =
             skill_name.starts_with("user::") || skill_name.starts_with("project::");
+        let progress = skill_load_progress(context, "Skill");
         let mut skill_data = if context.is_remote() {
             if let Some(ws_fs) = context.ws_fs() {
                 let root = context
@@ -267,41 +269,31 @@ impl Tool for SkillTool {
                     .unwrap_or_default();
                 if use_stable_key {
                     registry
-                        .find_and_load_skill_by_key_for_remote_workspace(
+                        .find_and_load_skill_by_key_for_remote_workspace_with_progress(
                             skill_name,
                             ws_fs,
                             &root,
                             context.agent_type.as_deref(),
+                            context.ws_shell(),
+                            Some(progress.clone()),
                         )
                         .await?
                 } else {
                     registry
-                        .find_and_load_skill_for_remote_workspace(
+                        .find_and_load_skill_for_remote_workspace_with_progress(
                             skill_name,
                             ws_fs,
                             &root,
                             context.agent_type.as_deref(),
+                            context.ws_shell(),
+                            Some(progress.clone()),
                         )
                         .await?
                 }
             } else {
-                if use_stable_key {
-                    registry
-                        .find_and_load_skill_by_key_for_workspace(
-                            skill_name,
-                            None,
-                            context.agent_type.as_deref(),
-                        )
-                        .await?
-                } else {
-                    registry
-                        .find_and_load_skill_for_workspace(
-                            skill_name,
-                            None,
-                            context.agent_type.as_deref(),
-                        )
-                        .await?
-                }
+                return Err(OpenBitFunError::tool(
+                    "Remote workspace Skill loading requires its bound filesystem provider; no local fallback is available.".to_string(),
+                ));
             }
         } else {
             if use_stable_key {
@@ -346,6 +338,7 @@ impl Tool for SkillTool {
                 "location": location_str,
                 "content": skill_data.content,
                 "compatibility_warnings": skill_data.compatibility_warnings,
+                "resource_availability": skill_data.resource_availability,
                 "success": true
             }),
             result_for_assistant: Some(result_for_assistant),
@@ -1131,8 +1124,15 @@ Use the remote project skill.
             ),
         };
 
-        let results = SkillTool::new()
-            .call_impl(&json!({ "command": "create-agent" }), &context)
+        use super::super::skills::remote_user_skills::TEST_REMOTE_USER_SKILLS_MODE;
+        use crate::service::config::types::RemoteUserSkillsMode;
+        let tool = SkillTool::new();
+        let input = json!({ "command": "create-agent" });
+        let results = TEST_REMOTE_USER_SKILLS_MODE
+            .scope(
+                RemoteUserSkillsMode::SkillMdOnly,
+                tool.call_impl(&input, &context),
+            )
             .await
             .expect("explicit create-agent invocation should load the local built-in skill");
 
@@ -1146,6 +1146,7 @@ Use the remote project skill.
         };
         assert_eq!(data["skill_name"], "create-agent");
         assert_eq!(data["location"], "user");
+        assert_eq!(data["resource_availability"], "markdown_only");
         assert!(data["content"]
             .as_str()
             .unwrap_or_default()
@@ -1155,6 +1156,45 @@ Use the remote project skill.
         assert!(assistant.contains("\n</skill_content>"));
         assert!(assistant.contains("# Create an OpenBitFun Agent"));
         assert!(!assistant.contains("from stable key"));
+        assert!(assistant.contains("NOT available in this remote workspace"));
+
+        TEST_REMOTE_USER_SKILLS_MODE
+            .scope(RemoteUserSkillsMode::Disabled, async {
+                let listing = SkillTool::build_available_skills_context_section(Some(&context))
+                    .await
+                    .unwrap();
+                assert!(listing.contains("remote-only-skill-for-test"));
+                assert!(!listing.contains("user::"));
+                assert!(tool.call_impl(&input, &context).await.is_err());
+                let error = tool
+                    .call_impl(
+                        &json!({"command": "user::openbitfun-system::create-agent"}),
+                        &context,
+                    )
+                    .await
+                    .unwrap_err();
+                assert!(error.to_string().contains("disabled"));
+            })
+            .await;
+
+        let error = TEST_REMOTE_USER_SKILLS_MODE
+            .scope(RemoteUserSkillsMode::Full, tool.call_impl(&input, &context))
+            .await
+            .unwrap_err();
+        #[cfg(feature = "remote-workspace")]
+        assert!(error
+            .to_string()
+            .contains("Failed to deploy complete user Skill package"));
+        #[cfg(not(feature = "remote-workspace"))]
+        assert!(error
+            .to_string()
+            .contains("does not support complete user Skill deployment"));
+
+        let mut missing_provider = context;
+        missing_provider.runtime_handles =
+            openbitfun_runtime_ports::ToolRuntimeHandles::new(None, None);
+        let error = tool.call_impl(&input, &missing_provider).await.unwrap_err();
+        assert!(error.to_string().contains("bound filesystem provider"));
     }
 
     #[tokio::test]

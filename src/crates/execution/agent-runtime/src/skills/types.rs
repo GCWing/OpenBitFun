@@ -231,6 +231,8 @@ pub struct SkillData {
     pub location: SkillLocation,
     pub path: String,
     pub entry_file: Option<String>,
+    /// Resource availability for this load; absent for local/project/legacy loads.
+    pub resource_availability: Option<SkillResourceAvailability>,
     pub source_slot: String,
     pub source_id: String,
     pub source_label: String,
@@ -243,6 +245,13 @@ pub struct SkillData {
     pub compatibility_warnings: Vec<String>,
     /// Validated declarations, activated only when this skill is invoked.
     pub hooks: Option<super::SkillHooks>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillResourceAvailability {
+    MarkdownOnly,
+    RemotePackage,
 }
 
 fn default_allow_implicit_invocation() -> bool {
@@ -619,6 +628,7 @@ impl SkillData {
             location,
             path,
             entry_file: None,
+            resource_availability: None,
             source_slot: String::new(),
             source_id: String::new(),
             source_label: String::new(),

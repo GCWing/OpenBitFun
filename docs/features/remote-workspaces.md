@@ -234,6 +234,25 @@ working execution and text-query paths and receive an explicit upgrade instructi
 for a missing binary capability. Existing Remote Connect file commands and
 persisted session records remain compatible; the file-chunk revision is additive.
 
+## User Skill resources
+
+User Skill availability is controlled by the runtime host's
+`workspace.remote_user_skills` preference: `skill_md_only` (the upgrade-compatible
+default), `disabled`, or `full`. It applies to remote discovery, prompt listings
+and explicit invocation, without changing remote project Skills. See the
+[Desktop guide](../../src/apps/desktop/README.md#user-skills-in-remote-workspaces)
+for prerequisites and behavior.
+
+Full loading deploys the selected directory through the bound filesystem and
+shell providers, never through a local fallback. Deterministic file hashes and
+permissions identify package versions. Target verification checks the complete
+tree before reuse; otherwise one streamed archive is validated in a staging
+directory before publication. Returned Skill paths use target POSIX semantics,
+and references rooted in the original package are mapped to that deployment.
+The runtime reads instructions back from the deployed snapshot before reporting
+success. This copies package resources; it does not install interpreters,
+relocate executable hooks, or resolve external machine-specific dependencies.
+
 ## Upgrade compatibility
 
 Existing SSH profiles remain plain SSH targets because the new `proxyJump` and

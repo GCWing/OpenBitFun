@@ -230,5 +230,20 @@
     "saveSuccess": "Settings saved",
     "saveFailed": "Save failed",
     "updateFailed": "Update failed"
+  },
+  "remoteUserSkills": {
+    "title": "User Skills in remote workspaces",
+    "scope": "Applies to local user-level Skills when working in a remote workspace. Remote project Skills are unaffected.",
+    "label": "Run user Skills in remote workspaces",
+    "skillMdOnly": "Inject SKILL.md only",
+    "disabled": "Do not run",
+    "full": "Run fully",
+    "skillMdOnlyDescription": "Default: load only the local SKILL.md. Scripts, references, and templates are not copied and may be unavailable remotely.",
+    "disabledDescription": "Do not include local user Skills in the remote workspace agent prompt or allow them to be loaded.",
+    "fullDescription": "When a user Skill is used, copy its complete directory to the remote host and provide a remote path. Reuse an unchanged copy and synchronize it again when files change. The remote host needs Python 3; other runtimes required by the Skill must also be available there.",
+    "syncHint": "Skills containing many files can take a while to synchronize. The Skill tool shows progress while the agent waits. Commands and project operations continue to run remotely.",
+    "loadFailed": "Could not read this setting. Retry before making changes.",
+    "saveFailed": "Failed to save remote user Skill settings",
+    "unsupported": "Update this host to configure user Skills in remote workspaces."
   }
 }
