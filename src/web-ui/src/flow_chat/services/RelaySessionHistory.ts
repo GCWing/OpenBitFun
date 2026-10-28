@@ -6,6 +6,12 @@ import { resourceBudget } from '@/shared/utils/resourceBudget';
 
 const log = createLogger('RelaySessionHistory');
 
+/**
+ * How long opening may wait for the host's first page before presentation
+ * degrades. The live subscription stays open: a later page still applies.
+ */
+const FIRST_PAGE_TIMEOUT_MS = 15_000;
+
 export interface RelayHistoryReady {
   sessionId: string;
   hasMore: boolean;
@@ -33,6 +39,8 @@ export class RelaySessionHistory {
   private rejectPage: ((error: unknown) => void) | null = null;
   private visible = false;
   private prefetchCredit = 0;
+  private readonly publishReady: (ready: RelayHistoryReady) => void;
+  private readonly resumeInteraction: (() => Promise<void>) | undefined;
 
   constructor(
     readonly sessionId: string,
@@ -41,6 +49,8 @@ export class RelaySessionHistory {
     onError: (error: unknown) => void,
     onResumed?: () => Promise<void>,
   ) {
+    this.publishReady = onReady;
+    this.resumeInteraction = onResumed;
     // Register before asking Rust to replay its cache or fetch the first page.
     this.listeners.push(remoteConnectAPI.onSessionRecord(value => {
       if (!this.isCurrent()) return;
@@ -109,12 +119,55 @@ export class RelaySessionHistory {
         throw new Error('Session subscription is closed');
       }
       this.subscriptionId = id;
-      await this.firstPage;
+      await this.waitForFirstPage();
       this.scheduleHistoryPrefetch();
     } catch (error) {
       this.rejectReady(error);
       this.close();
       throw error;
+    }
+  }
+
+  /**
+   * A stalled host stream must not park the surface in hydration. The
+   * subscription stays open, so a later page still replaces this empty
+   * projection; what must not happen is a permanent spinner.
+   */
+  private async waitForFirstPage(): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const overdue = new Promise<'overdue'>(resolve => {
+      timer = setTimeout(() => resolve('overdue'), FIRST_PAGE_TIMEOUT_MS);
+    });
+    try {
+      const outcome = await Promise.race([
+        this.firstPage.then(() => 'ready' as const),
+        overdue,
+      ]);
+      if (outcome === 'overdue' && this.isCurrent()) {
+        log.warn('Relay session first page overdue; presenting an empty surface', {
+          sessionId: this.sessionId,
+        });
+        // A blocking question belongs to the Runtime mailbox, not to this
+        // stream. Once the stream is overdue, read the mailbox directly instead
+        // of waiting for a ready notification that may never arrive.
+        if (this.resumeInteraction) {
+          void this.resumeInteraction().catch(error => {
+            log.warn('Session interaction mailbox refresh failed', {
+              sessionId: this.sessionId,
+              error,
+            });
+          });
+        }
+        this.resolveReady();
+        this.publishReady({
+          sessionId: this.sessionId,
+          hasMore: false,
+          oldestSeq: 0,
+          cursor: 0,
+        });
+      }
+    } finally {
+      if (timer !== null) clearTimeout(timer);
     }
   }
 

@@ -132,7 +132,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::sync::{mpsc, oneshot, watch, OwnedSemaphorePermit, RwLock, Semaphore};
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{sleep, timeout, Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
 const MANUAL_COMPACTION_COMMAND: &str = "/compact";
@@ -142,6 +142,10 @@ const DEFAULT_SUBAGENT_MAX_CONCURRENCY: usize = 5;
 const DEFAULT_SWARM_MAX_CONCURRENCY: usize = 16;
 const MAX_SUBAGENT_MAX_CONCURRENCY: usize = 64;
 const SUBAGENT_TIMEOUT_GRACE_PERIOD: Duration = Duration::from_secs(10);
+/// How long an observer read waits for the Session's mutation lease before it
+/// projects persisted records without one. Kept small: the lease owner may be a
+/// Turn that is itself waiting for the reader's answer.
+const RELAY_HISTORY_OBSERVER_LEASE_WAIT: Duration = Duration::from_millis(1500);
 const SESSION_REFERENCES_METADATA_KEY: &str = "sessionReferences";
 const MAX_SESSION_REFERENCES_PER_TURN: usize = 5;
 const SESSION_REFERENCE_ARTIFACT_STEM_LENGTH: usize = 8;
@@ -9461,12 +9465,40 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .persistence_manager()
             .assert_relay_history_supported(storage, session_id)
             .await?;
-        let _mutation = self
+        // A reader here observes persisted history; it is not the Session's
+        // writer. Its owning Turn holds the mutation lease for the Turn's whole
+        // life, so an unbounded acquire would make a controller's first read
+        // depend on that Turn finishing. A Turn blocked on an unanswered
+        // question would then block the very read that lets a controller answer
+        // it. Wait briefly for the consistent window, then fall back to the
+        // persisted records so a reader is never parked behind live execution.
+        let mutation = match timeout(
+            RELAY_HISTORY_OBSERVER_LEASE_WAIT,
+            self.session_manager.acquire_session_mutation(session_id),
+        )
+        .await
+        {
+            Ok(lease) => Some(lease?),
+            Err(_) => None,
+        };
+        if mutation.is_some() {
+            self.prepare_persisted_session_read_locked(storage, session_id)
+                .await?;
+        } else if self
             .session_manager
-            .acquire_session_mutation(session_id)
-            .await?;
-        self.prepare_persisted_session_read_locked(storage, session_id)
-            .await?;
+            .persistence_manager()
+            .load_session_revert_state(storage, session_id)
+            .await?
+            .is_some_and(|state| state.phase != SessionRevertPhase::Staged)
+        {
+            // Without the lease an unfinished undo transition cannot be
+            // reconciled. Report that instead of projecting records that the
+            // transition is about to replace.
+            return Err(OpenBitFunError::OutcomeUnknown(format!(
+                "Session history is unavailable while its writer holds the Session: session_id={session_id}"
+            )));
+        }
+        let _mutation = mutation;
 
         // Persisted InProgress is not proof of a live executor after restart.
         // A loaded owner supplies runtime state; for an unloaded session an
