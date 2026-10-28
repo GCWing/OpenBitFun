@@ -3907,51 +3907,67 @@ mod tests {
         assert_eq!(scheduler.queue_depth(session_id), 0);
     }
 
-    #[tokio::test]
-    async fn idle_background_result_uses_the_session_logical_agent_route() {
-        let (scheduler, session_manager, _, root) = test_scheduler();
-        let session_id = "external-parent-session";
-        let workspace = fixture_workspace_dir(root.path().join("workspace"));
-        session_manager
-            .create_session_with_id(
-                Some(session_id.to_string()),
-                "External parent".to_string(),
-                "Standard".to_string(),
-                SessionConfig {
-                    tool_presentation_mode: Default::default(),
-                    workspace_path: Some(workspace.to_string_lossy().into_owned()),
-                    model_id: Some("model-original".to_string()),
-                    ..Default::default()
-                },
-            )
-            .await
-            .expect("create parent session");
+    #[test]
+    fn idle_background_result_uses_the_session_logical_agent_route() {
+        // This fixture polls the lifecycle delivery inline to retain the
+        // task-local model configuration. Give its large debug future a
+        // dedicated test stack.
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(async {
+                        let (scheduler, session_manager, _, root) = test_scheduler();
+                        let session_id = "external-parent-session";
+                        let workspace = fixture_workspace_dir(root.path().join("workspace"));
+                        session_manager
+                            .create_session_with_id(
+                                Some(session_id.to_string()),
+                                "External parent".to_string(),
+                                "Standard".to_string(),
+                                SessionConfig {
+                                    tool_presentation_mode: Default::default(),
+                                    workspace_path: Some(workspace.to_string_lossy().into_owned()),
+                                    model_id: Some("model-original".to_string()),
+                                    ..Default::default()
+                                },
+                            )
+                            .await
+                            .expect("create parent session");
 
-        TEST_MODEL_RESOLUTION_AI_CONFIG
-            .scope(
-                AIConfig {
-                    models: vec![AIModelConfig {
-                        id: "model-original".to_string(),
-                        name: "model-original".to_string(),
-                        model_name: "model-original".to_string(),
-                        enabled: true,
-                        ..Default::default()
-                    }],
-                    ..Default::default()
-                },
-                scheduler.deliver_background_result(
-                    session_id.to_string(),
-                    "external::opencode::agentic::generation-v1".to_string(),
-                    None,
-                    None,
-                    None,
-                    "Background Bash command completed".to_string(),
-                    None,
-                    None,
-                ),
-            )
-            .await
-            .expect("lifecycle delivery must follow the persisted logical session route");
+                        TEST_MODEL_RESOLUTION_AI_CONFIG
+                            .scope(
+                                AIConfig {
+                                    models: vec![AIModelConfig {
+                                        id: "model-original".to_string(),
+                                        name: "model-original".to_string(),
+                                        model_name: "model-original".to_string(),
+                                        enabled: true,
+                                        ..Default::default()
+                                    }],
+                                    ..Default::default()
+                                },
+                                scheduler.deliver_background_result(
+                                    session_id.to_string(),
+                                    "external::opencode::agentic::generation-v1".to_string(),
+                                    None,
+                                    None,
+                                    None,
+                                    "Background Bash command completed".to_string(),
+                                    None,
+                                    None,
+                                ),
+                            )
+                            .await
+                            .expect("lifecycle delivery must follow the persisted logical session route");
+                    });
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 
     #[tokio::test]
