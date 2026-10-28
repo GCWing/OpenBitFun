@@ -176,6 +176,10 @@ impl WorkspaceFileSystem for LocalWorkspaceFs {
         Ok(tokio::fs::create_dir_all(path).await?)
     }
 
+    async fn create_dir_new(&self, path: &str) -> anyhow::Result<()> {
+        Ok(tokio::fs::create_dir(path).await?)
+    }
+
     async fn set_permissions(&self, path: &str, permissions: u32) -> anyhow::Result<()> {
         #[cfg(unix)]
         {
@@ -374,6 +378,38 @@ pub fn local_workspace_services(workspace_root: String) -> WorkspaceServices {
 mod tests {
     use super::*;
     use openbitfun_runtime_ports::WorkspaceFileSystem;
+
+    #[tokio::test]
+    async fn local_workspace_exclusive_directory_creation_preserves_existing_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let directory = temp.path().join("new directory");
+        let fs = LocalWorkspaceFs;
+        fs.create_dir_new(directory.to_str().unwrap())
+            .await
+            .unwrap();
+        std::fs::write(directory.join("keep.txt"), b"keep").unwrap();
+        assert!(fs
+            .create_dir_new(directory.to_str().unwrap())
+            .await
+            .is_err());
+        assert_eq!(std::fs::read(directory.join("keep.txt")).unwrap(), b"keep");
+        let existing_file = temp.path().join("file");
+        std::fs::write(&existing_file, b"file").unwrap();
+        assert!(fs
+            .create_dir_new(existing_file.to_str().unwrap())
+            .await
+            .is_err());
+        assert!(fs
+            .create_dir_new(temp.path().join("missing/child").to_str().unwrap())
+            .await
+            .is_err());
+        #[cfg(unix)]
+        {
+            let link = temp.path().join("directory-link");
+            std::os::unix::fs::symlink(&directory, &link).unwrap();
+            assert!(fs.create_dir_new(link.to_str().unwrap()).await.is_err());
+        }
+    }
 
     #[cfg(windows)]
     #[tokio::test]

@@ -43,6 +43,7 @@ export type SettingsSectionId =
   | 'session'
   | 'memory'
   | 'workspace-search'
+  | 'remote-user-skills'
   | 'worktrees'
   | 'git'
   | 'quick-actions'

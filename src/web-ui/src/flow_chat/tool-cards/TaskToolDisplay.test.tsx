@@ -1046,6 +1046,36 @@ describeWithJsdom('TaskToolDisplay', () => {
     expect(container.querySelector('[data-openbitfun-component="subagent-hatch"]')?.getAttribute('data-phase')).toBe('stopped');
   });
 
+  it.each(['Task', 'AgentSpawn'])('shows Skill package preparation on a pending %s launch', async toolName => {
+    const progress = 'Uploading Skill package (203 files, 1024 bytes)';
+    const item: FlowToolItem & { _progressMessage?: unknown } = {
+      id: 'skill-package-launch', type: 'tool', toolName, timestamp: Date.now(), status: 'running',
+      toolCall: { id: 'skill-package-call', input: { prompt: 'Check review coverage.', subagent_type: 'CodeReview' } },
+      _progressMessage: progress,
+    };
+    await act(async () => root.render(
+      <TaskToolDisplay toolItem={item} config={config} sessionId="parent-session" />,
+    ));
+    expect(container.querySelector('[data-openbitfun-part="agentStatus"]')?.textContent).toContain(progress);
+    expect(container.querySelector('[data-agent-capsule-trigger]')?.getAttribute('aria-label')).toContain(progress);
+    await act(async () => root.render(
+      <TaskToolDisplay toolItem={{ ...item, status: 'completed' }} config={config} sessionId="parent-session" />,
+    ));
+    expect(container.textContent).not.toContain(progress);
+  });
+
+  it.each(['error', 'cancelled'] as const)('hides old Skill package progress after %s', async status => {
+    const item = {
+      id: 'failed-skill-package', type: 'tool' as const, toolName: 'AgentSpawn', timestamp: Date.now(), status,
+      toolCall: { id: 'failed-skill-package-call', input: { prompt: 'Check review coverage.', subagent_type: 'CodeReview' } },
+      _progressMessage: 'Checking remote Skill package',
+    };
+    await act(async () => root.render(
+      <TaskToolDisplay toolItem={item} config={config} sessionId="parent-session" />,
+    ));
+    expect(container.textContent).not.toContain(item._progressMessage);
+  });
+
   it('opens an ordinary CodeReview subagent instead of treating it as Deep Review coverage', async () => {
     const toolItem: FlowToolItem = {
       ...reviewTaskItem('completed', 'CodeReview', 'Review completed work'),

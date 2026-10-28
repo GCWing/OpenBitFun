@@ -108,7 +108,8 @@
       "hooks": "Event Hooks",
       "pet": "Pet",
       "voice-call": "Real-time voice calls",
-      "desktop-cards": "Desktop cards"
+      "desktop-cards": "Desktop cards",
+      "remote-user-skills": "Remote user Skills"
     }
   },
   "changeGuard": {

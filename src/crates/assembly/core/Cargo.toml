@@ -475,6 +475,7 @@ workspace-runtime = [
 workspace-watch = ["workspace-runtime", "dep:notify"]
 remote-workspace = [
     "workspace-runtime",
+    "openbitfun-services-core/skill-package-sync",
     "dep:openbitfun-services-integrations",
     "openbitfun-services-integrations/remote-ssh",
 ]

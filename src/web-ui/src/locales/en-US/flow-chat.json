@@ -2488,7 +2488,9 @@
       "loadSkillFailed": "Load skill failed",
       "skillAction": "Load skill: {{name}}",
       "loadingSkill": "Loading",
-      "preparingSkill": "Preparing to load"
+      "preparingSkill": "Preparing to load",
+      "markdownOnlyResources": "Only SKILL.md loaded; supporting files were not synced to the remote host.",
+      "remotePackageResources": "Skill package synced to the remote host; required runtimes still need to be available."
     },
     "readFile": {
       "parsingParams": "Parsing parameters...",

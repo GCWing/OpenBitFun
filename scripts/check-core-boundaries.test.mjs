@@ -706,6 +706,7 @@ test('Services Core feature-free dependencies stay behind exact text and async I
       'workspace-runtime',
       'workspace-text-runtime',
       'workspace-transfer',
+      'skill-package-sync',
     ]),
   );
 });
@@ -4315,6 +4316,7 @@ test('Services Core accepts only the reviewed feature-owned Tokio runtime graph'
       ],
       'session-git': ['local-storage'],
       'workspace-transfer': ['dep:tokio', 'tokio/fs', 'tokio/io-util', 'tokio/rt', 'tokio/sync'],
+      'skill-package-sync': ['dep:tokio', 'tokio/fs', 'tokio/io-util', 'tokio/rt'],
     },
   };
 
@@ -5066,6 +5068,78 @@ test('workspace transfer admits IO without process or networking capabilities', 
   pkg.features['workspace-transfer'].push('tokio/process', 'tokio/net');
   assert.ok(findTokioDependencyFeatureViolations([pkg]).some(v =>
     v.message.includes('workspace-transfer has unexpected effective Tokio capabilities')));
+});
+
+test('Skill package synchronization keeps streamed workspace IO without archive or process owners', async () => {
+  const manifestPath = 'src/crates/services/services-core/Cargo.toml';
+  const manifest = await readFile(new URL(`../${manifestPath}`, import.meta.url), 'utf8');
+  const features = parseManifestFeatures(manifest);
+  const expected = [
+    'dep:anyhow', 'dep:openbitfun-runtime-ports',
+    'openbitfun-runtime-ports/workspace-ports', 'dep:sha2', 'dep:futures', 'dep:uuid',
+    'dep:tokio', 'tokio/fs', 'tokio/io-util', 'tokio/rt',
+  ];
+  const profile = coreClosedFeatureProfileRules.find(rule =>
+    rule.manifestPath === manifestPath && rule.featureName === 'skill-package-sync');
+  assert.equal(profile?.exact, true);
+  assert.deepEqual(profile.requiredFeatureRefs, expected);
+  assert.deepEqual(features['skill-package-sync'], expected);
+  const serviceOwners = optionalDependencyFeatureOwnerRules.find(rule => rule.crateName === 'services-core');
+  assert.deepEqual(serviceOwners.dependencies.find(rule => rule.depName === 'zip').ownerFeatures, ['pet-packages']);
+  assert.deepEqual(serviceOwners.dependencies.find(rule => rule.depName === 'futures').ownerFeatures, ['skill-package-sync']);
+
+  const pkg = {
+    name: 'openbitfun-services-core',
+    manifest_path: manifestPath,
+    dependencies: [{ name: 'tokio', kind: null, optional: true, features: [] }],
+    features,
+  };
+  assert.deepEqual(findTokioDependencyFeatureViolations([pkg]), []);
+  for (const added of ['tokio/process', 'tokio/net', 'workspace-runtime']) {
+    const mutated = structuredClone(pkg);
+    mutated.features['skill-package-sync'].push(added);
+    assert.ok(findTokioDependencyFeatureViolations([mutated]).some(violation =>
+      violation.message.includes('skill-package-sync has unexpected effective Tokio capabilities')), added);
+  }
+
+  const { findCapabilityContractConsumerViolations } = await import(
+    './core-boundaries/cargo-dependency-boundaries.mjs'
+  );
+  const runtimePorts = capabilityPackage(
+    'openbitfun-runtime-ports',
+    'src/crates/contracts/runtime-ports/Cargo.toml',
+    RUNTIME_PORT_FEATURE_PROFILES,
+  );
+  const consumer = {
+    ...packageAt('openbitfun-services-core', manifestPath, [
+      pathDependency('src/crates/contracts/runtime-ports', {
+        name: 'openbitfun-runtime-ports', optional: true, usesDefaultFeatures: false,
+      }),
+    ]),
+    features,
+  };
+  const rules = capabilityContractDependencyRules.filter(rule => rule.packageName === 'openbitfun-runtime-ports');
+  assert.deepEqual(findTestCapabilityViolations(findCapabilityContractConsumerViolations, [runtimePorts, consumer], rules), []);
+  for (const added of ['runtime-event-port', 'remote-exec-port', 'tool-runtime-handles']) {
+    const mutated = structuredClone(consumer);
+    mutated.features['skill-package-sync'].push(`openbitfun-runtime-ports/${added}`);
+    assert.ok(findTestCapabilityViolations(findCapabilityContractConsumerViolations, [runtimePorts, mutated], rules)
+      .some(violation => violation.message.includes('skill-package-sync') && violation.message.includes(added)), added);
+  }
+});
+
+test('remote workspace feature selects the Skill package service only at its owning surface', async () => {
+  const manifestPath = 'src/crates/assembly/core/Cargo.toml';
+  const manifest = await readFile(new URL(`../${manifestPath}`, import.meta.url), 'utf8');
+  const expected = [
+    'workspace-runtime', 'dep:openbitfun-services-integrations',
+    'openbitfun-services-integrations/remote-ssh', 'openbitfun-services-core/skill-package-sync',
+  ];
+  const profile = coreClosedFeatureProfileRules.find(rule =>
+    rule.manifestPath === manifestPath && rule.featureName === 'remote-workspace');
+  assert.equal(profile?.exact, true);
+  assert.deepEqual(profile.requiredFeatureRefs, expected);
+  assert.deepEqual(new Set(parseManifestFeatures(manifest)['remote-workspace']), new Set(expected));
 });
 
 

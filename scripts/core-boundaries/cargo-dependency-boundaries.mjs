@@ -188,6 +188,7 @@ const SERVICES_CORE_TOKIO_FEATURES = new Map([
   ['workspace-text-runtime', ['rt']],
   ['workspace-runtime', ['fs', 'io-util', 'process', 'rt', 'sync', 'time']],
   ['workspace-transfer', ['fs', 'io-util', 'rt', 'sync']],
+  ['skill-package-sync', ['fs', 'io-util', 'rt']],
 ]);
 const SERVICES_CORE_BASE_TOKIO_FEATURES = [];
 const SERVICES_INTEGRATIONS_TOKIO_AGGREGATES = new Set(['product-full']);

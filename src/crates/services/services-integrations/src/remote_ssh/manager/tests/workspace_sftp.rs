@@ -15,6 +15,7 @@ struct State {
     closed: AtomicUsize,
     live: AtomicUsize,
     channels: AtomicUsize,
+    exec_calls: AtomicUsize,
     pause_open: AtomicBool,
     pause_read: AtomicBool,
     pause_dir: AtomicBool,
@@ -227,6 +228,32 @@ impl russh::server::Handler for SshServer {
     ) -> Result<bool, Self::Error> {
         self.channels.insert(channel.id(), channel);
         Ok(true)
+    }
+    #[cfg(unix)]
+    async fn exec_request(
+        &mut self,
+        channel: russh::ChannelId,
+        command: &[u8],
+        session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        // This loopback fixture runs commands only against test-owned paths.
+        // Keep the SSH execution path real while using the local POSIX shell.
+        self.state.exec_calls.fetch_add(1, Ordering::SeqCst);
+        session.channel_success(channel);
+        let output = process_manager::create_tokio_command("sh")
+            .arg("-c")
+            .arg(std::str::from_utf8(command).unwrap())
+            .stdin(Stdio::null())
+            .kill_on_drop(true)
+            .output()
+            .await
+            .unwrap();
+        session.data(channel, russh::CryptoVec::from_slice(&output.stdout));
+        session.extended_data(channel, 1, russh::CryptoVec::from_slice(&output.stderr));
+        session.exit_status_request(channel, output.status.code().unwrap_or(1) as u32);
+        session.eof(channel);
+        session.close(channel);
+        Ok(())
     }
     async fn subsystem_request(
         &mut self,
@@ -1119,4 +1146,248 @@ async fn openssh_streaming_upload_create_is_exclusive_and_closes_handle() {
     let data = f.manager.sftp_read("sftp-test", &path).await.unwrap();
     assert_eq!(data.len(), chunk.len() * 32);
     assert!(data.iter().all(|byte| *byte == 29));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+#[ignore = "Set OPENBITFUN_TEST_SFTP_SERVER to the OpenSSH sftp-server executable"]
+async fn openssh_skill_package_sync_reads_executes_and_repairs_remote_resources() {
+    use crate::remote_ssh::workspace_services::{RemoteWorkspaceFs, RemoteWorkspaceShell};
+    use openbitfun_runtime_ports::{WorkspaceFileSystem, WorkspaceShell};
+    use openbitfun_services_core::skill_package_sync::sync_local_skill_package;
+    use std::os::unix::fs::PermissionsExt;
+
+    let executable = std::env::var("OPENBITFUN_TEST_SFTP_SERVER")
+        .expect("OpenSSH sftp-server executable required");
+    let fixture = Fixture::with_openssh(Some(executable)).await;
+    let local_root = fixture._dir.path().join("local user skill");
+    let remote_root = fixture._dir.path().join("remote workspace");
+    let cache_root = remote_root.join(".skill-cache");
+    for directory in ["scripts", "references", "templates"] {
+        std::fs::create_dir_all(local_root.join(directory)).unwrap();
+    }
+    std::fs::create_dir(&remote_root).unwrap();
+    std::fs::write(
+        local_root.join("SKILL.md"),
+        "Read references/guide.md and run scripts/hello.sh.",
+    )
+    .unwrap();
+    std::fs::write(local_root.join("references/guide.md"), "remote reference").unwrap();
+    std::fs::write(local_root.join("templates/binary.dat"), [0, 255, 1, 13, 10]).unwrap();
+    std::fs::write(
+        local_root.join("references/quoted ' Unicode 你好.txt"),
+        "quoted path",
+    )
+    .unwrap();
+    let script = local_root.join("scripts/hello.sh");
+    std::fs::write(&script, "#!/bin/sh\nscript_dir=${0%/*}\ncat \"$script_dir/../references/guide.md\"\nprintf '\\n'\npwd -P\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let file_service = crate::remote_ssh::RemoteFileService::new(Arc::new(
+        tokio::sync::RwLock::new(Some(fixture.manager.as_ref().clone())),
+    ));
+    let fs = RemoteWorkspaceFs::new("sftp-test".into(), file_service);
+    let exclusive_directory = remote_root.join("exclusive-directory");
+    fs.create_dir_new(exclusive_directory.to_str().unwrap())
+        .await
+        .unwrap();
+    assert!(fs
+        .create_dir_new(exclusive_directory.to_str().unwrap())
+        .await
+        .is_err());
+    fs.remove_dir(exclusive_directory.to_str().unwrap(), false)
+        .await
+        .unwrap();
+    let shell = RemoteWorkspaceShell::new(
+        "sftp-test".into(),
+        fixture.manager.as_ref().clone(),
+        remote_root.to_str().unwrap().into(),
+    );
+    let cache = cache_root.to_str().unwrap();
+    let first = sync_local_skill_package(
+        &local_root,
+        cache,
+        remote_root.to_str().unwrap(),
+        "user::test::hello",
+        &fs,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        fixture.state.exec_calls.load(Ordering::SeqCst),
+        0,
+        "Synchronization must use SSH/SFTP file IO without Python or shell execution"
+    );
+    assert!(!first.reused);
+    assert!(first.path.starts_with(cache));
+    assert!(!first.path.contains("local user skill"));
+    let remote_reference = format!("{}/references/guide.md", first.path);
+    let remote_template = format!("{}/templates/binary.dat", first.path);
+    assert_eq!(
+        fs.read_file_text(&remote_reference).await.unwrap(),
+        "remote reference"
+    );
+    assert_eq!(
+        fs.read_file(&remote_template).await.unwrap(),
+        [0, 255, 1, 13, 10]
+    );
+    let reference_before = fs
+        .metadata(&remote_reference, false)
+        .await
+        .unwrap()
+        .unwrap();
+    let attributes_before = fixture
+        .manager
+        .sftp_stat("sftp-test", &remote_reference)
+        .await
+        .unwrap();
+    let modified = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    fs.set_modified(&remote_reference, modified).await.unwrap();
+    let reference_after = fs
+        .metadata(&remote_reference, false)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(reference_after.modified, Some(modified));
+    let attributes_after = fixture
+        .manager
+        .sftp_stat("sftp-test", &remote_reference)
+        .await
+        .unwrap();
+    assert_eq!(
+        attributes_after.atime, attributes_before.atime,
+        "SFTP v3's paired access time must be preserved when changing modification time"
+    );
+    assert_eq!(
+        (attributes_after.uid, attributes_after.gid),
+        (attributes_before.uid, attributes_before.gid),
+        "Metadata updates must not change ownership"
+    );
+    assert_eq!(
+        reference_after.size, reference_before.size,
+        "SFTP mtime updates must not truncate the synchronized file"
+    );
+    assert_eq!(
+        reference_after.permissions, reference_before.permissions,
+        "SFTP mtime updates must not change executable or data permissions"
+    );
+    assert_eq!(
+        fs.read_file_text(&remote_reference).await.unwrap(),
+        "remote reference"
+    );
+    assert_eq!(
+        fs.read_file_text(&format!(
+            "{}/references/quoted ' Unicode 你好.txt",
+            first.path
+        ))
+        .await
+        .unwrap(),
+        "quoted path"
+    );
+    let script_command =
+        crate::remote_ssh::shell::quote_arg(&format!("{}/scripts/hello.sh", first.path));
+    let (stdout, stderr, status) = shell.exec(&script_command, Some(30_000)).await.unwrap();
+    assert_eq!(status, 0, "{stderr}");
+    assert_eq!(
+        fixture.state.exec_calls.load(Ordering::SeqCst),
+        1,
+        "The selected Skill script is the only remote command"
+    );
+    assert_eq!(
+        stdout,
+        format!(
+            "remote reference\n{}\n",
+            remote_root.canonicalize().unwrap().display()
+        )
+    );
+
+    let unchanged = sync_local_skill_package(
+        &local_root,
+        cache,
+        remote_root.to_str().unwrap(),
+        "user::test::hello",
+        &fs,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(unchanged.reused);
+    assert_eq!(unchanged.path, first.path);
+    fs.write_file(&remote_reference, b"remote corruption")
+        .await
+        .unwrap();
+    let repaired = sync_local_skill_package(
+        &local_root,
+        cache,
+        remote_root.to_str().unwrap(),
+        "user::test::hello",
+        &fs,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(!repaired.reused);
+    assert_ne!(
+        repaired.path, first.path,
+        "Repair must publish a new immutable generation instead of moving an active path"
+    );
+    assert_eq!(
+        fs.read_file_text(&remote_reference).await.unwrap(),
+        "remote corruption",
+        "Previously published generations must remain in place during repair"
+    );
+    assert_eq!(
+        fs.read_file_text(&format!("{}/references/guide.md", repaired.path))
+            .await
+            .unwrap(),
+        "remote reference"
+    );
+
+    let repaired_reuse = sync_local_skill_package(
+        &local_root,
+        cache,
+        remote_root.to_str().unwrap(),
+        "user::test::hello",
+        &fs,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(repaired_reuse.reused);
+    assert_eq!(repaired_reuse.path, repaired.path);
+
+    std::fs::write(
+        local_root.join("references/guide.md"),
+        "updated local reference",
+    )
+    .unwrap();
+    std::fs::remove_file(local_root.join("templates/binary.dat")).unwrap();
+    let updated = sync_local_skill_package(
+        &local_root,
+        cache,
+        remote_root.to_str().unwrap(),
+        "user::test::hello",
+        &fs,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(!updated.reused);
+    assert_ne!(updated.content_hash, first.content_hash);
+    assert_eq!(
+        fs.read_file_text(&format!("{}/references/guide.md", updated.path))
+            .await
+            .unwrap(),
+        "updated local reference"
+    );
+    assert!(!fs
+        .exists(&format!("{}/templates/binary.dat", updated.path))
+        .await
+        .unwrap());
+    assert_eq!(
+        fixture.state.exec_calls.load(Ordering::SeqCst),
+        1,
+        "Cache checking, corruption repair and updates must not execute target commands"
+    );
 }

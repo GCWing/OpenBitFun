@@ -108,7 +108,8 @@
       "hooks": "事件 Hooks",
       "pet": "宠物",
       "voice-call": "实时语音通话",
-      "desktop-cards": "小卡片"
+      "desktop-cards": "小卡片",
+      "remote-user-skills": "远程用户级 Skill"
     }
   },
   "changeGuard": {

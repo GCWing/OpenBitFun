@@ -8,6 +8,10 @@ use super::mode_overrides::{
     load_globally_disabled_project_skills, load_globally_disabled_user_skills,
     load_user_mode_skill_overrides, SkillPolicyWorkspace, UserModeSkillOverrides,
 };
+use super::remote_user_skills::{
+    check_remote_user_skill_mode, prepare_remote_user_skill, remote_user_skills_mode,
+    SkillLoadProgress,
+};
 use super::runtime_settings::apply_builtin_runtime_settings;
 #[cfg(feature = "file-watch")]
 use super::source_cache::{LocalSkillWatchMonitor, LocalSkillWatchRoot, VersionedSnapshotCache};
@@ -21,6 +25,7 @@ use crate::external_sources::{
     LocalConfiguredSkillRootContribution,
 };
 use crate::infrastructure::get_path_manager_arc;
+use crate::service::config::types::RemoteUserSkillsMode;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use futures::{stream, StreamExt};
 use log::{debug, error, warn};
@@ -1516,10 +1521,44 @@ impl SkillRegistry {
         fs: &dyn WorkspaceFileSystem,
         remote_root: &str,
     ) -> SkillCandidateScan {
-        let (user, project) = tokio::join!(
-            self.scan_skill_candidates_with_diagnostics_for_workspace(None),
+        let mode = remote_user_skills_mode().await;
+        self.scan_remote_skill_candidates_with_mode(fs, remote_root, mode)
+            .await
+    }
+
+    async fn scan_remote_skill_candidates_with_mode(
+        &self,
+        fs: &dyn WorkspaceFileSystem,
+        remote_root: &str,
+        mode: OpenBitFunResult<RemoteUserSkillsMode>,
+    ) -> SkillCandidateScan {
+        let (user, mut project) = tokio::join!(
+            async {
+                match &mode {
+                    Ok(RemoteUserSkillsMode::SkillMdOnly | RemoteUserSkillsMode::Full) => {
+                        self.scan_skill_candidates_with_diagnostics_for_workspace(None)
+                            .await
+                    }
+                    _ => SkillCandidateScan::default(),
+                }
+            },
             Self::scan_remote_project_skills(fs, remote_root),
         );
+        let notice = match &mode {
+            Err(error) => Some(format!("Local user Skills are unavailable: {error}")),
+            Ok(RemoteUserSkillsMode::Unsupported(value)) => Some(format!(
+                "Local user Skills are unavailable: unsupported remote user Skills mode '{value}'"
+            )),
+            _ => None,
+        };
+        if let Some(message) = notice {
+            project.diagnostics.push(SkillScanDiagnostic {
+                path: "workspace.remote_user_skills".into(),
+                source_id: "openbitfun".into(),
+                message,
+                unsupported_field: None,
+            });
+        }
         Self::merge_remote_skill_scans(user, project)
     }
 
@@ -2053,6 +2092,24 @@ impl SkillRegistry {
         remote_root: &str,
         agent_type: Option<&str>,
     ) -> OpenBitFunResult<SkillData> {
+        self.find_and_load_skill_for_remote_workspace_with_progress(
+            skill_name,
+            fs,
+            remote_root,
+            agent_type,
+            None,
+        )
+        .await
+    }
+
+    pub async fn find_and_load_skill_for_remote_workspace_with_progress(
+        &self,
+        skill_name: &str,
+        fs: &dyn WorkspaceFileSystem,
+        remote_root: &str,
+        agent_type: Option<&str>,
+        progress: Option<SkillLoadProgress>,
+    ) -> OpenBitFunResult<SkillData> {
         let info = self
             .find_skill_info_for_explicit_invocation_remote_workspace(
                 skill_name,
@@ -2071,6 +2128,7 @@ impl SkillRegistry {
             info.parser_source_slot(),
         )
         .map_err(|error| OpenBitFunError::tool(error.to_string()))?;
+        let parser_source_slot = info.parser_source_slot().to_string();
         data.path = info.path;
         data.entry_file = info.entry_file;
         data.key = info.key;
@@ -2078,6 +2136,8 @@ impl SkillRegistry {
         data.source_id = info.source_id;
         data.source_label = info.source_label;
         data.dir_name = info.dir_name;
+        prepare_remote_user_skill(&mut data, fs, remote_root, progress, &parser_source_slot)
+            .await?;
         apply_builtin_runtime_settings(&mut data).await?;
         Ok(data)
     }
@@ -2089,6 +2149,27 @@ impl SkillRegistry {
         remote_root: &str,
         agent_type: Option<&str>,
     ) -> OpenBitFunResult<SkillData> {
+        self.find_and_load_skill_by_key_for_remote_workspace_with_progress(
+            skill_key,
+            fs,
+            remote_root,
+            agent_type,
+            None,
+        )
+        .await
+    }
+
+    pub async fn find_and_load_skill_by_key_for_remote_workspace_with_progress(
+        &self,
+        skill_key: &str,
+        fs: &dyn WorkspaceFileSystem,
+        remote_root: &str,
+        agent_type: Option<&str>,
+        progress: Option<SkillLoadProgress>,
+    ) -> OpenBitFunResult<SkillData> {
+        if skill_key.starts_with("user::") {
+            check_remote_user_skill_mode(&remote_user_skills_mode().await?)?;
+        }
         let candidates = self
             .scan_skill_candidates_for_remote_workspace(fs, remote_root)
             .await;
@@ -2115,6 +2196,7 @@ impl SkillRegistry {
             info.parser_source_slot(),
         )
         .map_err(|error| OpenBitFunError::tool(error.to_string()))?;
+        let parser_source_slot = info.parser_source_slot().to_string();
         data.path = info.path;
         data.entry_file = info.entry_file;
         data.key = info.key;
@@ -2122,6 +2204,8 @@ impl SkillRegistry {
         data.source_id = info.source_id;
         data.source_label = info.source_label;
         data.dir_name = info.dir_name;
+        prepare_remote_user_skill(&mut data, fs, remote_root, progress, &parser_source_slot)
+            .await?;
         apply_builtin_runtime_settings(&mut data).await?;
         Ok(data)
     }
@@ -2191,6 +2275,58 @@ impl SkillRegistry {
                         OpenBitFunError::tool(format!("Failed to read skill file: {}", error))
                     })
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod remote_user_skills_policy_tests {
+    use super::*;
+    use crate::agentic::workspace::LocalWorkspaceFs;
+
+    #[tokio::test]
+    async fn remote_user_skills_disabled_or_unavailable_keeps_only_project_candidates() {
+        let temp = tempfile::tempdir().unwrap();
+        let project_skill = temp.path().join(".openbitfun/skills/project-guide");
+        std::fs::create_dir_all(&project_skill).unwrap();
+        std::fs::write(
+            project_skill.join("SKILL.md"),
+            "---\nname: project-guide\ndescription: Remote project guide\n---\nRead the project.",
+        )
+        .unwrap();
+        let registry = SkillRegistry::new();
+        for mode in [
+            Ok(RemoteUserSkillsMode::Disabled),
+            Ok(RemoteUserSkillsMode::Unsupported("future".into())),
+            Err(OpenBitFunError::config("unreadable preference")),
+        ] {
+            let should_warn = !matches!(mode, Ok(RemoteUserSkillsMode::Disabled));
+            let scan = registry
+                .scan_remote_skill_candidates_with_mode(
+                    &LocalWorkspaceFs,
+                    &temp.path().to_string_lossy(),
+                    mode,
+                )
+                .await;
+            assert_eq!(scan.candidates.len(), 1);
+            assert!(scan
+                .candidates
+                .iter()
+                .all(|candidate| candidate.info.level == SkillLocation::Project));
+            assert_eq!(scan.candidates[0].info.name, "project-guide");
+            let prompt: String = scan
+                .candidates
+                .iter()
+                .map(|candidate| candidate.info.to_xml_desc())
+                .collect();
+            assert!(prompt.contains("project-guide"));
+            assert!(!prompt.contains("user::"));
+            assert_eq!(
+                scan.diagnostics
+                    .iter()
+                    .any(|notice| notice.path == "workspace.remote_user_skills"),
+                should_warn
+            );
         }
     }
 }

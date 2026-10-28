@@ -61,6 +61,8 @@ pub mod resource_capacity;
 pub mod routing_state;
 #[cfg(feature = "session-event-format")]
 pub mod session_projection_format;
+#[cfg(feature = "skill-package-sync")]
+pub mod skill_package_sync;
 pub mod storage_error;
 #[cfg(feature = "workspace-persistence")]
 pub mod workspace_persistence;

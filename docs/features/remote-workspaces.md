@@ -234,6 +234,33 @@ working execution and text-query paths and receive an explicit upgrade instructi
 for a missing binary capability. Existing Remote Connect file commands and
 persisted session records remain compatible; the file-chunk revision is additive.
 
+## User Skill resources
+
+User Skill availability is controlled by the runtime host's
+`workspace.remote_user_skills` preference: `skill_md_only` (the upgrade-compatible
+default), `disabled`, or `full`. It applies to remote discovery, prompt listings
+and explicit invocation, without changing remote project Skills. See the
+[Desktop guide](../../src/apps/desktop/README.md#user-skills-in-remote-workspaces)
+for prerequisites and behavior.
+
+Full loading deploys the selected directory through the bound filesystem
+provider, never through a local fallback. SSH workspaces use the existing SFTP
+connection; synchronization does not execute a remote shell or require Python,
+an archive extractor or an external synchronization program. Deterministic file
+hashes and permissions identify package versions. Bounded parallel streamed
+reads check the complete remote tree before reuse; otherwise files are uploaded
+and verified in a staging directory before publication. Many small files can
+still take time over high-latency connections, so progress remains visible.
+Published directories are never moved or removed by synchronization. A changed
+or damaged cached copy leads to a new generation; matching verified generations
+can be reused. This preserves resource paths already returned to other turns
+without a persistent target-side lock.
+Returned Skill paths use target POSIX semantics,
+and references rooted in the original package are mapped to that deployment.
+The runtime reads instructions back from the deployed snapshot before reporting
+success. This copies package resources; it does not install interpreters,
+relocate executable hooks, or resolve external machine-specific dependencies.
+
 ## Upgrade compatibility
 
 Existing SSH profiles remain plain SSH targets because the new `proxyJump` and

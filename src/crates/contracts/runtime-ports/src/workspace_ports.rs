@@ -254,6 +254,11 @@ pub trait WorkspaceFileSystem: Send + Sync {
     async fn create_dir_all(&self, _path: &str) -> anyhow::Result<()> {
         anyhow::bail!("directory creation is not supported by this workspace filesystem")
     }
+    /// Create one new directory exclusively. An existing file, directory or
+    /// symbolic link must fail; parents are not created implicitly.
+    async fn create_dir_new(&self, _path: &str) -> anyhow::Result<()> {
+        anyhow::bail!("exclusive directory creation is not supported by this workspace filesystem")
+    }
     async fn set_permissions(&self, _path: &str, _permissions: u32) -> anyhow::Result<()> {
         anyhow::bail!("POSIX permissions are not supported by this workspace filesystem")
     }
@@ -470,6 +475,17 @@ pub(crate) mod tests {
             fs: Arc::new(FakeWorkspaceFileSystem),
             shell: Arc::new(FakeWorkspaceShell),
         }
+    }
+
+    #[tokio::test]
+    async fn exclusive_directory_creation_is_explicitly_unsupported_by_legacy_providers() {
+        let error = FakeWorkspaceFileSystem
+            .create_dir_new("/workspace/new")
+            .await
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("exclusive directory creation is not supported"));
     }
 
     #[test]

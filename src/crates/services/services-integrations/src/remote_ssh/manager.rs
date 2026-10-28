@@ -5261,9 +5261,18 @@ impl SSHConnectionManager {
                 .await;
         }
         let sftp = self.get_sftp(connection_id).await?;
+        // russh-sftp's default attributes contain size/owner/timestamps. A
+        // chmod request must leave those fields absent rather than truncate or
+        // chown the path while updating its permissions.
         let attrs = russh_sftp::protocol::FileAttributes {
+            size: None,
+            uid: None,
+            user: None,
+            gid: None,
+            group: None,
             permissions: Some(permissions),
-            ..Default::default()
+            atime: None,
+            mtime: None,
         };
         sftp.set_metadata(&path, attrs)
             .await
@@ -5300,9 +5309,14 @@ impl SSHConnectionManager {
         // SFTP v3 sends access and modification time together. Preserve access
         // time while avoiding unrelated size, owner or permission updates.
         let attrs = russh_sftp::protocol::FileAttributes {
+            size: None,
+            uid: None,
+            user: None,
+            gid: None,
+            group: None,
+            permissions: None,
             atime: Some(atime),
             mtime: Some(seconds),
-            ..Default::default()
         };
         sftp.set_metadata(&path, attrs)
             .await

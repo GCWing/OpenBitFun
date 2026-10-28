@@ -230,5 +230,20 @@
     "saveSuccess": "設置已儲存",
     "saveFailed": "儲存失敗",
     "updateFailed": "設置失敗"
+  },
+  "remoteUserSkills": {
+    "title": "遠端工作區的使用者層級 Skill",
+    "scope": "控制遠端工作區中本機使用者層級 Skill 的使用方式。遠端專案層級 Skill 不受影響。",
+    "label": "在遠端工作區執行使用者層級 Skill",
+    "skillMdOnly": "僅注入 SKILL.md",
+    "disabled": "不執行",
+    "full": "完整執行",
+    "skillMdOnlyDescription": "預設僅載入本機 SKILL.md，不複製指令碼、參考文件和範本，這些資源在遠端可能無法使用。",
+    "disabledDescription": "不在遠端工作區的 Agent 提示詞中注入本機使用者層級 Skill，也不允許載入這些 Skill。",
+    "fullDescription": "使用使用者層級 Skill 時，透過工作區連線同步完整目錄並提供遠端路徑；檔案未變更時重用既有副本，變更後重新同步。同步無須在遠端另裝軟體，Skill 本身所需的執行環境仍須具備。",
+    "syncHint": "Skill 包含大量零碎檔案時，驗證與同步可能耗時較長。等待期間可在工具卡片中查看進度。命令和專案操作仍在遠端執行。",
+    "loadFailed": "無法讀取此設定，請重試後再修改。",
+    "saveFailed": "儲存遠端使用者層級 Skill 設定失敗",
+    "unsupported": "請更新目前主機後再設定遠端工作區的使用者層級 Skill。"
   }
 }
