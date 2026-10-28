@@ -38,6 +38,27 @@ export function shouldRecordContextMutation(
   return contextsChanged && !isRestoringSessionDraft;
 }
 
+interface CommandTurnIdentity {
+  id: string;
+  kind?: string;
+}
+
+/**
+ * Whether the host admitted a manual compaction for a command submission.
+ *
+ * A command that failed before admission never produced a turn, so its text is
+ * still a retryable draft. Once the maintenance turn exists the outcome already
+ * reached the transcript - and the compaction may even have been applied before
+ * its terminal bookkeeping failed - so refilling the composer would resurrect
+ * the submitted command long after the fact.
+ */
+export function manualCompactionTurnStarted(
+  knownTurnIds: ReadonlySet<string>,
+  turns: readonly CommandTurnIdentity[],
+): boolean {
+  return turns.some(turn => turn.kind === 'manual_compaction' && !knownTurnIds.has(turn.id));
+}
+
 export function successfulRetryCleanupTarget(
   submissionSessionId: string,
   currentSessionId: string | null,

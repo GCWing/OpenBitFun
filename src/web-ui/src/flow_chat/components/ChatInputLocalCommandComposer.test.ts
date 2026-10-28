@@ -16,19 +16,19 @@ function readCallbackBody(component: string, entry: string): string {
 describe('composer ownership of local slash commands', () => {
   const component = readChatInputComponent();
 
-  it('never restores a submitted /compact back into the composer', () => {
-    // The desktop /compact entry point only settles after the compaction
-    // reaches a terminal state, so a restore on failure repopulates the
-    // composer minutes later - sometimes after the compaction was applied and
-    // only its terminal bookkeeping failed. The submitted command text is not a
-    // draft: clear it once and report the failure instead of refilling it.
+  it('hands /compact back only when the host never admitted it', () => {
+    // The desktop /compact entry point settles only after the compaction
+    // reaches a terminal state. An admitted compaction already reported its
+    // outcome in the transcript (and may have applied before failing), so
+    // refilling the composer there puts "/compact" back minutes later. Only an
+    // early rejection - no maintenance turn - is a retryable draft.
     const body = readCallbackBody(component, 'submitCompactFromInput');
 
     expect(body).toContain("dispatchInput({ type: 'CLEAR_VALUE' })");
-    expect(body).not.toContain('SET_VALUE');
-    expect(body).toContain('compactSession');
-    expect(body.indexOf('compactSession')).toBeGreaterThan(
-      body.indexOf("dispatchInput({ type: 'CLEAR_VALUE' })"),
+    expect(body.indexOf('const knownTurnIds')).toBeGreaterThan(-1);
+    expect(body.indexOf('const knownTurnIds')).toBeLessThan(body.indexOf('compactSession'));
+    expect(body).toMatch(
+      /if \(!manualCompactionTurnStarted\(knownTurnIds,[\s\S]*?dispatchInput\(\{ type: 'SET_VALUE', payload: message \}\);\s*\n\s*\}/,
     );
   });
 
