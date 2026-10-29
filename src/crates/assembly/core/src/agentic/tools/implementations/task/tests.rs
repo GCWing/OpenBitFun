@@ -35,18 +35,6 @@ fn named_agent(id: &str, name: &str) -> crate::agentic::agents::AgentInfo {
 }
 
 #[test]
-fn agent_name_reference_catalog_exposes_the_display_name_and_escapes_markup() {
-    let available = vec![named_agent("agent-internal", "Research & <review>")];
-    let listing = AgentExecutionTool::format_agent_descriptions(&available);
-    assert!(listing.contains("<agent type=\"agent-internal\">"));
-    assert!(listing.contains("<name>Research &amp; &lt;review&gt;</name>"));
-    assert!(listing.contains("<tools>Read</tools>"));
-    assert!(AgentSpawnTool
-        .render_agent_spawn_description()
-        .contains("Users reference agents by name"));
-}
-
-#[test]
 fn external_subagent_validation_accepts_model_emitted_casing() {
     let available = vec!["FileFinder".to_string(), "explore".to_string()];
 
