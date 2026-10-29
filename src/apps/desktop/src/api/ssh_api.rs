@@ -1506,6 +1506,7 @@ mod tests {
             },
             default_workspace: Some("/workspace".to_string()),
             proxy_jump: None,
+            proxy_command: None,
             container: Some(ContainerWorkspaceConfig {
                 name: "dev".to_string(),
                 access: ContainerAccess::DockerExec,
