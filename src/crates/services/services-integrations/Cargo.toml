@@ -208,7 +208,6 @@ account-identity = [
 miniapp-market = [
     "account-identity",
     "openbitfun-services-core/tls-provider",
-    "openbitfun-product-domains/appearance-market",
     "openbitfun-services-core/credential-vault",
     "openbitfun-services-core/product-identity",
     "chrono",

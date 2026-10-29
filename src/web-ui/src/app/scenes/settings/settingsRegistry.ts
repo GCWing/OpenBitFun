@@ -112,7 +112,6 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     descriptionKey: 'navigation.pages.appearance.description',
     keywords: [
       'theme', 'font', 'size', 'motion', 'animation',
-      'appearance pack', 'skin', 'import',
       'session', 'panel', 'layout', 'overlay',
       'chat', 'content', 'width', 'resize',
       'sidebar', 'navigation', 'pin', 'order',
@@ -121,8 +120,8 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     searchPhrases: [
       phrase('settings/appearance', 'title'),
       phrase('settings/appearance', 'subtitle'),
-      phrase('settings/appearance', 'package.title'),
-      phrase('settings/appearance', 'package.description'),
+      phrase('settings/appearance', 'theme.title'),
+      phrase('settings/appearance', 'theme.description'),
       phrase('settings/application', 'appearance.fontSize.title'),
       phrase('settings/appearance', 'sessionPanel.title'),
       phrase('settings/appearance', 'sessionPanel.displayMode'),

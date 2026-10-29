@@ -96,7 +96,7 @@ OpenBitFun 是一个高度可定制的开源 Agent 工作台，让任务按你�
 
 - **定制专属 Agent。** 围绕漫剧创作、视觉设计、代码评审等领域，选择模型、设定角色，组合需要的工具与工作方法。
 - **接入工具与流程。** 通过 MCP 连接专业工具，把常用工作方法保存为 Skills，用 Hooks 扩展任务执行流程。
-- **改变界面与源码。** 安装[皮肤](https://market.openbitfun.com/skin/)调整外观，也可以修改 UI、工具与 Runtime 源码，构建自己的 OpenBitFun。
+- **改变界面与源码。** 选择内置主题调整外观，也可以修改 UI、工具与 Runtime 源码，构建自己的 OpenBitFun。
 
 **你可以直接让 OpenBitFun 的 Code Agent 修改和扩展 OpenBitFun 本身。**
 

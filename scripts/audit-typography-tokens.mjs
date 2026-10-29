@@ -259,26 +259,6 @@ const FILE_CONTRACTS = Object.freeze([
       },
     ],
   },
-  {
-    path: 'src/crates/assembly/core/builtin_skills/create-openbitfun-skin/references/appearance-registry.json',
-    forbidden: [
-      {
-        code: 'appearance-registry-flowchat-font-contract-reintroduced',
-        pattern: /"flowChatControls"|--openbitfun-appearance-token-flowchat-font/,
-        message: 'The distributed Appearance registry must not advertise retired FlowChat typography controls or variables.',
-      },
-    ],
-  },
-  {
-    path: 'src/crates/assembly/core/builtin_skills/create-openbitfun-skin/scripts/openbitfun_appearance.py',
-    forbidden: [
-      {
-        code: 'standalone-appearance-typography-reintroduced',
-        pattern: /\b(?:fontFamilies|validate_font_family)\b|"(?:fontFamily|fontSize|fontWeight|fontWeightBold|fontVariantNumeric|lineHeight|letterSpacing)"|(?:STYLE_PROPERTIES|PAINT_PROPERTIES)\s*=\s*\{[^}]*"fontStyle"|^\s*"fontStyle"\s*:/m,
-        message: 'The standalone Appearance validator must not accept typography globals, Style IR, or renderer settings.',
-      },
-    ],
-  },
 ]);
 
 function normalizePath(value) {

@@ -25,7 +25,6 @@ python3 -m unittest test_migrate_market_data_v1.py
 ## Related guides
 
 - MiniApp market: [`../miniapp-market/README.md`](../miniapp-market/README.md)
-- Skin market: [`../skin-market/README.md`](../skin-market/README.md)
 - Relay: [`../relay-v1/README.md`](../relay-v1/README.md) and
   [`../../src/apps/relay-server/README.md`](../../src/apps/relay-server/README.md)
 - Outbound mail: [`../outbound-mail/README.md`](../outbound-mail/README.md)

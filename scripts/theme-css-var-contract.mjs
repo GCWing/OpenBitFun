@@ -227,7 +227,7 @@ export const COLOR_DOMAIN_LABELS = Object.fromEntries([
 export const COLOR_DOMAIN_CONTRACTS = [
   {
     key: 'assetMetadata',
-    owner: 'src/web-ui/src/app/components/NavPanel/assets; src/web-ui/public/assets; src/mobile-web/src/assets; src/miniapp-market-web/public; src/skin-market-web/public',
+    owner: 'src/web-ui/src/app/components/NavPanel/assets; src/web-ui/public/assets; src/mobile-web/src/assets; src/miniapp-market-web/public',
     reason: 'Favicons, install metadata, and self-contained vector assets cannot consume runtime CSS variables and therefore own their serialized colors at the asset boundary.',
     mergePolicy: 'Keep only identity or platform metadata colors here; any rendered application UI color must move to a canonical theme token.',
   },

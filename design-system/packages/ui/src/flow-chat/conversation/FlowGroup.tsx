@@ -70,7 +70,7 @@ export interface FlowGroupProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
   browser?: FlowGroupBrowserProps;
   /** A shared file identity with bound revision pages instead of a capsule. */
   fileRevision?: FlowGroupFileRevision;
-  /** Stable anatomy identity for semantic presets and installed Appearance packages. */
+  /** Stable anatomy identity for semantic presets and appearance compatibility data. */
   'data-openbitfun-component'?: string;
   'data-testid'?: string;
   'data-group-kind'?: string;

@@ -2,8 +2,8 @@ import type { AppearanceSurfaceDescriptor } from '@/infrastructure/appearance';
 
 /**
  * The surface id stays `permission-request-panel` even though the component is
- * now a band inside the composer: published skins target this id, and renaming
- * it would silently drop their styling for the approval surface.
+ * now a band inside the composer: saved appearance data targets this id, and
+ * renaming it would silently drop styling for the approval surface.
  */
 export const chatInputApprovalBandAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   id: 'permission-request-panel',

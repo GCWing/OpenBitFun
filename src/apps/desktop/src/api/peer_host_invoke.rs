@@ -768,23 +768,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn appearance_market_stays_on_the_controller_device() {
-        for command in [
-            "appearance_market_browse",
-            "appearance_market_get_listing",
-            "appearance_market_download_release",
-            "appearance_market_get_review_submission",
-            "appearance_market_list_review_submissions",
-            "appearance_market_list_submissions",
-            "appearance_market_review_submission",
-            "appearance_market_submit_package",
-            "appearance_market_withdraw_submission",
-        ] {
-            assert!(is_local_only_command(command), "{command}");
-        }
-    }
-
     /// The controller-side FE deny list is an optimization, not the boundary.
     /// A controller on an older build (or a non-FE controller) still reaches
     /// this host, so every controller-owned command must be refused here too.

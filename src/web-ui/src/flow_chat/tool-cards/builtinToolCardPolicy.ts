@@ -5,7 +5,7 @@ export const SEMANTIC_BUILTIN_TOOL_NAMES = [
   'get_goal', 'create_goal', 'update_goal', 'AgentList', 'AgentDelete', 'SessionHistory',
   'analyze_image', 'generate_image', 'GetTime', 'ListMCPResources', 'ReadMCPResource', 'ListMCPPrompts', 'GetMCPPrompt',
   'Worktree', 'PortForward', 'ReviewPlatform', 'FrontendWorkbench', 'FinalizeMiniApp',
-  'PublishMiniApp', 'PublishAppearance', 'Playbook', 'DesktopCard',
+  'PublishMiniApp', 'Playbook', 'DesktopCard',
 ] as const;
 export type SemanticBuiltinToolName = typeof SEMANTIC_BUILTIN_TOOL_NAMES[number];
 const names: ReadonlySet<string> = new Set(SEMANTIC_BUILTIN_TOOL_NAMES);
@@ -24,12 +24,12 @@ const REVIEW_READ_ACTIONS = new Set([
   'get_pull_request', 'get_pull_request_detail_page', 'get_pull_request_ci_log',
 ]);
 
-/** Unknown actions remain visible as consequential operations; never infer permission from a skin. */
+/** Unknown actions remain visible as consequential operations; never infer permission from appearance. */
 export function getBuiltinToolAttention(name: SemanticBuiltinToolName, input?: unknown): 'ambient' | 'prominent' {
   const request = runtimeToolRecord(input);
   switch (name) {
     case 'create_goal': case 'update_goal': case 'AgentDelete': case 'FinalizeMiniApp':
-    case 'PublishMiniApp': case 'PublishAppearance': return 'prominent';
+    case 'PublishMiniApp': return 'prominent';
     case 'Worktree': return request.operation === 'list' ? 'ambient' : 'prominent';
     case 'PortForward': return ['targets', 'detect', 'list'].includes(String(request.operation)) ? 'ambient' : 'prominent';
     case 'ReviewPlatform': return REVIEW_READ_ACTIONS.has(String(request.action)) ? 'ambient' : 'prominent';

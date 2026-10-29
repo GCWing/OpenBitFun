@@ -744,7 +744,7 @@ pub struct NotificationConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppearanceConfig {
-    /// Selected appearance package ID or `system`.
+    /// Selected appearance/theme ID or `system`.
     pub selection: String,
 }
 

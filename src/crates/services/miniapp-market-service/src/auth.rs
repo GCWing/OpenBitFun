@@ -15,10 +15,7 @@ use uuid::Uuid;
 
 const WEB_SESSION_COOKIE: &str = "openbitfun_market_session";
 const CSRF_COOKIE: &str = "openbitfun_market_csrf";
-const SKIN_SESSION_COOKIE: &str = "openbitfun_skin_session";
-const SKIN_CSRF_COOKIE: &str = "openbitfun_skin_csrf";
 const MINIAPP_COOKIE_PATH: &str = "/miniapp";
-const SKIN_COOKIE_PATH: &str = "/skin";
 const OAUTH_FLOW_MINUTES: i64 = 10;
 const MAX_ACTIVE_OAUTH_FLOWS: i64 = 8192;
 const WEB_SESSION_DAYS: i64 = 7;
@@ -45,33 +42,10 @@ pub(crate) enum RequestAuthKind {
         session_token: String,
         csrf_hash: String,
         expires_at: i64,
-        surface: WebSessionSurface,
     },
     Bearer {
         family_id: String,
     },
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum WebSessionSurface {
-    MiniApp,
-    Skin,
-}
-
-impl WebSessionSurface {
-    fn session_cookie(self) -> &'static str {
-        match self {
-            Self::MiniApp => WEB_SESSION_COOKIE,
-            Self::Skin => SKIN_SESSION_COOKIE,
-        }
-    }
-
-    fn csrf_cookie(self) -> &'static str {
-        match self {
-            Self::MiniApp => CSRF_COOKIE,
-            Self::Skin => SKIN_CSRF_COOKIE,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -184,25 +158,20 @@ impl AuthService {
                 kind: RequestAuthKind::Bearer { family_id },
             }));
         }
-        for surface in [WebSessionSurface::MiniApp, WebSessionSurface::Skin] {
-            let Some(token) = cookie_value(headers, surface.session_cookie()) else {
-                continue;
-            };
-            let Some((user, csrf_hash, expires_at)) = self.db.web_session_user(&token).await?
-            else {
-                continue;
-            };
-            return Ok(Some(RequestAuth {
-                user,
-                kind: RequestAuthKind::Web {
-                    session_token: token,
-                    csrf_hash,
-                    expires_at,
-                    surface,
-                },
-            }));
-        }
-        Ok(None)
+        let Some(token) = cookie_value(headers, WEB_SESSION_COOKIE) else {
+            return Ok(None);
+        };
+        let Some((user, csrf_hash, expires_at)) = self.db.web_session_user(&token).await? else {
+            return Ok(None);
+        };
+        return Ok(Some(RequestAuth {
+            user,
+            kind: RequestAuthKind::Web {
+                session_token: token,
+                csrf_hash,
+                expires_at,
+            },
+        }));
     }
 
     pub(crate) async fn require_auth(&self, headers: &HeaderMap) -> MarketResult<RequestAuth> {
@@ -212,17 +181,14 @@ impl AuthService {
     }
 
     pub(crate) fn require_csrf(&self, headers: &HeaderMap, auth: &RequestAuth) -> MarketResult<()> {
-        let RequestAuthKind::Web {
-            csrf_hash, surface, ..
-        } = &auth.kind
-        else {
+        let RequestAuthKind::Web { csrf_hash, .. } = &auth.kind else {
             return Ok(());
         };
         let header_token = headers
             .get("x-csrf-token")
             .and_then(|value| value.to_str().ok())
             .unwrap_or_default();
-        let cookie_token = cookie_value(headers, surface.csrf_cookie()).unwrap_or_default();
+        let cookie_token = cookie_value(headers, CSRF_COOKIE).unwrap_or_default();
         if header_token.is_empty()
             || header_token != cookie_token
             || token_hash(header_token) != *csrf_hash
@@ -654,23 +620,18 @@ impl AuthService {
         } else {
             ""
         };
-        for (session_cookie, csrf_cookie, path) in [
-            (WEB_SESSION_COOKIE, CSRF_COOKIE, MINIAPP_COOKIE_PATH),
-            (SKIN_SESSION_COOKIE, SKIN_CSRF_COOKIE, SKIN_COOKIE_PATH),
-        ] {
-            append_set_cookie(
-                headers,
-                &format!(
-                    "{session_cookie}={session_token}; Path={path}; Max-Age={max_age}; HttpOnly; SameSite=Lax{secure}"
-                ),
-            )?;
-            append_set_cookie(
-                headers,
-                &format!(
-                    "{csrf_cookie}={csrf_token}; Path={path}; Max-Age={max_age}; SameSite=Lax{secure}"
-                ),
-            )?;
-        }
+        append_set_cookie(
+            headers,
+            &format!(
+                "{WEB_SESSION_COOKIE}={session_token}; Path={MINIAPP_COOKIE_PATH}; Max-Age={max_age}; HttpOnly; SameSite=Lax{secure}"
+            ),
+        )?;
+        append_set_cookie(
+            headers,
+            &format!(
+                "{CSRF_COOKIE}={csrf_token}; Path={MINIAPP_COOKIE_PATH}; Max-Age={max_age}; SameSite=Lax{secure}"
+            ),
+        )?;
         Ok(())
     }
 
@@ -684,12 +645,11 @@ impl AuthService {
             session_token,
             csrf_hash,
             expires_at,
-            surface,
         } = &auth.kind
         else {
             return Ok(());
         };
-        let Some(csrf_token) = cookie_value(request_headers, surface.csrf_cookie()) else {
+        let Some(csrf_token) = cookie_value(request_headers, CSRF_COOKIE) else {
             return Ok(());
         };
         if token_hash(&csrf_token) != *csrf_hash {
@@ -704,21 +664,16 @@ impl AuthService {
         } else {
             ""
         };
-        for (session_cookie, csrf_cookie, path) in [
-            (WEB_SESSION_COOKIE, CSRF_COOKIE, MINIAPP_COOKIE_PATH),
-            (SKIN_SESSION_COOKIE, SKIN_CSRF_COOKIE, SKIN_COOKIE_PATH),
-        ] {
-            append_set_cookie(
-                headers,
-                &format!(
-                    "{session_cookie}=; Path={path}; Max-Age=0; HttpOnly; SameSite=Lax{secure}"
-                ),
-            )?;
-            append_set_cookie(
-                headers,
-                &format!("{csrf_cookie}=; Path={path}; Max-Age=0; SameSite=Lax{secure}"),
-            )?;
-        }
+        append_set_cookie(
+            headers,
+            &format!(
+                "{WEB_SESSION_COOKIE}=; Path={MINIAPP_COOKIE_PATH}; Max-Age=0; HttpOnly; SameSite=Lax{secure}"
+            ),
+        )?;
+        append_set_cookie(
+            headers,
+            &format!("{CSRF_COOKIE}=; Path={MINIAPP_COOKIE_PATH}; Max-Age=0; SameSite=Lax{secure}"),
+        )?;
         Ok(())
     }
 
@@ -842,11 +797,7 @@ pub(super) fn safe_return_to(value: &str) -> String {
         return FALLBACK.to_string();
     };
     let path = target.path();
-    if target.origin() == base.origin()
-        && (matches!(path, "/miniapp" | "/skin")
-            || path.starts_with("/miniapp/")
-            || path.starts_with("/skin/"))
-    {
+    if target.origin() == base.origin() && (path == "/miniapp" || path.starts_with("/miniapp/")) {
         value.to_string()
     } else {
         FALLBACK.to_string()
@@ -1074,9 +1025,8 @@ mod tests {
             .iter()
             .map(|v| v.to_str().unwrap())
             .collect();
-        assert_eq!(cookies.len(), 4);
+        assert_eq!(cookies.len(), 2);
         assert!(cookies.iter().any(|v| v.contains("Path=/miniapp;")));
-        assert!(cookies.iter().any(|v| v.contains("Path=/skin;")));
         assert!(cookies.iter().all(|v| !v.contains("Domain=")));
         let mut request_headers = HeaderMap::new();
         request_headers.insert(
@@ -1143,20 +1093,19 @@ mod tests {
     }
 
     #[test]
-    fn oauth_return_target_accepts_only_market_surfaces() {
-        assert_eq!(
-            safe_return_to("/skin/appearances/ocean-night?q=dark"),
-            "/skin/appearances/ocean-night?q=dark"
-        );
+    fn oauth_return_target_accepts_only_miniapp_surface() {
         assert_eq!(
             safe_return_to("/miniapp/apps/reviewed-app"),
             "/miniapp/apps/reviewed-app"
         );
-        assert_eq!(safe_return_to("//attacker.invalid/skin/"), "/miniapp/");
-        assert_eq!(safe_return_to("/skin/../admin"), "/miniapp/");
-        assert_eq!(safe_return_to("/skin/%2e%2e/admin"), "/miniapp/");
-        assert_eq!(safe_return_to("/skin/%2F%2Fattacker.invalid"), "/miniapp/");
-        assert_eq!(safe_return_to("/skin/%5c%5cattacker"), "/miniapp/");
+        assert_eq!(safe_return_to("//attacker.invalid/miniapp/"), "/miniapp/");
+        assert_eq!(safe_return_to("/miniapp/../admin"), "/miniapp/");
+        assert_eq!(safe_return_to("/miniapp/%2e%2e/admin"), "/miniapp/");
+        assert_eq!(
+            safe_return_to("/miniapp/%2F%2Fattacker.invalid"),
+            "/miniapp/"
+        );
+        assert_eq!(safe_return_to("/miniapp/%5c%5cattacker"), "/miniapp/");
         assert_eq!(safe_return_to("/unrelated"), "/miniapp/");
     }
 
@@ -1177,7 +1126,6 @@ mod tests {
                 session_token: "session".to_string(),
                 csrf_hash: token_hash("csrf-value"),
                 expires_at: (Utc::now() + Duration::hours(1)).timestamp(),
-                surface: WebSessionSurface::MiniApp,
             },
         };
         let mut headers = HeaderMap::new();
@@ -1207,19 +1155,13 @@ mod tests {
             .iter()
             .map(|value| value.to_str().unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(cookies.len(), 4);
+        assert_eq!(cookies.len(), 2);
         assert!(cookies.iter().any(|cookie| {
             cookie.starts_with("openbitfun_market_session=session; Path=/miniapp;")
         }));
         assert!(cookies.iter().any(|cookie| {
             cookie.starts_with("openbitfun_market_csrf=csrf-value; Path=/miniapp;")
         }));
-        assert!(cookies
-            .iter()
-            .any(|cookie| { cookie.starts_with("openbitfun_skin_session=session; Path=/skin;") }));
-        assert!(cookies
-            .iter()
-            .any(|cookie| { cookie.starts_with("openbitfun_skin_csrf=csrf-value; Path=/skin;") }));
         assert!(cookies.iter().all(|cookie| cookie.contains("SameSite=Lax")));
         assert!(cookies.iter().all(|cookie| cookie.contains("Secure")));
         assert!(cookies.iter().all(|cookie| !cookie.contains("Domain=")));
@@ -1235,7 +1177,7 @@ mod tests {
             .iter()
             .map(|value| value.to_str().unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(clear_cookies.len(), 4);
+        assert_eq!(clear_cookies.len(), 2);
         assert!(clear_cookies
             .iter()
             .all(|cookie| cookie.contains("Max-Age=0")));

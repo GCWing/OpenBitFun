@@ -1,7 +1,7 @@
 import type { AppearanceSurfaceDescriptor } from '@/infrastructure/appearance';
 
 export const agentCompanionPetAppearanceDescriptor: AppearanceSurfaceDescriptor = {
-  // Stable package contract retained so existing Appearance skins continue to
+  // Stable package contract retained so existing Appearance customizations continue to
   // style the companion after its input-box presentation is removed.
   id: 'chat-input-pixel-pet',
   parts: [

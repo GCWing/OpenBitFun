@@ -560,28 +560,6 @@ mod tests {
     }
 
     #[test]
-    fn create_openbitfun_skin_embeds_authoring_contract_and_example() {
-        let skill = embedded_skill_text("create-openbitfun-skin/SKILL.md");
-        assert!(skill.contains("name: create-openbitfun-skin"));
-
-        let registry =
-            embedded_skill_text("create-openbitfun-skin/references/appearance-registry.json");
-        assert!(registry.contains("schemaVersion"));
-
-        let example = embedded_skill_text(
-            "create-openbitfun-skin/examples/cinematic-animated-wallpaper/SKILL.md",
-        );
-        assert!(example.contains("cinematic animated-wallpaper"));
-
-        let metadata = embedded_skill_text("create-openbitfun-skin/agents/openai.yaml");
-        assert!(metadata.contains("display_name: \"OpenBitFun Appearance Manual\""));
-
-        let workflow =
-            embedded_skill_text("create-openbitfun-skin/references/authoring-workflow.md");
-        assert!(workflow.contains("Bump it whenever the manifest"));
-    }
-
-    #[test]
     fn commit_push_pr_is_bundled_with_attribution_and_owns_lightweight_pr_requests() {
         let skill = embedded_skill_text("commit-push-pr/SKILL.md");
         assert!(skill.contains("name: commit-push-pr"));

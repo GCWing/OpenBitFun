@@ -96,7 +96,7 @@ Install and reuse the apps you build, or explore the [Mini App Marketplace](http
 
 - **Build a specialist agent.** Choose a model, define its role, and equip it with the tools and workflows it needs for motion comic production, visual design, code review, or your own field.
 - **Connect tools and workflows.** Connect tools through MCP, turn repeatable processes into Skills, and use Hooks to customize how tasks run.
-- **Change the interface and source.** Install [skins](https://market.openbitfun.com/skin/) for a new look, or modify the UI, tools, and runtime source to build your own version of OpenBitFun.
+- **Change the interface and source.** Choose a built-in theme, or modify the UI, tools, and runtime source to build your own version of OpenBitFun.
 
 **You can ask OpenBitFun's Code Agent to modify and extend OpenBitFun itself.**
 
@@ -133,7 +133,7 @@ Getting there means making long-running tasks more reliable, the runtime more ef
 
 **Share what you build, offer feedback, or contribute code to help shape OpenBitFun.**
 
-Share your use cases and experience, contribute agents, Skills, Mini Apps, or skins, or help improve the docs, interface, and runtime. Ideas and questions are welcome in this repository's Issues and Discussions. See the [contribution guide](./CONTRIBUTING.md) for the development workflow.
+Share your use cases and experience, contribute agents, Skills, or Mini Apps, or help improve the docs, interface, and runtime. Ideas and questions are welcome in this repository's Issues and Discussions. See the [contribution guide](./CONTRIBUTING.md) for the development workflow.
 
 <details>
 <summary>Download, setup, and running from source</summary>

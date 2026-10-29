@@ -192,19 +192,19 @@ block-beta
 
 | Development area | Repository scope | Current modules |
 |---|---|---|
-| Apps | `src/apps/*` | `desktop`、`cli`、`server`、`relay-server`、`sdk-host`、`miniapp-shell`、`data-tools`、`miniapp-market-server`、`skin-market-server`、`extension-host`（Bun Plugin Host 进程） |
-| Web and delivery | product roots | `src/web-ui`、`src/mobile-web`、`src/miniapp-market-web`、`src/skin-market-web`、`src/apps/mobile`、`OpenBitFun-Installer`、`website`、`tests/e2e` |
+| Apps | `src/apps/*` | `desktop`、`cli`、`server`、`relay-server`、`sdk-host`、`miniapp-shell`、`data-tools`、`miniapp-market-server`、`extension-host`（Bun Plugin Host 进程） |
+| Web and delivery | product roots | `src/web-ui`、`src/mobile-web`、`src/miniapp-market-web`、`src/apps/mobile`、`OpenBitFun-Installer`、`website`、`tests/e2e` |
 | SDK | `sdk/*` | `typescript` |
 | Shared frontend | `src/shared`、`packages/flow-chat-presentation` | `shared`、`flow-chat-presentation` |
 | Design system | `design-system/*` | `packages/design-tokens`、`packages/theme-openbitfun`、`packages/ui`、`tooling/package-contract`、`tooling/token-engine`、`apps/design-lab` |
 | Interfaces | `src/crates/interfaces/*` | `acp`、`app-server`、`app-server-client`、`app-server-protocol`、`sdk-host` |
 | Assembly | `src/crates/assembly/*` | `agent-content`、`core`、`external-sources`、`product-capabilities` |
 | Adapters | `src/crates/adapters/*` | `agent-runtime-ipc`、`miniapp-ipc`、`ai-adapters`、`opencode-adapter`、`opencode-plugin-host`、`dsh-adapter`、`pi-adapter`、`claude-code-adapter`、`codex-adapter`、`cursor-adapter`、`zcode-adapter`、`static-hook-support`、`transport`、`webdriver` |
-| Services | `src/crates/services/*` | `services-core`、`services-integrations`、`computer-use`、`legacy-migration`、`legacy-migration-adapters`、`miniapp-market-service`、`skin-market-service`、`relay-service`、`page-function-runtime`、`terminal` |
+| Services | `src/crates/services/*` | `services-core`、`services-integrations`、`computer-use`、`legacy-migration`、`legacy-migration-adapters`、`miniapp-market-service`、`relay-service`、`page-function-runtime`、`terminal` |
 | Execution | `src/crates/execution/*` | `agent-runtime`、`agent-workflows`、`agent-stream`、`plugin-runtime-client`、`runtime-services`、`tool-contracts`、`tool-provider-groups`、`tool-execution`、`office-documents` |
 | Contracts | `src/crates/contracts/*` | `core-types`、`config-contracts`、`events`、`runtime-ports`、`product-domains` |
 
-图中子项与上表的对应：Product Apps 对应 Apps 行，Source Adapters 对应各外部生态来源 adapter，Legacy Migration 对应 `legacy-migration` 与 `legacy-migration-adapters`。Installer、E2E 以及 MiniApp/Skin market server 和对应 service 在 Level 0 图中分别归入交付入口、测试范围或 Services 家族，不作为独立架构模块；SDK、Shared frontend 与 Design system 在图中不单列。未进入 Cargo workspace 或 pnpm workspace 的其余目录（如 `packages/dsh-acp`、`extensions/`、`products/`、`MiniApp/`、`third_party/`）不计入本表。
+图中子项与上表的对应：Product Apps 对应 Apps 行，Source Adapters 对应各外部生态来源 adapter，Legacy Migration 对应 `legacy-migration` 与 `legacy-migration-adapters`。Installer、E2E 以及 MiniApp market server 和对应 service 在 Level 0 图中分别归入交付入口、测试范围或 Services 家族，不作为独立架构模块；SDK、Shared frontend 与 Design system 在图中不单列。未进入 Cargo workspace 或 pnpm workspace 的其余目录（如 `packages/dsh-acp`、`extensions/`、`products/`、`MiniApp/`、`third_party/`）不计入本表。
 Logical 与 Development 的主要映射如下，映射是多对多关系：
 
 | Development area | Logical coverage |

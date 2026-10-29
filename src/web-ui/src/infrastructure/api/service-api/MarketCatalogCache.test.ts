@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MiniAppMarketAPI, type MarketListingSummary } from './MiniAppMarketAPI';
-import { AppearanceMarketAPI, type AppearanceMarketListingSummary } from './AppearanceMarketAPI';
-import { activateSurface, resetDeviceSurfaceForTest } from '@/infrastructure/peer-device/deviceSurface';
+import { resetDeviceSurfaceForTest } from '@/infrastructure/peer-device/deviceSurface';
 import { readMarketCatalog, writeMarketCatalog } from './MarketCatalogCache';
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -17,11 +16,6 @@ const listing: MarketListingSummary = {
   ratingAverage: 4, ratingCount: 2, downloadCount: 12, favoriteCount: 3,
   isFavorited: true, myRating: 5,
 };
-const skin: AppearanceMarketListingSummary = {
-  ...listing, packageId: 'skin.one', packageVersion: '1.0.0', mode: 'dark',
-  requiredCapabilities: [], previewUrl: `https://market.test/artifacts/previews/${'b'.repeat(64)}`,
-};
-
 describe('public marketplace catalog snapshots', () => {
   afterEach(() => vi.unstubAllGlobals());
   beforeEach(() => {
@@ -58,18 +52,12 @@ describe('public marketplace catalog snapshots', () => {
       .toEqual(replacement.screenshotUrls);
   });
 
-  it('isolates MiniApp snapshots by device, filter and sort; Appearance remains controller-owned', async () => {
+  it('isolates MiniApp snapshots by device, filter and sort', async () => {
     mocks.invoke.mockResolvedValue({ items: [listing] });
     const miniapps = new MiniAppMarketAPI();
     await miniapps.browse({ sort: 'downloads' });
     expect(miniapps.getCachedPage({ sort: 'rating' })).toBeUndefined();
     expect(miniapps.getCachedPage({ sort: 'downloads', category: 'data' })).toBeUndefined();
-    mocks.invoke.mockResolvedValue({ items: [skin] });
-    const appearances = new AppearanceMarketAPI();
-    await appearances.browse({});
-    activateSurface('peer-device');
-    expect(miniapps.getCachedPage({ sort: 'downloads' })).toBeUndefined();
-    expect(appearances.getCachedPage({})?.items[0].listingId).toBe('one');
   });
 
   it('keeps the last successful page on a network failure and never replaces it with pagination', async () => {

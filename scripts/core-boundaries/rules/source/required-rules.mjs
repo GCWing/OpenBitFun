@@ -36,7 +36,6 @@ export const requiredContentRules = [
     'src/crates/assembly/core/Cargo.toml',
     'src/crates/services/miniapp-market-service/Cargo.toml',
     'src/crates/services/services-integrations/Cargo.toml',
-    'src/crates/services/skin-market-service/Cargo.toml',
   ].map((path) => ({
     path,
     reason: 'first-party Reqwest consumers must inherit the workspace-owned compatible version',
@@ -10053,16 +10052,6 @@ export const requiredContentRules = [
       {
         regex: /fn new\s*\([^)]*MarketConfig[\s\S]*?ensure_ring_crypto_provider\s*\(\s*\)[\s\S]*?reqwest::Client::builder\s*\(/,
         message: 'MiniApp market AuthService must initialize the ring provider first',
-      },
-    ],
-  },
-  {
-    path: 'src/crates/services/skin-market-service/src/auth.rs',
-    reason: 'appearance market HTTP clients must initialize the reviewed TLS provider',
-    patterns: [
-      {
-        regex: /fn new\s*\([^)]*Url[\s\S]*?ensure_ring_crypto_provider\s*\(\s*\)[\s\S]*?Client::builder\s*\(/,
-        message: 'appearance market IdentityVerifier must initialize the ring provider first',
       },
     ],
   },

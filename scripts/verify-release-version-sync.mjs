@@ -13,7 +13,6 @@ const versions = new Map([
   ['src/web-ui/package.json', readJsonVersion('src/web-ui/package.json')],
   ['src/mobile-web/package.json', readJsonVersion('src/mobile-web/package.json')],
   ['src/miniapp-market-web/package.json', readJsonVersion('src/miniapp-market-web/package.json')],
-  ['src/skin-market-web/package.json', readJsonVersion('src/skin-market-web/package.json')],
   ['src/apps/relay-server/Cargo.toml', readTomlVersion('src/apps/relay-server/Cargo.toml', /version = "([^"]+)" # x-release-please-version/)],
   ['src/crates/services/relay-service/Cargo.toml', readTomlVersion('src/crates/services/relay-service/Cargo.toml', /^version = "([^"]+)"/m)],
   ['src/crates/services/page-function-runtime/Cargo.toml', readTomlVersion('src/crates/services/page-function-runtime/Cargo.toml', /^version = "([^"]+)"/m)],

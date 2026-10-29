@@ -1,8 +1,7 @@
-//! Controller-owned public image cache shared by the two marketplace surfaces.
+//! Controller-owned public image cache for MiniApp marketplace images.
 
 use openbitfun_services_integrations::{
-    appearance_market::AppearanceMarketClient, market_image::MarketImageCache,
-    miniapp_market::MarketClient,
+    market_image::MarketImageCache, miniapp_market::MarketClient,
 };
 use serde::Deserialize;
 use tauri::Manager;
@@ -27,11 +26,7 @@ pub async fn market_image_load(
                 .app_cache_dir()
                 .map_err(|error| error.to_string())?
                 .join("market-images-v1");
-            MarketImageCache::new(
-                root,
-                &MarketClient::configured_base_url(),
-                &AppearanceMarketClient::configured_base_url(),
-            )
+            MarketImageCache::new(root, &MarketClient::configured_base_url())
         })
         .await?;
     cache

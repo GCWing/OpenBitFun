@@ -155,7 +155,7 @@ const FAMILIES: Record<SemanticBuiltinToolName, BuiltinCardFamily> = {
   SessionHistory: 'session-history', analyze_image: 'image-analysis', generate_image: 'image-analysis', GetTime: 'time',
   ListMCPResources: 'mcp-resource', ReadMCPResource: 'mcp-resource', ListMCPPrompts: 'mcp-resource', GetMCPPrompt: 'mcp-resource',
   Worktree: 'worktree', PortForward: 'port-forward', ReviewPlatform: 'review-platform', FrontendWorkbench: 'frontend-workbench',
-  FinalizeMiniApp: 'miniapp-finalize', PublishMiniApp: 'marketplace-publish', PublishAppearance: 'marketplace-publish', Playbook: 'playbook',
+  FinalizeMiniApp: 'miniapp-finalize', PublishMiniApp: 'marketplace-publish', Playbook: 'playbook',
   DesktopCard: 'desktop-card',
 };
 

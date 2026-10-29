@@ -55,10 +55,9 @@
   link、重复/大小写冲突路径和超限解压。
 - GitHub token 只用于读取公开 `{id,login,avatar_url}`，随后丢弃，不能下发给
   Web 或桌面客户端。
-- 本服务是 MiniApp、Skin 和远控共用的 GitHub 身份权威，通过 `auth.openbitfun.com`
-  提供统一入口。Web 和桌面 OAuth 完成都为
-  `/miniapp` 与 `/skin` 签发同一服务端 session 的独立 Path-scoped Cookie；Skin
-  不保存 OAuth secret，退出登录必须撤销 session 并清除两组 Cookie。
+- 本服务是 MiniApp 和远控共用的 GitHub 身份权威，通过 `auth.openbitfun.com`
+  提供统一入口。Web 和桌面 OAuth 完成后为 `/miniapp` 签发服务端 session 的
+  Path-scoped Cookie；退出登录必须撤销 session 并清除 Cookie。
 - 管理员身份每次请求按 GitHub 数字 ID 计算，不能依赖客户端声明。
 - `MARKET_WEB_SUBMISSIONS_ENABLED=false` 时，所有投稿写路由会在读取请求体前
   拒绝 Web Cookie 会话；Desktop Bearer 投稿、投稿历史读取和 Web 管理员审核
@@ -197,6 +196,6 @@ Marketplace author labels are public: email accounts display their full verified
 email address in listing owners and moderation submitters. The authenticated
 `/me` profile keeps its legacy `user.login` protocol handle and exposes the
 verified address separately as `email`; older relays require that handle format.
-Skin uses the separate email for its public author projection. GitHub
+Email accounts use the separate email for their public author projection. GitHub
 accounts retain their GitHub login. Ownership and authorization use internal IDs,
 never the displayed label; this does not link email and GitHub accounts.

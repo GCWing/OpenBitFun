@@ -6805,48 +6805,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "openbitfun-skin-market-server"
-version = "1.0.10"
-dependencies = [
- "anyhow",
- "axum",
- "openbitfun-skin-market-service",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "openbitfun-skin-market-service"
-version = "1.0.10"
-dependencies = [
- "anyhow",
- "axum",
- "base64 0.22.1",
- "chrono",
- "hex",
- "hmac",
- "image 0.25.10",
- "openbitfun-product-domains",
- "openbitfun-services-core",
- "reqwest",
- "semver",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "tempfile",
- "tokio",
- "tokio-util",
- "tower",
- "tower-http",
- "tracing",
- "url",
- "uuid",
- "zip 4.6.1",
-]
-
-[[package]]
 name = "openbitfun-static-hook-support"
 version = "1.0.10"
 dependencies = [

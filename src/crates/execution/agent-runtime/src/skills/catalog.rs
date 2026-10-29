@@ -41,10 +41,6 @@ pub(super) const BUILTIN_SKILL_SPECS: &[BuiltinSkillSpec] = &[
         group: BuiltinSkillGroup::Meta,
     },
     BuiltinSkillSpec {
-        dir_name: "create-openbitfun-skin",
-        group: BuiltinSkillGroup::Meta,
-    },
-    BuiltinSkillSpec {
         dir_name: "commit-push-pr",
         group: BuiltinSkillGroup::Meta,
     },

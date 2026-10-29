@@ -8,8 +8,8 @@ describe('Skill detail path presentation', () => {
   });
 
   it('preserves a remote POSIX root and complete trailing directory names', () => {
-    expect(formatSkillDetailPath('/home/alex/.config/openbitfun/skills/.system/create-openbitfun-skin'))
-      .toBe('/home/alex/.config/…/.system/create-openbitfun-skin');
+    expect(formatSkillDetailPath('/home/alex/.config/openbitfun/skills/.system/create-agent'))
+      .toBe('/home/alex/.config/…/.system/create-agent');
   });
 
   it('preserves the UNC prefix and trailing separator', () => {

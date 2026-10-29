@@ -28,7 +28,6 @@ export const crateLayoutRules = [
   { crateName: 'legacy-migration-adapters', layer: 'services', path: 'src/crates/services/legacy-migration-adapters' },
   { crateName: 'legacy-migration', layer: 'services', path: 'src/crates/services/legacy-migration' },
   { crateName: 'miniapp-market-service', layer: 'services', path: 'src/crates/services/miniapp-market-service' },
-  { crateName: 'skin-market-service', layer: 'services', path: 'src/crates/services/skin-market-service' },
   { crateName: 'relay-service', layer: 'services', path: 'src/crates/services/relay-service' },
   { crateName: 'page-function-runtime', layer: 'services', path: 'src/crates/services/page-function-runtime' },
   { crateName: 'terminal', layer: 'services', path: 'src/crates/services/terminal' },

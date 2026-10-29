@@ -4,7 +4,6 @@ pub mod account_identity_api;
 pub mod acp_client_api;
 pub mod agentic_api;
 pub mod app_state;
-pub mod appearance_market_api;
 pub mod browser_api;
 pub mod browser_control_api;
 pub mod browser_file_drop_api;

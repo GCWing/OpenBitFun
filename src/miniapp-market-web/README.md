@@ -200,5 +200,5 @@ pnpm run theme:color-audit:all
 GitHub sign-in uses `https://auth.openbitfun.com/sign-in`; desktop completion
 uses its standalone `/complete` page without marketplace navigation. The page
 is built from this frontend, while the registered OAuth callback remains on the
-market host so MiniApp and Skin receive their existing path-scoped session
-cookies. Legacy `/miniapp/auth/desktop-complete` links remain readable.
+market host so MiniApp receives its existing path-scoped session cookies.
+Legacy `/miniapp/auth/desktop-complete` links remain readable.

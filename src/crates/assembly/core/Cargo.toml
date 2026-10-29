@@ -393,7 +393,6 @@ tools-office-documents = [
 tools-miniapp = [
     "dep:openbitfun-product-domains",
     "openbitfun-tool-packs/miniapp",
-    "openbitfun-product-domains/appearance-market",
     "openbitfun-product-domains/miniapp",
     "openbitfun-services-integrations/miniapp-runtime",
     "openbitfun-services-integrations/miniapp-market",
