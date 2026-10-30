@@ -6,6 +6,7 @@ pub mod anthropic;
 pub mod gemini;
 pub mod openai;
 pub(crate) mod opencode;
+pub(crate) mod reasoning;
 pub(crate) mod shared;
 
 pub use anthropic::AnthropicMessageConverter;

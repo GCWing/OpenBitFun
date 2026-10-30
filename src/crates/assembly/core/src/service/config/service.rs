@@ -2601,7 +2601,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn startup_disables_invalid_reasoning_model_without_mutating_the_file() {
+    async fn startup_preserves_unresolved_reasoning_model_without_mutating_the_file() {
         let dir = tempfile::tempdir().expect("tempdir");
         let user_root = dir.path().join("invalid-reasoning-startup");
         let path_manager = Arc::new(PathManager::with_user_root_for_tests(user_root));
@@ -2650,7 +2650,7 @@ mod tests {
         let service = ConfigService::with_settings(settings()).await.unwrap();
         let models = service.get_ai_models().await.unwrap();
         assert_eq!(models.len(), 1);
-        assert!(!models[0].enabled);
+        assert!(models[0].enabled);
         assert_eq!(models[0].api_key, "key");
         assert_eq!(
             models[0]
@@ -2661,7 +2661,7 @@ mod tests {
                 .as_deref(),
             Some("missing")
         );
-        assert!(service.load_diagnostics().await.iter().any(|d| d
+        assert!(!service.load_diagnostics().await.iter().any(|d| d
             .message
             .contains("default preset 'missing' is not available")));
         assert_eq!(

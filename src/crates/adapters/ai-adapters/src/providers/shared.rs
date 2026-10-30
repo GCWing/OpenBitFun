@@ -15,15 +15,6 @@ pub(crate) fn is_generic_reasoning_preset(preset: &ReasoningPresetDescriptor) ->
     preset.execution_provider.as_deref() == Some(GENERIC_REASONING_PROVIDER_ID)
 }
 
-pub(crate) fn normalize_generic_reasoning_effort(value: &str) -> Option<&'static str> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "low" => Some("low"),
-        "medium" => Some("medium"),
-        "high" => Some("high"),
-        _ => None,
-    }
-}
-
 /// Attribution for APIs that accept third-party harnesses under their own name.
 #[cfg(feature = "subscription-auth")]
 pub(crate) fn product_user_agent() -> String {
