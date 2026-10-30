@@ -1,0 +1,3249 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-openbitfun-design-system-root>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OpenBitFun · Agent 多屏拓展（Demo）</title>
+<!-- ══════════════════════════════════════════════════════════════════════
+     毕方设计系统 —— 原样内联，未改一个值。
+     · openbitfun/design-system/packages/design-tokens/dist/tokens.css        （全文 753 行）
+     · openbitfun/design-system/packages/theme-openbitfun/dist/themes.css      （仅 light 主题块 1-175 行）
+     只切 light 是因为本 Demo 是浅色单主题，暗色 / 高对比块进来就是死重量。
+     两层都只声明 token（openbitfun.tokens.system / .theme），不含 reset，
+     所以不会覆盖 Demo 自己的样式；Demo 的样式不带 @layer，优先级在 token 层之上。
+     这些 token 挂在 [data-openbitfun-design-system-root] 上，见 <html> 属性。
+     ══════════════════════════════════════════════════════════════════════ -->
+<style id="openbitfun-design-system">
+@layer openbitfun.tokens.system, openbitfun.tokens.theme, openbitfun.reset, openbitfun.base, openbitfun.components, openbitfun.overrides;
+
+@layer openbitfun.tokens.system {
+  :where([data-openbitfun-design-system-root]) {
+    --openbitfun-border-width-default: 1px;
+    --openbitfun-border-width-strong: 2px;
+    --openbitfun-control-action-card-actions-gap: 0px;
+    --openbitfun-control-action-card-actions-padding-inline-end: var(--openbitfun-space-3);
+    --openbitfun-control-action-card-content-gap: var(--openbitfun-space-1);
+    --openbitfun-control-action-card-gap: var(--openbitfun-space-2);
+    --openbitfun-control-action-card-icon-size: 16px;
+    --openbitfun-control-action-card-leading-size: 30px;
+    --openbitfun-control-action-card-md-min-block-size: 62px;
+    --openbitfun-control-action-card-padding-block: var(--openbitfun-space-3);
+    --openbitfun-control-action-card-padding-inline: var(--openbitfun-space-3);
+    --openbitfun-control-action-card-radius: var(--openbitfun-radius-base);
+    --openbitfun-control-action-card-sm-min-block-size: 54px;
+    --openbitfun-control-activity-item-content-gap: var(--openbitfun-space-1);
+    --openbitfun-control-activity-item-divider-block-size: 16px;
+    --openbitfun-control-activity-item-inline-gap: var(--openbitfun-space-1);
+    --openbitfun-control-activity-item-inline-icon-size: 12px;
+    --openbitfun-control-activity-item-surface-gap: var(--openbitfun-space-2);
+    --openbitfun-control-activity-item-surface-height: 40px;
+    --openbitfun-control-activity-item-surface-icon-size: 14px;
+    --openbitfun-control-activity-item-surface-padding-block: 9px;
+    --openbitfun-control-activity-item-surface-padding-inline-end: 9px;
+    --openbitfun-control-activity-item-surface-padding-inline-start: var(--openbitfun-space-3);
+    --openbitfun-control-activity-item-surface-radius: var(--openbitfun-radius-lg);
+    --openbitfun-control-ask-user-body-gap: var(--openbitfun-space-3);
+    --openbitfun-control-ask-user-body-padding: var(--openbitfun-space-4);
+    --openbitfun-control-ask-user-description-max-width: 500px;
+    --openbitfun-control-ask-user-header-height: 30px;
+    --openbitfun-control-ask-user-icon-size: 14px;
+    --openbitfun-control-ask-user-option-content-gap: var(--openbitfun-space-2);
+    --openbitfun-control-ask-user-option-gap: var(--openbitfun-space-1);
+    --openbitfun-control-ask-user-option-padding-block: 7px;
+    --openbitfun-control-ask-user-option-padding-inline: var(--openbitfun-space-2);
+    --openbitfun-control-ask-user-question-options-gap: var(--openbitfun-space-3);
+    --openbitfun-control-ask-user-question-padding-inline: var(--openbitfun-space-1);
+    --openbitfun-control-ask-user-summary-action-size: 22px;
+    --openbitfun-control-ask-user-summary-padding-block: var(--openbitfun-space-1);
+    --openbitfun-control-ask-user-summary-padding-inline-end: var(--openbitfun-space-1);
+    --openbitfun-control-ask-user-summary-padding-inline-start: var(--openbitfun-space-2);
+    --openbitfun-control-button-xs-height: 24px;
+    --openbitfun-control-button-xs-leading-icon-size: 12px;
+    --openbitfun-control-button-xs-padding-inline: 6px;
+    --openbitfun-control-button-xs-trailing-icon-size: 10px;
+    --openbitfun-control-change-count-gap: var(--openbitfun-space-1);
+    --openbitfun-control-change-count-padding-block: 2px;
+    --openbitfun-control-change-count-padding-inline: var(--openbitfun-space-1);
+    --openbitfun-control-change-count-radius: var(--openbitfun-radius-xs);
+    --openbitfun-control-chat-composer-action-icon-size: 14px;
+    --openbitfun-control-chat-composer-compact-gap: var(--openbitfun-control-composer-surface-gap);
+    --openbitfun-control-chat-composer-compact-height: 42px;
+    --openbitfun-control-chat-composer-compact-padding-block: var(--openbitfun-control-composer-surface-padding);
+    --openbitfun-control-chat-composer-compact-padding-inline: var(--openbitfun-control-composer-surface-padding);
+    --openbitfun-control-chat-composer-compact-track-height: 24px;
+    --openbitfun-control-chat-composer-control-height: 24px;
+    --openbitfun-control-composer-context-blur: 10px;
+    --openbitfun-control-composer-context-gap: var(--openbitfun-space-2);
+    --openbitfun-control-composer-context-offset: 32px;
+    --openbitfun-control-composer-context-padding-block: 6px;
+    --openbitfun-control-composer-context-padding-inline: var(--openbitfun-space-2);
+    --openbitfun-control-composer-divider-block-size: 16px;
+    --openbitfun-control-composer-editor-padding: var(--openbitfun-space-1);
+    --openbitfun-control-composer-min-block-size: 120px;
+    --openbitfun-control-composer-surface-gap: var(--openbitfun-space-3);
+    --openbitfun-control-composer-surface-padding: var(--openbitfun-space-2);
+    --openbitfun-control-composer-surface-radius: var(--openbitfun-radius-xl);
+    --openbitfun-control-composer-toolbar-gap: var(--openbitfun-space-2);
+    --openbitfun-control-flow-chat-capsule-inline-size: 18rem;
+    --openbitfun-control-flow-chat-card-expanded-padding-block: var(--openbitfun-space-2);
+    --openbitfun-control-flow-chat-card-expanded-padding-inline: var(--openbitfun-control-flow-chat-card-padding-inline);
+    --openbitfun-control-flow-chat-card-gap: var(--openbitfun-control-flow-chat-flow-item-gap);
+    --openbitfun-control-flow-chat-card-padding-block: 0.625rem;
+    --openbitfun-control-flow-chat-card-padding-inline: var(--openbitfun-space-3);
+    --openbitfun-control-flow-chat-card-radius: var(--openbitfun-radius-base);
+    --openbitfun-control-flow-chat-code-block-padding-block: 0.55rem;
+    --openbitfun-control-flow-chat-code-block-padding-inline: 0.75rem;
+    --openbitfun-control-flow-chat-content-padding-inline: 0.75rem;
+    --openbitfun-control-flow-chat-content-padding-inline-mobile: var(--openbitfun-control-flow-chat-content-padding-inline);
+    --openbitfun-control-flow-chat-control-gap: var(--openbitfun-space-2);
+    --openbitfun-control-flow-chat-control-padding-block: var(--openbitfun-space-1);
+    --openbitfun-control-flow-chat-control-padding-inline: 0.75rem;
+    --openbitfun-control-flow-chat-flow-item-gap: var(--openbitfun-space-2);
+    --openbitfun-control-flow-chat-inline-gap: var(--openbitfun-space-1);
+    --openbitfun-control-flow-chat-metadata-action-size: 28px;
+    --openbitfun-control-flow-chat-model-idle-opacity: 0.72;
+    --openbitfun-control-flow-chat-model-name-max-width: 100px;
+    --openbitfun-control-flow-chat-paragraph-gap: var(--openbitfun-space-3);
+    --openbitfun-control-flow-chat-row-icon-gap: var(--openbitfun-space-1);
+    --openbitfun-control-flow-chat-row-icon-size: var(--openbitfun-control-icon-size-sm);
+    --openbitfun-control-flow-chat-stream-viewport-block-size: min(300px, 45dvh);
+    --openbitfun-control-flow-chat-transcript-max-width: 900px;
+    --openbitfun-control-flow-chat-turn-gap: var(--openbitfun-space-4);
+    --openbitfun-control-flow-chat-turn-rail-offset: var(--openbitfun-space-1);
+    --openbitfun-control-flow-chat-turn-rail-width: 30px;
+    --openbitfun-control-flow-chat-user-message-margin-block-start: 0.06rem;
+    --openbitfun-control-flow-chat-user-message-max-width: min(72%, 48rem);
+    --openbitfun-control-flow-chat-user-message-padding-block: 0.46rem;
+    --openbitfun-control-flow-chat-user-message-radius: calc(var(--openbitfun-control-flow-chat-card-radius) + 2px);
+    --openbitfun-control-height-lg: 48px;
+    --openbitfun-control-height-md: 40px;
+    --openbitfun-control-height-sm: 32px;
+    --openbitfun-control-hit-target: 40px;
+    --openbitfun-control-icon-size2xs: 8px;
+    --openbitfun-control-icon-size-lg: 24px;
+    --openbitfun-control-icon-size-md: 16px;
+    --openbitfun-control-icon-size-sm: 14px;
+    --openbitfun-control-icon-size-xs: 12px;
+    --openbitfun-control-icon-stroke-width: 1.6;
+    --openbitfun-control-icon-stroke-width-strong: 2;
+    --openbitfun-control-icon-button-standard-icon-size: 16px;
+    --openbitfun-control-icon-button-standard-size: 30px;
+    --openbitfun-control-icon-button-xs-icon-size: 14px;
+    --openbitfun-control-icon-button-xs-size: 22px;
+    --openbitfun-control-launcher-button-block-size: var(--openbitfun-control-height-md);
+    --openbitfun-control-launcher-button-gap: var(--openbitfun-space-1);
+    --openbitfun-control-launcher-button-icon-size: 12px;
+    --openbitfun-control-launcher-button-min-inline-size: 72px;
+    --openbitfun-control-launcher-button-padding-inline: 10px;
+    --openbitfun-control-launcher-button-radius: var(--openbitfun-radius-lg);
+    --openbitfun-control-search-field-height-lg: var(--openbitfun-control-height-lg);
+    --openbitfun-control-search-field-height-md: var(--openbitfun-control-height-md);
+    --openbitfun-control-search-field-height-sm: var(--openbitfun-control-height-sm);
+    --openbitfun-control-segmented-control-gap: var(--openbitfun-space-1);
+    --openbitfun-control-segmented-control-icon-size: 12px;
+    --openbitfun-control-segmented-control-icon-size-md: 14px;
+    --openbitfun-control-segmented-control-padding: 2px;
+    --openbitfun-control-segmented-control-padding-md: 3px;
+    --openbitfun-control-segmented-control-pill-segment-height: 24px;
+    --openbitfun-control-segmented-control-pill-segment-radius: var(--openbitfun-radius-sm);
+    --openbitfun-control-segmented-control-radius: var(--openbitfun-radius-pill);
+    --openbitfun-control-segmented-control-segment-gap: var(--openbitfun-space-1);
+    --openbitfun-control-segmented-control-segment-height: 24px;
+    --openbitfun-control-segmented-control-segment-height-md: 30px;
+    --openbitfun-control-segmented-control-segment-padding-inline: var(--openbitfun-space-2);
+    --openbitfun-control-segmented-control-segment-padding-inline-md: var(--openbitfun-space-3);
+    --openbitfun-control-segmented-control-segment-radius: var(--openbitfun-radius-pill);
+    --openbitfun-control-select-content-gap: var(--openbitfun-space-2);
+    --openbitfun-control-select-indicator-size: 14px;
+    --openbitfun-control-select-leading-inset: var(--openbitfun-space-3);
+    --openbitfun-control-select-padding-inline: var(--openbitfun-space-3);
+    --openbitfun-control-select-radius: var(--openbitfun-radius-base);
+    --openbitfun-control-select-trailing-inset: var(--openbitfun-space-3);
+    --openbitfun-control-status-pill-gap: 2px;
+    --openbitfun-control-status-pill-icon-size: 14px;
+    --openbitfun-control-status-pill-padding-block: 2px;
+    --openbitfun-control-status-pill-padding-inline: 6px;
+    --openbitfun-control-status-pill-radius: var(--openbitfun-radius-pill);
+    --openbitfun-control-switch-thumb-inset: 2px;
+    --openbitfun-control-switch-thumb-size: 12px;
+    --openbitfun-control-switch-thumb-travel: 12px;
+    --openbitfun-control-switch-thumb-travel-reverse: -12px;
+    --openbitfun-control-switch-track-height: 16px;
+    --openbitfun-control-switch-track-width: 28px;
+    --openbitfun-control-tab-group-gap: var(--openbitfun-space-2);
+    --openbitfun-control-tab-group-item-action-inset: var(--openbitfun-space-1);
+    --openbitfun-control-tab-group-item-action-size: var(--openbitfun-space-5);
+    --openbitfun-control-tab-group-item-gap: 6px;
+    --openbitfun-control-tab-group-item-gap-sm: var(--openbitfun-space-1);
+    --openbitfun-control-tab-group-item-height: var(--openbitfun-control-height-md);
+    --openbitfun-control-tab-group-item-height-sm: 30px;
+    --openbitfun-control-tab-group-item-icon-size: 16px;
+    --openbitfun-control-tab-group-item-icon-size-sm: 14px;
+    --openbitfun-control-tab-group-item-padding-block-sm: 7px;
+    --openbitfun-control-tab-group-item-padding-inline: var(--openbitfun-space-4);
+    --openbitfun-control-tab-group-item-padding-inline-sm: var(--openbitfun-space-3);
+    --openbitfun-control-tab-group-item-radius: var(--openbitfun-radius-pill);
+    --openbitfun-control-tool-card-ambient-row-min-block-size: calc(var(--openbitfun-type-flow-body-font-size) * var(--openbitfun-type-flow-body-line-height));
+    --openbitfun-control-tool-card-expanded-padding-inline: var(--openbitfun-control-flow-chat-card-padding-inline);
+    --openbitfun-control-tool-card-field-label-width: 7rem;
+    --openbitfun-control-tool-card-header-icon-slot: 34px;
+    --openbitfun-control-tool-card-header-padding-block: 0.44rem;
+    --openbitfun-control-tool-card-header-padding-inline-end: 0.625rem;
+    --openbitfun-focus-offset: 2px;
+    --openbitfun-focus-width: 2px;
+    --openbitfun-font-family-control: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --openbitfun-font-family-mono: 'Fira Code', 'Cascadia Mono', 'Cascadia Code', Consolas, 'Liberation Mono', SFMono-Regular, 'SF Mono', Menlo, Monaco, 'Courier New', var(--openbitfun-font-family-sans), monospace;
+    --openbitfun-font-family-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --openbitfun-font-size-2xl: 18px;
+    --openbitfun-font-size-2xl-plus: 20px;
+    --openbitfun-font-size-2xs: 9px;
+    --openbitfun-font-size-3xl: 22px;
+    --openbitfun-font-size-3xl-plus: 24px;
+    --openbitfun-font-size-3xs: 8px;
+    --openbitfun-font-size-4xl: 26px;
+    --openbitfun-font-size-4xs: 7px;
+    --openbitfun-font-size-5xl: 32px;
+    --openbitfun-font-size-6xl: 40px;
+    --openbitfun-font-size-7xl: 48px;
+    --openbitfun-font-size-8xl: 56px;
+    --openbitfun-font-size-9xl: 64px;
+    --openbitfun-font-size-base: 14px;
+    --openbitfun-font-size-lg: 15px;
+    --openbitfun-font-size-meta: 11px;
+    --openbitfun-font-size-micro: 10px;
+    --openbitfun-font-size-sm: 13px;
+    --openbitfun-font-size-xl: 16px;
+    --openbitfun-font-size-xl-plus: 17px;
+    --openbitfun-font-size-xs: 12px;
+    --openbitfun-font-weight-bold: 700;
+    --openbitfun-font-weight-medium: 500;
+    --openbitfun-font-weight-regular: 400;
+    --openbitfun-font-weight-semibold: 600;
+    --openbitfun-layer-base: 0;
+    --openbitfun-layer-content: 2;
+    --openbitfun-layer-context-menu: 500;
+    --openbitfun-layer-decoration: 1;
+    --openbitfun-layer-dropdown: 60;
+    --openbitfun-layer-floating: 50;
+    --openbitfun-layer-fullscreen: 280;
+    --openbitfun-layer-modal: 200;
+    --openbitfun-layer-modal-active: 250;
+    --openbitfun-layer-notification: 400;
+    --openbitfun-layer-overlay: 100;
+    --openbitfun-layer-overlay-host: 300;
+    --openbitfun-layer-popover: 360;
+    --openbitfun-layer-sticky: 15;
+    --openbitfun-layer-toast: 400;
+    --openbitfun-layer-tooltip: 370;
+    --openbitfun-layout-card-footer-gap: var(--openbitfun-space-2);
+    --openbitfun-layout-card-gap-lg: 30px;
+    --openbitfun-layout-card-gap-md: var(--openbitfun-space-3);
+    --openbitfun-layout-card-gap-sm: var(--openbitfun-space-2);
+    --openbitfun-layout-card-header-gap: var(--openbitfun-space-2);
+    --openbitfun-layout-card-media-min-block-size: 120px;
+    --openbitfun-layout-card-padding-md: var(--openbitfun-space-5);
+    --openbitfun-layout-card-padding-sm: var(--openbitfun-space-3);
+    --openbitfun-layout-card-radius-lg: 28px;
+    --openbitfun-layout-card-radius-md: var(--openbitfun-radius-lg);
+    --openbitfun-layout-card-radius-sm: var(--openbitfun-radius-base);
+    --openbitfun-layout-card-title-description-gap: var(--openbitfun-space-1);
+    --openbitfun-layout-confirm-dialog-content-gap: var(--openbitfun-space-4);
+    --openbitfun-layout-confirm-dialog-icon-glyph-size: var(--openbitfun-control-icon-size-md);
+    --openbitfun-layout-confirm-dialog-icon-size: 32px;
+    --openbitfun-layout-confirm-dialog-message-gap: var(--openbitfun-space-2);
+    --openbitfun-layout-confirm-dialog-preview-max-block-size: 240px;
+    --openbitfun-layout-confirm-dialog-preview-padding-block: var(--openbitfun-space-3);
+    --openbitfun-layout-confirm-dialog-preview-padding-inline: var(--openbitfun-space-4);
+    --openbitfun-layout-confirm-dialog-preview-radius: var(--openbitfun-radius-base);
+    --openbitfun-layout-disclosure-actions-gap: var(--openbitfun-space-1);
+    --openbitfun-layout-disclosure-content-padding-block: var(--openbitfun-space-3);
+    --openbitfun-layout-disclosure-content-padding-inline: var(--openbitfun-space-8);
+    --openbitfun-layout-disclosure-indicator-size: 14px;
+    --openbitfun-layout-disclosure-trigger-gap: var(--openbitfun-space-2);
+    --openbitfun-layout-disclosure-trigger-min-block-size: 30px;
+    --openbitfun-layout-disclosure-trigger-padding-block: var(--openbitfun-space-1);
+    --openbitfun-layout-disclosure-trigger-padding-inline: var(--openbitfun-space-2);
+    --openbitfun-layout-disclosure-trigger-radius: var(--openbitfun-radius-base);
+    --openbitfun-layout-empty-gap: 10px;
+    --openbitfun-layout-empty-icon-size-lg: var(--openbitfun-control-height-md);
+    --openbitfun-layout-empty-icon-size-md: var(--openbitfun-control-height-sm);
+    --openbitfun-layout-empty-icon-size-sm: var(--openbitfun-control-icon-size-lg);
+    --openbitfun-layout-empty-media-size-lg: var(--openbitfun-control-height-md);
+    --openbitfun-layout-empty-media-size-md: var(--openbitfun-control-height-sm);
+    --openbitfun-layout-empty-media-size-sm: var(--openbitfun-control-icon-size-lg);
+    --openbitfun-layout-empty-padding-block: var(--openbitfun-space-8);
+    --openbitfun-layout-empty-padding-inline: var(--openbitfun-space-4);
+    --openbitfun-layout-field-content-gap: var(--openbitfun-space-1);
+    --openbitfun-layout-field-control-gap: var(--openbitfun-space-2);
+    --openbitfun-layout-field-horizontal-gap: var(--openbitfun-space-5);
+    --openbitfun-layout-field-horizontal-gap-wide: var(--openbitfun-space-10);
+    --openbitfun-layout-field-label-action-gap: var(--openbitfun-space-2);
+    --openbitfun-layout-field-label-gap: 2px;
+    --openbitfun-layout-field-label-width-lg: 400px;
+    --openbitfun-layout-field-label-width-md: 200px;
+    --openbitfun-layout-field-label-width-sm: 150px;
+    --openbitfun-layout-field-root-gap: var(--openbitfun-space-2);
+    --openbitfun-layout-field-group-radius: var(--openbitfun-radius-lg);
+    --openbitfun-layout-field-group-row-padding-block: var(--openbitfun-space-4);
+    --openbitfun-layout-field-group-row-padding-inline: var(--openbitfun-space-5);
+    --openbitfun-layout-form-section-gap: var(--openbitfun-space-4);
+    --openbitfun-layout-form-section-header-gap: var(--openbitfun-space-5);
+    --openbitfun-layout-form-section-title-description-gap: var(--openbitfun-space-1);
+    --openbitfun-layout-navigation-panel-content-gap: var(--openbitfun-space-4);
+    --openbitfun-layout-navigation-panel-footer-height: 40px;
+    --openbitfun-layout-navigation-panel-footer-padding: var(--openbitfun-space-2);
+    --openbitfun-layout-navigation-panel-heading-action-size: 22px;
+    --openbitfun-layout-navigation-panel-heading-gap: var(--openbitfun-space-5);
+    --openbitfun-layout-navigation-panel-heading-height: 24px;
+    --openbitfun-layout-navigation-panel-heading-padding-inline: var(--openbitfun-space-2);
+    --openbitfun-layout-navigation-panel-inline-size: 216px;
+    --openbitfun-layout-navigation-panel-item-gap: var(--openbitfun-space-2);
+    --openbitfun-layout-navigation-panel-item-height: 30px;
+    --openbitfun-layout-navigation-panel-item-icon-size: 14px;
+    --openbitfun-layout-navigation-panel-item-padding-inline: var(--openbitfun-space-2);
+    --openbitfun-layout-navigation-panel-item-radius: var(--openbitfun-radius-base);
+    --openbitfun-layout-navigation-panel-scrollbar-gap: 2px;
+    --openbitfun-layout-navigation-panel-section-gap: var(--openbitfun-space-1);
+    --openbitfun-layout-navigation-panel-surface-padding: var(--openbitfun-space-2);
+    --openbitfun-layout-overflow-text-fade-extent: var(--openbitfun-space-4);
+    --openbitfun-layout-scroll-area-fade-extent: var(--openbitfun-space-4);
+    --openbitfun-layout-search-dialog-height: 460px;
+    --openbitfun-layout-search-dialog-padding: var(--openbitfun-space-5);
+    --openbitfun-layout-search-dialog-query-height: 30px;
+    --openbitfun-layout-search-dialog-results-gap: 30px;
+    --openbitfun-layout-search-dialog-scope-gap: var(--openbitfun-space-5);
+    --openbitfun-layout-search-dialog-width: var(--openbitfun-overlay-dialog-max-inline-size-xlarge);
+    --openbitfun-layout-spinner-matrix-cell-lg: 8px;
+    --openbitfun-layout-spinner-matrix-cell-md: 6px;
+    --openbitfun-layout-spinner-matrix-cell-sm: 4px;
+    --openbitfun-layout-spinner-matrix-cell-xs: 3px;
+    --openbitfun-layout-spinner-matrix-gap-md: 2px;
+    --openbitfun-layout-spinner-matrix-gap-sm: 1px;
+    --openbitfun-layout-spinner-matrix-radius: 1px;
+    --openbitfun-layout-split-view-content-panel-radius: var(--openbitfun-radius-3xl);
+    --openbitfun-layout-toolbar-badge-size: 24px;
+    --openbitfun-layout-toolbar-content-gap: 40px;
+    --openbitfun-layout-toolbar-group-gap-md: var(--openbitfun-space-2);
+    --openbitfun-layout-toolbar-group-gap-sm: var(--openbitfun-space-1);
+    --openbitfun-layout-toolbar-md-height: 45px;
+    --openbitfun-layout-toolbar-md-padding-block-end: 6px;
+    --openbitfun-layout-toolbar-md-padding-block-start: var(--openbitfun-space-2);
+    --openbitfun-layout-toolbar-md-padding-inline-end: 11px;
+    --openbitfun-layout-toolbar-md-padding-inline-start: var(--openbitfun-space-2);
+    --openbitfun-layout-toolbar-overflow-fade-extent: 16px;
+    --openbitfun-layout-toolbar-separator-block-size: 16px;
+    --openbitfun-layout-toolbar-sm-height: 33px;
+    --openbitfun-layout-toolbar-sm-padding-block: var(--openbitfun-space-1);
+    --openbitfun-layout-toolbar-sm-padding-inline: var(--openbitfun-space-2);
+    --openbitfun-letter-spacing-caps: 0.1em;
+    --openbitfun-letter-spacing-expanded: 0.26em;
+    --openbitfun-letter-spacing-normal: 0em;
+    --openbitfun-letter-spacing-snug: -0.01em;
+    --openbitfun-letter-spacing-subtle: 0.01em;
+    --openbitfun-letter-spacing-tight: -0.02em;
+    --openbitfun-letter-spacing-tighter: -0.04em;
+    --openbitfun-letter-spacing-wide: 0.02em;
+    --openbitfun-letter-spacing-wider: 0.04em;
+    --openbitfun-letter-spacing-widest: 0.08em;
+    --openbitfun-line-height-balanced: 1.35;
+    --openbitfun-line-height-base: 1.5;
+    --openbitfun-line-height-code: 1.52;
+    --openbitfun-line-height-comfortable: 1.55;
+    --openbitfun-line-height-compact: 1.32;
+    --openbitfun-line-height-dense: 1.25;
+    --openbitfun-line-height-display: 1.1;
+    --openbitfun-line-height-loose: 1.8;
+    --openbitfun-line-height-none: 1;
+    --openbitfun-line-height-reading: 1.58;
+    --openbitfun-line-height-relaxed: 1.6;
+    --openbitfun-line-height-snug: 1.3;
+    --openbitfun-line-height-spacious: 1.7;
+    --openbitfun-line-height-support: 1.45;
+    --openbitfun-line-height-tight: 1.2;
+    --openbitfun-line-height-ui: 1.4;
+    --openbitfun-motion-distance-sm: var(--openbitfun-space-1);
+    --openbitfun-motion-duration-base: 220ms;
+    --openbitfun-motion-duration-content-swap: 320ms;
+    --openbitfun-motion-duration-fast: 140ms;
+    --openbitfun-motion-duration-instant: 80ms;
+    --openbitfun-motion-duration-lazy: 1s;
+    --openbitfun-motion-duration-loop: 720ms;
+    --openbitfun-motion-duration-normal: var(--openbitfun-motion-duration-base);
+    --openbitfun-motion-duration-slow: 420ms;
+    --openbitfun-motion-easing-accelerate: cubic-bezier(0.4, 0, 1, 1);
+    --openbitfun-motion-easing-decelerate: var(--openbitfun-motion-easing-standard);
+    --openbitfun-motion-easing-enter: var(--openbitfun-motion-easing-standard);
+    --openbitfun-motion-easing-exit: cubic-bezier(0.3, 0, 1, 1);
+    --openbitfun-motion-easing-smooth: cubic-bezier(0.77, 0, 0.175, 1);
+    --openbitfun-motion-easing-standard: cubic-bezier(0.23, 1, 0.32, 1);
+    --openbitfun-opacity-icon-artwork: 0.8;
+    --openbitfun-overlay-dialog-backdrop-blur: blur(20px);
+    --openbitfun-overlay-dialog-content-padding-lg: var(--openbitfun-space-6);
+    --openbitfun-overlay-dialog-content-padding-md: var(--openbitfun-space-4);
+    --openbitfun-overlay-dialog-content-padding-sm: var(--openbitfun-space-3);
+    --openbitfun-overlay-dialog-content-padding-xl: var(--openbitfun-space-8);
+    --openbitfun-overlay-dialog-description-gap: var(--openbitfun-space-2);
+    --openbitfun-overlay-dialog-edge-gutter: 8px;
+    --openbitfun-overlay-dialog-footer-action-min-width: 100px;
+    --openbitfun-overlay-dialog-footer-blur: blur(10px);
+    --openbitfun-overlay-dialog-footer-content-inset: 104px;
+    --openbitfun-overlay-dialog-footer-fade-extent: var(--openbitfun-space-6);
+    --openbitfun-overlay-dialog-footer-gap: var(--openbitfun-space-2);
+    --openbitfun-overlay-dialog-footer-height: 68px;
+    --openbitfun-overlay-dialog-footer-padding-block-end: var(--openbitfun-space-6);
+    --openbitfun-overlay-dialog-footer-padding-block-start: var(--openbitfun-space-2);
+    --openbitfun-overlay-dialog-footer-padding-inline: var(--openbitfun-space-6);
+    --openbitfun-overlay-dialog-header-actions-gap: var(--openbitfun-space-2);
+    --openbitfun-overlay-dialog-header-gap: var(--openbitfun-space-5);
+    --openbitfun-overlay-dialog-header-padding-block-end: var(--openbitfun-space-5);
+    --openbitfun-overlay-dialog-header-padding-block-start: var(--openbitfun-space-6);
+    --openbitfun-overlay-dialog-header-padding-inline: var(--openbitfun-space-6);
+    --openbitfun-overlay-dialog-max-inline-size-large: 600px;
+    --openbitfun-overlay-dialog-max-inline-size-medium: 560px;
+    --openbitfun-overlay-dialog-max-inline-size-small: 420px;
+    --openbitfun-overlay-dialog-max-inline-size-wide: 1200px;
+    --openbitfun-overlay-dialog-max-inline-size-xlarge: 800px;
+    --openbitfun-overlay-dialog-max-inline-size-xxlarge: 960px;
+    --openbitfun-overlay-dialog-scrollbar-width: var(--openbitfun-scrollbar-width);
+    --openbitfun-overlay-dialog-surface-radius: 28px;
+    --openbitfun-overlay-dialog-viewport-gutter: 24px;
+    --openbitfun-overlay-menu-heading-action-size: 22px;
+    --openbitfun-overlay-menu-heading-gap: var(--openbitfun-space-5);
+    --openbitfun-overlay-menu-heading-height: 24px;
+    --openbitfun-overlay-menu-heading-padding-inline: var(--openbitfun-space-2);
+    --openbitfun-overlay-menu-inline-size: 220px;
+    --openbitfun-overlay-menu-item-gap: var(--openbitfun-space-2);
+    --openbitfun-overlay-menu-item-height: 30px;
+    --openbitfun-overlay-menu-item-icon-size: 14px;
+    --openbitfun-overlay-menu-item-padding-inline: var(--openbitfun-space-2);
+    --openbitfun-overlay-menu-item-radius: var(--openbitfun-radius-base);
+    --openbitfun-overlay-menu-max-block-size: 480px;
+    --openbitfun-overlay-menu-min-inline-size: 160px;
+    --openbitfun-overlay-menu-row-gap: 2px;
+    --openbitfun-overlay-menu-scrollbar-gap: 2px;
+    --openbitfun-overlay-menu-section-gap: var(--openbitfun-space-2);
+    --openbitfun-overlay-menu-surface-padding: var(--openbitfun-space-2);
+    --openbitfun-overlay-menu-surface-radius: var(--openbitfun-radius-xl);
+    --openbitfun-overlay-tooltip-arrow-size: 8px;
+    --openbitfun-overlay-tooltip-gap: var(--openbitfun-space-2);
+    --openbitfun-overlay-tooltip-max-block-size: 320px;
+    --openbitfun-overlay-tooltip-max-inline-size: 280px;
+    --openbitfun-overlay-tooltip-padding-block: 6px;
+    --openbitfun-overlay-tooltip-padding-inline: 10px;
+    --openbitfun-overlay-tooltip-surface-radius: var(--openbitfun-radius-sm);
+    --openbitfun-radius-2xl: 20px;
+    --openbitfun-radius-3xl: 24px;
+    --openbitfun-radius-4xl: 32px;
+    --openbitfun-radius-base: 8px;
+    --openbitfun-radius-lg: 12px;
+    --openbitfun-radius-md: var(--openbitfun-radius-base);
+    --openbitfun-radius-pill: 9999px;
+    --openbitfun-radius-sm: 6px;
+    --openbitfun-radius-xl: 16px;
+    --openbitfun-radius-xs: 4px;
+    --openbitfun-scrollbar-radius: var(--openbitfun-radius-pill);
+    --openbitfun-scrollbar-width: 6px;
+    --openbitfun-space-0: 0px;
+    --openbitfun-space-1: 4px;
+    --openbitfun-space-10: 40px;
+    --openbitfun-space-12: 48px;
+    --openbitfun-space-16: 64px;
+    --openbitfun-space-2: 8px;
+    --openbitfun-space-3: 12px;
+    --openbitfun-space-4: 16px;
+    --openbitfun-space-5: 20px;
+    --openbitfun-space-6: 24px;
+    --openbitfun-space-8: 32px;
+    --openbitfun-space-component-block: 8px;
+    --openbitfun-space-component-inline: 12px;
+    --openbitfun-type-action-row-line-height: 1.2307692307692308;
+    --openbitfun-type-body-lg-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-body-lg-font-size: var(--openbitfun-font-size-lg);
+    --openbitfun-type-body-lg-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-body-lg-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-body-lg-line-height: var(--openbitfun-line-height-relaxed);
+    --openbitfun-type-body-md-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-body-md-font-size: var(--openbitfun-font-size-base);
+    --openbitfun-type-body-md-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-body-md-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-body-md-line-height: var(--openbitfun-line-height-base);
+    --openbitfun-type-body-sm-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-body-sm-font-size: var(--openbitfun-font-size-sm);
+    --openbitfun-type-body-sm-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-body-sm-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-body-sm-line-height: var(--openbitfun-line-height-base);
+    --openbitfun-type-body-xs-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-body-xs-font-size: var(--openbitfun-font-size-xs);
+    --openbitfun-type-body-xs-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-body-xs-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-body-xs-line-height: var(--openbitfun-line-height-base);
+    --openbitfun-type-code-md-font-family: var(--openbitfun-font-family-mono);
+    --openbitfun-type-code-md-font-size: var(--openbitfun-font-size-sm);
+    --openbitfun-type-code-md-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-code-md-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-code-md-line-height: var(--openbitfun-line-height-code);
+    --openbitfun-type-code-meta-font-family: var(--openbitfun-font-family-mono);
+    --openbitfun-type-code-meta-font-size: var(--openbitfun-font-size-meta);
+    --openbitfun-type-code-meta-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-code-meta-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-code-meta-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-code-output-font-family: var(--openbitfun-font-family-mono);
+    --openbitfun-type-code-output-font-size: var(--openbitfun-font-size-xs);
+    --openbitfun-type-code-output-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-code-output-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-code-output-line-height: var(--openbitfun-line-height-ui);
+    --openbitfun-type-code-sm-font-family: var(--openbitfun-font-family-mono);
+    --openbitfun-type-code-sm-font-size: var(--openbitfun-font-size-xs);
+    --openbitfun-type-code-sm-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-code-sm-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-code-sm-line-height: var(--openbitfun-line-height-code);
+    --openbitfun-type-display-fluid-hero-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-display-fluid-hero-font-size: clamp(var(--openbitfun-font-size-6xl), 4vw, var(--openbitfun-font-size-8xl));
+    --openbitfun-type-display-fluid-hero-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-display-fluid-hero-letter-spacing: var(--openbitfun-letter-spacing-tight);
+    --openbitfun-type-display-fluid-hero-line-height: var(--openbitfun-line-height-display);
+    --openbitfun-type-display-fluid-title-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-display-fluid-title-font-size: clamp(var(--openbitfun-font-size-5xl), 3.2vw, var(--openbitfun-font-size-7xl));
+    --openbitfun-type-display-fluid-title-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-display-fluid-title-letter-spacing: var(--openbitfun-letter-spacing-tight);
+    --openbitfun-type-display-fluid-title-line-height: var(--openbitfun-line-height-display);
+    --openbitfun-type-display-lg-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-display-lg-font-size: var(--openbitfun-font-size-7xl);
+    --openbitfun-type-display-lg-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-display-lg-letter-spacing: var(--openbitfun-letter-spacing-tight);
+    --openbitfun-type-display-lg-line-height: var(--openbitfun-line-height-display);
+    --openbitfun-type-display-md-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-display-md-font-size: var(--openbitfun-font-size-6xl);
+    --openbitfun-type-display-md-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-display-md-letter-spacing: var(--openbitfun-letter-spacing-tight);
+    --openbitfun-type-display-md-line-height: var(--openbitfun-line-height-display);
+    --openbitfun-type-display-sm-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-display-sm-font-size: var(--openbitfun-font-size-5xl);
+    --openbitfun-type-display-sm-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-display-sm-letter-spacing: var(--openbitfun-letter-spacing-tight);
+    --openbitfun-type-display-sm-line-height: var(--openbitfun-line-height-display);
+    --openbitfun-type-display-xl-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-display-xl-font-size: var(--openbitfun-font-size-8xl);
+    --openbitfun-type-display-xl-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-display-xl-letter-spacing: var(--openbitfun-letter-spacing-tight);
+    --openbitfun-type-display-xl-line-height: var(--openbitfun-line-height-display);
+    --openbitfun-type-display-xxl-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-display-xxl-font-size: var(--openbitfun-font-size-9xl);
+    --openbitfun-type-display-xxl-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-display-xxl-letter-spacing: var(--openbitfun-letter-spacing-tight);
+    --openbitfun-type-display-xxl-line-height: var(--openbitfun-line-height-display);
+    --openbitfun-type-field-helper-line-height: 1.4545454545454546;
+    --openbitfun-type-flow-body-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-flow-body-font-size: var(--openbitfun-font-size-base);
+    --openbitfun-type-flow-body-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-flow-body-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-flow-body-line-height: var(--openbitfun-line-height-reading);
+    --openbitfun-type-flow-code-font-family: var(--openbitfun-font-family-mono);
+    --openbitfun-type-flow-code-font-size: var(--openbitfun-font-size-sm);
+    --openbitfun-type-flow-code-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-flow-code-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-flow-code-line-height: var(--openbitfun-line-height-code);
+    --openbitfun-type-flow-control-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-flow-control-font-size: var(--openbitfun-font-size-sm);
+    --openbitfun-type-flow-control-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-flow-control-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-flow-control-line-height: var(--openbitfun-line-height-support);
+    --openbitfun-type-flow-lead-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-flow-lead-font-size: var(--openbitfun-font-size-lg);
+    --openbitfun-type-flow-lead-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-flow-lead-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-flow-lead-line-height: var(--openbitfun-line-height-relaxed);
+    --openbitfun-type-flow-meta-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-flow-meta-font-size: var(--openbitfun-font-size-meta);
+    --openbitfun-type-flow-meta-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-flow-meta-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-flow-meta-line-height: var(--openbitfun-line-height-compact);
+    --openbitfun-type-flow-micro-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-flow-micro-font-size: var(--openbitfun-font-size-micro);
+    --openbitfun-type-flow-micro-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-flow-micro-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-flow-micro-line-height: var(--openbitfun-line-height-compact);
+    --openbitfun-type-flow-page-title-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-flow-page-title-font-size: var(--openbitfun-font-size-3xl);
+    --openbitfun-type-flow-page-title-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-flow-page-title-letter-spacing: var(--openbitfun-letter-spacing-tight);
+    --openbitfun-type-flow-page-title-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-flow-section-title-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-flow-section-title-font-size: var(--openbitfun-font-size-2xl);
+    --openbitfun-type-flow-section-title-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-flow-section-title-letter-spacing: var(--openbitfun-letter-spacing-snug);
+    --openbitfun-type-flow-section-title-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-flow-support-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-flow-support-font-size: var(--openbitfun-font-size-xs);
+    --openbitfun-type-flow-support-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-flow-support-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-flow-support-line-height: var(--openbitfun-line-height-support);
+    --openbitfun-type-flow-title-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-flow-title-font-size: var(--openbitfun-font-size-xl);
+    --openbitfun-type-flow-title-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-flow-title-letter-spacing: var(--openbitfun-letter-spacing-snug);
+    --openbitfun-type-flow-title-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-form-description-line-height: 1.2307692307692308;
+    --openbitfun-type-heading-card-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-heading-card-font-size: var(--openbitfun-font-size-sm);
+    --openbitfun-type-heading-card-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-heading-card-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-heading-card-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-heading-compact-page-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-heading-compact-page-font-size: var(--openbitfun-font-size-2xl-plus);
+    --openbitfun-type-heading-compact-page-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-heading-compact-page-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-heading-compact-page-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-heading-dialog-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-heading-dialog-font-size: var(--openbitfun-font-size-3xl-plus);
+    --openbitfun-type-heading-dialog-font-weight: var(--openbitfun-font-weight-bold);
+    --openbitfun-type-heading-dialog-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-heading-dialog-line-height: 1.2083333333;
+    --openbitfun-type-heading-display-font-family: var(--openbitfun-font-family-sans);
+    --openbitfun-type-heading-display-font-size: var(--openbitfun-font-size-4xl);
+    --openbitfun-type-heading-display-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-heading-display-letter-spacing: var(--openbitfun-letter-spacing-tight);
+    --openbitfun-type-heading-display-line-height: var(--openbitfun-line-height-display);
+    --openbitfun-type-heading-navigation-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-heading-navigation-font-size: var(--openbitfun-font-size-xl-plus);
+    --openbitfun-type-heading-navigation-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-heading-navigation-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-heading-navigation-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-heading-page-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-heading-page-font-size: var(--openbitfun-font-size-3xl-plus);
+    --openbitfun-type-heading-page-font-weight: var(--openbitfun-font-weight-bold);
+    --openbitfun-type-heading-page-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-heading-page-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-heading-panel-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-heading-panel-font-size: var(--openbitfun-font-size-2xl);
+    --openbitfun-type-heading-panel-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-heading-panel-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-heading-panel-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-heading-section-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-heading-section-font-size: var(--openbitfun-font-size-lg);
+    --openbitfun-type-heading-section-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-heading-section-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-heading-section-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-heading-welcome-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-heading-welcome-font-size: var(--openbitfun-font-size-5xl);
+    --openbitfun-type-heading-welcome-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-heading-welcome-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-heading-welcome-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-label-lg-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-label-lg-font-size: var(--openbitfun-font-size-base);
+    --openbitfun-type-label-lg-font-weight: var(--openbitfun-font-weight-medium);
+    --openbitfun-type-label-lg-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-label-lg-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-label-md-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-label-md-font-size: var(--openbitfun-font-size-sm);
+    --openbitfun-type-label-md-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-label-md-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-label-md-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-label-selected-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-label-selected-font-size: var(--openbitfun-font-size-sm);
+    --openbitfun-type-label-selected-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-label-selected-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-label-selected-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-label-sm-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-label-sm-font-size: var(--openbitfun-font-size-xs);
+    --openbitfun-type-label-sm-font-weight: var(--openbitfun-font-weight-medium);
+    --openbitfun-type-label-sm-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-label-sm-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-label-xs-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-label-xs-font-size: var(--openbitfun-font-size-meta);
+    --openbitfun-type-label-xs-font-weight: var(--openbitfun-font-weight-medium);
+    --openbitfun-type-label-xs-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-label-xs-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-meta-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-meta-font-size: var(--openbitfun-font-size-meta);
+    --openbitfun-type-meta-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-meta-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-meta-line-height: var(--openbitfun-line-height-compact);
+    --openbitfun-type-micro-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-micro-font-size: var(--openbitfun-font-size-micro);
+    --openbitfun-type-micro-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-micro-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-micro-line-height: var(--openbitfun-line-height-compact);
+    --openbitfun-type-modifier-leading-balanced-line-height: var(--openbitfun-line-height-balanced);
+    --openbitfun-type-modifier-leading-dense-line-height: var(--openbitfun-line-height-dense);
+    --openbitfun-type-modifier-leading-intrinsic-line-height: normal;
+    --openbitfun-type-modifier-leading-loose-line-height: var(--openbitfun-line-height-loose);
+    --openbitfun-type-modifier-leading-none-line-height: var(--openbitfun-line-height-none);
+    --openbitfun-type-modifier-leading-snug-line-height: var(--openbitfun-line-height-snug);
+    --openbitfun-type-modifier-leading-spacious-line-height: var(--openbitfun-line-height-spacious);
+    --openbitfun-type-modifier-leading-support-line-height: var(--openbitfun-line-height-support);
+    --openbitfun-type-modifier-leading-tight-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-modifier-leading-ui-line-height: var(--openbitfun-line-height-ui);
+    --openbitfun-type-modifier-tracking-caps-letter-spacing: var(--openbitfun-letter-spacing-caps);
+    --openbitfun-type-modifier-tracking-expanded-letter-spacing: var(--openbitfun-letter-spacing-expanded);
+    --openbitfun-type-modifier-tracking-subtle-letter-spacing: var(--openbitfun-letter-spacing-subtle);
+    --openbitfun-type-modifier-tracking-tighter-letter-spacing: var(--openbitfun-letter-spacing-tighter);
+    --openbitfun-type-modifier-tracking-wide-letter-spacing: var(--openbitfun-letter-spacing-wide);
+    --openbitfun-type-modifier-tracking-wider-letter-spacing: var(--openbitfun-letter-spacing-wider);
+    --openbitfun-type-modifier-tracking-widest-letter-spacing: var(--openbitfun-letter-spacing-widest);
+    --openbitfun-type-overline-micro-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-overline-micro-font-size: var(--openbitfun-font-size-4xs);
+    --openbitfun-type-overline-micro-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-overline-micro-letter-spacing: var(--openbitfun-letter-spacing-widest);
+    --openbitfun-type-overline-micro-line-height: var(--openbitfun-line-height-none);
+    --openbitfun-type-overline-sm-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-overline-sm-font-size: var(--openbitfun-font-size-2xs);
+    --openbitfun-type-overline-sm-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-overline-sm-letter-spacing: var(--openbitfun-letter-spacing-wider);
+    --openbitfun-type-overline-sm-line-height: var(--openbitfun-line-height-none);
+    --openbitfun-type-overline-xs-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-overline-xs-font-size: var(--openbitfun-font-size-3xs);
+    --openbitfun-type-overline-xs-font-weight: var(--openbitfun-font-weight-semibold);
+    --openbitfun-type-overline-xs-letter-spacing: var(--openbitfun-letter-spacing-widest);
+    --openbitfun-type-overline-xs-line-height: var(--openbitfun-line-height-none);
+    --openbitfun-type-page-intro-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-page-intro-font-size: var(--openbitfun-font-size-xl-plus);
+    --openbitfun-type-page-intro-font-weight: var(--openbitfun-font-weight-medium);
+    --openbitfun-type-page-intro-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-page-intro-line-height: var(--openbitfun-line-height-tight);
+    --openbitfun-type-status-pill-line-height: 1.2727272727272727;
+    --openbitfun-type-support-font-family: var(--openbitfun-font-family-control);
+    --openbitfun-type-support-font-size: var(--openbitfun-font-size-meta);
+    --openbitfun-type-support-font-weight: var(--openbitfun-font-weight-regular);
+    --openbitfun-type-support-letter-spacing: var(--openbitfun-letter-spacing-normal);
+    --openbitfun-type-support-line-height: var(--openbitfun-line-height-comfortable);
+  }
+}
+
+@layer openbitfun.tokens.system {
+  :where([data-openbitfun-design-system-root][data-density="compact"]) {
+    --openbitfun-control-height-lg: 44px;
+    --openbitfun-control-height-md: 36px;
+    --openbitfun-control-height-sm: 28px;
+    --openbitfun-control-hit-target: 36px;
+    --openbitfun-control-launcher-button-block-size: var(--openbitfun-control-height-md);
+    --openbitfun-control-search-field-height-lg: var(--openbitfun-control-height-lg);
+    --openbitfun-control-search-field-height-md: var(--openbitfun-control-height-md);
+    --openbitfun-control-search-field-height-sm: 30px;
+    --openbitfun-control-tab-group-item-height: var(--openbitfun-control-height-md);
+    --openbitfun-layout-empty-icon-size-lg: var(--openbitfun-control-height-md);
+    --openbitfun-layout-empty-icon-size-md: var(--openbitfun-control-height-sm);
+    --openbitfun-layout-empty-media-size-lg: var(--openbitfun-control-height-md);
+    --openbitfun-layout-empty-media-size-md: var(--openbitfun-control-height-sm);
+    --openbitfun-space-component-block: 6px;
+    --openbitfun-space-component-inline: 10px;
+  }
+}
+
+@layer openbitfun.tokens.system {
+  :where([data-openbitfun-design-system-root][data-density="touch"]) {
+    --openbitfun-control-height-lg: 56px;
+    --openbitfun-control-height-md: 48px;
+    --openbitfun-control-height-sm: 40px;
+    --openbitfun-control-hit-target: 48px;
+    --openbitfun-control-launcher-button-block-size: var(--openbitfun-control-height-md);
+    --openbitfun-control-search-field-height-lg: var(--openbitfun-control-height-lg);
+    --openbitfun-control-search-field-height-md: var(--openbitfun-control-height-md);
+    --openbitfun-control-search-field-height-sm: var(--openbitfun-control-height-sm);
+    --openbitfun-control-tab-group-item-height: var(--openbitfun-control-height-md);
+    --openbitfun-layout-empty-icon-size-lg: var(--openbitfun-control-height-md);
+    --openbitfun-layout-empty-icon-size-md: var(--openbitfun-control-height-sm);
+    --openbitfun-layout-empty-media-size-lg: var(--openbitfun-control-height-md);
+    --openbitfun-layout-empty-media-size-md: var(--openbitfun-control-height-sm);
+    --openbitfun-space-component-block: 12px;
+    --openbitfun-space-component-inline: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  :where([data-openbitfun-design-system-root]) {
+
+    --openbitfun-motion-duration-fast: 0ms;
+
+    --openbitfun-motion-duration-normal: 0ms;
+
+    --openbitfun-motion-duration-content-swap: 0ms;
+
+    --openbitfun-motion-duration-slow: 0ms;
+
+    --openbitfun-motion-duration-loop: 0ms;
+
+  }
+
+}
+
+@layer openbitfun.tokens.theme {
+  :where([data-openbitfun-design-system-root]), :where([data-openbitfun-design-system-root][data-color-scheme="light"]) {
+    --openbitfun-color-accent-border: color-mix(in srgb, #059cb0 40%, transparent);
+    --openbitfun-color-accent-border-subtle: color-mix(in srgb, #059cb0 25%, transparent);
+    --openbitfun-color-accent-default: #059cb0;
+    --openbitfun-color-accent-disabled: rgba(5, 156, 176, 0.30);
+    --openbitfun-color-accent-hover: #059cb0;
+    --openbitfun-color-accent-secondary: #7c6b99;
+    --openbitfun-color-accent-secondary-border: color-mix(in srgb, #7c6b99 25%, transparent);
+    --openbitfun-color-accent-secondary-hover: #655680;
+    --openbitfun-color-accent-secondary-surface: color-mix(in srgb, #7c6b99 9%, transparent);
+    --openbitfun-color-accent-secondary-surface-strong: color-mix(in srgb, #7c6b99 15%, transparent);
+    --openbitfun-color-accent-surface: color-mix(in srgb, #059cb0 9%, transparent);
+    --openbitfun-color-accent-surface-strong: color-mix(in srgb, #059cb0 15%, transparent);
+    --openbitfun-color-accent-surface-subtle: color-mix(in srgb, #059cb0 5%, transparent);
+    --openbitfun-color-action-neutral-border: rgba(0, 0, 0, 0.05);
+    --openbitfun-color-action-neutral-content: rgba(0, 0, 0, 0.80);
+    --openbitfun-color-action-neutral-content-disabled: rgba(0, 0, 0, 0.30);
+    --openbitfun-color-action-neutral-fill-border: rgba(0, 0, 0, 0.05);
+    --openbitfun-color-action-neutral-surface: rgba(0, 0, 0, 0.05);
+    --openbitfun-color-action-neutral-surface-hover: rgba(0, 0, 0, 0.08);
+    --openbitfun-color-action-neutral-surface-pressed: rgba(0, 0, 0, 0.10);
+    --openbitfun-color-action-primary-background: #101a27;
+    --openbitfun-color-action-primary-content: #ffffff;
+    --openbitfun-color-action-primary-hover: #1c1c1f;
+    --openbitfun-color-action-primary-pressed: #000000;
+    --openbitfun-color-action-quiet-content: rgba(0, 0, 0, 0.60);
+    --openbitfun-color-action-quiet-hover: #f3f3f5;
+    --openbitfun-color-action-quiet-pressed: rgba(16, 26, 39, 0.09);
+    --openbitfun-color-action-secondary-background: #f3f3f5;
+    --openbitfun-color-action-secondary-content: rgba(0, 0, 0, 0.80);
+    --openbitfun-color-action-secondary-hover: rgba(16, 26, 39, 0.09);
+    --openbitfun-color-action-secondary-pressed: rgba(16, 26, 39, 0.13);
+    --openbitfun-color-action-card-background: rgba(0, 0, 0, 0.03);
+    --openbitfun-color-border-default: rgba(16, 26, 39, 0.15);
+    --openbitfun-color-border-strong: rgba(16, 26, 39, 0.34);
+    --openbitfun-color-border-subtle: rgba(16, 26, 39, 0.08);
+    --openbitfun-color-code-change-added: #1aa73e;
+    --openbitfun-color-code-change-removed: #ec221f;
+    --openbitfun-color-code-diff-added-gutter: #effbf8;
+    --openbitfun-color-code-diff-added-line: #eaf9f5;
+    --openbitfun-color-code-diff-added-marker: #00cab1;
+    --openbitfun-color-code-diff-added-word: #c7f2eb;
+    --openbitfun-color-code-diff-foreground: #090909;
+    --openbitfun-color-code-diff-gutter-border: #ffffff;
+    --openbitfun-color-code-diff-line-number: #555555;
+    --openbitfun-color-code-diff-removed-gutter: #ffefec;
+    --openbitfun-color-code-diff-removed-line: #ffeae6;
+    --openbitfun-color-code-diff-removed-marker: #ff2e3f;
+    --openbitfun-color-code-diff-removed-word: #ffcecd;
+    --openbitfun-color-code-diff-syntax-comment: #858585;
+    --openbitfun-color-code-diff-syntax-declaration: #c635e4;
+    --openbitfun-color-code-diff-syntax-function: #7b43f8;
+    --openbitfun-color-code-diff-syntax-keyword: #fc2b73;
+    --openbitfun-color-code-diff-syntax-number: #1ca1c7;
+    --openbitfun-color-code-diff-syntax-operator: #08c0ef;
+    --openbitfun-color-code-diff-syntax-property: #d47628;
+    --openbitfun-color-code-diff-syntax-punctuation: #77777a;
+    --openbitfun-color-code-diff-syntax-string: #199f43;
+    --openbitfun-color-code-diff-syntax-variable: #d5a910;
+    --openbitfun-color-composer-border: rgba(0, 0, 0, 0.08);
+    --openbitfun-color-composer-context-background: rgba(0, 0, 0, 0.03);
+    --openbitfun-color-content-caption: rgba(0, 0, 0, 0.40);
+    --openbitfun-color-content-disabled: rgba(0, 0, 0, 0.30);
+    --openbitfun-color-content-inverse: #ffffff;
+    --openbitfun-color-content-muted: #6a6a6a;
+    --openbitfun-color-content-on-dark: #ffffff;
+    --openbitfun-color-content-on-light: #000000;
+    --openbitfun-color-content-primary: rgba(0, 0, 0, 0.80);
+    --openbitfun-color-content-required-indicator: #059cb0;
+    --openbitfun-color-content-secondary: rgba(0, 0, 0, 0.60);
+    --openbitfun-color-control-highlight-background: #059cb0;
+    --openbitfun-color-control-highlight-content: #000000;
+    --openbitfun-color-control-launcher-background: rgba(0, 0, 0, 0.08);
+    --openbitfun-color-control-launcher-background-hover: color-mix(in srgb, #059cb0 20%, transparent);
+    --openbitfun-color-control-launcher-background-pressed: color-mix(in srgb, #059cb0 30%, transparent);
+    --openbitfun-color-control-launcher-content: rgba(0, 0, 0, 0.80);
+    --openbitfun-color-control-launcher-content-disabled: rgba(0, 0, 0, 0.30);
+    --openbitfun-color-control-launcher-content-hover: #059cb0;
+    --openbitfun-color-control-launcher-content-pressed: #059cb0;
+    --openbitfun-color-control-switch-thumb: #ffffff;
+    --openbitfun-color-control-switch-track: rgba(0, 0, 0, 0.10);
+    --openbitfun-color-control-switch-track-checked: #059cb0;
+    --openbitfun-color-field-background: #ffffff;
+    --openbitfun-color-field-background-hover: #ffffff;
+    --openbitfun-color-field-border: rgba(0, 0, 0, 0.08);
+    --openbitfun-color-field-border-active: rgba(0, 0, 0, 0.20);
+    --openbitfun-color-field-border-focus: #858585;
+    --openbitfun-color-field-border-hover: rgba(0, 0, 0, 0.20);
+    --openbitfun-color-field-group-background: rgba(0, 0, 0, 0.03);
+    --openbitfun-color-field-placeholder: rgba(0, 0, 0, 0.40);
+    --openbitfun-color-focus-ring: #6a6a6a;
+    --openbitfun-color-identity-assistant-border: color-mix(in srgb, #db2777 15%, transparent);
+    --openbitfun-color-identity-assistant-content: #db2777;
+    --openbitfun-color-identity-assistant-content-hover: #be185d;
+    --openbitfun-color-identity-assistant-surface: color-mix(in srgb, #db2777 9%, transparent);
+    --openbitfun-color-identity-assistant-surface-subtle: color-mix(in srgb, #db2777 5%, transparent);
+    --openbitfun-color-identity-global-search-new-project: #3271d7;
+    --openbitfun-color-identity-global-search-new-session: #ec221f;
+    --openbitfun-color-identity-global-search-open-browser: #ff8c00;
+    --openbitfun-color-identity-global-search-open-files: #9e54ff;
+    --openbitfun-color-identity-global-search-open-project: #059cb0;
+    --openbitfun-color-identity-global-search-open-terminal: rgba(0, 0, 0, 0.80);
+    --openbitfun-color-identity-harness-creative: #2e7eff;
+    --openbitfun-color-identity-harness-minimal: #b434ef;
+    --openbitfun-color-identity-harness-standard: #1aa73e;
+    --openbitfun-color-identity-harness-ultimate: #ff8c00;
+    --openbitfun-color-key-hint-background: rgba(0, 0, 0, 0.08);
+    --openbitfun-color-key-hint-content: rgba(0, 0, 0, 0.60);
+    --openbitfun-color-link-default: #059cb0;
+    --openbitfun-color-link-hover: #07879a;
+    --openbitfun-color-number-badge-background: rgba(0, 0, 0, 0.08);
+    --openbitfun-color-overlay-scrim: rgba(16, 26, 39, 0.20);
+    --openbitfun-color-scrollbar-thumb: rgba(0, 0, 0, 0.20);
+    --openbitfun-color-scrollbar-thumb-hover: rgba(0, 0, 0, 0.30);
+    --openbitfun-color-selection-surface: rgba(0, 0, 0, 0.08);
+    --openbitfun-color-status-danger-border: rgba(236, 34, 31, 0.3);
+    --openbitfun-color-status-danger-content: #bd1b19;
+    --openbitfun-color-status-danger-emphasis: #ec221f;
+    --openbitfun-color-status-danger-surface: rgba(236, 34, 31, 0.1);
+    --openbitfun-color-status-info-border: rgba(46, 126, 255, 0.3);
+    --openbitfun-color-status-info-content: #2360c2;
+    --openbitfun-color-status-info-emphasis: #2e7eff;
+    --openbitfun-color-status-info-surface: rgba(46, 126, 255, 0.1);
+    --openbitfun-color-status-success-border: rgba(26, 167, 62, 0.3);
+    --openbitfun-color-status-success-content: #12722a;
+    --openbitfun-color-status-success-emphasis: #1aa73e;
+    --openbitfun-color-status-success-surface: rgba(26, 167, 62, 0.1);
+    --openbitfun-color-status-warning-border: rgba(255, 140, 0, 0.3);
+    --openbitfun-color-status-warning-content: #8a4c00;
+    --openbitfun-color-status-warning-emphasis: #ff8c00;
+    --openbitfun-color-status-warning-surface: rgba(255, 140, 0, 0.1);
+    --openbitfun-color-surface-canvas: #fdfdfd;
+    --openbitfun-color-surface-chrome: #f8f8f9;
+    --openbitfun-color-surface-panel: #ffffff;
+    --openbitfun-color-surface-raised: #ffffff;
+    --openbitfun-color-surface-scene: #ffffff;
+    --openbitfun-color-surface-subtle: rgba(16, 26, 39, 0.03);
+    --openbitfun-color-surface-tertiary: #f7f7f7;
+    --openbitfun-color-surface-workbench: #f3f3f5;
+    --openbitfun-component-button-content: rgba(0, 0, 0, 0.80);
+    --openbitfun-component-button-fill-background: rgba(0, 0, 0, 0.08);
+    --openbitfun-component-button-fill-background-hover: rgba(0, 0, 0, 0.08);
+    --openbitfun-component-button-fill-background-pressed: rgba(0, 0, 0, 0.08);
+    --openbitfun-component-button-outline-border: rgba(0, 0, 0, 0.08);
+    --openbitfun-component-button-outline-border-interactive: rgba(0, 0, 0, 0.08);
+    --openbitfun-component-button-primary-background: rgba(0, 0, 0, 0.80);
+    --openbitfun-component-button-primary-background-hover: rgba(0, 0, 0, 0.60);
+    --openbitfun-component-button-primary-background-pressed: rgba(0, 0, 0, 0.90);
+    --openbitfun-component-button-primary-content-disabled: rgba(0, 0, 0, 0.20);
+    --openbitfun-component-button-text-content: #059cb0;
+    --openbitfun-component-button-text-content-disabled: rgba(5, 156, 176, 0.30);
+    --openbitfun-component-button-text-content-hover: #059cb0;
+    --openbitfun-component-empty-media: color-mix(in srgb, #6a6a6a 35%, #f7f7f7);
+    --openbitfun-effect-blur-base: blur(8px) saturate(1.05);
+    --openbitfun-effect-blur-medium: blur(12px) saturate(1.2);
+    --openbitfun-effect-blur-subtle: blur(4px) saturate(1.02);
+    --openbitfun-opacity-disabled: 0.55;
+    --openbitfun-opacity-focus: 0.9;
+    --openbitfun-opacity-hover: 0.75;
+    --openbitfun-opacity-muted: 0.75;
+    --openbitfun-shadow-accent-glow: 0 12px 32px color-mix(in srgb, #059cb0 25%, transparent), 0 6px 16px color-mix(in srgb, #059cb0 18%, transparent), 0 3px 8px rgba(0, 0, 0, 0.12);
+    --openbitfun-shadow-base: 0 4px 8px rgba(16, 26, 39, 0.07);
+    --openbitfun-shadow-composer: 0 2px 12px rgba(0, 0, 0, 0.08);
+    --openbitfun-shadow-inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --openbitfun-shadow-inner-highlight-hover: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+    --openbitfun-shadow-lg: 0 8px 16px rgba(16, 26, 39, 0.09);
+    --openbitfun-shadow-menu: 0 4px 20px rgba(0, 0, 0, 0.12);
+    --openbitfun-shadow-overlay: 0 4px 20px rgba(0, 0, 0, 0.12);
+    --openbitfun-shadow-raised: 0 2px 4px rgba(16, 26, 39, 0.055);
+    --openbitfun-shadow-sm: 0 2px 4px rgba(16, 26, 39, 0.055);
+    --openbitfun-shadow-xl: 0 12px 24px rgba(16, 26, 39, 0.11);
+    --openbitfun-shadow-xs: 0 1px 2px rgba(16, 26, 39, 0.04);
+  }
+}
+</style>
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   Tokens — 全部取自毕方官方契约，不在组件里写死数值：
+   · 颜色 / 阴影   design-system/packages/theme-openbitfun/dist/themes.css  (light)
+   · 圆角 / 字阶   design-system/packages/design-tokens/dist/tokens.css
+   官网主色是青色 #059cb0，主操作色 #101a27，画布 #fdfdfd + 24px 网格底。
+   本 Demo 走单色变体：强调色收到 #101a27 + 中性灰阶，不用青色。
+   ════════════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════════════
+   Demo 自己的两样东西。
+   其余一律直接用上面的 --openbitfun-* 真 token —— 不再留中间别名层，
+   否则「哪些值来自设计系统、哪些是我自己编的」就分不清了。
+   ════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* 品牌标识 —— 官网官方 App 图标：黑底圆角方块 + 白色六边形环。
+     源文件 design-system/packages/ui/src/brand/assets/openbitfun-app-icon-128.png。
+     内联成 data URI，保证本 Demo 仍是单文件、可离线双击打开。
+     注意：官方 SVG（openbitfun-mark.svg）是 15 道 0.2px 错位细线叠出的六边形网格，
+     实测 48px 起就糊、30px 几乎不可见，只适合大尺寸展示，不能拿来做 30px 的品牌角标。 */
+  --demo-logo: url("data:image/png;base64,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");
+
+  /* 自适应缩放系数，由 fitDesk() 写回 */
+  --fit: 1;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--openbitfun-color-surface-canvas);
+  color: var(--openbitfun-color-content-primary);
+  font: 13px/1.5 var(--openbitfun-font-family-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+button { font: inherit; color: inherit; }
+code { font-family: var(--openbitfun-font-family-mono); }
+:focus-visible { outline: 2px solid var(--openbitfun-color-action-primary-background); outline-offset: 2px; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   页面框架
+   ════════════════════════════════════════════════════════════════════════ */
+.desk {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  width: min(1120px, calc(100% - 32px));
+  margin-inline: auto;
+  padding: 16px 0 20px;
+  min-height: 100%;
+}
+.desk__fit { transform: scale(var(--fit)); transform-origin: top center; }
+
+/* 页头不做卡片：不铺底、不描边、不圆角，直接落在画布上 */
+.site-header {
+  width: 100%; height: 72px; flex: 0 0 72px;
+  display: flex; align-items: center; gap: 18px;
+}
+.brand { display: flex; align-items: center; gap: 11px; }
+.brand-mark {
+  width: 30px; height: 30px; flex: 0 0 30px;
+  background: var(--demo-logo) center / contain no-repeat;
+}
+.brand__text { display: grid; gap: 3px; line-height: 1; }
+.brand__text strong { font-size: 14px; font-weight: 700; letter-spacing: -0.02em; }
+.brand__text small {
+  font-family: var(--openbitfun-font-family-mono); font-size: 8.5px; letter-spacing: 0.18em;
+  color: var(--openbitfun-color-content-caption); text-transform: uppercase;
+}
+.header-actions { margin-left: auto; display: flex; align-items: center; gap: var(--openbitfun-space-3); }
+/* 页头按钮直接用 .ds-btn（= Button 的 outline 变体），不再另起一套 */
+
+/* Agent 视野：跨屏数 —— 一行小字 + 一个圆点 */
+.vision-badge {
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  font-size: 11px; color: var(--openbitfun-color-content-secondary);
+}
+.vision-badge i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--openbitfun-color-content-secondary);
+}
+.vision-badge b { font-weight: 700; color: var(--openbitfun-color-content-primary); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   三块屏：主屏在上，两个副屏并列在下
+   ════════════════════════════════════════════════════════════════════════ */
+.displays {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: center;
+  align-items: start;
+  gap: 20px;
+}
+/* 主屏独占两列居中；两个副屏落在第二行，左右并列 */
+.display[data-display="1"] { grid-column: 1 / -1; justify-self: center; }
+.display { display: flex; flex-direction: column; gap: 7px; align-items: center; }
+.display__label {
+  display: inline-flex; align-items: center; gap: 8px;
+  font: 500 9.5px/1 var(--openbitfun-font-family-mono); letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--openbitfun-color-content-caption);
+}
+.display__label b { font-weight: 700; color: var(--openbitfun-color-content-secondary); letter-spacing: 0.1em; }
+.display.is-busy .display__label b { color: var(--openbitfun-color-action-primary-background); }
+/* 这块屏现在装着什么 —— 就标在这块屏上方，点一下聚焦。
+   配方照抄 StatusPill：药丸 + meta 字阶 + 上下 2px 左右 6px，tone 决定色。
+   类名保留 .display__status 是因为演示脚本要按它定位（命中点），不是样式需要。 */
+.display__status {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--openbitfun-control-status-pill-gap);
+  padding-block: var(--openbitfun-control-status-pill-padding-block);
+  padding-inline: var(--openbitfun-control-status-pill-padding-inline);
+  border: 0;
+  border-radius: var(--openbitfun-control-status-pill-radius);
+  color: var(--openbitfun-color-content-secondary);
+  background: var(--openbitfun-color-action-neutral-surface);
+  font-family: var(--openbitfun-type-meta-font-family);
+  font-size: var(--openbitfun-type-meta-font-size);
+  font-weight: var(--openbitfun-type-meta-font-weight);
+  line-height: var(--openbitfun-type-status-pill-line-height);
+  letter-spacing: var(--openbitfun-type-meta-letter-spacing);
+  white-space: nowrap; cursor: pointer;
+  transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+              background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.display__status:hover { color: var(--openbitfun-color-content-primary); background: var(--openbitfun-color-action-neutral-surface-hover); }
+/* 空闲比常态更轻，别跟「有内容」抢注意力 */
+.display__status.is-idle {
+  color: var(--openbitfun-color-content-caption); background: transparent;
+}
+/* 正在显示内容：提到成功 tone，和真系统里「状态良好」用同一组色 */
+.display__status.is-busy {
+  color: var(--openbitfun-color-status-success-content);
+  background: var(--openbitfun-color-status-success-surface);
+}
+.display__status.is-idle::before {
+  content: ''; inline-size: 5px; block-size: 5px;
+  border-radius: var(--openbitfun-radius-pill);
+  background: currentColor; opacity: 0.6;
+}
+
+.screen {
+  position: relative; padding: 9px; border-radius: var(--openbitfun-radius-xl);
+  background: var(--openbitfun-color-surface-panel); border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default);
+  transition: border-color 0.2s var(--openbitfun-motion-easing-standard);
+}
+.display[data-display="1"] .screen { width: 620px; height: 420px; }
+.display[data-display="2"] .screen { width: 620px; height: 340px; }
+.display[data-display="3"] .screen { width: 330px; height: 420px; }
+/* 聚焦态直接动边框色 —— 上一轮把边框撤了才改用内阴影，现在边框回来了 */
+.display.is-busy .screen { border-color: var(--openbitfun-color-border-strong); }
+.display.is-flash .screen { border-color: var(--openbitfun-color-action-primary-background); }
+.screen__inner {
+  position: relative; width: 100%; height: 100%;
+  border-radius: var(--openbitfun-radius-lg); overflow: hidden;
+  background: var(--openbitfun-color-surface-workbench); border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   应用窗口
+   ════════════════════════════════════════════════════════════════════════ */
+.app { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--openbitfun-color-surface-panel); }
+.titlebar {
+  display: flex; align-items: center; gap: 9px;
+  height: 36px; flex: 0 0 36px; padding: 0 12px;
+  background: var(--openbitfun-color-surface-chrome); border-block-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+}
+.traffic { display: flex; gap: 5px; }
+.traffic i { width: 7px; height: 7px; border-radius: 50%; background: var(--openbitfun-color-border-strong); opacity: 0.5; }
+.titlebar__tabs { display: flex; gap: 3px; margin-left: 4px; overflow: hidden; }
+.titlebar__tab {
+  height: 22px; padding: 0 9px; border-radius: var(--openbitfun-radius-sm);
+  display: inline-flex; align-items: center; white-space: nowrap;
+  font-size: 11px; color: var(--openbitfun-color-content-caption);
+}
+.titlebar__tab.is-active { background: var(--openbitfun-color-surface-panel); color: var(--openbitfun-color-content-primary); font-weight: 600; }
+/* .badge 已删 —— surface 标识改用 StatusPill 的中性 tone（.ds-pill，不传 data-tone）。
+   DS 里没有专门的「标签」组件：Capsule 只有 14 行，是浮动操作宿主，没有任何视觉，
+   套上来等于什么都没换。中性 pill 的底色 action-neutral-surface 与原来的
+   key-hint-background 同为 rgba(0,0,0,.08)，所以底色没变，只是字阶从 mono 变成 meta。 */
+.app__body { flex: 1; display: flex; min-height: 0; }
+
+.rail {
+  width: 44px; flex: 0 0 44px;
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 8px 0; background: var(--openbitfun-color-surface-chrome); border-inline-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+}
+/* 左轨图标用 .ds-icon-btn（= IconButton），尺寸/圆角/悬停都交给它；
+   选中项用它的 fill 变体（component-button-fill-background），不另造一套选中色。
+   用 .rail 前缀是为了压过文件后面 .ds-icon-btn 的默认色（同为 0,1,0 时后者在后）。
+   这三个是假窗口里的装饰图标，不是真导航，所以光标保持默认，别假装能点。 */
+.rail .rail__btn { color: var(--openbitfun-color-content-caption); cursor: default; }
+.rail .rail__btn[data-openbitfun-variant="fill"] { color: var(--openbitfun-color-content-primary); }
+
+.chat { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chat__stream { flex: 1; min-height: 0; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.msg { display: flex; gap: var(--openbitfun-space-2); }
+/* 头像直接用 .ds-avatar（= Avatar）；Agent 那侧加 data-tone="primary" 走品牌实心 */
+/* 对话写真文案，不再留骨架条 —— 页面其余部分已经是真组件，灰条反而成了唯一的假东西。
+   内容本身也是论点：Agent 一边聊一边把结论写回 PRD，这才叫「读得懂画布上的内容」。 */
+.msg__text {
+  flex: 1; min-width: 0; margin: 0;
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+  letter-spacing: var(--openbitfun-type-body-sm-letter-spacing);
+  color: var(--openbitfun-color-content-secondary);
+}
+.msg--user .msg__text { color: var(--openbitfun-color-content-primary); }
+/* 输入区用一层灰填充跟对话流分开（原来靠 border-top） */
+.composer {
+  flex: 0 0 auto; padding: 9px 11px;
+  display: flex; align-items: center; gap: 8px;
+  background: var(--openbitfun-color-surface-chrome); border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+}
+.composer__field {
+  flex: 1; block-size: var(--openbitfun-control-height-sm);
+  display: flex; align-items: center; padding-inline: var(--openbitfun-space-3);
+  border-radius: var(--openbitfun-radius-base); background: var(--openbitfun-color-surface-panel);
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-field-border);
+  color: var(--openbitfun-color-content-caption); font-size: var(--openbitfun-font-size-xs);
+}
+/* 发送键 = .ds-icon-btn 的 primary 变体，尺寸跟输入框同高 */
+
+/* ════════════════════════════════════════════════════════════════════════
+   多 tab 预览面板
+   ════════════════════════════════════════════════════════════════════════ */
+.panel {
+  width: 268px; flex: 0 0 268px;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--openbitfun-color-surface-chrome); border-inline-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+}
+/* 面板本身是灰的，表头用白填充顶出来，就不需要下描边了 */
+.panel__head {
+  flex: 0 0 38px; height: 38px;
+  display: flex; align-items: center; gap: 7px; padding: 0 9px 0 12px;
+  background: var(--openbitfun-color-surface-panel);
+}
+.panel__title { font-size: 12px; font-weight: 700; }
+.panel__count { font-family: var(--openbitfun-font-family-mono); font-size: 9.5px; color: var(--openbitfun-color-content-caption); }
+.panel__actions { margin-left: auto; display: flex; align-items: center; gap: 5px; }
+
+/* 这里原本是手写的 .btn / .btn--primary / .btn--quiet / .btn--tiny / .icon-btn 两套。
+   已全部换成 .ds-btn / .ds-icon-btn（= Button / IconButton 配方）。
+   顺带修掉一个一直没被发现的视觉缺陷：.btn 和 .icon-btn 都没写 border: 0，
+   而本文件全局只重置了 button 的 font/color，**没有 border 重置** ——
+   所以它们一直在渲染浏览器默认按钮描边，截图里那圈像手绘的重框就是这么来的。 */
+
+/* tab 条 */
+/* ── TabGroup ───────────────────────────────────────────────────────────
+   配方源：components/TabGroup/TabGroup.module.css（data-size="sm" 那一档）。
+   形态和上一版完全不同：不是下划线 tab，是**带边框的药丸**，选中态靠填充区分
+   （color-selection-surface + border 转透明），和真组件一致。
+   类名保留 .tab，因为演示脚本按 .tab.is-active 定位命中点。 */
+.tabbar {
+  flex: 0 0 auto;
+  display: flex; align-items: center;
+  gap: var(--openbitfun-control-tab-group-gap);
+  padding-block: var(--openbitfun-space-1);
+  padding-inline: var(--openbitfun-space-2);
+  background: var(--openbitfun-color-surface-workbench);
+  border-block-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  overflow-x: auto; overflow-y: hidden;
+}
+.tabbar::-webkit-scrollbar { height: 0; }
+.tab {
+  display: inline-flex; align-items: center; gap: var(--openbitfun-space-1);
+  flex: 0 0 auto;
+  block-size: var(--openbitfun-control-tab-group-item-height-sm);
+  padding-inline: var(--openbitfun-control-tab-group-item-padding-inline-sm);
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-component-button-outline-border);
+  border-radius: var(--openbitfun-control-tab-group-item-radius);
+  color: var(--openbitfun-color-content-primary);
+  background: transparent;
+  font-family: var(--openbitfun-type-label-md-font-family);
+  font-size: var(--openbitfun-type-label-md-font-size);
+  font-weight: var(--openbitfun-type-label-md-font-weight);
+  letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
+  line-height: var(--openbitfun-type-label-md-line-height);
+  white-space: nowrap; cursor: pointer;
+  transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+              border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+              color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.tab:hover { background: var(--openbitfun-component-button-fill-background); border-color: var(--openbitfun-component-button-outline-border-interactive); }
+.tab.is-active {
+  background: var(--openbitfun-color-selection-surface);
+  border-color: transparent;
+  font-weight: var(--openbitfun-type-label-selected-font-weight);
+}
+/* 已跳出到别的屏 —— 对应真组件的 :disabled 档，复用同一组 token */
+.tab.is-popped { color: var(--openbitfun-color-action-neutral-content-disabled); }
+.tab.is-popped:hover { background: transparent; border-color: var(--openbitfun-component-button-outline-border); }
+/* 这扇窗现在挂在哪块屏上（真组件里的 labelSuffix / endAction 位置） */
+.tab__where {
+  font-family: var(--openbitfun-font-family-mono);
+  font-size: var(--openbitfun-font-size-3xs); letter-spacing: 0.04em;
+  padding: 1px var(--openbitfun-space-1); border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-action-neutral-surface);
+  color: var(--openbitfun-color-content-secondary);
+}
+/* 跳出按钮 —— 对应真组件的 .endAction 槽位。
+   常态给 0.55 透明度而不是 0：这条动线正是这个 Demo 要讲的东西，藏到 hover 才出现就讲不清了。 */
+.tab__pop {
+  display: inline-grid; place-items: center;
+  inline-size: 20px; block-size: 20px;
+  border-radius: var(--openbitfun-radius-pill);
+  color: var(--openbitfun-color-action-neutral-content);
+  opacity: 0.55; cursor: pointer;
+  transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+              background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.tab:hover .tab__pop { opacity: 1; }
+.tab__pop:hover { opacity: 1; background: var(--openbitfun-color-action-neutral-surface-hover); }
+
+/* overflow-y: auto 是必须的，不是可选：空态里那段「已跳出清单」在窄面板下会
+   比可视区高（实测 scrollHeight 423 / clientHeight 255，被裁 168px），
+   而这里原本是 visible —— 等于 4 行「收回」按钮点不到又没有滚动条。
+   配合下面的 min-height: 0 才能让 flex 子项真的可滚。 */
+.panel__body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
+.panel__foot {
+  flex: 0 0 auto; padding: 7px 12px;
+  font-size: 10px; color: var(--openbitfun-color-content-caption); background: var(--openbitfun-color-surface-workbench);
+  border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  display: flex; align-items: center; gap: 6px;
+}
+
+/* 占位符 */
+/* ── Empty ──────────────────────────────────────────────────────────────
+   配方源：components/Empty/Empty.module.css
+     .placeholder ← .root   __icon ← .media   __title ← .title
+     __desc ← .description  __row ← .actions
+   外面那圈虚线 + 浅底是 demo 自己的容器皮（Empty 的 .root 不带底也不带边），
+   用来表达「这块面板当前没有内容」；里面从图标到字阶全部走 Empty 的槽位。
+   图标那格从「灰底圆角方块 + 深色图标」换成了 Empty 的裸图标（media 只给尺寸和
+   component-empty-media 这个浅灰），这是真组件的样子。 */
+.placeholder {
+  flex: 1; margin: 12px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--openbitfun-layout-empty-gap);
+  padding: var(--openbitfun-layout-empty-padding-block) var(--openbitfun-layout-empty-padding-inline);
+  color: var(--openbitfun-color-content-muted);
+  text-align: center;
+  border-radius: var(--openbitfun-layout-card-radius-md);
+  border: var(--openbitfun-border-width-default) dashed var(--openbitfun-color-border-default);
+  background: var(--openbitfun-color-surface-subtle);
+}
+.placeholder__icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  inline-size: var(--openbitfun-layout-empty-media-size-md);
+  block-size: var(--openbitfun-layout-empty-media-size-md);
+  color: var(--openbitfun-component-empty-media);
+}
+.placeholder__icon > svg {
+  display: block;
+  inline-size: var(--openbitfun-layout-empty-icon-size-md);
+  block-size: var(--openbitfun-layout-empty-icon-size-md);
+}
+.placeholder__title {
+  color: var(--openbitfun-color-content-muted);
+  font-family: var(--openbitfun-type-label-md-font-family);
+  font-size: var(--openbitfun-type-label-md-font-size);
+  font-weight: var(--openbitfun-type-label-md-font-weight);
+  line-height: var(--openbitfun-type-label-md-line-height);
+  letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
+}
+.placeholder__desc {
+  max-inline-size: 42ch;
+  color: var(--openbitfun-color-content-muted);
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+  letter-spacing: var(--openbitfun-type-body-sm-letter-spacing);
+}
+.placeholder__row {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--openbitfun-space-2); flex-wrap: wrap;
+  margin-block-start: var(--openbitfun-space-1);
+}
+/* 「正在哪块屏显示」是状态指示，直接用 StatusPill（.ds-pill data-tone="success"），
+   Empty 里没有对应槽位 —— 它是这块面板特有的信息，只有 b 的强调色需要补。 */
+.placeholder__where b { color: var(--openbitfun-color-content-primary); font-weight: var(--openbitfun-type-label-selected-font-weight); }
+/* 全部跳出后的可恢复清单。Empty 没有对应槽位，是这块面板自己的附加内容，
+   所以只保留布局；行内的角标与按钮都是真组件（.tab__where 的 pill / .ds-btn）。 */
+.placeholder__list { width: 100%; display: flex; flex-direction: column; gap: 5px; margin-top: 3px; }
+.placeholder__item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 9px; border-radius: var(--openbitfun-radius-sm);
+  background: var(--openbitfun-color-surface-tertiary);
+  font-size: 11px;
+}
+.placeholder__item span:first-child { flex: 1; text-align: left; }
+/* .pulse 已删 —— 那个绿点换成 StatusPill 自带的 .ds-pill__dot（currentColor，5px）。 */
+
+/* 屏内空状态 */
+.empty-hint {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; text-align: center; color: var(--openbitfun-color-content-caption); font-size: 11.5px;
+}
+.empty-hint__box {
+  min-width: 150px; max-width: 92%;
+  min-height: 100px; padding: 14px;
+  border-radius: var(--openbitfun-radius-lg);
+  background: var(--openbitfun-color-surface-panel);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+}
+.empty-hint__title { font-size: 11.5px; font-weight: 600; color: var(--openbitfun-color-content-secondary); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   独立窗口（屏内，可拖动 / 跨屏 / 缩放）
+   ════════════════════════════════════════════════════════════════════════ */
+/* 浮窗压在同样是白的 app 上，光靠浅表面分不开，
+   所以按真系统浮层的做法「描边 + 投影」一起用。 */
+.detached {
+  position: absolute;
+  display: flex; flex-direction: column;
+  min-width: 200px; min-height: 150px;
+  background: var(--openbitfun-color-surface-panel); border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default);
+  border-radius: var(--openbitfun-radius-lg);
+  box-shadow: var(--openbitfun-shadow-menu);
+  overflow: hidden;
+  opacity: 0; transform: scale(0.97);
+  transition: opacity 0.3s var(--openbitfun-motion-easing-standard) 0.05s, transform 0.34s var(--openbitfun-motion-easing-standard) 0.05s;
+}
+.detached.is-in { opacity: 1; transform: scale(1); }
+.detached.is-flash { box-shadow: 0 0 0 2px var(--openbitfun-color-action-primary-background), var(--openbitfun-shadow-menu); }
+.detached__titlebar {
+  flex: 0 0 32px; height: 32px;
+  display: flex; align-items: center; gap: 8px; padding: 0 8px 0 11px;
+  background: var(--openbitfun-color-surface-chrome);
+  cursor: grab; user-select: none; touch-action: none;
+}
+.detached__titlebar:active { cursor: grabbing; }
+.detached__title { font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detached__sub { font-family: var(--openbitfun-font-family-mono); font-size: 9px; color: var(--openbitfun-color-content-caption); white-space: nowrap; }
+.detached__actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.detached__body { flex: 1; min-height: 0; display: flex; }
+.detached__resize {
+  position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
+  cursor: nwse-resize; touch-action: none;
+  background: linear-gradient(135deg, transparent 50%,
+              var(--openbitfun-color-border-strong) 50%, var(--openbitfun-color-border-strong) 62%, transparent 62%);
+}
+.drag-ghost {
+  position: fixed; z-index: 999; pointer-events: none;
+  border-radius: var(--openbitfun-radius-lg); background: var(--openbitfun-color-surface-panel); border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default);
+  box-shadow: var(--openbitfun-shadow-menu);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Hub（面板内 compact / 独立窗口 full）
+   ════════════════════════════════════════════════════════════════════════ */
+.hub { flex: 1; display: flex; min-height: 0; min-width: 0; background: var(--openbitfun-color-surface-panel); }
+.hub__targets {
+  flex: 0 0 122px; width: 122px; min-height: 0; overflow: auto;
+  display: flex; flex-direction: column; gap: var(--openbitfun-overlay-menu-row-gap);
+  padding: var(--openbitfun-space-1);
+  background: var(--openbitfun-color-surface-chrome); border-inline-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+}
+/* ── Listbox ────────────────────────────────────────────────────────────
+   配方源：components/Listbox/Listbox.module.css
+     .hub__group-title ← .groupLabel   .target ← .option
+     .target__content ← .content       .target__name ← .label   .target__meta ← .description
+   「预览目标」是单选设备列表，正对应 Listbox。选中态用 .option[data-selected] 的
+   color-selection-surface 填充，替掉原先手搓的黑竖条（真组件靠填充表选中，不靠侧边条）。
+
+   ⚠️ .option 里那句 border: 0 是必须的，不是可省：本文件全局只重置了
+   `button { font: inherit; color: inherit }`，**没有 border 重置**，所以 .target 作为
+   <button> 一直在渲染浏览器默认描边 —— 之前截图里那些像手绘的重框就是这么来的。 */
+.hub__group-title {
+  display: flex; align-items: center;
+  min-block-size: var(--openbitfun-overlay-menu-heading-height);
+  padding-inline: var(--openbitfun-overlay-menu-heading-padding-inline);
+  color: var(--openbitfun-color-content-muted);
+  font-family: var(--openbitfun-type-meta-font-family);
+  font-size: var(--openbitfun-type-meta-font-size);
+  font-weight: var(--openbitfun-type-meta-font-weight);
+  line-height: var(--openbitfun-type-meta-line-height);
+  letter-spacing: var(--openbitfun-type-meta-letter-spacing);
+}
+.target {
+  display: flex; align-items: center;
+  inline-size: 100%; min-inline-size: 0;
+  min-block-size: var(--openbitfun-overlay-menu-item-height);
+  gap: var(--openbitfun-overlay-menu-item-gap);
+  margin: 0;
+  padding-block: var(--openbitfun-space-1);
+  padding-inline: var(--openbitfun-overlay-menu-item-padding-inline);
+  border: 0;
+  border-radius: var(--openbitfun-overlay-menu-item-radius);
+  outline: 0;
+  color: inherit; background: transparent;
+  font: inherit; text-align: start; cursor: pointer;
+  transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+              background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+/* 瞬时交互态不能盖掉持久选中态 —— 真组件里就是这么分的 */
+.target:where(:not(:disabled):is(:hover, [data-active="true"])) { background: var(--openbitfun-color-action-neutral-surface); }
+.target:where(:not(:disabled):active) { background: var(--openbitfun-color-action-neutral-surface-pressed); }
+.target[data-selected="true"] { background: var(--openbitfun-color-selection-surface); }
+.target:focus-visible { box-shadow: 0 0 0 var(--openbitfun-focus-width) var(--openbitfun-color-focus-ring); }
+.target__content {
+  display: flex; overflow: hidden; flex: 1 1 auto; min-inline-size: 0;
+  flex-direction: column; gap: var(--openbitfun-space-1);
+}
+.target__name {
+  overflow: hidden;
+  font-family: var(--openbitfun-type-label-md-font-family);
+  font-size: var(--openbitfun-type-label-md-font-size);
+  font-weight: var(--openbitfun-type-label-md-font-weight);
+  line-height: var(--openbitfun-type-label-md-line-height);
+  letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
+  white-space: nowrap;
+}
+.target__meta {
+  overflow: hidden;
+  color: var(--openbitfun-color-content-muted);
+  font-family: var(--openbitfun-type-meta-font-family);
+  font-size: var(--openbitfun-type-meta-font-size);
+  font-weight: var(--openbitfun-type-meta-font-weight);
+  line-height: var(--openbitfun-type-meta-line-height);
+  letter-spacing: var(--openbitfun-type-meta-letter-spacing);
+  white-space: nowrap;
+}
+
+.hub__canvas-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.hub__toolbar {
+  flex: 0 0 31px; height: 31px;
+  display: flex; align-items: center; gap: 7px; padding: 0 8px 0 11px;
+  background: var(--openbitfun-color-surface-panel); border-block-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  container-type: inline-size;
+}
+/* 窗口被夹窄时（例如落到竖屏副屏）不能折行，改成标题吃省略号、右侧控件保持完整 */
+.hub__crumb { font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.hub__note {
+  font-family: var(--openbitfun-font-family-mono); font-size: 9px; color: var(--openbitfun-color-content-caption);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.hub__zoom { margin-left: auto; flex: 0 0 auto; display: flex; align-items: center; gap: 5px; }
+.hub__scale {
+  font-family: var(--openbitfun-font-family-mono); font-size: 9px; color: var(--openbitfun-color-content-caption);
+  min-width: 44px; text-align: right; white-space: nowrap;
+}
+/* 缩放组（「适配 30%」+ seg）固定 149px 且不许收缩，所以窗口一窄就是它溢出：
+   实测竖屏副屏里的工具条内容盒只有 141px，seg 的右边缘会超出工具条 30px，100% 被裁成 10。
+   141px 装不下 149px 的缩放组，但装得下砍掉百分比之后的 100px。
+   阈值 210px 是按「内容盒」算的（container 查询比较的是内容盒，不含 padding）：
+   主屏面板 248 / 横屏副屏窗口 431、415 都远在阈值之上，只有竖屏那个 141 会命中。 */
+@container (max-width: 210px) {
+  .hub__scale { display: none; }
+}
+/* 缩放缓切已改用 .ds-seg（= SegmentedControl），选中态走 aria-pressed，不再另起一套 */
+
+/* 屏内画布：整块画布压成灰的，白色的浮窗 / 视口才不用描边就能读出来 */
+.hub__canvas {
+  flex: 1; min-height: 0; overflow: auto; padding: 12px;
+  background: var(--openbitfun-color-surface-workbench);
+}
+.viewport-sizer { position: relative; }
+.viewport {
+  background: var(--openbitfun-color-surface-panel); border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default);
+  border-radius: var(--openbitfun-radius-base);
+  transform-origin: top left;
+}
+.viewport__chrome {
+  height: 23px; display: flex; align-items: center; gap: 7px; padding: 0 9px;
+  background: var(--openbitfun-color-surface-chrome); border-block-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  border-radius: 7px 7px 0 0;
+  font-family: var(--openbitfun-font-family-mono); font-size: 9px; color: var(--openbitfun-color-content-caption); white-space: nowrap;
+}
+.vp-dots { display: inline-flex; gap: 3px; }
+.vp-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--openbitfun-color-action-neutral-surface-hover); }
+
+/* compact：目标列表收成横向 chip（这块是 Display 1 面板，走 hubHTML(tab,'compact')） */
+.hub--compact { flex-direction: column; }
+.hub--compact .hub__targets {
+  flex: 0 0 auto; width: 100%; display: flex; flex-direction: row; gap: var(--openbitfun-space-1);
+  padding: var(--openbitfun-space-1) var(--openbitfun-space-2);
+  border-block-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  overflow-x: auto;
+}
+.hub--compact .hub__group-title { padding-inline: var(--openbitfun-space-1); }
+.hub--compact .hub__note { display: none; }
+.hub--compact .target {
+  inline-size: auto; flex: 0 0 auto; min-block-size: 0;
+  padding-block: 2px; padding-inline: var(--openbitfun-space-2);
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-surface-panel);
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+}
+.hub--compact .target:where(:not(:disabled):is(:hover, [data-active="true"])) { background: var(--openbitfun-color-action-neutral-surface); }
+.hub--compact .target[data-selected="true"] {
+  background: var(--openbitfun-color-selection-surface);
+  border-color: transparent;
+}
+.hub--compact .target__meta { display: none; }
+.hub--compact .hub__canvas { padding: 10px; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   毕方组件 —— 每个配方都照抄同名组件模块，只用 design-system token。
+   对应关系（右侧是仓库里的源文件）：
+     .ds-btn        ← packages/ui/src/components/Button/Button.module.css
+     .ds-icon-btn   ← components/IconButton/IconButton.module.css
+     .ds-pill       ← components/StatusPill/StatusPill.module.css
+     .ds-seg        ← components/SegmentedControl/SegmentedControl.module.css
+     .ds-tab        ← components/TabGroup/TabGroup.module.css
+     .ds-kbd        ← components/KeyHint
+     .ds-avatar     ← components/Avatar
+   变体一律走 data-openbitfun-variant / data-tone / data-size，和真组件同契约，
+   这样从 Demo 抄回组件时属性名不用翻译。
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── Button ─────────────────────────────────────────────────────────────
+   默认（outline）变体：透明底 + 1px 描边；hover 由 fill-background 接管。
+   真组件把 hover 底放在 ::before 上，这里照做，免得过渡和文字色互相打架。 */
+.ds-btn {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--openbitfun-space-1);
+  block-size: var(--openbitfun-control-height-sm);
+  padding-inline: var(--openbitfun-space-4);
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-component-button-outline-border);
+  border-radius: var(--openbitfun-radius-pill);
+  color: var(--openbitfun-component-button-content);
+  background: transparent;
+  font-family: var(--openbitfun-type-label-md-font-family);
+  font-size: var(--openbitfun-type-label-md-font-size);
+  font-weight: var(--openbitfun-type-label-md-font-weight);
+  line-height: var(--openbitfun-type-label-md-line-height);
+  white-space: nowrap; cursor: pointer;
+  isolation: isolate;
+  transition: border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+              color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.ds-btn::before {
+  content: ''; position: absolute; z-index: 0; inset: 0;
+  border-radius: inherit; background: transparent;
+  transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.ds-btn > * { position: relative; z-index: 1; }
+.ds-btn:hover:not(:disabled) { border-color: var(--openbitfun-component-button-outline-border-interactive); }
+.ds-btn:hover:not(:disabled)::before { background: var(--openbitfun-component-button-fill-background); }
+.ds-btn:focus-visible { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: var(--openbitfun-focus-offset); }
+
+.ds-btn[data-openbitfun-variant="fill"] {
+  border-color: transparent; background: var(--openbitfun-component-button-fill-background);
+}
+.ds-btn[data-openbitfun-variant="fill"]:hover:not(:disabled) { border-color: transparent; }
+.ds-btn[data-openbitfun-variant="fill"]:hover:not(:disabled)::before { background: var(--openbitfun-component-button-fill-background-hover); }
+
+.ds-btn[data-openbitfun-variant="primary"] {
+  border-color: transparent;
+  background: var(--openbitfun-component-button-primary-background);
+  color: var(--openbitfun-color-action-primary-content);
+}
+.ds-btn[data-openbitfun-variant="primary"]:hover:not(:disabled) { border-color: transparent; }
+.ds-btn[data-openbitfun-variant="primary"]:hover:not(:disabled)::before { background: var(--openbitfun-component-button-primary-background-hover); }
+
+/* 小尺寸档：真组件是 .button[data-size="xs"]，尺寸全走 control-button-xs-*。
+   下面这条 > svg 能盖住 SVG 上的 width/height 属性 —— 表现属性优先级低于 CSS，
+   所以图标会跟着 token 走，不用去改 markup 里的数字。 */
+.ds-btn[data-size="xs"] {
+  block-size: var(--openbitfun-control-button-xs-height);
+  padding-inline: var(--openbitfun-control-button-xs-padding-inline);
+  font-size: var(--openbitfun-type-meta-font-size);
+}
+.ds-btn[data-size="xs"] > svg {
+  inline-size: var(--openbitfun-control-button-xs-leading-icon-size);
+  block-size: var(--openbitfun-control-button-xs-leading-icon-size);
+}
+
+/* 禁用态：真组件 .button:disabled 只换内容色 + not-allowed，底与边全清掉，
+   所以下面要显式把 fill / primary 的底色也清掉，不然禁用按钮还带着实心底。 */
+.ds-btn:disabled,
+.ds-icon-btn:disabled {
+  color: var(--openbitfun-color-action-neutral-content-disabled);
+  cursor: not-allowed;
+}
+.ds-btn:disabled { border-color: transparent; background: transparent; }
+.ds-btn:disabled::before,
+.ds-icon-btn:disabled::before { background: transparent; }
+.ds-btn[data-openbitfun-variant="fill"]:disabled,
+.ds-btn[data-openbitfun-variant="primary"]:disabled { background: transparent; }
+
+/* ── IconButton ─────────────────────────────────────────────────────────
+   默认 32px / 图标 14px / 圆角 radius-sm；circle 变体才是药丸。 */
+.ds-icon-btn {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  inline-size: var(--openbitfun-control-height-sm);
+  block-size: var(--openbitfun-control-height-sm);
+  padding: 0; border: 0; border-radius: var(--openbitfun-radius-sm);
+  color: var(--openbitfun-color-content-primary);
+  background: transparent; cursor: pointer; isolation: isolate;
+  transition: color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.ds-icon-btn::before {
+  content: ''; position: absolute; z-index: 0; inset: 0;
+  border-radius: inherit; background: transparent;
+  transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.ds-icon-btn > svg { position: relative; z-index: 1; display: block; }
+.ds-icon-btn:hover:not(:disabled)::before { background: var(--openbitfun-color-action-neutral-surface-hover); }
+.ds-icon-btn:focus-visible { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: var(--openbitfun-focus-offset); }
+/* 小尺寸档：真组件 .button[data-size="xs"] → 22px / 图标 14px */
+.ds-icon-btn[data-size="xs"] {
+  inline-size: var(--openbitfun-control-icon-button-xs-size);
+  block-size: var(--openbitfun-control-icon-button-xs-size);
+}
+.ds-icon-btn[data-size="xs"] > svg {
+  inline-size: var(--openbitfun-control-icon-button-xs-icon-size);
+  block-size: var(--openbitfun-control-icon-button-xs-icon-size);
+}
+.ds-icon-btn[data-openbitfun-shape="circle"] { border-radius: var(--openbitfun-radius-pill); }
+.ds-icon-btn[data-openbitfun-variant="primary"] {
+  color: var(--openbitfun-color-action-primary-content);
+  background: var(--openbitfun-color-action-primary-background);
+}
+.ds-icon-btn[data-openbitfun-variant="primary"]:hover:not(:disabled)::before { background: var(--openbitfun-color-action-primary-hover); }
+
+/* ── StatusPill ─────────────────────────────────────────────────────────
+   药丸、meta 字阶、上下 2px 左右 6px。tone 决定色。 */
+.ds-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--openbitfun-control-status-pill-gap);
+  padding-block: var(--openbitfun-control-status-pill-padding-block);
+  padding-inline: var(--openbitfun-control-status-pill-padding-inline);
+  border: 0;
+  border-radius: var(--openbitfun-control-status-pill-radius);
+  color: var(--openbitfun-color-content-secondary);
+  background: var(--openbitfun-color-action-neutral-surface);
+  font-family: var(--openbitfun-type-meta-font-family);
+  font-size: var(--openbitfun-type-meta-font-size);
+  font-weight: var(--openbitfun-type-meta-font-weight);
+  line-height: var(--openbitfun-type-status-pill-line-height);
+  letter-spacing: var(--openbitfun-type-meta-letter-spacing);
+  white-space: nowrap;
+}
+.ds-pill[data-openbitfun-shape="rounded"] { border-radius: var(--openbitfun-radius-sm); }
+.ds-pill[data-tone="success"] { color: var(--openbitfun-color-status-success-content); background: var(--openbitfun-color-status-success-surface); }
+.ds-pill[data-tone="info"]    { color: var(--openbitfun-color-status-info-content);    background: var(--openbitfun-color-status-info-surface); }
+.ds-pill[data-tone="warning"] { color: var(--openbitfun-color-status-warning-content); background: var(--openbitfun-color-status-warning-surface); }
+.ds-pill[data-tone="danger"]  { color: var(--openbitfun-color-status-danger-content);  background: var(--openbitfun-color-status-danger-surface); }
+.ds-pill__dot {
+  inline-size: 5px; block-size: 5px; flex: 0 0 5px;
+  border-radius: var(--openbitfun-radius-pill); background: currentColor;
+}
+
+/* ── SegmentedControl ───────────────────────────────────────────────────
+   槽底 action-neutral-surface-hover，选中段提到 surface-raised（白）。 */
+.ds-seg {
+  display: inline-flex; align-items: center;
+  gap: var(--openbitfun-control-segmented-control-gap);
+  padding: var(--openbitfun-control-segmented-control-padding);
+  border: 0; border-radius: var(--openbitfun-control-segmented-control-radius);
+  background: var(--openbitfun-color-action-neutral-surface-hover);
+}
+.ds-seg button {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--openbitfun-control-segmented-control-segment-gap);
+  block-size: var(--openbitfun-control-segmented-control-segment-height);
+  padding-block: 0;
+  padding-inline: var(--openbitfun-control-segmented-control-segment-padding-inline);
+  border: 0; border-radius: var(--openbitfun-control-segmented-control-segment-radius);
+  color: var(--openbitfun-color-action-neutral-content);
+  background: transparent;
+  font-family: var(--openbitfun-type-label-md-font-family);
+  font-size: var(--openbitfun-type-label-md-font-size);
+  font-weight: var(--openbitfun-type-label-md-font-weight);
+  line-height: var(--openbitfun-type-label-md-line-height);
+  white-space: nowrap; cursor: pointer;
+  transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+              color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.ds-seg button[aria-pressed="true"] {
+  color: var(--openbitfun-color-content-primary);
+  background: var(--openbitfun-color-surface-raised);
+  font-weight: var(--openbitfun-type-label-selected-font-weight);
+}
+.ds-seg button:hover:not([aria-pressed="true"]) { background: var(--openbitfun-color-action-neutral-surface-hover); }
+.ds-seg button:focus-visible { outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring); outline-offset: var(--openbitfun-focus-offset); }
+
+/* ── KeyHint ────────────────────────────────────────────────────────────*/
+.ds-kbd {
+  padding: 1px var(--openbitfun-space-1);
+  border-radius: var(--openbitfun-radius-xs);
+  background: var(--openbitfun-color-key-hint-background);
+  color: var(--openbitfun-color-key-hint-content);
+  font-family: var(--openbitfun-font-family-mono);
+  font-size: var(--openbitfun-font-size-2xs);
+}
+
+/* ── Avatar ─────────────────────────────────────────────────────────────*/
+.ds-avatar {
+  inline-size: 20px; block-size: 20px; flex: 0 0 20px;
+  display: grid; place-items: center;
+  border-radius: var(--openbitfun-radius-sm);
+  background: var(--openbitfun-color-action-neutral-surface);
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-font-size-2xs); font-weight: var(--openbitfun-font-weight-bold);
+}
+.ds-avatar[data-tone="primary"] { background: var(--openbitfun-color-action-primary-background); color: var(--openbitfun-color-action-primary-content); }
+
+/* ── Switch ─────────────────────────────────────────────────────────────*/
+.ds-switch {
+  position: relative;
+  inline-size: 32px; block-size: 18px; flex: 0 0 32px;
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-control-switch-track);
+  transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.ds-switch::after {
+  content: ''; position: absolute; inset-block-start: 2px; inset-inline-start: 2px;
+  inline-size: 14px; block-size: 14px;
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-control-switch-thumb);
+  transition: translate var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+}
+.ds-switch[aria-checked="true"] { background: var(--openbitfun-color-control-switch-track-checked); }
+.ds-switch[aria-checked="true"]::after { translate: 14px 0; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   视口内容 —— 真的毕方组件拼出的界面，不再是灰块占位。
+   三块屏分别放：PRD 文档 / 页面预览 / 组件矩阵。
+   ════════════════════════════════════════════════════════════════════════ */
+.doc {
+  padding: var(--openbitfun-space-6) var(--openbitfun-space-8);
+  display: flex; flex-direction: column; gap: var(--openbitfun-space-3);
+  color: var(--openbitfun-color-content-primary);
+}
+.doc__head { display: flex; align-items: center; gap: var(--openbitfun-space-3); }
+.doc__title {
+  font-family: var(--openbitfun-type-heading-page-font-family);
+  font-size: var(--openbitfun-type-heading-page-font-size);
+  font-weight: var(--openbitfun-type-heading-page-font-weight);
+  line-height: var(--openbitfun-type-heading-page-line-height);
+  letter-spacing: var(--openbitfun-letter-spacing-tight);
+}
+.doc__meta {
+  display: flex; align-items: center; gap: var(--openbitfun-space-2);
+  font-size: var(--openbitfun-font-size-meta);
+  color: var(--openbitfun-color-content-caption);
+}
+.doc__h2 {
+  margin-block-start: var(--openbitfun-space-3);
+  font-family: var(--openbitfun-type-heading-section-font-family);
+  font-size: var(--openbitfun-type-heading-section-font-size);
+  font-weight: var(--openbitfun-type-heading-section-font-weight);
+  line-height: var(--openbitfun-type-heading-section-line-height);
+}
+.doc__p {
+  font-size: var(--openbitfun-font-size-sm);
+  line-height: var(--openbitfun-line-height-reading);
+  color: var(--openbitfun-color-content-secondary);
+}
+.doc__list {
+  margin: 0; padding-inline-start: var(--openbitfun-space-5);
+  display: grid; gap: var(--openbitfun-space-1);
+  font-size: var(--openbitfun-font-size-sm);
+  line-height: var(--openbitfun-line-height-reading);
+  color: var(--openbitfun-color-content-secondary);
+}
+/* 验收表 —— 用 border-subtle 横线分行，不用表格线框 */
+.doc__table { display: grid; }
+.doc__tr {
+  display: grid; grid-template-columns: 1fr auto; align-items: center;
+  gap: var(--openbitfun-space-3);
+  padding-block: 7px; padding-inline: var(--openbitfun-space-3);
+  border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  font-size: var(--openbitfun-font-size-xs);
+  color: var(--openbitfun-color-content-secondary);
+}
+.doc__tr:last-child { border-block-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle); }
+.doc__tr--head { color: var(--openbitfun-color-content-caption); font-size: var(--openbitfun-font-size-meta); }
+
+/* 页面预览：工具条 + 筛选 chips + 三张卡片 */
+.pageview { display: flex; flex-direction: column; }
+.pageview__bar {
+  display: flex; align-items: center; gap: var(--openbitfun-space-2);
+  padding: var(--openbitfun-space-3) var(--openbitfun-space-5);
+  background: var(--openbitfun-color-surface-panel);
+  border-block-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+}
+.pageview__title {
+  font-family: var(--openbitfun-type-heading-card-font-family);
+  font-size: var(--openbitfun-type-heading-card-font-size);
+  font-weight: var(--openbitfun-type-heading-card-font-weight);
+}
+.pageview__gap { margin-inline-start: auto; }
+.pageview__filters {
+  display: flex; flex-wrap: wrap; gap: var(--openbitfun-space-2);
+  padding: var(--openbitfun-space-3) var(--openbitfun-space-5) 0;
+}
+.tiles {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: var(--openbitfun-space-3);
+  padding: var(--openbitfun-space-4) var(--openbitfun-space-5);
+}
+/* ── Card ───────────────────────────────────────────────────────────────
+   配方源：components/Card/Card.module.css
+     .tile ← .root   __header ← .header   __header-content ← .headerContent
+     __title ← .title   __text ← .description   __footer ← .footer
+   data-radius="md"(12px) / data-padding="sm"(12px) / data-gap="sm"(8px)
+   正好等于原来手写的圆角、内边距和间距，这几处尺寸没动。
+   ⚠️ data-appearance="raised" 会给卡片加上 shadow-overlay（0 4px 20px rgba(0,0,0,.12)）——
+   原来手写版没有投影，这是真组件 raised 档的定义，不是我加的。不想要就换成 subtle。 */
+.tile {
+  display: flex; flex-direction: column; min-inline-size: 0;
+  border: var(--openbitfun-border-width-default) solid transparent;
+  color: var(--openbitfun-color-content-secondary);
+  background: transparent;
+}
+.tile[data-appearance="raised"] {
+  border-color: var(--openbitfun-color-border-subtle);
+  background: var(--openbitfun-color-surface-raised);
+  box-shadow: var(--openbitfun-shadow-overlay);
+}
+.tile[data-radius="md"] { border-radius: var(--openbitfun-layout-card-radius-md); }
+.tile[data-padding="sm"] { padding: var(--openbitfun-layout-card-padding-sm); }
+.tile[data-gap="sm"] { gap: var(--openbitfun-layout-card-gap-sm); }
+.tile__header {
+  display: flex; align-items: flex-start; min-inline-size: 0;
+  gap: var(--openbitfun-layout-card-header-gap);
+}
+.tile__header-content {
+  display: flex; flex: 1 1 auto; min-inline-size: 0; flex-direction: column;
+  gap: var(--openbitfun-layout-card-title-description-gap);
+}
+.tile__title {
+  min-inline-size: 0; overflow-wrap: anywhere;
+  color: var(--openbitfun-color-content-primary);
+  font-family: var(--openbitfun-type-heading-card-font-family);
+  font-size: var(--openbitfun-type-heading-card-font-size);
+  font-weight: var(--openbitfun-type-heading-card-font-weight);
+  line-height: var(--openbitfun-type-heading-card-line-height);
+  letter-spacing: var(--openbitfun-type-heading-card-letter-spacing);
+}
+.tile__text {
+  min-inline-size: 0;
+  color: var(--openbitfun-color-content-secondary);
+  font-family: var(--openbitfun-type-body-sm-font-family);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  font-weight: var(--openbitfun-type-body-sm-font-weight);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+  letter-spacing: var(--openbitfun-type-body-sm-letter-spacing);
+}
+.tile__footer {
+  display: flex; align-items: center; min-inline-size: 0;
+  gap: var(--openbitfun-layout-card-footer-gap);
+}
+
+/* 组件矩阵：每格摆一个真控件的实例，底下标名字 */
+.matrix {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: var(--openbitfun-space-3);
+  padding: var(--openbitfun-space-4) var(--openbitfun-space-5);
+}
+.matrix__cell {
+  display: grid; place-items: center; align-content: center;
+  gap: var(--openbitfun-space-2);
+  min-block-size: 62px; padding: var(--openbitfun-space-3);
+  background: var(--openbitfun-color-surface-panel);
+  border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  border-radius: var(--openbitfun-radius-base);
+}
+.matrix__cell > small {
+  font-family: var(--openbitfun-font-family-mono);
+  font-size: var(--openbitfun-font-size-3xs);
+  color: var(--openbitfun-color-content-caption);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   真实弹窗 surface
+   ════════════════════════════════════════════════════════════════════════ */
+.surface-root { position: fixed; inset: 0; display: none; flex-direction: column; background: var(--openbitfun-color-surface-panel); }
+body.mode-surface .surface-root { display: flex; }
+body.mode-surface .desk { display: none; }
+.surface-root__bar {
+  flex: 0 0 38px; height: 38px; display: flex; align-items: center; gap: 9px;
+  padding: 0 9px 0 13px; background: var(--openbitfun-color-surface-chrome);
+}
+.surface-root__actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 12px);
+  padding: 9px 15px; border-radius: var(--openbitfun-radius-lg); font-size: 12px; font-weight: 500;
+  color: var(--openbitfun-color-content-inverse); background: var(--openbitfun-color-action-primary-background);
+  box-shadow: var(--openbitfun-shadow-menu);
+  opacity: 0; pointer-events: none; z-index: 1000;
+  transition: opacity 0.2s var(--openbitfun-motion-easing-standard), transform 0.24s var(--openbitfun-motion-easing-standard);
+}
+.toast.is-in { opacity: 1; transform: translate(-50%, 0); }
+
+/* ════════════════════════════════════════════════════════════════════════
+   实时播放：虚拟光标 / 字幕 / 聚光 / 进度
+   ════════════════════════════════════════════════════════════════════════ */
+.progress { position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 60; }
+.progress i {
+  display: block; height: 100%; width: 100%; background: var(--openbitfun-color-action-primary-background);
+  transform: scaleX(0); transform-origin: left center;
+  transition: transform 0.6s var(--openbitfun-motion-easing-standard);
+}
+
+.director { display: inline-flex; align-items: center; gap: var(--openbitfun-space-2); }
+/* 播放 / 重播直接用 .ds-icon-btn（= IconButton），不再另起一套 */
+.stepdots { display: inline-flex; align-items: center; gap: var(--openbitfun-space-1); }
+.stepdots i {
+  inline-size: 5px; block-size: 5px; border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-action-neutral-surface-hover);
+  transition: all 0.32s var(--openbitfun-motion-easing-standard);
+}
+.stepdots i.is-done { background: var(--openbitfun-color-border-strong); }
+.stepdots i.is-now { inline-size: 16px; background: var(--openbitfun-color-action-primary-background); }
+
+/* 聚光：没参与当前步骤的屏压暗 */
+.display { transition: opacity 0.45s var(--openbitfun-motion-easing-standard), filter 0.45s var(--openbitfun-motion-easing-standard); }
+.display.is-dim { opacity: 0.34; filter: saturate(0.4); }
+
+/* 字幕 */
+.caption {
+  position: fixed; left: 50%; bottom: 22px; z-index: 70;
+  transform: translate(-50%, 14px);
+  max-width: min(760px, calc(100% - 40px));
+  display: flex; align-items: center; gap: 13px;
+  padding: 12px 18px; border-radius: var(--openbitfun-radius-xl);
+  background: color-mix(in srgb, #101a27 95%, transparent);
+  color: var(--openbitfun-color-content-inverse);
+  box-shadow: var(--openbitfun-shadow-menu);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.28s var(--openbitfun-motion-easing-standard), transform 0.32s var(--openbitfun-motion-easing-standard);
+}
+.caption.is-in { opacity: 1; transform: translate(-50%, 0); }
+.caption__idx {
+  flex: 0 0 auto; font-family: var(--openbitfun-font-family-mono); font-size: 10px; letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.45);
+}
+.caption__text { font-size: 13px; line-height: 1.55; }
+body.is-playing .toast { bottom: 100px; }
+
+/* 虚拟光标 */
+.vcur {
+  position: fixed; left: 0; top: 0; z-index: 90;
+  width: 20px; height: 20px; pointer-events: none;
+  transform: translate3d(-100px, -100px, 0);
+  transition: transform 0.62s var(--openbitfun-motion-easing-standard);
+}
+.vcur svg { display: block; transition: transform 0.12s var(--openbitfun-motion-easing-standard); }
+.vcur.is-down svg { transform: scale(0.82); }
+.ripple {
+  position: fixed; z-index: 89; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+  border-radius: 50%; pointer-events: none; border: 2px solid var(--openbitfun-color-action-primary-background);
+}
+.is-pressed { box-shadow: 0 0 0 3px var(--openbitfun-color-action-neutral-surface-hover) !important; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   窄窗口降级：页头不参与 --fit 缩放，宽度不够时只能靠让位。
+   实测页头需要 741px（视口 ≥773px），所以 880px 起先让出装饰性的概念 chips，
+   保住「Agent 视野」徽标和右侧播放 / 重置。
+   ════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 560px) {
+  .vision-badge { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="desk">
+  <header class="site-header">
+    <div class="brand">
+      <span class="brand-mark" role="img" aria-label="OpenBitFun"></span>
+      <span class="brand__text"><strong>OpenBitFun</strong><small>Agent 多屏拓展</small></span>
+    </div>
+    <span class="vision-badge" id="visionBadge"
+          title="这些画布上的内容 Agent 都能读"><i></i>Agent 视野 · 跨 <b id="visionCount">1</b> 屏</span>
+    <div class="header-actions">
+      <div class="director">
+        <button class="ds-icon-btn" data-openbitfun-variant="primary" data-openbitfun-shape="circle"
+                data-action="toggle-play" id="playBtn"
+                title="播放 / 暂停（空格）" aria-label="播放演示"></button>
+        <button class="ds-icon-btn" data-openbitfun-shape="circle"
+                data-action="replay" title="从头重播" aria-label="重播">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M13 8a5 5 0 1 1-1.6-3.7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M13.4 2.4v3.4h-3.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <span class="stepdots" id="stepDots" aria-hidden="true"></span>
+      </div>
+      <button class="ds-btn" data-action="reset">重置</button>
+    </div>
+  </header>
+
+  <div class="desk__fit" id="fit">
+    <div class="displays">
+      <!-- ========== Display 1 · 主屏 ========== -->
+      <div class="display" data-display="1">
+        <div class="display__label">
+          <b>Display 1</b> · 主屏
+          <button class="display__status" data-action="focus-display" data-display="1"
+                  title="点击聚焦「Display 1」">
+            <span data-role="displaycontent" data-display="1">对话 · 主窗口</span>
+          </button>
+        </div>
+        <div class="screen">
+          <div class="screen__inner" data-display-inner="1">
+            <div class="app">
+              <div class="titlebar">
+                <div class="traffic"><i></i><i></i><i></i></div>
+                <div class="titlebar__tabs"><span class="titlebar__tab is-active">工作台</span></div>
+              </div>
+              <div class="app__body">
+                <nav class="rail">
+                  <span class="ds-icon-btn rail__btn" data-openbitfun-variant="fill" title="会话">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 3.5A1.5 1.5 0 013.5 2h9A1.5 1.5 0 0114 3.5v6A1.5 1.5 0 0112.5 11H6l-3 2.5V11H3.5A1.5 1.5 0 012 9.5v-6z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+                  </span>
+                  <span class="ds-icon-btn rail__btn" title="预览">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 14h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                  </span>
+                  <span class="ds-icon-btn rail__btn" title="组件">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="5" rx="1.2" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="2" width="5" height="5" rx="1.2" stroke="currentColor" stroke-width="1.2"/><rect x="2" y="9" width="5" height="5" rx="1.2" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="5" height="5" rx="1.2" stroke="currentColor" stroke-width="1.2"/></svg>
+                  </span>
+                </nav>
+
+                <section class="chat">
+                  <div class="chat__stream">
+                    <div class="msg msg--user">
+                      <div class="ds-avatar">你</div>
+                      <p class="msg__text">PRD 里写「一块屏一个窗口」，那关掉主屏之后副屏上的窗口怎么办？</p>
+                    </div>
+                    <div class="msg">
+                      <div class="ds-avatar" data-tone="primary">AI</div>
+                      <p class="msg__text">下一个 tab 自动顶上，窗口位置和尺寸都保留。我把这条补进验收表了。</p>
+                    </div>
+                    <div class="msg msg--user">
+                      <div class="ds-avatar">你</div>
+                      <p class="msg__text">好，那手机那块按真实尺寸渲染。</p>
+                    </div>
+                  </div>
+                  <div class="composer">
+                    <div class="composer__field">输入…</div>
+                    <button class="ds-icon-btn" data-openbitfun-variant="primary" data-openbitfun-shape="circle"
+                            type="button" aria-label="发送">
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5L3.5 8M8 3.5L12.5 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                  </div>
+                </section>
+
+                <aside class="panel">
+                  <div class="panel__head">
+                    <span class="panel__title">预览</span>
+                    <span class="panel__count" id="panelCount"></span>
+                    <div class="panel__actions">
+                      <button class="ds-icon-btn" data-size="xs" data-action="open-real" title="把当前 tab 放进真实浏览器窗口（复刻 ?openbitfunWindow 契约）" aria-label="真实窗口打开">
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="9" height="8" rx="1.3" stroke="currentColor" stroke-width="1.2"/><path d="M8 8l5.5-5.5M10 2.5h3.5V6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </button>
+                      <button class="ds-icon-btn" data-size="xs" data-action="recall-all" id="recallAllBtn" title="全部收回">
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M9 3h3.2A1.3 1.3 0 0113.5 4.3v7.9A1.3 1.3 0 0112.2 13.5H9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M6.5 5.5L3 8l3.5 2.5M3.3 8h6.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </button>
+                      <button class="ds-btn" data-size="xs" data-openbitfun-variant="primary" data-action="pop-active" id="popBtn">
+                        <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3H3.8A1.3 1.3 0 002.5 4.3v7.9A1.3 1.3 0 003.8 13.5h7.9A1.3 1.3 0 0013 12.2V10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M8.5 7.5L13.5 2.5M10 2.5h3.5V6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        跳出
+                      </button>
+                    </div>
+                  </div>
+                  <div class="tabbar" id="tabbar" role="tablist"></div>
+                  <div class="panel__body" id="panelBody"></div>
+                  <div class="panel__foot">
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.2" stroke="currentColor" stroke-width="1.2"/><path d="M8 7.4v3.4M8 5.3v.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                    <span id="panelFoot"></span>
+                  </div>
+                </aside>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== Display 2 · 横屏副屏 ========== -->
+      <div class="display" data-display="2">
+        <div class="display__label">
+          <b>Display 2</b> · 横屏副屏
+          <button class="display__status" data-action="focus-display" data-display="2"
+                  title="点击聚焦「Display 2」">
+            <span data-role="displaycontent" data-display="2">空闲</span>
+          </button>
+        </div>
+        <div class="screen"><div class="screen__inner" data-display-inner="2"></div></div>
+      </div>
+
+      <!-- ========== Display 3 · 竖屏副屏 ========== -->
+      <div class="display" data-display="3">
+        <div class="display__label">
+          <b>Display 3</b> · 竖屏副屏
+          <button class="display__status" data-action="focus-display" data-display="3"
+                  title="点击聚焦「Display 3」">
+            <span data-role="displaycontent" data-display="3">空闲</span>
+          </button>
+        </div>
+        <div class="screen"><div class="screen__inner" data-display-inner="3"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 真实弹窗 surface -->
+<div class="surface-root" id="surfaceRoot" data-tab="__surface__">
+  <div class="surface-root__bar">
+    <div class="traffic"><i></i><i></i><i></i></div>
+    <span class="detached__title" id="surfaceTitle">预览</span>
+    <span class="ds-pill">browser-detached</span>
+    <div class="surface-root__actions">
+      <button class="ds-btn" data-size="xs" data-action="close-popup">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M9 3h3.2A1.3 1.3 0 0113.5 4.3v7.9A1.3 1.3 0 0112.2 13.5H9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M6.5 5.5L3 8l3.5 2.5M3.3 8h6.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        收回窗口内
+      </button>
+    </div>
+  </div>
+  <div class="detached__body" id="surfaceBody"></div>
+</div>
+
+<!-- 实时播放层：进度 / 光标 / 字幕 -->
+<div class="progress" id="progress" aria-hidden="true"><i></i></div>
+<div class="vcur" id="vcur" aria-hidden="true">
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <path d="M4.2 2.6 15.3 9.2c.55.32.42 1.15-.19 1.28l-4.4 1.02-1.7 4.3c-.24.6-1.1.55-1.27-.07L4.2 2.6z"
+          fill="#101a27" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>
+  </svg>
+</div>
+<div class="caption" id="caption" role="status" aria-live="polite">
+  <span class="caption__idx" id="captionIdx"></span>
+  <span class="caption__text" id="captionText"></span>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ============================================================
+   数据
+   ============================================================ */
+/* 低保真：机型不带品牌型号，只保留「多端」这件事和真实尺寸 */
+const DEVICES = [
+  { id: 'tablet', name: '平板',    width: 1024, height: 1366 },
+  { id: 'phone',  name: '手机',    width: 393,  height: 852  },
+  { id: 'phone-l', name: '手机·大', width: 430,  height: 932  },
+  { id: 'watch',  name: '手表',    width: 205,  height: 251  },
+];
+const DISPLAY_NAMES = { 1: 'Display 1 · 主屏', 2: 'Display 2 · 横屏副屏', 3: 'Display 3 · 竖屏副屏' };
+
+const TABS_INIT = [
+  { id: 'prd',    title: 'PRD',   kind: 'doc',        device: 'tablet',  zoom: 'fit' },
+  { id: 'page-1', title: '页面 1', kind: 'page',       device: 'phone',   zoom: 'fit', url: 'app.openbitfun.com/orders' },
+  { id: 'page-2', title: '页面 2', kind: 'page',       device: 'phone-l', zoom: 'fit', url: 'app.openbitfun.com/orders/8842' },
+  { id: 'ui-kit', title: '组件',   kind: 'components', device: 'phone',   zoom: 'fit' },
+];
+
+/* ============================================================
+   状态
+   ============================================================ */
+const state = {
+  tabs: TABS_INIT.map((t) => ({ ...t, where: null, win: null })),
+  activeId: 'prd',
+  popups: new Map(),   // tabId -> WindowProxy（真实窗口）
+};
+
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const tabById = (id) => state.tabs.find((t) => t.id === id);
+const isPopped = (t) => t.where !== null;
+const deviceOf = (id) => DEVICES.find((d) => d.id === id) || DEVICES[1];
+const whereLabel = (t) =>
+  t.where === 'window' ? '真实浏览器窗口' : DISPLAY_NAMES[Number(String(t.where).replace('display-', ''))];
+const whereBadge = (t) =>
+  t.where === 'window' ? '窗口' : 'D' + String(t.where).replace('display-', '');
+
+/* ============================================================
+   视口内容
+   ============================================================ */
+/* 视口内容 —— 全部用真毕方组件拼，不再是灰块占位 */
+function docHTML() {
+  return `
+  <article class="doc">
+    <div class="doc__head">
+      <h1 class="doc__title">Agent 多屏拓展 · PRD</h1>
+      <span class="ds-pill" data-tone="warning">评审中</span>
+    </div>
+    <p class="doc__meta">v0.3 · 2026-10-14 · 作者 Cindy · <span class="ds-kbd">⌘K</span></p>
+
+    <h2 class="doc__h2">1. 背景</h2>
+    <p class="doc__p">用户会同时开好几个窗口看 PRD、页面和组件，但 Agent 只看得见主窗口。来回切窗口的成本，比直接问一次还高。</p>
+
+    <h2 class="doc__h2">2. 目标</h2>
+    <ul class="doc__list">
+      <li>Agent 视野覆盖所有已打开的屏，而不只是主窗口</li>
+      <li>一块屏一个窗口；关掉主屏后，副屏要顶上来</li>
+      <li>手机 / 平板 / 手表按真实尺寸渲染，不靠缩放糊弄</li>
+    </ul>
+
+    <h2 class="doc__h2">3. 验收</h2>
+    <div class="doc__table">
+      <div class="doc__tr doc__tr--head"><span>验收项</span><span>状态</span></div>
+      <div class="doc__tr"><span>跳出后「Agent 视野」计数 +1</span><span class="ds-pill" data-tone="success">通过</span></div>
+      <div class="doc__tr"><span>关掉当前屏后，下一个自动顶上来</span><span class="ds-pill">待测</span></div>
+      <div class="doc__tr"><span>跨屏拖动后尺寸与朝向保持不变</span><span class="ds-pill" data-tone="info">进行中</span></div>
+    </div>
+  </article>`;
+}
+
+/* 页面预览：工具条（标题 + 状态 + 分段控件）+ 筛选 chips + 三张卡片 */
+function pageHTML() {
+  const tiles = [
+    ['概览', '打开会话、最近项目与待办', 'success', '已上线'],
+    ['数据看板', '跨屏联调时的实时指标面板', 'info', '开发中'],
+    ['设置', '主题、快捷键与模型偏好', 'warning', '待确认'],
+  ];
+  return `
+  <div class="pageview">
+    <div class="pageview__bar">
+      <span class="pageview__title">页面预览</span>
+      <span class="ds-pill" data-tone="success">已发布</span>
+      <span class="pageview__gap"></span>
+      <span class="ds-seg" role="group" aria-label="视图切换">
+        <button type="button" aria-pressed="true">列表</button>
+        <button type="button" aria-pressed="false">看板</button>
+      </span>
+    </div>
+    <div class="pageview__filters">
+      <span class="ds-pill" data-tone="info">全部 12</span>
+      <span class="ds-pill">设计 4</span>
+      <span class="ds-pill">前端 6</span>
+      <span class="ds-pill">待确认 2</span>
+    </div>
+    <div class="tiles">
+      ${tiles.map(([title, text, tone, label]) => `
+      <div class="tile" data-appearance="raised" data-radius="md" data-padding="sm" data-gap="sm">
+        <div class="tile__header">
+          <div class="tile__header-content">
+            <span class="tile__title">${title}</span>
+            <span class="tile__text">${text}</span>
+          </div>
+        </div>
+        <div class="tile__footer">
+          <span class="ds-pill" data-tone="${tone}">${label}</span>
+        </div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+/* 组件矩阵：每格摆一个真控件的实例，格下标组件名 */
+function matrixHTML() {
+  const cells = [
+    '<button class="ds-btn" data-openbitfun-variant="primary">主操作</button>', 'button/primary',
+    '<button class="ds-btn">次要</button>', 'button/outline',
+    '<button class="ds-btn" data-openbitfun-variant="fill">填充</button>', 'button/fill',
+    '<button class="ds-btn" data-size="xs">小号</button>', 'button/xs',
+    '<span class="ds-pill" data-tone="success"><i class="ds-pill__dot"></i>正常</span>', 'status-pill/success',
+    '<span class="ds-pill" data-tone="warning">待确认</span>', 'status-pill/warning',
+    '<span class="ds-pill" data-tone="danger">失败</span>', 'status-pill/danger',
+    '<span class="ds-pill">中性</span>', 'status-pill/neutral',
+    '<span class="ds-seg"><button type="button" aria-pressed="true">日</button><button type="button" aria-pressed="false">周</button></span>', 'segmented-control',
+    '<span class="ds-kbd">⌘K</span>', 'key-hint',
+    '<span class="ds-avatar">CN</span>', 'avatar/default',
+    '<span class="ds-avatar" data-tone="primary">AI</span>', 'avatar/primary',
+    '<button class="ds-icon-btn" data-openbitfun-shape="circle" aria-label="圆形图标按钮"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.2" stroke="currentColor" stroke-width="1.4"/></svg></button>', 'icon-button/circle',
+    '<button class="ds-icon-btn" aria-label="方形图标按钮"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.4"/></svg></button>', 'icon-button/square',
+    '<span class="ds-switch" role="switch" aria-checked="true" tabindex="0"></span>', 'switch/on',
+    '<span class="ds-switch" role="switch" aria-checked="false" tabindex="0"></span>', 'switch/off',
+  ];
+  return `
+  <div class="matrix">
+    ${Array.from({ length: 8 }, (_, i) => `
+      <span class="matrix__cell">
+        ${cells[i * 2]}
+        <small>${cells[i * 2 + 1]}</small>
+      </span>`).join('')}
+  </div>`;
+}
+
+function viewportBodyHTML(tab) {
+  if (tab.kind === 'doc') return docHTML();
+  if (tab.kind === 'page') return pageHTML();
+  return matrixHTML();
+}
+
+function viewportChromeText(tab, device) {
+  return `${device.name} · ${device.width} × ${device.height}`;
+}
+
+/* ============================================================
+   Hub
+   ============================================================ */
+function hubHTML(tab, mode) {
+  const device = deviceOf(tab.device);
+  const targets = DEVICES.map((d) => `
+    <button class="target"
+            data-selected="${d.id === tab.device}"
+            data-action="pick-device" data-device="${d.id}" data-tab-id="${tab.id}"
+            aria-pressed="${d.id === tab.device}">
+      <span class="target__content">
+        <span class="target__name">${d.name}</span>
+        <span class="target__meta">${d.width} × ${d.height}</span>
+      </span>
+    </button>`).join('');
+
+  const note = { doc: '文档 · 只读', page: '页面', components: '组件' }[tab.kind] || '';
+
+  return `
+  <div class="hub hub--${mode}">
+    <aside class="hub__targets">
+      <div class="hub__group-title">预览目标</div>${targets}
+    </aside>
+    <section class="hub__canvas-wrap">
+      <header class="hub__toolbar">
+        <span class="hub__crumb">${tab.title}</span>
+        <span class="hub__note">${note}</span>
+        <div class="hub__zoom">
+          <span class="hub__scale" data-role="scale">适配 100%</span>
+          <div class="ds-seg" role="group" aria-label="缩放">
+            <button type="button" data-action="zoom" data-zoom="fit" data-tab-id="${tab.id}" aria-pressed="${tab.zoom === 'fit'}">适应</button>
+            <button type="button" data-action="zoom" data-zoom="100" data-tab-id="${tab.id}" aria-pressed="${tab.zoom === '100'}">100%</button>
+          </div>
+        </div>
+      </header>
+      <div class="hub__canvas" data-role="canvas">
+        <div class="viewport-sizer">
+          <div class="viewport" style="width:${device.width}px">
+            <div class="viewport__chrome">
+              <span class="vp-dots"><i></i><i></i><i></i></span>${viewportChromeText(tab, device)}
+            </div>
+            ${viewportBodyHTML(tab)}
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>`;
+}
+
+/* ============================================================
+   渲染：tab 条
+   ============================================================ */
+function renderTabbar() {
+  $('#tabbar').innerHTML = state.tabs.map((t) => `
+    <div class="tab${t.id === state.activeId ? ' is-active' : ''}${isPopped(t) ? ' is-popped' : ''}"
+         role="tab" tabindex="0" aria-selected="${t.id === state.activeId}"
+         data-action="activate-tab" data-tab-id="${t.id}">
+      <span class="tab__label">${t.title}</span>
+      ${isPopped(t)
+        ? `<span class="tab__where">${whereBadge(t)}</span>`
+        : `<span class="tab__pop" role="button" tabindex="0" title="只跳出「${t.title}」"
+             data-action="pop-tab" data-tab-id="${t.id}" aria-label="跳出 ${t.title}">
+             <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M6 3H3.8A1.3 1.3 0 002.5 4.3v7.9A1.3 1.3 0 003.8 13.5h7.9A1.3 1.3 0 0013 12.2V10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M8.5 7.5L13.5 2.5M10 2.5h3.5V6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+           </span>`}
+    </div>`).join('');
+}
+
+/* ============================================================
+   渲染：面板主体
+   ============================================================ */
+function renderPanel() {
+  const body = $('#panelBody');
+  const active = tabById(state.activeId);
+  const poppedCount = state.tabs.filter(isPopped).length;
+  const allPopped = poppedCount === state.tabs.length;
+
+  $('#panelCount').textContent = poppedCount ? `${poppedCount}/${state.tabs.length} 已跳出` : `${state.tabs.length} 个预览`;
+  $('#recallAllBtn').style.display = poppedCount ? '' : 'none';
+  $('#recallAllBtn').disabled = !poppedCount;
+  $('#popBtn').disabled = !active || isPopped(active);
+  $('#panelBody').dataset.tab = active ? active.id : '__none__';
+
+  if (active && !isPopped(active)) {
+    body.innerHTML = hubHTML(active, 'compact');
+    $('#panelFoot').textContent = '跳出是「按 tab」的：跳走后下一个 tab 会自动顶上';
+    applyZoom();
+    return;
+  }
+
+  /* 当前 tab 已跳出（或全部跳出）→ 占位符 */
+  if (!active) { body.innerHTML = ''; return; }
+
+  const list = allPopped ? `
+    <div class="placeholder__list">
+      ${state.tabs.map((t) => `
+        <div class="placeholder__item">
+          <span>${t.title}</span>
+          <span class="tab__where">${whereBadge(t)}</span>
+          <button class="ds-btn" data-size="xs" data-openbitfun-variant="fill" data-action="recall-tab" data-tab-id="${t.id}">收回</button>
+        </div>`).join('')}
+    </div>` : '';
+
+  body.innerHTML = `
+    <div class="placeholder">
+      <div class="placeholder__icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 6V3.8A1.3 1.3 0 013.8 2.5H6M10 2.5h2.2A1.3 1.3 0 0113.5 3.8V6M13.5 10v2.2a1.3 1.3 0 01-1.3 1.3H10M6 13.5H3.8a1.3 1.3 0 01-1.3-1.3V10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      </div>
+      <div class="placeholder__title">${active.title} 已跳出</div>
+      <div class="placeholder__desc">${allPopped ? '所有预览都在独立窗口里，面板已空。' : '内容整体迁移到独立窗口，这里保留可恢复的占位。'}</div>
+      <span class="ds-pill placeholder__where" data-tone="success"><span class="ds-pill__dot"></span>正在 <b>${whereLabel(active)}</b> 显示</span>
+      <div class="placeholder__row">
+        <button class="ds-btn" data-size="xs" data-action="focus-tab" data-tab-id="${active.id}">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.6" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/></svg>
+          定位窗口
+        </button>
+        <button class="ds-btn" data-size="xs" data-action="recall-tab" data-tab-id="${active.id}">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M9 3h3.2A1.3 1.3 0 0113.5 4.3v7.9A1.3 1.3 0 0112.2 13.5H9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M6.5 5.5L3 8l3.5 2.5M3.3 8h6.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          收回这个
+        </button>
+      </div>
+      ${list}
+    </div>`;
+  $('#panelFoot').textContent = allPopped
+    ? '点任意 tab 可查看它的落点，或全部收回'
+    : '其余 tab 仍在面板里，切过去就能继续预览';
+}
+
+/* ============================================================
+   渲染：三块屏
+   ============================================================ */
+const mountedTabs = new Set();
+
+function geometryFor(display, indexOnDisplay) {
+  const inner = $(`[data-display-inner="${display}"]`);
+  const w = inner.clientWidth, h = inner.clientHeight;
+  const k = indexOnDisplay;
+  return {
+    x: 12 + k * 16,
+    y: 11 + k * 13,
+    w: Math.max(190, w - 24 - k * 16),
+    h: Math.max(140, h - 22 - k * 13),
+  };
+}
+
+function renderDisplays() {
+  const alive = new Set();
+
+  [2, 3].forEach((display) => {
+    const host = $(`[data-display-inner="${display}"]`);
+    const tabs = state.tabs.filter((t) => t.where === 'display-' + display);
+    host.innerHTML = '';
+
+    if (!tabs.length) {
+      host.innerHTML = `
+        <div class="empty-hint">
+          <div class="empty-hint__box">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.1"/><path d="M5.5 14h5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+            <span class="empty-hint__title">空闲</span>
+            <span>在面板里点 tab 上的跳出图标</span>
+          </div>
+        </div>`;
+      return;
+    }
+
+    tabs.forEach((tab, i) => {
+      if (!tab.win) tab.win = geometryFor(display, i);
+      alive.add(tab.id);
+      const fresh = !mountedTabs.has(tab.id);
+      mountedTabs.add(tab.id);
+      const { x, y, w, h } = tab.win;
+      host.insertAdjacentHTML('beforeend', `
+        <div class="detached${fresh ? '' : ' is-in'}" data-tab="${tab.id}" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px">
+          <div class="detached__titlebar" data-role="dragbar" title="拖动可换屏">
+            <div class="traffic"><i></i><i></i><i></i></div>
+            <span class="detached__title">${tab.title}</span>
+            <span class="detached__sub" data-role="winwhere">${DISPLAY_NAMES[display]}</span>
+            <div class="detached__actions">
+              <button class="ds-icon-btn" data-size="xs" data-action="open-real" data-tab-id="${tab.id}" title="换成真实浏览器窗口">
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="9" height="8" rx="1.3" stroke="currentColor" stroke-width="1.2"/><path d="M8 8l5.5-5.5M10 2.5h3.5V6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button class="ds-btn" data-size="xs" data-action="recall-tab" data-tab-id="${tab.id}">
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M9 3h3.2A1.3 1.3 0 0113.5 4.3v7.9A1.3 1.3 0 0112.2 13.5H9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M6.5 5.5L3 8l3.5 2.5M3.3 8h6.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                收回
+              </button>
+            </div>
+          </div>
+          <div class="detached__body">${hubHTML(tab, 'full')}</div>
+          <div class="detached__resize" data-role="resize"></div>
+        </div>`);
+    });
+
+    requestAnimationFrame(() => {
+      $$('.detached:not(.is-in)', host).forEach((el) => el.classList.add('is-in'));
+      applyZoom();
+    });
+  });
+
+  /* 清理已收回 tab 的挂载标记 */
+  Array.from(mountedTabs).forEach((id) => { if (!alive.has(id)) mountedTabs.delete(id); });
+}
+
+/* ============================================================
+   每块屏的状态：装了什么就标在那块屏的标签上，跨屏数收进页头
+   ============================================================ */
+function renderDisplayStatus() {
+  const on = {};   /* display → 该屏上的 tab 名 */
+  [2, 3].forEach((d) => {
+    on[d] = state.tabs.filter((t) => t.where === 'display-' + d).map((t) => t.title);
+  });
+
+  [2, 3].forEach((d) => {
+    const host = $(`[data-role="displaycontent"][data-display="${d}"]`);
+    if (!host) return;
+    const busy = on[d].length > 0;
+    host.textContent = busy ? on[d].join('、') : '空闲';
+    host.parentElement.classList.toggle('is-busy', busy);
+    host.parentElement.classList.toggle('is-idle', !busy);
+    /* 整块屏的忙碌态也在这里统一维护，避免散落在拖动 / 渲染各处 */
+    $(`.display[data-display="${d}"]`)?.classList.toggle('is-busy', busy);
+  });
+
+  /* 用到几块屏 = 主屏 + 真正放了东西的副屏（不是"只要有跳出就一律算 3 屏"） */
+  const count = 1 + [2, 3].filter((d) => on[d].length).length;
+  const countEl = $('#visionCount');
+  if (countEl) countEl.textContent = String(count);
+}
+
+/* ============================================================
+   渲染：总入口
+   ============================================================ */
+function renderAll() {
+  renderTabbar();
+  renderPanel();
+  renderDisplays();
+  renderDisplayStatus();
+  fitDesk();      /* 屏标签里的状态文案会换行，缩放要跟着重算 */
+  bindAll();
+  broadcast();
+}
+
+/* ============================================================
+   缩放
+   ============================================================ */
+function applyZoom() {
+  $$('[data-role="canvas"]').forEach((canvas) => {
+    const owner = canvas.closest('[data-tab]');
+    const tab = owner ? tabById(owner.dataset.tab) : null;
+    if (!tab) return;
+    const device = deviceOf(tab.device);
+    const vp = $('.viewport', canvas);
+    const sizer = $('.viewport-sizer', canvas);
+    if (!vp || !sizer) return;
+    const avail = Math.max(40, canvas.clientWidth - 26);
+    const k = tab.zoom === '100' ? 1 : Math.min(1, avail / device.width);
+    vp.style.transform = `scale(${k})`;
+    vp.style.width = device.width + 'px';
+    sizer.style.width = device.width * k + 'px';
+    sizer.style.height = vp.offsetHeight * k + 'px';
+    const label = $('[data-role="scale"]', canvas.closest('.hub__canvas-wrap') || document);
+    if (label) label.textContent = `适配 ${Math.round(k * 100)}%`;
+  });
+}
+
+/* ============================================================
+   跳出 / 收回
+   ============================================================ */
+function nextDisplay() {
+  const poppedOn2 = state.tabs.filter((t) => t.where === 'display-2').length;
+  const poppedOn3 = state.tabs.filter((t) => t.where === 'display-3').length;
+  return poppedOn2 <= poppedOn3 ? 2 : 3;
+}
+
+function nextAvailableTab(afterId) {
+  const order = state.tabs;
+  const start = order.findIndex((t) => t.id === afterId);
+  for (let i = 1; i <= order.length; i++) {
+    const t = order[(start + i) % order.length];
+    if (!isPopped(t)) return t.id;
+  }
+  return afterId;   // 全部已跳出
+}
+
+function popTab(tabId, silent) {
+  const tab = tabById(tabId);
+  if (!tab || isPopped(tab)) { if (tab) flashTab(tabId); return; }
+
+  const from = $('#panelBody .hub')?.getBoundingClientRect() || $('#panelBody').getBoundingClientRect();
+  const display = nextDisplay();
+  const indexOnDisplay = state.tabs.filter((t) => t.where === 'display-' + display).length;
+  tab.where = 'display-' + display;
+  tab.win = geometryFor(display, indexOnDisplay);
+
+  if (state.activeId === tabId) state.activeId = nextAvailableTab(tabId);
+
+  renderAll();
+
+  const target = $(`.detached[data-tab="${tabId}"]`);
+  if (target) flyGhost(from, target.getBoundingClientRect());
+  if (!silent) toast(`「${tab.title}」已跳到 ${DISPLAY_NAMES[display]}${state.activeId !== tabId ? `，下一个 tab 已顶上` : ''}`);
+}
+
+function recallTab(tabId, silent) {
+  const tab = tabById(tabId);
+  if (!tab || !isPopped(tab)) return;
+  const el = $(`.detached[data-tab="${tabId}"]`);
+  const from = el ? el.getBoundingClientRect() : null;
+
+  if (tab.where === 'window') {
+    const w = state.popups.get(tabId);
+    if (w) { try { w.close(); } catch (_) {} state.popups.delete(tabId); }
+  }
+  tab.where = null;
+  tab.win = null;
+  mountedTabs.delete(tabId);
+  if (!tabById(state.activeId) || isPopped(tabById(state.activeId))) state.activeId = tabId;
+
+  renderAll();
+  const to = $('#panelBody').getBoundingClientRect();
+  if (from) flyGhost(from, to);
+  if (!silent) toast(`「${tab.title}」已收回面板`);
+}
+
+function recallAll() {
+  const ids = state.tabs.filter(isPopped).map((t) => t.id);
+  if (!ids.length) return;
+  ids.forEach((id) => {
+    const t = tabById(id);
+    if (t.where === 'window') {
+      const w = state.popups.get(id);
+      if (w) { try { w.close(); } catch (_) {} state.popups.delete(id); }
+    }
+    t.where = null; t.win = null; mountedTabs.delete(id);
+  });
+  /* 收回后所有 tab 都回到了面板，当前激活项必然有效，无需再校正 */
+  renderAll();
+  toast('全部收回面板');
+}
+
+function flashTab(tabId) {
+  const el = $(`.detached[data-tab="${tabId}"]`);
+  const display = tabById(tabId)?.where;
+  const dEl = display && display.startsWith('display-') ? $(`.display[data-display="${display.replace('display-', '')}"]`) : null;
+  [el, dEl].forEach((n) => {
+    if (!n) return;
+    n.classList.add('is-flash');
+    setTimeout(() => n.classList.remove('is-flash'), 950);
+  });
+  if (!el) toast('它在真实浏览器窗口中，切过去看看');
+}
+
+/* ============================================================
+   真实窗口
+   ============================================================ */
+function surfaceURL(tab) {
+  const p = new URLSearchParams({
+    openbitfunWindow: 'browser-detached',
+    browserUrl: tab.url || `openbitfun://design-lab/${tab.kind}/${tab.id}`,
+    browserTitle: `${tab.title} — OpenBitFun`,
+    demoTab: tab.id,
+  });
+  return `${location.pathname}?${p.toString()}`;
+}
+
+function openRealWindow(tabId) {
+  const tab = tabById(tabId);
+  if (!tab) return;
+  const w = window.open(surfaceURL(tab), `openbitfun-detached-${tab.id}`, 'width=1080,height=740,menubar=no,toolbar=no,location=no,status=no');
+  if (!w) { toast('浏览器拦截了弹窗：请允许本站弹出窗口后重试'); return; }
+
+  const wasPopped = isPopped(tab);
+  const display = wasPopped && tab.where.startsWith('display-') ? tab.where : null;
+  const indexOnDisplay = display ? state.tabs.filter((t) => t.where === display).length : 0;
+
+  state.popups.set(tab.id, w);
+  tab.where = 'window';
+  tab.win = null;
+  mountedTabs.delete(tab.id);
+  if (state.activeId === tab.id) state.activeId = nextAvailableTab(tab.id);
+
+  renderAll();
+  toast(`「${tab.title}」已在真实浏览器窗口中打开`);
+
+  const timer = setInterval(() => {
+    if (!state.popups.has(tab.id) || state.popups.get(tab.id).closed) {
+      clearInterval(timer);
+      if (state.popups.get(tab.id) === w) {
+        state.popups.delete(tab.id);
+        if (tab.where === 'window') {
+          tab.where = null; tab.win = null;
+          if (!tabById(state.activeId) || isPopped(tabById(state.activeId))) state.activeId = tab.id;
+          renderAll();
+          toast(`真实窗口已关闭，「${tab.title}」回到面板`);
+        }
+      }
+    }
+  }, 500);
+}
+
+function broadcast() {
+  state.popups.forEach((w, tabId) => {
+    if (!w || w.closed) return;
+    const tab = tabById(tabId);
+    try { w.postMessage({ type: 'obf:state', state: { device: tab.device, zoom: tab.zoom, title: tab.title } }, '*'); } catch (_) {}
+  });
+}
+
+/* ============================================================
+   飞行动画
+   ============================================================ */
+function flyGhost(from, to) {
+  if (!from || !to || from.width < 4 || to.width < 4) return;
+  const ghost = document.createElement('div');
+  ghost.className = 'drag-ghost';
+  Object.assign(ghost.style, {
+    left: from.left + 'px', top: from.top + 'px',
+    width: from.width + 'px', height: from.height + 'px',
+  });
+  document.body.appendChild(ghost);
+  const dx = to.left - from.left, dy = to.top - from.top;
+  const sx = to.width / from.width, sy = to.height / from.height;
+  ghost.animate(
+    [{ transform: 'none', opacity: 0.95 }, { transform: `translate(${dx}px,${dy}px) scale(${sx},${sy})`, opacity: 0.4 }],
+    { duration: 430, easing: 'cubic-bezier(.22,1,.36,1)' }
+  ).onfinish = () => ghost.remove();
+}
+
+/* ============================================================
+   拖动 / 缩放 / 跨屏
+   ============================================================ */
+let drag = null;
+const fitScale = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--fit')) || 1;
+
+function screenAt(clientX, clientY) {
+  return $$('[data-display-inner]').find((el) => {
+    const r = el.getBoundingClientRect();
+    return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+  }) || null;
+}
+
+function bindAll() {
+  $$('.detached').forEach((win) => {
+    const bar = $('[data-role="dragbar"]', win);
+    const grip = $('[data-role="resize"]', win);
+    if (bar) bar.addEventListener('pointerdown', (ev) => startDrag(ev, win, 'move'));
+    if (grip) grip.addEventListener('pointerdown', (ev) => startDrag(ev, win, 'resize'));
+  });
+}
+
+function startDrag(ev, win, mode) {
+  if (ev.target.closest('[data-action]')) return;   // 标题栏上的按钮不触发拖动
+  ev.preventDefault();
+  const rect = win.getBoundingClientRect();
+  drag = {
+    mode, win,
+    tabId: win.dataset.tab,
+    startX: ev.clientX, startY: ev.clientY,
+    grabDX: ev.clientX - rect.left, grabDY: ev.clientY - rect.top,
+    startW: rect.width, startH: rect.height,
+    scale: fitScale(),
+  };
+  win.style.cursor = mode === 'move' ? 'grabbing' : 'nwse-resize';
+  window.addEventListener('pointermove', onDragMove);
+  window.addEventListener('pointerup', endDrag, { once: true });
+}
+
+function onDragMove(ev) {
+  if (!drag) return;
+  const { mode, win, tabId, scale, startX, startY, grabDX, grabDY, startW, startH } = drag;
+  const tab = tabById(tabId);
+  if (!tab) return;
+
+  if (mode === 'move') {
+    /* 期望位置（视口坐标） */
+    const wantLeft = ev.clientX - grabDX;
+    const wantTop = ev.clientY - grabDY;
+    const cx = wantLeft + win.offsetWidth * scale / 2;
+    const cy = wantTop + win.offsetHeight * scale / 2;
+
+    const target = screenAt(cx, cy) || screenAt(ev.clientX, ev.clientY);
+    /* Display 1 承载的是主窗口本身，浮窗不能塞进去 */
+    if (target && target !== win.parentElement && target.dataset.displayInner !== '1') {
+      target.appendChild(win);
+      tab.where = 'display-' + target.dataset.displayInner;
+      /* 换到更小的屏时收敛尺寸，否则窗口会溢出被裁掉 */
+      const box = target.getBoundingClientRect();
+      let w = win.offsetWidth, h = win.offsetHeight;
+      const maxW = box.width / scale - 8, maxH = box.height / scale - 8;
+      if (w > maxW) { w = Math.max(150, maxW); win.style.width = w + 'px'; }
+      if (h > maxH) { h = Math.max(140, maxH); win.style.height = h + 'px'; }
+      if (tab.win) { tab.win.w = w; tab.win.h = h; }
+      renderDisplayStatus();
+    }
+
+    const inner = win.parentElement.getBoundingClientRect();
+    const wCss = win.offsetWidth, hCss = win.offsetHeight;
+    let left = (wantLeft - inner.left) / scale;
+    let top = (wantTop - inner.top) / scale;
+    left = Math.max(4, Math.min(inner.width / scale - wCss - 4, left));
+    top = Math.max(4, Math.min(inner.height / scale - hCss - 4, top));
+    win.style.left = left + 'px';
+    win.style.top = top + 'px';
+    if (tab.win) { tab.win.x = left; tab.win.y = top; }
+    const sub = $('[data-role="winwhere"]', win);
+    if (sub && tab.where && tab.where.startsWith('display-')) sub.textContent = DISPLAY_NAMES[Number(tab.where.replace('display-', ''))];
+  } else {
+    const inner = win.parentElement.getBoundingClientRect();
+    const wCss = win.offsetWidth, hCss = win.offsetHeight;
+    const x = parseFloat(win.style.left) || 0;
+    const y = parseFloat(win.style.top) || 0;
+    const wantW = startW / scale + (ev.clientX - startX) / scale;
+    const wantH = startH / scale + (ev.clientY - startY) / scale;
+    const w = Math.max(190, Math.min(inner.width / scale - x - 4, wantW));
+    const h = Math.max(140, Math.min(inner.height / scale - y - 4, wantH));
+    win.style.width = w + 'px';
+    win.style.height = h + 'px';
+    if (tab.win) { tab.win.w = w; tab.win.h = h; }
+  }
+  applyZoom();
+}
+
+function endDrag() {
+  if (!drag) return;
+  if (drag.win) drag.win.style.cursor = '';
+  drag = null;
+  window.removeEventListener('pointermove', onDragMove);
+  /* 落定后整树重渲染：tab 角标、面板占位符、屏上标签都跟着新落点走 */
+  renderAll();
+}
+
+/* ============================================================
+   事件
+   ============================================================ */
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const a = el.dataset.action;
+  const tabId = el.dataset.tabId;
+
+  if (a === 'activate-tab') {
+    state.activeId = tabId;
+    renderTabbar(); renderPanel(); bindAll();
+  } else if (a === 'pop-tab') { popTab(tabId); }
+  else if (a === 'pop-active') { if (state.activeId) popTab(state.activeId); }
+  else if (a === 'recall-tab') { recallTab(tabId); }
+  else if (a === 'recall-all') { recallAll(); }
+  else if (a === 'focus-tab') { flashTab(tabId); if (tabId !== state.activeId) { state.activeId = tabId; renderTabbar(); renderPanel(); bindAll(); } }
+  else if (a === 'focus-display') {
+    const d = el.dataset.display;
+    const dEl = $(`.display[data-display="${d}"]`);
+    const own = state.tabs.filter((t) => t.where === 'display-' + d);
+    if (own.length) { own.forEach((t, i) => setTimeout(() => flashTab(t.id), i * 160)); }
+    else if (dEl) { dEl.classList.add('is-flash'); setTimeout(() => dEl.classList.remove('is-flash'), 950); }
+  }
+  else if (a === 'open-real') { openRealWindow(tabId || state.activeId); }
+  else if (a === 'pick-device') {
+    const t = tabById(tabId); if (!t) return;
+    t.device = el.dataset.device;
+    renderPanel(); renderDisplays(); bindAll(); broadcast();
+  }
+  else if (a === 'zoom') {
+    const t = tabById(tabId); if (!t) return;
+    t.zoom = el.dataset.zoom;
+    renderPanel(); renderDisplays(); bindAll(); broadcast();
+  }
+  else if (a === 'close-popup') {
+    try { window.opener?.postMessage({ type: 'obf:recall' }, '*'); } catch (_) {}
+    window.close();
+  }
+  else if (a === 'reset') { resetAll(); }
+  else if (a === 'toggle-play') { togglePlay(); }
+  else if (a === 'replay') { play(0); }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { recallAll(); return; }
+  if (e.key === 'Enter' || e.key === ' ') {
+    const el = e.target.closest?.('[data-action][role="tab"], [data-action][role="button"]');
+    if (el) { e.preventDefault(); el.click(); return; }
+    if (e.key === ' ') { e.preventDefault(); togglePlay(); }   /* 空格播放 / 暂停 */
+  }
+});
+
+/* 用户一动手就交出控制权 —— 合成事件（演示自己派发的）不算接管 */
+document.addEventListener('pointerdown', (e) => {
+  if (!e.isTrusted || !director.playing) return;
+  if (e.target.closest?.('.director')) return;
+  pauseDirector();
+  toast('已接管，自动演示暂停');
+}, true);
+
+window.addEventListener('message', (e) => {
+  if ((e.data || {}).type === 'obf:recall') {
+    state.popups.forEach((w, id) => {
+      if (w.closed) return;
+      const t = tabById(id);
+      if (t?.where === 'window') { t.where = null; t.win = null; }
+      state.popups.delete(id);
+    });
+    renderAll();
+  }
+});
+
+/* ============================================================
+   自适应
+   ============================================================ */
+function fitDesk() {
+  const displays = $('.displays');
+  const fit = $('#fit');
+  const desk = $('.desk');
+  if (!displays || !fit || !desk) return;
+  /* 页头不参与缩放，但会占掉可视高度。除了子元素高度和 gap，
+     还要算上 .desk 自己的上下内边距 —— 原来只硬编码了下边距 20，
+     后来 .desk 加上 16px 上内边距就漏算了，页面会多溢出 8px。
+     改成从 computed style 读，以后再调内边距不用回来动这里。 */
+  const kids = $$('.desk > *');
+  const dcs = getComputedStyle(desk);
+  const padY = parseFloat(dcs.paddingTop) + parseFloat(dcs.paddingBottom);
+  const rowGap = parseFloat(dcs.rowGap) || 0;
+  const chrome = $$('.desk > *:not(#fit)').reduce((n, el) => n + el.offsetHeight, 0)
+    + rowGap * Math.max(0, kids.length - 1)  /* .desk 的 gap 总数 */
+    + padY                                   /* .desk 的上下内边距 */
+    + 8;                                     /* 留白 */
+  /* 宽度取 .desk 的真实可用宽度，而不是 window.innerWidth ——
+     .desk 自带 min(1120px, 100% - 32px) 上限，用窗口宽度会高估。 */
+  const availW = desk.clientWidth;
+  const availH = window.innerHeight - chrome;
+  const k = Math.min(1, availW / displays.offsetWidth, availH / displays.offsetHeight);
+  document.documentElement.style.setProperty('--fit', String(k));
+
+  /* scale() 不改变布局盒尺寸：不校正的话缩放区仍按原始高度占位，
+     下方会留出一大片空白。把包装盒压到缩放后的真实高度。 */
+  fit.style.height = Math.round(displays.offsetHeight * k) + 'px';
+}
+window.addEventListener('resize', () => { fitDesk(); applyZoom(); });
+/* 预览面板被拖拽缩放时不一定触发 window resize，--fit 就会停在旧值。
+   只盯宽度：fitDesk() 会改 #fit 的高度，跟着盯高度会自己触发自己。 */
+if (typeof ResizeObserver === 'function') {
+  let lastW = 0;
+  new ResizeObserver((entries) => {
+    const w = entries[0].contentRect.width;
+    if (Math.abs(w - lastW) < 1) return;
+    lastW = w;
+    fitDesk();
+    applyZoom();
+  }).observe(document.querySelector('.desk'));
+}
+
+let toastTimer = null;
+function toast(text) {
+  const el = $('#toast');
+  el.textContent = text;
+  el.classList.add('is-in');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('is-in'), 2800);
+}
+
+/* ============================================================
+   重置
+   ============================================================ */
+function resetAll() {
+  state.popups.forEach((w) => { try { w.close(); } catch (_) {} });
+  state.popups.clear();
+  mountedTabs.clear();
+  state.tabs = TABS_INIT.map((t) => ({ ...t, where: null, win: null }));
+  state.activeId = 'prd';
+  renderAll();
+}
+
+/* ============================================================
+   实时播放（自动演示）
+   ------------------------------------------------------------
+   光标是虚拟的，但操作是真的：每一步调的都是手动点击时那套函数，
+   拖动那一步甚至派发真实 PointerEvent，走的是和手动拖动同一条代码路径。
+   ============================================================ */
+const PLAY_SVG = '<svg width="13" height="13" viewBox="0 0 12 12"><path d="M3.4 2.3 9.3 6 3.4 9.7z" fill="currentColor"/></svg>';
+const PAUSE_SVG = '<svg width="13" height="13" viewBox="0 0 12 12"><rect x="3.1" y="2.3" width="2.1" height="7.4" rx=".9" fill="currentColor"/><rect x="6.8" y="2.3" width="2.1" height="7.4" rx=".9" fill="currentColor"/></svg>';
+
+const STEPS = [
+  {
+    say: '三块屏：主屏在改需求，副屏留给 Agent 把要看的东西铺开。',
+    hold: 2600,
+  },
+  {
+    say: 'PRD 先跳到 Display 2 —— 长文档需要横向空间。',
+    focus: 2, target: '#popBtn',
+    action: () => popTab('prd', true), hold: 2400,
+  },
+  {
+    say: '跳走的 tab 从面板让位，页面 1 自动顶上。',
+    target: () => $('.tab.is-active'), hold: 2600,
+  },
+  {
+    say: '页面 1 再跳到 Display 3 —— 一边看 PRD，一边看页面。',
+    focus: 3, target: '#popBtn',
+    action: () => popTab('page-1', true), hold: 2600,
+  },
+  {
+    say: '每块屏装了什么，就标在那块屏上方 —— Agent 读得到，你也一眼看得见。',
+    target: () => $('.display[data-display="3"] .display__status'), hold: 3000,
+  },
+  {
+    say: '页面 2 也铺开 —— 级联错位，不互相遮挡。',
+    focus: 2, target: '#popBtn',
+    action: () => popTab('page-2', true), hold: 2600,
+  },
+  {
+    say: '落点不合适？直接把窗口拖到另一块屏。',
+    focus: 3, drag: { tabId: 'prd', toDisplay: 3 }, hold: 2600,
+  },
+  {
+    say: '要专注的时候一键收回：屏幕跟着任务走，而不是任务挤在一块屏里。',
+    target: () => $('#recallAllBtn'),
+    action: () => recallAll(), hold: 3200,
+  },
+];
+
+const director = { playing: false, i: 0, token: 0 };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const stale = (t) => t !== director.token;
+
+function directorUI() {
+  const btn = $('#playBtn');
+  if (btn) btn.innerHTML = director.playing ? PAUSE_SVG : PLAY_SVG;
+  document.body.classList.toggle('is-playing', director.playing);
+  const dots = $('#stepDots');
+  if (dots) {
+    dots.innerHTML = STEPS.map((_, k) =>
+      `<i class="${k === director.i && director.playing ? 'is-now' : k < director.i ? 'is-done' : ''}"></i>`).join('');
+  }
+  const bar = $('#progress i');
+  if (bar) bar.style.transform = `scaleX(${(director.i + (director.playing ? 1 : 0)) / STEPS.length})`;
+}
+
+function setCaption(text, i) {
+  const box = $('#caption');
+  if (!box) return;
+  if (text === null) { box.classList.remove('is-in'); return; }
+  $('#captionIdx').textContent = `${i + 1} / ${STEPS.length}`;
+  $('#captionText').textContent = text;
+  box.classList.add('is-in');
+}
+
+function spotlight(display) {
+  $$('.display').forEach((d) => d.classList.toggle('is-dim', !!display && d.dataset.display !== String(display)));
+}
+
+function cursorToPoint(x, y, dur) {
+  const el = $('#vcur');
+  if (!el) return;
+  el.style.transitionDuration = (dur ?? 620) + 'ms';
+  el.style.transform = `translate3d(${Math.round(x) - 3}px, ${Math.round(y) - 2}px, 0)`;
+}
+
+async function cursorToEl(el, dur) {
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  cursorToPoint(r.left + r.width / 2, r.top + Math.min(r.height / 2, 18), dur);
+  await sleep((dur ?? 620) + 60);
+}
+
+const pressCursor = (on) => $('#vcur')?.classList.toggle('is-down', !!on);
+
+function pressTarget(el) {
+  if (!el) return;
+  el.classList.add('is-pressed');
+  setTimeout(() => el.classList.remove('is-pressed'), 240);
+}
+
+function rippleAt(x, y) {
+  const el = document.createElement('div');
+  el.className = 'ripple';
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  document.body.appendChild(el);
+  el.animate(
+    [{ transform: 'scale(.35)', opacity: 0.85 }, { transform: 'scale(2.8)', opacity: 0 }],
+    { duration: 480, easing: 'cubic-bezier(.22,1,.36,1)' }
+  ).onfinish = () => el.remove();
+}
+
+/* 拖动：派发真实指针事件，链路和手动拖动完全一致 */
+async function animateDrag(tabId, toDisplay, token) {
+  const win = $(`.detached[data-tab="${tabId}"]`);
+  const target = $(`[data-display-inner="${toDisplay}"]`);
+  if (!win || !target) return;
+
+  const r = win.getBoundingClientRect();
+  const startX = r.left + 80, startY = r.top + 15;
+  await cursorToPoint(startX, startY, 560);
+  if (stale(token)) return;
+
+  const cur = $('#vcur');
+  if (cur) cur.style.transitionDuration = '60ms';   /* 拖动时跟手，不用长缓动 */
+  pressCursor(true);
+  $('[data-role="dragbar"]', win).dispatchEvent(
+    new PointerEvent('pointerdown', { clientX: startX, clientY: startY, bubbles: true, pointerId: 1 }));
+
+  const t = target.getBoundingClientRect();
+  const endX = t.left + t.width / 2, endY = t.top + t.height * 0.42;
+  const N = 26;
+  for (let k = 1; k <= N; k++) {
+    if (stale(token)) {
+      window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1 }));
+      pressCursor(false);
+      if (cur) cur.style.transitionDuration = '620ms';
+      return;
+    }
+    const cx = startX + (endX - startX) * k / N;
+    const cy = startY + (endY - startY) * k / N;
+    cursorToPoint(cx, cy, 60);
+    window.dispatchEvent(new PointerEvent('pointermove', { clientX: cx, clientY: cy, pointerId: 1 }));
+    await sleep(18);
+  }
+  window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1 }));
+  pressCursor(false);
+  if (cur) cur.style.transitionDuration = '620ms';   /* 恢复常态缓动 */
+}
+
+async function play(from = 0) {
+  const token = ++director.token;
+  director.playing = true;
+  director.i = from;
+  directorUI();
+
+  if (from === 0) {
+    resetAll();
+    await sleep(520);
+    if (stale(token)) return;
+  }
+
+  for (let i = from; i < STEPS.length; i++) {
+    if (stale(token)) return;
+    director.i = i;
+    directorUI();
+    const s = STEPS[i];
+    spotlight(s.focus);
+    setCaption(s.say, i);
+
+    if (s.drag) {
+      await animateDrag(s.drag.tabId, s.drag.toDisplay, token);
+    } else {
+      const el = typeof s.target === 'function' ? s.target() : (s.target ? $(s.target) : null);
+      if (el) {
+        await cursorToEl(el, 620);
+        if (stale(token)) return;
+        const r = el.getBoundingClientRect();
+        rippleAt(r.left + r.width / 2, r.top + Math.min(r.height / 2, 18));
+        pressCursor(true);
+        pressTarget(el);
+        await sleep(150);
+        pressCursor(false);
+        if (stale(token)) return;
+      }
+      if (s.action) s.action();
+    }
+    await sleep(s.hold ?? 2000);
+  }
+
+  if (stale(token)) return;
+  await sleep(1000);
+  if (stale(token)) return;
+  play(0);   /* 循环 */
+}
+
+function pauseDirector() {
+  if (!director.playing) return;
+  director.token++;
+  director.playing = false;
+  pressCursor(false);
+  directorUI();
+  setCaption(null);
+  spotlight(null);
+}
+
+function togglePlay() {
+  if (director.playing) pauseDirector();
+  else play(director.i);
+}
+
+/* ============================================================
+   启动
+   ============================================================ */
+const params = new URLSearchParams(location.search);
+
+if (params.get('openbitfunWindow') === 'browser-detached') {
+  document.body.classList.add('mode-surface');
+  const demoTabId = params.get('demoTab');
+  const def = TABS_INIT.find((t) => t.id === demoTabId) || TABS_INIT[0];
+  const tab = { ...def, where: null, win: null };
+  state.tabs = [{ ...tab, id: '__surface__' }];
+  state.activeId = '__surface__';
+
+  const title = params.get('browserTitle');
+  if (title) document.title = title;
+  $('#surfaceTitle').textContent = title || tab.title;
+
+  const paint = () => { $('#surfaceBody').innerHTML = hubHTML(tab, 'full'); applyZoom(); };
+  window.addEventListener('message', (e) => {
+    const d = e.data || {};
+    if (d.type === 'obf:state' && d.state) {
+      if (d.state.device) tab.device = d.state.device;
+      if (d.state.zoom) tab.zoom = d.state.zoom;
+      paint();
+    }
+  });
+  try { window.opener?.postMessage({ type: 'obf:ready' }, '*'); } catch (_) {}
+  paint();
+} else {
+  renderAll();   /* 先渲染，fitDesk 才能量到视野栏的真实高度 */
+  fitDesk();
+  directorUI();
+
+  /* 进页面就实时播放。尊重系统的「减弱动态效果」，也可以 ?manual=1 关掉。 */
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (!params.get('manual') && !reduceMotion) setTimeout(() => play(0), 850);
+}
+</script>
+</body>
+</html>

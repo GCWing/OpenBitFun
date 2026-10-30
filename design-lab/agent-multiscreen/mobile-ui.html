@@ -1,0 +1,2101 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>毕方手机版 · UI 提取原型</title>
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   Tokens — 逐条取自 openbitfun/src/apps/mobile/design-system/tokens/
+   mobile-tokens.json。颜色为 light / dark 双套，几何与字阶为移动端契约值。
+   改这里就是改全局，不要在组件里写死数值。
+   ══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* — 字阶（size / lineHeight / weight）— */
+  --ob-display-large: 24px;   --ob-display-large-lh: 30px;
+  --ob-headline-medium: 20px; --ob-headline-medium-lh: 26px;
+  --ob-headline-small: 18px;  --ob-headline-small-lh: 24px;
+  --ob-title-medium: 17px;    --ob-title-medium-lh: 22px;
+  --ob-title-small: 15px;     --ob-title-small-lh: 20px;
+  --ob-conv-header-title: 17px; --ob-conv-header-title-lh: 22px;
+  --ob-body-large: 16px;      --ob-body-large-lh: 24px;
+  --ob-body-medium: 14px;     --ob-body-medium-lh: 21px;
+  --ob-body-small: 13px;      --ob-body-small-lh: 19px;
+  --ob-label-large: 15px;     --ob-label-large-lh: 20px;
+  --ob-label-medium: 14px;    --ob-label-medium-lh: 18px;
+  --ob-label-small: 12px;     --ob-label-small-lh: 16px;
+
+  /* — 几何（geometry）— */
+  --ob-header-h: 76px;
+  --ob-header-h-compact: 64px;
+  --ob-touch: 48px;
+  --ob-gutter: 16px;
+  --ob-strip-h: 48px;
+  --ob-timeline-top: 22px;
+  --ob-edge-fade: 28px;
+  --ob-msg-gap: 18px;
+  --ob-bubble-max: 276px;
+  --ob-bubble-px: 14px;
+  --ob-bubble-py: 11px;
+  --ob-bubble-r: 17px;
+  --ob-composer-action: 48px;
+  --ob-composer-input-h: 44px;
+  --ob-composer-collapsed-h: 56px;
+  --ob-composer-expanded-h: 120px;
+  --ob-composer-collapsed-r: 28px;
+  --ob-composer-expanded-r: 18px;
+  --ob-sheet-top-r: 28px;
+  --ob-sheet-px: 20px;
+  --ob-sheet-header-h: 56px;
+  --ob-sheet-action-h: 48px;
+  --ob-selection-top-r: 20px;
+  --ob-selection-row-h: 64px;
+  --ob-popover-w: 292px;
+  --ob-popover-r: 16px;
+  --ob-popover-p: 12px;
+  --ob-popover-action-h: 48px;
+  --ob-compact-popover-w: 150px;
+  --ob-compact-popover-r: 14px;
+  --ob-compact-popover-action-h: 42px;
+  --ob-approval-r: 12px;
+  --ob-welcome-gutter: 25px;
+  --ob-welcome-btn-h: 49px;
+  --ob-welcome-btn-gap: 11px;
+  --ob-welcome-dock-r: 30px;
+  --ob-welcome-mark: 92px;
+  --ob-welcome-stage-h: 220px;
+
+  /* — 动效（motion）— */
+  --ob-quick: 180ms;
+  --ob-structure: 220ms;
+  --ob-ease: cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/* — 外观：浅色 — */
+:root[data-theme='light'] {
+  --ob-page-bg: #FFFFFF;
+  --ob-welcome-page-bg: #FFFFFF;
+  --ob-ink: #171717;
+  --ob-muted: #706F6A;
+  --ob-subtle: #A5A39B;
+  --ob-line: #E9E7E2;
+  --ob-card: #FFFFFF;
+  --ob-soft: #F4F3F0;
+  --ob-floating-panel: #F7F7F5;
+  --ob-accent: #111111;
+  --ob-primary-action: #111111;
+  --ob-on-action: #FFFFFF;
+  --ob-file-link: #2563EB;
+  --ob-connect-hero-bg: #E6EDFF;
+  --ob-sidebar-bg: #F8F8F9;
+  --ob-sidebar-raised: #FFFFFF;
+  --ob-sidebar-line: rgba(16, 26, 39, 0.08);
+  --ob-sidebar-hover: #F3F3F5;
+  --ob-sidebar-selection: rgba(0, 0, 0, 0.08);
+  --ob-sidebar-ink: rgba(0, 0, 0, 0.80);
+  --ob-sidebar-muted: rgba(0, 0, 0, 0.60);
+  --ob-sidebar-subtle: rgba(0, 0, 0, 0.40);
+  --ob-success: #27C46A;
+  --ob-danger: #E04F4F;
+  --ob-warning: #FF8C00;
+  --ob-welcome-dock: #171917;
+  --ob-welcome-button: #FFFFFF;
+  --ob-welcome-button-label: #171917;
+  --ob-welcome-secondary: #B9BCB9;
+  --ob-brand-dot: #16B9CE;
+  --ob-scrim: rgba(0, 0, 0, 0.27);
+  --ob-shadow-subtle: rgba(0, 0, 0, 0.07);
+  --ob-shadow-medium: rgba(0, 0, 0, 0.09);
+  --ob-bench-bg: #ECEAE5;
+  --ob-bench-ink: #171717;
+  --ob-bench-line: rgba(0, 0, 0, 0.10);
+}
+
+/* — 外观：深色 — */
+:root[data-theme='dark'] {
+  --ob-page-bg: #151514;
+  --ob-welcome-page-bg: #252522;
+  --ob-ink: #F4F3EF;
+  --ob-muted: #AAA8A0;
+  --ob-subtle: #77756E;
+  --ob-line: #363531;
+  --ob-card: #252522;
+  --ob-soft: #2D2C28;
+  --ob-floating-panel: #1E1E1C;
+  --ob-accent: #5B5954;
+  --ob-primary-action: #454540;
+  --ob-on-action: #FFFFFF;
+  --ob-file-link: #60A5FA;
+  --ob-connect-hero-bg: #2B2B29;
+  --ob-sidebar-bg: #0E0E10;
+  --ob-sidebar-raised: #1C1C1F;
+  --ob-sidebar-line: rgba(255, 255, 255, 0.12);
+  --ob-sidebar-hover: rgba(255, 255, 255, 0.06);
+  --ob-sidebar-selection: rgba(255, 255, 255, 0.12);
+  --ob-sidebar-ink: #E8E8E8;
+  --ob-sidebar-muted: #B0B0B0;
+  --ob-sidebar-subtle: #858585;
+  --ob-success: #3BD47B;
+  --ob-danger: #FF6B6B;
+  --ob-warning: #FF8C00;
+  --ob-welcome-dock: #000000;
+  --ob-welcome-button: #FFFFFF;
+  --ob-welcome-button-label: #171917;
+  --ob-welcome-secondary: #B9BCB9;
+  --ob-brand-dot: #16B9CE;
+  --ob-scrim: rgba(0, 0, 0, 0.27);
+  --ob-shadow-subtle: rgba(0, 0, 0, 0.30);
+  --ob-shadow-medium: rgba(0, 0, 0, 0.40);
+  --ob-bench-bg: #0B0B0A;
+  --ob-bench-ink: #F4F3EF;
+  --ob-bench-line: rgba(255, 255, 255, 0.12);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   审查台外壳
+   ══════════════════════════════════════════════════════════════════════════ */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  background: var(--ob-bench-bg);
+  color: var(--ob-bench-ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC',
+               'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background var(--ob-structure) var(--ob-ease);
+}
+
+.bench {
+  width: 320px;
+  flex-shrink: 0;
+  padding: 28px 24px 40px;
+  border-right: 1px solid var(--ob-bench-line);
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  overflow-y: auto;
+  max-height: 100vh;
+}
+
+.bench__eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+
+.bench__title {
+  margin: 8px 0 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.bench__note {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 20px;
+  opacity: 0.62;
+}
+
+.bench__group > h2 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.45;
+}
+
+.screens { display: flex; flex-direction: column; gap: 4px; }
+
+.screens button {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--ob-quick) var(--ob-ease);
+}
+.screens button:hover { background: var(--ob-sidebar-hover); }
+.screens button[aria-current='true'] {
+  background: var(--ob-sidebar-selection);
+  border-color: var(--ob-bench-line);
+}
+.screens button b { font-size: 14px; font-weight: 600; }
+.screens button i {
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.48;
+  font-variant-numeric: tabular-nums;
+}
+
+.bench__toggles { display: flex; gap: 8px; }
+.bench__toggles button {
+  flex: 1;
+  padding: 9px 10px;
+  border: 1px solid var(--ob-bench-line);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--ob-quick) var(--ob-ease);
+}
+.bench__toggles button:hover { background: var(--ob-sidebar-hover); }
+
+.spec-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 19px;
+  opacity: 0.62;
+}
+.spec-list li { display: flex; gap: 8px; padding: 3px 0; }
+.spec-list code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  opacity: 0.85;
+  flex-shrink: 0;
+  min-width: 108px;
+}
+
+.stage {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 40px;
+  min-height: 100vh;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   设备框 390 × 844
+   ══════════════════════════════════════════════════════════════════════════ */
+.device {
+  position: relative;
+  width: 390px;
+  height: 844px;
+  flex-shrink: 0;
+  border-radius: 54px;
+  padding: 11px;
+  background: #0C0C0C;
+  box-shadow:
+    0 0 0 1.5px #2A2A2A,
+    0 32px 70px rgba(0, 0, 0, 0.42),
+    0 8px 20px rgba(0, 0, 0, 0.28);
+}
+
+.device__viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 44px;
+  overflow: hidden;
+  background: var(--ob-page-bg);
+  isolation: isolate;
+}
+
+.device__notch {
+  position: absolute;
+  top: 9px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 112px;
+  height: 30px;
+  border-radius: 999px;
+  background: #0C0C0C;
+  z-index: 60;
+}
+
+.device__home {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 134px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--ob-ink);
+  opacity: 0.22;
+  z-index: 60;
+}
+
+/* 状态栏 —— 屏内自绘，便于在不同界面上保持一致 */
+.statusbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 54px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 0 30px 7px;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  z-index: 50;
+  pointer-events: none;
+}
+.statusbar__icons { display: flex; align-items: center; gap: 5px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   屏幕容器与切换
+   ══════════════════════════════════════════════════════════════════════════ */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ob-page-bg);
+  color: var(--ob-ink);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(14px);
+  transition: opacity var(--ob-structure) var(--ob-ease),
+              transform var(--ob-structure) var(--ob-ease),
+              visibility var(--ob-structure);
+}
+.screen[data-active='true'] {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   1 — 未登录欢迎页（welcome_home）
+   anatomy: wordmark_header / fixed_brand_mark / sliding_phrase / dark_action_dock
+   ══════════════════════════════════════════════════════════════════════════ */
+.welcome {
+  background: var(--ob-welcome-page-bg);
+  padding-top: 54px;
+}
+
+.welcome__head {
+  height: 58px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--ob-welcome-gutter);
+}
+
+/* 字标：ı + 青色点（brand_dot），"i" 的圆点被独立上色 */
+.wordmark {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 1.5px;
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ob-ink);
+}
+.wordmark__i { position: relative; display: inline-block; }
+.wordmark__dot {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 3.4px;
+  height: 3.4px;
+  border-radius: 50%;
+  background: var(--ob-brand-dot);
+}
+
+/* hero 在标题栏与底部动作坞之间垂直居中 */
+.welcome__stage {
+  flex: 1;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 0 var(--ob-welcome-gutter);
+}
+
+/* 品牌 mark：15 条同心圆角六边轮廓（AboutBrandMark 几何） */
+.brandmark { width: var(--ob-welcome-mark); height: var(--ob-welcome-mark); overflow: visible; }
+.brandmark path {
+  fill: none;
+  stroke: var(--ob-ink);
+  stroke-width: 1.1;
+  vector-effect: non-scaling-stroke;
+}
+
+.welcome__phrase {
+  min-height: 30px;
+  font-size: 17px;
+  line-height: 30px;
+  font-weight: 500;
+  text-align: center;
+  color: var(--ob-ink);
+}
+.welcome__phrase span {
+  display: inline-block;
+  animation: phrase-in 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes phrase-in {
+  from { opacity: 0; transform: translateY(38px); }
+  72%  { transform: translateY(-5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 深色动作坞 —— 固定用 welcome_dock / welcome_button，
+   不跟随 page/action 语义色反转 */
+.welcome__dock {
+  flex-shrink: 0;
+  margin: 0 var(--ob-welcome-gutter) 39px;
+  padding: var(--ob-welcome-gutter);
+  padding-top: 20px;
+  border-radius: var(--ob-welcome-dock-r);
+  background: var(--ob-welcome-dock);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ob-welcome-btn-gap);
+}
+
+.welcome__btn {
+  height: var(--ob-welcome-btn-h);
+  border: 0;
+  border-radius: 28px;
+  font-family: inherit;
+  font-size: var(--ob-label-large);
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform var(--ob-quick) var(--ob-ease), opacity var(--ob-quick) var(--ob-ease);
+}
+.welcome__btn:active { transform: scale(0.985); }
+
+.welcome__btn--primary {
+  background: var(--ob-welcome-button);
+  color: var(--ob-welcome-button-label);
+}
+
+.welcome__btn--ghost {
+  background: transparent;
+  color: var(--ob-welcome-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.welcome__miniapps {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ob-welcome-secondary);
+  font-family: inherit;
+  font-size: var(--ob-label-small);
+  cursor: pointer;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   2 — 配对（pairing_surface）
+   ══════════════════════════════════════════════════════════════════════════ */
+.pagehead {
+  flex-shrink: 0;
+  height: calc(var(--ob-header-h) + 54px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px var(--ob-gutter);
+  padding-top: 54px;
+  background: var(--ob-page-bg);
+}
+
+.pagehead__title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: var(--ob-conv-header-title);
+  line-height: var(--ob-conv-header-title-lh);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 圆形控制：glyph 视觉盒与 48 触控目标分离 */
+.circle-control {
+  flex-shrink: 0;
+  width: var(--ob-touch);
+  height: var(--ob-touch);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ob-ink);
+  cursor: pointer;
+  transition: background var(--ob-quick) var(--ob-ease);
+}
+.circle-control:active { background: var(--ob-soft); }
+.circle-control--raised {
+  width: 42px;
+  height: 42px;
+  background: var(--ob-card);
+  box-shadow: 0 7px 30px var(--ob-shadow-subtle);
+}
+
+.pairing__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px var(--ob-gutter) 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.pairing__hero {
+  margin-top: 18px;
+  width: 100%;
+  padding: 28px 20px 24px;
+  border-radius: 20px;
+  background: var(--ob-connect-hero-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.pairing__headline {
+  margin: 0;
+  font-size: var(--ob-headline-small);
+  line-height: var(--ob-headline-small-lh);
+  font-weight: 700;
+}
+
+.pairing__desc {
+  margin: 0;
+  max-width: 280px;
+  font-size: var(--ob-body-medium);
+  line-height: var(--ob-body-medium-lh);
+  color: var(--ob-muted);
+}
+
+/* 扫码框：四角描边（八段 linear-gradient 拼出四个角） */
+.scanbox {
+  position: relative;
+  width: 148px;
+  height: 148px;
+  border-radius: 18px;
+  background: var(--ob-card);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 6px 18px var(--ob-shadow-subtle);
+}
+.scanbox::before {
+  content: '';
+  position: absolute;
+  inset: 10px;
+  background:
+    linear-gradient(var(--ob-ink), var(--ob-ink)) 0 0 / 26px 3px no-repeat,
+    linear-gradient(var(--ob-ink), var(--ob-ink)) 0 0 / 3px 26px no-repeat,
+    linear-gradient(var(--ob-ink), var(--ob-ink)) 100% 0 / 26px 3px no-repeat,
+    linear-gradient(var(--ob-ink), var(--ob-ink)) 100% 0 / 3px 26px no-repeat,
+    linear-gradient(var(--ob-ink), var(--ob-ink)) 0 100% / 26px 3px no-repeat,
+    linear-gradient(var(--ob-ink), var(--ob-ink)) 0 100% / 3px 26px no-repeat,
+    linear-gradient(var(--ob-ink), var(--ob-ink)) 100% 100% / 26px 3px no-repeat,
+    linear-gradient(var(--ob-ink), var(--ob-ink)) 100% 100% / 3px 26px no-repeat;
+}
+.scanbox__grid {
+  width: 82px;
+  height: 82px;
+  border-radius: 10px;
+  background:
+    repeating-linear-gradient(0deg, var(--ob-ink) 0 5px, transparent 5px 10px),
+    repeating-linear-gradient(90deg, var(--ob-ink) 0 5px, transparent 5px 10px);
+  opacity: 0.14;
+}
+
+.field {
+  width: 100%;
+  margin-top: 20px;
+  text-align: left;
+}
+.field__label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--ob-label-small);
+  color: var(--ob-muted);
+}
+.field__input {
+  width: 100%;
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--ob-line);
+  border-radius: 14px;
+  background: var(--ob-card);
+  color: var(--ob-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--ob-body-large);
+  letter-spacing: 0.32em;
+}
+.field__input::placeholder { color: var(--ob-subtle); letter-spacing: 0.32em; }
+
+.btn {
+  width: 100%;
+  height: var(--ob-sheet-action-h);
+  margin-top: 12px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  font-family: inherit;
+  font-size: var(--ob-label-large);
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity var(--ob-quick) var(--ob-ease), transform var(--ob-quick) var(--ob-ease);
+}
+.btn:active { transform: scale(0.99); }
+.btn--primary { background: var(--ob-primary-action); color: var(--ob-on-action); }
+.btn--secondary { background: var(--ob-soft); color: var(--ob-ink); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   3 — 侧栏 / 会话列表（sidebar_chrome）
+   chrome 一层，与对话页的纸面一层刻意不同
+   ══════════════════════════════════════════════════════════════════════════ */
+.sidebar {
+  background: var(--ob-sidebar-bg);
+  color: var(--ob-sidebar-ink);
+  padding-top: 54px;
+}
+
+.sidebar__head {
+  flex-shrink: 0;
+  height: var(--ob-header-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 20px;
+}
+
+.sidebar__title {
+  margin: 0;
+  font-size: var(--ob-headline-medium);
+  line-height: var(--ob-headline-medium-lh);
+  font-weight: 700;
+  color: var(--ob-sidebar-ink);
+}
+
+.circle-control--sidebar {
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  background: var(--ob-sidebar-raised);
+  color: var(--ob-sidebar-ink);
+  box-shadow: 0 2px 10px var(--ob-shadow-subtle);
+}
+.circle-control--sidebar:active { background: var(--ob-sidebar-hover); }
+
+.sidebar__search-wrap { padding: 0 20px 10px; flex-shrink: 0; }
+
+.sidebar__search {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--ob-sidebar-hover);
+  color: var(--ob-sidebar-subtle);
+  font-size: var(--ob-body-medium);
+}
+
+.sidebar__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 设备分组 —— 行内无 chevron，可达性只用状态点表达 */
+.device-group { display: flex; flex-direction: column; gap: 2px; }
+
+/* 设备行 —— 契约明确要求不带 disclosure chevron：它表达「选中哪台设备」，
+   可达性只由独立的状态点表达，展开/折叠属于工作区面板自己。 */
+.device-group__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: var(--ob-title-small);
+  font-weight: 500;
+  color: var(--ob-sidebar-ink);
+  cursor: pointer;
+}
+.device-group__head:active { background: var(--ob-sidebar-hover); }
+.device-group__head[data-selected='true'] { background: var(--ob-sidebar-selection); }
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot--online { background: var(--ob-success); }
+.dot--idle { background: var(--ob-sidebar-subtle); }
+.dot--offline { background: var(--ob-danger); }
+
+/* 工作区面板 */
+.workspace-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: var(--ob-body-small);
+  color: var(--ob-sidebar-muted);
+}
+.workspace-row:active { background: var(--ob-sidebar-hover); }
+.workspace-row[data-selected='true'] {
+  background: var(--ob-sidebar-selection);
+  color: var(--ob-sidebar-ink);
+}
+.workspace-row__glyph {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--ob-sidebar-hover);
+  color: var(--ob-sidebar-ink);
+}
+.workspace-row__copy { min-width: 0; flex: 1; }
+.workspace-row__name {
+  display: block;
+  font-size: var(--ob-body-medium);
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workspace-row__branch {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--ob-label-small);
+  color: var(--ob-sidebar-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-group__label {
+  padding: 10px 10px 4px;
+  font-size: var(--ob-label-small);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ob-sidebar-subtle);
+}
+
+/* 会话行 —— 56 高（带元信息）/ 46（纯标题） */
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 56px;
+  padding: 0 4px 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ob-sidebar-ink);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.session-row:active { background: var(--ob-sidebar-hover); }
+.session-row[data-selected='true'] { background: var(--ob-sidebar-selection); }
+
+.session-row__copy { flex: 1; min-width: 0; }
+.session-row__title {
+  display: block;
+  font-size: var(--ob-title-small);
+  line-height: var(--ob-title-small-lh);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-row__meta {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--ob-label-small);
+  line-height: var(--ob-label-small-lh);
+  color: var(--ob-sidebar-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-row__badge {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--ob-sidebar-selection);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ob-sidebar-muted);
+}
+
+/* 滚动区两端渐隐（chrome 的 scroll_fade） */
+.sidebar__scroll {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 28px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 28px), transparent 100%);
+}
+
+/* 工具页脚：不透明 chrome 面，过渡交给滚动区的渐隐，不再加分隔线 */
+.sidebar__footer {
+  flex-shrink: 0;
+  padding: 8px 16px 26px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--ob-sidebar-bg);
+}
+.sidebar__footer button {
+  flex: 1;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ob-sidebar-muted);
+  font-family: inherit;
+  font-size: var(--ob-body-small);
+  cursor: pointer;
+}
+.sidebar__footer button:active { background: var(--ob-sidebar-hover); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   4 — 对话（conversation_header / message_bubble / composer_bar）
+   ══════════════════════════════════════════════════════════════════════════ */
+.chat { background: var(--ob-page-bg); }
+
+.chat__head {
+  flex-shrink: 0;
+  height: calc(var(--ob-header-h) + 54px);
+  padding: 8px var(--ob-gutter);
+  padding-top: 62px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  z-index: 12;
+  background: var(--ob-page-bg);
+}
+
+.chat__titleblock {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+/* 两个子项都必须显式 width:100%：titleblock 是 align-items:center 的列容器，
+   只给 max-width 时子项仍按内容宽撑开，省略号不会生效。 */
+.chat__title {
+  width: 100%;
+  text-align: center;
+  font-size: var(--ob-conv-header-title);
+  line-height: var(--ob-conv-header-title-lh);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat__subtitle {
+  width: 100%;
+  text-align: center;
+  font-size: var(--ob-label-medium);
+  line-height: var(--ob-label-medium-lh);
+  color: var(--ob-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat__subtitle b { font-weight: 500; color: var(--ob-ink); opacity: 0.85; }
+
+/* 连接条 48 */
+.chat__strip {
+  flex-shrink: 0;
+  height: var(--ob-strip-h);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 var(--ob-gutter) 4px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--ob-soft);
+  font-size: var(--ob-body-small);
+  color: var(--ob-muted);
+}
+.chat__strip b { color: var(--ob-ink); font-weight: 500; }
+.chat__strip__pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ob-success);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* 时间线：top padding 22 / 消息间距 18
+   两端按 conversation_edge_fade_height (28) 渐隐，避免内容被硬切 */
+.chat__timeline {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--ob-timeline-top) var(--ob-gutter) var(--ob-edge-fade);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ob-msg-gap);
+  mask-image: linear-gradient(to bottom,
+    transparent 0,
+    #000 var(--ob-edge-fade),
+    #000 calc(100% - var(--ob-edge-fade)),
+    transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom,
+    transparent 0,
+    #000 var(--ob-edge-fade),
+    #000 calc(100% - var(--ob-edge-fade)),
+    transparent 100%);
+}
+
+.msg { display: flex; flex-direction: column; width: 100%; }
+.msg--user { align-items: flex-end; }
+.msg--assistant { align-items: flex-start; }
+
+/* 用户气泡 —— SOFT 面 + 17 圆角 + 276 上限 */
+.bubble {
+  max-width: var(--ob-bubble-max);
+  padding: var(--ob-bubble-py) var(--ob-bubble-px);
+  border-radius: var(--ob-bubble-r);
+  background: var(--ob-soft);
+  color: var(--ob-ink);
+  font-size: var(--ob-body-large);
+  line-height: var(--ob-body-large-lh);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 助手消息：全宽纸面，无气泡 */
+.assistant-copy {
+  width: 100%;
+  font-size: var(--ob-body-large);
+  line-height: var(--ob-body-large-lh);
+  color: var(--ob-ink);
+}
+.assistant-copy p { margin: 0 0 12px; }
+.assistant-copy p:last-child { margin-bottom: 0; }
+.assistant-copy strong { font-weight: 600; }
+.assistant-copy ul { margin: 0 0 12px; padding-left: 20px; }
+.assistant-copy li { margin-bottom: 4px; }
+.assistant-copy code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13.5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--ob-soft);
+  /* 中文段落里别把 mobile-tokens.json 这类标识符拆成两行 */
+  white-space: nowrap;
+}
+.assistant-copy a { color: var(--ob-file-link); text-decoration: underline; text-underline-offset: 2px; }
+
+/* 代码块 */
+.codeblock {
+  margin: 0 0 12px;
+  border: 1px solid var(--ob-line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--ob-card);
+}
+.codeblock__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ob-line);
+  font-size: var(--ob-label-small);
+  color: var(--ob-muted);
+}
+.codeblock pre {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 19px;
+}
+.tok-kw { color: #8F3F71; } .tok-str { color: #477A4A; }
+.tok-num { color: #9A5B13; } .tok-com { color: #7A8078; }
+.tok-fn { color: #2C6693; } .tok-type { color: #865A20; }
+:root[data-theme='dark'] .tok-kw { color: #D99AC4; }
+:root[data-theme='dark'] .tok-str { color: #9BCB9D; }
+:root[data-theme='dark'] .tok-num { color: #E3B36D; }
+:root[data-theme='dark'] .tok-com { color: #96958D; }
+:root[data-theme='dark'] .tok-fn { color: #8CBCE0; }
+:root[data-theme='dark'] .tok-type { color: #D5B27F; }
+
+/* 思考块 */
+.thinking {
+  width: 100%;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  background: var(--ob-soft);
+  overflow: hidden;
+}
+.thinking__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: var(--ob-body-small);
+  color: var(--ob-muted);
+}
+.thinking__head svg { flex-shrink: 0; opacity: 0.7; }
+.thinking__body {
+  padding: 0 12px 12px;
+  font-size: var(--ob-body-small);
+  line-height: var(--ob-body-small-lh);
+  color: var(--ob-muted);
+  font-style: italic;
+}
+
+/* 工具卡 —— approval_card 几何 */
+.toolcard {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--ob-line);
+  border-radius: var(--ob-approval-r);
+  background: var(--ob-card);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.toolcard__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--ob-body-small);
+  color: var(--ob-muted);
+}
+.toolcard__name {
+  font-weight: 600;
+  color: var(--ob-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+}
+.toolcard__status {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ob-success);
+  font-weight: 500;
+}
+.toolcard__body {
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: var(--ob-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ob-muted);
+  white-space: pre-wrap;
+}
+.toolcard__actions { display: flex; gap: 8px; }
+.chip {
+  height: 36px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: var(--ob-label-medium);
+  font-weight: 500;
+  cursor: pointer;
+}
+.chip--primary { background: var(--ob-primary-action); color: var(--ob-on-action); }
+.chip--quiet { background: var(--ob-soft); color: var(--ob-ink); }
+
+/* 助手底部动作行 */
+.msg__actions { display: flex; gap: 8px; margin-top: 10px; }
+.pill {
+  height: 28px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  border-radius: 14px;
+  background: var(--ob-soft);
+  color: var(--ob-ink);
+  font-family: inherit;
+  font-size: var(--ob-label-small);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* 打字指示 */
+.typing { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding-left: 2px; }
+.typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ob-muted);
+  animation: typing-bounce 1.2s ease-in-out infinite;
+}
+.typing i:nth-child(2) { animation-delay: 0.15s; }
+.typing i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.34; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* 输入区 —— 收起 56 / 展开 120，圆角 28 / 18 */
+.chat__composer-area {
+  flex-shrink: 0;
+  padding: 8px var(--ob-gutter) 26px;
+  background: linear-gradient(to top, var(--ob-page-bg) 76%, transparent);
+}
+
+.composer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--ob-composer-collapsed-h);
+  padding: 5px;
+  border: 1px solid var(--ob-line);
+  border-radius: var(--ob-composer-collapsed-r);
+  background: var(--ob-card);
+  box-shadow: 0 8px 24px var(--ob-shadow-medium);
+}
+
+.composer__leading {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ob-ink);
+  cursor: pointer;
+}
+.composer__leading:active { background: var(--ob-soft); }
+
+.composer__input {
+  flex: 1;
+  min-width: 0;
+  padding: 0 4px;
+  font-size: var(--ob-body-medium);
+  line-height: var(--ob-body-medium-lh);
+  color: var(--ob-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer__send {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ob-primary-action);
+  border-radius: 50%;
+  background: var(--ob-primary-action);
+  color: var(--ob-on-action);
+  cursor: pointer;
+  box-shadow: 0 2px 8px var(--ob-shadow-subtle);
+}
+
+/* 展开态：两行 —— 输入行 60 + 动作行 48，合计 120（composer_expanded_height） */
+.composer--expanded {
+  min-height: var(--ob-composer-expanded-h);
+  border-radius: var(--ob-composer-expanded-r);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 5px;
+}
+.model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--ob-soft);
+  color: var(--ob-ink);
+  font-family: inherit;
+  font-size: var(--ob-label-small);
+  font-weight: 500;
+  cursor: pointer;
+}
+.model-chip svg { opacity: 0.55; }
+.composer__draft {
+  min-height: 60px;
+  padding: 8px;
+  font-size: var(--ob-body-medium);
+  line-height: var(--ob-body-medium-lh);
+  color: var(--ob-ink);
+  white-space: pre-wrap;
+}
+.composer__draft .caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 17px;
+  vertical-align: -3px;
+  background: var(--ob-ink);
+  animation: caret 1.1s step-end infinite;
+}
+@keyframes caret { 50% { opacity: 0; } }
+.composer__actionrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px;
+}
+.composer__actionrow .spacer { flex: 1; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   弹层 —— scrim / 选择面板 / 紧凑 popover
+   ══════════════════════════════════════════════════════════════════════════ */
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--ob-scrim);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--ob-structure) var(--ob-ease), visibility var(--ob-structure);
+  z-index: 70;
+}
+.scrim[data-open='true'] { opacity: 1; visibility: visible; }
+
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 80;
+  background: var(--ob-card);
+  border-top-left-radius: var(--ob-selection-top-r);
+  border-top-right-radius: var(--ob-selection-top-r);
+  box-shadow: 0 -12px 40px var(--ob-shadow-medium);
+  transform: translateY(102%);
+  transition: transform var(--ob-structure) var(--ob-ease);
+  padding-bottom: 26px;
+  max-height: 78%;
+  display: flex;
+  flex-direction: column;
+}
+.sheet[data-open='true'] { transform: translateY(0); }
+
+.sheet__head {
+  flex-shrink: 0;
+  height: var(--ob-sheet-header-h);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 var(--ob-sheet-px) 0 12px;
+  border-bottom: 1px solid var(--ob-line);
+}
+.sheet__title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--ob-title-medium);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sheet__close {
+  flex-shrink: 0;
+  width: var(--ob-touch);
+  height: var(--ob-touch);
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ob-muted);
+  cursor: pointer;
+}
+.sheet__close:active { background: var(--ob-soft); }
+
+.sheet__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px var(--ob-popover-p) 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 模型行：选中项在首位，soft 面 + 前置勾选，无分隔线、无 provider 图标 */
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--ob-selection-row-h);
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--ob-composer-expanded-r);
+  background: transparent;
+  color: var(--ob-ink);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.model-row:active { background: var(--ob-soft); }
+.model-row[data-selected='true'] { background: var(--ob-soft); }
+
+.model-row__check {
+  flex-shrink: 0;
+  width: 16px;
+  color: var(--ob-accent);
+  opacity: 0;
+}
+.model-row[data-selected='true'] .model-row__check { opacity: 1; }
+
+.model-row__copy { flex: 1; min-width: 0; }
+.model-row__name {
+  display: block;
+  font-size: var(--ob-body-large);
+  line-height: 22px;
+  font-weight: 500;
+}
+.model-row__meta {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--ob-body-small);
+  color: var(--ob-muted);
+}
+
+/* 紧凑 popover：会话操作 */
+.popover {
+  position: absolute;
+  top: 132px;
+  right: 14px;
+  z-index: 85;
+  width: var(--ob-compact-popover-w);
+  padding: 8px;
+  border-radius: var(--ob-compact-popover-r);
+  background: var(--ob-card);
+  box-shadow: 0 18px 40px var(--ob-shadow-medium);
+  border: 1px solid var(--ob-line);
+  display: grid;
+  gap: 2px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: opacity var(--ob-quick) var(--ob-ease),
+              transform var(--ob-quick) var(--ob-ease),
+              visibility var(--ob-quick);
+}
+.popover[data-open='true'] { opacity: 1; visibility: visible; transform: translateY(0); }
+
+.popover button {
+  height: var(--ob-compact-popover-action-h);
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ob-ink);
+  font-family: inherit;
+  font-size: var(--ob-body-small);
+  text-align: left;
+  cursor: pointer;
+}
+.popover button:active { background: var(--ob-soft); }
+.popover button[data-tone='danger'] { color: var(--ob-danger); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════ 审查台侧栏 ══════════════════════════ -->
+<aside class="bench">
+  <div>
+    <p class="bench__eyebrow">BitFang · Mobile</p>
+    <h1 class="bench__title">手机版 UI 提取</h1>
+    <p class="bench__note">
+      从原生手机 App 的设计契约（HarmonyOS 为视觉基线）还原，颜色 / 字阶 / 几何逐条对应
+      <code>mobile-tokens.json</code>。这是可迭代的骨架，不是截图。
+    </p>
+  </div>
+
+  <div class="bench__group">
+    <h2>界面</h2>
+    <div class="screens" id="screenNav">
+      <button data-goto="welcome" aria-current="true"><b>未登录欢迎页</b><i>01</i></button>
+      <button data-goto="pairing"><b>配对连接</b><i>02</i></button>
+      <button data-goto="sessions"><b>会话列表 / 侧栏</b><i>03</i></button>
+      <button data-goto="chat"><b>对话</b><i>04</i></button>
+    </div>
+  </div>
+
+  <div class="bench__group">
+    <h2>外观</h2>
+    <div class="bench__toggles">
+      <button id="themeToggle">切换深色</button>
+      <button data-goto="sessions">回到列表</button>
+    </div>
+  </div>
+
+  <div class="bench__group">
+    <h2>本页用到的契约值</h2>
+    <ul class="spec-list">
+      <li><code>header 76</code><span>对话 / 侧栏标题栏</span></li>
+      <li><code>touch 48</code><span>所有圆形控制</span></li>
+      <li><code>bubble 276</code><span>用户气泡宽度上限</span></li>
+      <li><code>r 17 / p 14·11</code><span>气泡圆角与内边距</span></li>
+      <li><code>composer 56</code><span>收起态输入区高度</span></li>
+      <li><code>expanded 120</code><span>展开态输入区高度</span></li>
+      <li><code>row 64</code><span>选择面板行高</span></li>
+      <li><code>popover 150</code><span>紧凑操作面板宽</span></li>
+      <li><code>msg gap 18</code><span>消息间距</span></li>
+    </ul>
+  </div>
+
+  <div class="bench__group">
+    <h2>可交互</h2>
+    <ul class="spec-list">
+      <li><span>点右上 <b>···</b> → 会话操作面板</span></li>
+      <li><span>点输入区左下 <b>+</b> → 展开态</span></li>
+      <li><span>展开态点模型 chip → 模型选择面板</span></li>
+      <li><span>点任意遮罩 / 关闭按钮收起</span></li>
+    </ul>
+  </div>
+</aside>
+
+<!-- ══════════════════════════ 设备 ══════════════════════════ -->
+<main class="stage">
+  <div class="device">
+    <div class="device__viewport" id="viewport">
+
+      <!-- 状态栏（屏内自绘） -->
+      <div class="statusbar">
+        <span id="clock">9:41</span>
+        <span class="statusbar__icons">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor" aria-hidden="true">
+            <rect x="0" y="7.5" width="3" height="3.5" rx="1"/>
+            <rect x="4.7" y="5.2" width="3" height="5.8" rx="1"/>
+            <rect x="9.4" y="2.7" width="3" height="8.3" rx="1"/>
+            <rect x="14.1" y="0" width="3" height="11" rx="1"/>
+          </svg>
+          <svg width="16" height="11" viewBox="0 0 16 11" fill="currentColor" aria-hidden="true">
+            <path d="M8 9.6 5.9 7.4a3 3 0 0 1 4.2 0L8 9.6Zm0-4.4a6 6 0 0 0-4.2 1.7L2.3 5.5a8 8 0 0 1 11.4 0l-1.5 1.4A6 6 0 0 0 8 5.2Z"/>
+          </svg>
+          <svg width="25" height="12" viewBox="0 0 25 12" fill="none" aria-hidden="true">
+            <rect x="0.5" y="0.5" width="21" height="11" rx="3.4" stroke="currentColor" opacity="0.4"/>
+            <rect x="2" y="2" width="16.5" height="8" rx="2" fill="currentColor"/>
+            <path d="M23 4v4a2.2 2.2 0 0 0 0-4Z" fill="currentColor" opacity="0.5"/>
+          </svg>
+        </span>
+      </div>
+
+      <!-- ─────────── 01 未登录欢迎页 ─────────── -->
+      <section class="screen welcome" data-screen="welcome" data-active="true">
+        <header class="welcome__head">
+          <span class="wordmark">
+            <span class="wordmark__i">ı<span class="wordmark__dot"></span></span>OpenBitFun
+          </span>
+        </header>
+
+        <div class="welcome__stage">
+          <svg class="brandmark" viewBox="0 0 256 256" id="brandmark" aria-label="OpenBitFun"></svg>
+          <div class="welcome__phrase" id="welcomePhrase"></div>
+        </div>
+
+        <div class="welcome__dock">
+          <button class="welcome__btn welcome__btn--primary" data-goto="pairing">登录 OpenBitFun</button>
+          <button class="welcome__btn welcome__btn--ghost" data-goto="pairing">扫描二维码连接电脑</button>
+          <button class="welcome__miniapps">浏览内置小程序
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <!-- ─────────── 02 配对 ─────────── -->
+      <section class="screen" data-screen="pairing">
+        <div class="pagehead">
+          <button class="circle-control" data-goto="welcome" aria-label="返回">
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <span class="pagehead__title">连接电脑</span>
+          <span style="width:48px"></span>
+        </div>
+
+        <div class="pairing__body">
+          <div class="pairing__hero">
+            <h2 class="pairing__headline">扫描桌面端的二维码</h2>
+            <p class="pairing__desc">在桌面版 OpenBitFun 打开「远程控制」，用手机扫码即可接管它的工作区与 Agent。</p>
+            <div class="scanbox"><div class="scanbox__grid"></div></div>
+          </div>
+
+          <div class="field">
+            <label class="field__label" for="paircode">或输入 6 位配对码</label>
+            <input class="field__input" id="paircode" inputmode="numeric" placeholder="······" value="418902" />
+          </div>
+
+          <button class="btn btn--primary">连接这台电脑</button>
+          <button class="btn btn--secondary">用 GitHub 账号登录</button>
+
+          <p class="pairing__desc" style="margin-top:18px">
+            登录后手机只提交任务与查看结果；模型与执行都留在电脑上。
+          </p>
+        </div>
+      </section>
+
+      <!-- ─────────── 03 会话列表 / 侧栏 ─────────── -->
+      <section class="screen sidebar" data-screen="sessions">
+        <div class="sidebar__head">
+          <h1 class="sidebar__title">工作区</h1>
+          <button class="circle-control circle-control--sidebar" aria-label="新建会话">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </div>
+
+        <div class="sidebar__search-wrap">
+          <div class="sidebar__search">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+            搜索会话
+          </div>
+        </div>
+
+        <div class="sidebar__scroll">
+          <div class="device-group">
+            <div class="device-group__head" data-selected="true">
+              <span class="dot dot--online"></span>
+              MacBook Pro 16″
+            </div>
+
+            <div class="workspace-row" data-selected="true">
+              <span class="workspace-row__glyph">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h3.6l1.6 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+              </span>
+              <span class="workspace-row__copy">
+                <span class="workspace-row__name">OpenBitFun</span>
+                <span class="workspace-row__branch">feature/mobile-reading</span>
+              </span>
+            </div>
+
+            <div class="workspace-row">
+              <span class="workspace-row__glyph">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h3.6l1.6 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+              </span>
+              <span class="workspace-row__copy">
+                <span class="workspace-row__name">design-system</span>
+                <span class="workspace-row__branch">main</span>
+              </span>
+            </div>
+
+            <div class="session-group__label">进行中</div>
+
+            <button class="session-row" data-selected="true">
+              <span class="session-row__copy">
+                <span class="session-row__title">统一移动端设计系统</span>
+                <span class="session-row__meta">12 分钟前 · Standard</span>
+              </span>
+              <span class="session-row__badge">运行中</span>
+            </button>
+
+            <button class="session-row">
+              <span class="session-row__copy">
+                <span class="session-row__title">远程文件浏览器的空状态</span>
+                <span class="session-row__meta">1 小时前 · Standard</span>
+              </span>
+            </button>
+
+            <button class="session-row">
+              <span class="session-row__copy">
+                <span class="session-row__title">跨端视觉校验 · 深色气泡对比度</span>
+                <span class="session-row__meta">昨天 · Design Review</span>
+              </span>
+            </button>
+
+            <div class="session-group__label">本周</div>
+
+            <button class="session-row">
+              <span class="session-row__copy">
+                <span class="session-row__title">HarmonyOS 基准截图对比</span>
+                <span class="session-row__meta">周一 · Standard</span>
+              </span>
+            </button>
+
+            <button class="session-row">
+              <span class="session-row__copy">
+                <span class="session-row__title">排队消息与 turn 交接</span>
+                <span class="session-row__meta">周一 · Standard</span>
+              </span>
+            </button>
+
+            <div class="session-group__label">更早</div>
+
+            <button class="session-row">
+              <span class="session-row__copy">
+                <span class="session-row__title">小程序目录的加载策略</span>
+                <span class="session-row__meta">10 月 8 日 · Standard</span>
+              </span>
+            </button>
+
+            <div class="device-group__head" style="margin-top:12px">
+              <span class="dot dot--idle"></span>
+              macOS Studio · 离线
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar__footer">
+          <button>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.2 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7.2"/><path d="M17 3.5a2.1 2.1 0 0 1 3 3L11 15.5l-4 1 1-4Z"/></svg>
+            设备工具
+          </button>
+          <button>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 15a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.1a2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21 11a2 2 0 1 1 0 4Z"/></svg>
+            设置
+          </button>
+        </div>
+      </section>
+
+      <!-- ─────────── 04 对话 ─────────── -->
+      <section class="screen chat" data-screen="chat">
+        <div class="chat__head">
+          <button class="circle-control" data-goto="sessions" aria-label="会话列表">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+          </button>
+
+          <div class="chat__titleblock">
+            <span class="chat__title">统一移动端设计系统</span>
+            <span class="chat__subtitle">
+              <b>MacBook Pro</b> · OpenBitFun / feature/mobile-reading
+            </span>
+          </div>
+
+          <button class="circle-control circle-control--raised" id="chatMore" aria-label="会话操作">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></svg>
+          </button>
+        </div>
+
+        <div class="chat__strip">
+          <span class="chat__strip__pulse"></span>
+          <span>正在由 <b>MacBook Pro 16″</b> 运行 · Standard</span>
+        </div>
+
+        <div class="chat__timeline">
+          <!-- 用户气泡 -->
+          <div class="msg msg--user">
+            <div class="bubble">三端的组件和样式可以保持一致吗？</div>
+          </div>
+
+          <!-- 助手消息：思考 + 正文 + 代码 + 工具卡 -->
+          <div class="msg msg--assistant">
+            <div class="thinking">
+              <div class="thinking__head">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                已思考 4 秒
+              </div>
+              <div class="thinking__body">对比三个平台的 token 映射，确认共享的是语义角色而不是具体数值。</div>
+            </div>
+
+            <div class="assistant-copy">
+              <p>可以。三个平台共享<strong>同一套视觉契约</strong>，但各自保留原生渲染——共享的是语义角色，不是像素。</p>
+              <ul>
+                <li>颜色、字阶、几何、动效全部来自 <code>mobile-tokens.json</code></li>
+                <li>组件只声明它消费哪些 token 角色</li>
+                <li>安全区、键盘、无障碍桥接仍由各平台自己负责</li>
+              </ul>
+              <p>契约只记录稳定事实，渲染器的选择留给宿主：</p>
+            </div>
+
+            <div class="codeblock" style="width:100%">
+              <div class="codeblock__bar">
+                <span>MobileDesignGeometry.ets</span>
+                <span>生成文件 · 勿手改</span>
+              </div>
+              <pre><span class="tok-kw">export const</span> messageBubbleMaxWidth = <span class="tok-num">276</span>
+<span class="tok-kw">export const</span> messageBubbleRadius = <span class="tok-num">17</span>
+<span class="tok-com">// 紧凑基线：iPhone Pro 级宽度的逻辑单位</span>
+<span class="tok-kw">export const</span> composerCollapsedHeight = <span class="tok-num">56</span></pre>
+            </div>
+
+            <div class="toolcard">
+              <div class="toolcard__head">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 1 5 5L9 22H2v-7Z"/></svg>
+                <span class="toolcard__name">read_file</span>
+                <span class="toolcard__status">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>
+                  已完成
+                </span>
+              </div>
+              <div class="toolcard__body">design-system/tokens/mobile-tokens.json
+读取 440 行 · 9.9 KB</div>
+            </div>
+
+            <div class="toolcard">
+              <div class="toolcard__head">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+                <span class="toolcard__name">write_file</span>
+                <span class="toolcard__status" style="color:var(--ob-warning)">等待授权</span>
+              </div>
+              <div class="toolcard__body">要修改 3 个文件，均在 OpenBitFun/feature/mobile-reading 工作区内。</div>
+              <div class="toolcard__actions">
+                <button class="chip chip--primary">允许一次</button>
+                <button class="chip chip--quiet">本会话总是允许</button>
+              </div>
+            </div>
+
+            <div class="msg__actions">
+              <button class="pill">复制</button>
+              <button class="pill">重新生成</button>
+            </div>
+          </div>
+
+          <!-- 正在输出 -->
+          <div class="msg msg--assistant">
+            <div class="assistant-copy">
+              <p>我先把契约与实现分开，再看三端的差异清单——</p>
+            </div>
+            <div class="typing"><i></i><i></i><i></i></div>
+          </div>
+        </div>
+
+        <!-- 输入区（收起态） -->
+        <div class="chat__composer-area">
+          <div class="composer" id="composer">
+            <button class="composer__leading" id="composerExpand" aria-label="展开输入区">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+            <div class="composer__input" id="composerInput">向 OpenBitFun 提问</div>
+            <button class="composer__send" aria-label="发送">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m0 0-6 6m6-6 6 6"/></svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─────────── 遮罩 + 弹层 ─────────── -->
+      <div class="scrim" id="scrim"></div>
+
+      <!-- 模型选择（composer_model_selector · 紧凑底部面板） -->
+      <div class="sheet" id="modelSheet" role="dialog" aria-label="选择模型">
+        <div class="sheet__head">
+          <span class="sheet__title">选择模型</span>
+          <button class="sheet__close" id="modelSheetClose" aria-label="关闭">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
+        </div>
+        <div class="sheet__body">
+          <button class="model-row" data-selected="true">
+            <span class="model-row__check">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>
+            </span>
+            <span class="model-row__copy">
+              <span class="model-row__name">Opus 4.6</span>
+              <span class="model-row__meta">当前会话 · 支持图片</span>
+            </span>
+          </button>
+
+          <button class="model-row">
+            <span class="model-row__check">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>
+            </span>
+            <span class="model-row__copy">
+              <span class="model-row__name">Sonnet 4.6</span>
+              <span class="model-row__meta">更快 · 适合日常改动</span>
+            </span>
+          </button>
+
+          <button class="model-row">
+            <span class="model-row__check">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>
+            </span>
+            <span class="model-row__copy">
+              <span class="model-row__name">GPT-5.2 Codex</span>
+              <span class="model-row__meta">长任务 · 大上下文</span>
+            </span>
+          </button>
+
+          <button class="model-row">
+            <span class="model-row__check">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>
+            </span>
+            <span class="model-row__copy">
+              <span class="model-row__name">Qwen3-VL 235B</span>
+              <span class="model-row__meta">图片理解 · 由电脑端提供</span>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 会话操作（compact popover 150） -->
+      <div class="popover" id="chatPopover" role="menu">
+        <button role="menuitem">重命名会话</button>
+        <button role="menuitem">导出对话</button>
+        <button role="menuitem">查看工作区</button>
+        <button role="menuitem" data-tone="danger">归档会话</button>
+      </div>
+
+    </div>
+    <div class="device__notch"></div>
+    <div class="device__home"></div>
+  </div>
+</main>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   品牌 mark —— 15 条同心圆角六边轮廓，几何取自
+   design-system/assets/welcome-brand-contours.json（256 单位视口）。
+   三条低透明度高光沿轮廓环行，18s 一轮；减少动效时保持静止。
+   ══════════════════════════════════════════════════════════════════════════ */
+const CONTOURS = [
+  'M154.860 59.584 Q167.500 59.584 173.820 70.531 L200.680 117.053 Q207.000 128.000 200.680 138.947 L173.820 185.469 Q167.500 196.416 154.860 196.416 L101.140 196.416 Q88.500 196.416 82.180 185.469 L55.320 138.947 Q49.000 128.000 55.320 117.053 L82.180 70.531 Q88.500 59.584 101.140 59.584 Z',
+  'M152.788 57.185 Q165.682 56.702 172.547 67.628 L201.722 114.060 Q208.586 124.985 202.557 136.392 L176.934 184.875 Q170.905 196.282 158.011 196.765 L103.212 198.815 Q90.318 199.298 83.453 188.372 L54.278 141.940 Q47.414 131.015 53.443 119.608 L79.066 71.125 Q85.095 59.718 97.989 59.235 Z',
+  'M150.574 54.847 Q163.702 53.863 171.119 64.741 L202.639 110.973 Q210.056 121.851 204.343 133.713 L180.066 184.126 Q174.353 195.988 161.224 196.972 L105.426 201.153 Q92.298 202.137 84.881 191.259 L53.361 145.027 Q45.944 134.149 51.657 122.287 L75.934 71.874 Q81.647 60.012 94.776 59.028 Z',
+  'M148.218 52.578 Q161.562 51.074 169.537 61.879 L203.427 107.798 Q211.401 118.603 206.031 130.911 L183.208 183.221 Q177.838 195.529 164.494 197.032 L107.782 203.422 Q94.438 204.926 86.463 194.121 L52.573 148.202 Q44.599 137.397 49.969 125.089 L72.792 72.779 Q78.162 60.471 91.506 58.968 Z',
+  'M145.724 50.384 Q159.263 48.344 167.799 59.048 L204.079 104.542 Q212.616 115.246 207.614 127.991 L186.355 182.157 Q181.353 194.902 167.814 196.943 L110.276 205.616 Q96.737 207.656 88.201 196.952 L51.921 151.458 Q43.384 140.754 48.386 128.009 L69.645 73.843 Q74.647 61.098 88.186 59.057 Z',
+  'M143.094 48.274 Q156.805 45.680 165.907 56.257 L204.592 101.209 Q213.694 111.786 209.085 124.957 L189.498 180.935 Q184.889 194.106 171.178 196.700 L112.906 207.726 Q99.195 210.320 90.093 199.743 L51.408 154.791 Q42.306 144.214 46.915 131.043 L66.502 75.065 Q71.111 61.894 84.822 59.300 Z',
+  'M140.330 46.254 Q154.191 43.091 163.861 53.512 L204.959 97.806 Q214.629 108.227 210.439 121.813 L192.629 179.551 Q188.438 193.137 174.578 196.301 L115.670 209.746 Q101.809 212.909 92.139 202.488 L51.041 158.194 Q41.371 147.773 45.561 134.187 L63.371 76.449 Q67.562 62.863 81.422 59.699 Z',
+  'M137.437 44.331 Q151.423 40.584 161.662 50.823 L205.177 94.338 Q215.416 104.577 211.669 118.563 L195.741 178.007 Q191.993 191.993 178.007 195.741 L118.563 211.669 Q104.577 215.416 94.338 205.177 L50.823 161.662 Q40.584 151.423 44.331 137.437 L60.259 77.993 Q64.007 64.007 77.993 60.259 Z',
+  'M134.416 42.513 Q148.504 38.167 159.311 48.195 L205.242 90.813 Q216.049 100.840 212.769 115.214 L198.826 176.300 Q195.545 190.673 181.458 195.019 L121.584 213.487 Q107.496 217.833 96.689 207.805 L50.758 165.187 Q39.951 155.160 43.231 140.786 L57.174 79.700 Q60.455 65.327 74.542 60.981 Z',
+  'M131.272 40.805 Q145.436 35.849 156.810 45.637 L205.149 87.237 Q216.523 97.025 213.733 111.769 L201.877 174.431 Q199.087 189.175 184.923 194.131 L124.728 215.195 Q110.564 220.151 99.190 210.363 L50.851 168.763 Q39.477 158.975 42.267 144.231 L54.123 81.569 Q56.913 66.825 71.077 61.869 Z',
+  'M128.010 39.216 Q142.223 33.637 154.160 43.157 L204.895 83.616 Q216.832 93.136 214.556 108.234 L204.885 172.401 Q202.609 187.499 188.396 193.077 L127.990 216.784 Q113.777 222.363 101.840 212.843 L51.105 172.384 Q39.168 162.864 41.444 147.766 L51.115 83.599 Q53.391 68.501 67.604 62.923 Z',
+  'M124.633 37.750 Q138.869 31.539 151.365 40.762 L204.475 79.959 Q216.972 89.182 215.233 104.616 L207.842 170.209 Q206.103 185.643 191.868 191.854 L131.367 218.250 Q117.131 224.461 104.635 215.238 L51.525 176.041 Q39.028 166.818 40.767 151.384 L48.158 85.791 Q49.897 70.357 64.132 64.146 Z',
+  'M121.147 36.415 Q135.377 29.562 148.427 38.459 L203.889 76.272 Q216.938 85.169 215.758 100.920 L210.742 167.858 Q209.562 183.608 195.331 190.461 L134.853 219.585 Q120.623 226.438 107.573 217.541 L52.111 179.728 Q39.062 170.831 40.242 155.080 L45.258 88.142 Q46.438 72.392 60.669 65.539 Z',
+  'M117.556 35.216 Q131.752 27.713 145.348 36.256 L203.131 72.563 Q216.727 81.106 216.127 97.152 L213.575 165.347 Q212.975 181.393 198.778 188.896 L138.444 220.784 Q124.248 228.287 110.652 219.744 L52.869 183.437 Q39.273 174.894 39.873 158.848 L42.425 90.653 Q43.025 74.607 57.222 67.104 Z',
+  'M113.866 34.160 Q128.000 26.000 142.134 34.160 L202.201 68.840 Q216.335 77.000 216.335 93.320 L216.335 162.680 Q216.335 179.000 202.201 187.160 L142.134 221.840 Q128.000 230.000 113.866 221.840 L53.799 187.160 Q39.665 179.000 39.665 162.680 L39.665 93.320 Q39.665 77.000 53.799 68.840 Z'
+];
+
+(function renderBrandmark() {
+  const svg = document.getElementById('brandmark');
+  if (!svg) return;
+  const NS = 'http://www.w3.org/2000/svg';
+  CONTOURS.forEach((d, i) => {
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', d);
+    // 由内向外递减：让 15 条轮廓读成一组等高线，而不是叠成一团墨
+    path.setAttribute('opacity', String(Math.max(0.10, 0.34 - i * 0.017)));
+    svg.appendChild(path);
+  });
+  // 高光：描边虚线段沿路径环行，三条错开 6s
+  [0, 5, 10].forEach((idx, k) => {
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', CONTOURS[idx]);
+    path.setAttribute('stroke', 'var(--ob-ink)');
+    path.setAttribute('stroke-width', '1.3');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('opacity', '0.34');
+    path.setAttribute('stroke-dasharray', '30 436');
+    const anim = document.createElementNS(NS, 'animate');
+    anim.setAttribute('attributeName', 'stroke-dashoffset');
+    anim.setAttribute('values', '466;0');
+    anim.setAttribute('dur', '18s');
+    anim.setAttribute('begin', (k * 6) + 's');
+    anim.setAttribute('repeatCount', 'indefinite');
+    path.appendChild(anim);
+    svg.appendChild(path);
+  });
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   欢迎页短语：逐字进场（55ms 递进 / 800ms 缓出），4 秒换一句
+   ══════════════════════════════════════════════════════════════════════════ */
+(function welcomePhrases() {
+  const el = document.getElementById('welcomePhrase');
+  if (!el) return;
+  const PHRASES = [
+    '在手机上继续你的 Agent 工作',
+    '看一眼就跑，活还在电脑上干',
+    '换台设备，工作区还在原地'
+  ];
+  let index = 0;
+
+  function show(text) {
+    el.textContent = '';
+    [...text].forEach((ch, i) => {
+      const span = document.createElement('span');
+      span.textContent = ch;
+      span.style.animationDelay = (i * 55) + 'ms';
+      el.appendChild(span);
+    });
+  }
+
+  show(PHRASES[0]);
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduced) return;
+  setInterval(() => {
+    index = (index + 1) % PHRASES.length;
+    show(PHRASES[index]);
+  }, 4000);
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   屏幕切换 / 主题 / 弹层
+   ══════════════════════════════════════════════════════════════════════════ */
+const screens = [...document.querySelectorAll('.screen')];
+const navButtons = [...document.querySelectorAll('#screenNav [data-goto]')];
+const scrim = document.getElementById('scrim');
+const modelSheet = document.getElementById('modelSheet');
+const chatPopover = document.getElementById('chatPopover');
+const composer = document.getElementById('composer');
+const composerInput = document.getElementById('composerInput');
+
+function showScreen(name) {
+  screens.forEach((s) => s.setAttribute('data-active', String(s.dataset.screen === name)));
+  navButtons.forEach((b) => b.setAttribute('aria-current', String(b.dataset.goto === name)));
+  closeOverlays();
+}
+
+function closeOverlays() {
+  modelSheet.dataset.open = 'false';
+  chatPopover.dataset.open = 'false';
+  scrim.dataset.open = 'false';
+  setComposerExpanded(false);
+}
+
+function setComposerExpanded(expanded) {
+  if (expanded === composer.classList.contains('composer--expanded')) return;
+  if (expanded) {
+    composer.classList.add('composer--expanded');
+    composer.innerHTML = [
+      '<div class="composer__draft">检查深色模式下气泡与背景的对比度<span class="caret"></span></div>',
+      '<div class="composer__actionrow">',
+      '  <button class="composer__leading" aria-label="添加附件">',
+      '    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+      '  </button>',
+      '  <button class="model-chip" id="modelChip">Opus 4.6',
+      '    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+      '  </button>',
+      '  <button class="model-chip">深度思考',
+      '    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+      '  </button>',
+      '  <span class="spacer"></span>',
+      '  <button class="composer__send" aria-label="发送">',
+      '    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m0 0-6 6m6-6 6 6"/></svg>',
+      '  </button>',
+      '</div>'
+    ].join('');
+    document.getElementById('modelChip').addEventListener('click', (e) => {
+      e.stopPropagation();
+      modelSheet.dataset.open = 'true';
+      scrim.dataset.open = 'true';
+    });
+  } else {
+    composer.classList.remove('composer--expanded');
+    composer.innerHTML = [
+      '<button class="composer__leading" id="composerExpand" aria-label="展开输入区">',
+      '  <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+      '</button>',
+      '<div class="composer__input" id="composerInput">向 OpenBitFun 提问</div>',
+      '<button class="composer__send" aria-label="发送">',
+      '  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m0 0-6 6m6-6 6 6"/></svg>',
+      '</button>'
+    ].join('');
+    bindComposerCollapsed();
+  }
+}
+
+function bindComposerCollapsed() {
+  const expand = document.getElementById('composerExpand');
+  const input = document.getElementById('composerInput');
+  if (expand) expand.addEventListener('click', () => setComposerExpanded(true));
+  if (input) input.addEventListener('click', () => setComposerExpanded(true));
+}
+
+// 侧栏里点会话 → 进对话
+document.querySelectorAll('[data-goto]').forEach((el) => {
+  el.addEventListener('click', (event) => {
+    const target = el.dataset.goto;
+    if (!target) return;
+    event.preventDefault();
+    showScreen(target);
+  });
+});
+
+document.querySelectorAll('.session-row').forEach((row) => {
+  row.addEventListener('click', () => {
+    document.querySelectorAll('.session-row').forEach((r) => r.setAttribute('data-selected', 'false'));
+    row.setAttribute('data-selected', 'true');
+    showScreen('chat');
+  });
+});
+
+document.getElementById('chatMore').addEventListener('click', (event) => {
+  event.stopPropagation();
+  const open = chatPopover.dataset.open === 'true';
+  chatPopover.dataset.open = String(!open);
+  scrim.dataset.open = String(!open);
+});
+
+document.getElementById('modelSheetClose').addEventListener('click', closeOverlays);
+scrim.addEventListener('click', closeOverlays);
+
+document.querySelectorAll('.model-row').forEach((row) => {
+  row.addEventListener('click', () => {
+    document.querySelectorAll('.model-row').forEach((r) => r.setAttribute('data-selected', 'false'));
+    row.setAttribute('data-selected', 'true');
+    closeOverlays();
+  });
+});
+
+bindComposerCollapsed();
+
+// 主题切换
+const themeToggle = document.getElementById('themeToggle');
+themeToggle.addEventListener('click', () => {
+  const root = document.documentElement;
+  const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+  root.dataset.theme = next;
+  themeToggle.textContent = next === 'dark' ? '切换浅色' : '切换深色';
+});
+
+// 键盘：数字键切屏，Esc 收起弹层
+window.addEventListener('keydown', (event) => {
+  const order = ['welcome', 'pairing', 'sessions', 'chat'];
+  const index = Number(event.key) - 1;
+  if (index >= 0 && index < order.length) showScreen(order[index]);
+  if (event.key === 'Escape') closeOverlays();
+});
+</script>
+</body>
+</html>
