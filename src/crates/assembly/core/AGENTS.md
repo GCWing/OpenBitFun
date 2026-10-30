@@ -234,6 +234,14 @@ presentation, check both the native baseline and the optional PTC owner:
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::tools::product_runtime::
 cargo test --locked -p openbitfun-core --no-default-features --features ptc-runtime --lib agentic::tools::product_runtime::
 ```
+
+For RunCode language validation, TypeScript/Python nested pipeline dispatch, and
+PTC manifest/guide compatibility:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features ptc-runtime --lib ptc_
+```
+
 For config-backed product-control option defaults, typed binding, and persisted readback:
 
 ```bash

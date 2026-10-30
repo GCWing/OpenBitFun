@@ -49,7 +49,7 @@ use openbitfun_runtime_ports::{
     PtcToolCallHandler, PtcToolSpecRequest,
 };
 #[cfg(feature = "ptc-runtime")]
-use openbitfun_services_integrations::ptc_runtime::NodePtcRuntime;
+use openbitfun_services_integrations::ptc_runtime::{PtcScriptLanguage, ScriptPtcRuntime};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
@@ -889,8 +889,8 @@ impl PtcToolCallHandler for PtcPipelineToolCallHandler {
         let typescript_sdk = render_ptc_loaded_tool_typescript_sdk(&PtcToolContract::new(
             tool_name.clone(),
             description,
-            input_schema,
-            output_schema,
+            input_schema.clone(),
+            output_schema.clone(),
         ));
 
         let mut loaded = self.loaded_deferred_tool_specs.lock().await;
@@ -904,6 +904,8 @@ impl PtcToolCallHandler for PtcPipelineToolCallHandler {
         }
         Ok(serde_json::json!({
             "typescript_sdk": typescript_sdk,
+            "input_schema": input_schema,
+            "output_schema": output_schema,
         }))
     }
 }
@@ -2974,6 +2976,20 @@ impl ToolPipeline {
             .effective_arguments()
             .get("timeout_ms")
             .and_then(serde_json::Value::as_u64);
+        let language = match task.effective_arguments().get("language") {
+            None => PtcScriptLanguage::TypeScript,
+            Some(serde_json::Value::String(language)) if language == "typescript" => {
+                PtcScriptLanguage::TypeScript
+            }
+            Some(serde_json::Value::String(language)) if language == "python" => {
+                PtcScriptLanguage::Python
+            }
+            _ => {
+                return Err(OpenBitFunError::Validation(
+                    "RunCode language must be typescript or python".to_string(),
+                ))
+            }
+        };
         let runtime = if context.is_remote() {
             #[cfg(feature = "ssh-remote")]
             {
@@ -3002,7 +3018,7 @@ impl ToolPipeline {
                             "Remote SSH services are not initialized".to_string(),
                         )
                     })?;
-                NodePtcRuntime::for_remote(ssh_manager, connection_id)
+                ScriptPtcRuntime::for_remote(ssh_manager, connection_id)
             }
             #[cfg(not(feature = "ssh-remote"))]
             {
@@ -3011,14 +3027,20 @@ impl ToolPipeline {
                 ));
             }
         } else {
-            NodePtcRuntime::discover()
-        };
+            ScriptPtcRuntime::discover()
+        }
+        .with_language(language);
         let operation_id = task.tool_call.tool_id.clone();
+        let nested_cancellation = context
+            .cancellation_token()
+            .map(CancellationToken::child_token)
+            .unwrap_or_default();
+        let _nested_cancellation_guard = nested_cancellation.clone().drop_guard();
         let handler = Arc::new(PtcPipelineToolCallHandler {
             pipeline: Arc::new(self.clone()),
             context: task.context.clone(),
             options: ToolExecutionOptions {
-                parent_cancellation_token: context.cancellation_token().cloned(),
+                parent_cancellation_token: Some(nested_cancellation),
                 ..task.options.clone()
             },
             parent_tool_id: operation_id.clone(),
@@ -4362,6 +4384,17 @@ mod tests {
     #[cfg(feature = "ptc-runtime")]
     #[tokio::test]
     async fn ptc_run_code_dispatches_nested_calls_through_the_pipeline() {
+        assert_ptc_pipeline_dispatch(None).await;
+    }
+
+    #[cfg(feature = "ptc-runtime")]
+    #[tokio::test]
+    async fn ptc_python_run_code_dispatches_nested_calls_through_the_pipeline() {
+        assert_ptc_pipeline_dispatch(Some("python")).await;
+    }
+
+    #[cfg(feature = "ptc-runtime")]
+    async fn assert_ptc_pipeline_dispatch(language: Option<&str>) {
         let pipeline = test_tool_pipeline();
         register_static_test_tool(&pipeline, "Read", json!({"content": "ok"}), 0).await;
         let workspace_root = std::env::temp_dir().join("openbitfun-ptc-pipeline-test");
@@ -4374,14 +4407,22 @@ mod tests {
             serde_json::to_string(&vec!["Read"]).expect("nested allowlist should serialize"),
         );
 
+        let mut arguments = json!({
+            "code": if language == Some("python") {
+                "return await tools.Read({'path': 'src/lib.rs'})"
+            } else {
+                "return await tools.Read({ path: 'src/lib.rs' });"
+            }
+        });
+        if let Some(language) = language {
+            arguments["language"] = json!(language);
+        }
         let results = pipeline
             .execute_tools(
                 vec![ToolCall {
                     tool_id: "outer-ptc".to_string(),
                     tool_name: openbitfun_agent_tools::PTC_RUN_CODE_TOOL_NAME.to_string(),
-                    arguments: json!({
-                        "code": "return await tools.Read({ path: 'src/lib.rs' });"
-                    }),
+                    arguments,
                     ..ToolCall::default()
                 }],
                 context,

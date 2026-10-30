@@ -529,7 +529,7 @@
               "global-project-rules": "Create, reorder, and save global or project-level Allow, Ask, and Deny rules",
               "remembered-grants": "Review, revoke, or clear remembered project permission grants and audit records",
               "deferred-tools": "Deferred tool loading on demand to reduce initial agent context",
-              "tool-presentation": "Choose native mode or PTC TypeScript mode for the model",
+              "tool-presentation": "Choose native mode or PTC TypeScript / Python mode for the model",
               "parallelism": "Set subagent and swarm concurrency plus safe-only, forced-parallel, or serial policy",
               "timeouts": "Set or disable the per-tool execution timeout",
               "review-capacity": "Set the maximum parallel Deep Review workers and queue wait time",

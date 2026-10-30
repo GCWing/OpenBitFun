@@ -100,8 +100,8 @@
     "mode": "工具呈现模式",
     "description": "选择模型看到工具的方式，只对切换设置后新建的会话生效。",
     "native": "原生工具",
-    "ptc": "PTC（TypeScript）",
-    "ptcTooltip": "PTC 通过 RunCode 执行 TypeScript。"
+    "ptc": "PTC（TypeScript / Python）",
+    "ptcTooltip": "PTC 通过 RunCode 执行 TypeScript 或 Python，需在执行主机安装对应运行时。"
   },
   "projectPermissions": {
     "description": "“始终允许”会保存为当前项目的记忆授权；静态项目规则会在工具执行前直接应用",

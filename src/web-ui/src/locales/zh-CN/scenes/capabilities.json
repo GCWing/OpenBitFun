@@ -529,7 +529,7 @@
               "global-project-rules": "创建、排序和保存全局或项目级 Allow、Ask、Deny 规则",
               "remembered-grants": "查看、撤销或清空项目中记住的权限授权与审计记录",
               "deferred-tools": "按需延迟加载工具定义以减少智能体初始上下文",
-              "tool-presentation": "选择模型使用原生模式还是 PTC TypeScript 模式",
+              "tool-presentation": "选择模型使用原生模式还是 PTC TypeScript / Python 模式",
               "parallelism": "设置子智能体与 Swarm 最大并发及安全、强制并行或串行策略",
               "timeouts": "设置或取消单次工具调用超时",
               "review-capacity": "设置 Deep Review 最大并行评审者和队列等待时间",

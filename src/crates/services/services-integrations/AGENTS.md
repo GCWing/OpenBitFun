@@ -119,6 +119,18 @@ slices that are outside pure product logic but still platform-neutral.
   workspaces; never probe or fall back to the host filesystem for a remote
   workspace path.
 
+## PTC runtime
+
+`ptc_runtime::ScriptPtcRuntime` supervises both Node/TypeScript and Python
+workers through the same `PtcRuntime` port and nested-tool protocol. The legacy
+`NodePtcRuntime` name remains a compatibility alias defaulting to TypeScript.
+Python uses isolated, unbuffered CPython 3.8+ (`python3`, then `python`), while
+TypeScript requires Node.js 22.6+. Remote workspaces probe and launch only on
+the SSH target. Neither backend is an OS sandbox. Tool admission and permission
+orchestration remain in the Core pipeline. Add `remote-ssh-concrete` to the
+focused PTC test command below to compile the remote launcher and exercise the
+offline-target/no-local-fallback contract; this is not a live SSH end-to-end test.
+
 ## Verification
 
 Select one integration family and its minimum feature set. Remote SSH uses a
@@ -128,6 +140,7 @@ creating another Cargo target. Real transport/system boundaries such as MCP
 streamable HTTP stay independent. Representative stable entry points are:
 
 ```bash
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features ptc-runtime --lib ptc_runtime::tests::
 cargo check -p openbitfun-services-integrations --no-default-features
 cargo test -p openbitfun-services-integrations --no-default-features --features browser-control --lib browser_control::cdp::tests::
 cargo test -p openbitfun-services-integrations --no-default-features --features remote-persistence --lib remote_persistence::tests::
