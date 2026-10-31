@@ -116,6 +116,7 @@ pub struct BotStrings {
     pub resume_you_label: &'static str,
     pub resume_continue_hint: &'static str,
     pub resume_first_message_hint: &'static str,
+    pub resume_list_failed_prefix: &'static str,
 
     pub switch_model_title: &'static str,
     pub switch_model_pick: &'static str,
@@ -284,6 +285,7 @@ const STRINGS_ZH: BotStrings = BotStrings {
     resume_you_label: "你",
     resume_continue_hint: "可以继续对话。",
     resume_first_message_hint: "发送一条消息即可开始。",
+    resume_list_failed_prefix: "读取会话列表失败：",
 
     switch_model_title: "选择模型",
     switch_model_pick: "请选择要使用的模型：",
@@ -451,6 +453,7 @@ const STRINGS_ZH_TW: BotStrings = BotStrings {
     resume_you_label: "你",
     resume_continue_hint: "可以繼續對話。",
     resume_first_message_hint: "發送一條消息即可開始。",
+    resume_list_failed_prefix: "讀取會話列表失敗：",
 
     switch_model_title: "選擇模型",
     switch_model_pick: "請選擇要使用的模型：",
@@ -619,6 +622,7 @@ Open Remote Connect in OpenBitFun Desktop and send the 6-digit pairing code here
     resume_you_label: "You",
     resume_continue_hint: "You can continue the conversation.",
     resume_first_message_hint: "Send a message to start.",
+    resume_list_failed_prefix: "Failed to list sessions: ",
 
     switch_model_title: "Select Model",
     switch_model_pick: "Pick a model to use:",
