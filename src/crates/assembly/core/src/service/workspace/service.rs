@@ -2138,7 +2138,26 @@ impl WorkspaceService {
 
         let assistant_root = self.path_manager.assistant_workspace_base_dir(None);
         if path.parent()? != assistant_root {
-            return None;
+            // BitFun → OpenBitFun rebranding left pre-migration assistant
+            // workspaces rooted at the legacy hidden directory. Keep them
+            // recognizable so delete/reset commands can still operate on them.
+            let legacy_root = self
+                .path_manager
+                .product_home_dir()
+                .parent()
+                .map(|home| home.join(".bitfun").join("personal_assistant"))?;
+            if path.parent()? != legacy_root {
+                return None;
+            }
+            // The pre-rebranding default assistant workspace (no id suffix)
+            // is also recognizable so it can be deleted/reset like named ones.
+            if path == legacy_root.join("workspace") {
+                return Some(AssistantWorkspaceDescriptor {
+                    path: path.to_path_buf(),
+                    assistant_id: None,
+                    display_name: Self::assistant_display_name(None),
+                });
+            }
         }
 
         let file_name = path.file_name()?.to_string_lossy();
@@ -3788,6 +3807,30 @@ mod tests {
             )),
             Some("Legacy TypeScript implementation".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn legacy_bitfun_assistant_workspace_paths_are_still_recognized() {
+        let env = TestEnvironment::new();
+        let service = build_test_workspace_service(env.path_manager.clone()).await;
+
+        // New-brand assistant root remains recognized.
+        let new_root = env.path_manager.assistant_workspace_base_dir(None);
+        assert!(service.is_assistant_workspace_path(&new_root.join("workspace-abc")));
+        assert!(service.is_assistant_workspace_path(&new_root.join("workspace")));
+
+        // Pre-rebranding assistant workspaces rooted at ~/.bitfun are recognized
+        // so delete/reset commands can still operate on them.
+        let product_home = env.path_manager.product_home_dir();
+        let home = product_home.parent().unwrap();
+        let legacy_root = home.join(".bitfun").join("personal_assistant");
+        assert!(service.is_assistant_workspace_path(&legacy_root.join("workspace-44e0e781")));
+        assert!(service.is_assistant_workspace_path(&legacy_root.join("workspace")));
+
+        // Unrelated paths are still rejected.
+        assert!(!service.is_assistant_workspace_path(&home.join("personal_assistant").join("workspace-xyz")));
+        assert!(!service.is_assistant_workspace_path(&home.join(".bitfun").join("workspace-xyz")));
+        assert!(!service.is_assistant_workspace_path(&home.join(".bitfun").join("personal_assistant").join("other")));
     }
 }
 

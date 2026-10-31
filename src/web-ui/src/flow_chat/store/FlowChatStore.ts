@@ -5399,9 +5399,9 @@ export class FlowChatStore {
         scope.assertCurrent('delete session');
         const sess = this.state.sessions.get(id);
         if (sess?.draft?.phase !== 'editing') {
-          if (!sess || !sessionProjectWorkspacePath(sess)) {
-            throw new Error(`Workspace path not found for session ${id}`);
-          }
+          // The backend resolves session storage by workspace ID, not by path,
+          // so deletion must still be attempted when the workspace directory is
+          // unavailable (e.g. pre-migration assistant workspaces under ~/.bitfun).
           await agentAPI.deleteSession(id, this.sessionHistoryWorkspaceId(id));
           scope.assertCurrent('complete session deletion');
         }
