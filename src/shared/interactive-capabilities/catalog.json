@@ -4646,8 +4646,8 @@
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“列出、连接、查看设备型号与系统、设置别名和删除同账户设备”需要选择设备并确认操作。设备目录使用控制端的账户身份，不随 Peer Device 切换到目标主机。别名优先于技术名称显示，但不修改技术名称；型号与系统信息由设备自身上报。仅支持对应能力的 Relay 可更新或清除别名，旧 Relay 明确显示不支持。智能体打开设备管理入口，由用户确认后续交互。",
-            "reasonEn": "“List, connect, inspect model and OS, set aliases, and remove same-account devices” requires device selection and confirmation. The device directory uses the controller's account identity, not the selected Peer host. Aliases take display priority without changing technical names; model and OS metadata come from the device itself. Alias updates and clearing require Relay capability support; older Relays explicitly remain unsupported. The Agent opens device management and leaves subsequent interaction to the user."
+            "reasonZh": "“列出、连接、查看设备型号与系统、设置别名和删除同账户设备”需要选择设备并确认操作。设备目录使用控制端的账户身份，不随 Peer Device 切换到目标主机。别名优先于技术名称显示，但不修改技术名称；型号与系统信息由设备自身上报。仅支持对应能力的 Relay 可更新或清除别名，旧 Relay 明确显示不支持。智能体打开设备管理入口，由用户确认后续交互。读取设备列表请调用 feature.detached-dispatch 的 list-targets。",
+            "reasonEn": "“List, connect, inspect model and OS, set aliases, and remove same-account devices” requires device selection and confirmation. The device directory uses the controller's account identity, not the selected Peer host. Aliases take display priority without changing technical names; model and OS metadata come from the device itself. Alias updates and clearing require Relay capability support; older Relays explicitly remain unsupported. The Agent opens device management and leaves subsequent interaction to the user. To read the device list, call list-targets on feature.detached-dispatch."
           },
           "evidence": [
             "command:account_list_devices",
@@ -4783,29 +4783,31 @@
         "offline job"
       ],
       "highlightsZh": [
-        "发现与探测目标主机",
-        "派发、继续或取消任务",
+        "列出同账户设备与 SSH 目标",
+        "派发、查询或取消任务",
         "断线后重新加载事件与执行记录"
       ],
       "highlightsEn": [
-        "Discover and probe target hosts",
-        "Dispatch, continue, or cancel jobs",
+        "List same-account devices and SSH targets",
+        "Dispatch, inspect, or cancel jobs",
         "Reload events and execution history after reconnecting"
       ],
       "items": [
         {
           "id": "targets",
-          "titleZh": "列出可派发目标并探测版本、连接和运行能力",
-          "titleEn": "List dispatch targets and probe their version, connectivity, and runtime capabilities",
+          "titleZh": "列出同账户设备与已保存的 SSH 目标",
+          "titleEn": "List same-account devices and saved SSH targets",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“列出可派发目标并探测版本、连接和运行能力”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“List dispatch targets and probe their version, connectivity, and runtime capabilities” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "list-targets"
+            ],
+            "options": []
           },
           "evidence": [
             "command:dispatch_list_targets",
-            "command:dispatch_probe_target"
+            "command:dispatch_probe_target",
+            "command:account_list_devices"
           ]
         },
         {
@@ -4841,13 +4843,14 @@
         },
         {
           "id": "submit",
-          "titleZh": "把包含工作区、会话、模型和权限策略的持久任务提交到目标",
-          "titleEn": "Submit a durable job with workspace, session, model, and permission policy to the target",
+          "titleZh": "从当前 Git 工作区把持久任务提交到同账户设备或 SSH 目标",
+          "titleEn": "Submit a durable job from the current Git workspace to a same-account device or SSH target",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“把包含工作区、会话、模型和权限策略的持久任务提交到目标”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Submit a durable job with workspace, session, model, and permission policy to the target” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "submit"
+            ],
+            "options": []
           },
           "evidence": [
             "command:dispatch_submit"
@@ -4858,10 +4861,12 @@
           "titleZh": "列出派发任务并查询运行状态、结果和错误",
           "titleEn": "List dispatched jobs and query their status, result, and errors",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“列出派发任务并查询运行状态、结果和错误”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“List dispatched jobs and query their status, result, and errors” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "list-jobs",
+              "status"
+            ],
+            "options": []
           },
           "evidence": [
             "command:dispatch_list_jobs",
@@ -4887,17 +4892,31 @@
         },
         {
           "id": "permission-continuation",
-          "titleZh": "远程回答权限请求，并继续或取消目标端任务",
-          "titleEn": "Answer permission requests remotely and continue or cancel target-side work",
+          "titleZh": "远程回答权限请求并继续目标端任务",
+          "titleEn": "Answer permission requests remotely and continue target-side work",
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“远程回答权限请求，并继续或取消目标端任务”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Answer permission requests remotely and continue or cancel target-side work” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "reasonZh": "“远程回答权限请求并继续目标端任务”需要用户逐条确认权限与后续输入，目前没有能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
+            "reasonEn": "“Answer permission requests remotely and continue target-side work” needs the user to confirm each permission and follow-up input and has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
           },
           "evidence": [
             "command:dispatch_answer",
-            "command:dispatch_continue",
+            "command:dispatch_continue"
+          ]
+        },
+        {
+          "id": "cancel",
+          "titleZh": "取消本机派发的任务",
+          "titleEn": "Cancel a job submitted from this host",
+          "control": {
+            "kind": "direct",
+            "operations": [
+              "cancel"
+            ],
+            "options": []
+          },
+          "evidence": [
             "command:dispatch_cancel"
           ]
         },
@@ -4927,12 +4946,16 @@
         "Submit the work and follow its job status"
       ],
       "agentExamplesZh": [
-        "打开设备管理，我想把任务派发到另一台机器",
-        "带我配置远程任务派发"
+        "我有几台设备？",
+        "把这个任务派发到我的 MacBook 上跑",
+        "看看刚才派发的任务跑完没有",
+        "打开设备管理，我想把任务派发到另一台机器"
       ],
       "agentExamplesEn": [
-        "Open device management so I can dispatch work to another machine",
-        "Take me to remote task dispatch setup"
+        "How many devices do I have?",
+        "Dispatch this task to my MacBook",
+        "Check whether the job I dispatched has finished",
+        "Open device management so I can dispatch work to another machine"
       ],
       "destination": {
         "kind": "event",
@@ -4941,7 +4964,43 @@
           "group": "account"
         }
       },
-      "operations": []
+      "operations": [
+        {
+          "id": "list-targets",
+          "titleZh": "列出派发目标",
+          "titleEn": "List dispatch targets",
+          "descriptionZh": "读取同账户下所有 OpenBitFun 设备（含本机，带 isCurrentDevice 标记、在线状态、型号与系统）以及本机已保存的 SSH 连接。回答“有几台设备”或派发前先调用；未登录账户时 devices 为空并说明原因。",
+          "descriptionEn": "Read every OpenBitFun device on this account (including this one, marked isCurrentDevice, with online state, model and OS) plus this host's saved SSH connections. Call it before stating how many devices exist or before submitting; when signed out, devices is empty with a reason."
+        },
+        {
+          "id": "submit",
+          "titleZh": "派发任务",
+          "titleEn": "Submit a dispatch job",
+          "descriptionZh": "把任务提交到另一台同账户设备（名称、别名或 device:<id>）或 SSH 目标（ssh:<connectionId>）。目标在自己的 Git worktree 中从 baseRef（默认 HEAD）开始执行，本机可以断开。仅在用户明确要求派发时调用，并明确选择 approvalPolicy；离线设备直接报错，不会在本机执行。",
+          "descriptionEn": "Submit work to another same-account device (name, alias, or device:<id>) or SSH target (ssh:<connectionId>). The target runs in its own Git worktree branched from baseRef (default HEAD) and this host may disconnect. Call only when the user asked to dispatch, and choose approvalPolicy explicitly; an offline device is an error, never a local run."
+        },
+        {
+          "id": "status",
+          "titleZh": "查询派发任务",
+          "titleEn": "Read dispatch job status",
+          "descriptionZh": "按 jobId 读取本机派发任务的状态与增量事件；cursor 传上次返回值以只取新事件。",
+          "descriptionEn": "Read state and incremental events of a job submitted from this host; pass the previous cursor to read only new events."
+        },
+        {
+          "id": "list-jobs",
+          "titleZh": "列出派发任务",
+          "titleEn": "List dispatch jobs",
+          "descriptionZh": "不带 target 时列出本机提交过的任务；带 target 时直接询问该目标正在持有的任务。",
+          "descriptionEn": "Without target, list jobs submitted from this host; with target, ask that target for the jobs it owns."
+        },
+        {
+          "id": "cancel",
+          "titleZh": "取消派发任务",
+          "titleEn": "Cancel a dispatch job",
+          "descriptionZh": "取消本机提交的指定任务；目标端停止执行并保留记录。",
+          "descriptionEn": "Cancel a job submitted from this host; the target stops it and keeps its record."
+        }
+      ]
     },
     {
       "id": "feature.pages",

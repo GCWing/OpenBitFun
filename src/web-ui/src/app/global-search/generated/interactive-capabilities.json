@@ -4,8 +4,8 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "d44141ce2d62548faf2f081b7319fc529b5ed791891a68cd6733dcd4341508c1",
-  "ownerDigest": "df28e5eed6e3190741899ebf236bc5fb426d2469187e437839a349a7136c7c34",
+  "digest": "5c26d781f664b1daa3cef9062f0ad3e776544242b80fbd1fc303d59d4494eed3",
+  "ownerDigest": "0b2d30952efd57108d9e566dc0bf5a176f2b3d753abfb736bfc32b2c1fa3f7b7",
   "searchAcceptance": [
     {
       "id": "native-image-generation",
@@ -175,11 +175,11 @@
     "features": 22,
     "settings": 22,
     "userFacing": 44,
-    "documentedItems": 337,
+    "documentedItems": 338,
     "controlCoverage": {
-      "direct": 58,
+      "direct": 62,
       "delegated": 72,
-      "interactive": 207,
+      "interactive": 204,
       "unsupported": 0
     }
   },
@@ -9822,6 +9822,7 @@
         "status-list",
         "transcript",
         "permission-continuation",
+        "cancel",
         "result-sync"
       ],
       "kind": "query",
@@ -9867,27 +9868,78 @@
       }
     },
     {
-      "id": "feature.detached-dispatch:open:targets",
+      "id": "feature.detached-dispatch:operation:list-targets",
       "capabilityId": "feature.detached-dispatch",
       "itemIds": [
         "targets"
       ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
+      "kind": "operation",
+      "risk": "read",
+      "executionHost": "productHost",
       "availability": {
         "desktop": {
           "available": true
         },
         "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "available": true
         },
         "peer": {
           "available": true,
           "requiredCapabilities": [
             "product_control_v1",
-            "product_control_presentation_v1"
+            "product_control_native_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "detached-dispatch"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect",
+        "detail": {
+          "group": "account"
+        }
+      }
+    },
+    {
+      "id": "feature.detached-dispatch:operation:submit",
+      "capabilityId": "feature.detached-dispatch",
+      "itemIds": [
+        "submit"
+      ],
+      "kind": "operation",
+      "risk": "execute",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_native_v1"
           ]
         },
         "remoteControl": {
@@ -9895,18 +9947,255 @@
         },
         "detachedDispatch": {
           "available": false,
-          "reason": "This delivery profile has no live presentation surface"
+          "reason": "A detached dispatch job cannot dispatch further work"
         }
       },
       "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "approvalPolicy": {
+            "enum": [
+              "auto",
+              "reject-and-report"
+            ],
+            "type": "string"
+          },
+          "baseRef": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "includeUncommitted": {
+            "type": "boolean"
+          },
+          "model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 32768,
+            "minLength": 1,
+            "type": "string"
+          },
+          "target": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workspacePath": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "prompt",
+          "approvalPolicy",
+          "workspacePath"
+        ],
+        "type": "object"
       },
       "outputSchema": {
         "type": "object",
         "additionalProperties": true
       },
-      "openReason": "unstructuredInteraction",
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "detached-dispatch"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect",
+        "detail": {
+          "group": "account"
+        }
+      }
+    },
+    {
+      "id": "feature.detached-dispatch:operation:status",
+      "capabilityId": "feature.detached-dispatch",
+      "itemIds": [
+        "status-list"
+      ],
+      "kind": "operation",
+      "risk": "read",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_native_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "jobId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "detached-dispatch"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect",
+        "detail": {
+          "group": "account"
+        }
+      }
+    },
+    {
+      "id": "feature.detached-dispatch:operation:list-jobs",
+      "capabilityId": "feature.detached-dispatch",
+      "itemIds": [
+        "status-list"
+      ],
+      "kind": "operation",
+      "risk": "read",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_native_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "detached-dispatch"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect",
+        "detail": {
+          "group": "account"
+        }
+      }
+    },
+    {
+      "id": "feature.detached-dispatch:operation:cancel",
+      "capabilityId": "feature.detached-dispatch",
+      "itemIds": [
+        "cancel"
+      ],
+      "kind": "operation",
+      "risk": "destructive",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_native_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "jobId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "detached-dispatch"
+      },
       "presentationTarget": {
         "kind": "event",
         "eventName": "openbitfun:open-remote-connect",
@@ -9969,104 +10258,6 @@
       "capabilityId": "feature.detached-dispatch",
       "itemIds": [
         "model-sync"
-      ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "openReason": "unstructuredInteraction",
-      "presentationTarget": {
-        "kind": "event",
-        "eventName": "openbitfun:open-remote-connect",
-        "detail": {
-          "group": "account"
-        }
-      }
-    },
-    {
-      "id": "feature.detached-dispatch:open:submit",
-      "capabilityId": "feature.detached-dispatch",
-      "itemIds": [
-        "submit"
-      ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "openReason": "unstructuredInteraction",
-      "presentationTarget": {
-        "kind": "event",
-        "eventName": "openbitfun:open-remote-connect",
-        "detail": {
-          "group": "account"
-        }
-      }
-    },
-    {
-      "id": "feature.detached-dispatch:open:status-list",
-      "capabilityId": "feature.detached-dispatch",
-      "itemIds": [
-        "status-list"
       ],
       "kind": "open",
       "risk": "ui",
@@ -25438,8 +25629,8 @@
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“列出、连接、查看设备型号与系统、设置别名和删除同账户设备”需要选择设备并确认操作。设备目录使用控制端的账户身份，不随 Peer Device 切换到目标主机。别名优先于技术名称显示，但不修改技术名称；型号与系统信息由设备自身上报。仅支持对应能力的 Relay 可更新或清除别名，旧 Relay 明确显示不支持。智能体打开设备管理入口，由用户确认后续交互。",
-            "reasonEn": "“List, connect, inspect model and OS, set aliases, and remove same-account devices” requires device selection and confirmation. The device directory uses the controller's account identity, not the selected Peer host. Aliases take display priority without changing technical names; model and OS metadata come from the device itself. Alias updates and clearing require Relay capability support; older Relays explicitly remain unsupported. The Agent opens device management and leaves subsequent interaction to the user."
+            "reasonZh": "“列出、连接、查看设备型号与系统、设置别名和删除同账户设备”需要选择设备并确认操作。设备目录使用控制端的账户身份，不随 Peer Device 切换到目标主机。别名优先于技术名称显示，但不修改技术名称；型号与系统信息由设备自身上报。仅支持对应能力的 Relay 可更新或清除别名，旧 Relay 明确显示不支持。智能体打开设备管理入口，由用户确认后续交互。读取设备列表请调用 feature.detached-dispatch 的 list-targets。",
+            "reasonEn": "“List, connect, inspect model and OS, set aliases, and remove same-account devices” requires device selection and confirmation. The device directory uses the controller's account identity, not the selected Peer host. Aliases take display priority without changing technical names; model and OS metadata come from the device itself. Alias updates and clearing require Relay capability support; older Relays explicitly remain unsupported. The Agent opens device management and leaves subsequent interaction to the user. To read the device list, call list-targets on feature.detached-dispatch."
           }
         },
         {
@@ -25729,25 +25920,26 @@
         "offline job"
       ],
       "highlightsZh": [
-        "发现与探测目标主机",
-        "派发、继续或取消任务",
+        "列出同账户设备与 SSH 目标",
+        "派发、查询或取消任务",
         "断线后重新加载事件与执行记录"
       ],
       "highlightsEn": [
-        "Discover and probe target hosts",
-        "Dispatch, continue, or cancel jobs",
+        "List same-account devices and SSH targets",
+        "Dispatch, inspect, or cancel jobs",
         "Reload events and execution history after reconnecting"
       ],
       "items": [
         {
           "id": "targets",
-          "titleZh": "列出可派发目标并探测版本、连接和运行能力",
-          "titleEn": "List dispatch targets and probe their version, connectivity, and runtime capabilities",
+          "titleZh": "列出同账户设备与已保存的 SSH 目标",
+          "titleEn": "List same-account devices and saved SSH targets",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“列出可派发目标并探测版本、连接和运行能力”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“List dispatch targets and probe their version, connectivity, and runtime capabilities” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "list-targets"
+            ],
+            "options": []
           }
         },
         {
@@ -25774,13 +25966,14 @@
         },
         {
           "id": "submit",
-          "titleZh": "把包含工作区、会话、模型和权限策略的持久任务提交到目标",
-          "titleEn": "Submit a durable job with workspace, session, model, and permission policy to the target",
+          "titleZh": "从当前 Git 工作区把持久任务提交到同账户设备或 SSH 目标",
+          "titleEn": "Submit a durable job from the current Git workspace to a same-account device or SSH target",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“把包含工作区、会话、模型和权限策略的持久任务提交到目标”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Submit a durable job with workspace, session, model, and permission policy to the target” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "submit"
+            ],
+            "options": []
           }
         },
         {
@@ -25788,10 +25981,12 @@
           "titleZh": "列出派发任务并查询运行状态、结果和错误",
           "titleEn": "List dispatched jobs and query their status, result, and errors",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“列出派发任务并查询运行状态、结果和错误”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“List dispatched jobs and query their status, result, and errors” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "list-jobs",
+              "status"
+            ],
+            "options": []
           }
         },
         {
@@ -25807,13 +26002,25 @@
         },
         {
           "id": "permission-continuation",
-          "titleZh": "远程回答权限请求，并继续或取消目标端任务",
-          "titleEn": "Answer permission requests remotely and continue or cancel target-side work",
+          "titleZh": "远程回答权限请求并继续目标端任务",
+          "titleEn": "Answer permission requests remotely and continue target-side work",
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“远程回答权限请求，并继续或取消目标端任务”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Answer permission requests remotely and continue or cancel target-side work” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "reasonZh": "“远程回答权限请求并继续目标端任务”需要用户逐条确认权限与后续输入，目前没有能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
+            "reasonEn": "“Answer permission requests remotely and continue target-side work” needs the user to confirm each permission and follow-up input and has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+          }
+        },
+        {
+          "id": "cancel",
+          "titleZh": "取消本机派发的任务",
+          "titleEn": "Cancel a job submitted from this host",
+          "control": {
+            "kind": "direct",
+            "operations": [
+              "cancel"
+            ],
+            "options": []
           }
         },
         {
@@ -25839,12 +26046,16 @@
         "Submit the work and follow its job status"
       ],
       "agentExamplesZh": [
-        "打开设备管理，我想把任务派发到另一台机器",
-        "带我配置远程任务派发"
+        "我有几台设备？",
+        "把这个任务派发到我的 MacBook 上跑",
+        "看看刚才派发的任务跑完没有",
+        "打开设备管理，我想把任务派发到另一台机器"
       ],
       "agentExamplesEn": [
-        "Open device management so I can dispatch work to another machine",
-        "Take me to remote task dispatch setup"
+        "How many devices do I have?",
+        "Dispatch this task to my MacBook",
+        "Check whether the job I dispatched has finished",
+        "Open device management so I can dispatch work to another machine"
       ],
       "destination": {
         "kind": "event",
@@ -25853,7 +26064,157 @@
           "group": "account"
         }
       },
-      "operations": [],
+      "operations": [
+        {
+          "id": "list-targets",
+          "titleZh": "列出派发目标",
+          "titleEn": "List dispatch targets",
+          "descriptionZh": "读取同账户下所有 OpenBitFun 设备（含本机，带 isCurrentDevice 标记、在线状态、型号与系统）以及本机已保存的 SSH 连接。回答“有几台设备”或派发前先调用；未登录账户时 devices 为空并说明原因。",
+          "descriptionEn": "Read every OpenBitFun device on this account (including this one, marked isCurrentDevice, with online state, model and OS) plus this host's saved SSH connections. Call it before stating how many devices exist or before submitting; when signed out, devices is empty with a reason.",
+          "risk": "read",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          }
+        },
+        {
+          "id": "submit",
+          "titleZh": "派发任务",
+          "titleEn": "Submit a dispatch job",
+          "descriptionZh": "把任务提交到另一台同账户设备（名称、别名或 device:<id>）或 SSH 目标（ssh:<connectionId>）。目标在自己的 Git worktree 中从 baseRef（默认 HEAD）开始执行，本机可以断开。仅在用户明确要求派发时调用，并明确选择 approvalPolicy；离线设备直接报错，不会在本机执行。",
+          "descriptionEn": "Submit work to another same-account device (name, alias, or device:<id>) or SSH target (ssh:<connectionId>). The target runs in its own Git worktree branched from baseRef (default HEAD) and this host may disconnect. Call only when the user asked to dispatch, and choose approvalPolicy explicitly; an offline device is an error, never a local run.",
+          "risk": "execute",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "agent": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "approvalPolicy": {
+                "enum": [
+                  "auto",
+                  "reject-and-report"
+                ],
+                "type": "string"
+              },
+              "baseRef": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "includeUncommitted": {
+                "type": "boolean"
+              },
+              "model": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "prompt": {
+                "maxLength": 32768,
+                "minLength": 1,
+                "type": "string"
+              },
+              "target": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              "title": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "workspacePath": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "target",
+              "prompt",
+              "approvalPolicy",
+              "workspacePath"
+            ],
+            "type": "object"
+          },
+          "argumentScopes": {
+            "workspacePath": "productHostLocal"
+          }
+        },
+        {
+          "id": "status",
+          "titleZh": "查询派发任务",
+          "titleEn": "Read dispatch job status",
+          "descriptionZh": "按 jobId 读取本机派发任务的状态与增量事件；cursor 传上次返回值以只取新事件。",
+          "descriptionEn": "Read state and incremental events of a job submitted from this host; pass the previous cursor to read only new events.",
+          "risk": "read",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "cursor": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "jobId": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "jobId"
+            ],
+            "type": "object"
+          }
+        },
+        {
+          "id": "list-jobs",
+          "titleZh": "列出派发任务",
+          "titleEn": "List dispatch jobs",
+          "descriptionZh": "不带 target 时列出本机提交过的任务；带 target 时直接询问该目标正在持有的任务。",
+          "descriptionEn": "Without target, list jobs submitted from this host; with target, ask that target for the jobs it owns.",
+          "risk": "read",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "target": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [],
+            "type": "object"
+          }
+        },
+        {
+          "id": "cancel",
+          "titleZh": "取消派发任务",
+          "titleEn": "Cancel a dispatch job",
+          "descriptionZh": "取消本机提交的指定任务；目标端停止执行并保留记录。",
+          "descriptionEn": "Cancel a job submitted from this host; the target stops it and keeps its record.",
+          "risk": "destructive",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "jobId": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "jobId"
+            ],
+            "type": "object"
+          }
+        }
+      ],
       "options": [],
       "searchTerms": [
         "feature.detached-dispatch",
@@ -25870,32 +26231,38 @@
         "remote execution",
         "target host",
         "offline job",
-        "发现与探测目标主机",
-        "派发、继续或取消任务",
+        "列出同账户设备与 SSH 目标",
+        "派发、查询或取消任务",
         "断线后重新加载事件与执行记录",
-        "Discover and probe target hosts",
-        "Dispatch, continue, or cancel jobs",
+        "List same-account devices and SSH targets",
+        "Dispatch, inspect, or cancel jobs",
         "Reload events and execution history after reconnecting",
-        "列出可派发目标并探测版本、连接和运行能力",
-        "List dispatch targets and probe their version, connectivity, and runtime capabilities",
+        "列出同账户设备与已保存的 SSH 目标",
+        "List same-account devices and saved SSH targets",
         "为目标主机配置运行环境并安装或更新 OpenBitFun CLI",
         "Provision the target runtime and install or update the OpenBitFun CLI",
         "在提交任务前同步目标所需的模型配置",
         "Synchronize required model configuration before submitting a job",
-        "把包含工作区、会话、模型和权限策略的持久任务提交到目标",
-        "Submit a durable job with workspace, session, model, and permission policy to the target",
+        "从当前 Git 工作区把持久任务提交到同账户设备或 SSH 目标",
+        "Submit a durable job from the current Git workspace to a same-account device or SSH target",
         "列出派发任务并查询运行状态、结果和错误",
         "List dispatched jobs and query their status, result, and errors",
         "保存、追加和重新加载可断线恢复的执行记录",
         "Save, append, and reload reconnectable execution transcripts",
-        "远程回答权限请求，并继续或取消目标端任务",
-        "Answer permission requests remotely and continue or cancel target-side work",
+        "远程回答权限请求并继续目标端任务",
+        "Answer permission requests remotely and continue target-side work",
+        "取消本机派发的任务",
+        "Cancel a job submitted from this host",
         "将目标端结果同步回控制端，而不把控制端当作远程文件系统代理",
         "Synchronize target-side results back without treating the controller as a remote-filesystem proxy",
+        "我有几台设备？",
+        "把这个任务派发到我的 MacBook 上跑",
+        "看看刚才派发的任务跑完没有",
         "打开设备管理，我想把任务派发到另一台机器",
-        "带我配置远程任务派发",
-        "Open device management so I can dispatch work to another machine",
-        "Take me to remote task dispatch setup"
+        "How many devices do I have?",
+        "Dispatch this task to my MacBook",
+        "Check whether the job I dispatched has finished",
+        "Open device management so I can dispatch work to another machine"
       ],
       "docsUrl": "https://playbook.openbitfun.com/capabilities/feature.detached-dispatch/"
     },

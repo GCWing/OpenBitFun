@@ -6,6 +6,7 @@
 pub mod account;
 pub mod agent_catalog;
 pub mod canvas;
+pub mod detached_dispatch_control;
 pub mod html_preview;
 pub mod mcp;
 pub mod native_hooks;

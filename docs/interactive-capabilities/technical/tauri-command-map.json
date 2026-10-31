@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "d44141ce2d62548faf2f081b7319fc529b5ed791891a68cd6733dcd4341508c1",
+  "catalogDigest": "5c26d781f664b1daa3cef9062f0ad3e776544242b80fbd1fc303d59d4494eed3",
   "commandCount": 709,
   "coverage": {
     "commandCount": 709,
@@ -193,11 +193,13 @@
     {
       "id": "account_list_devices",
       "moduleId": "remote_connect",
-      "capabilityId": "feature.remote-connect",
+      "capabilityId": null,
       "capabilityIds": [
+        "feature.detached-dispatch",
         "feature.remote-connect"
       ],
       "documentedItemIds": [
+        "feature.detached-dispatch:targets",
         "feature.remote-connect:devices"
       ],
       "visibility": "documented",
@@ -2276,7 +2278,7 @@
         "feature.detached-dispatch"
       ],
       "documentedItemIds": [
-        "feature.detached-dispatch:permission-continuation"
+        "feature.detached-dispatch:cancel"
       ],
       "visibility": "documented",
       "rustPath": "api::dispatch_api::dispatch_cancel",

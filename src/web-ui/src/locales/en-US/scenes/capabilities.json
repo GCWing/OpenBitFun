@@ -317,13 +317,14 @@
           "title": "Detached Dispatch",
           "summary": "Dispatch durable work to another OpenBitFun host; the controller may disconnect while the target continues and keeps the record.",
           "items": {
-            "targets": "List dispatch targets and probe their version, connectivity, and runtime capabilities",
+            "targets": "List same-account devices and saved SSH targets",
             "provision": "Provision the target runtime and install or update the OpenBitFun CLI",
             "model-sync": "Synchronize required model configuration before submitting a job",
-            "submit": "Submit a durable job with workspace, session, model, and permission policy to the target",
+            "submit": "Submit a durable job from the current Git workspace to a same-account device or SSH target",
             "status-list": "List dispatched jobs and query their status, result, and errors",
             "transcript": "Save, append, and reload reconnectable execution transcripts",
-            "permission-continuation": "Answer permission requests remotely and continue or cancel target-side work",
+            "permission-continuation": "Answer permission requests remotely and continue target-side work",
+            "cancel": "Cancel a job submitted from this host",
             "result-sync": "Synchronize target-side results back without treating the controller as a remote-filesystem proxy"
           }
         },

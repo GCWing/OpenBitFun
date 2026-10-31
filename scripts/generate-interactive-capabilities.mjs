@@ -1295,6 +1295,20 @@ function definitionAvailability(kind, handler) {
   if (handler?.kind === 'provider' && handler.providerId === 'remote-connect') {
     return { desktop, cli: availability(true), peer: peer('remote_connect_control_v1'), remoteControl: remote, detachedDispatch: availability(true) };
   }
+  if (handler?.kind === 'provider' && handler.providerId === 'detached-dispatch') {
+    // A dispatch worker may observe jobs but must not fan out further work.
+    const nestedSubmit = handler.operationId === 'submit';
+    return {
+      desktop,
+      cli: availability(true),
+      peer: peer('product_control_native_v1'),
+      remoteControl: remote,
+      detachedDispatch: availability(
+        !nestedSubmit,
+        'A detached dispatch job cannot dispatch further work',
+      ),
+    };
+  }
   const presentationOnly = handler?.kind === 'productAction';
   const nativeProvider = handler?.kind === 'provider';
   const headlessReason = presentationOnly

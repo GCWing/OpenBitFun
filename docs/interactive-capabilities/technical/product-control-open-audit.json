@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "d44141ce2d62548faf2f081b7319fc529b5ed791891a68cd6733dcd4341508c1",
-  "count": 207,
+  "catalogDigest": "5c26d781f664b1daa3cef9062f0ad3e776544242b80fbd1fc303d59d4494eed3",
+  "count": 204,
   "reasonCounts": {
     "externalAuth": 4,
     "secretEntry": 5,
-    "unstructuredInteraction": 172,
+    "unstructuredInteraction": 169,
     "visualSelection": 26
   },
   "entries": [
@@ -2027,8 +2027,8 @@
       "titleZh": "列出、连接、查看设备型号与系统、设置别名和删除同账户设备",
       "titleEn": "List, connect, inspect model and OS, set aliases, and remove same-account devices",
       "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“列出、连接、查看设备型号与系统、设置别名和删除同账户设备”需要选择设备并确认操作。设备目录使用控制端的账户身份，不随 Peer Device 切换到目标主机。别名优先于技术名称显示，但不修改技术名称；型号与系统信息由设备自身上报。仅支持对应能力的 Relay 可更新或清除别名，旧 Relay 明确显示不支持。智能体打开设备管理入口，由用户确认后续交互。",
-      "reasonEn": "“List, connect, inspect model and OS, set aliases, and remove same-account devices” requires device selection and confirmation. The device directory uses the controller's account identity, not the selected Peer host. Aliases take display priority without changing technical names; model and OS metadata come from the device itself. Alias updates and clearing require Relay capability support; older Relays explicitly remain unsupported. The Agent opens device management and leaves subsequent interaction to the user.",
+      "reasonZh": "“列出、连接、查看设备型号与系统、设置别名和删除同账户设备”需要选择设备并确认操作。设备目录使用控制端的账户身份，不随 Peer Device 切换到目标主机。别名优先于技术名称显示，但不修改技术名称；型号与系统信息由设备自身上报。仅支持对应能力的 Relay 可更新或清除别名，旧 Relay 明确显示不支持。智能体打开设备管理入口，由用户确认后续交互。读取设备列表请调用 feature.detached-dispatch 的 list-targets。",
+      "reasonEn": "“List, connect, inspect model and OS, set aliases, and remove same-account devices” requires device selection and confirmation. The device directory uses the controller's account identity, not the selected Peer host. Aliases take display priority without changing technical names; model and OS metadata come from the device itself. Alias updates and clearing require Relay capability support; older Relays explicitly remain unsupported. The Agent opens device management and leaves subsequent interaction to the user. To read the device list, call list-targets on feature.detached-dispatch.",
       "presentationTarget": {
         "kind": "event",
         "eventName": "openbitfun:open-remote-connect"
@@ -2061,26 +2061,6 @@
         "command:peer_control_detach",
         "command:peer_controller_set_active",
         "command:peer_mode_ping"
-      ]
-    },
-    {
-      "capabilityId": "feature.detached-dispatch",
-      "itemId": "targets",
-      "titleZh": "列出可派发目标并探测版本、连接和运行能力",
-      "titleEn": "List dispatch targets and probe their version, connectivity, and runtime capabilities",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“列出可派发目标并探测版本、连接和运行能力”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“List dispatch targets and probe their version, connectivity, and runtime capabilities” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "event",
-        "eventName": "openbitfun:open-remote-connect",
-        "detail": {
-          "group": "account"
-        }
-      },
-      "evidence": [
-        "command:dispatch_list_targets",
-        "command:dispatch_probe_target"
       ]
     },
     {
@@ -2126,46 +2106,6 @@
     },
     {
       "capabilityId": "feature.detached-dispatch",
-      "itemId": "submit",
-      "titleZh": "把包含工作区、会话、模型和权限策略的持久任务提交到目标",
-      "titleEn": "Submit a durable job with workspace, session, model, and permission policy to the target",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“把包含工作区、会话、模型和权限策略的持久任务提交到目标”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Submit a durable job with workspace, session, model, and permission policy to the target” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "event",
-        "eventName": "openbitfun:open-remote-connect",
-        "detail": {
-          "group": "account"
-        }
-      },
-      "evidence": [
-        "command:dispatch_submit"
-      ]
-    },
-    {
-      "capabilityId": "feature.detached-dispatch",
-      "itemId": "status-list",
-      "titleZh": "列出派发任务并查询运行状态、结果和错误",
-      "titleEn": "List dispatched jobs and query their status, result, and errors",
-      "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“列出派发任务并查询运行状态、结果和错误”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“List dispatched jobs and query their status, result, and errors” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
-      "presentationTarget": {
-        "kind": "event",
-        "eventName": "openbitfun:open-remote-connect",
-        "detail": {
-          "group": "account"
-        }
-      },
-      "evidence": [
-        "command:dispatch_list_jobs",
-        "command:dispatch_status",
-        "command:dispatch_query"
-      ]
-    },
-    {
-      "capabilityId": "feature.detached-dispatch",
       "itemId": "transcript",
       "titleZh": "保存、追加和重新加载可断线恢复的执行记录",
       "titleEn": "Save, append, and reload reconnectable execution transcripts",
@@ -2188,11 +2128,11 @@
     {
       "capabilityId": "feature.detached-dispatch",
       "itemId": "permission-continuation",
-      "titleZh": "远程回答权限请求，并继续或取消目标端任务",
-      "titleEn": "Answer permission requests remotely and continue or cancel target-side work",
+      "titleZh": "远程回答权限请求并继续目标端任务",
+      "titleEn": "Answer permission requests remotely and continue target-side work",
       "reasonCode": "unstructuredInteraction",
-      "reasonZh": "“远程回答权限请求，并继续或取消目标端任务”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-      "reasonEn": "“Answer permission requests remotely and continue or cancel target-side work” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
+      "reasonZh": "“远程回答权限请求并继续目标端任务”需要用户逐条确认权限与后续输入，目前没有能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
+      "reasonEn": "“Answer permission requests remotely and continue target-side work” needs the user to confirm each permission and follow-up input and has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user.",
       "presentationTarget": {
         "kind": "event",
         "eventName": "openbitfun:open-remote-connect",
@@ -2202,8 +2142,7 @@
       },
       "evidence": [
         "command:dispatch_answer",
-        "command:dispatch_continue",
-        "command:dispatch_cancel"
+        "command:dispatch_continue"
       ]
     },
     {

@@ -310,7 +310,7 @@ impl Tool for OpenBitFunControlTool {
 
     async fn description(&self) -> OpenBitFunResult<String> {
         Ok(
-            "Control OpenBitFun features and settings, including MCP servers and Remote Connect bots/Mobile Web. Prefer this tool over ComputerUse. Use the two-step flow: `list` or `search`, then `get` the matching capability and follow its schema and availability to `configure`, `execute`, or `open`. Open a root with capability_id only. destination.actionId is presentation metadata, never an item_id or operation_id. The catalog loads on demand; never guess IDs or values."
+            "Control OpenBitFun features and settings, including MCP servers, Remote Connect bots/Mobile Web, and same-account devices with Detached Dispatch to other hosts. Prefer this tool over ComputerUse. Use the two-step flow: `list` or `search`, then `get` the matching capability and follow its schema and availability to `configure`, `execute`, or `open`. Open a root with capability_id only. destination.actionId is presentation metadata, never an item_id or operation_id. The catalog loads on demand; never guess IDs or values."
                 .to_string(),
         )
     }
