@@ -3,6 +3,39 @@
 For development commands, see [AGENTS.md](AGENTS.md) and the repository
 [contribution guide](../../../CONTRIBUTING.md).
 
+## Programmatic tool calling (PTC)
+
+In **Settings → Tools → Execution & Permissions**, select PTC tool presentation
+for new sessions. `RunCode` accepts an async function body and an optional
+`language`: `typescript` (the backward-compatible default) or `python`.
+TypeScript needs Node.js 22.6+; Python needs Python 3.8+ and does not need Node.js.
+Install the selected runtime on the execution host: the SSH workspace target,
+peer host, or detached-dispatch target, not just the controller computer.
+An unavailable runtime returns an explicit error without local fallback or
+silently translating the source into another language.
+
+For example, a Python `RunCode` request is:
+
+```json
+{
+  "language": "python",
+  "code": "import asyncio\nresults = await asyncio.gather(tools.Read({'file_path': 'a.py'}), tools.Read({'file_path': 'b.py'}))\nreturn results"
+}
+```
+
+Use the actual argument names from the session's generated tool guide.
+`tools.<name>(arguments)` and `tools["name"](arguments)` are awaitable; arguments
+are dictionaries and JSON results are Python dictionaries/lists. Load deferred
+tools with `await tools.getToolSpec("name")`, inspect the returned `input_schema`
+and `output_schema`, then call `await tools.callTool("name", arguments)`.
+`print` output is captured in `logs`; return a JSON-serializable value.
+
+Both languages share tool permissions, execution deadlines, output limits and
+process-tree cancellation. Pending nested calls are cancelled when the program
+ends. These workers provide failure containment, **not an OS sandbox**:
+Python imports and direct filesystem/network operations are not governed by
+nested-tool permissions. Do not run untrusted code on this boundary.
+
 ## Model selection and smart routing
 
 **Release availability:** smart mode is not available in this release. The GUI

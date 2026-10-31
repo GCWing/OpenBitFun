@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "d44141ce2d62548faf2f081b7319fc529b5ed791891a68cd6733dcd4341508c1",
+  "digest": "44e81d200d46b1ffb031427d4812fbcaa388aa556d82408fa78f8e6193fdcf22",
   "ownerDigest": "df28e5eed6e3190741899ebf236bc5fb426d2469187e437839a349a7136c7c34",
   "searchAcceptance": [
     {
@@ -30177,8 +30177,8 @@
         },
         {
           "id": "tool-presentation",
-          "titleZh": "选择模型使用原生模式还是 PTC TypeScript 模式",
-          "titleEn": "Choose native mode or PTC TypeScript mode for the model",
+          "titleZh": "选择模型使用原生模式还是 PTC TypeScript / Python 模式",
+          "titleEn": "Choose native mode or PTC TypeScript / Python mode for the model",
           "destination": {
             "kind": "settings",
             "pageId": "tools.execution",
@@ -30381,8 +30381,8 @@
           "id": "tool-presentation-mode",
           "titleZh": "工具呈现模式",
           "titleEn": "Tool presentation mode",
-          "descriptionZh": "选择模型直接调用原生工具，或通过 PTC TypeScript 调用工具。",
-          "descriptionEn": "Choose whether the model calls native tools directly or uses PTC TypeScript.",
+          "descriptionZh": "选择模型直接调用原生工具，或通过 PTC TypeScript / Python 调用工具。",
+          "descriptionEn": "Choose whether the model calls native tools directly or uses PTC TypeScript / Python.",
           "valueSchema": {
             "type": "string",
             "enum": [
@@ -30550,8 +30550,8 @@
         "Review, revoke, or clear remembered project permission grants and audit records",
         "按需延迟加载工具定义以减少智能体初始上下文",
         "Deferred tool loading on demand to reduce initial agent context",
-        "选择模型使用原生模式还是 PTC TypeScript 模式",
-        "Choose native mode or PTC TypeScript mode for the model",
+        "选择模型使用原生模式还是 PTC TypeScript / Python 模式",
+        "Choose native mode or PTC TypeScript / Python mode for the model",
         "设置子智能体与 Swarm 最大并发及安全、强制并行或串行策略",
         "Set subagent and swarm concurrency plus safe-only, forced-parallel, or serial policy",
         "设置或取消单次工具调用超时",

@@ -209,7 +209,13 @@ pub fn ptc_run_code_input_schema() -> Value {
         "properties": {
             "code": {
                 "type": "string",
-                "description": "TypeScript program. Call tools by name through the generated tools binding and return a JSON value."
+                "description": "Async TypeScript or Python function body. Call tools through the generated tools binding and return a JSON value."
+            },
+            "language": {
+                "type": "string",
+                "enum": ["typescript", "python"],
+                "default": "typescript",
+                "description": "Script language. TypeScript requires Node.js 22.6+; Python requires Python 3.8+ on the execution host. Omit for backward-compatible TypeScript execution."
             },
             "timeout_ms": {
                 "type": "integer",
@@ -222,7 +228,7 @@ pub fn ptc_run_code_input_schema() -> Value {
 }
 
 pub fn ptc_run_code_description() -> String {
-    "Execute a TypeScript program that can call available tools through the provided `tools` binding and return a compact JSON value."
+    "Execute a TypeScript program (default) or a Python program (language: python) that can call available tools through the provided `tools` binding and return a compact JSON value."
         .to_string()
 }
 
@@ -239,12 +245,12 @@ pub fn render_ptc_tool_calling_guide_with_options(
     include_deferred_tool_apis: bool,
 ) -> String {
     let deferred_guidance = if include_deferred_tool_apis {
-        "\n\nFor deferred tools:\n1. Call `tools.getToolSpec(\"tool_name\")` before choosing arguments.\n2. Read the returned `typescript_sdk`, which contains the input and output types.\n3. Call `tools.callTool(\"tool_name\", args)` with arguments matching that SDK.\nDo not infer deferred tool arguments from the placeholder `Record<string, unknown>` type."
+        "\n\nFor deferred tools:\n1. Call `tools.getToolSpec(\"tool_name\")` before choosing arguments.\n2. Read the returned `typescript_sdk`, which contains the input and output types.\n3. Call `tools.callTool(\"tool_name\", args)` with arguments matching that SDK.\nPython can read the returned `input_schema` and `output_schema` instead of `typescript_sdk`. Do not infer deferred tool arguments from the placeholder `Record<string, unknown>` type."
     } else {
         ""
     };
     format!(
-        "# Tool Calling Guide\nUse `RunCode` with a TypeScript program. Call tools through the generated `tools` binding and return a JSON-serializable value. The binding includes direct tool signatures.{}\n\nGenerated SDK:\n```ts\n{}\n```",
+        "# Tool Calling Guide\nUse `RunCode` with a TypeScript program by default, or set `language` to `python` for Python. Both execute an async function body: use top-level await and return a JSON-serializable result. Python requires Python 3.8+ on the execution host, not Node.js. In Python use `await tools.Read({{\"file_path\": \"file.py\"}})`; tool arguments are Python dictionaries and results are dictionaries/lists, not attribute objects. Use `asyncio.gather` for concurrency and `print` for captured logs. The TypeScript SDK below describes the same tool names, argument fields and result shapes for both languages; do not execute TypeScript declarations in Python. Scripts are trusted code running in supervised processes, NOT an OS sandbox; direct filesystem/network access is not mediated by tool permissions. Call tools through the generated `tools` binding and return a JSON-serializable value. The binding includes direct tool signatures.{}\n\nGenerated SDK:\n```ts\n{}\n```",
         deferred_guidance,
         sdk_source.trim(),
     )
@@ -717,5 +723,21 @@ mod tests {
         assert!(
             render_ptc_tool_calling_guide("export type ToolArgsMap = {};").contains("ToolArgsMap")
         );
+    }
+
+    #[test]
+    fn run_code_exposes_python_without_changing_legacy_required_fields() {
+        let schema = ptc_run_code_input_schema();
+        assert_eq!(
+            schema["properties"]["language"]["enum"],
+            json!(["typescript", "python"])
+        );
+        assert_eq!(schema["properties"]["language"]["default"], "typescript");
+        assert_eq!(schema["required"], json!(["code"]));
+        let guide = render_ptc_tool_calling_guide("sdk");
+        assert!(guide.contains("set `language` to `python`"));
+        assert!(guide.contains("await tools.Read({\"file_path\": \"file.py\"})"));
+        assert!(guide.contains("Python dictionaries"));
+        assert!(guide.contains("NOT an OS sandbox"));
     }
 }

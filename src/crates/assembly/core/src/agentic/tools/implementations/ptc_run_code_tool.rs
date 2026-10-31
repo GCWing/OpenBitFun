@@ -38,7 +38,7 @@ impl Tool for PtcRunCodeTool {
     }
 
     fn short_description(&self) -> String {
-        "Execute a TypeScript program with available tools".to_string()
+        "Execute a TypeScript or Python program with available tools".to_string()
     }
 
     fn input_schema(&self) -> Value {
@@ -88,6 +88,17 @@ impl Tool for PtcRunCodeTool {
         _context: Option<&ToolUseContext>,
     ) -> ValidationResult {
         if input
+            .get("language")
+            .is_some_and(|language| !matches!(language.as_str(), Some("typescript" | "python")))
+        {
+            return ValidationResult {
+                result: false,
+                message: Some("RunCode language must be typescript or python".to_string()),
+                error_code: Some(400),
+                meta: None,
+            };
+        }
+        if input
             .get("code")
             .and_then(Value::as_str)
             .is_some_and(|code| !code.trim().is_empty())
@@ -110,5 +121,31 @@ impl Tool for PtcRunCodeTool {
         Err(OpenBitFunError::NotImplemented(
             "RunCode must be executed by the PTC tool pipeline".to_string(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn ptc_validates_python_and_legacy_typescript_inputs() {
+        let tool = PtcRunCodeTool::new();
+        for input in [
+            json!({"code": "return 1;"}),
+            json!({"code": "return 1;", "language": "typescript"}),
+            json!({"code": "return 1", "language": "python"}),
+        ] {
+            assert!(tool.validate_input(&input, None).await.result);
+        }
+        for input in [
+            json!({"code": "return 1", "language": "ruby"}),
+            json!({"code": "return 1", "language": null}),
+            json!({"code": "return 1", "language": 1}),
+            json!({"code": " ", "language": "python"}),
+        ] {
+            assert!(!tool.validate_input(&input, None).await.result);
+        }
     }
 }
