@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clearComposerForSubmission,
   failedSubmissionRecoveryTarget,
+  manualCompactionTurnStarted,
   shouldRecordContextMutation,
   successfulRetryCleanupTarget,
 } from './chatInputDraftRecovery';
@@ -75,5 +76,30 @@ describe('ChatInput failed submission recovery', () => {
       'retry this',
       ['context-a'],
     )).toBe('none');
+  });
+});
+
+describe('manual compaction admission', () => {
+  const turn = (id: string, kind?: string) => ({ id, kind });
+
+  it('keeps a command retryable while no maintenance turn exists', () => {
+    expect(manualCompactionTurnStarted(
+      new Set(['turn-1']),
+      [turn('turn-1', 'user_dialog')],
+    )).toBe(false);
+  });
+
+  it('detects the maintenance turn the host created for the submission', () => {
+    expect(manualCompactionTurnStarted(
+      new Set(['turn-1']),
+      [turn('turn-1', 'user_dialog'), turn('turn-2', 'manual_compaction')],
+    )).toBe(true);
+  });
+
+  it('ignores a compaction turn left by an earlier submission', () => {
+    expect(manualCompactionTurnStarted(
+      new Set(['turn-1', 'turn-2']),
+      [turn('turn-1', 'manual_compaction'), turn('turn-2', 'user_dialog')],
+    )).toBe(false);
   });
 });

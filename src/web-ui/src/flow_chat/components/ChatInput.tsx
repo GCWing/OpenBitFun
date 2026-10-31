@@ -91,6 +91,7 @@ import { useAssistantBootstrap } from '@/app/hooks/useAssistantBootstrap';
 import {
   clearComposerForSubmission,
   failedSubmissionRecoveryTarget,
+  manualCompactionTurnStarted,
   shouldRecordContextMutation,
   successfulRetryCleanupTarget,
 } from './chatInputDraftRecovery';
@@ -3742,7 +3743,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
+    // Turns already visible before the submission; a maintenance turn that is
+    // not in this set proves the host admitted the compaction.
+    const knownTurnIds = new Set(
+      (FlowChatStore.getInstance().getState().sessions.get(effectiveTargetSessionId)?.dialogTurns ?? [])
+        .map(turn => turn.id),
+    );
+
+    setHistoryIndex(-1);
+    setSavedDraft('');
     dispatchInput({ type: 'CLEAR_VALUE' });
+    clearPendingLargePastes();
+    // Clear the machine queue too; a stale queued value would be restored into
+    // the now-empty composer by the queuedInput sync effect.
     setQueuedInput(null);
     setSlashCommandState({ isActive: false, kind: 'all', query: '', selectedIndex: 0 });
 
@@ -3753,7 +3766,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         error,
         sessionId: effectiveTargetSessionId,
       });
-      dispatchInput({ type: 'SET_VALUE', payload: message });
+      // A command the host admitted is not a draft. The desktop /compact entry
+      // point settles only after the compaction reaches a terminal state, so
+      // restoring that text would put "/compact" back into the composer long
+      // after the user submitted it - including when the compaction was already
+      // applied and only its terminal bookkeeping failed. Only an early
+      // rejection, which never started a maintenance turn, hands the command
+      // back for a retry.
+      const session = FlowChatStore.getInstance()
+        .getState()
+        .sessions.get(effectiveTargetSessionId);
+      if (!manualCompactionTurnStarted(knownTurnIds, session?.dialogTurns ?? [])) {
+        dispatchInput({ type: 'SET_VALUE', payload: message });
+      }
       notificationService.error(
         error instanceof Error ? error.message : t('error.unknown'),
         {
@@ -3763,6 +3788,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       );
     }
   }, [
+    clearPendingLargePastes,
     derivedState?.isProcessing,
     dispatchInput,
     effectiveTargetSession,
