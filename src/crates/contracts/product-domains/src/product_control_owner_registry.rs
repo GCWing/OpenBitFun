@@ -286,9 +286,59 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
         AppearanceSelection, FlowChatPermissionModeControl, Language,
     };
     use ProductControlArgumentScope::ProductHostLocal;
-    use ProductControlRisk::{Destructive, Read, Ui, Write};
+    use ProductControlRisk::{Destructive, Execute, Read, Ui, Write};
 
     vec![
+        operation(
+            "feature.detached-dispatch",
+            "list-targets",
+            Read,
+            json!({"type": "object", "properties": {}, "required": [], "additionalProperties": false}),
+            &[],
+            operation_provider("detached-dispatch", "list-targets"),
+        ),
+        operation(
+            "feature.detached-dispatch",
+            "submit",
+            Execute,
+            json!({"type": "object", "properties": {
+                "target": {"type": "string", "minLength": 1, "maxLength": 512},
+                "prompt": {"type": "string", "minLength": 1, "maxLength": 32768},
+                "approvalPolicy": {"type": "string", "enum": ["auto", "reject-and-report"]},
+                "workspacePath": {"type": "string", "minLength": 1},
+                "agent": {"type": "string", "minLength": 1, "maxLength": 128},
+                "model": {"type": "string", "minLength": 1, "maxLength": 256},
+                "baseRef": {"type": "string", "minLength": 1, "maxLength": 512},
+                "includeUncommitted": {"type": "boolean"},
+                "title": {"type": "string", "minLength": 1, "maxLength": 200}
+            }, "required": ["target", "prompt", "approvalPolicy", "workspacePath"], "additionalProperties": false}),
+            &[("workspacePath", ProductHostLocal)],
+            operation_provider("detached-dispatch", "submit"),
+        ),
+        operation(
+            "feature.detached-dispatch",
+            "status",
+            Read,
+            json!({"type": "object", "properties": {"jobId": {"type": "string", "minLength": 1, "maxLength": 128}, "cursor": {"type": "integer", "minimum": 0}}, "required": ["jobId"], "additionalProperties": false}),
+            &[],
+            operation_provider("detached-dispatch", "status"),
+        ),
+        operation(
+            "feature.detached-dispatch",
+            "list-jobs",
+            Read,
+            json!({"type": "object", "properties": {"target": {"type": "string", "minLength": 1, "maxLength": 512}}, "required": [], "additionalProperties": false}),
+            &[],
+            operation_provider("detached-dispatch", "list-jobs"),
+        ),
+        operation(
+            "feature.detached-dispatch",
+            "cancel",
+            Destructive,
+            json!({"type": "object", "properties": {"jobId": {"type": "string", "minLength": 1, "maxLength": 128}}, "required": ["jobId"], "additionalProperties": false}),
+            &[],
+            operation_provider("detached-dispatch", "cancel"),
+        ),
         operation(
             "feature.remote-connect",
             "status",

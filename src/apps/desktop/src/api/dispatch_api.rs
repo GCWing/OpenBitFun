@@ -25,9 +25,14 @@ use openbitfun_core::service::dispatch::{
     DispatchSubmitRequest, DispatchSyncResultRequest, DispatchTarget, DispatchTargetOption,
     DispatchTargetRequest, DispatchTranscriptRequest, OutboundDispatchStore,
 };
+use openbitfun_core::service::dispatch::{
+    execute_dispatch_control, DispatchAccountAccess, DispatchControlContext,
+};
+use openbitfun_core::service::remote_connect::account_runtime::AccountDevice;
 use openbitfun_core::service::remote_ssh::dispatch_ssh::{
     self, DispatchInstallPoll, DispatchInstallStart, DispatchSshProbe,
 };
+use openbitfun_product_domains::detached_dispatch_control::DetachedDispatchControlRequest;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::State;
@@ -49,6 +54,64 @@ impl DeviceDispatchRpc for AccountDeviceDispatchRpc {
         .map_err(anyhow::Error::msg)?;
         decode_device_dispatch_response(command, &raw)
     }
+}
+
+/// Desktop account session for the shared Agent dispatch-control executor.
+struct DesktopDispatchAccountAccess;
+
+#[async_trait]
+impl DispatchAccountAccess for DesktopDispatchAccountAccess {
+    async fn list_devices(&self) -> anyhow::Result<Vec<AccountDevice>> {
+        let devices = super::remote_connect_api::account_list_devices()
+            .await
+            .map_err(anyhow::Error::msg)?;
+        Ok(devices
+            .into_iter()
+            .map(|device| AccountDevice {
+                device_id: device.device_id,
+                device_name: device.device_name,
+                device_kind: device.device_kind,
+                device_alias: device.device_alias,
+                device_model: device.device_model,
+                device_os: device.device_os,
+                device_os_version: device.device_os_version,
+                device_client_version: device.device_client_version,
+                device_client_protocol: device.device_client_protocol,
+                compatible: device.compatible,
+                online: device.online,
+            })
+            .collect())
+    }
+
+    fn device_rpc(&self) -> Arc<dyn DeviceDispatchRpc> {
+        Arc::new(AccountDeviceDispatchRpc)
+    }
+}
+
+/// Run one Agent product-control dispatch request on this desktop.
+pub(crate) async fn execute_agent_dispatch_control(
+    state: &AppState,
+    path_manager: &PathManager,
+    request: DetachedDispatchControlRequest,
+) -> Result<Value, String> {
+    let store = OutboundDispatchStore::new(path_manager);
+    let ssh = state
+        .get_ssh_manager_async()
+        .await
+        .map_err(|error| error.to_string());
+    let local_device_id = super::remote_connect_api::remote_connect_get_device_info()
+        .await
+        .ok()
+        .map(|device| device.device_id);
+    let context = DispatchControlContext {
+        store: &store,
+        ssh,
+        account: Some(&DesktopDispatchAccountAccess),
+        local_device_id,
+    };
+    execute_dispatch_control(&context, request)
+        .await
+        .map_err(|error| format!("{error:#}"))
 }
 
 #[tauri::command]

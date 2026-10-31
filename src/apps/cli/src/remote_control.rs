@@ -16,6 +16,9 @@ use openbitfun_core::service::remote_connect::{
     relay_client::ConnectionState,
     AccountClient, DeviceIdentity, QrGenerator, RemoteConnectConfig, RemoteConnectService,
 };
+use openbitfun_product_domains::detached_dispatch_control::{
+    DetachedDispatchControlRequest, DETACHED_DISPATCH_CONTROL_PROVIDER,
+};
 use openbitfun_product_domains::product_control::{
     capability, discover, validate_operation_arguments, ProductCapabilityOperationHandler,
     ProductControlAction, ProductControlDeliveryProfile, ProductControlFuture, ProductControlPort,
@@ -35,9 +38,10 @@ pub(crate) fn daemon_host() -> Option<Arc<CliRemoteControlHost>> {
     DAEMON_HOST.get().cloned()
 }
 
-pub(crate) fn install(runtime: &Arc<CliRuntimeContext>) {
+pub(crate) fn install(runtime: &Arc<CliRuntimeContext>, profile: crate::BootstrapProfile) {
     set_openbitfun_control_port(Arc::new(CliProductControlPort {
         runtime: Arc::downgrade(runtime),
+        dispatch_worker: matches!(profile, crate::BootstrapProfile::Detached),
     }));
 }
 
@@ -223,6 +227,8 @@ impl EmbeddedRelayHost for CliEmbeddedRelayUnavailable {
 
 struct CliProductControlPort {
     runtime: Weak<CliRuntimeContext>,
+    /// A detached dispatch worker may observe jobs but not dispatch further.
+    dispatch_worker: bool,
 }
 
 impl ProductControlPort for CliProductControlPort {
@@ -243,6 +249,24 @@ impl ProductControlPort for CliProductControlPort {
                         .await?
                         .inspect(id, ProductControlDeliveryProfile::Cli)
                         .await?;
+                    if id == "feature.detached-dispatch" {
+                        let worker = self.dispatch_worker;
+                        result["operationAvailability"] = Value::Object(
+                            capability(id)?
+                                .operations
+                                .iter()
+                                .map(|operation| {
+                                    let status = if worker && operation.id == "submit" {
+                                        json!({"status":"unavailable", "reason":"A detached dispatch job cannot dispatch further work"})
+                                    } else {
+                                        json!({"status":"available", "owner":"cli-host"})
+                                    };
+                                    (operation.id.clone(), status)
+                                })
+                                .collect(),
+                        );
+                        result["controlAvailability"] = json!({"status":"available", "adapter":"cli-host", "readBack":true, "actions":{"execute":{"status":"available"}}});
+                    }
                     if id == "feature.remote-connect" {
                         result["operationAvailability"] = Value::Object(
                             capability(id)?
@@ -304,6 +328,21 @@ impl ProductControlPort for CliProductControlPort {
                     else {
                         return Err("product_control_native_operation_unavailable: CLI has no provider for this operation".into());
                     };
+                    if provider_id == DETACHED_DISPATCH_CONTROL_PROVIDER {
+                        let command = DetachedDispatchControlRequest::from_operation(
+                            operation_id,
+                            request.arguments.as_ref(),
+                        )?;
+                        if self.dispatch_worker {
+                            command.ensure_allowed_in_dispatch_worker()?;
+                        }
+                        return crate::dispatch::outbound::execute_for_host(
+                            runtime.account_runtime().clone(),
+                            command,
+                        )
+                        .await
+                        .map_err(|error| format!("{error:#}"));
+                    }
                     if provider_id != REMOTE_CONTROL_PROVIDER {
                         return Err("product_control_native_operation_unavailable: CLI has no provider for this operation".into());
                     }
@@ -317,5 +356,41 @@ impl ProductControlPort for CliProductControlPort {
                 }
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod product_control_binding_tests {
+    use openbitfun_product_domains::detached_dispatch_control::DETACHED_DISPATCH_CONTROL_PROVIDER;
+    use openbitfun_product_domains::product_control::{
+        ProductCapabilityOperationHandler, ProductControlDeliveryProfile, ProductControlRegistry,
+    };
+    use openbitfun_product_domains::remote_control::REMOTE_CONTROL_PROVIDER;
+
+    #[test]
+    fn every_cli_available_provider_operation_has_a_cli_binding() {
+        let registry = ProductControlRegistry::global();
+        let catalog = openbitfun_product_domains::product_control::catalog().unwrap();
+        for capability in &catalog.capabilities {
+            for operation in &capability.operations {
+                let ProductCapabilityOperationHandler::Provider { provider_id, .. } =
+                    &operation.handler
+                else {
+                    continue;
+                };
+                let definition = registry
+                    .definition(&format!("{}:operation:{}", capability.id, operation.id))
+                    .unwrap();
+                if definition.availability[&ProductControlDeliveryProfile::Cli].available {
+                    assert!(
+                        provider_id == REMOTE_CONTROL_PROVIDER
+                            || provider_id == DETACHED_DISPATCH_CONTROL_PROVIDER,
+                        "CLI-available provider {provider_id} for {}:{} has no CLI binding",
+                        capability.id,
+                        operation.id
+                    );
+                }
+            }
+        }
     }
 }

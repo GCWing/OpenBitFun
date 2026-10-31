@@ -1012,7 +1012,7 @@ async fn initialize_core_services_for_deployment(
     )?);
     // Restore on the executing host for TUI, exec, Shared and detached jobs alike.
     runtime.account_runtime().try_restore_session().await;
-    remote_control::install(&runtime);
+    remote_control::install(&runtime, bootstrap_profile);
     debug_assert!(runtime
         .product()
         .service_availability()

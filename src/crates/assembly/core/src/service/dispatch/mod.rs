@@ -4,6 +4,12 @@
     feature = "remote-connect"
 ))]
 mod account_device_rpc;
+#[cfg(all(
+    feature = "agent-runtime",
+    feature = "ssh-remote",
+    feature = "remote-connect"
+))]
+mod agent_control;
 #[cfg(feature = "agent-runtime")]
 mod baseline;
 #[cfg(all(feature = "agent-runtime", feature = "ssh-remote"))]
@@ -34,6 +40,15 @@ use crate::infrastructure::PathManager;
 pub use account_device_rpc::{
     decode_device_dispatch_response, encode_device_dispatch_command,
     AccountRuntimeDeviceDispatchRpc,
+};
+#[cfg(all(
+    feature = "agent-runtime",
+    feature = "ssh-remote",
+    feature = "remote-connect"
+))]
+pub use agent_control::{
+    device_label, execute_dispatch_control, resolve_dispatch_target, AccountRuntimeDispatchAccess,
+    DispatchAccountAccess, DispatchControlContext, ResolvedDispatchTarget,
 };
 #[cfg(all(feature = "agent-runtime", feature = "ssh-remote"))]
 pub use controller::{

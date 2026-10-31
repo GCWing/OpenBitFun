@@ -27,6 +27,16 @@ both controllers over the same Core controller. The account-device `host_invoke`
 envelope is shared through `AccountRuntimeDeviceDispatchRpc` and its
 encode/decode helpers, so the two hosts cannot drift.
 
+The Agent reaches the same controller through the `detached-dispatch`
+product-control provider on `feature.detached-dispatch` (`list-targets`,
+`submit`, `status`, `list-jobs`, `cancel`). Both hosts bind it to Core's
+`execute_dispatch_control`, which `dispatch outbound` also uses; hosts supply
+only their account session and SSH manager. `list-targets` returns every
+same-account device with `isCurrentDevice` and the saved SSH targets, so the
+Agent never infers the device count from Remote Connect status. `submit` is
+refused inside a detached dispatch worker, so a job cannot fan out further
+dispatches.
+
 The controller is never a runtime or filesystem proxy for a non-local job. It
 stores only an outbound observer record under
 `~/.openbitfun/dispatch/outbound/`; it must not create the target session in the
