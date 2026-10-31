@@ -317,13 +317,14 @@
           "title": "Detached Dispatch 远程派发",
           "summary": "把可持续运行的任务派发到另一台 OpenBitFun 主机；控制端可以断开，目标主机继续执行并保留记录。",
           "items": {
-            "targets": "列出可派发目标并探测版本、连接和运行能力",
+            "targets": "列出同账户设备与已保存的 SSH 目标",
             "provision": "为目标主机配置运行环境并安装或更新 OpenBitFun CLI",
             "model-sync": "在提交任务前同步目标所需的模型配置",
-            "submit": "把包含工作区、会话、模型和权限策略的持久任务提交到目标",
+            "submit": "从当前 Git 工作区把持久任务提交到同账户设备或 SSH 目标",
             "status-list": "列出派发任务并查询运行状态、结果和错误",
             "transcript": "保存、追加和重新加载可断线恢复的执行记录",
-            "permission-continuation": "远程回答权限请求，并继续或取消目标端任务",
+            "permission-continuation": "远程回答权限请求并继续目标端任务",
+            "cancel": "取消本机派发的任务",
             "result-sync": "将目标端结果同步回控制端，而不把控制端当作远程文件系统代理"
           }
         },
