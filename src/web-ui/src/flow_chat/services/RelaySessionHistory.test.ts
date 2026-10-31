@@ -60,6 +60,36 @@ describe('RelaySessionHistory', () => {
     expect(fixture.unsubscribe).toHaveBeenCalledWith('subscription');
   });
 
+  it('degrades to an empty surface when the host never sends the first page', async () => {
+    vi.useFakeTimers();
+    fixture.subscribe.mockResolvedValueOnce('subscription');
+    const ready = vi.fn();
+    const resumed = vi.fn(async () => {});
+    const history = new RelaySessionHistory('session', vi.fn(), ready, vi.fn(), resumed);
+
+    const opening = history.open();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ready).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(15_000);
+    await opening;
+
+    // The mailbox is read without waiting for a ready notification that may
+    // never arrive, and presentation leaves hydration.
+    expect(resumed).toHaveBeenCalledOnce();
+    expect(ready).toHaveBeenCalledWith({
+      sessionId: 'session', hasMore: false, oldestSeq: 0, cursor: 0,
+    });
+
+    // The subscription stays open, so a late first page still applies.
+    fixture.ready?.({ sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 9 });
+    expect(ready).toHaveBeenLastCalledWith({
+      sessionId: 'session', hasMore: false, oldestSeq: 1, cursor: 9,
+    });
+
+    history.close();
+    expect(fixture.unsubscribe).toHaveBeenCalledWith('subscription');
+  });
+
   it('drops stale replay and unsubscribes when the surface changes during grant', async () => {
     const apply = vi.fn();
     fixture.subscribe.mockImplementation(async () => {
