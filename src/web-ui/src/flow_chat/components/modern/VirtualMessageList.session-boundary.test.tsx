@@ -52,6 +52,8 @@ const mocks = vi.hoisted(() => ({
   estimateWidth: undefined as number | undefined,
   estimateRevision: '',
   reconcileOpeningMeasurement: null as null | (() => boolean),
+  shiftMeasurement: null as null | ((delta: number) => boolean),
+  virtualizerKeys: [] as string[],
   placeSubmittedMessage: null as null | ((intent: SubmittedMessageScrollIntent) => number | null),
   readLayoutTarget: null as null | (() => number),
   /**
@@ -149,6 +151,7 @@ vi.mock('./useFlowChatVirtualizer', async () => {
       scrollerRef: { current: HTMLElement | null };
       startAtTailOnMount?: boolean;
       reconcileOpeningMeasurement?: () => boolean;
+      shiftViewport?: (delta: number) => boolean;
       estimateContext?: { availableWidthPx?: number };
       estimateContextRevision?: string;
     }) => {
@@ -156,12 +159,14 @@ vi.mock('./useFlowChatVirtualizer', async () => {
       mocks.estimateWidth = options.estimateContext?.availableWidthPx;
       mocks.estimateRevision = options.estimateContextRevision ?? '';
       mocks.reconcileOpeningMeasurement = options.reconcileOpeningMeasurement ?? null;
+      mocks.shiftMeasurement = options.shiftViewport ?? null;
       const rows = options.items.map((item, index) => ({
         index,
         key: options.getItemKey(item),
         startPx: index * 40,
         endPx: index * 40 + 40,
       }));
+      mocks.virtualizerKeys = rows.map(row => row.key);
       return {
         rows,
         paddingTopPx: 0,
@@ -466,6 +471,35 @@ describe('VirtualMessageList natural scroll contract', () => {
     expect(mocks.scheduleFollowToLatest).toHaveBeenCalledTimes(1);
     act(() => root.render(<VirtualMessageList isViewportActive={false} />));
     expect(mocks.reconcileOpeningMeasurement?.()).toBe(false);
+  });
+
+  it('does not compensate an above-viewport measurement twice before its scroll event arrives', async () => {
+    const restore = fakeLayout({ clientHeight: 800, scrollHeight: 4000, turnTopFromScrollerTop: 100 });
+    try {
+      act(() => root.render(<VirtualMessageList />));
+      await settleOpenReveal();
+      const scroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+      const rows = [...scroller.querySelectorAll<HTMLElement>('.virtual-item-wrapper')];
+      let contentTop = 1100;
+      rows.forEach((row, index) => {
+        row.getBoundingClientRect = () => ({ top: contentTop + index * 80 - scroller.scrollTop,
+          bottom: contentTop + index * 80 + 60 - scroller.scrollTop, height: 60,
+          left: 0, right: 800, width: 800 }) as DOMRect;
+      });
+      act(() => {
+        scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true }));
+        scroller.scrollTop = 1000;
+        scroller.dispatchEvent(new Event('scroll'));
+      });
+      // Resize and its registered compensation precede native scroll delivery.
+      contentTop -= 120;
+      act(() => { expect(mocks.shiftMeasurement!(-120)).toBe(true); });
+      expect(scroller.scrollTop).toBe(880);
+      act(() => { resizeObservers.forEach(observer => observer.notify()); });
+      await settleOpenReveal();
+      expect(scroller.scrollTop).toBe(880);
+      expect(rows[0].getBoundingClientRect().top).toBe(100);
+    } finally { restore(); }
   });
 
   it('crops only idle gutter paint across content and viewport resizing without moving the reader', () => {
@@ -2152,6 +2186,46 @@ describe('VirtualMessageList natural scroll contract', () => {
         expect(snapshot && listRef.current?.restoreViewportSnapshot(snapshot)).toBe(true);
       });
       expect(scroller.scrollTop).toBe(650);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it.each([-80, -800])('materializes a saved row at offset %s even when its new estimate is shorter', offset => {
+    mocks.items = [
+      userMessage('turn-1', 'message-1', 'Question'),
+      modelRound('turn-1', 'round-1', 'Long answer'),
+    ];
+    const listRef = React.createRef<VirtualMessageListRef>();
+    const restoreLayout = fakeLayout({ clientHeight: 600, scrollHeight: 2000, turnTopFromScrollerTop: 0 });
+    try {
+      act(() => root.render(<VirtualMessageList ref={listRef} />));
+      const scroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+      const row = container.querySelector<HTMLElement>('.virtual-item-wrapper[data-item-type="model-round"]')!;
+      const index = Number(row.dataset.virtualIndex);
+      // This mock renderer normally keeps legacy keys. Match the production
+      // renderer's timeline key for the unmounted-item lookup under test.
+      row.dataset.virtualItemKey = mocks.virtualizerKeys[index];
+      const parent = row.parentElement!;
+      const next = row.nextSibling;
+      const snapshot = {
+        sessionId: 'session-1', presentationMode: 'tail' as const, viewportMode: 'live-tail' as const,
+        historyWindow: null, anchorTurnId: 'turn-1', anchorItemKey: row.dataset.virtualItemKey!,
+        anchorOffsetPx: offset, scrollTopPx: 1400, isAtTail: false, capturedAtMs: 1,
+      };
+      row.remove();
+      try {
+        act(() => { expect(listRef.current?.restoreViewportSnapshot(snapshot)).toBe(false); });
+        // Materialize inside the current 40px estimate, even when the saved
+        // reading position was hundreds of pixels into this same answer.
+        expect(scroller.scrollTop).toBe(index * 40 + 39);
+      } finally {
+        parent.insertBefore(row, next);
+      }
+      scroller.getBoundingClientRect = () => new DOMRect(0, 0, 1000, 600);
+      row.getBoundingClientRect = () => new DOMRect(0, index * 40 - scroller.scrollTop, 1000, 900);
+      act(() => { expect(listRef.current?.restoreViewportSnapshot(snapshot)).toBe(true); });
+      expect(scroller.scrollTop).toBe(index * 40 - offset);
     } finally {
       restoreLayout();
     }

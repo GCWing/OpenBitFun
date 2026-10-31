@@ -19,7 +19,7 @@ const groupForTool = {
   GetFileDiff: 'files', view_image: 'files',
   ListModels: 'execution', ControlHub: 'web',
   RunCode: 'execution', ExecCommand: 'execution', WriteStdin: 'execution', ExecControl: 'execution', Cron: 'execution', GetToolSpec: 'execution', Skill: 'execution',
-  WebSearch: 'web', WebFetch: 'web', PageDeploy: 'web', PagePublish: 'web',
+  WebSearch: 'web', WebFetch: 'web', PageDeploy: 'web', PagePublish: 'web', PageManage: 'web',
   AgentSpawn: 'collaboration', AgentSendInput: 'collaboration', AgentWait: 'collaboration', TodoWrite: 'collaboration',
   ContextCompression: 'collaboration', ReviewSessionSummary: 'collaboration', SessionControl: 'collaboration', SessionMessage: 'collaboration',
 } as const satisfies Record<ToolNameForOwner<'standard'>, ToolGroup>;

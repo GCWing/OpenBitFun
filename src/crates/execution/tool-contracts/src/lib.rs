@@ -143,3 +143,6 @@ pub use tool_snapshot::{
     ToolCancellationContract, ToolEffectFacts, ToolEffectFactsSource, ToolEffectFilter,
     ToolProviderIdentity, ToolSnapshotCallError, ToolSnapshotItem,
 };
+
+#[cfg(feature = "computer-use-contract")]
+pub mod computer_use_host;

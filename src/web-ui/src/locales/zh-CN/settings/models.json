@@ -250,16 +250,16 @@
       "name": "OpenBitFun 服务",
       "description": "OpenBitFun 大模型平台",
       "urlOptions": {
-        "default": "Anthropic格式",
-        "openai": "OpenAI兼容格式-默认"
+        "default": "官方接口",
+        "openai": "官方接口"
       }
     },
     "openai": {
       "name": "OpenAI",
       "description": "OpenAI GPT 与推理模型",
       "urlOptions": {
-        "default": "Responses API（默认）",
-        "chatCompletions": "Chat Completions API"
+        "default": "官方接口",
+        "chatCompletions": "官方接口"
       }
     },
     "gemini": {
@@ -274,52 +274,52 @@
       "name": "MiniMax",
       "description": "MiniMax 系列模型",
       "urlOptions": {
-        "default": "国内-Anthropic格式-默认",
-        "openai": "国内-OpenAI兼容格式",
-        "intl": "海外-Anthropic格式",
-        "intlOpenai": "海外-OpenAI兼容格式"
+        "default": "国内-默认",
+        "openai": "国内",
+        "intl": "海外",
+        "intlOpenai": "海外"
       }
     },
     "xiaomi": {
       "name": "Xiaomi MiMo",
       "description": "小米 MiMo 系列模型，API 与 Token Plan 密钥不可混用",
       "urlOptions": {
-        "default": "API - OpenAI Chat Completions（默认）",
-        "responses": "API - OpenAI Responses",
-        "anthropic": "API - Anthropic Messages",
-        "tokenPlan": "国内 - Token Plan - OpenAI",
-        "tokenPlanAnthropic": "国内 - Token Plan - Anthropic"
+        "default": "API-默认",
+        "responses": "API",
+        "anthropic": "API",
+        "tokenPlan": "国内 - Token Plan",
+        "tokenPlanAnthropic": "国内 - Token Plan"
       }
     },
     "moonshot": {
       "name": "月之暗面",
       "description": "月之暗面 Kimi 系列模型",
       "urlOptions": {
-        "default": "国内-OpenAI格式-默认",
-        "anthropic": "国内-Anthropic格式",
-        "intl": "海外-OpenAI格式",
-        "intlAnthropic": "海外-Anthropic格式",
+        "default": "国内-默认",
+        "anthropic": "国内",
+        "intl": "海外",
+        "intlAnthropic": "海外",
         "kimiForCoding": "Kimi For Coding 套餐（模型 k3 / kimi-for-coding）",
-        "kimiForCodingAnthropic": "Kimi For Coding 套餐 - Anthropic格式"
+        "kimiForCodingAnthropic": "Kimi For Coding 套餐"
       }
     },
     "deepseek": {
       "name": "DeepSeek",
       "description": "DeepSeek 系列模型",
       "urlOptions": {
-        "default": "OpenAI格式-默认",
-        "anthropic": "Anthropic格式"
+        "default": "官方接口-默认",
+        "anthropic": "官方接口"
       }
     },
     "zhipu": {
       "name": "智谱AI",
       "description": "智谱AI GLM 系列模型",
       "urlOptions": {
-        "default": "国内-OpenAI格式-默认",
-        "anthropic": "国内-Anthropic格式",
+        "default": "国内-默认",
+        "anthropic": "国内",
         "codingPlan": "国内-Coding Plan",
-        "intl": "海外(Z.AI)-OpenAI格式",
-        "intlAnthropic": "海外(Z.AI)-Anthropic格式",
+        "intl": "海外(Z.AI)",
+        "intlAnthropic": "海外(Z.AI)",
         "intlCodingPlan": "海外(Z.AI)-Coding Plan"
       }
     },
@@ -327,10 +327,10 @@
       "name": "通义千问",
       "description": "阿里云百炼大模型平台",
       "urlOptions": {
-        "default": "国内-OpenAI格式-默认",
-        "intl": "海外(国际站)-OpenAI格式",
+        "default": "国内-默认",
+        "intl": "海外(国际站)",
         "codingPlan": "国内-Coding Plan",
-        "codingPlanAnthropic": "国内-Coding Plan-Anthropic格式",
+        "codingPlanAnthropic": "国内-Coding Plan",
         "intlCodingPlan": "海外-Coding Plan"
       }
     },
@@ -347,9 +347,9 @@
       "name": "硅基流动",
       "description": "硅基流动大模型平台",
       "urlOptions": {
-        "default": "国内-OpenAI格式-默认",
-        "anthropic": "国内-Anthropic格式",
-        "intl": "海外-OpenAI格式"
+        "default": "国内-默认",
+        "anthropic": "国内",
+        "intl": "海外"
       }
     },
     "nvidia": {

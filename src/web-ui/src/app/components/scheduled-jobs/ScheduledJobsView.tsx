@@ -5,9 +5,10 @@
  * job list at top, inline editor expands below the selected job.
  */
 
-import { OverflowText, Icon, Button, Combobox, Switch, IconButton, Input, Select, Textarea, Tooltip } from '@openbitfun/ui';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, OverflowText, Icon, Button, Combobox, Switch, IconButton, Input, Select, StatusPill, Textarea, Tooltip, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading, DialogTitle, Field } from '@openbitfun/ui';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { confirmDanger } from '@/infrastructure/confirm-dialog';
 import {
   cronAPI,
@@ -62,6 +63,39 @@ import './ScheduledJobsView.scss';
 const log = createLogger('ScheduledJobsView');
 const NEW_JOB_ID = '__new__';
 
+type ScheduledJobFieldProps = Pick<React.ComponentProps<typeof Field>, 'label' | 'description' | 'controlTrailing' | 'children'> & {
+  dialog: boolean;
+  prompt?: boolean;
+  controlLayout?: 'schedule' | 'interval';
+};
+
+function ScheduledJobField({
+  dialog,
+  prompt,
+  label,
+  description,
+  controlTrailing,
+  controlLayout = 'interval',
+  children,
+}: ScheduledJobFieldProps) {
+  if (dialog) {
+    return <Field label={label} description={description} controlWidth="fill" controlTrailing={controlTrailing}>
+      {children}
+    </Field>;
+  }
+
+  return <div className={`asv__form-row asv__form-row--inline${prompt ? ' asv__form-row--prompt' : ''}`}
+    data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="field">
+    <div className="asv__field-meta" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldMeta">
+      <span className="asv__field-label">{label}</span>
+    </div>
+    <div className="asv__field-control" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldControl">
+      {controlTrailing ? <div className={`asv__control-grid asv__control-grid--${controlLayout}`}>{children}{controlTrailing}</div> : children}
+      {description && <span className="asv__field-note">{description}</span>}
+    </div>
+  </div>;
+}
+
 export interface ScheduledJobsViewProps {
   workspaceId?: string;
   workspaceKind?: WorkspaceKind;
@@ -73,6 +107,11 @@ export interface ScheduledJobsViewProps {
   targetKind?: CronJobTargetKind;
   lockSessionId?: boolean;
   assistantWorkspaceMode?: boolean;
+  listPresentation?: 'cards' | 'table';
+  initialCreate?: boolean;
+  creationOnly?: boolean;
+  onCreationClose?: () => void;
+  listTargetKind?: CronJobTargetKind;
 }
 
 function getDefaultAgentType(
@@ -195,18 +234,29 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
   targetKind = 'session',
   lockSessionId = false,
   assistantWorkspaceMode = false,
+  listPresentation = 'cards',
+  initialCreate = false,
+  creationOnly = false,
+  onCreationClose,
+  listTargetKind,
 }) => {
   const { t, formatDate } = useI18n('common');
+  const creationFormId = useId();
+  const creationNameRef = useRef<HTMLInputElement | null>(null);
   const peer = usePeerDeviceModeOptional();
   const supportsReportPolicy = !peer?.peerMode.active || peer.currentPeerCapabilities?.backgroundResultDeliveryV1 === true;
   const instanceIdRef = useRef(`scheduled-jobs-${Math.random().toString(36).slice(2)}`);
+  const mounted = useRef(true);
+  const savePending = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [flowChatState, setFlowChatState] = useState<FlowChatState>(() => flowChatStore.getState());
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [availableModes, setAvailableModes] = useState<ModeInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+  const [expandedJobId, setExpandedJobId] = useState<string | null>((initialCreate || creationOnly) ? NEW_JOB_ID : null);
   const [validationErrors, setValidationErrors] = useState<JobDraftValidationErrors>(
     EMPTY_VALIDATION_ERRORS,
   );
@@ -282,20 +332,22 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
   }), [jobs]);
 
   const loadJobs = useCallback(async () => {
+    const scope = getActiveSurfaceScope();
     if (!workspaceRef) { setJobs([]); return; }
     setLoading(true);
-    // Deliberately no `targetKind` filter: the agent's Cron tool creates
-    // session-targeted jobs, so a workspace-scoped list that asked for
-    // workspace-targeted jobs only would hide exactly the jobs the user just
-    // asked the agent to create.
+    setLoadError(null);
+    // Existing assistant/session owners include both target kinds. Project resources
+    // explicitly match the workspace-targeted jobs counted by their summary.
     const request = {
       workspaceId: workspaceRef?.workspaceId ?? undefined,
+      ...(listTargetKind ? { targetKind: listTargetKind } : {}),
       sessionId: targetKind === 'session' && lockSessionId && !assistantWorkspaceMode
         ? sessionId || undefined
         : undefined,
     };
     try {
       const result = await cronAPI.listJobs(request);
+      if (!mounted.current || !scope.isCurrent()) return;
       setJobs(result);
       setExpandedJobId(current => {
         if (current === NEW_JOB_ID) {
@@ -309,20 +361,23 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
         return null;
       });
     } catch (error) {
+      if (!mounted.current || !scope.isCurrent()) return;
       log.error('Failed to load scheduled jobs', { error });
+      setLoadError(t('nav.scheduledJobs.messages.loadFailed', { error: error instanceof Error ? error.message : String(error) }));
       notificationService.error(
         t('nav.scheduledJobs.messages.loadFailed', {
           error: error instanceof Error ? error.message : String(error),
         }),
       );
     } finally {
-      setLoading(false);
+      if (mounted.current && scope.isCurrent()) setLoading(false);
     }
-  }, [assistantWorkspaceMode, lockSessionId, sessionId, t, targetKind, workspaceRef]);
+  }, [assistantWorkspaceMode, listTargetKind, lockSessionId, sessionId, t, targetKind, workspaceRef]);
 
-  useEffect(() => { void loadJobs(); }, [loadJobs]);
+  useEffect(() => { if (!creationOnly) void loadJobs(); }, [creationOnly, loadJobs]);
 
   useEffect(() => {
+    if (creationOnly) return;
     const handleScheduledJobsChanged = (event: Event) => {
       const sourceId = (event as CustomEvent<{ sourceId?: string }>).detail?.sourceId;
       if (sourceId === instanceIdRef.current) return;
@@ -333,7 +388,7 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
     return () => {
       window.removeEventListener(SCHEDULED_JOBS_CHANGED_EVENT, handleScheduledJobsChanged);
     };
-  }, [loadJobs]);
+  }, [creationOnly, loadJobs]);
 
   useEffect(() => {
     setDraft(prev => ({
@@ -369,6 +424,7 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
   }, []);
 
   const handleCreateNew = useCallback(() => {
+    if (savePending.current) return;
     setSelectedJobId(null);
     resetValidationErrors();
     setDraft(createEmptyDraft(
@@ -389,6 +445,7 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
   ]);
 
   const handleEditJob = useCallback((job: CronJob) => {
+    if (savePending.current) return;
     if (expandedJobId === job.id) {
       setExpandedJobId(null);
       setSelectedJobId(null);
@@ -401,6 +458,8 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
   }, [defaultAgentType, expandedJobId, resetValidationErrors]);
 
   const handleCloseEditor = useCallback(() => {
+    if (savePending.current) return;
+    if (creationOnly) onCreationClose?.();
     setExpandedJobId(null);
     setSelectedJobId(null);
     resetValidationErrors();
@@ -411,6 +470,8 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
       defaultAgentType,
     ));
   }, [
+    creationOnly,
+    onCreationClose,
     defaultAgentType,
     defaultSessionIdForWorkspace,
     assistantWorkspaceMode,
@@ -421,17 +482,21 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
   ]);
 
   const handleDeleteJob = useCallback(async (job: CronJob) => {
+    const scope = getActiveSurfaceScope();
     const confirmed = await confirmDanger(
       t('nav.scheduledJobs.deleteDialog.title', { name: job.name }),
       null,
     );
-    if (!confirmed) return;
+    if (!confirmed || !mounted.current || !scope.isCurrent()) return;
     try {
       await cronAPI.deleteJob(job.id);
+      if (!mounted.current || !scope.isCurrent()) return;
       if (selectedJobId === job.id || expandedJobId === job.id) { handleCloseEditor(); }
       await loadJobs();
+      if (!mounted.current || !scope.isCurrent()) return;
       notifyScheduledJobsChanged();
     } catch (error) {
+      if (!mounted.current || !scope.isCurrent()) return;
       log.error('Failed to delete scheduled job', { jobId: job.id, error });
       notificationService.error(
         t('nav.scheduledJobs.messages.deleteFailed', {
@@ -442,11 +507,15 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
   }, [expandedJobId, handleCloseEditor, loadJobs, notifyScheduledJobsChanged, selectedJobId, t]);
 
   const handleToggleEnabled = useCallback(async (job: CronJob, enabled: boolean) => {
+    const scope = getActiveSurfaceScope();
     try {
       await cronAPI.updateJob(job.id, { enabled });
+      if (!mounted.current || !scope.isCurrent()) return;
       await loadJobs();
+      if (!mounted.current || !scope.isCurrent()) return;
       notifyScheduledJobsChanged();
     } catch (error) {
+      if (!mounted.current || !scope.isCurrent()) return;
       log.error('Failed to toggle scheduled job', { jobId: job.id, error });
       notificationService.error(
         t('nav.scheduledJobs.messages.updateFailed', {
@@ -457,6 +526,8 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
   }, [loadJobs, notifyScheduledJobsChanged, t]);
 
   const handleSave = useCallback(async () => {
+    if (savePending.current) return;
+    const scope = getActiveSurfaceScope();
     const nextValidationErrors = validateDraft(draftTargetKind, draft);
     setValidationErrors(nextValidationErrors);
     if (hasValidationErrors(nextValidationErrors)) { return; }
@@ -465,6 +536,7 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
     const schedule = buildScheduleFromDraft(draft);
     const target = buildTargetFromDraft(draftTargetKind, draft, workspaceRef);
 
+    savePending.current = true;
     setSaving(true);
     try {
       if (selectedJobId) {
@@ -477,6 +549,7 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
           target,
         };
         const updated = await cronAPI.updateJob(selectedJobId, request);
+        if (!mounted.current || !scope.isCurrent()) return;
         setSelectedJobId(null);
         setDraft(jobToDraft(updated, defaultAgentType));
         setExpandedJobId(null);
@@ -490,6 +563,7 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
           target,
         };
         await cronAPI.createJob(request);
+        if (!mounted.current || !scope.isCurrent()) return;
         setSelectedJobId(null);
         setExpandedJobId(null);
         setDraft(createEmptyDraft(
@@ -499,9 +573,16 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
           defaultAgentType,
         ));
       }
+      if (creationOnly) {
+        notifyScheduledJobsChanged();
+        onCreationClose?.();
+        return;
+      }
       await loadJobs();
+      if (!mounted.current || !scope.isCurrent()) return;
       notifyScheduledJobsChanged();
     } catch (error) {
+      if (!mounted.current || !scope.isCurrent()) return;
       log.error('Failed to save scheduled job', { error });
       notificationService.error(
         t('nav.scheduledJobs.messages.saveFailed', {
@@ -509,9 +590,12 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
         }),
       );
     } finally {
-      setSaving(false);
+      savePending.current = false;
+      if (mounted.current && scope.isCurrent()) setSaving(false);
     }
   }, [
+    creationOnly,
+    onCreationClose,
     defaultAgentType,
     defaultSessionIdForWorkspace,
     supportsReportPolicy,
@@ -567,6 +651,19 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
     ? t('nav.scheduledJobs.empty.workspaceTitle')
     : t('nav.scheduledJobs.empty.title');
 
+  const separateCreation = creationOnly || listPresentation === 'table';
+  const creationDialog = separateCreation && expandedJobId === NEW_JOB_ID && (
+    <Dialog open onOpenChange={open => { if (!open) handleCloseEditor(); }} size="md" initialFocusRef={creationNameRef} className="asv__create-dialog">
+      <DialogHeader>
+        <DialogHeading><DialogTitle>{t('nav.scheduledJobs.actions.newJob')}</DialogTitle></DialogHeading>
+        <DialogClose aria-label={t('actions.close')} disabled={saving} />
+      </DialogHeader>
+      <DialogBody>{renderForm(false)}</DialogBody>
+      <DialogFooter>{renderFormActions(true)}</DialogFooter>
+    </Dialog>
+  );
+  if (creationOnly) return creationDialog;
+
   return (
     <div
       className="asv"
@@ -601,22 +698,52 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
           size="sm"
           variant="primary"
           className="asv__new-job"
+          leadingIcon={<Icon name="plus" size="sm" />}
           onClick={handleCreateNew}
-          disabled={assistantWorkspaceMode ? !workspaceRef : targetKind === 'session' ? !canSave : !workspaceRef}
+          disabled={saving || (assistantWorkspaceMode ? !workspaceRef : targetKind === 'session' ? !canSave : !workspaceRef)}
         >
           {t('nav.scheduledJobs.actions.newJob')}
         </Button>
       </div>
 
-      {expandedJobId === NEW_JOB_ID ? renderEditor() : null}
+      {separateCreation ? creationDialog : expandedJobId === NEW_JOB_ID ? renderEditor() : null}
+      {loadError && <Alert tone="error" role="status" message={loadError}
+        description={<Button size="sm" variant="text" disabled={loading} onClick={() => void loadJobs()}>{t('retry')}</Button>} />}
 
       {loading ? (
         <div className="asv__empty" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="empty" data-openbitfun-state="loading">
           <Icon name="refresh" size="sm" className="asv__spin" />
         </div>
-      ) : sortedJobs.length === 0 && expandedJobId !== NEW_JOB_ID ? (
+      ) : !loadError && sortedJobs.length === 0 && expandedJobId !== NEW_JOB_ID ? (
         <div className="asv__empty" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="empty">
           <p className="asv__empty-title">{emptyTitle}</p>
+        </div>
+      ) : sortedJobs.length > 0 && listPresentation === 'table' ? (
+        <div className="asv__table-wrap" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="list">
+          <div role="table" className="asv__table" aria-label={t('nav.scheduledJobs.listTitle')}>
+            <div role="row" className="resource-table__row resource-table__header"><div role="columnheader">{t('nav.scheduledJobs.fields.name')}</div><div role="columnheader">{t('nav.scheduledJobs.fields.scheduleKind')}</div>
+              <div role="columnheader">{t('nav.scheduledJobs.columns.status')}</div><div role="columnheader">{t('nav.scheduledJobs.columns.actions')}</div></div>
+            {sortedJobs.map(job => <React.Fragment key={job.id}>
+              <div role="row" className="resource-table__row asv__table-row" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="job">
+                <div role="cell"><div className="asv__table-copy"><OverflowText className="asv__table-name">{job.name}</OverflowText>
+                  <OverflowText className="asv__table-meta">{job.payload.text}</OverflowText></div></div>
+                <div role="cell"><div className="asv__table-copy"><span>{formatScheduleSummary(job.schedule, formatDate, t)}</span>
+                  <span className="asv__table-meta">{t('nav.scheduledJobs.nextRunLabel')}: {formatTimestamp(getNextExecutionAtMs(job), formatDate, t)}</span>
+                  {job.state.lastError && <span className="asv__item-error">{job.state.lastError}</span>}</div></div>
+                <div role="cell"><StatusPill tone={job.enabled && job.state.lastRunStatus === 'error' ? 'danger' : job.enabled ? 'info' : 'neutral'}>
+                  {t(`nav.scheduledJobs.status.${job.enabled ? job.state.lastRunStatus || 'idle' : 'disabled'}`)}</StatusPill></div>
+                <div role="cell"><div className="asv__table-actions">
+                  <Switch checked={job.enabled} disabled={saving} aria-label={t('nav.scheduledJobs.actions.toggleEnabled')}
+                    onChange={event => void handleToggleEnabled(job, event.currentTarget.checked)} />
+                  <IconButton size="sm" disabled={saving} aria-label={t('nav.scheduledJobs.actions.edit')} aria-expanded={expandedJobId === job.id}
+                    icon={<Icon name="edit" size="sm" />} onClick={() => handleEditJob(job)} />
+                  <IconButton size="sm" tone="danger" disabled={saving} aria-label={t('nav.scheduledJobs.actions.delete')}
+                    icon={<Icon name="delete" size="sm" />} onClick={() => void handleDeleteJob(job)} />
+                </div></div>
+              </div>
+              {expandedJobId === job.id && <div role="row" className="resource-table__row resource-table__details asv__table-editor"><div role="cell" aria-colspan={4}>{renderEditor()}</div></div>}
+            </React.Fragment>)}
+          </div>
         </div>
       ) : sortedJobs.length > 0 ? (
         <div className="asv__list" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="list">
@@ -714,315 +841,275 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
     );
   }
 
-  function renderForm() {
+  function renderForm(showActions = true) {
+    const Form = showActions ? 'div' : 'form';
     return (
-      <div className="asv__form" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="form">
+      <Form id={showActions ? undefined : creationFormId} className={`asv__form${showActions ? '' : ' asv__form--dialog'}`}
+        onSubmit={event => { event.preventDefault(); if (canSave && !saving) void handleSave(); }}
+        data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="form">
         {targetKind === 'session' && !assistantWorkspaceMode && !canSave ? (
           <p className="asv__warning" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="warning">
             {t('nav.scheduledJobs.messages.sessionRequired')}
           </p>
         ) : null}
 
-        <div className="asv__form-row asv__form-row--inline" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="field">
-          <div className="asv__field-meta" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldMeta">
-            <span className="asv__field-label">{t('nav.scheduledJobs.fields.name')}</span>
-          </div>
-          <div className="asv__field-control" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldControl">
-            <Input
-              value={draft.name}
-              onChange={e => {
-                const name = e.currentTarget.value;
-                setValidationErrors(current => ({ ...current, name: false }));
-                setDraft(c => ({ ...c, name }));
-              }}
-              invalid={validationErrors.name}
-              placeholder={t('nav.scheduledJobs.placeholders.name')}
-              size="sm"
-            />
-          </div>
-        </div>
+        <ScheduledJobField dialog={!showActions} label={t('nav.scheduledJobs.fields.name')}>
+          <Input
+            disabled={saving}
+            ref={showActions ? undefined : creationNameRef}
+            value={draft.name}
+            onChange={e => {
+              const name = e.currentTarget.value;
+              setValidationErrors(current => ({ ...current, name: false }));
+              setDraft(c => ({ ...c, name }));
+            }}
+            invalid={validationErrors.name}
+            placeholder={t('nav.scheduledJobs.placeholders.name')}
+            size="sm"
+          />
+        </ScheduledJobField>
 
-        <div className="asv__form-row asv__form-row--inline" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="field">
-          <div className="asv__field-meta" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldMeta">
-            <span className="asv__field-label">{t('nav.scheduledJobs.fields.scheduleKind')}</span>
-          </div>
-          <div className="asv__field-control" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldControl">
-            <div className="asv__control-grid asv__control-grid--schedule">
-              <Select
-                size="sm"
-                value={draft.scheduleKind}
-                options={[
-                  { value: 'at', label: t('nav.scheduledJobs.scheduleKinds.at') },
-                  { value: 'every', label: t('nav.scheduledJobs.scheduleKinds.every') },
-                  { value: 'cron', label: t('nav.scheduledJobs.scheduleKinds.cron') },
-                ]}
-                onValueChange={value => {
-                  setValidationErrors(current => ({
-                    ...current,
-                    at: false,
-                    everyValue: false,
-                    cronExpr: false,
-                  }));
-                  setDraft(c => ({
-                    ...c,
-                    scheduleKind: value as ScheduleKind,
-                    at: (value as ScheduleKind) === 'at' && !c.at.trim() ? getCurrentLocalDateTimeInput() : c.at,
-                  }));
+        <ScheduledJobField dialog={!showActions} label={t('nav.scheduledJobs.fields.scheduleKind')} controlLayout="schedule"
+          controlTrailing={showActions ? (
+            <div className="asv__toggle-card" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="toggle">
+              <span className="asv__toggle-label">{t('nav.scheduledJobs.fields.enabled')}</span>
+              <Switch
+                disabled={saving}
+                className="asv__switch"
+                checked={draft.enabled}
+                onChange={e => {
+                  const enabled = e.currentTarget.checked;
+                  setDraft(c => ({ ...c, enabled }));
                 }}
+                aria-label={t('nav.scheduledJobs.fields.enabled')}
               />
-
-              <div className="asv__toggle-card" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="toggle">
-                <span className="asv__toggle-label">{t('nav.scheduledJobs.fields.enabled')}</span>
-                <Switch
-                  className="asv__switch"
-                  checked={draft.enabled}
-                  onChange={e => {
-                    const enabled = e.currentTarget.checked;
-                    setDraft(c => ({ ...c, enabled }));
-                  }}
-                  aria-label={t('nav.scheduledJobs.fields.enabled')}
-                />
-              </div>
             </div>
-          </div>
-        </div>
+          ) : undefined}>
+          <Select
+            disabled={saving}
+            size="sm"
+            value={draft.scheduleKind}
+            options={[
+              { value: 'at', label: t('nav.scheduledJobs.scheduleKinds.at') },
+              { value: 'every', label: t('nav.scheduledJobs.scheduleKinds.every') },
+              { value: 'cron', label: t('nav.scheduledJobs.scheduleKinds.cron') },
+            ]}
+            onValueChange={value => {
+              setValidationErrors(current => ({
+                ...current,
+                at: false,
+                everyValue: false,
+                cronExpr: false,
+              }));
+              setDraft(c => ({
+                ...c,
+                scheduleKind: value as ScheduleKind,
+                at: (value as ScheduleKind) === 'at' && !c.at.trim() ? getCurrentLocalDateTimeInput() : c.at,
+              }));
+            }}
+          />
+        </ScheduledJobField>
 
         {draft.scheduleKind === 'at' && (
-          <div className="asv__form-row asv__form-row--inline" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="field">
-            <div className="asv__field-meta" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldMeta">
-              <span className="asv__field-label">{t('nav.scheduledJobs.fields.at')}</span>
-            </div>
-            <div className="asv__field-control" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldControl">
-              <LocalizedDateTimeField
-                value={draft.at}
-                error={validationErrors.at}
-                onChange={at => {
-                  setValidationErrors(current => ({ ...current, at: false }));
-                  setDraft(c => ({
-                    ...c,
-                    at,
-                    enabled: !c.enabled && isFutureLocalDateTimeInput(at) ? true : c.enabled,
-                  }));
-                }}
-              />
-            </div>
-          </div>
+          <ScheduledJobField dialog={!showActions} label={t('nav.scheduledJobs.fields.at')}>
+            <LocalizedDateTimeField
+              disabled={saving}
+              value={draft.at}
+              error={validationErrors.at}
+              onChange={at => {
+                setValidationErrors(current => ({ ...current, at: false }));
+                setDraft(c => ({
+                  ...c,
+                  at,
+                  enabled: !c.enabled && isFutureLocalDateTimeInput(at) ? true : c.enabled,
+                }));
+              }}
+            />
+          </ScheduledJobField>
         )}
 
         {draft.scheduleKind === 'every' && (
           <>
-            <div className="asv__form-row asv__form-row--inline" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="field">
-              <div className="asv__field-meta" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldMeta">
-                <span className="asv__field-label">{t('nav.scheduledJobs.fields.everyMs')}</span>
-              </div>
-              <div className="asv__field-control" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldControl">
-                <div className="asv__control-grid asv__control-grid--interval">
-                  <Input
-                    type="number"
-                    value={draft.everyValue}
-                    invalid={validationErrors.everyValue}
-                    onChange={e => {
-                      const everyValue = e.currentTarget.value;
-                      setValidationErrors(current => ({ ...current, everyValue: false }));
-                      setDraft(c => ({ ...c, everyValue }));
-                    }}
-                    placeholder="1"
-                    size="sm"
-                  />
-                  <Select
-                    size="sm"
-                    value={draft.everyUnit}
-                    options={INTERVAL_UNIT_OPTIONS.map(unit => ({
-                      value: unit,
-                      label: t(`nav.scheduledJobs.intervalUnits.${unit}`),
-                    }))}
-                    onValueChange={value => {
-                      setDraft(c => ({ ...c, everyUnit: value as IntervalUnit }));
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="asv__form-row asv__form-row--inline" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="field">
-              <div className="asv__field-meta" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldMeta">
-                <span className="asv__field-label">{t('nav.scheduledJobs.fields.anchorMs')}</span>
-              </div>
-              <div className="asv__field-control" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldControl">
-                <LocalizedDateTimeField
-                  value={draft.anchorMs}
-                  onChange={anchorMs => setDraft(c => ({ ...c, anchorMs }))}
-                  aria-label={t('nav.scheduledJobs.fields.anchorMs')}
+            <ScheduledJobField dialog={!showActions} label={t('nav.scheduledJobs.fields.everyMs')}
+              controlTrailing={
+                <Select
+                  disabled={saving}
+                  aria-label={t('nav.scheduledJobs.fields.everyMs')}
+                  size="sm"
+                  value={draft.everyUnit}
+                  options={INTERVAL_UNIT_OPTIONS.map(unit => ({
+                    value: unit,
+                    label: t(`nav.scheduledJobs.intervalUnits.${unit}`),
+                  }))}
+                  onValueChange={value => {
+                    setDraft(c => ({ ...c, everyUnit: value as IntervalUnit }));
+                  }}
                 />
-              </div>
-            </div>
+              }>
+              <Input
+                disabled={saving}
+                type="number"
+                value={draft.everyValue}
+                invalid={validationErrors.everyValue}
+                onChange={e => {
+                  const everyValue = e.currentTarget.value;
+                  setValidationErrors(current => ({ ...current, everyValue: false }));
+                  setDraft(c => ({ ...c, everyValue }));
+                }}
+                placeholder="1"
+                size="sm"
+              />
+            </ScheduledJobField>
+            <ScheduledJobField dialog={!showActions} label={t('nav.scheduledJobs.fields.anchorMs')}>
+              <LocalizedDateTimeField
+                disabled={saving}
+                value={draft.anchorMs}
+                onChange={anchorMs => setDraft(c => ({ ...c, anchorMs }))}
+                aria-label={t('nav.scheduledJobs.fields.anchorMs')}
+              />
+            </ScheduledJobField>
           </>
         )}
 
         {draft.scheduleKind === 'cron' && (
           <>
-            <div className="asv__form-row asv__form-row--inline" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="field">
-              <div className="asv__field-meta" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldMeta">
-                <span className="asv__field-label">{t('nav.scheduledJobs.fields.cronExpr')}</span>
-              </div>
-              <div className="asv__field-control" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldControl">
-                <Input
-                  value={draft.expr}
-                  invalid={validationErrors.cronExpr}
-                  onChange={e => {
-                    const expr = e.currentTarget.value;
-                    setValidationErrors(current => ({ ...current, cronExpr: false }));
-                    setDraft(c => ({ ...c, expr }));
-                  }}
-                  placeholder="0 8 * * *"
-                  size="sm"
-                />
-                <span className="asv__field-note">
-                  {t('nav.scheduledJobs.hints.cronExpr')}
-                </span>
-              </div>
-            </div>
-            <div className="asv__form-row asv__form-row--inline" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="field">
-              <div className="asv__field-meta" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldMeta">
-                <span className="asv__field-label">{t('nav.scheduledJobs.fields.timezone')}</span>
-              </div>
-              <div className="asv__field-control" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldControl">
-                <Input
-                  value={draft.tz}
-                  onChange={e => {
-                    const tz = e.currentTarget.value;
-                    setDraft(c => ({ ...c, tz }));
-                  }}
-                  placeholder={t('nav.scheduledJobs.placeholders.timezone')}
-                  size="sm"
-                />
-              </div>
-            </div>
+            <ScheduledJobField dialog={!showActions} label={t('nav.scheduledJobs.fields.cronExpr')}
+              description={t('nav.scheduledJobs.hints.cronExpr')}>
+              <Input
+                disabled={saving}
+                value={draft.expr}
+                invalid={validationErrors.cronExpr}
+                onChange={e => {
+                  const expr = e.currentTarget.value;
+                  setValidationErrors(current => ({ ...current, cronExpr: false }));
+                  setDraft(c => ({ ...c, expr }));
+                }}
+                placeholder="0 8 * * *"
+                size="sm"
+              />
+            </ScheduledJobField>
+            <ScheduledJobField dialog={!showActions} label={t('nav.scheduledJobs.fields.timezone')}>
+              <Input
+                disabled={saving}
+                value={draft.tz}
+                onChange={e => {
+                  const tz = e.currentTarget.value;
+                  setDraft(c => ({ ...c, tz }));
+                }}
+                placeholder={t('nav.scheduledJobs.placeholders.timezone')}
+                size="sm"
+              />
+            </ScheduledJobField>
           </>
         )}
 
         {assistantWorkspaceMode ? (
-          <div className="asv__form-row asv__form-row--inline" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="field">
-            <div className="asv__field-meta" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldMeta">
-              <span className="asv__field-label">{t('nav.scheduledJobs.fields.session')}</span>
-            </div>
-            <div className="asv__field-control" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldControl">
-              <Combobox
-                size="sm"
-                options={sessionOptions}
-                value={draft.sessionId}
-                invalid={validationErrors.sessionId}
-                onCreateValue={value => value}
-                clearable
-                className="asv__session-select"
-                onValueChange={value => {
-                  setValidationErrors(current => ({ ...current, sessionId: false }));
-                  setDraft(c => ({ ...c, sessionId: String(value) }));
-                }}
-                placeholder={t('nav.scheduledJobs.placeholders.optionalSession')}
-              />
-            </div>
-          </div>
+          <ScheduledJobField dialog={!showActions} label={t('nav.scheduledJobs.fields.session')}>
+            <Combobox
+              disabled={saving}
+              size="sm"
+              options={sessionOptions}
+              value={draft.sessionId}
+              invalid={validationErrors.sessionId}
+              onCreateValue={value => value}
+              clearable
+              className="asv__session-select"
+              onValueChange={value => {
+                setValidationErrors(current => ({ ...current, sessionId: false }));
+                setDraft(c => ({ ...c, sessionId: String(value) }));
+              }}
+              placeholder={t('nav.scheduledJobs.placeholders.optionalSession')}
+            />
+          </ScheduledJobField>
         ) : targetKind === 'workspace' ? (
-          <div className="asv__form-row asv__form-row--inline" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="field">
-            <div className="asv__field-meta" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldMeta">
-              <span className="asv__field-label">{t('nav.scheduledJobs.fields.agentType')}</span>
-            </div>
-            <div className="asv__field-control" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldControl">
-              <Combobox
-                size="sm"
-                options={workspaceAgentOptions}
-                value={draft.agentType}
-                invalid={validationErrors.agentType}
-                disabled={workspaceKind === WorkspaceKind.Assistant}
-                className="asv__agent-select"
-                onValueChange={value => {
-                  const agentType = String(value);
-                  setValidationErrors(current => ({ ...current, agentType: false }));
-                  setDraft(c => ({ ...c, agentType }));
-                }}
-                placeholder={t('nav.scheduledJobs.placeholders.agentType')}
-              />
-            </div>
-          </div>
+          <ScheduledJobField dialog={!showActions} label={t('nav.scheduledJobs.fields.agentType')}>
+            <Combobox
+              size="sm"
+              options={workspaceAgentOptions}
+              value={draft.agentType}
+              invalid={validationErrors.agentType}
+              disabled={saving || workspaceKind === WorkspaceKind.Assistant}
+              className="asv__agent-select"
+              onValueChange={value => {
+                const agentType = String(value);
+                setValidationErrors(current => ({ ...current, agentType: false }));
+                setDraft(c => ({ ...c, agentType }));
+              }}
+              placeholder={t('nav.scheduledJobs.placeholders.agentType')}
+            />
+          </ScheduledJobField>
         ) : !lockSessionId ? (
-          <div className="asv__form-row asv__form-row--inline" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="field">
-            <div className="asv__field-meta" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldMeta">
-              <span className="asv__field-label">{t('nav.scheduledJobs.fields.session')}</span>
-            </div>
-            <div className="asv__field-control" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldControl">
-              <Combobox
-                size="sm"
-                options={sessionOptions}
-                value={draft.sessionId}
-                invalid={validationErrors.sessionId}
-                onCreateValue={value => value}
-                onValueChange={value => {
-                  setValidationErrors(current => ({ ...current, sessionId: false }));
-                  setDraft(c => ({ ...c, sessionId: String(value) }));
-                }}
-                placeholder={t('nav.scheduledJobs.placeholders.session')}
-              />
-            </div>
-          </div>
+          <ScheduledJobField dialog={!showActions} label={t('nav.scheduledJobs.fields.session')}>
+            <Combobox
+              disabled={saving}
+              size="sm"
+              options={sessionOptions}
+              value={draft.sessionId}
+              invalid={validationErrors.sessionId}
+              onCreateValue={value => value}
+              onValueChange={value => {
+                setValidationErrors(current => ({ ...current, sessionId: false }));
+                setDraft(c => ({ ...c, sessionId: String(value) }));
+              }}
+              placeholder={t('nav.scheduledJobs.placeholders.session')}
+            />
+          </ScheduledJobField>
         ) : null}
 
-        <div className="asv__form-row asv__form-row--inline asv__form-row--prompt" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="field">
-          <div className="asv__field-meta" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldMeta">
-            <span className="asv__field-label">{t('nav.scheduledJobs.fields.prompt')}</span>
-          </div>
-          <div className="asv__field-control" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="fieldControl">
-            <Textarea
-              className="asv__prompt-textarea"
-              rows={4}
-              value={draft.text}
-              onChange={e => {
-                const text = e.currentTarget.value;
-                setValidationErrors(current => ({ ...current, text: false }));
-                setDraft(c => ({ ...c, text }));
-              }}
-              invalid={validationErrors.text}
-              autoResize
-              showCount
-              maxLength={4000}
-              placeholder={t('nav.scheduledJobs.placeholders.prompt')}
-            />
-          </div>
-        </div>
+        <ScheduledJobField dialog={!showActions} prompt label={t('nav.scheduledJobs.fields.prompt')}>
+          <Textarea
+            disabled={saving}
+            className="asv__prompt-textarea"
+            rows={4}
+            value={draft.text}
+            onChange={e => {
+              const text = e.currentTarget.value;
+              setValidationErrors(current => ({ ...current, text: false }));
+              setDraft(c => ({ ...c, text }));
+            }}
+            invalid={validationErrors.text}
+            autoResize={showActions}
+            layout="fill"
+            variant={showActions ? 'default' : 'outlined'}
+            resize={showActions ? 'vertical' : 'none'}
+            showCount
+            maxLength={4000}
+            placeholder={t('nav.scheduledJobs.placeholders.prompt')}
+          />
+        </ScheduledJobField>
 
-        <div className="asv__form-row asv__form-row--inline" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="field">
-          <div className="asv__field-meta"><span className="asv__field-label">{t('nav.scheduledJobs.fields.reportPolicy')}</span></div>
-          <div className="asv__field-control">
-            <Select size="sm" value={draft.reportPolicy} disabled={!supportsReportPolicy}
-              options={(['inherit', 'always', 'conditional'] as const).map(value => ({ value, label: t(`nav.scheduledJobs.reportPolicies.${value}`) }))}
-              onValueChange={value => setDraft(current => ({ ...current, reportPolicy: value as JobDraft['reportPolicy'] }))} />
-            <span>{t(supportsReportPolicy ? 'nav.scheduledJobs.hints.reportPolicy' : 'nav.scheduledJobs.hints.reportPolicyUnsupported')}</span>
-          </div>
-        </div>
+        <ScheduledJobField dialog={!showActions} label={t('nav.scheduledJobs.fields.reportPolicy')}
+          description={t(supportsReportPolicy ? 'nav.scheduledJobs.hints.reportPolicy' : 'nav.scheduledJobs.hints.reportPolicyUnsupported')}>
+          <Select size="sm" value={draft.reportPolicy} disabled={saving || !supportsReportPolicy}
+            options={(['inherit', 'always', 'conditional'] as const).map(value => ({ value, label: t(`nav.scheduledJobs.reportPolicies.${value}`) }))}
+            onValueChange={value => setDraft(current => ({ ...current, reportPolicy: value as JobDraft['reportPolicy'] }))} />
+        </ScheduledJobField>
 
-        <div className="asv__form-actions" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="formActions">
-          <Button
-            size="sm"
-            className="asv__action-btn"
-            variant="fill"
-            onClick={handleCloseEditor}
-          >
-            {t('nav.scheduledJobs.actions.cancel')}
-          </Button>
-          <Button
-            size="sm"
-            className="asv__action-btn"
-            variant="primary"
-            onClick={() => { void handleSave(); }}
-            disabled={!canSave}
-            loading={saving}
-          >
-            {selectedJobId
-              ? t('nav.scheduledJobs.actions.save')
-              : t('nav.scheduledJobs.actions.create')}
-          </Button>
-        </div>
-      </div>
+        {!showActions && <Field label={t('nav.scheduledJobs.fields.enabled')} orientation="horizontal">
+          <Switch checked={draft.enabled} disabled={saving} aria-label={t('nav.scheduledJobs.fields.enabled')}
+            onChange={event => {
+              const enabled = event.currentTarget.checked;
+              setDraft(current => ({ ...current, enabled }));
+            }} />
+        </Field>}
+
+        {showActions && <div className="asv__form-actions" data-openbitfun-component="scheduled-jobs-view" data-openbitfun-part="formActions">
+          {renderFormActions()}
+        </div>}
+      </Form>
     );
+  }
+  function renderFormActions(dialog = false) {
+    return <>
+      <Button type="button" size="sm" className={dialog ? undefined : 'asv__action-btn'} variant="fill" disabled={saving} onClick={handleCloseEditor}>
+        {t('nav.scheduledJobs.actions.cancel')}
+      </Button>
+      <Button type={dialog ? 'submit' : 'button'} form={dialog ? creationFormId : undefined}
+        size="sm" className={dialog ? undefined : 'asv__action-btn'} variant="primary" onClick={dialog ? undefined : () => { void handleSave(); }}
+        disabled={!canSave || saving} loading={saving}>
+        {selectedJobId ? t('nav.scheduledJobs.actions.save') : t('nav.scheduledJobs.actions.create')}
+      </Button>
+    </>;
   }
 };
 

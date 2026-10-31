@@ -52,7 +52,7 @@ mod window_state_support;
 mod window_webview_geometry;
 
 use openbitfun_agent_runtime::sdk::{attach_session_event_cursor, SessionEventJournal};
-use openbitfun_core::agentic::tools::computer_use_capability::set_computer_use_desktop_available;
+use openbitfun_core::agentic::tools::computer_use_capability::set_computer_use_host_available;
 use openbitfun_core::agentic::tools::computer_use_host::ComputerUseHostRef;
 use openbitfun_core::infrastructure::ai::AIClientFactory;
 use openbitfun_core::infrastructure::{get_path_manager_arc, try_get_path_manager_arc};
@@ -1521,6 +1521,8 @@ pub async fn run() {
             get_app_state,
             update_app_status,
             update_workspace_info,
+            get_workspace_icon,
+            set_workspace_icon,
             appearance::show_agent_companion_desktop_pet,
             appearance::hide_agent_companion_desktop_pet,
             appearance::resize_agent_companion_desktop_pet,
@@ -2177,9 +2179,17 @@ async fn init_agentic_system() -> anyhow::Result<(
         openbitfun_core::product_runtime::core_permission_request_manager()
             .map_err(anyhow::Error::msg)?;
 
+    if let Ok(paths) = openbitfun_core::infrastructure::try_get_path_manager_arc() {
+        openbitfun_computer_use::set_ocr_debug_directory(
+            paths
+                .default_assistant_workspace_dir(None)
+                .join(openbitfun_core_types::product_identity::hidden_data_directory())
+                .join("computer_use_debug"),
+        );
+    }
     let computer_use_host: ComputerUseHostRef =
         Arc::new(computer_use::DesktopComputerUseHost::new());
-    set_computer_use_desktop_available(true);
+    set_computer_use_host_available(true);
 
     let tool_pipeline = Arc::new(
         tools::pipeline::ToolPipeline::new(

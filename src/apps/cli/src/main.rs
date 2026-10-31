@@ -31,6 +31,7 @@ mod plugin_host_activation;
 mod product_assembly;
 mod prompt_stash;
 mod prompts;
+mod remote_control;
 mod root_handlers;
 mod runtime;
 mod self_update;
@@ -225,6 +226,12 @@ fn agent_type_with_harness_profile(agent_type: String, harness_profile: Option<&
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Inspect or configure native Computer Use on this executing machine
+    ComputerUse {
+        #[command(subcommand)]
+        action: computer_use::Action,
+    },
+
     /// Start interactive chat (TUI)
     Chat {
         /// Agent type
@@ -380,7 +387,11 @@ enum Commands {
         action: DaemonAction,
     },
 
-    /// Run and inspect persistent tasks owned by this machine
+    /// Run persistent tasks owned by this machine, or dispatch them to another host
+    ///
+    /// `dispatch outbound ...` is the controller: it submits a job to an SSH
+    /// connection or account device and observes it. The other verbs are the
+    /// JSON target protocol that controllers invoke on this machine.
     Dispatch {
         #[command(subcommand)]
         action: DispatchAction,
@@ -598,6 +609,8 @@ pub(crate) enum BootstrapProfile {
     Interactive,
     Execution,
     Management,
+    /// Dispatch has not negotiated a GUI provider with its submitter.
+    Detached,
 }
 
 impl BootstrapProfile {
@@ -613,7 +626,7 @@ impl BootstrapProfile {
     }
 
     const fn starts_mcp(self) -> bool {
-        matches!(self, Self::Interactive | Self::Execution)
+        matches!(self, Self::Interactive | Self::Execution | Self::Detached)
     }
 
     const fn starts_scheduled_jobs(
@@ -622,7 +635,7 @@ impl BootstrapProfile {
     ) -> bool {
         // Shared TUI owns one workspace and exits after the last controller
         // disconnects. It cannot own the host-wide durable scheduler lease.
-        matches!(self, Self::Interactive | Self::Execution)
+        matches!(self, Self::Interactive | Self::Execution | Self::Detached)
             && matches!(
                 deployment,
                 openbitfun_services_core::runtime_ownership::RuntimeDeployment::Embedded
@@ -633,7 +646,7 @@ impl BootstrapProfile {
         matches!(
             PLUGIN_HOST_LAUNCH_POLICY,
             openbitfun_core::plugin_host::PluginHostLaunchPolicy::Enabled
-        ) && matches!(self, Self::Interactive | Self::Execution)
+        ) && matches!(self, Self::Interactive | Self::Execution | Self::Detached)
     }
 }
 
@@ -770,6 +783,11 @@ pub(crate) enum DispatchAction {
     Continue,
     /// Read persisted session facts (usage report) without starting a turn
     Query,
+    /// Submit jobs to, and observe jobs on, another OpenBitFun host
+    Outbound {
+        #[command(subcommand)]
+        action: dispatch::outbound::OutboundAction,
+    },
     #[command(name = "__workspace_provision", hide = true)]
     WorkspaceProvision,
     #[command(name = "__workspace_bundle_begin", hide = true)]
@@ -897,7 +915,7 @@ async fn initialize_core_services_for_deployment(
     tracing::info!("Global config service initialized");
     if matches!(
         bootstrap_profile,
-        BootstrapProfile::Interactive | BootstrapProfile::Execution
+        BootstrapProfile::Interactive | BootstrapProfile::Execution | BootstrapProfile::Detached
     ) {
         if let Err(error) =
             plugin_host_activation::ensure_configured_plugin_execution_supported().await
@@ -967,6 +985,7 @@ async fn initialize_core_services_for_deployment(
     let agentic_system = agent::agentic_system::init_agentic_system(
         openbitfun_core::product_assembly::DeliveryProfile::Cli,
         runtime_ownership,
+        computer_use::provider(bootstrap_profile),
     )
     .await
     .map_err(|error| anyhow!("Failed to initialize agentic system: {error}"))?;
@@ -993,6 +1012,7 @@ async fn initialize_core_services_for_deployment(
     )?);
     // Restore on the executing host for TUI, exec, Shared and detached jobs alike.
     runtime.account_runtime().try_restore_session().await;
+    remote_control::install(&runtime);
     debug_assert!(runtime
         .product()
         .service_availability()
@@ -1559,6 +1579,10 @@ async fn run_cli() -> Result<()> {
             root_handlers::handle_config_action(action, &config).await?;
         }
 
+        Some(Commands::ComputerUse { action }) => {
+            computer_use::run(action).await?;
+        }
+
         Some(Commands::Health) => {
             root_handlers::handle_health_command()?;
         }
@@ -1731,6 +1755,8 @@ async fn run_interactive_with_session(
     Ok(())
 }
 
+mod computer_use;
+
 fn main() {
     // Install the workspace-owned ring CryptoProvider before any TLS-capable
     // work (relay WS, reqwest rustls paths, Feishu wss) so every client uses
@@ -1748,6 +1774,7 @@ fn main() {
                 .build()
                 .expect("failed to build tokio runtime");
             runtime.block_on(async {
+                let _native_cleanup = openbitfun_computer_use::host_runtime::StopOnExit;
                 let result = run_cli().await;
                 match openbitfun_core::plugin_host::shutdown_configured_plugin_host().await {
                     Ok(Some(report)) => tracing::info!(
@@ -1768,7 +1795,7 @@ fn main() {
         })
         .expect("failed to spawn openbitfun worker thread");
 
-    match worker.join() {
+    match openbitfun_computer_use::host_runtime::join(worker) {
         Ok(Ok(())) => {}
         Ok(Err(err)) => {
             if let Some(reported) = err.downcast_ref::<ReportedCliError>() {
@@ -2273,6 +2300,39 @@ mod dispatch_command_tests {
             .render_long_help()
             .to_string();
         assert!(!dispatch_help.contains("__run"));
+        assert!(dispatch_help.contains("outbound"));
+
+        let outbound = Cli::try_parse_from([
+            "openbitfun",
+            "dispatch",
+            "outbound",
+            "submit",
+            "--target",
+            "device:mac-id",
+            "--approval-policy",
+            "reject-and-report",
+            "fix the flaky test",
+        ])
+        .expect("parse outbound submit");
+        assert!(matches!(
+            outbound.command,
+            Some(Commands::Dispatch {
+                action: DispatchAction::Outbound {
+                    action: crate::dispatch::outbound::OutboundAction::Submit { ref target, .. }
+                }
+            }) if target == "device:mac-id"
+        ));
+        // Approval policy is never defaulted for an unattended job.
+        assert!(Cli::try_parse_from([
+            "openbitfun",
+            "dispatch",
+            "outbound",
+            "submit",
+            "--target",
+            "mac",
+            "prompt",
+        ])
+        .is_err());
     }
 }
 

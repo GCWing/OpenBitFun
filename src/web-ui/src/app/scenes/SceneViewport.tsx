@@ -41,6 +41,7 @@ const TerminalScene   = lazyWithRecovery(() => import('./terminal/TerminalScene'
 const GitScene        = lazyWithRecovery(() => import('./git/GitScene'));
 const ProfileScene    = lazyWithRecovery(() => import('./profile/ProfileScene'));
 const PersonalOverviewScene = lazyWithRecovery(() => import('./personal-overview/PersonalOverviewScene'));
+const ProjectResourcesScene = lazyWithRecovery(() => import('./project-resources/ProjectResourcesScene'));
 const AgentsScene       = lazyWithRecovery(() => import('./agents/AgentsScene'));
 const SkillsScene     = lazyWithRecovery(() => import('./skills/SkillsScene'));
 const MiniAppGalleryScene = lazyWithRecovery(() => import('./miniapps/MiniAppGalleryScene'));
@@ -175,7 +176,7 @@ const SceneViewport: React.FC<SceneViewportProps> = ({ workspacePath, isEntering
               data-scene-active={isActive ? 'true' : 'false'}
               data-openbitfun-scene="workbench"
               data-openbitfun-part="scene"
-              data-openbitfun-scene-id={isEmpty ? 'welcome' : tabId.startsWith('content:') ? 'content' : tabId.startsWith('miniapp:') ? 'miniapp' : tabId}
+              data-openbitfun-scene-id={isEmpty ? 'welcome' : tabId.startsWith('project-resources:') ? 'project-resources' : tabId.startsWith('content:') ? 'content' : tabId.startsWith('miniapp:') ? 'miniapp' : tabId}
               data-openbitfun-state={[
                 isActive && 'active',
                 isEmpty && 'empty',
@@ -361,6 +362,9 @@ function renderScene(
     case 'shell':
       return <ShellScene isActive={isActive} />;
     default:
+      if (id.startsWith('project-resources:')) {
+        return <ProjectResourcesScene sceneId={id} isActive={isActive} />;
+      }
       if (id.startsWith('content:')) {
         return <ContentResourceView resourceId={id.slice('content:'.length)} isActive={isActive} />;
       }

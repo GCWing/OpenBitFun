@@ -17,6 +17,14 @@ enum MobileLanguage: String, CaseIterable, Identifiable {
 enum MobileLocalization {
     static let preferenceKey = "openbitfun.mobile.language"
 
+    static func messageTime(_ date: Date, language: MobileLanguage) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: language.rawValue)
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
     static func restoredLanguage() -> MobileLanguage {
         if let saved = UserDefaults.standard.string(forKey: preferenceKey),
            let language = MobileLanguage(rawValue: saved) {

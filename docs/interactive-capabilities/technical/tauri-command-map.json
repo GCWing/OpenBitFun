@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "88d5ab0dbcf69af99b67cb5168ed6b8fe39e51c9f19bc06fbf0cb00e9aafd7af",
-  "commandCount": 707,
+  "catalogDigest": "44e81d200d46b1ffb031427d4812fbcaa388aa556d82408fa78f8e6193fdcf22",
+  "commandCount": 709,
   "coverage": {
-    "commandCount": 707,
-    "documentedCommandCount": 647,
+    "commandCount": 709,
+    "documentedCommandCount": 649,
     "implementationCommandCount": 60,
     "implementationDigest": "5047b674e890f899e65baf9235e9df4bd912fa28f44eb10a656e079a1b89974d"
   },
@@ -4435,6 +4435,22 @@
       "rustPath": "get_web_search_credential_status",
       "sourceFile": "src/apps/desktop/src/api/config_api.rs",
       "signature": "fn get_web_search_credential_status( _state: State<'_, AppState>, request: GetWebSearchCredentialStatusRequest, ) -> Result<openbitfun_core::service::web_search::WebSearchCredentialStatus, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
+      "id": "get_workspace_icon",
+      "moduleId": "commands",
+      "capabilityId": "feature.projects",
+      "capabilityIds": [
+        "feature.projects"
+      ],
+      "documentedItemIds": [
+        "feature.projects:workspace-icon"
+      ],
+      "visibility": "documented",
+      "rustPath": "get_workspace_icon",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn get_workspace_icon( state: State<'_, AppState>, request: openbitfun_core::service::workspace::WorkspaceIconRequest, ) -> Result<openbitfun_core::service::workspace::WorkspaceIconSnapshot, String>",
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
@@ -9558,6 +9574,22 @@
       "sourceFile": "src/apps/desktop/src/api/system_api.rs",
       "signature": "fn set_tray_unread_count( app: tauri::AppHandle, request: SetTrayUnreadCountRequest, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
+      "id": "set_workspace_icon",
+      "moduleId": "commands",
+      "capabilityId": "feature.projects",
+      "capabilityIds": [
+        "feature.projects"
+      ],
+      "documentedItemIds": [
+        "feature.projects:workspace-icon"
+      ],
+      "visibility": "documented",
+      "rustPath": "set_workspace_icon",
+      "sourceFile": "src/apps/desktop/src/api/commands.rs",
+      "signature": "fn set_workspace_icon( state: State<'_, AppState>, request: openbitfun_core::service::workspace::SetWorkspaceIconRequest, ) -> Result<openbitfun_core::service::workspace::WorkspaceIconSnapshot, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "show_agent_companion_desktop_pet",

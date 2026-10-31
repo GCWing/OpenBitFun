@@ -102,11 +102,11 @@ export interface GlobalSearchSnapshot {
 
 export const GLOBAL_SEARCH_GROUP_ORDER: readonly GlobalSearchGroupId[] = [
   'actions',
+  'settings',
+  'capabilities',
   'messages',
   'sessions',
   'files',
   'workspaces',
   'assistants',
-  'capabilities',
-  'settings',
 ];

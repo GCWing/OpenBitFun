@@ -750,7 +750,7 @@
   "layout": {
     "$type": "dimension",
     "searchDialog": {
-      "width": { "$value": "{overlay.dialog.maxInlineSizeXlarge}" },
+      "width": { "$value": "744px" },
       "height": { "$value": "460px" },
       "padding": { "$value": "{space.5}" },
       "queryHeight": { "$value": "30px" },

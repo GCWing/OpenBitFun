@@ -221,7 +221,12 @@ listener alone recovers an interaction emitted before attachment.
     to the controller. Definitions that need a native provider or a live UI
     additionally declare `product_control_native_v1` or
     `product_control_presentation_v1`; the CLI host advertises neither and
-    returns a typed unsupported result. `mark_openbitfun_control_surface_ready`,
+    returns a typed unsupported result. Remote Connect management instead uses the
+    narrow `remote_connect_control_v1` capability, advertised by both Desktop and
+    CLI; its operations execute on the selected host and fail before RPC on older
+    peers. Direct Peer RPC refuses Relay start/stop because it holds that route's
+    response lease; submit these operations through a Claw turn instead.
+    `mark_openbitfun_control_surface_ready`,
     `mark_openbitfun_control_surface_unready`, and `report_openbitfun_control_result`
     describe or acknowledge the controller window's live Web UI and therefore
     remain `LOCAL_ONLY` in the frontend, Desktop host, and CLI host lists. A

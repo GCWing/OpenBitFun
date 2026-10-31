@@ -19,8 +19,9 @@ import { OverflowText,
   ScrollArea,
   Dialog,
   DialogBody,
+  Portal,
 } from '@openbitfun/ui';
-import { BarChart3, Blocks, CheckSquare2, FileText, Keyboard, MessageSquareText, MessagesSquare, Network, Users } from 'lucide-react';
+import { AlertCircle, BarChart3, Blocks, CheckSquare2, FileText, Keyboard, MessageSquareText, MessagesSquare, Network, Users } from 'lucide-react';
 import { useShortcut } from '@/infrastructure/hooks/useShortcut';
 import { useI18n } from '@/infrastructure/i18n';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
@@ -30,6 +31,7 @@ import { useMyAgentStore } from '@/app/scenes/my-agent/myAgentStore';
 import { useNurseryStore } from '@/app/scenes/profile/nurseryStore';
 import { notificationService } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
+import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
 import { activateGlobalSearchTarget } from './globalSearchActivator';
 import { runFederatedSearch } from './federatedSearchEngine';
 import { globalSearchRegistry } from './globalSearchRegistry';
@@ -134,7 +136,7 @@ function iconForItem(item: GlobalSearchItem): IconSource {
 
 function resultVariant(group: GlobalSearchGroupId): 'action' | 'entity' | 'standard' {
   if (group === 'actions') return 'action';
-  if (group === 'workspaces' || group === 'assistants') return 'entity';
+  if (group === 'workspaces' || group === 'assistants' || group === 'settings' || group === 'capabilities') return 'entity';
   return 'standard';
 }
 
@@ -183,12 +185,30 @@ export const GlobalSearchContent: React.FC<GlobalSearchContentProps> = ({
   const retryRef = useRef<{ context: string; providerId: string; previous: GlobalSearchSnapshot } | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [drilldownGroup, setDrilldownGroup] = useState<GlobalSearchDrilldownGroupId | null>(null);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const diagnosticsTriggerRef = useRef<HTMLButtonElement>(null);
+  const diagnosticsPanelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const inputCompositionActiveRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const generatedId = useId().replace(/:/g, '');
   const instanceId = `global-search-${generatedId || 'content'}`;
   const resultsId = `${instanceId}-results`;
+  const diagnosticsId = `${instanceId}-diagnostics`;
+  const diagnosticsTriggerId = `${diagnosticsId}-trigger`;
+  const diagnosticsVisible = active && diagnosticsOpen && snapshot.diagnostics.length > 0;
+  const diagnosticsLayout = useAnchoredPopoverPosition({
+    open: diagnosticsVisible,
+    anchorRef: diagnosticsTriggerRef,
+    popoverRef: diagnosticsPanelRef,
+    preferredPlacement: 'top',
+    gap: 8,
+    layoutRevision: snapshot.diagnostics,
+  });
+  const diagnosticsPositioned = diagnosticsLayout !== null;
+  useEffect(() => {
+    if (diagnosticsVisible && diagnosticsPositioned) diagnosticsPanelRef.current?.focus();
+  }, [diagnosticsVisible, diagnosticsPositioned]);
   const testIdPrefix = variant === 'modal' ? 'global-search' : 'embedded-global-search';
   const providers = useSyncExternalStore(
     globalSearchRegistry.subscribe,
@@ -376,13 +396,20 @@ export const GlobalSearchContent: React.FC<GlobalSearchContentProps> = ({
     focusSearchInput();
   }, [focusSearchInput]);
 
+  useEffect(() => {
+    if (!active || snapshot.diagnostics.length === 0) {
+      setDiagnosticsOpen(false);
+    }
+  }, [active, snapshot.diagnostics.length]);
+
   const handleRootKeyDownCapture = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (isImeOwnedKeyboardEvent(event, inputCompositionActiveRef.current)) return;
+    // The diagnostics layer owns Escape before the underlying group or dialog.
+    if (diagnosticsVisible || isImeOwnedKeyboardEvent(event, inputCompositionActiveRef.current)) return;
     if (event.key !== 'Escape' || !drilldownGroup) return;
     event.preventDefault();
     event.stopPropagation();
     closeGroupDetails();
-  }, [closeGroupDetails, drilldownGroup]);
+  }, [closeGroupDetails, diagnosticsVisible, drilldownGroup]);
 
   const effectiveScope = parsedQuery.scope;
   const emptyLabel = effectiveScope === 'content' && parsedQuery.query.length < 2
@@ -551,7 +578,11 @@ export const GlobalSearchContent: React.FC<GlobalSearchContentProps> = ({
                   </div>
                 )}
                 </div></div>
-                <div className="global-search__group-items" role="presentation">
+                <div
+                  className="global-search__group-items"
+                  role="presentation"
+                  data-search-layout={parsedQuery.query && resultVariant(groupId) !== 'standard' ? 'cards' : undefined}
+                >
                   {groupItems.map((item) => {
                     const itemIcon = iconForItem(item);
                     const selected = item.id === activeId;
@@ -666,27 +697,73 @@ export const GlobalSearchContent: React.FC<GlobalSearchContentProps> = ({
           || snapshot.diagnostics.length > 0) ? (
         <footer className="global-search__footer" data-openbitfun-component="global-search" data-openbitfun-part="footer">
           {snapshot.diagnostics.length > 0 ? (
-            <details className="global-search__diagnostics" data-testid={`${testIdPrefix}-partial-status`}>
-              <summary>{tCommon('nav.search.partialUnavailable')}</summary>
-              <div className="global-search__diagnostic-target">
-                {tCommon('nav.search.diagnosticTarget', { host: hostLabel })}
-              </div>
-              {snapshot.diagnostics.map((diagnostic, index) => (
-                <div className="global-search__diagnostic" key={`${diagnostic.providerId}:${diagnostic.code}:${index}`}>
-                  <strong>{providers.find(provider => provider.id === diagnostic.providerId)?.groups
-                    .map(group => tCommon(`nav.search.groups.${group}`)).join(' / ') ?? diagnostic.providerId}</strong>
-                  {diagnostic.workspaceName ? <div>{diagnostic.workspaceName} · {diagnostic.hostLabel ?? hostLabel}</div> : null}
-                  {diagnostic.workspacePath ? <div className="global-search__diagnostic-path">{diagnostic.workspacePath}</div> : null}
-                  <p>{diagnostic.message}</p>
-                  {diagnostic.retryable !== false ? (
-                    <Button size="sm" variant="outline" disabled={snapshot.isSearching}
-                      onClick={() => retryProvider(diagnostic.providerId)}>
-                      {tCommon('nav.search.retrySource')}
-                    </Button>
-                  ) : null}
-                </div>
-              ))}
-            </details>
+            <div
+              className="global-search__diagnostics"
+              data-testid={`${testIdPrefix}-partial-status`}
+            >
+              <Button
+                ref={diagnosticsTriggerRef}
+                id={diagnosticsTriggerId}
+                className="global-search__diagnostics-summary"
+                variant="text"
+                size="xs"
+                aria-haspopup="dialog"
+                aria-expanded={diagnosticsVisible}
+                aria-controls={diagnosticsVisible ? diagnosticsId : undefined}
+                leadingIcon={<AlertCircle size={13} aria-hidden="true" className="global-search__diagnostics-icon" />}
+                onClick={() => setDiagnosticsOpen(open => !open)}
+              >
+                {tCommon('nav.search.partialUnavailable')}
+              </Button>
+              {diagnosticsVisible ? (
+                <Portal
+                  ownerRef={diagnosticsTriggerRef}
+                  surfaceRef={diagnosticsPanelRef}
+                  open={diagnosticsVisible}
+                  dismissOnPointerOutside
+                  onDismiss={(reason) => {
+                    if (reason === 'escape-key') diagnosticsTriggerRef.current?.focus();
+                    setDiagnosticsOpen(false);
+                  }}
+                >
+                  <div
+                    ref={diagnosticsPanelRef}
+                    id={diagnosticsId}
+                    role="dialog"
+                    aria-labelledby={diagnosticsTriggerId}
+                    tabIndex={-1}
+                    className="global-search__diagnostics-panel"
+                    data-openbitfun-native-webview-occlusion
+                    style={{
+                      left: diagnosticsLayout?.left ?? 0,
+                      top: diagnosticsLayout?.top ?? 0,
+                      visibility: diagnosticsLayout ? 'visible' : 'hidden',
+                    }}
+                  >
+                    <div className="global-search__diagnostic-target">
+                      {tCommon('nav.search.diagnosticTarget', { host: hostLabel })}
+                    </div>
+                    {snapshot.diagnostics.map((diagnostic, index) => (
+                      <div className="global-search__diagnostic" key={`${diagnostic.providerId}:${diagnostic.code}:${index}`}>
+                        <div className="global-search__diagnostic-header">
+                          <strong>{providers.find(provider => provider.id === diagnostic.providerId)?.groups
+                            .map(group => tCommon(`nav.search.groups.${group}`)).join(' / ') ?? diagnostic.providerId}</strong>
+                          {diagnostic.workspaceName ? <div>{diagnostic.workspaceName} · {diagnostic.hostLabel ?? hostLabel}</div> : null}
+                        </div>
+                        {diagnostic.workspacePath ? <div className="global-search__diagnostic-path">{diagnostic.workspacePath}</div> : null}
+                        <p>{diagnostic.message}</p>
+                        {diagnostic.retryable !== false ? (
+                          <Button size="sm" variant="outline" disabled={snapshot.isSearching}
+                            onClick={() => retryProvider(diagnostic.providerId)}>
+                            {tCommon('nav.search.retrySource')}
+                          </Button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </Portal>
+              ) : null}
+            </div>
           ) : null}
           <span className="global-search__footer-keys" aria-hidden="true">
             <KeyHint>↑↓</KeyHint> {tCommon('nav.search.footer.navigate')}
@@ -743,8 +820,10 @@ const GlobalSearchRoot: React.FC = () => {
       size="xl"
       aria-label={tCommon('nav.search.dialogLabel')}
       className="global-search-dialog"
+      overlayProps={{ className: 'global-search-overlay' }}
       data-testid="global-search-dialog"
     >
+      <div className="global-search-dialog__material" aria-hidden="true" />
       <DialogBody className="global-search-modal-content">
         <GlobalSearchContent
           active={open}

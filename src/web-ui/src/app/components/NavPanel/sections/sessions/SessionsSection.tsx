@@ -379,16 +379,16 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   const discoveryFilterActive = discoveryEnabledSources !== undefined
     && Object.keys(EXTERNAL_SESSION_NAMES).some(source => !discoveryEnabledSources.has(source));
   const catalogQueryJson = useMemo(() => {
-    void orderingRevision;
     if (discoveryFilterActive) return JSON.stringify(null);
     return JSON.stringify(workspaceSessionCatalogQuery(workspaceId, sessionOrdering, sessionShow,
-      sessionFilters, sourceAgent, flowChatState.sessions.values(), sessionNavStatusService.getSortTimestamp) ?? null);
-  }, [discoveryFilterActive, workspaceId, sessionOrdering, sessionShow, sessionFilters, sourceAgent, flowChatState.sessions, orderingRevision]);
+      sessionFilters, sourceAgent) ?? null);
+  }, [discoveryFilterActive, workspaceId, sessionOrdering, sessionShow, sessionFilters, sourceAgent]);
   const captureCatalogQuery = useCallback((query: SessionCatalogQuery) => captureWorkspaceSessionCatalogQuery(
     query, flowChatStore.getState().sessions.values(), sessionNavStatusService.getSortTimestamp,
   ), []);
-  // Capture the view's observed order only when beginning a catalog. Hydration
-  // and streaming must not restart it; a refresh or device switch must rebind it.
+  // Capture the view's observed order only when beginning a catalog. Hydration,
+  // streaming and run starts must not restart it; a refresh or device switch
+  // must rebind it.
   const catalogQuery = useMemo(() => {
     void catalogRefreshVersion;
     void initialMetadataKey;
@@ -1157,9 +1157,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
         sourceView ? t('nav.sessions.removeSourceConfirmTitle') : t('nav.sessions.deleteConfirmTitle'),
         sourceView ? t('nav.sessions.removeSourceConfirmMessage', {
           name: session ? resolveSessionTitle(session) : t('nav.sessions.untitled'),
-        }) : t('nav.sessions.deleteConfirmMessage', {
-          name: session ? resolveSessionTitle(session) : t('nav.sessions.untitled'),
-        }),
+        }) : t('nav.sessions.deleteConfirmMessage'),
         { confirmText: sourceView ? t('nav.sessions.removeSource') : t('nav.sessions.delete') },
       );
       if (!confirmed) return;

@@ -163,6 +163,15 @@ impl CliTestEnvironment {
 
     pub(crate) fn configure_tool_loop_mock_model(&self, server_base_url: &str) {
         self.configure_mock_model(server_base_url);
+        self.allow_tool_loop_rounds();
+    }
+
+    pub(crate) fn configure_tool_loop_image_model(&self, server_base_url: &str) {
+        self.configure_mock_image_model(server_base_url);
+        self.allow_tool_loop_rounds();
+    }
+
+    fn allow_tool_loop_rounds(&self) {
         let config_path = self.user_root.join("config/app.json");
         let mut config: serde_json::Value = serde_json::from_slice(
             &std::fs::read(&config_path).expect("read tool-loop model config"),

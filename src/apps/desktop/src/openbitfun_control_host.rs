@@ -568,6 +568,16 @@ async fn inspect_desktop(
             }),
         );
     }
+    if capability_id == "feature.remote-connect" {
+        let status = crate::api::remote_connect_api::execute_remote_control(
+            openbitfun_product_domains::remote_control::RemoteControlRequest::Status,
+        )
+        .await;
+        option_values.insert(
+            "remoteConnect".into(),
+            status.unwrap_or_else(|error| json!({"status":"unavailable", "reason":error})),
+        );
+    }
     if capability_id == "setting.application.pet" {
         let provider_state = match companion_state(&state).await {
             Ok(value) => value,
@@ -845,6 +855,7 @@ async fn configure_desktop_provider_option(
 enum DesktopProviderOperation {
     MiniApp(miniapps::Operation),
     Mcp(openbitfun_core::service::mcp::control::MCPControlOperation),
+    RemoteConnect(&'static str),
     ListCompanionPets,
     UseCompanionPet,
     DeleteCompanionPet,
@@ -855,6 +866,18 @@ fn desktop_provider_operation(
     operation_id: &str,
 ) -> Option<DesktopProviderOperation> {
     match (provider_id, operation_id) {
+        ("remote-connect", id) => [
+            "status",
+            "start",
+            "stop",
+            "configure-bot",
+            "weixin-login-start",
+            "weixin-login-poll",
+            "set-bot-verbose",
+        ]
+        .into_iter()
+        .find(|operation| *operation == id)
+        .map(DesktopProviderOperation::RemoteConnect),
         ("miniapp", id) => miniapps::operation(id).map(DesktopProviderOperation::MiniApp),
         ("mcp", id) => {
             openbitfun_core::service::mcp::control::operation(id).map(DesktopProviderOperation::Mcp)
@@ -893,6 +916,13 @@ async fn execute_desktop_provider_operation(
 ) -> Result<Value, String> {
     let state = app.state::<AppState>();
     match operation {
+        DesktopProviderOperation::RemoteConnect(operation) => {
+            let request =
+                openbitfun_product_domains::remote_control::RemoteControlRequest::from_operation(
+                    operation, arguments,
+                )?;
+            crate::api::remote_connect_api::execute_remote_control(request).await
+        }
         DesktopProviderOperation::Mcp(operation) => {
             let mut result = state
                 .mcp_service

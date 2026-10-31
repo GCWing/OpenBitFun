@@ -6,6 +6,13 @@ import { ModelPoolCardActions } from './ModelPoolCardActions';
 import { ZcodeSubscriptionGroup } from './ZcodeSubscriptionGroup';
 import { SubscriptionProviderPicker } from './SubscriptionProviderPicker';
 import { OpenCodeModelQuota } from './OpenCodeModelQuota';
+import {
+  endpointPresetsForFormat,
+  findSelectedEndpointPreset,
+  previewRequestUrl,
+  remapBaseUrlForFormat,
+  resolveRequestUrl,
+} from './modelRequestUrl';
 import { SubscriptionQuotaPanel } from './SubscriptionQuotaPanel';
 import { SubscriptionAuthorizationExpiry } from './SubscriptionAuthorizationExpiry';
 import { SubscriptionCapsuleList } from './SubscriptionCapsuleList';
@@ -100,7 +107,6 @@ import {
   ReasoningCatalogProjection,
   ReasoningConfig,
 } from '@/infrastructure/config/types';
-import { supportsResponsesReasoning } from '@/infrastructure/config/utils/reasoning';
 import {
   canonicalReasoningConfig,
   cloneReasoningConfig,
@@ -152,7 +158,7 @@ import {
   Tooltip,
   type ComboboxOption,
 } from '@openbitfun/ui';
-import { AlertTriangle, EyeOff, FolderOpen, Loader, Wifi } from 'lucide-react';
+import { AlertTriangle, EyeOff, FolderOpen, Loader, Undo2, Wifi } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 const log = createLogger('ModelSettings');
@@ -246,10 +252,6 @@ function subscriptionLoginCancelledError(): Error {
   const error = new Error('Login cancelled');
   error.name = 'SubscriptionLoginCancelled';
   return error;
-}
-
-function isResponsesProvider(provider?: string): boolean {
-  return supportsResponsesReasoning(provider);
 }
 
 function createModelDraft(
@@ -352,53 +354,6 @@ function dedupeSelectedModelDraftsByModelName(drafts: SelectedModelDraft[]): Sel
     out[i] = !prev.configId && draft.configId ? draft : prev;
   }
   return out;
-}
-
-/**
- * Compute the stored request URL from a base URL and provider format.
- * For Gemini, stores the bare base without the /v1beta/models/... suffix;
- * the backend dynamically appends /v1beta/models/{model}:streamGenerateContent?alt=sse.
- */
-function resolveRequestUrl(baseUrl: string, provider: string, _modelName = ''): string {
-  const trimmed = baseUrl.trim().replace(/\/+$/, '');
-  if (trimmed.endsWith('#')) {
-    return trimmed.slice(0, -1).replace(/\/+$/, '');
-  }
-  if (provider === 'openai') {
-    return trimmed.endsWith('chat/completions') ? trimmed : `${trimmed}/chat/completions`;
-  }
-  if (isResponsesProvider(provider)) {
-    return trimmed.endsWith('responses') ? trimmed : `${trimmed}/responses`;
-  }
-  if (provider === 'anthropic') {
-    if (trimmed.endsWith('/messages')) return trimmed;
-    return trimmed.endsWith('/v1') ? `${trimmed}/messages` : `${trimmed}/v1/messages`;
-  }
-  if (provider === 'gemini') {
-    return geminiBaseUrl(trimmed);
-  }
-  return trimmed;
-}
-
-/** Strip /v1beta/models/... or /models/... suffix from a gemini URL to get the bare host+path root. */
-function geminiBaseUrl(url: string): string {
-  return url
-    .replace(/\/v1beta(?:\/models(?:\/[^/?#]*(?::(?:stream)?[Gg]enerateContent)?(?:\?[^]*)?)?)?$/, '')
-    .replace(/\/models(?:\/[^/?#]*(?::(?:stream)?[Gg]enerateContent)?(?:\?[^]*)?)?$/, '')
-    .replace(/\/+$/, '');
-}
-
-/**
- * Build a human-readable preview URL for display in the UI.
- * For Gemini, show the full streaming endpoint with a model placeholder when needed.
- */
-function previewRequestUrl(baseUrl: string, provider: string, modelName?: string): string {
-  const trimmed = baseUrl.trim().replace(/\/+$/, '');
-  if (provider === 'gemini' && !trimmed.endsWith('#')) {
-    const model = modelName?.trim();
-    return `${geminiBaseUrl(trimmed)}/v1beta/models/${model ? encodeURIComponent(model) : '{model}'}:streamGenerateContent?alt=sse`;
-  }
-  return resolveRequestUrl(baseUrl, provider);
 }
 
 function hasHttpUrlScheme(value: string): boolean {
@@ -2777,7 +2732,22 @@ const ModelSettingsPage: React.FC = () => {
     return (
       <ConfigPageLayout className="openbitfun-model-settings" data-openbitfun-component="model-settings" data-openbitfun-part="root" data-openbitfun-view="selection">
         <ConfigPageHeader
+          className="openbitfun-model-settings__selection-header"
           title={t('providerSelection.title')}
+          extra={(
+            <div className="openbitfun-model-settings__selection-actions" data-openbitfun-component="model-settings" data-openbitfun-part="selectionActions">
+              <Tooltip content={t('actions.back')} trigger="hover-focus">
+                <IconButton
+                  variant="quiet"
+                  size="sm"
+                  aria-label={t('actions.back')}
+                  data-testid="settings-model-provider-back-btn"
+                  icon={<Icon glyph={Undo2} size="sm" />}
+                  onClick={() => setCreationMode(null)}
+                />
+              </Tooltip>
+            </div>
+          )}
         />
 
         <ConfigPageContent className="openbitfun-model-settings__content openbitfun-model-settings__content--selection">
@@ -2888,12 +2858,6 @@ const ModelSettingsPage: React.FC = () => {
                 </button>
               )}
             </div>
-
-            <div className="openbitfun-model-settings__selection-actions" data-openbitfun-component="model-settings" data-openbitfun-part="selectionActions">
-              <Button variant="fill" size="sm" onClick={() => setCreationMode(null)}>
-                {t('actions.cancel')}
-              </Button>
-            </div>
           </div>
         </ConfigPageContent>
       </ConfigPageLayout>
@@ -2903,6 +2867,18 @@ const ModelSettingsPage: React.FC = () => {
   const renderEditingForm = () => {
     if (!isEditing || !editingConfig) return null;
     const isFromTemplate = !editingConfig.id && !!currentTemplate;
+    // Presets are filtered by the request format so the picker only chooses a
+    // host/plan; the format select stays the single owner of the API format.
+    const endpointPresetOptions = isFromTemplate
+      ? endpointPresetsForFormat(currentTemplate?.baseUrlOptions, editingConfig.provider || 'openai')
+      : [];
+    const selectedEndpointPreset = findSelectedEndpointPreset(
+      endpointPresetOptions,
+      editingConfig.base_url || '',
+      editingConfig.provider || 'openai',
+    );
+    const showEndpointPresetPicker = endpointPresetOptions.length > 1
+      || (endpointPresetOptions.length === 1 && !selectedEndpointPreset);
     const zenOAuth = isOpenCodeZenOAuth(editingConfig);
     const routeConfig = editingConfig;
     const automaticOpenCodeRouting = zenOAuth || isOpenCodeApiKeyConfig(routeConfig);
@@ -4024,11 +4000,22 @@ const ModelSettingsPage: React.FC = () => {
                             onValueChange={(value) => {
                               const provider = value as string;
                               resetRemoteModelDiscovery();
-                              setEditingConfig(prev => ({
-                                ...prev,
-                                provider,
-                                request_url: resolveRequestUrl(prev?.base_url || '', provider, prev?.model_name || '')
-                              }));
+                              setEditingConfig(prev => {
+                                // Saved providers move too, but only while their URL is still a preset.
+                                const base_url = remapBaseUrlForFormat(
+                                  currentTemplate?.baseUrlOptions,
+                                  prev?.base_url || '',
+                                  prev?.provider || 'openai',
+                                  provider,
+                                  currentTemplate?.baseUrl,
+                                );
+                                return {
+                                  ...prev,
+                                  provider,
+                                  base_url,
+                                  request_url: resolveRequestUrl(base_url, provider, prev?.model_name || '')
+                                };
+                              });
                             }}
                             placeholder={t('form.providerPlaceholder')}
                             options={requestFormatOptions}
@@ -4040,23 +4027,22 @@ const ModelSettingsPage: React.FC = () => {
                     <ConfigPageRow label={t('form.baseUrl')} required wide className="openbitfun-model-settings__endpoint-row">
                       <div className="openbitfun-model-settings__control-stack">
                         <div className="openbitfun-model-settings__endpoint-inputs">
-                          {isFromTemplate && currentTemplate?.baseUrlOptions && currentTemplate.baseUrlOptions.length > 0 && (
+                          {showEndpointPresetPicker && (
                             <Combobox
+                              data-testid="settings-model-endpoint-preset-select"
                               invalid={showModelValidation && missingModelFields.baseUrl}
-                              value={currentTemplate.baseUrlOptions.some(opt => opt.url === editingConfig.base_url) ? editingConfig.base_url : ''}
+                              value={selectedEndpointPreset?.url ?? ''}
                               onValueChange={(value) => {
-                                const selectedOption = currentTemplate.baseUrlOptions!.find(opt => opt.url === value);
-                                const newProvider = selectedOption?.format || editingConfig.provider || 'openai';
+                                const url = value as string;
                                 resetRemoteModelDiscovery();
                                 setEditingConfig(prev => ({
                                   ...prev,
-                                  base_url: value as string,
-                                  request_url: resolveRequestUrl(value as string, newProvider, editingConfig.model_name || ''),
-                                  provider: newProvider
+                                  base_url: url,
+                                  request_url: resolveRequestUrl(url, prev?.provider || 'openai', prev?.model_name || ''),
                                 }));
                               }}
                               placeholder={t('form.baseUrl')}
-                              options={currentTemplate.baseUrlOptions.map(opt => ({
+                              options={endpointPresetOptions.map(opt => ({
                                 label: opt.note || requestFormatLabelMap[opt.format] || opt.format,
                                 value: opt.url,
                               }))}

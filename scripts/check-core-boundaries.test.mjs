@@ -819,7 +819,7 @@ const RUNTIME_PORT_FEATURE_PROFILES = {
   'product-search': ['dep:openbitfun-product-domains'],
   'ptc-runtime': [],
   'remote-exec-port': ['dep:tokio'],
-  'remote-workspace-ports': [],
+  'remote-workspace-ports': ['dep:openbitfun-core-types'],
   'runtime-event-port': [],
   'script-tool-runtime': [],
   'terminal-port': ['dep:tokio'],
@@ -1910,12 +1910,14 @@ const ACP_REVIEWED_CORE_FEATURES = [
 ];
 
 const CLI_REVIEWED_CORE_FEATURES = [
+  'workspace-icons',
   'tools-pages',
   ...ACP_REVIEWED_CORE_FEATURES,
   'product-search',
   'remote-connect',
   'plugin-runtime',
   'opencode-plugin-host',
+  'dispatch-store',
 ];
 
 const APP_SERVER_REVIEWED_CORE_FEATURES = [
@@ -2912,7 +2914,7 @@ test('CLI dependency closure includes build dependencies and excluded capabiliti
   assert.match(violations[0].message, /openbitfun-core\/product-full/);
 });
 
-test('CLI dependency closure excludes the Core dispatch store', () => {
+test('only the CLI dependency closure may select the Core dispatch store', () => {
   const core = {
     ...packageAt('openbitfun-core', 'src/crates/assembly/core/Cargo.toml'),
     features: { 'dispatch-store': [] },
@@ -2924,17 +2926,30 @@ test('CLI dependency closure excludes the Core dispatch store', () => {
       features: ['dispatch-store'],
     }),
   ]);
-  const cli = packageAt('openbitfun-cli', 'src/apps/cli/Cargo.toml', [
-    pathDependency('src/crates/assembly/bridge', { name: 'bridge' }),
-  ]);
-
-  const violations = findProductEntrypointCoreFeatureViolations(
-    [cli, bridge, core],
+  const closureViolations = (rootName, manifestPath) => findProductEntrypointCoreFeatureViolations(
+    [
+      packageAt(rootName, manifestPath, [
+        pathDependency('src/crates/assembly/bridge', { name: 'bridge' }),
+      ]),
+      bridge,
+      core,
+    ],
     { root: TEST_ROOT, crateLayoutRules },
   );
 
-  assert.equal(violations.length, 1);
-  assert.match(violations[0].message, /openbitfun-core\/dispatch-store/);
+  // The CLI is the reviewed outbound dispatch controller.
+  assert.deepEqual(
+    closureViolations('openbitfun-cli', 'src/apps/cli/Cargo.toml')
+      .filter((violation) => /dispatch-store/.test(violation.message)),
+    [],
+  );
+
+  const acpViolations = closureViolations(
+    'openbitfun-acp',
+    'src/crates/interfaces/acp/Cargo.toml',
+  );
+  assert.equal(acpViolations.length, 1);
+  assert.match(acpViolations[0].message, /openbitfun-core\/dispatch-store/);
 });
 
 test('cargo layer checker rejects reverse edges across dependency kinds', () => {
@@ -4621,6 +4636,7 @@ test('capability contract consumers may inherit empty defaults but must select r
       }),
       pathDependency('src/crates/execution/tool-contracts', {
         name: 'openbitfun-agent-tools',
+        features: ['computer-use-contract'],
       }),
     ],
   );
@@ -4647,6 +4663,22 @@ test('capability contract consumers may inherit empty defaults but must select r
     );
     assert.ok(violations.some(({ message }) => /tool-runtime.*openbitfun-runtime-ports/.test(message)),
       `tool-runtime must retain exactly workspace-ports, not ${features.join(', ') || 'an empty edge'}`);
+  }
+  for (const features of [[], ['computer-use-contract', 'mcp-bridge']]) {
+    const mutatedConsumer = {
+      ...toolRuntime,
+      dependencies: [
+        toolRuntime.dependencies[0],
+        { ...toolRuntime.dependencies[1], features },
+      ],
+    };
+    const violations = findTestCapabilityViolations(
+      cargoBoundaries.findCapabilityContractConsumerViolations,
+      [runtimePorts, agentTools, mutatedConsumer],
+      ioContractRules,
+    );
+    assert.ok(violations.some(({ message }) => /tool-runtime.*openbitfun-agent-tools/.test(message)),
+      `tool-runtime must retain exactly computer-use-contract, not ${features.join(', ') || 'an empty edge'}`);
   }
 });
 
@@ -5081,4 +5113,20 @@ test('core loopback WebSocket fixture cannot broaden the runtime dependency', ()
   ]) {
     assert.ok(findThirdPartyCapabilityFeatureViolations([{ ...pkg, dependencies }]).length > 0);
   }
+});
+
+// Icon codecs must never pull animation or unrelated product features into small hosts.
+test('workspace icon image codecs remain an exact feature-owned slice', () => {
+  const pkg = {
+    ...packageAt('openbitfun-services-core', 'src/crates/services/services-core/Cargo.toml', [{
+      name: 'image', kind: null, optional: true, uses_default_features: false, features: [],
+    }]),
+    features: {
+      'pet-packages': ['dep:image', 'image/gif', 'image/jpeg', 'image/png', 'image/webp'],
+      'workspace-icons': ['dep:image', 'image/jpeg', 'image/png', 'image/webp'],
+    },
+  };
+  assert.deepEqual(findThirdPartyCapabilityFeatureViolations([pkg]), []);
+  pkg.features['workspace-icons'].push('image/gif');
+  assert.match(findThirdPartyCapabilityFeatureViolations([pkg]).map(v => v.message).join('\n'), /workspace-icons.*unexpected.*gif/);
 });

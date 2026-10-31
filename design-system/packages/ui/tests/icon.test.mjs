@@ -8,8 +8,8 @@ import { Icon, iconNames, canonicalIconNames, iconAliases } from "../dist/index.
 import { Network } from "lucide-react";
 
 test("Icon exposes the complete named catalog without duplicate names", () => {
-  assert.equal(iconNames.length, 103);
-  assert.equal(canonicalIconNames.length, 100);
+  assert.equal(iconNames.length, 104);
+  assert.equal(canonicalIconNames.length, 101);
   assert.deepEqual(Object.keys(iconAliases).sort(), ["circle", "download"]);
   for (const name of ["thinking", "git", "duplicate", "chevron-left", "selected", "delete", "waitlist-message", "creative", "ultimate", "standard", "minimal", "arrow-down", "unselected"]) {
     assert.ok(canonicalIconNames.includes(name), name);
@@ -35,7 +35,7 @@ test("Icon exposes the complete named catalog without duplicate names", () => {
   assert.ok(iconNames.includes("chevron-up"));
   assert.ok(iconNames.includes("refresh"));
   assert.ok(iconNames.includes("layers-plus"));
-  for (const name of ["target", "users", "history", "git-pull-request", "battery-full", "galaxy", "playing-cards-fan"]) {
+  for (const name of ["target", "users", "history", "git-pull-request", "battery-full", "galaxy", "playing-cards-fan", "messages-square"]) {
     assert.ok(canonicalIconNames.includes(name));
     assert.match(renderToStaticMarkup(createElement(Icon, { name })), new RegExp(`lucide-${name}`));
   }

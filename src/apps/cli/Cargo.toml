@@ -29,9 +29,11 @@ name = "terminal_process_contracts"
 path = "tests/terminal_process_contracts.rs"
 
 [dependencies]
+openbitfun-computer-use = { path = "../../crates/services/computer-use" }
 # Internal crates
 openbitfun-core = { path = "../../crates/assembly/core", features = [
     "agent-runtime",
+    "workspace-icons",
     "product-search",
     "document-read",
     "subscription-auth",
@@ -40,6 +42,7 @@ openbitfun-core = { path = "../../crates/assembly/core", features = [
     "plugin-runtime",
     "opencode-plugin-host",
     "ssh-remote",
+    "dispatch-store",
     "tools-pages",
     "tools-basic",
     "tools-git",

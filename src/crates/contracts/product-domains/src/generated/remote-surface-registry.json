@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:96fc351cf4dd6568",
+  "digest": "fnv1a64:ee62faff5c97f12a",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -35,12 +35,14 @@
       "wsl_workspaces_v1",
       "computer_use_sharing_v1",
       "product_control_v1",
+      "remote_connect_control_v1",
       "product_control_native_v1",
       "product_control_presentation_v1",
       "cancel_tool",
       "tool_catalog",
       "review_platform_v1",
       "chat_mcp_catalog_v1",
+      "workspace_icon_v1",
       "workspace_id_references_v1",
       "workspace_html_preview_v1",
       "whole_session_copy_v1",
@@ -75,12 +77,14 @@
       "wsl_workspaces_v1",
       "computer_use_sharing_v1",
       "product_control_v1",
+      "remote_connect_control_v1",
       "product_control_native_v1",
       "product_control_presentation_v1",
       "cancel_tool",
       "tool_catalog",
       "review_platform_v1",
       "chat_mcp_catalog_v1",
+      "workspace_icon_v1",
       "workspace_id_references_v1",
       "workspace_html_preview_v1",
       "whole_session_copy_v1",
@@ -101,10 +105,12 @@
       "token_usage_statistics",
       "model_channel_routing_v1",
       "product_control_v1",
+      "remote_connect_control_v1",
       "cancel_tool",
       "tool_catalog",
       "session_trajectory_v1",
       "chat_mcp_catalog_v1",
+      "workspace_icon_v1",
       "workspace_id_references_v1",
       "workspace_html_preview_v1",
       "user_question_response",
@@ -3527,6 +3533,17 @@
     },
     {
       "id": "get_web_search_credential_status",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
+      }
+    },
+    {
+      "id": "get_workspace_icon",
       "surface": "tauri_command",
       "remoteWorkspace": "WorkspaceAgnostic",
       "peer": {
@@ -7397,6 +7414,17 @@
       "cliPeer": {
         "kind": "unsupported",
         "reason": "the controller keeps this command; peer hosts refuse it before dispatch"
+      }
+    },
+    {
+      "id": "set_workspace_icon",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
       }
     },
     {

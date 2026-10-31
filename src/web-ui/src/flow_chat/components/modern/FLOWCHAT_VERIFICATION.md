@@ -49,6 +49,7 @@ each missing what the other had.
 | `flowChatLiveTailWindow.test.ts` | "does the transcript still reach the newest Turn" |
 | `flowChatViewportAnchor.test.ts` | anchor geometry and the DOM contract |
 | `useFlowChatViewportAnchor.test.tsx` | capture, restore, carry, the settle window |
+| `useFlowChatLeadingExtent.test.tsx` | shared event geometry without repeated rectangle reads; fresh layout reads after resize and collection |
 | `VirtualMessageList.session-boundary.test.tsx` | prepend compensation, consecutive paging with/without queued input, passive scroll suppression, navigation-target current Turn with gesture/follow/session handoff, search placement only outside the readable viewport, and real viewport-register acknowledgement before trajectory details/highlights commit for user/search/model/folded-tool/history targets |
 | `flowChatScrollbarMask.test.ts`, `VirtualMessageList.session-boundary.test.tsx` | idle gutter masking with symmetric, one-sided and overlay scrollbars; overflow restoration and content/viewport resizing without scroll writes; supplied DOM geometry, not native rendering or live remote evidence |
 | `FlowChatOpeningBoundary.test.tsx` | opening-only activation/scroll isolation, bidirectional focus skipping, programmatic focus return, and reveal cleanup; DOM contracts only |
@@ -57,7 +58,7 @@ each missing what the other had.
 | `useFlowChatVirtualizer.test.ts` | the offsets-and-positions boundary |
 | `useFlowChatVirtualizer.measurement.test.tsx` | `measureRenderedItems` against a real virtualizer |
 | `useFlowChatVirtualizer.cascade.test.tsx` | bounded synchronous measurement notifications, cross-frame convergence, ordinary synchronous opening, reader takeover and StrictMode/session cleanup; real hooks with supplied geometry, not native paint evidence |
-| `useFlowChatVirtualizer.initial-window.test.tsx` | tail-first window, empty hydration, head default, one-time seed, user-scroll takeover, opening readbacks before native events, suspended viewport, measured-window reconciliation with delayed scroll/scroll-end delivery; supplied DOM geometry, not performance validation |
+| `useFlowChatVirtualizer.initial-window.test.tsx` | tail-first window, empty hydration, head default, one-time seed, user-scroll takeover, newly attached rows measured during gestures before observer delivery, smooth-aim target stability and immediate measurement on reader takeover, opening readbacks before native events, suspended viewport, measured-window reconciliation with delayed scroll/scroll-end delivery; supplied DOM geometry, not performance validation |
 | `useFlowChatVirtualizer.aim.test.tsx` | the re-aim, and giving it up on takeover |
 | `VirtualMessageList.layout.test.ts` | the item-height estimate and the spacer |
 | `FlowChatTurnRail.test.tsx` | single-marker emphasis, neighboring hover fan, independent keyboard focus, reduced motion, and rail navigation |
@@ -73,6 +74,34 @@ each missing what the other had.
 | `FlowChatHeader.test.tsx` | shared SearchField composition, result controls, input identity while expanding, native-view occlusion declaration for session overview, overview positioning during pane resize/collapse, and the default active-only Agent tree toggle |
 | `SessionTreePopover.test.tsx` | Agent selection/cancellation/deletion menus, type-only metadata, active branch filtering with ancestor retention, restoring all agents, and the active empty state |
 | `../../services/deleteSessionTreeBranch.test.ts` | Unloaded descendant deletion in child-first order, remote location forwarding, failure retention, and device surface guards |
+
+## Native history-scroll fixture
+
+When UI verification is authorized, build Desktop and current frontend assets,
+then run the focused command documented in `tests/e2e/AGENTS.md`:
+
+```bash
+pnpm --dir tests/e2e exec wdio run ./config/wdio.flowchat-scroll-native.ts
+```
+
+The isolated packaged-app fixture opens an 80-Turn transcript, drives slow and
+fast wheel actions in both directions, and records per-frame continuity,
+rectangle reads, DOM scans and mounted rows. Reversals over 4px, empty frames,
+post-gesture drift, lost session reading position, lost draft text and failed
+search navigation are assertions. Frame intervals are diagnostic measurements,
+not hard timing gates on shared machines. JSON evidence and a screenshot remain
+in the printed temporary directory. `OPENBITFUN_SCROLL_DIAGNOSTICS=1` additionally
+captures per-frame row geometry and scroll-write stacks; use it for attribution,
+not timing comparisons.
+
+The embedded driver dispatches wheel input and updates the native WebView's
+scroll offset. It does not reproduce OS trackpad inertia. This fixture does not
+establish physical input comfort, live streaming/model transport, remote
+workspace, remote control, Peer Device, or detached-dispatch behavior. Existing
+follow-output, navigation, owner and session-boundary unit tests cover those
+local state-machine contracts separately. The session-boundary suite also
+covers measurement-shift credit and restoration when a saved key is unmounted
+and its former absolute pixel position is obsolete.
 
 ## Manual
 

@@ -1,5 +1,51 @@
 # FlowChat Virtualization
 
+## Historical scrolling and measurement
+
+Manual scrolling keeps the host's native wheel/touch behavior. Perceived
+smoothness depends on stable content coordinates as well as frame time; adding
+an easing loop to a height correction would expose the correction as motion.
+The implementation follows the read-before-write guidance in
+[rendering performance](https://web.dev/articles/rendering-performance) and
+[layout thrashing](https://web.dev/articles/avoid-large-complex-layouts-and-layout-thrashing).
+No new motion is introduced, so the existing reduced-motion policy and follow
+targets remain unchanged.
+
+Newly attached rows are measured as one batch in the layout phase, including
+while the reader is scrolling. The library's `measureElement` still registers
+observation, but it skips its inline size update during a gesture; the adapter
+therefore supplies the already-read height through `resizeItem` in that commit.
+In this flow layout the real row heights affect following content immediately.
+Waiting for ResizeObserver lets the old virtual padding and real rows disagree
+for a visible frame.
+
+Explicit item/offset aims retain the library's own attachment-measurement policy.
+A smooth aim intentionally leaves distant rows estimated: forcing their sizes
+can move its target and make the library replace the animation with an `auto`
+jump. Reader intent cancels the aim before scrolling, so newly attached rows
+resume synchronous measurement in the first reader-controlled commit.
+
+Above-viewport measurement shifts pass through the viewport register and credit
+the DOM anchor with the **actual applied** displacement. Otherwise the anchor
+counts that repair as reader travel and applies it again. The anchor remains
+independent of the virtualizer; the list joins these two owners.
+
+The native scroll handler shares one `flowChatViewportGeometry` sample among
+leading-extent, anchor and session-snapshot readers. It is local to that event,
+and discarded if a follow write changes the offset. Layout commits, resize and
+navigation read fresh geometry; this is not a cross-frame cache.
+
+The packaged macOS WebView fixture (80 Turns with Markdown, code, tables and
+collapsed tool groups) reproduced 17 reverse frames during 72 fast upward wheel
+actions, with a maximum 499.45px reversal. After these changes the same five
+slow/fast bidirectional phases had zero reversals over 4px and zero blank frames;
+row/scroller rectangle reads fell from 37,331 to 28,489 across those phases.
+Fast-up frame intervals still reached 26ms at p95 and 53ms at maximum in the
+final run; continuity is established here, not a constant 60fps guarantee.
+These are instrumented native-WebView samples, not physical trackpad or
+cross-platform latency measurements. See `FLOWCHAT_VERIFICATION.md` for the
+repeatable fixture and its limits.
+
 ## Accepted steering display
 
 The host queue's optional `steeringDisplay` receipt projects an accepted message

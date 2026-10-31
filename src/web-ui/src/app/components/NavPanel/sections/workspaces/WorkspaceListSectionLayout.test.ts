@@ -263,10 +263,12 @@ describe('WorkspaceListSection layout styles', () => {
     const itemSource = readWorkspaceItemSource();
     const listSource = readWorkspaceListSource();
     const stylesheet = readWorkspaceListStylesheet();
+    const iconSource = readFileSync(fileURLToPath(new URL('../../../WorkspaceIcon/WorkspaceIcon.tsx', import.meta.url)), 'utf8');
 
     expect(itemSource).toContain('<AssistantAvatar size={22} name={workspaceDisplayName} />');
-    expect(itemSource).toContain('<Icon glyph={Server} size="sm" />');
-    expect(itemSource).toContain('<Icon name="folder" size="sm" />');
+    expect(itemSource).toContain('<WorkspaceIcon workspace={workspace} />');
+    expect(iconSource).toContain('projectGlyphs[glyph] : remote ? Server : Folder');
+    expect(iconSource).toContain('<Icon glyph={artwork} size="sm"');
     expect(itemSource).not.toContain('SessionGroup');
     expect(listSource).not.toContain('nav.sessions.viewMenu.grouping.all');
     expect(listSource).not.toContain('workspace-all-sessions-header');
@@ -286,7 +288,7 @@ describe('WorkspaceListSection layout styles', () => {
 
     expect(assistant).not.toContain('nav-workspace-session-region');
     expect(assistant).not.toContain('nav-workspace-sessions-toggle');
-    expect(assistant).not.toContain('nav-workspace-files-btn');
+    expect(assistant).not.toContain('nav-workspace-project-resources-btn');
     expect(assistant).not.toContain('handleCollapseToggle');
     for (const removedAction of ['project-permissions', 'reveal', 'open-session-storage', 'manage-sessions', 'copy-path']) {
       expect(assistant).not.toContain(`data-testid="nav-workspace-menu-${removedAction}"`);

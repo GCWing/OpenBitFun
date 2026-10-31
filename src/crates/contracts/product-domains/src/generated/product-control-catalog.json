@@ -4,8 +4,8 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "88d5ab0dbcf69af99b67cb5168ed6b8fe39e51c9f19bc06fbf0cb00e9aafd7af",
-  "ownerDigest": "f27c231da2e536e4f2123910f34f862b55d21feb0528bc915d4d13edbd528af9",
+  "digest": "44e81d200d46b1ffb031427d4812fbcaa388aa556d82408fa78f8e6193fdcf22",
+  "ownerDigest": "df28e5eed6e3190741899ebf236bc5fb426d2469187e437839a349a7136c7c34",
   "searchAcceptance": [
     {
       "id": "native-image-generation",
@@ -175,11 +175,11 @@
     "features": 22,
     "settings": 22,
     "userFacing": 44,
-    "documentedItems": 336,
+    "documentedItems": 337,
     "controlCoverage": {
-      "direct": 56,
+      "direct": 58,
       "delegated": 72,
-      "interactive": 208,
+      "interactive": 207,
       "unsupported": 0
     }
   },
@@ -1880,7 +1880,8 @@
         "file-watch",
         "workspace-search",
         "remote-open",
-        "project-health"
+        "project-health",
+        "workspace-icon"
       ],
       "kind": "query",
       "risk": "read",
@@ -2334,6 +2335,52 @@
         "additionalProperties": true
       },
       "openReason": "unstructuredInteraction",
+      "presentationTarget": {
+        "kind": "action",
+        "actionId": "project.open"
+      }
+    },
+    {
+      "id": "feature.projects:open:workspace-icon",
+      "capabilityId": "feature.projects",
+      "itemIds": [
+        "workspace-icon"
+      ],
+      "kind": "open",
+      "risk": "ui",
+      "executionHost": "presentationSurface",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_presentation_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "openReason": "visualSelection",
       "presentationTarget": {
         "kind": "action",
         "actionId": "project.open"
@@ -9128,6 +9175,413 @@
       }
     },
     {
+      "id": "feature.remote-connect:operation:status",
+      "capabilityId": "feature.remote-connect",
+      "itemIds": [
+        "start-stop-status",
+        "bots"
+      ],
+      "kind": "operation",
+      "risk": "read",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "remote_connect_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "remote-connect"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect"
+      }
+    },
+    {
+      "id": "feature.remote-connect:operation:start",
+      "capabilityId": "feature.remote-connect",
+      "itemIds": [
+        "start-stop-status",
+        "bots"
+      ],
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "remote_connect_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "lanIp": {
+            "type": "string"
+          },
+          "method": {
+            "enum": [
+              "weixin",
+              "telegram",
+              "feishu",
+              "mobile_web",
+              "lan"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "method"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "remote-connect"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect"
+      }
+    },
+    {
+      "id": "feature.remote-connect:operation:stop",
+      "capabilityId": "feature.remote-connect",
+      "itemIds": [
+        "start-stop-status",
+        "bots"
+      ],
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "remote_connect_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "method": {
+            "enum": [
+              "weixin",
+              "telegram",
+              "feishu",
+              "mobile_web",
+              "lan"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "method"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "remote-connect"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect"
+      }
+    },
+    {
+      "id": "feature.remote-connect:operation:configure-bot",
+      "capabilityId": "feature.remote-connect",
+      "itemIds": [
+        "bots"
+      ],
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "remote_connect_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "credentialsFile": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "method": {
+            "enum": [
+              "weixin",
+              "telegram",
+              "feishu"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "credentialsFile"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "remote-connect"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect"
+      }
+    },
+    {
+      "id": "feature.remote-connect:operation:weixin-login-start",
+      "capabilityId": "feature.remote-connect",
+      "itemIds": [
+        "bots"
+      ],
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "remote_connect_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "remote-connect"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect"
+      }
+    },
+    {
+      "id": "feature.remote-connect:operation:weixin-login-poll",
+      "capabilityId": "feature.remote-connect",
+      "itemIds": [
+        "bots"
+      ],
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "remote_connect_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "sessionKey": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "verifyCode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionKey"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "remote-connect"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect"
+      }
+    },
+    {
+      "id": "feature.remote-connect:operation:set-bot-verbose",
+      "capabilityId": "feature.remote-connect",
+      "itemIds": [
+        "bots"
+      ],
+      "kind": "operation",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "remote_connect_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "provider",
+        "providerId": "remote-connect"
+      },
+      "presentationTarget": {
+        "kind": "event",
+        "eventName": "openbitfun:open-remote-connect"
+      }
+    },
+    {
       "id": "feature.remote-connect:open:connection-methods",
       "capabilityId": "feature.remote-connect",
       "itemIds": [
@@ -9174,102 +9628,10 @@
       }
     },
     {
-      "id": "feature.remote-connect:open:start-stop-status",
-      "capabilityId": "feature.remote-connect",
-      "itemIds": [
-        "start-stop-status"
-      ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "openReason": "unstructuredInteraction",
-      "presentationTarget": {
-        "kind": "event",
-        "eventName": "openbitfun:open-remote-connect"
-      }
-    },
-    {
       "id": "feature.remote-connect:open:network",
       "capabilityId": "feature.remote-connect",
       "itemIds": [
         "network"
-      ],
-      "kind": "open",
-      "risk": "ui",
-      "executionHost": "presentationSurface",
-      "availability": {
-        "desktop": {
-          "available": true
-        },
-        "cli": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        },
-        "peer": {
-          "available": true,
-          "requiredCapabilities": [
-            "product_control_v1",
-            "product_control_presentation_v1"
-          ]
-        },
-        "remoteControl": {
-          "available": true
-        },
-        "detachedDispatch": {
-          "available": false,
-          "reason": "This delivery profile has no live presentation surface"
-        }
-      },
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "openReason": "unstructuredInteraction",
-      "presentationTarget": {
-        "kind": "event",
-        "eventName": "openbitfun:open-remote-connect"
-      }
-    },
-    {
-      "id": "feature.remote-connect:open:bots",
-      "capabilityId": "feature.remote-connect",
-      "itemIds": [
-        "bots"
       ],
       "kind": "open",
       "risk": "ui",
@@ -21128,6 +21490,17 @@
             "reasonZh": "“查看当前工作区、应用状态、健康状态与统计信息”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
             "reasonEn": "“Inspect the current workspace, app state, health, and statistics” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
           }
+        },
+        {
+          "id": "workspace-icon",
+          "titleZh": "选择项目图案和颜色，或使用自定义图片",
+          "titleEn": "Choose project icon shapes and colors, or use a custom image",
+          "control": {
+            "kind": "open",
+            "reasonCode": "visualSelection",
+            "reasonZh": "点击项目资源页的大图标，从工作学习或生活兴趣分类选择图案及颜色，或分别上传浅色、深色图片，预览后保存到工作区所属主机。",
+            "reasonEn": "Click the large icon on the Project resources page to choose a work/study or life/hobby icon and color, or upload separate light and dark images, preview them, then save on the workspace host."
+          }
         }
       ],
       "stepsZh": [
@@ -21225,6 +21598,8 @@
         "Open SSH and other remote workspaces from the project flow",
         "查看当前工作区、应用状态、健康状态与统计信息",
         "Inspect the current workspace, app state, health, and statistics",
+        "选择项目图案和颜色，或使用自定义图片",
+        "Choose project icon shapes and colors, or use a custom image",
         "帮我打开一个项目",
         "打开新建项目的界面",
         "Help me open a project",
@@ -25048,10 +25423,13 @@
           "titleZh": "启动、停止 Remote Connect 并查看实时连接状态和设备信息",
           "titleEn": "Start or stop Remote Connect and inspect live status and device information",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“启动、停止 Remote Connect 并查看实时连接状态和设备信息”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Start or stop Remote Connect and inspect live status and device information” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "status",
+              "start",
+              "stop"
+            ],
+            "options": []
           }
         },
         {
@@ -25070,10 +25448,17 @@
           "titleZh": "配置飞书、Telegram、微信等 Bot 并单独停止 Bot",
           "titleEn": "Configure Feishu, Telegram, WeChat, and other bots, and stop a bot independently",
           "control": {
-            "kind": "open",
-            "reasonCode": "unstructuredInteraction",
-            "reasonZh": "“配置飞书、Telegram、微信等 Bot 并单独停止 Bot”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
-            "reasonEn": "“Configure Feishu, Telegram, WeChat, and other bots, and stop a bot independently” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
+            "kind": "direct",
+            "operations": [
+              "configure-bot",
+              "weixin-login-start",
+              "weixin-login-poll",
+              "set-bot-verbose",
+              "start",
+              "stop",
+              "status"
+            ],
+            "options": []
           }
         },
         {
@@ -25123,18 +25508,222 @@
       "agentExamplesZh": [
         "打开 Remote Connect",
         "我想配置手机远程控制",
-        "带我管理已连接设备"
+        "带我管理已连接设备",
+        "启动微信机器人并持续监听消息",
+        "关闭 Telegram 机器人",
+        "开启手机网页远控"
       ],
       "agentExamplesEn": [
         "Open Remote Connect",
         "I want to configure mobile remote control",
-        "Take me to connected-device management"
+        "Take me to connected-device management",
+        "Start the WeChat bot and keep listening",
+        "Stop the Telegram bot",
+        "Enable Mobile Web remote control"
       ],
       "destination": {
         "kind": "event",
         "eventName": "openbitfun:open-remote-connect"
       },
-      "operations": [],
+      "operations": [
+        {
+          "id": "status",
+          "titleZh": "查看远控状态",
+          "titleEn": "Inspect Remote Connect status",
+          "descriptionZh": "读取当前执行主机的监听、配对、停用与恢复错误；不返回凭据，监听任务存活不等于消息已完成往返。",
+          "descriptionEn": "Read listener, pairing, disabled and restore-error state on the executing host without credentials. A live listener task does not prove a message round trip.",
+          "risk": "read",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "remote-connect",
+            "operationId": "status"
+          }
+        },
+        {
+          "id": "start",
+          "titleZh": "启动远控渠道",
+          "titleEn": "Start a Remote Connect channel",
+          "descriptionZh": "启动指定机器人或手机网页远控。CLI 自动启动 daemon，退出当前聊天后继续监听。新机器人需将返回的配对码发给机器人；CLI 不支持局域网 Relay。",
+          "descriptionEn": "Start the selected bot or Mobile Web. CLI starts its daemon and keeps listening after this chat exits. Send the returned pairing code to a new bot. CLI does not host a LAN Relay.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "lanIp": {
+                "type": "string"
+              },
+              "method": {
+                "enum": [
+                  "weixin",
+                  "telegram",
+                  "feishu",
+                  "mobile_web",
+                  "lan"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "method"
+            ],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "remote-connect",
+            "operationId": "start"
+          }
+        },
+        {
+          "id": "stop",
+          "titleZh": "停用远控渠道",
+          "titleEn": "Stop a Remote Connect channel",
+          "descriptionZh": "停用选定渠道并保留配置和会话。机器人停用状态跨重启保留。关闭手机网页会同时断开该主机的 Peer 设备路由，机器人保持运行。",
+          "descriptionEn": "Stop the selected channel while retaining configuration and sessions. Bot disablement survives restart. Stopping Mobile Web also disconnects Peer routing on this host; bots keep running.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "method": {
+                "enum": [
+                  "weixin",
+                  "telegram",
+                  "feishu",
+                  "mobile_web",
+                  "lan"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "method"
+            ],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "remote-connect",
+            "operationId": "stop"
+          }
+        },
+        {
+          "id": "configure-bot",
+          "titleZh": "从主机凭据文件配置机器人",
+          "titleEn": "Configure a bot from a private host credential file",
+          "descriptionZh": "读取执行主机上用户提供的私有 JSON 凭据文件并保存配置；不会自动启动。文件包含 bot_type 和对应凭据字段，需绝对路径和仅所有者可读权限；不要把凭据贴到聊天中。远程工作区路径不能用作主机凭据路径。",
+          "descriptionEn": "Load a user-supplied private JSON BotConfig file on the executing host, with bot_type and provider credential fields; save without starting. Requires an absolute host path and owner-only permissions. Do not paste credentials into chat or use a remote-workspace path.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "credentialsFile": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "method": {
+                "enum": [
+                  "weixin",
+                  "telegram",
+                  "feishu"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "method",
+              "credentialsFile"
+            ],
+            "type": "object"
+          },
+          "argumentScopes": {
+            "credentialsFile": "productHostLocal"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "remote-connect",
+            "operationId": "configure-bot"
+          }
+        },
+        {
+          "id": "weixin-login-start",
+          "titleZh": "开始微信扫码登录",
+          "titleEn": "Begin WeChat QR login",
+          "descriptionZh": "生成微信登录二维码。CLI TUI 在工具卡片中直接显示 qrTerminal，无需模型重写；其他终端逐字显示，图形界面显示 qrImageUrl，再用 sessionKey 轮询。扫码本身尚未完成机器人监听和配对。",
+          "descriptionEn": "Create a WeChat login QR. CLI TUI renders qrTerminal in the tool card without model transcription; other terminals show it verbatim and graphical surfaces show qrImageUrl. Poll using sessionKey; scanning alone does not complete listening and pairing.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "remote-connect",
+            "operationId": "weixin-login-start"
+          }
+        },
+        {
+          "id": "weixin-login-poll",
+          "titleZh": "完成微信登录并启动监听",
+          "titleEn": "Complete WeChat login and start listening",
+          "descriptionZh": "轮询同一登录会话。确认后在主机保存凭据并启动监听，向用户展示返回的机器人配对码。凭据不会返回给模型。",
+          "descriptionEn": "Poll the same login session. Confirmation saves credentials on the host and starts listening; show the returned bot pairing code. Credentials are never returned to the model.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "sessionKey": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "verifyCode": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sessionKey"
+            ],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "remote-connect",
+            "operationId": "weixin-login-poll"
+          }
+        },
+        {
+          "id": "set-bot-verbose",
+          "titleZh": "设置机器人详细输出",
+          "titleEn": "Set bot verbose output",
+          "descriptionZh": "切换所有机器人的详细输出模式并保存。",
+          "descriptionEn": "Persist verbose output mode for all bot channels.",
+          "risk": "write",
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "handler": {
+            "kind": "provider",
+            "providerId": "remote-connect",
+            "operationId": "set-bot-verbose"
+          }
+        }
+      ],
       "options": [],
       "searchTerms": [
         "feature.remote-connect",
@@ -25181,9 +25770,15 @@
         "打开 Remote Connect",
         "我想配置手机远程控制",
         "带我管理已连接设备",
+        "启动微信机器人并持续监听消息",
+        "关闭 Telegram 机器人",
+        "开启手机网页远控",
         "Open Remote Connect",
         "I want to configure mobile remote control",
-        "Take me to connected-device management"
+        "Take me to connected-device management",
+        "Start the WeChat bot and keep listening",
+        "Stop the Telegram bot",
+        "Enable Mobile Web remote control"
       ],
       "docsUrl": "https://playbook.openbitfun.com/capabilities/feature.remote-connect/"
     },

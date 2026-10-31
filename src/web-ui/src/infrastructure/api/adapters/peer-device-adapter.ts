@@ -99,6 +99,7 @@ const HIGH_PRIORITY_COMMANDS = new Set([
 ]);
 
 const RETRYABLE_READ_COMMANDS = new Set([
+  'get_workspace_icon',
   'initialize_workspace_startup_state',
   'restore_session_view',
   'load_session_event_backfill',
@@ -309,6 +310,7 @@ export interface PeerDeviceTransportHooks {
   supportsComputerUseSharingV1?: boolean;
   /** Enables the versioned typed ProductControl HostInvoke contract. */
   supportsProductControlV1?: boolean;
+  supportsRemoteConnectControlV1?: boolean;
 }
 
 interface HostInvokeResultEnvelope {
@@ -449,6 +451,7 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       | 'supportsBtwModelPoolSelectionV1'
       | 'supportsComputerUseSharingV1'
       | 'supportsProductControlV1'
+      | 'supportsRemoteConnectControlV1'
     >,
   ): void {
     this.hooks = { ...this.hooks, ...capabilities };
@@ -593,6 +596,17 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     ) {
       throw new PeerProductCommandError(
         'product_control_v1_unsupported: The connected Peer host does not support the unified ProductControl contract',
+      );
+    }
+
+    if (
+      action === 'product_control_invoke'
+      && params?.request?.action === 'execute'
+      && params?.request?.capabilityId === 'feature.remote-connect'
+      && this.hooks.supportsRemoteConnectControlV1 !== true
+    ) {
+      throw new PeerProductCommandError(
+        'remote_connect_control_v1_unsupported: Update the executing Peer host to manage Remote Connect bots and Mobile Web',
       );
     }
 

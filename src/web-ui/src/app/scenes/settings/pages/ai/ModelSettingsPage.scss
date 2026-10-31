@@ -2237,10 +2237,21 @@
     overflow-wrap: anywhere;
   }
 
+  &__selection-header {
+    > .openbitfun-config-page-header__inner {
+      flex-direction: row;
+      align-items: center;
+    }
+
+    .openbitfun-config-page-header__extra {
+      width: auto;
+      margin-top: 0;
+    }
+  }
+
   &__selection-actions {
     display: flex;
     justify-content: flex-end;
-    margin-top: var(--openbitfun-space-4);
   }
 
   

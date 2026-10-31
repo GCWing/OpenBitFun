@@ -26,7 +26,7 @@ describe('session action confirmation policy', () => {
     expect(source).not.toContain('confirmWarning');
     expect(deleteHandler).toContain('await confirmDanger(');
     expect(deleteHandler).toContain("t('nav.sessions.deleteConfirmTitle')");
-    expect(deleteHandler).toContain("t('nav.sessions.deleteConfirmMessage', {");
+    expect(deleteHandler).toContain("t('nav.sessions.deleteConfirmMessage')");
     expect(deleteHandler).toContain("{ confirmText: sourceView ? t('nav.sessions.removeSource') : t('nav.sessions.delete') }");
     expect(deleteHandler.indexOf('await confirmDanger(')).toBeLessThan(
       deleteHandler.indexOf('await flowChatManager.deleteChatSession(sessionId)'),

@@ -55,8 +55,8 @@
         "description": "默認暗色外觀"
       },
       "openbitfun-light": {
-        "name": "亮色",
-        "description": "亮色外觀 - 純白界面、柔和中性灰與深海軍藍操作色"
+        "name": "淺色",
+        "description": "淺色外觀 - 純白界面、柔和中性灰與深海軍藍操作色"
       },
       "openbitfun-monochrome": {
         "name": "黑白撞色",

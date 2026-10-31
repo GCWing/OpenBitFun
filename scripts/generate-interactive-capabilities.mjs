@@ -1292,6 +1292,9 @@ function definitionAvailability(kind, handler) {
       detachedDispatch: availability(false, reason),
     };
   }
+  if (handler?.kind === 'provider' && handler.providerId === 'remote-connect') {
+    return { desktop, cli: availability(true), peer: peer('remote_connect_control_v1'), remoteControl: remote, detachedDispatch: availability(true) };
+  }
   const presentationOnly = handler?.kind === 'productAction';
   const nativeProvider = handler?.kind === 'provider';
   const headlessReason = presentationOnly

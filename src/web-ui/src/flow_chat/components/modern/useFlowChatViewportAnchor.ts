@@ -27,6 +27,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
+import type { FlowChatViewportGeometry } from './flowChatViewportGeometry';
 import {
   ANCHOR_CORRECTION_EPSILON_PX,
   ANCHOR_MISSING_TURN_ATTEMPTS,
@@ -140,7 +141,7 @@ export interface FlowChatViewportAnchorApi {
    *   movement is theirs and crediting it to the reader would drag the anchor
    *   along with every follow and aim.
    */
-  captureAnchorForScroll: () => void;
+  captureAnchorForScroll: (sample?: FlowChatViewportGeometry) => void;
   /** The user did something that scrolls, by their own hand. */
   markUserScrollIntent: () => void;
   /**
@@ -231,13 +232,17 @@ export function useFlowChatViewportAnchor({
     missingTurnAttemptsRef.current = 0;
   }, []);
 
-  const captureAnchorAt = useCallback(() => {
+  const captureAnchorAt = useCallback((sample?: FlowChatViewportGeometry) => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     blockedGeometryRef.current = null;
     lastResizeGeometryRef.current = null;
     const next = selectViewportAnchor(
-      readViewportAnchorCandidates(scroller),
+      sample ? sample.rows.filter(row => row.key !== undefined || row.itemType === 'user-message').map(row => ({
+        turnId: row.turnId, itemKey: row.key,
+        offsetFromScrollerTop: row.top - sample.top,
+        bottomOffsetFromScrollerTop: row.bottom - sample.top,
+      })) : readViewportAnchorCandidates(scroller),
       scroller.clientHeight,
     );
     anchorRef.current = next;
@@ -307,7 +312,7 @@ export function useFlowChatViewportAnchor({
     };
   }, []);
 
-  const captureAnchorForScroll = useCallback(() => {
+  const captureAnchorForScroll = useCallback((sample?: FlowChatViewportGeometry) => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     if (missingTurnAttemptsRef.current > 0) {
@@ -316,7 +321,7 @@ export function useFlowChatViewportAnchor({
     }
     const msSinceUserScrollIntent = performance.now() - lastUserScrollIntentAtRef.current;
     if (shouldCaptureViewportAnchorOnScroll(anchorRef.current !== null, msSinceUserScrollIntent)) {
-      captureAnchorAt();
+      captureAnchorAt(sample);
       return;
     }
     /*

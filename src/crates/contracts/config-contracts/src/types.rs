@@ -1349,8 +1349,9 @@ pub struct AIConfig {
     #[serde(default = "default_true")]
     pub allow_tool_json_repair: bool,
 
-    /// Allow Computer use (desktop automation) when the desktop host is available (all session modes).
-    #[serde(default)]
+    /// Allow Computer Use when the executing host has a native provider.
+    /// System consent and tool approval remain independent; persisted opt-outs win.
+    #[serde(default = "default_true")]
     pub computer_use_enabled: bool,
 
     /// Preferred browser for CDP browser control. Empty/default uses the system default browser.
@@ -2310,7 +2311,7 @@ impl Default for AIConfig {
             enable_context_compression_prefetch: true,
             enable_edit_constraint_guard: false,
             allow_tool_json_repair: true,
-            computer_use_enabled: false,
+            computer_use_enabled: true,
             browser_control_preferred_browser: String::new(),
             web_search: WebSearchConfig::default(),
             browser_control_auto_connect_on_startup: false,
@@ -3751,6 +3752,45 @@ mod tests {
             config.agent_model_defaults.subagents.fork,
             SubagentModelSelection::Inherit
         );
+    }
+
+    #[test]
+    fn computer_use_defaults_on_and_preserves_persisted_choices() {
+        assert!(AIConfig::default().computer_use_enabled);
+        let legacy: AIConfig =
+            serde_json::from_value(serde_json::json!({"max_rounds": 42})).unwrap();
+        assert!(legacy.computer_use_enabled);
+        let reloaded: AIConfig =
+            serde_json::from_value(serde_json::to_value(&legacy).unwrap()).unwrap();
+        assert!(reloaded.computer_use_enabled);
+        assert_eq!(reloaded.max_rounds, 42);
+
+        // Only an absent legacy field takes the default; damaged preferences
+        // must remain errors instead of silently enabling native control.
+        for invalid in [
+            serde_json::json!("false"),
+            serde_json::Value::Null,
+            serde_json::json!(1),
+        ] {
+            assert!(serde_json::from_value::<AIConfig>(serde_json::json!({
+                "computer_use_enabled": invalid
+            }))
+            .is_err());
+        }
+
+        for enabled in [false, true] {
+            let config: AIConfig = serde_json::from_value(serde_json::json!({
+                "computer_use_enabled": enabled,
+                "max_rounds": 42
+            }))
+            .unwrap();
+            assert_eq!(config.computer_use_enabled, enabled);
+            let payload = serde_json::to_value(&config).unwrap();
+            assert_eq!(payload["computer_use_enabled"], enabled);
+            let reloaded: AIConfig = serde_json::from_value(payload).unwrap();
+            assert_eq!(reloaded.computer_use_enabled, enabled);
+            assert_eq!(reloaded.max_rounds, 42);
+        }
     }
 
     #[test]

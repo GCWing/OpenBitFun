@@ -7,6 +7,8 @@ export const selectMeta = {
   name: "Select",
   props: [
     { name: "options", type: "readonly SelectOption[] (supports selectedLabel, tooltip, testId and data-* attributes)" },
+    { defaultValue: "true", name: "showGroupLabels", type: "boolean" },
+    { defaultValue: "false", name: "showGroupDividers", type: "boolean" },
     { name: "value", type: "SelectValue" },
     { name: "defaultValue", type: "SelectValue" },
     { name: "placeholder", type: "string" },

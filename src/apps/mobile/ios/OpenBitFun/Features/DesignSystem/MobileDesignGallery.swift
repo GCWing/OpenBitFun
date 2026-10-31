@@ -178,6 +178,22 @@ struct StreamingRegressionView: View {
             }
             model.selectedSessionID = "fixture"
             model.timelineRows = ProcessInfo.processInfo.arguments.contains("--card-regression") ? [cardRow] : history
+            if ProcessInfo.processInfo.arguments.contains("--message-metadata-regression") {
+                let failed = MobileTimelineTool(id: "fetch", name: "WebFetch", phase: "FAILED", kind: "WEB",
+                    operation: "FETCH_URL", target: "example.com", filePath: "", fileLabel: "",
+                    input: "https://example.com", output: "HTTP 404", question: nil, questions: [], actions: [], foldIntoSummary: true)
+                let completed = MobileTimelineTool(id: "read", name: "Read", phase: "COMPLETED", kind: "FILE",
+                    operation: "READ_FILE", target: "README.md", filePath: "", fileLabel: "",
+                    input: "README.md", output: "Document content", question: nil, questions: [], actions: [], foldIntoSummary: true)
+                model.timelineRows = [
+                    MobileConversationRow(id: "dated-user", kind: "USER", text: "Check the sources.", thinking: nil,
+                        images: [], tools: [], blocks: [], streaming: false, typing: false, showRetry: false, error: nil,
+                        timestamp: Date(timeIntervalSince1970: 1700000000)),
+                    MobileConversationRow(id: "dated-assistant", kind: "ASSISTANT", text: "The remaining source confirms the result.", thinking: nil,
+                        images: [], tools: [completed, failed], blocks: [], streaming: false, typing: false, showRetry: false, error: nil,
+                        timestamp: Date(timeIntervalSince1970: 1700000010))
+                ]
+            }
         }
         .task(id: generation) {
             guard generation > 0 else { return }
@@ -238,7 +254,7 @@ struct StreamingRegressionView: View {
         func tool(_ id: String, phase: String = "COMPLETED") -> MobileTimelineTool {
             MobileTimelineTool(id: id, name: "Read", phase: phase, kind: "FILE", operation: "READ",
                 target: id, filePath: "", fileLabel: "", input: "INPUT-\(id)", output: "OUTPUT-\(id)",
-                question: nil, questions: [], actions: [], foldIntoSummary: phase == "COMPLETED")
+                question: nil, questions: [], actions: [], foldIntoSummary: phase == "COMPLETED" || phase == "FAILED")
         }
         if ProcessInfo.processInfo.arguments.contains("--subagent-detail-regression") {
             return MobileConversationRow(id: "subtask-details", kind: "ASSISTANT", text: "", thinking: nil,

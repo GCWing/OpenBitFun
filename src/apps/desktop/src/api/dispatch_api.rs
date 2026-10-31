@@ -11,8 +11,9 @@ use openbitfun_core::infrastructure::PathManager;
 use openbitfun_core::service::dispatch::{
     answer_device_dispatch, answer_dispatch, append_device_dispatch, append_dispatch,
     cancel_device_dispatch, cancel_dispatch, cancel_dispatch_cli_install,
-    continue_device_dispatch_job, continue_dispatch_job, get_device_dispatch_status,
-    get_dispatch_status, list_device_dispatch_jobs, list_dispatch_jobs, list_dispatch_targets,
+    continue_device_dispatch_job, continue_dispatch_job, decode_device_dispatch_response,
+    encode_device_dispatch_command, get_device_dispatch_status, get_dispatch_status,
+    list_device_dispatch_jobs, list_dispatch_jobs, list_dispatch_targets,
     poll_dispatch_cli_install, probe_device_dispatch_target, probe_dispatch_target,
     query_device_dispatch_job, query_dispatch_job, start_dispatch_cli_install,
     submit_device_dispatch, submit_dispatch, sync_device_dispatch_result,
@@ -38,17 +39,7 @@ struct AccountDeviceDispatchRpc;
 #[async_trait]
 impl DeviceDispatchRpc for AccountDeviceDispatchRpc {
     async fn invoke(&self, device_id: &str, command: &str, args: Value) -> anyhow::Result<Value> {
-        use openbitfun_core_types::agent_identity_wire::{
-            translate_agent_identity_command, translate_agent_identity_response,
-            AgentIdentityDialect,
-        };
-        let args = translate_agent_identity_command(command, args, AgentIdentityDialect::Legacy)
-            .map_err(anyhow::Error::msg)?;
-        let command_json = serde_json::to_string(&serde_json::json!({
-            "cmd": "host_invoke",
-            "command": command,
-            "args": args,
-        }))?;
+        let command_json = encode_device_dispatch_command(command, args)?;
         let raw = super::remote_connect_api::account_device_rpc(
             device_id.to_string(),
             command_json,
@@ -56,40 +47,7 @@ impl DeviceDispatchRpc for AccountDeviceDispatchRpc {
         )
         .await
         .map_err(anyhow::Error::msg)?;
-        translate_agent_identity_response(
-            command,
-            decode_device_dispatch_rpc(&raw)?,
-            &Value::Null,
-            AgentIdentityDialect::Canonical,
-        )
-        .map_err(anyhow::Error::msg)
-    }
-}
-
-fn decode_device_dispatch_rpc(raw: &str) -> anyhow::Result<Value> {
-    let envelope: Value =
-        serde_json::from_str(raw).map_err(|error| anyhow::anyhow!("decode device RPC: {error}"))?;
-    match envelope.get("resp").and_then(Value::as_str) {
-        Some("host_invoke_result") if envelope.get("ok").and_then(Value::as_bool) == Some(true) => {
-            Ok(envelope.get("value").cloned().unwrap_or(Value::Null))
-        }
-        Some("host_invoke_result") => Err(anyhow::anyhow!(
-            "{}",
-            envelope
-                .get("error")
-                .and_then(Value::as_str)
-                .unwrap_or("Device dispatch target rejected the command")
-        )),
-        Some("error") => Err(anyhow::anyhow!(
-            "{}",
-            envelope
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or("Device dispatch RPC failed")
-        )),
-        _ => Err(anyhow::anyhow!(
-            "Device dispatch target returned an unexpected RPC envelope"
-        )),
+        decode_device_dispatch_response(command, &raw)
     }
 }
 
@@ -597,8 +555,13 @@ pub async fn dispatch_save_transcript(
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_device_dispatch_rpc, DispatchAccountBootstrapStatus, DispatchProvisionTargetResult,
+        decode_device_dispatch_response, DispatchAccountBootstrapStatus,
+        DispatchProvisionTargetResult,
     };
+
+    fn decode_device_dispatch_rpc(raw: &str) -> anyhow::Result<serde_json::Value> {
+        decode_device_dispatch_response("dispatch_target_submit", raw)
+    }
 
     #[test]
     fn device_dispatch_requires_a_correlated_host_invoke_acknowledgement() {

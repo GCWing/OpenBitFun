@@ -52,6 +52,8 @@ pub(crate) fn dispatch<'a>(
         "initialize_workspace_startup_state" => {
             Box::pin(workspace::initialize_workspace_startup_state(state))
         }
+        "get_workspace_icon" => Box::pin(workspace::get_workspace_icon(state, args)),
+        "set_workspace_icon" => Box::pin(workspace::set_workspace_icon(state, args)),
         "get_opened_workspaces" => Box::pin(workspace::get_opened_workspaces(state)),
         "get_recent_workspaces" => Box::pin(workspace::get_recent_workspaces(state)),
         "get_current_workspace" | "get_workspace_info" => {
@@ -311,6 +313,8 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "get_external_source_control_snapshot",
     "get_external_source_discovery_snapshot",
     "get_external_source_snapshot",
+    "get_workspace_icon",
+    "set_workspace_icon",
     "get_opened_workspaces",
     "get_recent_workspaces",
     "get_session_files",

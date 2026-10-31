@@ -245,7 +245,7 @@ const PersistentFooterActions: React.FC = () => {
                   <MenuSeparator />
                   <UpdateMenuItems onCloseMenu={closeMenu} />
                   <MenuItem
-                    leading={<Icon name="message-square" size="sm" aria-hidden="true" />}
+                    leading={<Icon name="messages-square" size="sm" aria-hidden="true" />}
                     onClick={handleOpenFeedback}
                     data-testid="nav-settings-feedback-item"
                   >

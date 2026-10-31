@@ -32,6 +32,7 @@ members = [
     "src/crates/adapters/webdriver",
     "src/crates/adapters/transport",
     "src/crates/services/services-core",
+    "src/crates/services/computer-use",
     "src/crates/services/services-integrations",
     "src/crates/services/legacy-migration",
     "src/crates/services/legacy-migration-adapters",
@@ -90,6 +91,8 @@ undocumented_unsafe_blocks = "warn"
 
 # Shared dependency versions to keep all crates aligned
 [workspace.dependencies]
+pkg-config = "0.3"
+x11rb = { version = "0.13", default-features = false }
 # Async runtime
 tokio = { version = "1.52", default-features = false }
 tokio-stream = { version = "0.1.18", default-features = false }
@@ -235,13 +238,10 @@ keepawake = "0.6.0"
 
 # Desktop support
 screenshots = "0.8"
-enigo = "0.2"
+enigo = { version = "0.2", default-features = false }
 resvg = { version = "0.47", default-features = false }
 atspi = "0.29"
-gstreamer = { version = "0.24", default-features = false }
-gstreamer-app = { version = "0.24", default-features = false }
 cc = { version = "1", default-features = false }
-leptess = "0.14"
 core-foundation = "0.9"
 core-graphics = { version = "0.23", features = ["elcapitan", "highsierra"] }
 foreign-types = "0.5"

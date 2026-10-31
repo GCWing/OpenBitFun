@@ -813,6 +813,39 @@ project installation remains unsupported; choose user scope to install on the
 serving host. Mobile/bot controls, CLI peers and Detached Dispatch do not gain a
 marketplace configuration or installation entry point.
 
+## Files sent through WeChat
+
+Send an ordinary file or a native video in the paired WeChat chat to make it available to the
+selected Agent session. OpenBitFun downloads and decrypts the file, saves it in
+a unique `.openbitfun-inbound-<id>` directory inside that session's workspace,
+and supplies its path to the Agent. Existing files are not overwritten. File
+contents stay out of the message text; the Agent can read the saved file using
+its tools. Files remain available for later turns and can be removed manually
+when no longer needed. On POSIX filesystems, directories use `0700` and files
+use `0600` permissions.
+
+A message accepts up to five files totaling 30 MiB. Missing download information,
+failed downloads, and unavailable workspaces produce an explicit error instead
+of submitting an empty message. Complete pending menu selections or approvals
+before sending a file.
+
+SSH workspaces use the session's remote filesystem and never fall back to the
+host's local filesystem. Cross-device bot sessions negotiate `session_attachments_v1`,
+transfer the bytes through encrypted device RPC, and use the path returned by the
+execution host. Upgrade an older target host when prompted; file input is never
+silently omitted. Accepted writes finish on the target even if the controller
+disconnects. Retries with the same attachment identity reuse identical saved bytes
+and reject changed or incomplete content. This input path does not submit
+attachments to Detached Dispatch jobs.
+
+Messages from one WeChat peer finish attachment preparation and turn admission in
+receive order. Model replies run independently, so approvals and follow-up input
+remain available. Failed image downloads also reject the message with a visible
+error instead of silently submitting empty or partial media input. Native videos
+are delivered as unchanged `.mp4` files through the same local/remote path;
+video analysis depends on the Agent's available tools. Voice messages without
+transcripts currently return an unsupported notice.
+
 ## WeChat session result notifications
 
 While the WeChat bot is running, completed turns in its currently selected local
@@ -978,3 +1011,46 @@ model slots and externally approved immutable model bindings keep their rules.
 Validation uses local unit tests, mock HTTP streams, transport capability tests,
 and host compilation. These do not establish live SSH/Docker, relay/mobile/IM,
 Peer Device or detached-dispatch behavior. No interactive UI validation was run.
+
+### Workspace icons
+
+Open **Project resources** and click the large project icon in the header to edit it.
+Choose a built-in Lucide icon for code, learning, design, documents, research, websites,
+mobile apps, games, data, business or tools. The **Life & hobbies** group includes travel, food,
+fitness, music, reading, home, finance, photography, pets, nature, shopping and movies.
+Apply a preset or custom HEX color to any built-in icon.
+The default shape remains a folder for local projects and a server for remote projects.
+Alternatively, upload a PNG/JPEG/WebP (up to 5 MB and
+20 megapixels). The square editor centers light/dark previews below a fixed mode switch. Click
+either preview to open the built-in icon picker; choosing a glyph closes the picker. Custom colors
+also open separately, keeping the editor size stable. Image mode supports centered square
+cropping and zoom independently for each theme. Click the light or dark preview to upload
+its image; the emphasized **Choose image** button always sets the default image, preserving
+any separately selected dark variant. An existing single
+image works in both themes until a separate dark image is set. Uploading a dark image first
+also supplies the light/legacy fallback, which can then be replaced independently.
+To return to the original icon, select **Built-in icons**, choose the
+**Default** glyph and color swatch, and save. Closing the editor cancels its draft.
+
+Icons belong to the workspace catalog on the selected OpenBitFun host. Desktop and CLI
+Peer Hosts support reading/editing them; mobile Remote Control displays them read-only.
+Older peers and the retired standalone Web Server explicitly do not offer editing. SSH/Docker
+projects store this presentation metadata on their catalog host, so an offline execution
+filesystem does not need to be opened. Worktrees inherit their main project's icon. Separate
+hosts opening the same Git repository do not automatically synchronize their catalogs.
+
+Glyph choices are advertised by `supportedGlyphs` in the icon snapshot. Hosts without
+that offer retain color/image editing; glyph writes re-check the offer before submitting.
+Legacy color-only edits preserve the stored glyph. Unknown future glyphs retain their
+saved identity and display the default artwork with an availability hint. Separate theme
+uploads similarly require the `supportsThemedImages` snapshot capability. Older controllers
+keep working with the base image, and their image edits preserve the stored dark variant.
+When one image asset is unavailable, current controllers use the available variant with
+a load warning and keep both saved references intact.
+
+Uploaded images are normalized and stored under the host's user data `workspace-icons/`
+directory; moving/deleting the source image does not change the saved icon. Include that
+directory together with `workspace_data.json` in a full backup. A workspace metadata-only
+export does not embed image bytes; missing assets display the default icon with a load warning
+and preserve the saved reference. Unreferenced assets are retained; resetting an icon does
+not delete another record's shared image. Unknown icon versions remain intact.

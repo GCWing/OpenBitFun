@@ -1,6 +1,11 @@
 import { RemoteI18n } from '../i18n/RemoteI18n';
 
 export class TimeFormat {
+  static message(value: string): string {
+    const timestamp = TimeFormat.timestampMs(value);
+    return Number.isFinite(new Date(timestamp).getTime()) ? RemoteI18n.formatMessageTime(timestamp) : '';
+  }
+
   static relative(value: string, nowMs: number = Date.now()): string {
     const timestamp = TimeFormat.timestampMs(value);
     if (Number.isNaN(timestamp)) {

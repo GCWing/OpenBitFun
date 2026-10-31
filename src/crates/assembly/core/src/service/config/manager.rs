@@ -215,6 +215,17 @@ pub struct ConfigManager {
     backup_count: usize,
     load_diagnostics: Vec<ConfigDiagnostic>,
     account_guard_sources: HashMap<String, Value>,
+    /// Fingerprint of the file content this manager last loaded or wrote, so
+    /// an on-disk change by another writer can be told apart from its own.
+    disk_fingerprint: std::sync::Mutex<Option<u64>>,
+}
+
+/// Content fingerprint used to detect config files replaced by another writer.
+pub(crate) fn config_content_fingerprint(content: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
 }
 
 struct ConfigCandidate {
@@ -266,6 +277,7 @@ impl ConfigManager {
             backup_count,
             load_diagnostics: Vec::new(),
             account_guard_sources: HashMap::new(),
+            disk_fingerprint: std::sync::Mutex::new(None),
         };
 
         manager.load_or_create_config().await?;
@@ -283,6 +295,27 @@ impl ConfigManager {
     /// Returns the path manager.
     pub fn path_manager(&self) -> &Arc<PathManager> {
         &self.path_manager
+    }
+
+    /// Persisted config file owned by this manager.
+    pub(crate) fn config_file(&self) -> &std::path::Path {
+        &self.config_file
+    }
+
+    /// Fingerprint of the content this manager last loaded or wrote.
+    pub(crate) fn disk_fingerprint(&self) -> Option<u64> {
+        *self
+            .disk_fingerprint
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn remember_disk_content(&self, content: &str) {
+        *self
+            .disk_fingerprint
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            Some(config_content_fingerprint(content.as_bytes()));
     }
 
     /// Reloads from the same storage root while the service holds its write
@@ -459,6 +492,9 @@ impl ConfigManager {
                         "Failed to persist model selection migration: {error}"
                     ))
                 })?;
+            self.remember_disk_content(&content);
+        } else {
+            self.remember_disk_content(&content);
         }
         self.config = config;
         self.load_diagnostics = diagnostics;
@@ -612,6 +648,7 @@ impl ConfigManager {
                     self.config_file, e
                 ))
             })?;
+        self.remember_disk_content(&content);
         Ok(account_guard_sources(&value))
     }
 

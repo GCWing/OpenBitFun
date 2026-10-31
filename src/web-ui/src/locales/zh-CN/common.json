@@ -389,8 +389,8 @@
       "exportMarkdownFull": "导出完整过程",
       "exportMarkdownResult": "导出结果",
       "delete": "删除",
-      "deleteConfirmTitle": "永久删除会话？",
-      "deleteConfirmMessage": "“{{name}}”及其子会话将被永久删除。此操作无法撤销。",
+      "deleteConfirmTitle": "删除会话",
+      "deleteConfirmMessage": "会话及其子会话将被永久删除，无法恢复。",
       "confirmEdit": "确认",
       "cancelEdit": "取消",
       "loading": "加载中...",
@@ -613,6 +613,10 @@
         "minute": "分钟",
         "hour": "小时",
         "day": "天"
+      },
+      "columns": {
+        "status": "状态",
+        "actions": "操作"
       }
     },
     "workspaces": {
@@ -663,8 +667,8 @@
         "manageAssistant": "管理助理",
         "closeAssistant": "隐藏助理",
         "resetWorkspace": "重置工作区",
-        "manageRelatedPaths": "关联目录",
-        "manageProjectPermissions": "项目权限",
+        "projectResources": "项目资源",
+        "openDirectory": "打开目录",
         "rename": "重命名项目",
         "copyPath": "复制路径",
         "reveal": "在资源管理器中打开",
@@ -694,7 +698,12 @@
           "add": "添加目录",
           "selectDirectoryTitle": "选择关联目录",
           "pathPlaceholder": "目录路径",
-          "descriptionLabel": "说明（选填）"
+          "descriptionLabel": "说明（选填）",
+          "columns": {
+            "directory": "目录",
+            "description": "说明",
+            "actions": "操作"
+          }
         },
         "messages": {
           "externalLoadFailed": "无法加载 OpenCode 引用",
@@ -714,6 +723,56 @@
         "title": "重置 {{name}}？",
         "message": "此操作会清空该工作区目录下的所有内容，并恢复默认 persona 文件；不会删除工作区目录本身。",
         "pathLabel": "工作区路径"
+      },
+      "icon": {
+        "title": "更改图标",
+        "description": "自定义 {{name}} 的图标，设置保存在工作区所属主机上。",
+        "default": "内置图标",
+        "chooseIcon": "选择图标",
+        "builtinIcons": "图标",
+        "glyphsUnsupported": "当前主机暂不支持切换内置图标。",
+        "workIcons": "工作与学习",
+        "lifeIcons": "生活与兴趣",
+        "chooseLightImage": "选择浅色图片",
+        "chooseDarkImage": "选择深色图片",
+        "themedImagesUnsupported": "当前主机仅支持两种主题共用一张图片，升级主机后可单独设置深色图片。",
+        "glyphs": {
+          "default": "默认", "code": "代码", "learning": "学习", "design": "设计",
+          "documents": "文档", "research": "研究", "web": "网站", "mobile": "移动应用",
+          "games": "游戏", "data": "数据", "business": "业务", "tools": "工具",
+          "travel": "旅行", "food": "美食", "fitness": "运动", "music": "音乐", "reading": "阅读", "home": "家庭", "finance": "理财", "photography": "摄影", "pets": "宠物", "nature": "自然", "shopping": "购物", "movies": "电影"
+        },
+        "image": "自定义图片",
+        "preview": "图标预览",
+        "colors": "图标颜色",
+        "customColor": "自定义颜色",
+        "colorValue": "颜色值",
+        "lightness": "明度",
+        "presetColors": "预设颜色",
+        "chooseImage": "选择图片",
+        "imageHint": "支持 PNG、JPEG、WebP，最大 5 MB。图片随工作区保存，无需保留原文件。",
+        "crop": "裁剪填满正方形",
+        "zoom": "缩放",
+        "reset": "恢复默认",
+        "retry": "重试",
+        "loading": "正在加载图标…",
+        "unsupported": "当前主机不支持工作区图标定制，请升级主机或使用支持此功能的桌面端、CLI 主机。",
+        "loadFailed": "自定义图标暂时无法加载，已显示默认图标，原设置仍然保留。",
+        "invalidImage": "请选择不超过 5 MB、2000 万像素的 PNG、JPEG 或 WebP 图片。",
+        "saveFailed": "无法保存图标：{{reason}}",
+        "palette": {
+          "default": "默认",
+          "blue": "蓝色",
+          "cyan": "青色",
+          "green": "绿色",
+          "yellow": "黄色",
+          "orange": "橙色",
+          "red": "红色",
+          "purple": "紫色",
+          "pink": "粉色"
+        },
+        "light": "浅色预览",
+        "dark": "深色预览"
       }
     },
     "agents": {
@@ -738,9 +797,9 @@
     "notifications": "通知",
     "settingsMenu": {
       "floatingWindow": "悬浮窗",
-      "feedback": "意见反馈",
-      "feedbackUnavailable": "反馈问卷尚未配置。",
-      "feedbackOpenFailed": "无法打开反馈问卷。",
+      "feedback": "用户反馈",
+      "feedbackUnavailable": "用户反馈尚未配置。",
+      "feedbackOpenFailed": "无法打开用户反馈。",
       "openSettings": "$t(shared:features.settings)",
       "about": "关于"
     },

@@ -1,3 +1,4 @@
+import { WorkspaceIcon as ProjectWorkspaceIcon } from '../components/WorkspaceIcon';
 import { subscribeHostCatalog } from '../services/HostCatalogSubscription';
 import {
   AppWindow as LucideAppWindow,
@@ -1660,7 +1661,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
                           <span className="harmony-sidebar__folder-icon" aria-hidden="true">
                             {workspace.workspace_kind === 'assistant'
                               ? <LucideBot width="21" height="21" stroke="currentColor" aria-hidden="true" />
-                              : <LucideFolder width="21" height="21" stroke="currentColor" aria-hidden="true" />}
+                              : <ProjectWorkspaceIcon manager={sessionMgr} workspace={workspace} />}
                           </span>
                           <span className="harmony-sidebar__workspace-copy">
                             <span className="harmony-sidebar__row-label">{workspace.name || workspace.path}</span>
@@ -1907,7 +1908,9 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
               }}
             >
               <span className="session-list__workspace-icon">
-                <WorkspaceIcon />
+                {currentWorkspace?.workspace_id
+                  ? <ProjectWorkspaceIcon manager={sessionMgr} workspace={currentWorkspace} />
+                  : <WorkspaceIcon />}
               </span>
               <div className="session-list__workspace-copy">
                 <span className="session-list__workspace-label">{t('shared.features.workspace')}</span>
@@ -1944,7 +1947,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
                   label: workspace.remote_ssh_host
                     ? `${workspace.name} · ${workspace.remote_ssh_host}`
                     : workspace.name,
-                  leading: <span className="session-list__picker-item-icon"><WorkspaceIcon /></span>,
+                  leading: <span className="session-list__picker-item-icon"><ProjectWorkspaceIcon manager={sessionMgr} workspace={workspace} /></span>,
                   trailing: selected ? <LucideCheck width="16" height="16" stroke="currentColor" aria-hidden="true" /> : undefined,
                   value: String(index),
                 };

@@ -310,7 +310,7 @@ impl Tool for OpenBitFunControlTool {
 
     async fn description(&self) -> OpenBitFunResult<String> {
         Ok(
-            "Control OpenBitFun features and settings, including MCP servers. Prefer this tool over ComputerUse. Use the two-step flow: `list` or `search`, then `get` the matching capability and follow its schema and availability to `configure`, `execute`, or `open`. Open a root with capability_id only. destination.actionId is presentation metadata, never an item_id or operation_id. The catalog loads on demand; never guess IDs or values."
+            "Control OpenBitFun features and settings, including MCP servers and Remote Connect bots/Mobile Web. Prefer this tool over ComputerUse. Use the two-step flow: `list` or `search`, then `get` the matching capability and follow its schema and availability to `configure`, `execute`, or `open`. Open a root with capability_id only. destination.actionId is presentation metadata, never an item_id or operation_id. The catalog loads on demand; never guess IDs or values."
                 .to_string(),
         )
     }
@@ -890,6 +890,41 @@ mod tests {
                 Err("value_null must be true when used".to_string())
             );
         }
+    }
+
+    #[tokio::test]
+    async fn remote_connect_management_preserves_permissions_and_remote_path_scope() {
+        let tool = OpenBitFunControlTool::new();
+        let status = json!({"action":"execute", "capability_id":"feature.remote-connect", "operation_id":"status"});
+        assert!(tool.validate_input(&status, Some(&context())).await.result);
+        assert!(tool
+            .permission_intents(&status, &context())
+            .unwrap()
+            .is_empty());
+        let start = json!({"action":"execute", "capability_id":"feature.remote-connect", "operation_id":"start", "arguments":{"method":"weixin"}});
+        assert!(
+            tool.validate_input(&start, Some(&remote_context()))
+                .await
+                .result
+        );
+        assert!(!tool
+            .permission_intents(&start, &context())
+            .unwrap()
+            .is_empty());
+        let credential_file = json!({"action":"execute", "capability_id":"feature.remote-connect", "operation_id":"configure-bot", "arguments":{"method":"telegram", "credentialsFile":"/host/private.json"}});
+        assert!(
+            tool.validate_input(&credential_file, Some(&context()))
+                .await
+                .result
+        );
+        let remote = tool
+            .validate_input(&credential_file, Some(&remote_context()))
+            .await;
+        assert!(!remote.result);
+        assert!(remote
+            .message
+            .unwrap()
+            .contains("local OpenBitFun product-host path"));
     }
 
     #[tokio::test]

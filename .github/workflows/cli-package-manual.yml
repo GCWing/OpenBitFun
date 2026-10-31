@@ -142,7 +142,13 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
+          # Jammy runners may have conflicting LLVM libunwind development files.
           sudo apt-get install -y --no-install-recommends \
+            libunwind-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libtesseract-dev \
+            libleptonica-dev \
             pkg-config \
             build-essential \
             libxcb1-dev \

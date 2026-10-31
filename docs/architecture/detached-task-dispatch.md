@@ -22,6 +22,11 @@ There are three roles:
 - A **transport adapter** moves the same narrow JSON protocol over SSH or an
   end-to-end encrypted account-device RPC.
 
+Desktop (`dispatch_*` commands) and the CLI (`openbitfun dispatch outbound`) are
+both controllers over the same Core controller. The account-device `host_invoke`
+envelope is shared through `AccountRuntimeDeviceDispatchRpc` and its
+encode/decode helpers, so the two hosts cannot drift.
+
 The controller is never a runtime or filesystem proxy for a non-local job. It
 stores only an outbound observer record under
 `~/.openbitfun/dispatch/outbound/`; it must not create the target session in the

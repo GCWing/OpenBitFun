@@ -13,6 +13,7 @@ pub mod product_control;
 pub mod product_control_owner_registry;
 pub mod product_release;
 pub mod product_search;
+pub mod remote_control;
 pub mod remote_surface;
 #[cfg(feature = "external-sources")]
 pub mod session_import;

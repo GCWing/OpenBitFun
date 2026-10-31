@@ -104,9 +104,9 @@ describe('navigation icon integration', () => {
     expect(assistantMarkup).toContain('<AssistantAvatar size={22} name={workspaceDisplayName} />');
     expect(assistantMarkup).not.toContain('SessionGroupAssistant');
 
-    expect(workspaceMarkup).toContain('workspaceIsRemote');
-    expect(workspaceMarkup).toContain('<Icon glyph={Server} size="sm" />');
-    expect(workspaceMarkup).toContain('<Icon name="folder" size="sm" />');
+    expect(workspaceMarkup).toContain('<WorkspaceIcon workspace={workspace} />');
+    const renderer = readFileSync(fileURLToPath(new URL('../WorkspaceIcon/WorkspaceIcon.tsx', import.meta.url)), 'utf8');
+    expect(renderer).toContain('remote ? Server : Folder');
     expect(workspaceMarkup).not.toContain('SessionGroup');
   });
 });

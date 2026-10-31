@@ -1,3 +1,4 @@
+pub(crate) mod outbound;
 mod permissions;
 pub(crate) mod protocol;
 mod query_file;

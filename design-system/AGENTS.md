@@ -65,3 +65,12 @@ pnpm --dir src/web-ui exec vitest run src/shared/ui/Select.test.tsx
 ```
 
 These package and DOM checks do not establish native rendering or live remote behavior.
+
+For ColorPicker HEX drafts, flower selection, curved lightness dragging and keyboard input:
+
+```bash
+pnpm --dir design-system run build:ui && node --test design-system/packages/ui/tests/color-picker.test.mjs design-system/packages/ui/tests/registry.test.mjs
+pnpm --dir src/web-ui run test:run src/shared/ui/ColorPicker.test.tsx src/app/components/WorkspaceIcon/WorkspaceIconDialog.test.tsx
+```
+
+These package and DOM checks do not establish visual fidelity or live remote behavior.

@@ -1718,7 +1718,7 @@ public class RemoteSessionStore internal constructor(
             renderVersion = null,
             turnId = clientTurnId,
             detail = null,
-            timestamp = null,
+            timestamp = Clock.System.now().toString(),
             thinking = null,
             tools = null,
             items = null,

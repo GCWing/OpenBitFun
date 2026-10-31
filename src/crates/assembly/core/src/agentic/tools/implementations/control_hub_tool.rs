@@ -52,10 +52,9 @@ static BROWSER_SESSIONS: std::sync::OnceLock<Arc<BrowserSessionRegistry>> =
 /// the headed browser sitting on that port.
 const DEFAULT_HEADLESS_CDP_PORT: u16 = DEFAULT_CDP_PORT + 1;
 
-/// Computer Use is an independent switch from browser control (`ai.computer_use_enabled`
-/// defaults to off, and there is no desktop host outside the desktop app), so ControlHub
+/// Computer Use has an independent setting and native provider from browser control, so ControlHub
 /// must never route recovery through a tool that is absent from the agent's tool list.
-const COMPUTER_USE_UNAVAILABLE_HINT: &str = "Desktop automation is unavailable in this session (Computer Use is off in Settings, or there is no desktop host). Do not call ComputerUse — it is not in your tool list. Use ControlHub browser.navigate for http(s) URLs on a Desktop host and ExecCommand for local files and scripts; ask the user to enable Computer Use in Settings if desktop control is genuinely required.";
+const COMPUTER_USE_UNAVAILABLE_HINT: &str = "Desktop automation is unavailable in this session (Computer Use is disabled, or the executing host has no native graphical provider). Do not call ComputerUse — it is not in your tool list. Use an available ControlHub browser target for http(s) URLs and ExecCommand for local files and scripts. A disabled setting can be changed in Settings or with `openbitfun computer-use enable`; native control also requires a graphical login session on the executing host.";
 
 fn browser_sessions() -> Arc<BrowserSessionRegistry> {
     BROWSER_SESSIONS
@@ -628,14 +627,12 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
     ) -> OpenBitFunResult<Vec<ToolResult>> {
         match action {
             "capabilities" => {
-                // `terminal` (TerminalApi) is delivered through a global
-                // registry rather than a field on the context, so we can't be
-                // 100% sure here without round-tripping. We report "likely
-                // available iff a desktop host is present" because that bridge
-                // only exists in OpenBitFun's desktop runtime; the actual call will
-                // surface a clean error if the bridge is offline.
+                // CLI and Desktop register terminal and GUI providers separately.
+                // Read the same terminal registry used by the action dispatcher;
+                // this probe neither initializes the service nor opens a session.
                 let is_remote = context.is_remote();
-                let likely_terminal_available = !is_remote && context.computer_use_host.is_some();
+                let terminal_available =
+                    !is_remote && crate::service::terminal::TerminalApi::from_singleton().is_ok();
                 let browser_session_ids = if is_remote {
                     Vec::new()
                 } else {
@@ -745,7 +742,7 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                             "default_target": selection.as_ref().map(|s| s.target.as_str()).unwrap_or(if builtin_host_available { "builtin" } else { "external" }),
                             "shared_action_contract": true,
                         },
-                        "terminal": { "available": likely_terminal_available, "reason": if likely_terminal_available { Value::Null } else { json!("TerminalApi is only available in contexts that registered it") } },
+                        "terminal": { "available": terminal_available, "reason": if terminal_available { Value::Null } else { json!("TerminalApi is only available in local workspace contexts that registered it") } },
                         "meta":     { "available": true },
                     },
                     "local_client": {
@@ -762,7 +759,7 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                         } else if is_remote {
                             json!("Not available in remote workspace sessions")
                         } else {
-                            json!("Computer Use is disabled (ai.computer_use_enabled = false) or no desktop host is present")
+                            json!("Computer Use is disabled (ai.computer_use_enabled = false) or the executing host has no native provider")
                         },
                     },
                     "schema_version": "1.6",

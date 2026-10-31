@@ -31,6 +31,7 @@ export type SceneTabId =
   | 'insights'
   | 'shell'
   | `content:${string}`
+  | `project-resources:${string}`
   | `session:${string}`
   | `miniapp:${string}`;
 

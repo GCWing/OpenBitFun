@@ -146,7 +146,11 @@ describe('ModelSettingsPage loading and provider actions', () => {
     expect(editorDraft().dirty).toBe(false);
     expect(container.querySelector('[data-openbitfun-view="selection"]')).not.toBeNull();
     expect(document.activeElement).toBe(container.querySelector('button[data-provider-id="custom"]'));
-    await act(async () => button('actions.cancel').click());
+    const backButton = container.querySelector<HTMLButtonElement>('[data-testid="settings-model-provider-back-btn"]')!;
+    expect(backButton.getAttribute('aria-label')).toBe(copy('actions.back'));
+    expect(backButton.closest('.openbitfun-config-page-header__extra')).not.toBeNull();
+    expect(button('actions.cancel')).toBeUndefined();
+    await act(async () => backButton.click());
     expect(container.querySelector('[data-openbitfun-view="settings"]')).not.toBeNull();
     expect(update).not.toHaveBeenCalled();
     expect(probe).not.toHaveBeenCalled();
@@ -181,6 +185,52 @@ describe('ModelSettingsPage loading and provider actions', () => {
     expect(container.querySelector('[data-openbitfun-view="selection"]')).not.toBeNull();
     expect(container.querySelector<HTMLInputElement>('[data-testid="settings-model-provider-search"]')!.value)
       .toBe(provider === 'custom' ? '' : provider);
+  });
+
+  describe('request format and endpoint presets', () => {
+    const endpoint = () => editor()!.querySelector<HTMLInputElement>('[data-testid="settings-model-base-url-input"]')!;
+    const presetPicker = () => editor()!.querySelector('[data-testid="settings-model-endpoint-preset-select"]');
+    const resolvedUrl = () => editor()!.querySelector('.openbitfun-model-settings__resolved-url-value')!.textContent;
+    const chooseFormat = async (format: string) => act(async () => {
+      const select = editor()!.querySelector<HTMLSelectElement>('select[data-testid="settings-model-request-format-select"]')!;
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, format);
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    it('drops the format-only OpenAI preset picker and moves its endpoint with the format', async () => {
+      await openNewProvider('openai');
+      expect(presetPicker()).toBeNull();
+      expect(resolvedUrl()).toBe('https://api.openai.com/v1/responses');
+      await chooseFormat('openai');
+      expect(endpoint().value).toBe('https://api.openai.com/v1');
+      expect(resolvedUrl()).toBe('https://api.openai.com/v1/chat/completions');
+      expect(presetPicker()).toBeNull();
+      await chooseFormat('responses');
+      expect(resolvedUrl()).toBe('https://api.openai.com/v1/responses');
+    });
+
+    it('keeps a region picker for presets that share the selected format', async () => {
+      await openNewProvider('zhipu');
+      expect(presetPicker()).not.toBeNull();
+      await chooseFormat('anthropic');
+      expect(endpoint().value).toBe('https://open.bigmodel.cn/api/anthropic');
+      expect(resolvedUrl()).toBe('https://open.bigmodel.cn/api/anthropic/v1/messages');
+      expect(presetPicker()).not.toBeNull();
+    });
+
+    it('moves a saved preset endpoint with the format instead of appending a second path', async () => {
+      const saved = { ...model, id: 'saved-openai', name: 'OpenAI', provider: 'responses',
+        base_url: 'https://api.openai.com/v1/responses' };
+      await act(async () => root.render(<ModelSettingsPage />));
+      await act(async () => {
+        reads.get('ai.models')!.resolve([saved]);
+        reads.get('ai.default_models')!.resolve({});
+      });
+      await act(async () => container.querySelector<HTMLButtonElement>('.openbitfun-model-settings__source-pill')!.click());
+      await chooseFormat('openai');
+      expect(endpoint().value).toBe('https://api.openai.com/v1');
+      expect(resolvedUrl()).toBe('https://api.openai.com/v1/chat/completions');
+    });
   });
 
   it.each(['custom', 'zhipu'])('returns a discarded %s draft to the same provider selection', async provider => {
