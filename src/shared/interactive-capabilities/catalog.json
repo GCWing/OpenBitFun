@@ -8171,8 +8171,8 @@
         },
         {
           "id": "tool-presentation",
-          "titleZh": "选择模型使用原生模式还是 PTC TypeScript 模式",
-          "titleEn": "Choose native mode or PTC TypeScript mode for the model",
+          "titleZh": "选择模型使用原生模式、PTC TypeScript 或 PTC Python 模式",
+          "titleEn": "Choose native, PTC TypeScript, or PTC Python mode for the model",
           "destination": {
             "kind": "settings",
             "pageId": "tools.execution",
@@ -8393,8 +8393,8 @@
           "id": "tool-presentation-mode",
           "titleZh": "工具呈现模式",
           "titleEn": "Tool presentation mode",
-          "descriptionZh": "选择模型直接调用原生工具，或通过 PTC TypeScript 调用工具。",
-          "descriptionEn": "Choose whether the model calls native tools directly or uses PTC TypeScript."
+          "descriptionZh": "选择模型直接调用原生工具，或通过 PTC TypeScript/Python 调用工具。",
+          "descriptionEn": "Choose whether the model calls native tools directly or uses PTC TypeScript or Python."
         },
         {
           "id": "subagent-batch-policy",

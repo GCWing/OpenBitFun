@@ -101,7 +101,9 @@
     "description": "Choose how tools are exposed to the model. This setting applies only to sessions created after it changes.",
     "native": "Native tools",
     "ptc": "PTC (TypeScript)",
-    "ptcTooltip": "PTC executes TypeScript through RunCode."
+    "ptcTooltip": "PTC executes TypeScript through RunCode.",
+    "ptcPython": "PTC (Python)",
+    "ptcPythonTooltip": "PTC executes Python through RunCode."
   },
   "projectPermissions": {
     "title": "Tool and command permissions",

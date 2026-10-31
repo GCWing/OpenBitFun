@@ -49,7 +49,7 @@ use openbitfun_agent_runtime::user_questions::{
 };
 use openbitfun_agent_tools::{
     LoadedDeferredToolSpec, PortableToolContextProvider, ToolContextFacts, ToolWorkspaceKind,
-    PTC_TOOL_PRESENTATION_CONTEXT_KEY,
+    PTC_LANGUAGE_CONTEXT_KEY, PTC_TOOL_PRESENTATION_CONTEXT_KEY,
 };
 #[cfg(feature = "canvas-runtime")]
 use openbitfun_product_domains::canvas::CanvasStoragePort;
@@ -457,6 +457,12 @@ fn build_tool_context_custom_data(context: &ToolExecutionContext) -> HashMap<Str
         extension_custom_data.insert(
             PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
             Value::String(mode.clone()),
+        );
+    }
+    if let Some(language) = context.context_vars.get(PTC_LANGUAGE_CONTEXT_KEY) {
+        extension_custom_data.insert(
+            PTC_LANGUAGE_CONTEXT_KEY.to_string(),
+            Value::String(language.clone()),
         );
     }
     for key in [

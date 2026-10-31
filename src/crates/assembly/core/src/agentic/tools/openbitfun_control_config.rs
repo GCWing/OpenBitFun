@@ -785,6 +785,25 @@ mod tests {
                 .expect("tool presentation mode is config-backed");
         assert_eq!(applied.changed_path, "ai.tool_presentation_mode");
         assert_eq!(applied.effective_value, Value::String("ptc".to_string()));
+
+        let applied_python = configure_config_backed_option(
+            &service,
+            option,
+            &Value::String("ptc_python".to_string()),
+        )
+        .await
+        .expect("PTC Python should be accepted")
+        .expect("tool presentation mode is config-backed");
+        assert_eq!(
+            applied_python.effective_value,
+            Value::String("ptc_python".to_string())
+        );
+        assert_eq!(
+            read_config_backed_option(&service, option)
+                .await
+                .expect("PTC Python should be readable"),
+            Some(Value::String("ptc_python".to_string()))
+        );
     }
 
     #[tokio::test]

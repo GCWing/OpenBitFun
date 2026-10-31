@@ -4,8 +4,8 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "5c26d781f664b1daa3cef9062f0ad3e776544242b80fbd1fc303d59d4494eed3",
-  "ownerDigest": "0b2d30952efd57108d9e566dc0bf5a176f2b3d753abfb736bfc32b2c1fa3f7b7",
+  "digest": "513e184cc2d93f183cdea258516f532caf58ac6400ef76dce9b54f6de0752627",
+  "ownerDigest": "3cc6d7d869b2c90c2161494a854b5ff7eb72ea69a1a28e40ccd42065fb3382e2",
   "searchAcceptance": [
     {
       "id": "native-image-generation",
@@ -16923,7 +16923,8 @@
         "type": "string",
         "enum": [
           "native",
-          "ptc"
+          "ptc",
+          "ptc_python"
         ]
       },
       "outputSchema": {
@@ -30569,8 +30570,8 @@
         },
         {
           "id": "tool-presentation",
-          "titleZh": "选择模型使用原生模式还是 PTC TypeScript 模式",
-          "titleEn": "Choose native mode or PTC TypeScript mode for the model",
+          "titleZh": "选择模型使用原生模式、PTC TypeScript 或 PTC Python 模式",
+          "titleEn": "Choose native, PTC TypeScript, or PTC Python mode for the model",
           "destination": {
             "kind": "settings",
             "pageId": "tools.execution",
@@ -30773,13 +30774,14 @@
           "id": "tool-presentation-mode",
           "titleZh": "工具呈现模式",
           "titleEn": "Tool presentation mode",
-          "descriptionZh": "选择模型直接调用原生工具，或通过 PTC TypeScript 调用工具。",
-          "descriptionEn": "Choose whether the model calls native tools directly or uses PTC TypeScript.",
+          "descriptionZh": "选择模型直接调用原生工具，或通过 PTC TypeScript/Python 调用工具。",
+          "descriptionEn": "Choose whether the model calls native tools directly or uses PTC TypeScript or Python.",
           "valueSchema": {
             "type": "string",
             "enum": [
               "native",
-              "ptc"
+              "ptc",
+              "ptc_python"
             ]
           },
           "handler": {
@@ -30942,8 +30944,8 @@
         "Review, revoke, or clear remembered project permission grants and audit records",
         "按需延迟加载工具定义以减少智能体初始上下文",
         "Deferred tool loading on demand to reduce initial agent context",
-        "选择模型使用原生模式还是 PTC TypeScript 模式",
-        "Choose native mode or PTC TypeScript mode for the model",
+        "选择模型使用原生模式、PTC TypeScript 或 PTC Python 模式",
+        "Choose native, PTC TypeScript, or PTC Python mode for the model",
         "设置子智能体与 Swarm 最大并发及安全、强制并行或串行策略",
         "Set subagent and swarm concurrency plus safe-only, forced-parallel, or serial policy",
         "设置或取消单次工具调用超时",

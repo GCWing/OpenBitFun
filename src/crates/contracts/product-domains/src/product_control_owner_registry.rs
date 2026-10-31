@@ -943,7 +943,7 @@ pub fn owner_definitions() -> Vec<ProductControlOwnerDefinition> {
         option(
             "setting.tools.execution",
             "tool-presentation-mode",
-            string_enum(&["native", "ptc"]),
+            string_enum(&["native", "ptc", "ptc_python"]),
             config("ai.tool_presentation_mode"),
         ),
         option(

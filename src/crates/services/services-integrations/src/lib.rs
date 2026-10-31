@@ -104,6 +104,8 @@ pub mod script_tool;
 
 #[cfg(feature = "ptc-runtime")]
 pub mod ptc_runtime;
+#[cfg(feature = "ptc-runtime")]
+pub mod python_ptc_runtime;
 #[cfg(feature = "speech")]
 pub mod speech;
 
