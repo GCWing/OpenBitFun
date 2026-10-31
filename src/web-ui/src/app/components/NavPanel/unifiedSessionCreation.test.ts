@@ -31,7 +31,7 @@ describe('unified project session creation', () => {
     const projectActionsEnd = workspaceItem.indexOf('{menuOpen && createOverlayPortal(', projectActionsStart);
     const actionStrips = [
       { source: workspaceItem.slice(assistantActionsStart, assistantActionsEnd), middleAction: 'nav-assistant-history-btn' },
-      { source: workspaceItem.slice(projectActionsStart, projectActionsEnd), middleAction: 'nav-workspace-files-btn' },
+      { source: workspaceItem.slice(projectActionsStart, projectActionsEnd), middleAction: 'nav-workspace-project-resources-btn' },
     ];
 
     expect(utilityRowIndex).toBeGreaterThan(-1);

@@ -14,6 +14,7 @@ import {
 } from '@/infrastructure/api/service-api/CustomAgentAPI';
 import { toolAPI } from '@/infrastructure/api/service-api/ToolAPI';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
+import type { WorkspaceInfo } from '@/shared/types';
 import { useNotification } from '@/shared/notification-system';
 import { isUserSelectableToolName } from '@/shared/utils/toolVisibility';
 import { useAgentsStore } from '../agentsStore';
@@ -98,16 +99,20 @@ function defaultSelectedTools(
 }
 
 interface CreateAgentPageProps {
+  workspace?: WorkspaceInfo;
+  initialLevel?: CustomAgentLevel;
   standalone?: boolean;
   titleId?: string;
   onCancel?: () => void;
   onCreated?: () => void;
 }
 
-const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, titleId, onCancel, onCreated }) => {
+const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, titleId, onCancel, onCreated, workspace: targetWorkspace, initialLevel = 'user' }) => {
   const { t, formatNumber } = useI18n('scenes/agents');
   const notification = useNotification();
-  const { hasWorkspace, workspace } = useCurrentWorkspace();
+  const current = useCurrentWorkspace();
+  const workspace = targetWorkspace ?? current.workspace;
+  const hasWorkspace = Boolean(workspace);
   const workspaceId = workspace?.id;
   const { openHome, agentEditorMode, editingAgentId } = useAgentsStore();
   const closeEditor = onCancel ?? openHome;
@@ -159,8 +164,8 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
 
   const isEdit = !standalone && agentEditorMode === 'edit' && Boolean(editingAgentId);
 
-  const [kind, setKind] = useState<CustomAgentKind>('mode');
-  const [level, setLevel] = useState<CustomAgentLevel>('user');
+  const [kind, setKind] = useState<CustomAgentKind>(initialLevel === 'project' ? 'subagent' : 'mode');
+  const [level, setLevel] = useState<CustomAgentLevel>(initialLevel);
   const [agentId, setAgentId] = useState(createSuggestedAgentId);
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState(false);
@@ -232,7 +237,7 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
     if (isEdit) {
       return;
     }
-    setLevel('user');
+    setLevel(kind === 'subagent' ? initialLevel : 'user');
     setReadonly(defaultReadonlyForKind(kind));
     setReview(false);
     setUserContextPolicy(new Set(defaultPolicyForKind(kind)));
@@ -241,7 +246,7 @@ const CreateAgentPage: React.FC<CreateAgentPageProps> = ({ standalone = false, t
     setToolsEditing(false);
     setPendingTools(null);
     setPendingReadonly(null);
-  }, [isEdit, kind]);
+  }, [isEdit, kind, initialLevel]);
 
   useEffect(() => {
     if (isEdit || toolInfos.length === 0 || toolSelectionInitialized.current) {

@@ -176,6 +176,15 @@ pub struct RemoteFileChunkRange {
 /// Old remote-connect host compatibility trait for workspace commands.
 #[async_trait::async_trait]
 pub trait RemoteWorkspaceRuntimeHost: Send + Sync {
+    fn supports_workspace_icons(&self) -> bool {
+        false
+    }
+    async fn workspace_icon(
+        &self,
+        _workspace_id: &str,
+    ) -> Result<openbitfun_core_types::workspace_icon::WorkspaceIconSnapshot, String> {
+        Err("This host does not support workspace icons".into())
+    }
     async fn current_workspace(&self) -> Option<RemoteWorkspaceFacts>;
     async fn recent_workspaces(&self) -> Vec<RemoteRecentWorkspaceFacts>;
     /// Authoritative sidebar catalog, including opened assistant workspaces.
@@ -212,6 +221,9 @@ impl<T> RemoteWorkspacePort for T where T: RuntimeServicePort + RemoteWorkspaceR
 /// Old remote-connect host compatibility trait for initial sync.
 #[async_trait::async_trait]
 pub trait RemoteInitialSyncRuntimeHost: Send + Sync {
+    fn supports_workspace_icons(&self) -> bool {
+        false
+    }
     async fn current_workspace(&self) -> Option<RemoteWorkspaceFacts>;
     async fn list_session_metadata(
         &self,

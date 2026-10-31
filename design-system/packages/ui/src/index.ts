@@ -59,6 +59,7 @@ export { Avatar, AvatarGroup, type AvatarGroupProps, type AvatarProps, type Avat
 export { Button, type ButtonProps } from "./components/Button";
 export { Capsule, type CapsuleProps } from "./components/Capsule";
 export { Checkbox, type CheckboxProps, type CheckboxSize } from "./components/Checkbox";
+export { ColorPicker, type ColorPickerProps, type ColorPickerLabels } from "./components/ColorPicker";
 export {
   Card,
   CardBody,

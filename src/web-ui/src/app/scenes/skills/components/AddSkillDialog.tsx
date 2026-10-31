@@ -6,12 +6,15 @@ import { useEffect, useRef } from 'react';
 import { FolderOpen } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import type { SkillLevel } from '@/infrastructure/config/types';
+import type { WorkspaceInfo } from '@/shared/types';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { isTauriRuntime } from '@/infrastructure/runtime';
 import { useInstalledSkills } from '../hooks/useInstalledSkills';
 import './AddSkillDialog.scss';
 
 interface AddSkillDialogProps {
+  workspace?: WorkspaceInfo;
+  initialLevel?: SkillLevel;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAdded?: () => void | Promise<void>;
@@ -154,7 +157,8 @@ export function StandaloneAddSkillDialog(props: AddSkillDialogProps) {
   const peer = usePeerDeviceModeOptional();
   const remoteConnectionActive = peer?.peerMode.active === true;
   const available = isTauriRuntime() && !remoteConnectionActive;
-  const installed = useInstalledSkills({ searchQuery: '', activeFilter: 'all', enabled: props.open && available });
+  const installed = useInstalledSkills({ searchQuery: '', activeFilter: 'all', enabled: props.open && available,
+    workspace: props.workspace, initialLevel: props.initialLevel });
 
   if (!available) {
     return (

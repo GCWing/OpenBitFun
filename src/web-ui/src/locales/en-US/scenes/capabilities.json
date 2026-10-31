@@ -92,6 +92,7 @@
             "close-switch-reorder": "Close, switch, and reorder multiple open workspaces",
             "recent-workspaces": "Review, clean up, and reopen recently used projects",
             "workspace-metadata": "Scan and maintain workspace names, metadata, related directories, and persona files",
+            "workspace-icon": "Choose project icon shapes and colors, or use a custom image",
             "file-watch": "Watch project file changes, inspect watch status, and recover a stopped watcher",
             "workspace-search": "Search local workspaces by filename, path, or file content",
             "remote-open": "Open SSH and other remote workspaces from the project flow",

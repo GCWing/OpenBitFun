@@ -108,6 +108,49 @@ describe('GlobalSearchContent accessibility', () => {
     await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
     expect(fixtures.activate).toHaveBeenCalledWith(snapshot.items[0].target, expect.anything());
   });
+  it('renders app and entity search hits as actionable cards while keeping content hits in lists', async () => {
+    const cardItems: GlobalSearchSnapshot['items'] = [
+      snapshot.items[0],
+      { id: 'setting', providerId: 'capabilities', group: 'settings', title: 'Appearance settings', score: 90,
+        target: { kind: 'capability', capabilityId: 'setting.appearance' } },
+      { id: 'feature', providerId: 'capabilities', group: 'capabilities', title: 'Project features', score: 90,
+        target: { kind: 'capability', capabilityId: 'feature.projects' } },
+      { id: 'workspace', providerId: 'entities', group: 'workspaces', title: 'Project workspace', score: 90,
+        target: { kind: 'workspace', workspaceId: 'workspace' } },
+      { id: 'assistant', providerId: 'entities', group: 'assistants', title: 'Project assistant', score: 90,
+        target: { kind: 'assistant', workspaceId: 'assistant' } },
+    ];
+    const contentItems: GlobalSearchSnapshot['items'] = [
+      { id: 'message', providerId: 'sessions', group: 'messages', title: 'Message match', score: 90,
+        target: { kind: 'session', sessionId: 'session', workspaceId: 'workspace', workspacePath: '/project', turnId: 'turn' } },
+      { id: 'session', providerId: 'sessions', group: 'sessions', title: 'Session match', score: 90,
+        target: { kind: 'session', sessionId: 'session', workspaceId: 'workspace', workspacePath: '/project' } },
+      { id: 'file', providerId: 'files', group: 'files', title: 'File match', score: 90,
+        target: { kind: 'file', workspaceId: 'workspace', workspacePath: '/project', filePath: '/project/notes.md', fileName: 'notes.md' } },
+    ];
+    fixtures.search.mockImplementationOnce((_providers, _request, _signal, onUpdate) =>
+      onUpdate({ ...snapshot, items: [...cardItems, ...contentItems] }));
+    useGlobalSearchStore.getState().openSearch('project');
+    act(() => root.render(<GlobalSearchRoot />));
+    await act(async () => { await vi.runOnlyPendingTimersAsync(); });
+    const dialog = document.querySelector<HTMLElement>('[data-testid="global-search-dialog"]')!;
+
+    for (const item of cardItems) {
+      const group = dialog.querySelector(`[data-search-group="${item.group}"]`)!;
+      expect(group.querySelector('[data-search-layout="cards"]')).not.toBeNull();
+      expect(group.querySelector('[data-openbitfun-component="action-card"] button')?.getAttribute('aria-label')).toBe(item.title);
+    }
+    for (const item of contentItems) {
+      const group = dialog.querySelector(`[data-search-group="${item.group}"]`)!;
+      expect(group.querySelector('[data-search-layout="cards"]')).toBeNull();
+      expect(group.querySelector('.global-search__result')?.getAttribute('aria-label')).toBe(item.title);
+    }
+
+    await act(async () => dialog.querySelector<HTMLButtonElement>('[data-search-group="settings"] button[aria-label="Appearance settings"]')!.click());
+    expect(fixtures.activate).toHaveBeenCalledWith(cardItems[1].target, expect.anything());
+    expect(useGlobalSearchStore.getState().open).toBe(false);
+  });
+
   it('shows source diagnostics and retries without clearing the query or healthy results', async () => {
     fixtures.search.mockImplementationOnce((_providers, _request, _signal, onUpdate) => onUpdate(diagnosticSnapshot));
     fixtures.search.mockImplementationOnce((_providers, _request, _signal, onUpdate, retry) =>

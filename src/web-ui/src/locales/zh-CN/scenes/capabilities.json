@@ -92,6 +92,7 @@
             "close-switch-reorder": "关闭、切换并重新排序多个已打开工作区",
             "recent-workspaces": "查看、清理和重新打开最近使用的项目",
             "workspace-metadata": "扫描并维护工作区名称、信息、关联目录和 Persona 文件",
+            "workspace-icon": "选择项目图案和颜色，或使用自定义图片",
             "file-watch": "监听项目文件变化、检查监听状态并在失败后恢复",
             "workspace-search": "按文件名、路径或文件内容搜索本地工作区",
             "remote-open": "从项目流程打开 SSH 或其他远程工作区",

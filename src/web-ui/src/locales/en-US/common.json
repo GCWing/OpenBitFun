@@ -389,8 +389,8 @@
       "exportMarkdownFull": "Export full process",
       "exportMarkdownResult": "Export result",
       "delete": "Delete",
-      "deleteConfirmTitle": "Delete session permanently?",
-      "deleteConfirmMessage": "“{{name}}” and its child sessions will be permanently deleted. This action cannot be undone.",
+      "deleteConfirmTitle": "Delete session",
+      "deleteConfirmMessage": "This session and its child sessions will be permanently deleted and cannot be restored.",
       "confirmEdit": "Confirm",
       "cancelEdit": "Cancel",
       "loading": "Loading...",
@@ -613,6 +613,10 @@
         "minute": "Minutes",
         "hour": "Hours",
         "day": "Days"
+      },
+      "columns": {
+        "status": "Status",
+        "actions": "Actions"
       }
     },
     "workspaces": {
@@ -663,8 +667,8 @@
         "manageAssistant": "Manage assistant",
         "closeAssistant": "Hide assistant",
         "resetWorkspace": "Reset workspace",
-        "manageRelatedPaths": "Related directories",
-        "manageProjectPermissions": "Project permissions",
+        "projectResources": "Project resources",
+        "openDirectory": "Open directory",
         "rename": "Rename project",
         "copyPath": "Copy path",
         "reveal": "Reveal in explorer",
@@ -694,7 +698,12 @@
           "add": "Add directory",
           "selectDirectoryTitle": "Select related directory",
           "pathPlaceholder": "Directory path",
-          "descriptionLabel": "Description (optional)"
+          "descriptionLabel": "Description (optional)",
+          "columns": {
+            "directory": "Directory",
+            "description": "Description",
+            "actions": "Actions"
+          }
         },
         "messages": {
           "externalLoadFailed": "Could not load OpenCode references.",
@@ -714,6 +723,56 @@
         "title": "Reset {{name}}?",
         "message": "This will clear everything inside the workspace directory and restore the default persona files without deleting the workspace directory itself.",
         "pathLabel": "Workspace path"
+      },
+      "icon": {
+        "title": "Change icon",
+        "description": "Customize the icon for {{name}}. Changes are saved on the workspace host.",
+        "default": "Built-in icons",
+        "chooseIcon": "Choose icon",
+        "builtinIcons": "Icon",
+        "glyphsUnsupported": "This host does not yet support choosing built-in icons.",
+        "workIcons": "Work & study",
+        "lifeIcons": "Life & hobbies",
+        "chooseLightImage": "Choose light image",
+        "chooseDarkImage": "Choose dark image",
+        "themedImagesUnsupported": "This host supports a single image for both themes. Upgrade the host to set a separate dark image.",
+        "glyphs": {
+          "default": "Default", "code": "Code", "learning": "Learning", "design": "Design",
+          "documents": "Documents", "research": "Research", "web": "Website", "mobile": "Mobile app",
+          "games": "Games", "data": "Data", "business": "Business", "tools": "Tools",
+          "travel": "Travel", "food": "Food", "fitness": "Fitness", "music": "Music", "reading": "Reading", "home": "Home", "finance": "Finance", "photography": "Photography", "pets": "Pets", "nature": "Nature", "shopping": "Shopping", "movies": "Movies"
+        },
+        "image": "Custom image",
+        "preview": "Icon preview",
+        "colors": "Icon colors",
+        "customColor": "Custom color",
+        "colorValue": "Color value",
+        "lightness": "Lightness",
+        "presetColors": "Preset colors",
+        "chooseImage": "Choose image",
+        "imageHint": "PNG, JPEG or WebP, up to 5 MB. Images are stored with the workspace; the original file is no longer needed.",
+        "crop": "Fill square crop",
+        "zoom": "Zoom",
+        "reset": "Restore default",
+        "retry": "Retry",
+        "loading": "Loading icon…",
+        "unsupported": "This host does not support workspace icon customization. Update the host or use a supported Desktop or CLI host.",
+        "loadFailed": "The custom icon could not be loaded. The default icon is shown; your settings are preserved.",
+        "invalidImage": "Choose a PNG, JPEG or WebP image under 5 MB and 20 megapixels.",
+        "saveFailed": "Could not save the icon: {{reason}}",
+        "palette": {
+          "default": "Default",
+          "blue": "Blue",
+          "cyan": "Cyan",
+          "green": "Green",
+          "yellow": "Yellow",
+          "orange": "Orange",
+          "red": "Red",
+          "purple": "Purple",
+          "pink": "Pink"
+        },
+        "light": "Light preview",
+        "dark": "Dark preview"
       }
     },
     "agents": {

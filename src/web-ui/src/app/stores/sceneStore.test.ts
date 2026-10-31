@@ -3,6 +3,7 @@ import { recordInteractionModality } from '@/shared/utils/motionPreference';
 import { registerSessionSceneNavigation, useSceneStore } from './sceneStore';
 import { getSessionSceneTabId } from '../components/SceneBar/types';
 import { useSettingsStore } from '../scenes/settings/settingsStore';
+import { projectResourceSceneId } from '../scenes/project-resources/projectResourceTarget';
 const sessionTarget = { surfaceId: 'local', workspaceKey: 'project', sessionId: 'current' };
 const sessionTabId = getSessionSceneTabId(sessionTarget);
 import {
@@ -38,6 +39,25 @@ describe('sceneStore transition snapshots', () => {
     expect(useSettingsStore.getState().activePageId).toBe('tools.external-import');
     expect(useSceneStore.getState().activeTabId).toBe('settings');
     expect(useSceneStore.getState().openTabs.map(tab => tab.id)).toEqual(['settings']);
+  });
+
+  it('reuses each project resource tab and supports history without activating a session', () => {
+    const first = projectResourceSceneId({ surfaceId: 'local', workspaceId: 'a' });
+    const second = projectResourceSceneId({ surfaceId: 'local', workspaceId: 'b' });
+    const activate = vi.fn();
+    const stop = registerSessionSceneNavigation({ current: () => sessionTarget, isActive: () => true, activate });
+    try {
+      const scenes = useSceneStore.getState();
+      scenes.openScene(first);
+      scenes.openScene(second);
+      scenes.openScene(first);
+      expect(useSceneStore.getState().openTabs.map(tab => tab.id)).toEqual([first, second]);
+      scenes.goBack();
+      expect(useSceneStore.getState().activeTabId).toBe(second);
+      scenes.closeScene(second);
+      expect(useSceneStore.getState().activeTabId).toBe(first);
+      expect(activate).not.toHaveBeenCalled();
+    } finally { stop(); }
   });
 
   it('keeps the five most recently opened sessions per workspace, moving repeats to the front', () => {

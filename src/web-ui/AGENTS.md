@@ -227,6 +227,16 @@ For ecosystem discovery, import, or compatibility status presentation changes:
 pnpm --dir src/web-ui run test:run src/app/scenes/ecosystem-compatibility
 ```
 
+For project resource summaries, combined permission editing, and scheduled-task lists:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/project-resources/ProjectResourcesScene.test.tsx src/app/components/NavPanel/sections/workspaces/WorkspaceProjectPermissionsPanel.test.tsx src/app/components/scheduled-jobs/ScheduledJobsView.table.test.tsx src/app/components/scheduled-jobs/scheduledJobDraft.test.ts
+```
+
+These DOM fixtures cover explicit project ownership, saved versus draft permissions,
+task creation/editing, and simulated Peer switches. They do not establish native
+rendering or live SSH, Remote Control, Peer Device or Detached Dispatch behavior.
+
 For followed external session views, refresh-on-open and first-send forks:
 
 ```bash
@@ -344,3 +354,11 @@ pnpm --dir src/web-ui run test:run src/app/components/panels/content-canvas/edit
 ```
 
 These local DOM/store fixtures do not establish native rendering or live remote behavior.
+
+For workspace icon editing, host capability gates, persistence requests and device-switch fences:
+
+```bash
+pnpm --dir src/web-ui run test:run src/infrastructure/workspace-icons/workspaceIcons.test.ts src/app/components/WorkspaceIcon/WorkspaceIconDialog.test.tsx src/app/components/WorkspaceIcon/WorkspaceIcon.test.tsx src/app/components/NavPanel/navigationIconIntegration.test.ts
+```
+
+These fixtures exercise DOM behavior and simulated device switching, not live remote hosts.

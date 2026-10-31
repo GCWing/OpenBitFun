@@ -1,0 +1,86 @@
+.project-resource-cards {
+  position: relative;
+  min-inline-size: 0;
+  &__track {
+    display: flex;
+    gap: var(--openbitfun-space-4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    &::-webkit-scrollbar { display: none; }
+  }
+  &__cell {
+    display: flex;
+    min-inline-size: 0;
+    // Match the Home device strip: two cards and part of the next one.
+    flex: 0 0 max(220px, calc((100% - var(--openbitfun-space-4) - var(--openbitfun-space-4)) / 2.3));
+    max-inline-size: 100%;
+    scroll-snap-align: start;
+  }
+  &__card { width: 100%; min-inline-size: 0; align-items: stretch;
+    border-radius: var(--openbitfun-layout-card-radius-lg); background: var(--openbitfun-color-surface-tertiary); }
+  &__card > [data-openbitfun-part='actions'] {
+    inset-block-start: var(--openbitfun-space-2);
+    inset-inline-end: var(--openbitfun-space-2);
+    transform: none;
+  }
+  &__add { display: flex; flex: 1 0 auto; align-items: center; justify-content: center; padding-inline: var(--openbitfun-space-4); }
+  &__trigger {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--openbitfun-space-4);
+    width: 100%;
+    min-inline-size: 0;
+    min-block-size: 136px;
+    padding: var(--openbitfun-space-5);
+    border: 0;
+    border-radius: inherit;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+    &:hover:not(:disabled) { background: var(--openbitfun-color-action-quiet-hover); }
+    &:disabled { cursor: default; }
+  }
+  &__icon { display: flex; flex-shrink: 0; padding-block: var(--openbitfun-space-1); color: var(--openbitfun-color-content-secondary); }
+  &__copy { display: flex; flex: 1; flex-direction: column; min-inline-size: 0; gap: var(--openbitfun-space-2); }
+  &__name {
+    color: var(--openbitfun-color-content-primary);
+    font-family: var(--openbitfun-type-heading-card-font-family);
+    font-size: var(--openbitfun-type-heading-card-font-size);
+    font-weight: var(--openbitfun-type-heading-card-font-weight);
+    line-height: var(--openbitfun-type-heading-card-line-height);
+    letter-spacing: var(--openbitfun-type-heading-card-letter-spacing);
+  }
+  &__path, &__description { color: var(--openbitfun-color-content-secondary); font-size: var(--openbitfun-type-body-sm-font-size); line-height: var(--openbitfun-type-body-sm-line-height); }
+  &__status { display: flex; flex-wrap: wrap; gap: var(--openbitfun-space-2); }
+  &__scroll-control {
+    position: absolute;
+    inset-block-start: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+    &--previous { inset-inline-start: var(--openbitfun-space-2); }
+    &--next { inset-inline-end: var(--openbitfun-space-2); }
+  }
+  &:is(:hover, :focus-within) &__scroll-control { opacity: 1; pointer-events: auto; }
+}
+
+@media (forced-colors: none) {
+  .project-resource-cards__card:hover { outline-color: transparent; }
+}
+
+@media (hover: none) {
+  .project-resource-cards__scroll-control { opacity: 1; pointer-events: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-resource-cards__scroll-control { transition: none; }
+}

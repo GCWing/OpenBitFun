@@ -242,6 +242,11 @@
     background: var(--openbitfun-color-border-subtle);
   }
 
+  .dividedGroup {
+    padding-block-start: var(--openbitfun-overlay-menu-section-gap);
+    border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+  }
+
   .options {
     display: flex;
     overflow: hidden;

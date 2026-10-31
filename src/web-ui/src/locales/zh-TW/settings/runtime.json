@@ -104,6 +104,18 @@
     "ptcTooltip": "PTC 透過 RunCode 執行 TypeScript。"
   },
   "projectPermissions": {
+    "title": "工具與命令權限",
+    "entryCount": "權限項目",
+    "summary": "允許 {{allow}} · 詢問 {{ask}} · 拒絕 {{deny}}",
+    "incomplete": "部分權限暫未載入完成",
+    "listTitle": "授權列表",
+    "empty": "暫無授權",
+    "unsaved": "有未儲存的修改",
+    "addAuthorization": "新增授權",
+    "editAuthorization": "編輯授權",
+    "clearRemembered": "清除記憶授權",
+    "source": "來源",
+    "actions": "操作",
     "description": "「始終允許」會儲存為目前專案的記憶授權；靜態專案規則會在工具執行前直接套用",
     "grantsTitle": "記憶授權",
     "grantsEmpty": "目前專案沒有記憶授權。",
@@ -135,7 +147,7 @@
     "saveRules": "儲存規則",
     "rulesSaveSuccess": "已儲存靜態專案規則",
     "rulesSaveFailed": "儲存靜態專案規則失敗",
-    "rulesConflict": "規則檔案已在外部變更，請重新開啟專案權限後再儲存。",
+    "rulesConflict": "規則檔案已在外部變更，請取消本機修改並重新整理後再試。",
     "cancel": "取消",
     "effects": { "allow": "允許", "ask": "詢問", "deny": "拒絕" }
   },

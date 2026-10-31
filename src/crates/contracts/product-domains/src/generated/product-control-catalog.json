@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "a4e451cd4268edcf15c00d41b4e5c8c6a476eb407e1324698d3db2b3f2f1ad34",
+  "digest": "5c26d781f664b1daa3cef9062f0ad3e776544242b80fbd1fc303d59d4494eed3",
   "ownerDigest": "0b2d30952efd57108d9e566dc0bf5a176f2b3d753abfb736bfc32b2c1fa3f7b7",
   "searchAcceptance": [
     {
@@ -175,11 +175,11 @@
     "features": 22,
     "settings": 22,
     "userFacing": 44,
-    "documentedItems": 337,
+    "documentedItems": 338,
     "controlCoverage": {
       "direct": 62,
       "delegated": 72,
-      "interactive": 203,
+      "interactive": 204,
       "unsupported": 0
     }
   },
@@ -1880,7 +1880,8 @@
         "file-watch",
         "workspace-search",
         "remote-open",
-        "project-health"
+        "project-health",
+        "workspace-icon"
       ],
       "kind": "query",
       "risk": "read",
@@ -2334,6 +2335,52 @@
         "additionalProperties": true
       },
       "openReason": "unstructuredInteraction",
+      "presentationTarget": {
+        "kind": "action",
+        "actionId": "project.open"
+      }
+    },
+    {
+      "id": "feature.projects:open:workspace-icon",
+      "capabilityId": "feature.projects",
+      "itemIds": [
+        "workspace-icon"
+      ],
+      "kind": "open",
+      "risk": "ui",
+      "executionHost": "presentationSurface",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_presentation_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "openReason": "visualSelection",
       "presentationTarget": {
         "kind": "action",
         "actionId": "project.open"
@@ -21634,6 +21681,17 @@
             "reasonZh": "“查看当前工作区、应用状态、健康状态与统计信息”由多个实时状态相关步骤组成，目前没有一个能确定完成整个流程的单一结构化 Command；智能体会打开精确入口，并把后续交互保留在用户可见界面。",
             "reasonEn": "“Inspect the current workspace, app state, health, and statistics” spans multiple live-state-dependent steps and currently has no single structured Command that can deterministically complete the whole workflow; the Agent opens the exact entry and keeps the remaining interaction visible to the user."
           }
+        },
+        {
+          "id": "workspace-icon",
+          "titleZh": "选择项目图案和颜色，或使用自定义图片",
+          "titleEn": "Choose project icon shapes and colors, or use a custom image",
+          "control": {
+            "kind": "open",
+            "reasonCode": "visualSelection",
+            "reasonZh": "点击项目资源页的大图标，从工作学习或生活兴趣分类选择图案及颜色，或分别上传浅色、深色图片，预览后保存到工作区所属主机。",
+            "reasonEn": "Click the large icon on the Project resources page to choose a work/study or life/hobby icon and color, or upload separate light and dark images, preview them, then save on the workspace host."
+          }
         }
       ],
       "stepsZh": [
@@ -21731,6 +21789,8 @@
         "Open SSH and other remote workspaces from the project flow",
         "查看当前工作区、应用状态、健康状态与统计信息",
         "Inspect the current workspace, app state, health, and statistics",
+        "选择项目图案和颜色，或使用自定义图片",
+        "Choose project icon shapes and colors, or use a custom image",
         "帮我打开一个项目",
         "打开新建项目的界面",
         "Help me open a project",

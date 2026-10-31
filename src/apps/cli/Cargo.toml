@@ -33,6 +33,7 @@ openbitfun-computer-use = { path = "../../crates/services/computer-use" }
 # Internal crates
 openbitfun-core = { path = "../../crates/assembly/core", features = [
     "agent-runtime",
+    "workspace-icons",
     "product-search",
     "document-read",
     "subscription-auth",

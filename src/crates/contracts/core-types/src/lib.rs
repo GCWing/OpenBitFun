@@ -60,4 +60,5 @@ pub use worktree::{
 };
 
 pub mod workspace;
+pub mod workspace_icon;
 pub use workspace::WorkspaceKind;

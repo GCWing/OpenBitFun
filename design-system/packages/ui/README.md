@@ -18,6 +18,28 @@ export function Example() {
 
 The package owns component anatomy, behavior, accessibility, and stable variants. It does not own theme selection persistence, product state, routes, locale resources, or platform APIs.
 
+## Color selection
+
+`ColorPicker` combines a round swatch, an editable HEX pill, an expandable flower
+palette and a curved lightness slider. Use `value` / `onValueChange` for a controlled
+draft, or `defaultValue` for an independent control. Opening the palette and
+focusing unchanged text do not emit a value change. `onValueChange` includes
+incomplete text; owners must require a six-digit HEX value before persistence.
+Enter, blur or the apply action expands three-digit shorthand. Invalid text keeps
+the last valid preview. `open` / `onOpenChange` can connect an external custom-color
+entry point; `defaultOpen` is available for inline authoring.
+
+The palette stays in normal document flow. Its petals are keyboard buttons; the
+lightness slider supports pointer capture, touch, arrow keys, Page Up/Down and
+Home/End. Escape first leaves text editing, then collapses the palette. Pass
+localized `labels` from the owning surface. Bloom motion respects reduced motion.
+
+`components/ColorPicker/color.ts` owns sRGB/HSL conversion and the sampled flower
+gamut. Palette colors, the current-color ring and the lightness ramp represent
+editable color content; they deliberately do not follow theme or status colors.
+Chrome, borders, focus and shadows use existing semantic/system tokens. No theme
+color literal or new token is needed. The component has no storage or host API.
+
 ## Pane layouts
 
 `SplitView` retains its primary and secondary content hosts across placement,
@@ -607,7 +629,9 @@ matches the trigger. `variant="pill"` uses badge typography, spacing and rounded
 ends while retaining the selected control size. An option's `selectedLabel`
 shortens only the closed trigger; the expanded header, listbox and native form
 option retain its full `label`. Combine these with content widths for compact
-inline platform or scope selectors. `Combobox` adds searchable single
+inline platform or scope selectors. Set `showGroupLabels={false}` to hide group
+headings while retaining the standard section spacing, and `showGroupDividers`
+to separate option groups with a themed border. `Combobox` adds searchable single
 selection, grouped options, explicit custom-value creation and async loading
 states. `MultiSelect` owns multiple selection, removable tags and select-all.
 Controlled values are authoritative; option discovery remains host-owned.

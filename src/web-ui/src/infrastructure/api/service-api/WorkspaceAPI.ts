@@ -1078,10 +1078,10 @@ export class WorkspaceAPI {
   }
 
    
-  async revealInExplorer(path: string): Promise<void> {
+  async revealInExplorer(path: string, workspaceId?: string): Promise<void> {
     try {
       await api.invoke('reveal_in_explorer', { 
-        request: { path } 
+        request: { path, ...(workspaceId === undefined ? {} : { workspaceId }) }
       });
     } catch (error) {
       throw createTauriCommandError('reveal_in_explorer', error, { path });

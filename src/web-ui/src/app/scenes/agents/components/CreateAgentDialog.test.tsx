@@ -6,6 +6,7 @@ import type { Editor } from '@tiptap/core';
 import CreateAgentDialog from './CreateAgentDialog';
 import CreateAgentPage from './CreateAgentPage';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
+import { WorkspaceKind, WorkspaceType, type WorkspaceInfo } from '@/shared/types';
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
@@ -117,6 +118,17 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   activateSurface('local');
+});
+
+it('creates a project agent for the explicit owner even when another workspace is active', async () => {
+  const owner: WorkspaceInfo = { id: 'owned-project', name: 'Owned', rootPath: '/owned', workspaceKind: WorkspaceKind.Normal,
+    workspaceType: WorkspaceType.SingleProject, languages: [], tags: [], openedAt: '', lastAccessed: '' };
+  await act(async () => root.render(<CreateAgentDialog workspace={owner} initialLevel="project" onClose={onClose} onCreated={onCreated} />));
+  await reachTools();
+  mocks.workspace = { id: 'unrelated-project' };
+  await act(async () => root.render(<CreateAgentDialog workspace={owner} initialLevel="project" onClose={onClose} onCreated={onCreated} />));
+  await submit();
+  expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ kind: 'subagent', workspaceId: 'owned-project', level: 'project' }));
 });
 
 describe('guided agent creation', () => {

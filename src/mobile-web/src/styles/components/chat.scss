@@ -421,5 +421,5 @@
 .chat-msg__timestamp {
   color: var(--openbitfun-color-content-muted);
   font-size: var(--openbitfun-type-label-sm-font-size);
-  line-height: 1.4;
+  line-height: var(--openbitfun-type-label-sm-line-height);
 }

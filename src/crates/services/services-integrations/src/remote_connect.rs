@@ -1269,8 +1269,23 @@ where
 {
     match command {
         RemoteCommand::GetWorkspaceInfo => {
-            remote_workspace_info_response(host.current_workspace().await)
+            let mut response = remote_workspace_info_response(host.current_workspace().await);
+            if host.supports_workspace_icons() {
+                if let RemoteResponse::WorkspaceInfo { capabilities, .. } = &mut response {
+                    capabilities.push("workspace_icon_read_v1".into());
+                }
+            }
+            response
         }
+        RemoteCommand::GetWorkspaceIcon { workspace_id } => {
+            match host.workspace_icon(workspace_id).await {
+                Ok(snapshot) => RemoteResponse::WorkspaceIcon { snapshot },
+                Err(message) => RemoteResponse::Error { message },
+            }
+        }
+        RemoteCommand::SetWorkspaceIcon { .. } => RemoteResponse::Error {
+            message: "Workspace icon editing is not supported on mobile or IM surfaces; use a Desktop controller".into(),
+        },
         RemoteCommand::ListRecentWorkspaces => match host.opened_workspaces().await {
             Ok(opened) => remote_workspace_catalog_response(host.recent_workspaces().await, opened),
             Err(message) => RemoteResponse::Error { message },
@@ -1344,13 +1359,19 @@ where
         (Vec::new(), false)
     };
 
-    remote_initial_sync_response(
+    let mut response = remote_initial_sync_response(
         workspace,
         sessions,
         workspace_name.as_deref(),
         has_more,
         authenticated_user_id,
-    )
+    );
+    if host.supports_workspace_icons() {
+        if let RemoteResponse::InitialSync { capabilities, .. } = &mut response {
+            capabilities.push("workspace_icon_read_v1".into());
+        }
+    }
+    response
 }
 
 pub fn remote_session_created_response(session_id: impl Into<String>) -> RemoteResponse {
@@ -2682,6 +2703,13 @@ pub enum RemoteCommand {
         stream_id: String,
     },
     GetWorkspaceInfo,
+    GetWorkspaceIcon {
+        workspace_id: String,
+    },
+    /// Mobile and IM surfaces expose icons read-only in v1.
+    SetWorkspaceIcon {
+        workspace_id: String,
+    },
     ListRecentWorkspaces,
     SetWorkspace {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2937,6 +2965,9 @@ pub enum RemoteResponse {
     },
     StreamUnsubscribed {
         stream_id: String,
+    },
+    WorkspaceIcon {
+        snapshot: openbitfun_core_types::workspace_icon::WorkspaceIconSnapshot,
     },
     WorkspaceInfo {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3244,6 +3275,8 @@ where
         RemoteCommand::Ping { .. } => RemoteResponse::Pong,
 
         RemoteCommand::GetWorkspaceInfo
+        | RemoteCommand::GetWorkspaceIcon { .. }
+        | RemoteCommand::SetWorkspaceIcon { .. }
         | RemoteCommand::ListRecentWorkspaces
         | RemoteCommand::SetWorkspace { .. }
         | RemoteCommand::ListAssistants
@@ -4617,6 +4650,124 @@ mod tests {
                 remote_ssh_host: None,
             })
         }
+    }
+
+    struct IconWorkspaceHost;
+
+    #[async_trait::async_trait]
+    impl RemoteWorkspaceRuntimeHost for IconWorkspaceHost {
+        fn supports_workspace_icons(&self) -> bool {
+            true
+        }
+        async fn workspace_icon(
+            &self,
+            workspace_id: &str,
+        ) -> Result<openbitfun_core_types::workspace_icon::WorkspaceIconSnapshot, String> {
+            if workspace_id != "project-id" {
+                return Err("Workspace not found".into());
+            }
+            Ok(
+                openbitfun_core_types::workspace_icon::WorkspaceIconSnapshot {
+                    workspace_id: workspace_id.into(),
+                    icon: openbitfun_core_types::workspace_icon::WorkspaceIcon {
+                        glyph: Some("learning".into()),
+                        ..Default::default()
+                    },
+                    image_data: None,
+                    image_unavailable: false,
+                    dark_image_data: Some("data:image/png;base64,dark".into()),
+                    dark_image_unavailable: false,
+                    supports_themed_images: true,
+                    supported_glyphs: openbitfun_core_types::workspace_icon::WORKSPACE_ICON_GLYPHS
+                        .iter()
+                        .map(|glyph| (*glyph).into())
+                        .collect(),
+                },
+            )
+        }
+        async fn current_workspace(&self) -> Option<RemoteWorkspaceFacts> {
+            FakeWorkspaceHost.current_workspace().await
+        }
+        async fn recent_workspaces(&self) -> Vec<RemoteRecentWorkspaceFacts> {
+            FakeWorkspaceHost.recent_workspaces().await
+        }
+        async fn open_workspace(
+            &self,
+            path: &str,
+            connection: Option<&str>,
+            host: Option<&str>,
+        ) -> Result<RemoteWorkspaceUpdate, String> {
+            FakeWorkspaceHost
+                .open_workspace(path, connection, host)
+                .await
+        }
+        async fn assistant_workspaces(&self) -> Vec<RemoteAssistantWorkspaceFacts> {
+            FakeWorkspaceHost.assistant_workspaces().await
+        }
+        async fn open_assistant_workspace(
+            &self,
+            path: &str,
+        ) -> Result<RemoteWorkspaceUpdate, String> {
+            FakeWorkspaceHost.open_assistant_workspace(path).await
+        }
+    }
+
+    #[tokio::test]
+    async fn workspace_icon_protocol_is_capability_gated_and_round_trips_without_paths() {
+        let legacy = serde_json::to_value(
+            handle_remote_workspace_command(&FakeWorkspaceHost, &RemoteCommand::GetWorkspaceInfo)
+                .await,
+        )
+        .unwrap();
+        assert!(!legacy["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == "workspace_icon_read_v1"));
+        let current = serde_json::to_value(
+            handle_remote_workspace_command(&IconWorkspaceHost, &RemoteCommand::GetWorkspaceInfo)
+                .await,
+        )
+        .unwrap();
+        assert!(current["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == "workspace_icon_read_v1"));
+        let read: RemoteCommand = serde_json::from_value(
+            serde_json::json!({ "cmd": "get_workspace_icon", "workspace_id": "project-id" }),
+        )
+        .unwrap();
+        let response = handle_remote_workspace_command(&IconWorkspaceHost, &read).await;
+        let wire = serde_json::to_value(&response).unwrap();
+        assert_eq!(wire["resp"], "workspace_icon");
+        assert_eq!(wire["snapshot"]["workspaceId"], "project-id");
+        assert_eq!(wire["snapshot"]["icon"]["glyph"], "learning");
+        assert_eq!(wire["snapshot"]["supportsThemedImages"], true);
+        assert_eq!(
+            wire["snapshot"]["darkImageData"],
+            "data:image/png;base64,dark"
+        );
+        assert!(wire["snapshot"]["supportedGlyphs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|glyph| glyph == "learning"));
+        assert_eq!(
+            serde_json::from_value::<RemoteResponse>(wire).unwrap(),
+            response
+        );
+        assert!(matches!(
+            handle_remote_workspace_command(&FakeWorkspaceHost, &read).await,
+            RemoteResponse::Error { .. }
+        ));
+        let edit = RemoteCommand::SetWorkspaceIcon {
+            workspace_id: "project-id".into(),
+        };
+        let unsupported = handle_remote_workspace_command(&IconWorkspaceHost, &edit).await;
+        assert!(
+            matches!(unsupported, RemoteResponse::Error { message } if message.contains("not supported") && message.contains("Desktop"))
+        );
     }
 
     #[tokio::test]

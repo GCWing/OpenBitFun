@@ -1521,6 +1521,8 @@ pub async fn run() {
             get_app_state,
             update_app_status,
             update_workspace_info,
+            get_workspace_icon,
+            set_workspace_icon,
             appearance::show_agent_companion_desktop_pet,
             appearance::hide_agent_companion_desktop_pet,
             appearance::resize_agent_companion_desktop_pet,

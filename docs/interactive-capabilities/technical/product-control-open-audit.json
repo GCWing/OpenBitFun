@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "a4e451cd4268edcf15c00d41b4e5c8c6a476eb407e1324698d3db2b3f2f1ad34",
-  "count": 203,
+  "catalogDigest": "5c26d781f664b1daa3cef9062f0ad3e776544242b80fbd1fc303d59d4494eed3",
+  "count": 204,
   "reasonCounts": {
     "externalAuth": 4,
     "secretEntry": 5,
     "unstructuredInteraction": 169,
-    "visualSelection": 25
+    "visualSelection": 26
   },
   "entries": [
     {
@@ -598,6 +598,23 @@
         "command:get_statistics",
         "command:get_global_config_status",
         "command:update_app_status"
+      ]
+    },
+    {
+      "capabilityId": "feature.projects",
+      "itemId": "workspace-icon",
+      "titleZh": "选择项目图案和颜色，或使用自定义图片",
+      "titleEn": "Choose project icon shapes and colors, or use a custom image",
+      "reasonCode": "visualSelection",
+      "reasonZh": "点击项目资源页的大图标，从工作学习或生活兴趣分类选择图案及颜色，或分别上传浅色、深色图片，预览后保存到工作区所属主机。",
+      "reasonEn": "Click the large icon on the Project resources page to choose a work/study or life/hobby icon and color, or upload separate light and dark images, preview them, then save on the workspace host.",
+      "presentationTarget": {
+        "kind": "action",
+        "actionId": "project.open"
+      },
+      "evidence": [
+        "command:get_workspace_icon",
+        "command:set_workspace_icon"
       ]
     },
     {

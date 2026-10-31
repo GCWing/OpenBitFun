@@ -3412,6 +3412,25 @@ impl RemoteWorkspaceFileRuntimeHost for CoreRemoteWorkspaceFileRuntimeHost {
 #[cfg(feature = "remote-connect")]
 #[async_trait::async_trait]
 impl RemoteWorkspaceRuntimeHost for CoreRemoteWorkspaceRuntimeHost {
+    fn supports_workspace_icons(&self) -> bool {
+        cfg!(feature = "workspace-icons")
+    }
+    async fn workspace_icon(
+        &self,
+        workspace_id: &str,
+    ) -> Result<openbitfun_core_types::workspace_icon::WorkspaceIconSnapshot, String> {
+        #[cfg(feature = "workspace-icons")]
+        {
+            let service = crate::service::workspace::get_global_workspace_service()
+                .ok_or("Workspace service unavailable")?;
+            service.get_workspace_icon(workspace_id).await
+        }
+        #[cfg(not(feature = "workspace-icons"))]
+        {
+            let _ = workspace_id;
+            Err("This host does not support workspace icons".into())
+        }
+    }
     async fn current_workspace(&self) -> Option<RemoteWorkspaceFacts> {
         current_remote_workspace_facts().await
     }
@@ -3536,6 +3555,9 @@ impl RemoteWorkspaceRuntimeHost for CoreRemoteWorkspaceRuntimeHost {
 #[cfg(feature = "remote-connect")]
 #[async_trait::async_trait]
 impl RemoteInitialSyncRuntimeHost for CoreRemoteWorkspaceRuntimeHost {
+    fn supports_workspace_icons(&self) -> bool {
+        cfg!(feature = "workspace-icons")
+    }
     async fn current_workspace(&self) -> Option<RemoteWorkspaceFacts> {
         current_remote_workspace_facts().await
     }

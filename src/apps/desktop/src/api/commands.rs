@@ -6258,3 +6258,22 @@ mod quota_request_compatibility_tests {
         assert_eq!(request.account_id, "model:fixture");
     }
 }
+
+#[tauri::command]
+pub async fn get_workspace_icon(
+    state: State<'_, AppState>,
+    request: openbitfun_core::service::workspace::WorkspaceIconRequest,
+) -> Result<openbitfun_core::service::workspace::WorkspaceIconSnapshot, String> {
+    state
+        .workspace_service
+        .get_workspace_icon(&request.workspace_id)
+        .await
+}
+
+#[tauri::command]
+pub async fn set_workspace_icon(
+    state: State<'_, AppState>,
+    request: openbitfun_core::service::workspace::SetWorkspaceIconRequest,
+) -> Result<openbitfun_core::service::workspace::WorkspaceIconSnapshot, String> {
+    state.workspace_service.set_workspace_icon(request).await
+}

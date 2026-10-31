@@ -57,6 +57,7 @@ installed-apps = ["dep:windows", "windows/Win32_Foundation", "windows/Win32_Syst
 default = []
 session-recovery = ["local-storage", "workspace-persistence", "dep:anyhow"]
 pet-packages = ["dep:image", "image/png", "image/webp", "image/jpeg", "image/gif", "dep:zip", "dep:uuid", "dep:sha2", "dep:base64", "dep:dunce", "dep:fs2"]
+workspace-icons = ["dep:image", "image/png", "image/jpeg", "image/webp", "dep:base64", "dep:sha2", "dep:uuid"]
 workspace-persistence = ["workspace-identity", "dep:openbitfun-core-types", "dep:openbitfun-runtime-ports", "dep:chrono"]
 coordination-store = ["dep:rusqlite"]
 routing-state = ["json-io", "dep:sha2"]

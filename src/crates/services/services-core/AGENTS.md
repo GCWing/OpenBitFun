@@ -225,3 +225,12 @@ Workspace catalog identity and upgrade deserialization (without live filesystem/
 ```bash
 cargo test -p openbitfun-services-core --no-default-features --features workspace-persistence --lib workspace_persistence::tests
 ```
+
+For bounded project icon decoding, normalization, content-addressed storage and digest checks:
+
+```bash
+cargo test -p openbitfun-services-core --no-default-features --features workspace-icons --lib workspace_icon_assets
+```
+
+`workspace-icons` owns PNG/JPEG/WebP processing only; workspace selection and mutation remain
+with the workspace service. Unknown records and missing assets must not trigger data deletion.

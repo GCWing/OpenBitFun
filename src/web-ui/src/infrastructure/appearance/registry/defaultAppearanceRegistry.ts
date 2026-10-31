@@ -79,6 +79,7 @@ import { insightsAppearanceDescriptor } from '@/app/scenes/my-agent/appearance';
 import { pagesAppearanceDescriptor } from '@/app/scenes/pages/appearance';
 import { profileAppearanceDescriptor } from '@/app/scenes/profile/appearance';
 import { personalOverviewAppearanceDescriptor } from '@/app/scenes/personal-overview/appearance';
+import { projectResourcesAppearanceDescriptor } from '@/app/scenes/project-resources/appearance';
 import { usageActivityGridAppearanceDescriptor } from '@/infrastructure/config/components/UsageActivityGrid.appearance';
 import { sessionAppearanceDescriptor } from '@/app/scenes/session/appearance';
 import { settingsAppearanceDescriptor } from '@/app/scenes/settings/appearance';
@@ -180,6 +181,7 @@ import { imageViewerAppearanceDescriptor } from '@/tools/editor/components/Image
 import { pdfViewerAppearanceDescriptor } from '@/tools/editor/components/PdfViewer.appearance';
 import { branchQuickSwitchAppearanceDescriptor } from '@/tools/git/components/BranchQuickSwitch.appearance';
 import { workspaceListSectionAppearanceDescriptor } from '@/app/components/NavPanel/sections/workspaces/WorkspaceListSection.appearance';
+import { workspaceIconAppearanceDescriptor, workspaceIconEditorAppearanceDescriptor } from '@/app/components/WorkspaceIcon/appearance';
 import { workspaceItemAppearanceDescriptor } from '@/app/components/NavPanel/sections/workspaces/WorkspaceItem.appearance';
 import { newProjectDialogAppearanceDescriptor } from '@/app/components/NewProjectDialog/NewProjectDialog.appearance';
 import { projectFolderListAppearanceDescriptor } from '@/app/components/ProjectFolderList/ProjectFolderList.appearance';
@@ -451,6 +453,8 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerComponent(pdfViewerAppearanceDescriptor)
     .registerComponent(branchQuickSwitchAppearanceDescriptor)
     .registerComponent(workspaceListSectionAppearanceDescriptor)
+    .registerComponent(workspaceIconAppearanceDescriptor)
+    .registerComponent(workspaceIconEditorAppearanceDescriptor)
     .registerComponent(workspaceItemAppearanceDescriptor)
     .registerComponent(newProjectDialogAppearanceDescriptor)
     .registerComponent(projectFolderListAppearanceDescriptor)
@@ -513,6 +517,7 @@ export function createDefaultAppearanceRegistry(): AppearanceRegistry {
     .registerScene(pagesAppearanceDescriptor)
     .registerScene(profileAppearanceDescriptor)
     .registerScene(personalOverviewAppearanceDescriptor)
+    .registerScene(projectResourcesAppearanceDescriptor)
     .registerScene(sessionAppearanceDescriptor)
     .registerScene(settingsAppearanceDescriptor)
     .registerScene(ecosystemCompatibilityAppearanceDescriptor)

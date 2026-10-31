@@ -33,6 +33,8 @@ Open a local directory or create a project so files, sessions, terminals, and ag
   - Open SSH and other remote workspaces from the project flow
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看当前工作区、应用状态、健康状态与统计信息
   - Inspect the current workspace, app state, health, and statistics
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 选择项目图案和颜色，或使用自定义图片
+  - Choose project icon shapes and colors, or use a custom image
 
 ## 怎么用 / How to use it
 

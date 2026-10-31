@@ -99,6 +99,7 @@ const HIGH_PRIORITY_COMMANDS = new Set([
 ]);
 
 const RETRYABLE_READ_COMMANDS = new Set([
+  'get_workspace_icon',
   'initialize_workspace_startup_state',
   'restore_session_view',
   'load_session_event_backfill',

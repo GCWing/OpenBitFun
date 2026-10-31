@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runFederatedSearch } from './federatedSearchEngine';
-import type { GlobalSearchProvider, GlobalSearchRequest } from './types';
+import { buildGlobalSearchResultPresentation } from './globalSearchResultPresentation';
+import type { GlobalSearchItem, GlobalSearchProvider, GlobalSearchRequest } from './types';
 
 const request: GlobalSearchRequest = {
   rawQuery: 'search',
@@ -22,6 +23,44 @@ function provider(
 }
 
 describe('runFederatedSearch', () => {
+  it('prioritizes app actions, settings, and features over higher-scoring history and files', async () => {
+    const items: GlobalSearchItem[] = [
+      {
+        id: 'message', providerId: 'mixed', group: 'messages', title: 'Appearance notes', score: 100,
+        target: { kind: 'session', sessionId: 'session', workspaceId: 'workspace', workspacePath: '/project' },
+      },
+      {
+        id: 'file', providerId: 'mixed', group: 'files', title: 'appearance.md', score: 100,
+        target: { kind: 'file', workspaceId: 'workspace', workspacePath: '/project', filePath: '/project/appearance.md', fileName: 'appearance.md' },
+      },
+      {
+        id: 'feature', providerId: 'mixed', group: 'capabilities', title: 'Appearance features', score: 20,
+        target: { kind: 'capability', capabilityId: 'feature.appearance' },
+      },
+      {
+        id: 'setting', providerId: 'mixed', group: 'settings', title: 'Appearance settings', score: 20,
+        target: { kind: 'capability', capabilityId: 'setting.appearance' },
+      },
+      {
+        id: 'action', providerId: 'mixed', group: 'actions', title: 'Open settings', score: 20,
+        target: { kind: 'action', actionId: 'settings.open' },
+      },
+    ];
+    const result = await runFederatedSearch([{
+      id: 'mixed', groups: ['messages', 'files', 'capabilities', 'settings', 'actions'],
+      search: () => ({ items }),
+    }], request, new AbortController().signal, () => {});
+
+    const expectedOrder = ['action', 'setting', 'feature', 'message', 'file'];
+    expect(result.items.map(item => item.id)).toEqual(expectedOrder);
+    const presentation = buildGlobalSearchResultPresentation(result.items, {
+      hasQuery: true,
+      drilldownGroup: null,
+    });
+    expect(presentation.groups.map(group => group.items[0]?.id)).toEqual(expectedOrder);
+    expect(presentation.navigableItems.map(item => item.id)).toEqual(expectedOrder);
+  });
+
   it('keeps successful results when another provider fails', async () => {
     const updates = vi.fn();
     const result = await runFederatedSearch([

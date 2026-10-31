@@ -231,6 +231,13 @@ retains the previous serial chunk algorithm with the same filesystem provider;
 browser rendering and public-network variability are outside this measurement.
 Do not turn timing ratios into CI assertions.
 
+For workspace icon RemoteCommand reads, capability negotiation and explicit
+mobile/IM editing rejection:
+
+```bash
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::tests::workspace_icon_
+```
+
 For WeChat inbound CDN files, attachment storage, and provider-neutral bot contracts:
 
 ```bash

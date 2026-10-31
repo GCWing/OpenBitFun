@@ -68,6 +68,10 @@ export interface SelectProps
   placeholder?: string;
   /** Size the expanded surface to its trigger or the full option labels. */
   popupWidth?: "trigger" | "content";
+  /** Draw a divider before each subsequent option group. */
+  showGroupDividers?: boolean;
+  /** Hide group headings while retaining the standard section spacing. */
+  showGroupLabels?: boolean;
   size?: SelectSize;
   value?: SelectValue;
   /** A compact visual treatment using the system's badge typography and radius. */
@@ -154,6 +158,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   placeholder,
   popupWidth = "trigger",
   required = false,
+  showGroupDividers = false,
+  showGroupLabels = true,
   size = "md",
   style,
   tabIndex,
@@ -435,8 +441,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
           ) : (
             <>
               {ungrouped.map(renderListboxOption)}
-              {[...groups].map(([label, groupedOptions]) => (
-                <ListboxGroup key={label} label={label}>
+              {[...groups].map(([label, groupedOptions], index) => (
+                <ListboxGroup
+                  className={showGroupDividers && (index > 0 || ungrouped.length > 0) ? styles.dividedGroup : undefined}
+                  key={label}
+                  label={showGroupLabels ? label : undefined}
+                >
                   {groupedOptions.map(renderListboxOption)}
                 </ListboxGroup>
               ))}
@@ -486,7 +496,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
         )}
         {ungrouped.map(renderNativeOption)}
         {[...groups].map(([label, groupedOptions]) => (
-          <optgroup key={label} label={label}>{groupedOptions.map(renderNativeOption)}</optgroup>
+          <optgroup key={label} label={showGroupLabels ? label : ""}>{groupedOptions.map(renderNativeOption)}</optgroup>
         ))}
       </select>
       <button data-overflow-trigger

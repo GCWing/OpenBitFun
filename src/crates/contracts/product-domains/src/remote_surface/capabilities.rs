@@ -88,6 +88,7 @@ pub enum PeerHostCapability {
     /// Mode/workspace-scoped `get_chat_mcp_catalog` is implemented.
     ChatMcpCatalogV1,
     /// Workspace references can carry the owning host's persisted ID.
+    WorkspaceIconV1,
     WorkspaceIdReferencesV1,
     /// Workspace-confined static resources for controller-owned HTML preview.
     WorkspaceHtmlPreviewV1,
@@ -137,6 +138,7 @@ impl PeerHostCapability {
         Self::ToolCatalog,
         Self::ReviewPlatformV1,
         Self::ChatMcpCatalogV1,
+        Self::WorkspaceIconV1,
         Self::WorkspaceIdReferencesV1,
         Self::WorkspaceHtmlPreviewV1,
         Self::WholeSessionCopyV1,
@@ -181,6 +183,7 @@ impl PeerHostCapability {
             Self::ToolCatalog => "tool_catalog",
             Self::ReviewPlatformV1 => "review_platform_v1",
             Self::ChatMcpCatalogV1 => "chat_mcp_catalog_v1",
+            Self::WorkspaceIconV1 => "workspace_icon_v1",
             Self::WorkspaceIdReferencesV1 => "workspace_id_references_v1",
             Self::WorkspaceHtmlPreviewV1 => "workspace_html_preview_v1",
             Self::SessionTrajectoryV1 => "session_trajectory_v1",
@@ -218,6 +221,7 @@ const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::ToolCatalog,
     PeerHostCapability::SessionTrajectoryV1,
     PeerHostCapability::ChatMcpCatalogV1,
+    PeerHostCapability::WorkspaceIconV1,
     PeerHostCapability::WorkspaceIdReferencesV1,
     PeerHostCapability::WorkspaceHtmlPreviewV1,
     PeerHostCapability::UserQuestionResponse,

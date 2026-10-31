@@ -136,7 +136,7 @@ function iconForItem(item: GlobalSearchItem): IconSource {
 
 function resultVariant(group: GlobalSearchGroupId): 'action' | 'entity' | 'standard' {
   if (group === 'actions') return 'action';
-  if (group === 'workspaces' || group === 'assistants') return 'entity';
+  if (group === 'workspaces' || group === 'assistants' || group === 'settings' || group === 'capabilities') return 'entity';
   return 'standard';
 }
 
@@ -578,7 +578,11 @@ export const GlobalSearchContent: React.FC<GlobalSearchContentProps> = ({
                   </div>
                 )}
                 </div></div>
-                <div className="global-search__group-items" role="presentation">
+                <div
+                  className="global-search__group-items"
+                  role="presentation"
+                  data-search-layout={parsedQuery.query && resultVariant(groupId) !== 'standard' ? 'cards' : undefined}
+                >
                   {groupItems.map((item) => {
                     const itemIcon = iconForItem(item);
                     const selected = item.id === activeId;
@@ -816,8 +820,10 @@ const GlobalSearchRoot: React.FC = () => {
       size="xl"
       aria-label={tCommon('nav.search.dialogLabel')}
       className="global-search-dialog"
+      overlayProps={{ className: 'global-search-overlay' }}
       data-testid="global-search-dialog"
     >
+      <div className="global-search-dialog__material" aria-hidden="true" />
       <DialogBody className="global-search-modal-content">
         <GlobalSearchContent
           active={open}

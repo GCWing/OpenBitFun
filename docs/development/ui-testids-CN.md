@@ -131,7 +131,8 @@
 | 工作区卡片 | `nav-workspace-card` | 可点击行主体。配合 `data-workspace-id` 使用。 |
 | 工作区会话展开按钮 | `nav-workspace-sessions-toggle` | 展开/折叠会话行。配合 `data-workspace-id` 使用。 |
 | 工作区名称按钮 | `nav-workspace-name-btn` | 激活工作区或切换会话展开状态。配合 `data-workspace-id` 使用。 |
-| 工作区文件按钮 | `nav-workspace-files-btn` | 打开该工作区的文件查看器。配合 `data-workspace-id` 使用。 |
+| 项目资源按钮 | `nav-workspace-project-resources-btn` | 打开项目资源管理页面。配合 `data-workspace-id` 使用。 |
+| 打开目录菜单项 | `nav-workspace-menu-open-directory` | 从工作区更多菜单打开项目文件查看器。 |
 | 工作区搜索索引按钮 | `nav-workspace-search-index-btn` | 存在时打开搜索索引状态弹窗。配合 `data-workspace-id` 使用。 |
 | 工作区行菜单按钮 | `nav-workspace-menu-btn` | 打开行操作菜单。配合 `data-workspace-id` 使用。 |
 | 工作区行菜单 | `nav-workspace-item-menu` | 单个工作区的 portal 菜单。配合 `data-workspace-id` 使用。 |

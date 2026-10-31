@@ -1157,9 +1157,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
         sourceView ? t('nav.sessions.removeSourceConfirmTitle') : t('nav.sessions.deleteConfirmTitle'),
         sourceView ? t('nav.sessions.removeSourceConfirmMessage', {
           name: session ? resolveSessionTitle(session) : t('nav.sessions.untitled'),
-        }) : t('nav.sessions.deleteConfirmMessage', {
-          name: session ? resolveSessionTitle(session) : t('nav.sessions.untitled'),
-        }),
+        }) : t('nav.sessions.deleteConfirmMessage'),
         { confirmText: sourceView ? t('nav.sessions.removeSource') : t('nav.sessions.delete') },
       );
       if (!confirmed) return;

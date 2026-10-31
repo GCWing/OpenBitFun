@@ -819,7 +819,7 @@ const RUNTIME_PORT_FEATURE_PROFILES = {
   'product-search': ['dep:openbitfun-product-domains'],
   'ptc-runtime': [],
   'remote-exec-port': ['dep:tokio'],
-  'remote-workspace-ports': [],
+  'remote-workspace-ports': ['dep:openbitfun-core-types'],
   'runtime-event-port': [],
   'script-tool-runtime': [],
   'terminal-port': ['dep:tokio'],
@@ -1910,6 +1910,7 @@ const ACP_REVIEWED_CORE_FEATURES = [
 ];
 
 const CLI_REVIEWED_CORE_FEATURES = [
+  'workspace-icons',
   'tools-pages',
   ...ACP_REVIEWED_CORE_FEATURES,
   'product-search',
@@ -5112,4 +5113,20 @@ test('core loopback WebSocket fixture cannot broaden the runtime dependency', ()
   ]) {
     assert.ok(findThirdPartyCapabilityFeatureViolations([{ ...pkg, dependencies }]).length > 0);
   }
+});
+
+// Icon codecs must never pull animation or unrelated product features into small hosts.
+test('workspace icon image codecs remain an exact feature-owned slice', () => {
+  const pkg = {
+    ...packageAt('openbitfun-services-core', 'src/crates/services/services-core/Cargo.toml', [{
+      name: 'image', kind: null, optional: true, uses_default_features: false, features: [],
+    }]),
+    features: {
+      'pet-packages': ['dep:image', 'image/gif', 'image/jpeg', 'image/png', 'image/webp'],
+      'workspace-icons': ['dep:image', 'image/jpeg', 'image/png', 'image/webp'],
+    },
+  };
+  assert.deepEqual(findThirdPartyCapabilityFeatureViolations([pkg]), []);
+  pkg.features['workspace-icons'].push('image/gif');
+  assert.match(findThirdPartyCapabilityFeatureViolations([pkg]).map(v => v.message).join('\n'), /workspace-icons.*unexpected.*gif/);
 });
