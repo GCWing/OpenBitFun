@@ -250,16 +250,16 @@
       "name": "OpenBitFun Service",
       "description": "OpenBitFun Model Platform",
       "urlOptions": {
-        "default": "Anthropic Format",
-        "openai": "OpenAI Compatible Format - Default"
+        "default": "Official API",
+        "openai": "Official API"
       }
     },
     "openai": {
       "name": "OpenAI",
       "description": "OpenAI GPT and reasoning models",
       "urlOptions": {
-        "default": "Responses API - Default",
-        "chatCompletions": "Chat Completions API"
+        "default": "Official API",
+        "chatCompletions": "Official API"
       }
     },
     "gemini": {
@@ -274,52 +274,52 @@
       "name": "MiniMax",
       "description": "MiniMax series models",
       "urlOptions": {
-        "default": "China - Anthropic Format - Default",
-        "openai": "China - OpenAI Compatible",
-        "intl": "Global - Anthropic Format",
-        "intlOpenai": "Global - OpenAI Compatible"
+        "default": "China - Default",
+        "openai": "China",
+        "intl": "Global",
+        "intlOpenai": "Global"
       }
     },
     "xiaomi": {
       "name": "Xiaomi MiMo",
       "description": "Xiaomi MiMo models. API and Token Plan keys are separate.",
       "urlOptions": {
-        "default": "API - OpenAI Chat Completions - Default",
-        "responses": "API - OpenAI Responses",
-        "anthropic": "API - Anthropic Messages",
-        "tokenPlan": "China - Token Plan - OpenAI",
-        "tokenPlanAnthropic": "China - Token Plan - Anthropic"
+        "default": "API - Default",
+        "responses": "API",
+        "anthropic": "API",
+        "tokenPlan": "China - Token Plan",
+        "tokenPlanAnthropic": "China - Token Plan"
       }
     },
     "moonshot": {
       "name": "Moonshot AI",
       "description": "Moonshot Kimi series models",
       "urlOptions": {
-        "default": "China - OpenAI Format - Default",
-        "anthropic": "China - Anthropic Format",
-        "intl": "Global - OpenAI Format",
-        "intlAnthropic": "Global - Anthropic Format",
+        "default": "China - Default",
+        "anthropic": "China",
+        "intl": "Global",
+        "intlAnthropic": "Global",
         "kimiForCoding": "Kimi For Coding plan (models: k3 / kimi-for-coding)",
-        "kimiForCodingAnthropic": "Kimi For Coding plan - Anthropic Format"
+        "kimiForCodingAnthropic": "Kimi For Coding plan"
       }
     },
     "deepseek": {
       "name": "DeepSeek",
       "description": "DeepSeek series models",
       "urlOptions": {
-        "default": "OpenAI Format - Default",
-        "anthropic": "Anthropic Format"
+        "default": "Official API - Default",
+        "anthropic": "Official API"
       }
     },
     "zhipu": {
       "name": "Zhipu AI",
       "description": "Zhipu AI GLM series models",
       "urlOptions": {
-        "default": "China - OpenAI Format - Default",
-        "anthropic": "China - Anthropic Format",
+        "default": "China - Default",
+        "anthropic": "China",
         "codingPlan": "China - Coding Plan",
-        "intl": "Global (Z.AI) - OpenAI Format",
-        "intlAnthropic": "Global (Z.AI) - Anthropic Format",
+        "intl": "Global (Z.AI)",
+        "intlAnthropic": "Global (Z.AI)",
         "intlCodingPlan": "Global (Z.AI) - Coding Plan"
       }
     },
@@ -327,10 +327,10 @@
       "name": "Qwen",
       "description": "Alibaba Cloud Bailian Model Platform",
       "urlOptions": {
-        "default": "China - OpenAI Format - Default",
-        "intl": "Global (International) - OpenAI Format",
+        "default": "China - Default",
+        "intl": "Global (International)",
         "codingPlan": "China - Coding Plan",
-        "codingPlanAnthropic": "China - Coding Plan - Anthropic Format",
+        "codingPlanAnthropic": "China - Coding Plan",
         "intlCodingPlan": "Global - Coding Plan"
       }
     },
@@ -347,9 +347,9 @@
       "name": "SiliconFlow",
       "description": "SiliconFlow Model Platform",
       "urlOptions": {
-        "default": "China - OpenAI Format - Default",
-        "anthropic": "China - Anthropic Format",
-        "intl": "Global - OpenAI Format"
+        "default": "China - Default",
+        "anthropic": "China",
+        "intl": "Global"
       }
     },
     "nvidia": {
