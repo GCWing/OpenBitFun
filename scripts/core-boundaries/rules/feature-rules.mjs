@@ -291,7 +291,7 @@ export const optionalDependencyFeatureOwnerRules = [
       { depName: 'openbitfun-agent-workflows', ownerFeatures: ['deep-research'] },
       {
         depName: 'openbitfun-core-types',
-        ownerFeatures: ['deep-research', 'remote-connect', 'remote-ssh-concrete', 'speech'],
+        ownerFeatures: ['deep-research', 'ptc-runtime', 'remote-connect', 'remote-ssh-concrete', 'speech'],
       },
       { depName: 'openbitfun-product-domains', ownerFeatures: ['account-identity', 'canvas-runtime', 'function-agents', 'hook-import', 'miniapp-market', 'miniapp-runtime', 'miniapp-storage', 'plugin-source', 'remote-connect'] },
       { depName: 'openbitfun-runtime-ports', ownerFeatures: ['deep-research', 'git', 'ptc-runtime', 'remote-connect', 'remote-ssh', 'remote-ssh-concrete', 'script-tool-runtime', 'web-tools'] },

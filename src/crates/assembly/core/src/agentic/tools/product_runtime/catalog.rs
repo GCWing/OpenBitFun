@@ -8,9 +8,9 @@ use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use crate::util::types::ToolDefinition;
 #[cfg(feature = "ptc-runtime")]
 use openbitfun_agent_tools::{
-    ptc_run_code_description, ptc_run_code_input_schema,
-    render_ptc_tool_calling_guide_with_options, render_ptc_typescript_sdk_with_options,
-    PtcToolContract, PTC_RUN_CODE_TOOL_NAME, PTC_TOOL_PRESENTATION_CONTEXT_KEY,
+    ptc_run_code_description_for_language, ptc_run_code_input_schema_for_language,
+    render_ptc_sdk_with_options, render_ptc_tool_calling_guide_for_language, PtcToolContract,
+    PTC_LANGUAGE_CONTEXT_KEY, PTC_RUN_CODE_TOOL_NAME, PTC_TOOL_PRESENTATION_CONTEXT_KEY,
     PTC_TOOL_PRESENTATION_MODE,
 };
 use openbitfun_agent_tools::{
@@ -20,6 +20,8 @@ use openbitfun_agent_tools::{
     ToolCatalogRuntime, ToolCatalogSnapshotProvider, ToolManifestDefinition,
     CALL_DEFERRED_TOOL_NAME, GET_TOOL_SPEC_TOOL_NAME,
 };
+#[cfg(feature = "ptc-runtime")]
+use openbitfun_core_types::PtcLanguage;
 use serde::Serialize;
 #[cfg(feature = "ptc-runtime")]
 use serde_json::json;
@@ -359,10 +361,11 @@ pub(crate) async fn resolve_product_tool_manifest(
         // PTC keeps deferred tools out of the initial full schema. Their
         // generated SDK is attached to the prompt reminder by the resolved
         // manifest facade below.
+        let language = ptc_language(context);
         manifest.tool_definitions = vec![ToolManifestDefinition::new(
             PTC_RUN_CODE_TOOL_NAME,
-            ptc_run_code_description(),
-            ptc_run_code_input_schema(),
+            ptc_run_code_description_for_language(language),
+            ptc_run_code_input_schema_for_language(language),
         )];
         if !manifest
             .allowed_tool_names
@@ -389,6 +392,22 @@ fn context_is_ptc_mode(context: &ToolUseContext) -> bool {
             .agent_type
             .as_deref()
             .is_some_and(|agent| agent.eq_ignore_ascii_case("PTC"))
+}
+
+#[cfg(feature = "ptc-runtime")]
+fn ptc_language(context: &ToolUseContext) -> PtcLanguage {
+    context
+        .custom_data
+        .get(PTC_LANGUAGE_CONTEXT_KEY)
+        .and_then(Value::as_str)
+        .map(|language| {
+            if language.eq_ignore_ascii_case("python") {
+                PtcLanguage::Python
+            } else {
+                PtcLanguage::TypeScript
+            }
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(feature = "ptc-runtime")]
@@ -558,10 +577,12 @@ pub(crate) async fn resolve_product_resolved_tool_manifest(
             context,
         )
         .await;
+        let language = ptc_language(context);
         let sdk_source =
-            render_ptc_typescript_sdk_with_options(&contracts, include_deferred_tool_apis);
-        Some(render_ptc_tool_calling_guide_with_options(
+            render_ptc_sdk_with_options(&contracts, language, include_deferred_tool_apis);
+        Some(render_ptc_tool_calling_guide_for_language(
             &sdk_source,
+            language,
             include_deferred_tool_apis,
         ))
     } else {
@@ -615,12 +636,12 @@ mod tests {
     use crate::agentic::tools::ToolRuntimeRestrictions;
     #[cfg(feature = "external-sources")]
     use crate::agentic::WorkspaceBinding;
-    #[cfg(feature = "ptc-runtime")]
-    use openbitfun_agent_tools::PTC_TOOL_PRESENTATION_CONTEXT_KEY;
     use openbitfun_agent_tools::{
         GetToolSpecCatalogProvider, ToolCatalogSnapshotProvider, CALL_DEFERRED_TOOL_NAME,
         GET_TOOL_SPEC_TOOL_NAME, PTC_RUN_CODE_TOOL_NAME,
     };
+    #[cfg(feature = "ptc-runtime")]
+    use openbitfun_agent_tools::{PTC_LANGUAGE_CONTEXT_KEY, PTC_TOOL_PRESENTATION_CONTEXT_KEY};
     use serde_json::{json, Value};
     use std::collections::HashMap;
     #[cfg(feature = "external-sources")]
@@ -812,6 +833,47 @@ mod tests {
             .expect("resolved PTC manifest should carry the SDK guide");
         assert!(guide.starts_with("# Tool Calling Guide\n"));
         assert!(guide.contains("ToolArgsMap"));
+        assert!(guide.contains("SessionHistory"));
+    }
+
+    #[cfg(feature = "ptc-runtime")]
+    #[tokio::test]
+    async fn resolved_python_ptc_manifest_uses_python_schema_and_guide() {
+        let mut context = tool_context(Some("Standard"));
+        context.custom_data.insert(
+            PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
+            Value::String("ptc".to_string()),
+        );
+        context.custom_data.insert(
+            PTC_LANGUAGE_CONTEXT_KEY.to_string(),
+            Value::String("python".to_string()),
+        );
+        let manifest = resolve_product_resolved_tool_manifest(
+            &["Read".to_string(), "SessionHistory".to_string()],
+            &AgentToolPolicyOverrides::default(),
+            &context,
+        )
+        .await;
+        let run_code = manifest
+            .tool_definitions
+            .iter()
+            .find(|definition| definition.name == PTC_RUN_CODE_TOOL_NAME)
+            .expect("Python PTC manifest should expose RunCode");
+        assert!(run_code.description.contains("Python program"));
+        assert!(run_code
+            .description
+            .contains("Do not emit TypeScript/JavaScript"));
+        assert_eq!(run_code.parameters["properties"]["code"]["type"], "string");
+        assert_eq!(
+            run_code.parameters["properties"]["code"]["description"],
+            "Python source code executed inside an existing async function. Use top-level `await`; do not call `asyncio.run`."
+        );
+        let guide = manifest
+            .ptc_tool_calling_guide
+            .as_deref()
+            .expect("Python PTC manifest should carry the SDK guide");
+        assert!(guide.contains("Python program"));
+        assert!(guide.contains("tools.get_tool_spec"));
         assert!(guide.contains("SessionHistory"));
     }
 

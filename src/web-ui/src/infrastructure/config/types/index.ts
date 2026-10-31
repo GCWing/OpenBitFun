@@ -472,7 +472,7 @@ export interface ModelRoutingConfig {
 
 export interface AIConfig {
   models: AIModelConfig[];
-  tool_presentation_mode?: 'native' | 'ptc';
+  tool_presentation_mode?: 'native' | 'ptc' | 'ptc_python';
   default_models: DefaultModelsConfig;
   model_routing?: ModelRoutingConfig;
   agent_model_defaults: AgentModelDefaultsConfig;

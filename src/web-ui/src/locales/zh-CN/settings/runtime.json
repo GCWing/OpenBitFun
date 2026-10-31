@@ -101,7 +101,9 @@
     "description": "选择模型看到工具的方式，只对切换设置后新建的会话生效。",
     "native": "原生工具",
     "ptc": "PTC（TypeScript）",
-    "ptcTooltip": "PTC 通过 RunCode 执行 TypeScript。"
+    "ptcTooltip": "PTC 通过 RunCode 执行 TypeScript。",
+    "ptcPython": "PTC（Python）",
+    "ptcPythonTooltip": "PTC 通过 RunCode 执行 Python。"
   },
   "projectPermissions": {
     "title": "工具与命令权限",

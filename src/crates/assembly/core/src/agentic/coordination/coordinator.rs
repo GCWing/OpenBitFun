@@ -103,7 +103,9 @@ use openbitfun_agent_runtime::remote_file_delivery::{
 };
 use openbitfun_agent_runtime::sdk::PermissionReply;
 use openbitfun_agent_runtime::user_questions::USER_INPUT_AVAILABLE_CONTEXT_KEY;
-use openbitfun_agent_tools::{PTC_TOOL_PRESENTATION_CONTEXT_KEY, PTC_TOOL_PRESENTATION_MODE};
+use openbitfun_agent_tools::{
+    PTC_LANGUAGE_CONTEXT_KEY, PTC_TOOL_PRESENTATION_CONTEXT_KEY, PTC_TOOL_PRESENTATION_MODE,
+};
 use openbitfun_config_contracts::model_pool::AgentModelSelection;
 use openbitfun_config_contracts::model_pool::AgentModelSelections;
 use openbitfun_core_types::model_pool::ModelSelection;
@@ -7339,6 +7341,15 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
                 PTC_TOOL_PRESENTATION_MODE.to_string(),
             );
+            context_vars.insert(
+                PTC_LANGUAGE_CONTEXT_KEY.to_string(),
+                session
+                    .config
+                    .tool_presentation_mode
+                    .language()
+                    .as_str()
+                    .to_string(),
+            );
         }
         let review_agent = is_review_agent_type(&effective_agent_type);
         let turn_review_manifest =
@@ -7950,6 +7961,15 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             context_vars.insert(
                 PTC_TOOL_PRESENTATION_CONTEXT_KEY.to_string(),
                 PTC_TOOL_PRESENTATION_MODE.to_string(),
+            );
+            context_vars.insert(
+                PTC_LANGUAGE_CONTEXT_KEY.to_string(),
+                session
+                    .config
+                    .tool_presentation_mode
+                    .language()
+                    .as_str()
+                    .to_string(),
             );
         }
         if let Some(user_input_available) = metadata_bool(
