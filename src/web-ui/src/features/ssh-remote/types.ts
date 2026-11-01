@@ -41,13 +41,16 @@ export type SSHAuthMethod =
   | { type: 'Password'; password: string }
   | { type: 'PrivateKey'; keyPath: string; passphrase?: string; certificatePath?: string }
   | { type: 'Agent'; keyFingerprint?: string; fallbackKeyPath?: string }
-  | { type: 'KeyboardInteractive'; responses: string[] };
+  | { type: 'KeyboardInteractive'; responses: string[] }
+  /** Server accepts the connection without credentials (already-authenticated tunnels). */
+  | { type: 'None' };
 
 export type SavedAuthType =
   | { type: 'Password' }
   | { type: 'PrivateKey'; keyPath: string; certificatePath?: string }
   | { type: 'Agent'; keyFingerprint?: string; fallbackKeyPath?: string }
-  | { type: 'KeyboardInteractive' };
+  | { type: 'KeyboardInteractive' }
+  | { type: 'None' };
 
 export interface SavedConnection {
   id: string;

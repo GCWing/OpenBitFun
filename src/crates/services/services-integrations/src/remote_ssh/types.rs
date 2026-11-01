@@ -107,7 +107,8 @@ impl SSHAuthMethod {
     fn connection_params_equal(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Password { .. }, Self::Password { .. })
-            | (Self::KeyboardInteractive { .. }, Self::KeyboardInteractive { .. }) => true,
+            | (Self::KeyboardInteractive { .. }, Self::KeyboardInteractive { .. })
+            | (Self::None, Self::None) => true,
             (
                 Self::PrivateKey {
                     key_path,
@@ -277,6 +278,14 @@ pub enum SSHAuthMethod {
         #[serde(default)]
         responses: Vec<String>,
     },
+    /// Accept the server without sending credentials (`none` method).
+    ///
+    /// Needed for endpoints whose transport is already authenticated and that
+    /// therefore advertise only `none`: Coder workspace agents are the motivating
+    /// case, because `coder ssh --stdio` authenticates the tunnel with the CLI
+    /// token and the agent disconnects clients that attempt public key or password
+    /// authentication.
+    None,
 }
 
 fn deserialize_ssh_auth_method<'de, D>(deserializer: D) -> Result<SSHAuthMethod, D::Error>
@@ -306,6 +315,7 @@ where
             #[serde(default)]
             responses: Vec<String>,
         },
+        None,
     }
     match Helper::deserialize(deserializer)? {
         Helper::Password { password } => Ok(SSHAuthMethod::Password { password }),
@@ -328,6 +338,7 @@ where
         Helper::KeyboardInteractive { responses } => {
             Ok(SSHAuthMethod::KeyboardInteractive { responses })
         }
+        Helper::None => Ok(SSHAuthMethod::None),
     }
 }
 
@@ -387,6 +398,8 @@ pub enum SavedAuthType {
         fallback_key_path: Option<String>,
     },
     KeyboardInteractive,
+    /// Server accepts the connection without credentials (see `SSHAuthMethod::None`).
+    None,
 }
 
 fn deserialize_saved_auth_type<'de, D>(deserializer: D) -> Result<SavedAuthType, D::Error>
@@ -410,6 +423,7 @@ where
             fallback_key_path: Option<String>,
         },
         KeyboardInteractive,
+        None,
     }
     match Helper::deserialize(deserializer)? {
         Helper::Password => Ok(SavedAuthType::Password),
@@ -428,6 +442,7 @@ where
             fallback_key_path: fallback_key_path.or_else(|| Some("~/.ssh/id_rsa".to_string())),
         }),
         Helper::KeyboardInteractive => Ok(SavedAuthType::KeyboardInteractive),
+        Helper::None => Ok(SavedAuthType::None),
     }
 }
 

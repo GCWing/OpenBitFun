@@ -1995,6 +1995,8 @@
       "privateKey": "Private Key",
       "sshAgent": "SSH Agent",
       "keyboardInteractive": "Keyboard-interactive",
+      "noAuth": "No authentication",
+      "noAuthHint": "The server accepts the connection without credentials. Use this for tunnels that are already authenticated, such as a Coder workspace agent.",
       "privateKeyPath": "Private Key File Path",
       "certificatePath": "OpenSSH certificate",
       "certificatePathOptional": "Optional certificate file",

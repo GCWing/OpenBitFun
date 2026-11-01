@@ -1995,6 +1995,8 @@
       "privateKey": "私鑰",
       "sshAgent": "SSH 金鑰代理",
       "keyboardInteractive": "鍵盤互動驗證",
+      "noAuth": "不驗證",
+      "noAuthHint": "伺服器不驗證憑證，適用於已完成驗證的通道，例如 Coder 工作區 agent。",
       "privateKeyPath": "私鑰檔案路徑",
       "certificatePath": "OpenSSH 憑證",
       "certificatePathOptional": "可選憑證檔案",

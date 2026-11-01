@@ -254,6 +254,41 @@ describe('remote workspace form composition', () => {
       auth: { type: 'PrivateKey', keyPath: '/keys/build' }, proxyJump: 'jump.test', container: expect.objectContaining({ name: 'devbox', local: false }) }), { browseAfterConnect: true });
   });
 
+  it('connects a none-authenticated endpoint without asking for credentials', async () => {
+    remote.connect.mockResolvedValue(undefined);
+    sshApi.listSavedConnections.mockResolvedValue([{
+      id: 'saved', name: 'Saved', host: 'saved.test', port: 22, username: 'dev', authType: { type: 'Password' },
+    }]);
+    await renderConnection('ssh', true);
+    const newTab = document.querySelector<HTMLButtonElement>('[role="tab"][data-openbitfun-value="new"]')!;
+    await act(async () => newTab.click());
+    enterValue(fieldControl('ssh.remote.host') as HTMLInputElement, '127.0.0.1');
+    enterValue(fieldControl('ssh.remote.username') as HTMLInputElement, 'coder');
+    // The default method asks for a password; switching to none must drop it.
+    expect(document.querySelector('input[type="password"]')).not.toBeNull();
+
+    await act(async () => fieldControl('ssh.remote.authMethod').click());
+    const option = [...document.querySelectorAll<HTMLButtonElement>('[data-openbitfun-listbox-option]')]
+      .find(item => item.textContent === 'ssh.remote.noAuth')!;
+    expect(option).toBeDefined();
+    await act(async () => option.click());
+
+    expect(document.body.textContent).toContain('ssh.remote.noAuthHint');
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('footer button')]
+      .find(button => button.textContent === 'ssh.remote.connect')!.click());
+    expect(remote.connect).toHaveBeenCalledWith(
+      'ssh-coder@127.0.0.1',
+      expect.objectContaining({
+        host: '127.0.0.1',
+        username: 'coder',
+        auth: { type: 'None' },
+      }),
+      { browseAfterConnect: true },
+    );
+  });
+
   it('requires an existing SSH host before configuring a remote container', async () => {
     await renderConnection('remoteDocker', true);
     expect(document.body.textContent).toContain('workspaceSource.existingHostRequired');

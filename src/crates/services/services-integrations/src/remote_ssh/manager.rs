@@ -1363,6 +1363,13 @@ async fn authenticate_handle(
             SSHAuthMethod::KeyboardInteractive { responses } => {
                 authenticate_keyboard_interactive(handle, config, stage, responses).await?
             }
+            // Endpoints whose transport is already authenticated (Coder workspace
+            // agents) advertise only `none` and disconnect clients that send
+            // credentials, so this must be an explicit choice rather than a fallback.
+            SSHAuthMethod::None => handle
+                .authenticate_none(&config.username)
+                .await
+                .map_err(|error| anyhow!("{} none authentication failed: {:?}", stage, error))?,
         })
     };
     let authenticated = tokio::time::timeout(
@@ -2910,7 +2917,12 @@ impl SSHConnectionManager {
             (SSHAuthMethod::PrivateKey { .. }, false) => {
                 self.password_vault.remove(&config.id).await?;
             }
-            (SSHAuthMethod::Agent { .. } | SSHAuthMethod::KeyboardInteractive { .. }, false) => {
+            (
+                SSHAuthMethod::Agent { .. }
+                | SSHAuthMethod::KeyboardInteractive { .. }
+                | SSHAuthMethod::None,
+                false,
+            ) => {
                 self.password_vault.remove(&config.id).await?;
             }
         }
@@ -2955,6 +2967,7 @@ impl SSHConnectionManager {
                 SSHAuthMethod::KeyboardInteractive { .. } => {
                     crate::remote_ssh::types::SavedAuthType::KeyboardInteractive
                 }
+                SSHAuthMethod::None => crate::remote_ssh::types::SavedAuthType::None,
             },
             default_workspace: config.default_workspace.clone(),
             last_connected: Some(chrono::Utc::now().timestamp() as u64),
@@ -4398,6 +4411,7 @@ impl SSHConnectionManager {
                     responses: Vec::new(),
                 }
             }
+            crate::remote_ssh::types::SavedAuthType::None => SSHAuthMethod::None,
         };
 
         Ok(Some(SSHConnectionConfig {
@@ -9270,6 +9284,63 @@ mod tests {
             } if key_fingerprint.as_deref() == Some("SHA256:test-fingerprint")
                 && fallback_key_path.as_deref() == Some("~/.ssh/custom-fallback")
         ));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn saved_none_auth_profile_round_trips_without_credentials() {
+        let dir = test_data_dir("none-auth-profile");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+
+        manager
+            .save_connection(&SSHConnectionConfig {
+                id: "ssh-coder@127.0.0.1".to_string(),
+                name: "coder agent".to_string(),
+                host: "127.0.0.1".to_string(),
+                port: 2222,
+                username: "coder".to_string(),
+                auth: SSHAuthMethod::None,
+                default_workspace: Some("/root".to_string()),
+                proxy_jump: None,
+                container: None,
+                wsl: None,
+                options: Default::default(),
+            })
+            .await
+            .unwrap();
+
+        let persisted = tokio::fs::read_to_string(dir.join("ssh_connections.json"))
+            .await
+            .unwrap();
+        assert!(
+            persisted.contains("\"None\""),
+            "saved profile must record the none method: {persisted}"
+        );
+        assert!(
+            !manager.has_stored_password("ssh-coder@127.0.0.1").await,
+            "none authentication must not create a password vault entry"
+        );
+
+        let restored = manager
+            .load_connection_config_from_saved("ssh-coder@127.0.0.1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(restored.auth, SSHAuthMethod::None));
+
+        // Empty bodies are the shape the web UI sends for a new profile.
+        let from_wire: SSHConnectionConfig = serde_json::from_value(serde_json::json!({
+            "id": "ssh-coder@127.0.0.1",
+            "name": "coder agent",
+            "host": "127.0.0.1",
+            "port": 2222,
+            "username": "coder",
+            "auth": { "type": "None" },
+            "defaultWorkspace": null,
+        }))
+        .unwrap();
+        assert!(matches!(from_wire.auth, SSHAuthMethod::None));
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
