@@ -81,6 +81,9 @@
 
 .chat-page__prompt-suggestion {
   align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   max-width: 100%;
   min-width: 0;
 
@@ -93,6 +96,17 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+
+// The bubble accepts the suggestion into the editor; the trailing control
+// submits it directly so a suggestion can be sent with a single tap.
+.chat-page__prompt-suggestion-accept {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.chat-page__prompt-suggestion-send {
+  flex: 0 0 auto;
 }
 
 // ── Model and reasoning controls ─────────────────────────────────────────

@@ -35,6 +35,7 @@ interface ChatComposerBarProps {
   pendingImages: PendingImage[];
   promptSuggestion?: string | null;
   onAcceptPromptSuggestion?: (suggestion: string) => void;
+  onSendPromptSuggestion?: (suggestion: string) => void;
   remoteUnavailable: boolean;
   streaming: boolean;
 }
@@ -61,6 +62,7 @@ export default function ChatComposerBar({
   pendingImages,
   promptSuggestion,
   onAcceptPromptSuggestion,
+  onSendPromptSuggestion,
   remoteUnavailable,
   streaming,
 }: ChatComposerBarProps) {
@@ -74,17 +76,28 @@ export default function ChatComposerBar({
     <div className={`chat-page__input-wrap ${expanded ? 'is-expanded' : ''}`} ref={containerRef}>
       {queueContent}
       {visibleSuggestion ? (
-        <MobileButton
-          appearance="secondary"
-          aria-label={t('chat.promptSuggestionAccept', { suggestion: visibleSuggestion })}
-          className="chat-page__prompt-suggestion"
-          data-testid="chat-prompt-suggestion"
-          onClick={() => onAcceptPromptSuggestion?.(visibleSuggestion)}
-          size="sm"
-          trailing={<LucideCornerDownLeft width="14" height="14" aria-hidden="true" />}
-        >
-          {visibleSuggestion}
-        </MobileButton>
+        <div className="chat-page__prompt-suggestion">
+          <MobileButton
+            appearance="secondary"
+            aria-label={t('chat.promptSuggestionAccept', { suggestion: visibleSuggestion })}
+            className="chat-page__prompt-suggestion-accept"
+            data-testid="chat-prompt-suggestion"
+            onClick={() => onAcceptPromptSuggestion?.(visibleSuggestion)}
+            size="sm"
+            trailing={<LucideCornerDownLeft width="14" height="14" aria-hidden="true" />}
+          >
+            {visibleSuggestion}
+          </MobileButton>
+          <MobileIconButton
+            appearance="surface"
+            aria-label={t('chat.promptSuggestionSend', { suggestion: visibleSuggestion })}
+            className="chat-page__prompt-suggestion-send"
+            data-testid="chat-prompt-suggestion-send"
+            icon={<LucideArrowUp width="14" height="14" aria-hidden="true" />}
+            onClick={() => (onSendPromptSuggestion ?? onAcceptPromptSuggestion)?.(visibleSuggestion)}
+            size="sm"
+          />
+        </div>
       ) : null}
       <MobileComposer
         aria-label={t('chat.collapsedInputPlaceholder')}

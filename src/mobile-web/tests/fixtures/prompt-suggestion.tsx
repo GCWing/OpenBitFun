@@ -55,6 +55,8 @@ export function mountPromptSuggestionFixture() {
         promptSuggestion={suggestion} onAcceptPromptSuggestion={value => {
           calls.push(value); setInput(value); setExpanded(true);
           requestAnimationFrame(() => inputRef.current?.focus());
+        }} onSendPromptSuggestion={value => {
+          calls.push(`send:${value}`); setSuggestion(null);
         }} />
     </div></I18nProvider></ThemeProvider>;
   }

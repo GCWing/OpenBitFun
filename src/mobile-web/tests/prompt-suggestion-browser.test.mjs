@@ -91,3 +91,42 @@ test('suggestions fit the composer across compact, foldable and wide layouts wit
     }
   } finally { await browser.close(); await server.close(); }
 });
+
+test('the trailing control sends a suggestion without touching the draft', { timeout: 60_000 }, async () => {
+  const server = await startSourceServer();
+  const browser = await launchBrowser();
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 390, height: 844 });
+    await page.goto(server.origin);
+    await page.evaluate(async () => {
+      const { mountPromptSuggestionFixture } = await import('/tests/fixtures/prompt-suggestion.tsx');
+      window.suggestions = mountPromptSuggestionFixture();
+    });
+    await page.waitForFunction(() => window.suggestions.ready());
+    await page.evaluate(() => {
+      const fixture = window.suggestions;
+      fixture.event({ event: 'session-record', session_id: 'session', payload: {
+        sessionId: 'session', id: 'turn/first', revision: 1,
+        turn: { turnId: 'first', sessionId: 'session', turnIndex: 0, status: 'completed', timestamp: 1, userMessage: { id: 'user-1', content: 'Review', timestamp: 1 } },
+      } });
+      fixture.event({ event: 'agentic://prompt-suggestion', session_id: 'session',
+        payload: { sessionId: 'session', sourceTurnId: 'first', suggestion: 'Run the tests' } });
+      fixture.caughtUp();
+    });
+    const selector = '[data-testid="chat-prompt-suggestion"]';
+    await page.waitForSelector(selector);
+    // The compact accept affordance must stay the default target; sending is an
+    // explicit second control, not the whole bubble.
+    assert.equal(await page.$eval(selector, node => node.textContent), 'Run the tests');
+    await page.click('[data-testid="chat-prompt-suggestion-send"]');
+    await page.waitForFunction(() => window.suggestions.calls.length === 1);
+    assert.deepEqual(await page.evaluate(() => window.suggestions.calls), ['send:Run the tests']);
+    await page.waitForSelector(selector, { hidden: true });
+    assert.equal(
+      await page.evaluate(() => document.querySelector('textarea')?.value ?? ''),
+      '',
+      'a one-tap send must not fill the draft',
+    );
+  } finally { await browser.close(); await server.close(); }
+});
