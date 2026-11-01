@@ -43,7 +43,16 @@
         "idleMotion": "Idle motion and blinks",
         "glow": "Extra glow (may lower FPS)",
         "showStats": "Debug frame statistics (dev build only)",
-        "reset": "Restore defaults"
+        "reset": "Restore defaults",
+        "bodyColor": "Sphere color",
+        "bodyColor.black": "Black",
+        "bodyColor.darkGray": "Dark gray",
+        "bodyColor.gray": "Gray",
+        "bodyColor.custom": "Custom",
+        "eyeColor": "Eye color",
+        "eyeColor.white": "White",
+        "eyeColor.lightGray": "Light gray",
+        "eyeColor.custom": "Custom"
       },
       "presets": {
         "blueGolden": {

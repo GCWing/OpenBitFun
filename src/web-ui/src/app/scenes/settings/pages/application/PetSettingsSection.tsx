@@ -433,6 +433,35 @@ const PetSettingsSection: React.FC<{ isActive?: boolean }> = ({ isActive = true 
                 <ConfigPageRow label={t('features.pet.grok.glow')} align="center">
                   <Switch checked={grokSettings.glow} onChange={event => updateGrok({ glow: event.target.checked })} />
                 </ConfigPageRow>
+                <ConfigPageRow label={t('features.pet.grok.bodyColor')} align="center">
+                  <Select size="sm" value={grokSettings.bodyColor}
+                    onValueChange={value => updateGrok({ bodyColor: value as GrokLiveSettings['bodyColor'] })}
+                    options={[
+                      { value: 'black', label: t('features.pet.grok.bodyColor.black') },
+                      { value: 'darkGray', label: t('features.pet.grok.bodyColor.darkGray') },
+                      { value: 'gray', label: t('features.pet.grok.bodyColor.gray') },
+                      { value: 'custom', label: t('features.pet.grok.bodyColor.custom') },
+                    ]} aria-label={t('features.pet.grok.bodyColor')} />
+                  {grokSettings.bodyColor === 'custom' && (
+                    <input type="color" value={grokSettings.bodyCustomColor}
+                      aria-label={t('features.pet.grok.bodyColor.custom')}
+                      onChange={event => updateGrok({ bodyCustomColor: event.target.value })} />
+                  )}
+                </ConfigPageRow>
+                <ConfigPageRow label={t('features.pet.grok.eyeColor')} align="center">
+                  <Select size="sm" value={grokSettings.eyeColor}
+                    onValueChange={value => updateGrok({ eyeColor: value as GrokLiveSettings['eyeColor'] })}
+                    options={[
+                      { value: 'white', label: t('features.pet.grok.eyeColor.white') },
+                      { value: 'lightGray', label: t('features.pet.grok.eyeColor.lightGray') },
+                      { value: 'custom', label: t('features.pet.grok.eyeColor.custom') },
+                    ]} aria-label={t('features.pet.grok.eyeColor')} />
+                  {grokSettings.eyeColor === 'custom' && (
+                    <input type="color" value={grokSettings.eyeCustomColor}
+                      aria-label={t('features.pet.grok.eyeColor.custom')}
+                      onChange={event => updateGrok({ eyeCustomColor: event.target.value })} />
+                  )}
+                </ConfigPageRow>
                 {import.meta.env.DEV && (
                   <ConfigPageRow label={t('features.pet.grok.showStats')} align="center">
                     <Switch checked={grokSettings.showStats} onChange={event => updateGrok({ showStats: event.target.checked })} />

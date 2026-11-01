@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import recipes from './grok-live/grok-recipes.json';
 import { createGrokBot, type GrokBot } from './grok-live/grok-player.js';
-import { readGrokLiveSettings, subscribeGrokLiveSettings } from './grok-live/grokLiveSettings';
+import { readGrokLiveSettings, subscribeGrokLiveSettings, resolveGrokBodyColorHex, resolveGrokEyeColorHex, hexToRgb01 } from './grok-live/grokLiveSettings';
 import type { AgentCompanionPetProps } from './AgentCompanionPet';
 import './GrokLivePet.scss';
 
@@ -79,7 +79,7 @@ export const GrokLivePet: React.FC<Props> = ({
       bot = createGrokBot(stageRef.current, {
         data: recipes, size: 320, maxFps, state: baseRef.current,
         follow: settings.follow && !hasExternalGaze && !reducedMotion, reducedMotion,
-        theme: { ink: [0, 0, 0], spot: [1, 1, 1], cutout: false },
+        theme: { ink: hexToRgb01(resolveGrokBodyColorHex(settings)), spot: hexToRgb01(resolveGrokEyeColorHex(settings)), cutout: false },
         onFrame: import.meta.env.DEV && settings.showStats ? sample => {
           if (sample.intervalMs == null || !Number.isFinite(sample.intervalMs)) return;
           samples.push(sample);
@@ -122,10 +122,14 @@ export const GrokLivePet: React.FC<Props> = ({
     botRef.current?.setGaze(gaze ?? null);
   }, [gaze, settings.follow, reducedMotion, hasExternalGaze, settings.fps, settings.showStats]);
   useEffect(() => {
+    const ink = hexToRgb01(resolveGrokBodyColorHex(settings));
     botRef.current?.setGlow(settings.glow ? {
-      inner: [.16, .16, .16], mid: [.05, .05, .05], rim: [0, 0, 0], halo: 0,
+      inner: ink.map(v => Math.min(1, v + 0.16)),
+      mid: ink.map(v => Math.max(0, v - 0.05)),
+      rim: ink.map(v => Math.max(0, v - 0.14)),
+      halo: 0,
     } : null);
-  }, [settings.glow, settings.fps, settings.showStats, reducedMotion]);
+  }, [settings.glow, settings.bodyColor, settings.bodyCustomColor, settings.fps, settings.showStats, reducedMotion]);
   useEffect(() => {
     if ((!action || !transientActiveRef.current) && botRef.current) {
       applyBaseState(botRef.current, baseRef.current, settings.idleMotion);
@@ -170,9 +174,9 @@ export const GrokLivePet: React.FC<Props> = ({
       aria-label={error ? 'GrokLive (animation unavailable)' : 'GrokLive'} role="img">
       <div ref={stageRef} className="openbitfun-grok-live__stage">
         {!ready && (<svg className="openbitfun-grok-live__fallback" viewBox="0 0 100 100" aria-hidden="true">
-          <circle cx="50" cy="50" r="43" fill="black" />
-          <ellipse cx="36" cy="45" rx="8" ry="11" fill="white" />
-          <ellipse cx="64" cy="45" rx="8" ry="11" fill="white" />
+          <circle cx="50" cy="50" r="43" fill={resolveGrokBodyColorHex(settings)} />
+          <ellipse cx="36" cy="45" rx="8" ry="11" fill={resolveGrokEyeColorHex(settings)} />
+          <ellipse cx="64" cy="45" rx="8" ry="11" fill={resolveGrokEyeColorHex(settings)} />
         </svg>)}
       </div>
       {import.meta.env.DEV && settings.showStats && stats && (<output className="openbitfun-grok-live__stats">{stats}</output>)}

@@ -43,7 +43,16 @@
         "idleMotion": "闲置动作和眨眼",
         "glow": "额外发光（可能降低帧率）",
         "showStats": "调试帧统计（仅开发版）",
-        "reset": "恢复默认"
+        "reset": "恢复默认",
+        "bodyColor": "球体颜色",
+        "bodyColor.black": "黑色",
+        "bodyColor.darkGray": "深灰色",
+        "bodyColor.gray": "灰色",
+        "bodyColor.custom": "自定义",
+        "eyeColor": "眼睛颜色",
+        "eyeColor.white": "白色",
+        "eyeColor.lightGray": "浅灰色",
+        "eyeColor.custom": "自定义"
       },
       "presets": {
         "blueGolden": {
