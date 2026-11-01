@@ -1,0 +1,5 @@
+Local personal-research integration. Do not redistribute the extracted recipes or original character design without rights clearance.
+Source: https://github.com/ArvinYin1/grokbot-animation-anatomy
+Files: js/vendor/grok-player.js (browser ESM port), js/vendor/grok-recipes.json (extracted app data).
+Source repository README states MIT, but separately states that the underlying Grok design and extracted recipes remain the property of their original owners and are for study/research.
+Local changes to grok-player.js: visibility pause/resume, frame instrumentation, and RAF cadence.

@@ -23,6 +23,17 @@ export const DEFAULT_AGENT_COMPANION_PET: AgentCompanionPetSelection = {
   spriteVersionNumber: 2,
 };
 
+export const GROK_LIVE_PET: AgentCompanionPetSelection = {
+  id: 'grok-live',
+  displayName: 'GrokLive',
+  description: 'A live procedural SVG companion with a black body and white eyes.',
+  source: 'preset',
+  packagePath: `${BUILTIN_PET_BASE}/grok-live`,
+  // Only a picker thumbnail: the live renderer never parses this as a spritesheet.
+  spritesheetPath: `${BUILTIN_PET_BASE}/grok-live/preview.svg`,
+  spritesheetMimeType: 'image/svg+xml',
+};
+
 /** Cache: absolute file path → blob URL (prevents re-reading the same file). */
 const blobUrlCache = new Map<string, string>();
 const blobLoads = new Map<string, { promise: Promise<string>; released: boolean }>();
@@ -218,6 +229,7 @@ const BUILTIN_PETS: AgentCompanionPetSelection[] = [
     spritesheetPath: `${BUILTIN_PET_BASE}/usagi/spritesheet.webp`,
     spritesheetMimeType: 'image/webp',
   },
+  GROK_LIVE_PET,
 ];
 
 export interface AgentCompanionPetPackage extends AgentCompanionPetSelection {

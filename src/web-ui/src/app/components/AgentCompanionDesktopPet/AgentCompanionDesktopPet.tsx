@@ -29,6 +29,7 @@ import { createLogger } from '@/shared/utils/logger';
 import { isImeOwnedKeyboardEvent } from '@/shared/utils/ime';
 import { isReducedMotionPreferred } from '@/shared/utils/motionPreference';
 import { getPetLookDirection } from '@/infrastructure/config/services/agentCompanionPetSprite';
+import { isGrokLivePet } from '@/infrastructure/config/services/grokLivePetIdentity';
 import { startAgentCompanionDrag } from '@/infrastructure/config/services/AgentCompanionDragService';
 import { prepareAgentCompanionPointerDrag, type CompanionPointerDrag } from '@/infrastructure/config/services/AgentCompanionPointerDragService';
 import { createCompanionWindowResizer, isCompanionViewportShort } from './agentCompanionWindowResize';
@@ -192,9 +193,11 @@ export const AgentCompanionDesktopPet: React.FC = () => {
   const [typedOutputBySessionId, setTypedOutputBySessionId] = useState<Record<string, TypewriterOutputState>>({});
   const [isHoveringPet, setIsHoveringPet] = useState(false);
   const [lookDirection, setLookDirection] = useState<number | null>(null);
+  const [grokGaze, setGrokGaze] = useState<[number, number] | null>(null);
   const trackPetLook = mood === 'rest' && pet != null && (
     pet.spriteVersionNumber === 2 || (pet.source === 'user' && pet.spriteVersionNumber == null)
   );
+  const trackGrokGaze = isGrokLivePet(pet);
   const [isDraggingPet, setIsDraggingPet] = useState(false);
   const [dragDirection, setDragDirection] = useState<'left' | 'right'>('right');
   const stopDragRef = useRef<(() => void) | null>(null);
@@ -238,9 +241,11 @@ export const AgentCompanionDesktopPet: React.FC = () => {
   const displayTasks = [...visibleTasks].reverse();
   const activePetSize = pet && petFrameSize
     ? petFrameSize
-    : pet
-      ? DEFAULT_PETDEX_DISPLAY_SIZE
-      : { width: DEFAULT_PET_SIZE, height: DEFAULT_PET_SIZE };
+    : pet && isGrokLivePet(pet)
+      ? { width: DEFAULT_PET_SIZE, height: DEFAULT_PET_SIZE }
+      : pet
+        ? DEFAULT_PETDEX_DISPLAY_SIZE
+        : { width: DEFAULT_PET_SIZE, height: DEFAULT_PET_SIZE };
 
   useEffect(() => {
     let disposed = false;
@@ -539,7 +544,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
   }, [windowResizer]);
 
   useEffect(() => {
-    if (IS_WINDOWS_WEBVIEW && !trackPetLook) {
+    if (IS_WINDOWS_WEBVIEW && !trackPetLook && !trackGrokGaze) {
       return;
     }
 
@@ -656,6 +661,17 @@ export const AgentCompanionDesktopPet: React.FC = () => {
           lastPointerMovedAt = now;
           lastPointer = { x: pointer.x, y: pointer.y };
         }
+        const gazeX = cachedHitboxRect && !isReducedMotionPreferred()
+          ? Math.max(-1, Math.min(1, (pointerX - (cachedHitboxRect.left + cachedHitboxRect.width / 2)) / (cachedHitboxRect.width * 2)))
+          : 0;
+        const gazeY = cachedHitboxRect && !isReducedMotionPreferred()
+          ? Math.max(-1, Math.min(1, -(pointerY - (cachedHitboxRect.top + cachedHitboxRect.height / 2)) / (cachedHitboxRect.height * 2)))
+          : 0;
+        if (trackGrokGaze) {
+          setGrokGaze(previous => previous?.[0] === gazeX && previous?.[1] === gazeY ? previous : [gazeX, gazeY]);
+        } else {
+          setGrokGaze(null);
+        }
         setLookDirection(cachedHitboxRect && now - lastPointerMovedAt < PET_LOOK_HOLD_MS && !isReducedMotionPreferred()
           ? getPetLookDirection(
             pointerX - (cachedHitboxRect.left + cachedHitboxRect.width / 2),
@@ -689,7 +705,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       if (document.visibilityState === 'hidden') return;
       // Keep the same visible hover latency, and refresh immediately on return.
       void pollPointerHover();
-      intervalId = window.setInterval(() => { void pollPointerHover(); }, POINTER_HOVER_POLL_INTERVAL_MS);
+      intervalId = window.setInterval(() => { void pollPointerHover(); }, trackGrokGaze ? 33 : POINTER_HOVER_POLL_INTERVAL_MS);
     };
     document.addEventListener('visibilitychange', syncPointerPolling);
     syncPointerPolling();
@@ -702,7 +718,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       removeWindowMovedListener?.();
       removeScaleChangedListener?.();
     };
-  }, [trackPetLook]);
+  }, [trackPetLook, trackGrokGaze]);
 
   const showMainWindowFromPet = useCallback(async () => {
     try {
@@ -1251,12 +1267,15 @@ export const AgentCompanionDesktopPet: React.FC = () => {
            data-openbitfun-component="agent-companion-desktop-pet" data-openbitfun-part="hitbox" data-openbitfun-state={hasAttentionTask ? 'attention' : undefined}>
             <AgentCompanionPet
               mood={displayMood}
+              needsAttention={tasks.some(task => task.state === 'attention')}
+              toolWaiting={tasks.some(task => task.state === 'waiting')}
               dragDirection={dragDirection}
               action={!isDraggingPet
                 ? mood === 'rest' && visibleTasks.some(task => task.state === 'error') ? 'failed' : reaction?.action ?? null
                 : null}
               pet={pet}
               lookDirection={trackPetLook && !isDraggingPet ? lookDirection : null}
+              gaze={trackGrokGaze && !isDraggingPet ? grokGaze : null}
               nativePetdexSize
               petdexScale={PETDEX_DESKTOP_SCALE}
               petdexMaxSize={PET_MAX_DISPLAY_SIZE}

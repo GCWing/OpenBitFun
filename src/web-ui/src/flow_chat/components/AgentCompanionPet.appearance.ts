@@ -11,6 +11,6 @@ export const agentCompanionPetAppearanceDescriptor: AppearanceSurfaceDescriptor 
   ],
   facets: [
     { id: 'mood', attribute: 'data-openbitfun-mood', values: ['rest', 'analyzing', 'waiting', 'working', 'hover', 'dragging'] },
-    { id: 'layout', attribute: 'data-openbitfun-layout', values: ['default', 'center', 'stopRight', 'petdex'] },
+    { id: 'layout', attribute: 'data-openbitfun-layout', values: ['default', 'center', 'stopRight', 'petdex', 'grok-live'] },
   ],
 };

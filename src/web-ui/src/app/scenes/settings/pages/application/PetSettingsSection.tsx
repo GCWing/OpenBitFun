@@ -17,6 +17,8 @@ import {
   type AgentCompanionPetPackage,
 } from '@/infrastructure/config/services/AgentCompanionPetService';
 import { getPetSpriteLayout } from '@/infrastructure/config/services/agentCompanionPetSprite';
+import { isGrokLivePet } from '@/infrastructure/config/services/grokLivePetIdentity';
+import { DEFAULT_GROK_LIVE_SETTINGS, readGrokLiveSettings, saveGrokLiveSettings, subscribeGrokLiveSettings, type GrokLiveSettings } from '@/flow_chat/components/grok-live/grokLiveSettings';
 import { aiExperienceConfigService, type AIExperienceSettings } from '@/infrastructure/config/services/AIExperienceConfigService';
 import { confirmDanger } from '@/infrastructure/confirm-dialog';
 import { useI18n } from '@/infrastructure/i18n';
@@ -28,6 +30,7 @@ import { captureConfirmationAnchor,
   Icon,
   IconButton,
   OverflowText,
+  Select,
   Switch,
   Tooltip
 } from '@openbitfun/ui';
@@ -39,9 +42,10 @@ const IS_TAURI_DESKTOP = typeof window !== 'undefined' && '__TAURI__' in window;
 
 function getPetPreviewStyle(pet: AgentCompanionPetPackage): React.CSSProperties {
   return {
-    imageRendering: pet.source === 'preset' && pet.id === 'bitblob' ? 'auto' : undefined,
+    imageRendering: isGrokLivePet(pet) || (pet.source === 'preset' && pet.id === 'bitblob') ? 'auto' : undefined,
     '--openbitfun-pet-preview-src': `url("${pet.previewSrc}")`,
-    backgroundSize: `800% ${getPetSpriteLayout(pet.spriteVersionNumber).rows * 100}%`,
+    backgroundSize: isGrokLivePet(pet) ? 'contain' : `800% ${getPetSpriteLayout(pet.spriteVersionNumber).rows * 100}%`,
+    ...(isGrokLivePet(pet) ? { backgroundPosition: 'center', animation: 'none' } : {}),
   } as React.CSSProperties;
 }
 
@@ -70,6 +74,16 @@ const PetSettingsSection: React.FC<{ isActive?: boolean }> = ({ isActive = true 
   const [companionPetImporting, setCompanionPetImporting] = useState(false);
 
   const [companionPetDeletingPath, setCompanionPetDeletingPath] = useState<string | null>(null);
+  const [grokSettings, setGrokSettings] = useState(readGrokLiveSettings);
+  useEffect(() => subscribeGrokLiveSettings(() => setGrokSettings(readGrokLiveSettings())), []);
+  const updateGrok = (patch: Partial<GrokLiveSettings>) => {
+    try {
+      setGrokSettings(saveGrokLiveSettings(patch));
+    } catch (error) {
+      log.error('Failed to save GrokLive settings', error);
+      notification.error(t('messages.saveFailed'));
+    }
+  };
 
   const reloadCompanionPets = useCallback(async () => {
     setCompanionPets(await companionPetInventory.read(listAgentCompanionPets));
@@ -388,6 +402,44 @@ const PetSettingsSection: React.FC<{ isActive?: boolean }> = ({ isActive = true 
                 </Disclosure>
               </div>
             </div>
+            {isGrokLivePet(selectedCompanionPetReference) && (
+              <>
+                <ConfigPageRow label={t('features.pet.grok.title')} align="center">
+                  <Button size="sm" variant="secondary" onClick={() => updateGrok(DEFAULT_GROK_LIVE_SETTINGS)}>
+                    {t('features.pet.grok.reset')}
+                  </Button>
+                </ConfigPageRow>
+                <ConfigPageRow label={t('features.pet.grok.size')} align="center">
+                  <input type="range" min={64} max={128} step={8} value={grokSettings.size}
+                    aria-label={t('features.pet.grok.size')}
+                    onChange={event => updateGrok({ size: Number(event.target.value) })} />
+                  <output>{grokSettings.size}</output>
+                </ConfigPageRow>
+                <ConfigPageRow label={t('features.pet.grok.frameRate')} align="center">
+                  <Select size="sm" value={grokSettings.fps}
+                    onValueChange={value => updateGrok({ fps: value as GrokLiveSettings['fps'] })}
+                    options={[
+                      { value: 'auto', label: t('features.pet.grok.auto') },
+                      { value: '60', label: '60 FPS' },
+                      { value: '120', label: '120 FPS' },
+                    ]} aria-label={t('features.pet.grok.frameRate')} />
+                </ConfigPageRow>
+                <ConfigPageRow label={t('features.pet.grok.follow')} align="center">
+                  <Switch checked={grokSettings.follow} onChange={event => updateGrok({ follow: event.target.checked })} />
+                </ConfigPageRow>
+                <ConfigPageRow label={t('features.pet.grok.idleMotion')} align="center">
+                  <Switch checked={grokSettings.idleMotion} onChange={event => updateGrok({ idleMotion: event.target.checked })} />
+                </ConfigPageRow>
+                <ConfigPageRow label={t('features.pet.grok.glow')} align="center">
+                  <Switch checked={grokSettings.glow} onChange={event => updateGrok({ glow: event.target.checked })} />
+                </ConfigPageRow>
+                {import.meta.env.DEV && (
+                  <ConfigPageRow label={t('features.pet.grok.showStats')} align="center">
+                    <Switch checked={grokSettings.showStats} onChange={event => updateGrok({ showStats: event.target.checked })} />
+                  </ConfigPageRow>
+                )}
+              </>
+            )}
           </ConfigPageSection>
         )}
       </ConfigPageSectionStack>

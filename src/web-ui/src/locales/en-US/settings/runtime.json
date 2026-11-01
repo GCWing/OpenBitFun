@@ -34,6 +34,17 @@
       "deleteConfirmBody": "Delete this imported pet from your device? This cannot be undone.",
       "deleteSuccess": "Imported appearance removed",
       "deleteFailed": "Failed to remove imported appearance",
+      "grok": {
+        "title": "GrokLive settings",
+        "size": "Size (px)",
+        "frameRate": "Frame rate target",
+        "auto": "Auto (up to 120)",
+        "follow": "Follow pointer",
+        "idleMotion": "Idle motion and blinks",
+        "glow": "Extra glow (may lower FPS)",
+        "showStats": "Debug frame statistics (dev build only)",
+        "reset": "Restore defaults"
+      },
       "presets": {
         "blueGolden": {
           "name": "困困"

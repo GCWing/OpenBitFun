@@ -34,6 +34,17 @@
       "deleteConfirmBody": "從本機刪除此已匯入的寵物形象？此操作無法復原。",
       "deleteSuccess": "已刪除匯入的形象",
       "deleteFailed": "刪除匯入形象失敗",
+      "grok": {
+        "title": "GrokLive 設定",
+        "size": "大小（像素）",
+        "frameRate": "目標幀率",
+        "auto": "自動（最高 120）",
+        "follow": "視線跟隨滑鼠",
+        "idleMotion": "閒置動作與眨眼",
+        "glow": "額外發光（可能降低幀率）",
+        "showStats": "除錯幀統計（僅開發版）",
+        "reset": "恢復預設"
+      },
       "presets": {
         "blueGolden": {
           "name": "困困"
