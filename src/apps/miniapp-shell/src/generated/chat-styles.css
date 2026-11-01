@@ -1391,15 +1391,14 @@
   height: var(--openbitfun-control-chat-composer-control-height);
   align-items: center;
   align-self: center;
+  gap: var(--openbitfun-space-1);
   padding: 0;
 }
 .openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-chat-input__actions-left {
   justify-content: flex-start;
-  gap: var(--openbitfun-space-2);
 }
 .openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-chat-input__actions-right {
   justify-content: flex-end;
-  gap: var(--openbitfun-space-1);
 }
 .openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-chat-input__model-usage-group,
 .openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface] .openbitfun-model-selector {
@@ -1476,6 +1475,7 @@
 }
 .openbitfun-chat-input__composer > [data-openbitfun-part=body] > [data-openbitfun-part=surface][data-openbitfun-layout=expanded] .openbitfun-harness-selector__trigger {
   height: var(--openbitfun-control-chat-composer-control-height);
+  padding-inline: var(--openbitfun-space-1);
   border-radius: var(--openbitfun-radius-pill);
 }
 .openbitfun-chat-input--capsule .openbitfun-chat-input__content {
@@ -2101,6 +2101,10 @@
   position: relative;
 }
 
+.user-message-item:not(.user-message-item--expanded):not(.user-message-item--editing) {
+  max-width: min(28rem, var(--openbitfun-control-flow-chat-user-message-max-width));
+}
+
 .user-message-item__surface {
   position: absolute;
   inset: 0;
@@ -2274,6 +2278,22 @@
   max-height: 4.75em; /* Collapsed: up to 3 compact lines. */
   user-select: text;
   transition: none;
+}
+
+.user-message-item__content-preview::after {
+  content: "…";
+}
+
+.user-message-item__content-overflow {
+  display: none;
+}
+
+.user-message-item--expanded .user-message-item__content-preview::after {
+  content: none;
+}
+
+.user-message-item--expanded .user-message-item__content-overflow {
+  display: contents;
 }
 
 .user-message-item--expanded {

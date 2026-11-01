@@ -18,6 +18,28 @@ export function Example() {
 
 The package owns component anatomy, behavior, accessibility, and stable variants. It does not own theme selection persistence, product state, routes, locale resources, or platform APIs.
 
+## Color selection
+
+`ColorPicker` combines a round swatch, an editable HEX pill, an expandable flower
+palette and a curved lightness slider. Use `value` / `onValueChange` for a controlled
+draft, or `defaultValue` for an independent control. Opening the palette and
+focusing unchanged text do not emit a value change. `onValueChange` includes
+incomplete text; owners must require a six-digit HEX value before persistence.
+Enter, blur or the apply action expands three-digit shorthand. Invalid text keeps
+the last valid preview. `open` / `onOpenChange` can connect an external custom-color
+entry point; `defaultOpen` is available for inline authoring.
+
+The palette stays in normal document flow. Its petals are keyboard buttons; the
+lightness slider supports pointer capture, touch, arrow keys, Page Up/Down and
+Home/End. Escape first leaves text editing, then collapses the palette. Pass
+localized `labels` from the owning surface. Bloom motion respects reduced motion.
+
+`components/ColorPicker/color.ts` owns sRGB/HSL conversion and the sampled flower
+gamut. Palette colors, the current-color ring and the lightness ramp represent
+editable color content; they deliberately do not follow theme or status colors.
+Chrome, borders, focus and shadows use existing semantic/system tokens. No theme
+color literal or new token is needed. The component has no storage or host API.
+
 ## Pane layouts
 
 `SplitView` retains its primary and secondary content hosts across placement,
@@ -394,14 +416,16 @@ continues to own selection, keyboard navigation, label overflow, and end-action
 anatomy. Product wrappers own document states and layout, without replacing the
 tab's control styles or creating another tablist.
 
-`TabGroupItem.endAction` reserves space inside the tab surface. On pointer devices,
-the icon, label, and non-interactive suffix are centered together at rest, then
-shift toward the leading edge as the action fades in on hover. The tab and action
-hit areas keep fixed positions and widths. Keyboard focus reveals the action and
-moves the content immediately; touch keeps the action visible and the content
-clear of it. Reduced motion disables both transitions. Tabs without an end action
-keep their ordinary centered layout. Label overflow and rolling-text replacement
-remain inside the label slot, independent of this movement.
+`TabGroupItem.endAction` keeps the resting pointer-device capsule compact, with
+symmetrical padding around its centered content. Hover grows the capsule at its
+inline end, then fades in the action after expansion finishes. The icon, label
+slot, and non-interactive suffix retain their positions and widths; following
+tabs make room for the growing capsule. Keyboard focus expands and reveals the
+action immediately; touch keeps it visible. Reduced motion makes both steps
+immediate. Constrain the item's content width rather than a product wrapper's
+outer width so the action can grow beyond a capped label. Tabs without an end
+action keep their ordinary centered layout. Label overflow and rolling-text
+replacement remain inside the label slot, independent of action visibility.
 
 ## Mobile controls
 
@@ -465,6 +489,9 @@ except for error tone. Use `showIcon={false}` for text-only notices.
 uncontrolled open state, trigger/region accessibility wiring, focus exclusion
 while collapsed, reduced-motion behavior, and independent header actions.
 Product copy and the revealed content remain consumer-owned.
+Use `headerClassName` to style the default header surface while retaining its
+trigger, actions, and focus behavior. `triggerClassName` and `contentInnerClassName`
+allow consumers to align the indicator and revealed content without replacing the trigger.
 
 Use `Disclosure presentation="native"` when the browser must own the existing
 `details`/`summary` behavior. This mode renders a real details element, a direct
@@ -534,6 +561,15 @@ Leading identity icons stay in their label layout; this contract governs the
 independent trailing actions. Product CSS owns placement of capsules, not their
 action offsets, backgrounds, or visibility.
 
+`Capsule layout="split"` joins two direct child controls into equal-width halves
+with square inner corners, rounded outer ends, and no mismatched child borders.
+Set `splitSizing="content"` to fit both controls and the overall capsule to their
+content. Use a `Select variant="pill"` followed by
+a `Button`, with the same explicit size; set the Select's `width="content"` for
+content sizing or `width="full"` for equal halves. Each control
+keeps its own focus, disabled state, and action; the select popup remains portalled.
+Use exactly two controls and omit the floating `action` slot for this layout.
+
 For supplemental label annotations, compose `Tooltip trigger="hover-focus"
 openOnClick` with `IconButton variant="annotation" size="xs"` and an `info`
 icon. The annotation uses `color.content.muted` at rest and
@@ -589,7 +625,13 @@ Use `Select` for simple options; its hidden native control preserves form
 participation. `width="content"` fits the collapsed control to the selected label;
 `popupWidth="content"` independently fits the expanded surface to its options,
 within the viewport. The defaults remain a full-width control and a popup that
-matches the trigger. `Combobox` adds searchable single
+matches the trigger. `variant="pill"` uses badge typography, spacing and rounded
+ends while retaining the selected control size. An option's `selectedLabel`
+shortens only the closed trigger; the expanded header, listbox and native form
+option retain its full `label`. Combine these with content widths for compact
+inline platform or scope selectors. Set `showGroupLabels={false}` to hide group
+headings while retaining the standard section spacing, and `showGroupDividers`
+to separate option groups with a themed border. `Combobox` adds searchable single
 selection, grouped options, explicit custom-value creation and async loading
 states. `MultiSelect` owns multiple selection, removable tags and select-all.
 Controlled values are authoritative; option discovery remains host-owned.
@@ -659,6 +701,10 @@ the SearchField over that anchor.
 `FieldGroup fieldSurface="ambient"` keeps text and picker field borders while
 letting their shells reuse the grouped surface. The default field surface stays
 theme-owned, and portalled menus remain on the opaque panel surface.
+
+`FieldGroup fieldSurface="filled"` uses the theme's grouped field background with
+the standard resting, hover, focus, invalid, and forced-color borders. It applies to Input, Select, Combobox, Textarea, and NumberInput; nested
+groups can explicitly restore the default surface.
 
 `Menu` remains composable inline anatomy. `MenuPopover` composes it into a
 controlled anchored or coordinate popup. Pass `items`, `open`, `onClose` and
@@ -832,7 +878,36 @@ Dialog titles use 24px bold type with their own 29px line box and normal trackin
 
 Extra-large (`xl`) dialogs have an 800px maximum width and continue shrinking within the viewport gutter. Provider editing uses the floating footer; small workspace creation retains its attached footer and existing button/input sizes. The Lab workspace pattern uses local sample paths and callbacks only.
 
-Keep `Dialog` and `Sheet` mounted and set `open={false}` to close them. They retain the last committed children, size, placement, classes, and styles during the exit animation, with interaction disabled, so clearing an owner selection does not resize the surface. Reopening uses the latest presentation and cancels the pending exit. Owners that conditionally mount an editor can remove it in `onExitComplete`, which runs once after the surface unmounts.
+**Panel Dialog** (`Dialog preset="panel"`) is the fixed management-panel layout:
+800px wide, 640px high, with a 600px heading and content measure. The heading and
+body form one vertically centered group when content is short. Long content uses
+the available body height and scrolls; it does not resize the surface. The minimum
+top inset and heading-to-body gap share one measure: the header chrome inset plus
+16px. Floating footers reserve only their actual action height at the bottom,
+with trailing body space for the fade. Plain headings
+use the small control height, while a brand mark can grow naturally. Header
+actions or a standalone close button stay in the upper-right corner; use
+`DialogHeaderLeading` for a fixed upper-left back action. Width and height shrink
+within the viewport gutter. `DialogBody` owns scrolling and responsive horizontal
+insets. Use direct `DialogHeader` / `DialogHeading`, `DialogBody`, and optional
+`DialogFooter` children; group right-side actions in `DialogHeaderActions`.
+The preset selects `xl` regardless of `size`; the default preset retains the
+existing content-sized behavior. Keep product copy and account logic in consumers.
+The only new geometry token is `overlay.dialog.panelBlockSize`: the existing
+width and spacing scales cover the other dimensions, but do not define a fixed
+panel height.
+
+```tsx
+<Dialog open={open} onOpenChange={setOpen} preset="panel">
+  <DialogHeader>
+    <DialogHeading><DialogTitle>Manage accounts</DialogTitle></DialogHeading>
+    <DialogHeaderActions><DialogClose /></DialogHeaderActions>
+  </DialogHeader>
+  <DialogBody>{accountList}</DialogBody>
+</Dialog>
+```
+
+Keep `Dialog` and `Sheet` mounted and set `open={false}` to close them. They retain the last committed children, preset, size, placement, classes, and styles during the exit animation, with interaction disabled, so clearing an owner selection does not resize the surface. Reopening uses the latest presentation and cancels the pending exit. Owners that conditionally mount an editor can remove it in `onExitComplete`, which runs once after the surface unmounts.
 
 PageHeader `md` uses the settings title with a primary 15px description; `display` uses the welcome heading and medium 17px introduction with a 12px gap. ActionCard uses 12px padding, section-heading typography (15px semibold), and a primary 13px single-line action description. Its inset outline does not inflate the 62px medium minimum height; longer content keeps the independent sibling actions and OverflowText behavior.
 

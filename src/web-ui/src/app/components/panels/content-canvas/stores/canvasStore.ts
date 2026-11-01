@@ -1255,6 +1255,44 @@ export function openAgentCanvasTabForSession(sessionId: string, content: PanelCo
   if (target !== useAgentCanvasStore) rememberAgentSnapshot(key, extractAgentPersistableState(target.getState()));
 }
 
+/** Update retained output without reopening a closed tab or changing the selected tab. */
+export function updateAgentCanvasTabsForSession(
+  sessionId: string,
+  update: (content: PanelContent) => PanelContent | undefined,
+): boolean {
+  const key = normalizeAgentScopeKey(sessionId);
+  const target = useAgentCanvasStore.getState().scopeKey === key
+    ? useAgentCanvasStore : createCanvasStoreHook();
+  if (target !== useAgentCanvasStore) {
+    const snapshot = agentScopeSnapshots.get(key);
+    if (!snapshot) return false;
+    target.setState(structuredClone(snapshot));
+  }
+  const state = target.getState();
+  let updated = false;
+  for (const groupId of ['primary', 'secondary', 'tertiary'] as const) {
+    for (const tab of state[`${groupId}Group`].tabs) {
+      const content = update(tab.content);
+      if (!content) continue;
+      state.updateTabContent(tab.id, groupId, content);
+      updated = true;
+    }
+  }
+  // A later explicit Reopen Closed Tab must not restore an endless loading state.
+  let updatedHistory = false;
+  const closedTabs = state.closedTabs.map(record => {
+    const content = update(record.tab.content);
+    if (!content) return record;
+    updatedHistory = true;
+    return { ...record, tab: { ...record.tab, content } };
+  });
+  if (updatedHistory) target.setState({ closedTabs });
+  if ((updated || updatedHistory) && target !== useAgentCanvasStore) {
+    rememberAgentSnapshot(key, extractAgentPersistableState(target.getState()));
+  }
+  return updated;
+}
+
 /** Session deletion also releases snapshots exempted from ordinary LRU eviction. */
 export function forgetAgentCanvasSession(sessionId: string): void {
   const key = normalizeAgentScopeKey(sessionId);

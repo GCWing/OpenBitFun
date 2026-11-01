@@ -42,6 +42,7 @@
             "session-lifecycle": "Rename, archive, restore, delete, copy, fork, and export sessions",
             "model-mode-permissions": "Choose the model, work mode, memory mode, and permission mode per session",
             "creative-frontend-authoring": "Extend client UI and runtime capabilities in Creative mode",
+            "image-generation": "Generate images with the configured default image model",
             "turn-control": "Start, steer, interrupt, cancel, or recover an agent turn",
             "permission-mailbox": "Review and answer pending permission requests individually or in a batch",
             "history-search": "Page through, search, and backfill historical turns and session content",
@@ -91,6 +92,7 @@
             "close-switch-reorder": "Close, switch, and reorder multiple open workspaces",
             "recent-workspaces": "Review, clean up, and reopen recently used projects",
             "workspace-metadata": "Scan and maintain workspace names, metadata, related directories, and persona files",
+            "workspace-icon": "Choose project icon shapes and colors, or use a custom image",
             "file-watch": "Watch project file changes, inspect watch status, and recover a stopped watcher",
             "workspace-search": "Search local workspaces by filename, path, or file content",
             "remote-open": "Open SSH and other remote workspaces from the project flow",
@@ -221,6 +223,7 @@
             "customization": "Create customization drafts, preview them live, and apply, sync, or discard changes",
             "versions": "Inspect version history and roll back to an earlier release",
             "agent-authoring": "Let an agent initialize, author, and validate a Mini App",
+            "agent-operate-app": "Let an agent control a Mini App using its source and live interface",
             "agent-market-submit": "Let an agent submit a completed Mini App for market review when explicitly requested",
             "publishing": "Withdraw and review market releases, and render slide pages"
           }
@@ -314,13 +317,14 @@
           "title": "Detached Dispatch",
           "summary": "Dispatch durable work to another OpenBitFun host; the controller may disconnect while the target continues and keeps the record.",
           "items": {
-            "targets": "List dispatch targets and probe their version, connectivity, and runtime capabilities",
+            "targets": "List same-account devices and saved SSH targets",
             "provision": "Provision the target runtime and install or update the OpenBitFun CLI",
             "model-sync": "Synchronize required model configuration before submitting a job",
-            "submit": "Submit a durable job with workspace, session, model, and permission policy to the target",
+            "submit": "Submit a durable job from the current Git workspace to a same-account device or SSH target",
             "status-list": "List dispatched jobs and query their status, result, and errors",
             "transcript": "Save, append, and reload reconnectable execution transcripts",
-            "permission-continuation": "Answer permission requests remotely and continue or cancel target-side work",
+            "permission-continuation": "Answer permission requests remotely and continue target-side work",
+            "cancel": "Cancel a job submitted from this host",
             "result-sync": "Synchronize target-side results back without treating the controller as a remote-filesystem proxy"
           }
         },
@@ -367,7 +371,7 @@
           "title": "Desktop cards",
           "summary": "Let agents place draggable cards outside the main window for glanceable information such as countdowns, checklists, PR status, weather, or stock prices, restored after the app reopens.",
           "items": {
-            "agent-cards": "Create countdown, checklist, note, progress, metrics, scheduled-job, and custom cards on request or during a task, optionally refreshed from an HTTP endpoint or a local command",
+            "agent-cards": "Create countdown, checklist, note, progress, metrics, chart, scheduled-job, and custom cards on request or during a task, optionally refreshed from an HTTP endpoint or a local command",
             "home-management": "See every card in the Home Desktop cards section, and show, hide, or delete individual cards",
             "card-actions": "Refresh data, check off list items, toggle always-on-top, open the link, or return to the source session from a card",
             "drag-restore": "Drag cards anywhere on the desktop and resize them from their edges or corners; they disappear when OpenBitFun closes and return with the same position and size when it reopens"
@@ -467,8 +471,10 @@
               "available-models": "Let an agent inspect models available under the current configuration",
               "model-catalog": "Inspect models.dev catalog status, refresh it manually, and reveal its local cache",
               "advanced-request": "Add custom headers, request-body fields, and SSL behavior per provider",
-              "connection-test": "Test provider or model connectivity before saving and refresh the runtime client",
-              "model-pools": "Manage model pools, routing strategies, and session model selection"
+              "smart-routing": "View smart-mode availability (not available yet)",
+              "connection-test": "Test model connections or image generation and refresh the runtime client",
+              "model-pools": "Manage model pools, routing strategies, and session model selection",
+              "smart-routing": "View smart-mode availability (not released)"
             }
           },
           "memory": {
@@ -518,13 +524,14 @@
         "tools": {
           "execution": {
             "title": "Execution & permissions",
-            "summary": "Manage agent tool permissions, concurrency, timeouts, deferred loading, Computer Use, and browser control.",
+            "summary": "Manage agent tool permissions, presentation mode, concurrency, timeouts, deferred loading, Computer Use, and browser control.",
             "items": {
               "permission-mode": "Choose Ask, Auto-approve, or Full Access permission mode and acknowledge high-risk warnings",
               "permission-selector": "Choose whether the permission-mode selector appears below the chat composer",
               "global-project-rules": "Create, reorder, and save global or project-level Allow, Ask, and Deny rules",
               "remembered-grants": "Review, revoke, or clear remembered project permission grants and audit records",
               "deferred-tools": "Deferred tool loading on demand to reduce initial agent context",
+              "tool-presentation": "Choose native mode or PTC TypeScript mode for the model",
               "parallelism": "Set subagent and swarm concurrency plus safe-only, forced-parallel, or serial policy",
               "timeouts": "Set or disable the per-tool execution timeout",
               "review-capacity": "Set the maximum parallel Deep Review workers and queue wait time",

@@ -44,6 +44,70 @@
   .surface[data-size="xl"] { max-inline-size: var(--openbitfun-overlay-dialog-max-inline-size-xlarge); }
   .surface[data-size="2xl"] { max-inline-size: var(--openbitfun-overlay-dialog-max-inline-size-xxlarge); }
 
+  .surface[data-preset="panel"] {
+    --_dialog-panel-title-gap: calc(var(--openbitfun-overlay-dialog-header-padding-block-start) + var(--openbitfun-space-4));
+
+    display: grid;
+    grid-template-rows: auto minmax(0, max-content) auto;
+    align-content: center;
+    padding-block: var(--_dialog-panel-title-gap);
+    block-size: min(
+      var(--openbitfun-overlay-dialog-panel-block-size),
+      calc(100dvh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter))
+    );
+  }
+
+  .surface[data-preset="panel"] > .header {
+    padding-block-start: 0;
+    padding-block-end: var(--_dialog-panel-title-gap);
+  }
+
+  .surface[data-preset="panel"] > .header > .heading {
+    justify-content: center;
+    min-block-size: var(--openbitfun-control-height-sm);
+    max-inline-size: var(--openbitfun-overlay-dialog-max-inline-size-large);
+    margin-inline: auto;
+    text-align: center;
+  }
+
+  .surface[data-preset="panel"] > .header > .headerLeading,
+  .surface[data-preset="panel"] > .header > .headerActions,
+  .surface[data-preset="panel"] > .header > .close {
+    position: absolute;
+    inset-block-start: var(--openbitfun-overlay-dialog-header-padding-block-start);
+    inset-inline-end: var(--openbitfun-overlay-dialog-header-padding-inline);
+  }
+
+  .surface[data-preset="panel"] > .header > .headerLeading {
+    inset-inline-start: var(--openbitfun-overlay-dialog-header-padding-inline);
+    inset-inline-end: auto;
+  }
+
+  .surface[data-preset="panel"] > .body {
+    padding-block: 0;
+    padding-inline: max(
+      var(--openbitfun-overlay-dialog-content-padding-lg),
+      calc((100% - var(--openbitfun-overlay-dialog-max-inline-size-large)) / 2)
+    );
+  }
+
+  .surface[data-preset="panel"] > .footer[data-appearance="attached"] {
+    justify-content: center;
+    padding-block: var(--openbitfun-overlay-dialog-header-padding-block-end) 0;
+  }
+
+  .surface[data-preset="panel"]:has(> .footer[data-appearance="floating"]) {
+    padding-block-end: max(
+      var(--_dialog-panel-title-gap),
+      var(--openbitfun-overlay-dialog-footer-height)
+    );
+  }
+
+  .surface[data-preset="panel"]:has(> .footer[data-appearance="floating"]) > .body {
+    padding-block-end: var(--openbitfun-overlay-dialog-footer-fade-extent);
+    scroll-padding-block-end: var(--openbitfun-overlay-dialog-footer-fade-extent);
+  }
+
   .overlay[data-openbitfun-component="sheet"] {
     padding: 0;
   }
@@ -113,6 +177,7 @@
     letter-spacing: var(--openbitfun-type-support-letter-spacing);
   }
 
+  .headerLeading,
   .headerActions {
     display: flex;
     flex: 0 0 auto;

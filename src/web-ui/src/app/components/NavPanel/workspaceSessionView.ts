@@ -174,6 +174,25 @@ export function matchesWorkspaceSourceAgent(session: Session, source: WorkspaceS
   return source === 'all' || (session.importedSource || 'openbitfun') === source;
 }
 
+/**
+ * Automatic discovery controls whether source-following views are shown in
+ * workspace navigation. A forked/local continuation has no `externalHistory`
+ * marker and remains a native OpenBitFun session even when its original
+ * source is disabled.
+ *
+ * `undefined` means the host setting has not been resolved yet. Keep the
+ * existing projection visible during that brief window so an old host or a
+ * transient config read failure does not hide user data.
+ */
+export function matchesWorkspaceExternalDiscovery(
+  session: Session,
+  enabledSources: ReadonlySet<string> | undefined,
+): boolean {
+  if (enabledSources === undefined || session.externalHistory?.mode !== 'follow') return true;
+  return typeof session.importedSource === 'string'
+    && enabledSources.has(session.importedSource);
+}
+
 export function sessionSourceAgentLabel(source: string): string {
   return source === 'openbitfun' ? 'OpenBitFun' : isExternalSessionEcosystem(source) ? EXTERNAL_SESSION_NAMES[source] : source;
 }

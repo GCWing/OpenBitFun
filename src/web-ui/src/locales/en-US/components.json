@@ -586,11 +586,9 @@
     "dropBottom": "Bottom",
     "dropCenter": "Drop",
     "empty": {
-      "title": "Open something alongside your conversation",
-      "description": "Files, terminals, and previews appear here.",
-      "currentHost": "Current host",
-      "workspaceUnavailable": "This workspace is disconnected. Reconnect to browse files or start a terminal.",
-      "selectWorkspace": "Select a workspace to browse files or start a terminal.",
+      "title": "Nothing open",
+      "workspaceUnavailable": "Workspace disconnected. Please reconnect.",
+      "selectWorkspace": "Select a workspace first.",
       "browseFiles": "Browse files",
       "newTerminal": "New terminal",
       "reopen": "Reopen {{title}}"
@@ -694,6 +692,14 @@
     },
     "checklist": {
       "empty": "No items"
+    },
+    "chart": {
+      "empty": "No data to chart yet",
+      "other": "Other",
+      "remaining": "Remaining",
+      "ofTotal": "of {{total}}",
+      "changeSince": "{{change}} since {{label}}",
+      "range": "{{min}} – {{max}}"
     },
     "cron": {
       "failed": "Could not load the scheduled job.",

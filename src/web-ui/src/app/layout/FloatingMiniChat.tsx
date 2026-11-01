@@ -25,11 +25,12 @@ import { selectedScene } from '../workbench/scenePaneModel';
 import { useSessionPaneLayout } from '../scenes/session/sessionPaneLayoutStore';
 import { getMiniAppIdFromSceneId, getMiniAppSceneId } from '../scenes/miniapps/miniAppActivity';
 import { followMiniAppConversation, openMiniAppConversation, openMiniAppFromConversation, resolveMiniAppConversation, syncMiniAppConversations } from '../scenes/miniapps/miniAppConversation';
-import { postMiniAppComposerMessage } from '../scenes/miniapps/miniAppComposerMessages';
+import { requestMiniAppComposerMessage } from '../scenes/miniapps/miniAppComposerMessages';
 import { pickLocalizedString } from '../scenes/miniapps/utils/pickLocalizedString';
 import { resolveDisplayTitle } from '@/flow_chat/components/session-menu/useFlowChatSessions';
 import MiniAppBubbleWelcome from './MiniAppBubbleWelcome';
 import { createLogger } from '@/shared/utils/logger';
+import { notificationService } from '@/shared/notification-system';
 import './FloatingMiniChat.scss';
 const log = createLogger('ConversationDock');
 
@@ -63,11 +64,24 @@ function DockConversationView({ entry, active, onCollapse, renderHeader, onVoice
     placeholder: claim?.customization?.composer?.placeholder || claim?.placeholder || t('miniAppComposer.placeholder', { app: appName }),
     draft,
     onDraftConsumed: id => useConversationDockStore.getState().consumeDraft(key, id),
-    onSubmit: submission => {
-      const live = useMiniAppStore.getState().composerClaims[entry.appId!];
-      if (getActiveSurfaceId() !== entry.surfaceId || live?.surfaceId !== entry.surfaceId
-        || live?.token !== entry.claimToken || live.sessionId !== entry.sessionId) throw new Error('The MiniApp no longer owns this conversation');
-      postMiniAppComposerMessage({ ...submission, token: entry.claimToken!, sessionId: entry.sessionId });
+    onSubmit: async submission => {
+      try {
+        const live = useMiniAppStore.getState().composerClaims[entry.appId!];
+        if (getActiveSurfaceId() !== entry.surfaceId || live?.surfaceId !== entry.surfaceId
+          || live?.token !== entry.claimToken || live.sessionId !== entry.sessionId) throw new Error('The MiniApp no longer owns this conversation');
+        await requestMiniAppComposerMessage(
+          { ...submission, token: entry.claimToken!, sessionId: entry.sessionId },
+          undefined,
+          { resolveOnAgentRun: true },
+        );
+      } catch (error) {
+        if (getActiveSurfaceId() === entry.surfaceId && !isSurfaceChangedError(error)) {
+          const reason = error instanceof Error ? error.message : t('errors.sendFailed');
+          notificationService.error(reason.startsWith('miniapp_agent_images_v1_unsupported:')
+            ? t('miniAppComposer.imagesUnsupportedPeer') : reason);
+        }
+        throw error;
+      }
     },
   }), [appName, claim, draft, entry, session, t, key]);
   const voiceTarget = useMemo<VoiceCallTarget | undefined>(() => !session ? undefined : entry.kind === 'miniapp' ? {

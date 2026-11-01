@@ -65,6 +65,7 @@ vi.mock('@/app/utils/projectSessionWorkspace', () => ({
 
 vi.mock('../utils/imagePayload', () => ({
   buildImagePayload: vi.fn().mockResolvedValue(undefined),
+  stripImageContextTags: (text: string) => text.trim(),
 }));
 
 vi.mock('@/shared/notification-system', () => ({

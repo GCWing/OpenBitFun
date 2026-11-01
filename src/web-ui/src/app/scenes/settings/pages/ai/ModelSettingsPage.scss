@@ -50,6 +50,17 @@
     list-style: none;
   }
 
+  &__subscription-summary {
+    display: grid;
+    gap: var(--openbitfun-space-3);
+    min-inline-size: 0;
+    inline-size: 100%;
+
+    > .openbitfun-model-settings__import-summary {
+      flex-wrap: wrap;
+    }
+  }
+
   &__import-item {
     display: inline-flex;
     min-width: 0;
@@ -1204,10 +1215,6 @@
           &.openbitfun-model-settings__context-window-row {
             row-gap: var(--openbitfun-space-1);
           }
-
-          &.openbitfun-model-settings__model-selection-row {
-            row-gap: var(--openbitfun-space-2);
-          }
         }
       }
     }
@@ -1268,60 +1275,43 @@
   }
 
   &__connection-section > .openbitfun-config-page-section__body {
-    display: grid;
-    grid-template-columns: 112px minmax(0, 1.6fr) 96px minmax(0, 1fr);
-    column-gap: var(--openbitfun-space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-4);
+    overflow: visible;
   }
 
-  &__connection-section &__connection-row,
-  &__connection-section &__endpoint-row {
+  &__connection-section &__connection-row {
     display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: subgrid;
-    column-gap: var(--openbitfun-space-4);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: var(--openbitfun-space-4);
     min-width: 0;
-    padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
   }
 
-  &__connection-row > .openbitfun-config-page-row {
-    grid-column: span 2;
-    grid-template-columns: subgrid;
-    column-gap: var(--openbitfun-space-4);
+  &__connection-section &__connection-row--single {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  &__connection-row > .openbitfun-config-page-row,
+  &__connection-section &__endpoint-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--openbitfun-space-2);
     min-width: 0;
     padding: 0;
-    border-top: 0;
-  }
+    border: 0;
 
-  &__connection-row > .openbitfun-config-page-row + .openbitfun-config-page-row {
-    border-top: 0;
-  }
-
-  @media (hover: hover) and (pointer: fine) {
-    @container model-editor (width > 560px) {
-      &__connection-row:hover {
-        background: var(--openbitfun-component-config-page-row-hover-background);
-
-        > .openbitfun-config-page-row:hover {
-          background: transparent;
-        }
-      }
+    > .openbitfun-config-page-row__meta {
+      max-inline-size: none;
     }
-  }
 
-  &__connection-row--single > .openbitfun-config-page-row {
-    grid-column: 1 / -1;
-  }
-
-  &__connection-row--single > .openbitfun-config-page-row,
-  &__connection-section &__endpoint-row {
     > .openbitfun-config-page-row__control {
-      grid-column: 2 / -1;
+      grid-column: 1;
     }
-  }
 
-  &__connection-row + &__connection-row,
-  &__connection-row + &__endpoint-row {
-    border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-component-config-page-divider);
+    &:hover {
+      background: transparent;
+    }
   }
 
   &__connection-value {
@@ -1399,21 +1389,57 @@
     width: 100%;
   }
 
+  &__account-pool-entry {
+    min-inline-size: 0;
+    padding-block: var(--openbitfun-space-2);
+
+    & + & {
+      border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+      margin-block-start: var(--openbitfun-space-2);
+      padding-block-start: var(--openbitfun-space-4);
+    }
+  }
+
+  &__account-pool > &__subscription-account-actions {
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-3);
+  }
+
   &__account-pool-item {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--openbitfun-space-2);
-    min-width: 0;
-    min-height: 32px;
+    min-inline-size: 0;
+    min-block-size: var(--openbitfun-control-height-sm);
+
+    > [data-openbitfun-component='status-pill'] {
+      flex: none;
+      max-inline-size: 100%;
+    }
   }
 
   &__account-pool-choice {
+    flex: none;
+    align-self: center;
+  }
+
+  &__account-pool-content {
+    min-inline-size: 0;
+  }
+
+  &__account-pool-label {
     display: flex;
-    flex: 1 1 auto;
-    align-items: center;
-    gap: var(--openbitfun-space-2);
-    min-width: 0;
-    cursor: pointer;
+    min-inline-size: 0;
+
+    &[for] {
+      cursor: pointer;
+    }
+  }
+
+  &__account-pool-item > &__account-pool-label {
+    flex: 1 1 12rem;
+    min-inline-size: 0;
   }
 
   &__channel-route-index {
@@ -1423,12 +1449,7 @@
     font-variant-numeric: tabular-nums;
   }
 
-  &__subscription-management {
-    padding-inline: var(--openbitfun-space-6);
-  }
-
-  &__endpoint-row,
-  &__model-selection-row {
+  &__endpoint-row {
     > .openbitfun-config-page-row__meta {
       display: flex;
       align-items: center;
@@ -1453,9 +1474,79 @@
   }
 
   &__advanced-settings {
-    margin: 0 var(--openbitfun-space-4) var(--openbitfun-space-3);
-    padding-top: var(--openbitfun-space-2);
-    border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-component-config-page-divider);
+    margin: 0;
+
+    .openbitfun-config-page-row {
+      padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
+      gap: var(--openbitfun-space-2) var(--openbitfun-space-4);
+    }
+
+    .openbitfun-model-settings__toggle-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+  }
+
+  &__advanced-settings-trigger {
+    position: relative;
+    display: flex;
+    align-items: center;
+    inline-size: 100%;
+    min-block-size: var(--openbitfun-layout-disclosure-trigger-min-block-size);
+    padding: var(--openbitfun-space-1) 0;
+    padding-inline-end: calc(var(--openbitfun-layout-disclosure-indicator-size) + var(--openbitfun-space-2));
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset-block: calc(0px - var(--openbitfun-space-1));
+      inset-inline: calc(0px - var(--openbitfun-space-6)) calc(0px - var(--openbitfun-space-2));
+      border-radius: var(--openbitfun-layout-disclosure-trigger-radius);
+    }
+
+    &:hover:not(:disabled)::before {
+      background: var(--openbitfun-color-action-neutral-surface-hover);
+    }
+
+    &:focus-visible::before {
+      outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+      outline-offset: var(--openbitfun-focus-offset);
+    }
+
+    &[aria-expanded='true'] .openbitfun-model-settings__advanced-settings-indicator {
+      transform: rotate(90deg);
+    }
+  }
+
+  &__advanced-settings-indicator {
+    position: absolute;
+    inset-inline-end: 0;
+    color: var(--openbitfun-color-content-muted);
+    transition: transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+    @media (prefers-reduced-motion: reduce) { transition: none; }
+  }
+
+  &__advanced-settings-heading {
+    position: relative;
+    display: grid;
+    min-inline-size: 0;
+    gap: var(--openbitfun-space-1);
+  }
+
+  &__advanced-settings-title {
+    color: var(--openbitfun-color-content-primary);
+    font-family: var(--openbitfun-type-heading-section-font-family);
+    font-size: var(--openbitfun-type-heading-section-font-size);
+    font-weight: var(--openbitfun-type-heading-section-font-weight);
+    line-height: var(--openbitfun-type-heading-section-line-height);
+    letter-spacing: var(--openbitfun-type-heading-section-letter-spacing);
   }
 
   &__input-visibility-toggle {
@@ -1568,10 +1659,6 @@
     max-width: 100%;
   }
 
-  &__model-discovery-dialog {
-    block-size: min(420px, calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
-  }
-
   &__model-discovery-body {
     gap: var(--openbitfun-space-3);
     overflow: hidden;
@@ -1608,6 +1695,11 @@
     min-block-size: var(--openbitfun-control-height-sm);
   }
 
+  &__model-section > [data-openbitfun-part='header'] {
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
   &__manual-model-input {
     flex: 0 1 24ch;
     width: 24ch;
@@ -1625,6 +1717,11 @@
   }
 
   &__selected-models-empty {
+    flex-basis: 100%;
+    padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
+    border-radius: var(--openbitfun-radius-base);
+    background: var(--openbitfun-color-field-group-background);
+    text-align: start;
     color: var(--openbitfun-color-content-muted);
     font-size: var(--openbitfun-type-support-font-size);
     line-height: var(--openbitfun-type-support-line-height);
@@ -1692,14 +1789,6 @@
     line-height: var(--openbitfun-type-body-sm-line-height);
   }
 
-  &__model-selection-row > .openbitfun-config-page-row__control {
-    display: contents;
-
-    > .openbitfun-model-settings__control-stack {
-      display: contents;
-    }
-  }
-
   &__resolved-url {
     display: flex;
     align-items: baseline;
@@ -1731,33 +1820,17 @@
     border-top: 1px dashed var(--openbitfun-color-field-border-hover);
   }
 
-  &__editor-dialog {
-    block-size: min(
-      640px,
-      calc(100vh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter))
-    );
-  }
-
-  &__editor-heading-group {
-    flex: 1 1 auto;
-  }
-
-  &__model-editor-header {
+  &__provider-editor-brand {
+    display: flex;
     align-items: center;
-
-    [data-openbitfun-part='heading'] {
-      justify-content: center;
-      min-block-size: var(--openbitfun-control-icon-button-xs-size);
-    }
-
-    [data-openbitfun-part='title'] {
-      color: var(--openbitfun-color-content-primary);
-      font-family: var(--openbitfun-type-label-selected-font-family);
-      font-size: var(--openbitfun-type-label-selected-font-size);
-      font-weight: var(--openbitfun-type-label-selected-font-weight);
-      line-height: var(--openbitfun-type-action-row-line-height);
-      letter-spacing: var(--openbitfun-type-label-selected-letter-spacing);
-    }
+    justify-content: flex-start;
+    color: var(--openbitfun-color-content-primary);
+    text-align: start;
+    overflow-wrap: anywhere;
+    font-family: var(--openbitfun-type-heading-dialog-font-family);
+    font-size: var(--openbitfun-type-heading-dialog-font-size);
+    font-weight: var(--openbitfun-type-heading-dialog-font-weight);
+    line-height: var(--openbitfun-type-heading-dialog-line-height);
   }
 
   &__form--modal {
@@ -1774,15 +1847,22 @@
     }
   }
 
-  &__single-model-advanced-content {
+  &__single-model-fields .openbitfun-config-page-row {
+    padding: var(--openbitfun-space-3) var(--openbitfun-space-4);
+  }
+
+  &__advanced-settings-content {
     padding-inline: 0;
+
+    .openbitfun-config-page-row {
+      border: 0;
+    }
   }
 
   &__form-content {
-    padding-inline: var(--openbitfun-space-6);
     display: flex;
     flex-direction: column;
-    gap: var(--openbitfun-space-6);
+    gap: var(--openbitfun-space-4);
 
     > * {
       flex-shrink: 0;
@@ -2157,10 +2237,21 @@
     overflow-wrap: anywhere;
   }
 
+  &__selection-header {
+    > .openbitfun-config-page-header__inner {
+      flex-direction: row;
+      align-items: center;
+    }
+
+    .openbitfun-config-page-header__extra {
+      width: auto;
+      margin-top: 0;
+    }
+  }
+
   &__selection-actions {
     display: flex;
     justify-content: flex-end;
-    margin-top: var(--openbitfun-space-4);
   }
 
   
@@ -2390,13 +2481,6 @@
 }
 
 .openbitfun-model-settings {
-  &__subscription-dialog {
-    max-block-size: min(
-      640px,
-      calc(100dvh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter))
-    );
-  }
-
   &__subscription-content {
     container: config-panel / inline-size;
     display: grid;
@@ -2404,15 +2488,15 @@
     min-inline-size: 0;
   }
 
+  &__signed-in-accounts [data-openbitfun-part='subscriptionAccount']:first-child {
+    border-block-start: 0;
+  }
+
   &__cli-discovery {
     display: flex;
     flex-direction: column;
     gap: var(--openbitfun-space-3);
     min-inline-size: 0;
-  }
-
-  &__cli-discovery [data-openbitfun-part='subscriptionQuota'] {
-    margin-inline: var(--openbitfun-layout-card-padding-md);
   }
 
   &__cli-empty {
@@ -2429,11 +2513,72 @@
   &__cli-account.openbitfun-config-page-row {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--openbitfun-space-4);
+    row-gap: var(--openbitfun-space-2);
     padding: var(--openbitfun-layout-card-padding-md);
+
+    > .openbitfun-config-page-row__meta { display: contents; }
+    .openbitfun-config-page-row__label { grid-column: 1; grid-row: 1; }
+    .openbitfun-config-page-row__control { grid-column: 2; grid-row: 1; }
+    .openbitfun-config-page-row__description {
+      grid-column: 1 / -1;
+      grid-row: 2;
+      display: grid;
+      gap: var(--openbitfun-space-1);
+      max-inline-size: none;
+      margin: 0;
+    }
+
+    &:hover {
+      background: transparent;
+    }
   }
 
   &__cli-description-line {
     display: block;
+  }
+
+  &__cli-account-heading {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-2);
+  }
+
+  &__subscription-provider-logo {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--openbitfun-space-6);
+    block-size: var(--openbitfun-space-6);
+  }
+
+  &__cli-account-summary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-2) var(--openbitfun-space-4);
+    min-inline-size: 0;
+
+    > [data-openbitfun-part='subscriptionQuota'] {
+      flex: 1 1 240px;
+      min-inline-size: 0;
+    }
+  }
+
+  &__cli-authorization-expiry {
+    margin-inline-start: auto;
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-meta-font-size);
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+
+    &[data-expired='true'] { color: var(--openbitfun-color-status-danger-content); }
+    &:focus-visible {
+      outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+      outline-offset: var(--openbitfun-focus-offset);
+      border-radius: var(--openbitfun-radius-sm);
+    }
   }
 
   &__cli-actions {
@@ -2566,6 +2711,8 @@
       gap: var(--openbitfun-space-2);
 
       .openbitfun-config-page-row__control {
+        grid-column: 1;
+        grid-row: 3;
         justify-content: flex-start;
       }
     }
@@ -2619,7 +2766,25 @@
   }
 }
 
-@container model-editor (max-width: 560px) {
+@container model-editor (max-width: 480px) {
+  .openbitfun-model-settings__advanced-settings {
+    .openbitfun-config-page-row:not(.openbitfun-model-settings__toggle-row) {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .openbitfun-config-page-row__meta {
+      max-inline-size: none;
+    }
+
+    .openbitfun-config-page-row__control {
+      grid-column: 1;
+    }
+
+    .openbitfun-model-settings__toggle-row > .openbitfun-config-page-row__control {
+      grid-column: 2;
+    }
+  }
+
   .openbitfun-model-settings__form--modal .openbitfun-model-settings__edit-section:not(.openbitfun-model-settings__connection-section) {
     .openbitfun-config-page-row:not(.openbitfun-config-page-row--multiline):not(.openbitfun-model-settings__toggle-row),
     .openbitfun-config-page-row--multiline.openbitfun-config-page-row--wide {
@@ -2632,36 +2797,12 @@
     }
   }
 
-  .openbitfun-model-settings__form-content {
-    padding-inline: var(--openbitfun-space-4);
-  }
-
-  .openbitfun-model-settings__connection-section > .openbitfun-config-page-section__body {
+  .openbitfun-model-settings__connection-section .openbitfun-model-settings__connection-row {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .openbitfun-model-settings__connection-row > .openbitfun-config-page-row {
-    grid-column: 1 / -1;
-    padding-block: var(--openbitfun-space-3);
-  }
-
-  .openbitfun-model-settings__connection-row--single > .openbitfun-config-page-row,
-  .openbitfun-model-settings__connection-section .openbitfun-model-settings__endpoint-row {
-    > .openbitfun-config-page-row__control {
-      grid-column: 1;
-    }
   }
 
   .openbitfun-model-settings__form--modal .openbitfun-model-settings__edit-section .openbitfun-config-page-row {
     row-gap: var(--openbitfun-space-2);
-  }
-
-  .openbitfun-model-settings__connection-section .openbitfun-model-settings__connection-row {
-    padding-block: 0;
-  }
-
-  .openbitfun-model-settings__connection-row > .openbitfun-config-page-row + .openbitfun-config-page-row {
-    border-top: var(--openbitfun-border-width-default) solid var(--openbitfun-component-config-page-divider);
   }
 
   .openbitfun-model-settings__endpoint-inputs {

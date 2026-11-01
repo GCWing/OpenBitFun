@@ -7,12 +7,13 @@ import { FolderPlus, Server } from 'lucide-react';
 import React, { useState, useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { globalAPI, type WorkspaceInfo } from '@/infrastructure/api/service-api/GlobalAPI';
 import type { WorkspaceConnectionTarget } from '@/features/ssh-remote/types';
 import { WorkspaceSourceSelector } from '@/features/ssh-remote/WorkspaceSourceSelector';
 import { WorkspaceChoiceCapsules } from '@/features/ssh-remote/WorkspaceChoiceCapsules';
 import { useWorkspaceSourceOptions, workspacePresetHost, type WorkspaceConnectionPreset, type WorkspaceSourceOption } from '@/features/ssh-remote/useWorkspaceSourceOptions';
 import { workspaceSourceCoordinates, type WorkspaceSource } from '@/features/ssh-remote/workspaceSource';
-import { DEFAULT_PROJECT_SUBDIRECTORY, ProjectDirectoryUnavailableError, projectFolderKey, projectFolderName, type ProjectDraft, type ProjectFolder } from '@/app/utils/projectDraft';
+import { AssistantProjectFolderError, DEFAULT_PROJECT_SUBDIRECTORY, ProjectDirectoryUnavailableError, projectFolderKey, projectFolderName, type ProjectDraft, type ProjectFolder } from '@/app/utils/projectDraft';
 import { createLogger } from '@/shared/utils/logger';
 import { ProjectFolderItem, ProjectFolderList } from '@/app/components/ProjectFolderList/ProjectFolderList';
 import './NewProjectDialog.scss';
@@ -36,6 +37,8 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
 }) => {
   const { t } = useI18n('common');
   const [folders, setFolders] = useState<ProjectFolder[]>([]);
+  const [recentWorkspaces, setRecentWorkspaces] = useState<WorkspaceInfo[]>([]);
+  const [recentError, setRecentError] = useState('');
   const [projectName, setProjectName] = useState('');
   const [wslSupported, setWslSupported] = useState(false);
   const [source, setSource] = useState<WorkspaceSource>('host');
@@ -98,6 +101,33 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
     if (step === 'project') nameInputRef.current?.focus();
     else assistantChoiceRef.current?.focus();
   }, [isOpen, step]);
+
+  useEffect(() => {
+    if (!isOpen || step !== 'project' || !onPickRemoteFolder) return;
+    const scope = getActiveSurfaceScope();
+    let cancelled = false;
+    setRecentWorkspaces([]);
+    setRecentError('');
+    void globalAPI.getRecentWorkspaces().then(workspaces => {
+      if (cancelled || !scope.isCurrent()) return;
+      const paths = new Set<string>();
+      setRecentWorkspaces(workspaces
+        .filter(workspace => workspace.workspaceKind.toLowerCase() === 'normal'
+          && !workspace.connectionId && (!workspace.sshHost || workspace.sshHost === 'localhost') && workspace.rootPath)
+        .sort((a, b) => (Date.parse(b.lastAccessed) || 0) - (Date.parse(a.lastAccessed) || 0))
+        .filter(workspace => {
+          const key = projectFolderKey({ path: workspace.rootPath });
+          if (paths.has(key)) return false;
+          paths.add(key);
+          return true;
+        }).slice(0, 5));
+    }).catch(cause => {
+      if (cancelled || !scope.isCurrent()) return;
+      log.error('Failed to load recent project workspaces', cause);
+      setRecentError(cause instanceof Error ? cause.message : String(cause));
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, step, onPickRemoteFolder]);
 
   const changeStep = (next: typeof step) => {
     if (busy || submissionPending.current) return;
@@ -176,6 +206,7 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
       log.error('Failed to submit project setup', error);
       setError(error instanceof ProjectDirectoryUnavailableError
         ? t('newProject.defaultDirectoryUnavailable')
+        : error instanceof AssistantProjectFolderError ? t('newProject.assistantFolderUnavailable')
         : error instanceof Error ? error.message : t('newProject.errorCreateFailed'));
     } finally {
       submissionPending.current = false;
@@ -320,9 +351,23 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
               {onPickRemoteFolder && (
                 <div className="new-project-dialog__field" data-openbitfun-component="new-project-dialog" data-openbitfun-part="field">
                   <WorkspaceSourceSelector onWslSupportChange={setWslSupported} value={source} disabled={busy || hasFolders} showEnvironment={showEnvironment}
+                    showCurrentDevice={source !== 'host' || recentWorkspaces.length === 0}
                     locationOptions={location === 'other' ? optionChoices(hostOptions, 'ssh', selectedHostOption, value => {
                       setSelectedHostOption(value); setSelectedOption(undefined);
-                    }) : undefined}
+                    }) : source === 'host' ? <>
+                      {recentWorkspaces.length > 0 && <WorkspaceChoiceCapsules label={t('workspaceSource.availableOptions')}
+                        choices={recentWorkspaces.map(workspace => ({ id: workspace.id, label: workspace.name || projectFolderName(workspace.rootPath), description: workspace.rootPath }))}
+                        value={recentWorkspaces.find(workspace => folders.some(folder => projectFolderKey(folder) === projectFolderKey({ path: workspace.rootPath })))?.id}
+                        disabled={busy || hasFolders} onValueChange={id => {
+                          if (busy || hasFolders) return;
+                          try {
+                            formSurface.current.assertCurrent('select recent project workspace');
+                            const workspace = recentWorkspaces.find(item => item.id === id);
+                            if (workspace) { setFolders([{ path: workspace.rootPath }]); setError(''); }
+                          } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+                        }} />}
+                      {recentError && <span className="new-project-dialog__source-status" role="alert">{recentError}</span>}
+                    </> : undefined}
                     environmentOptions={source !== 'host' && source !== 'ssh' ? optionChoices(environmentOptions, source, selectedOption, setSelectedOption) : undefined}
                     locationActions={location === 'other' ? optionActions(hostOptions, 'ssh') : undefined}
                     environmentActions={source !== 'host' && source !== 'ssh' && (source !== 'wsl' || wslSupported) ? optionActions(environmentOptions, source) : undefined}

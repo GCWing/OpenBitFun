@@ -21,7 +21,7 @@ import {
 } from '@/infrastructure/config/components/common';
 import { confirmDanger } from '@/infrastructure/confirm-dialog';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
-import { i18nService, useI18n } from '@/infrastructure/i18n';
+import { i18nService } from '@/infrastructure/i18n';
 import { notificationService } from '@/shared/notification-system';
 import type { SessionMetadata } from '@/shared/types/session-history';
 import { externalHistoryFromMetadata } from '@/flow_chat/utils/externalHistory';
@@ -159,7 +159,6 @@ const ArchivedRow: React.FC<ArchivedRowProps> = ({
 
 const ArchivedSessionsSettingsPage: React.FC = () => {
   const { t } = useTranslation('common');
-  const { t: tSettings } = useI18n('settings');
   const { openedWorkspacesList } = useWorkspaceContext();
 
   const [loading, setLoading] = useState(true);
@@ -488,12 +487,10 @@ const ArchivedSessionsSettingsPage: React.FC = () => {
     <ConfigPageLayout data-openbitfun-component="archived-sessions-config" data-openbitfun-part="root" className="archived-sessions-config">
       <ConfigPageHeader
         title={t('nav.sessions.archivedSessions')}
-        subtitle={t('nav.sessions.archivedSessionsDescription')}
       />
       <ConfigPageContent>
         <ConfigPageSection
           title={t('nav.sessions.archivedSessions')}
-          description={tSettings('archivedSessions.sectionDescription')}
           extra={headerExtra}
         >
           {loadFailures.map(failure => (

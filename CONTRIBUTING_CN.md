@@ -60,7 +60,7 @@ Tauri 生成的 `gen/` 目录以及本地实施过程记录不进入 Git。
 ```bash
 # Desktop（日常开发推荐）
 pnpm run desktop:dev                # 完整热更新：Vite HMR + Rust 自动重编译并重启
-pnpm run desktop:dev -- --shared-data # 与安装版同时运行，并共享数据
+pnpm run desktop:dev -- --isolated-data # 显式使用当前仓库的独立测试数据
 pnpm run prepare:dsh-profile        # 可选：编译 DeepSeek Harness 桥，供本地会话使用
 
 # Desktop（轻量预览，无 Rust 自动重编译）
@@ -74,6 +74,11 @@ pnpm run e2e:test
 ```
 
 > **`desktop:dev` 与 `desktop:preview:debug` 的区别**：`desktop:dev` 运行 `tauri dev`，提供**完整热更新** — 前端改动通过 Vite HMR 即时生效，Rust/后端改动会触发增量重编译并自动重启应用，是日常开发的首选方式。`desktop:preview:debug` 启动预构建的 debug 二进制和 Vite dev server；前端编辑仍可 HMR，但 **Rust 侧改动不会自动重编译** — 需要手动停止并重新运行命令（或使用 `--force-rebuild`）。适合仅需迭代前端代码、或希望跳过 `tauri dev` 初始化以更快冷启动的场景。
+
+两种启动器默认使用安装版的日常数据，包括已有模型设置、工作区和会话。
+需要独立测试数据时，显式添加 `--isolated-data`，数据保存在当前仓库的
+`.openbitfun/desktop-dev/` 下。显式设置的数据目录环境变量仍优先生效；
+`--shared-data` 保留为默认模式的兼容写法。
 
 > 完整脚本列表见 [`package.json`](package.json)。agent 专用命令、验证与架构规则见 [`AGENTS.md`](AGENTS.md)。
 

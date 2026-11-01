@@ -8,7 +8,7 @@
 
 1. 先阅读仓库根 `AGENTS.md`、上级 `src/crates/services/AGENTS.md`、
    [Server README](../../../apps/miniapp-market-server/README.md) 和
-   [生产部署手册](../../../../deploy/miniapp-market/README.md)。
+   [部署手册](../../../../deploy/miniapp-market/README.md)。
 2. 本 crate 负责具体 SQLite、文件存储、GitHub OAuth、包校验和市场 HTTP
    路由。纯 DTO、状态机和策略属于
    `../../contracts/product-domains/src/miniapp/market.rs`。
@@ -135,7 +135,7 @@ yank、上传和 migration 变化不能只测试成功路径。
 此 crate 被 `openbitfun-miniapp-market-server` 编译进与网页相同的 Docker 镜像。
 不要在生产服务器直接执行 `cargo run`，不要手工替换 binary，也不要直接编辑
 SQLite/artifacts。完整流程见
-[生产部署手册](../../../../deploy/miniapp-market/README.md)。
+[部署手册](../../../../deploy/miniapp-market/README.md)。
 
 ## 邮箱验证码登录
 
@@ -151,8 +151,9 @@ URL。Relay 的旧命名 `/api/auth/github/start` 同样仅在 `methods=all` 时
 `POST /auth/login/start` 创建浏览器授权票据；`POST /auth/login/github` 选择 GitHub；
 `POST /auth/email/send` 发码，`POST /auth/email/verify` 验码。邮箱地址按 ASCII 小写
 规范化，不删除加号标签或点。固定八位随机数字验证码十分钟有效，单次最多五次尝试，只存
-基于 session secret 的 HMAC 摘要。每个邮箱一分钟一次、一天二十次；服务器整体
-一分钟三百封、不设每日总量上限，发送失败也计入配额。发送记录保留一天，配额跨重启有效。
+基于 session secret 的 HMAC 摘要。每个邮箱滚动六十秒最多两次、滚动二十四小时最多二十次，
+跨设备共享；服务器整体一分钟三百封、不设每日总量上限，发送失败也计入配额。
+发送记录保留一天，配额跨重启有效。
 只接受八位数字，不兼容旧六位验证码；部署后旧验证码需重新获取。
 SMTP 错误不得包含地址、凭据或验证码。认证接口保留 body、并发、期限和全局限流。
 

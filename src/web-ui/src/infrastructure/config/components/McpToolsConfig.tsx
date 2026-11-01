@@ -1534,13 +1534,11 @@ const McpToolsConfig: React.FC = () => {
     <ConfigPageLayout className="openbitfun-mcp-tools" data-openbitfun-component="mcp-tools-config" data-openbitfun-part="root" data-openbitfun-view={showJsonEditor ? 'json' : 'list'}>
       <ConfigPageHeader
         title={tPage('title')}
-        subtitle={desktopConfigAvailable ? tPage('subtitle') : tMcp('subtitleReadOnly')}
       />
 
       <ConfigPageContent data-openbitfun-component="mcp-tools-config" data-openbitfun-part="content">
         <ConfigPageSection
           title={showJsonEditor ? tMcp('jsonEditor.title') : tMcp('section.serverList.title')}
-          description={showJsonEditor ? tMcp('jsonEditor.description') : tMcp('section.serverList.description')}
           extra={desktopConfigAvailable ? mcpSectionExtra : undefined}
         >
           {!desktopConfigAvailable && (

@@ -440,7 +440,8 @@ struct SidebarView: View {
                 directoryExpanded: workspace.directoryExpanded,
                 directoryStatus: workspace.directoryStatus,
                 remoteConnectionId: workspace.remoteConnectionId,
-                remoteSshHost: workspace.remoteSshHost
+                remoteSshHost: workspace.remoteSshHost,
+                kind: workspace.kind
             )
             SidebarWorkspaceRow(
                 workspace: scopedWorkspace,
@@ -455,8 +456,12 @@ struct SidebarView: View {
                     )
                 },
                 onToggleCreate: {
-                    workspaceCreateTarget = scopedWorkspace
-                    workspaceCreatePath = scopedWorkspace.scopeKey
+                    if scopedWorkspace.kind == "assistant" {
+                        model.openDirectoryRemoteDraft(device: device, workspace: scopedWorkspace, agentType: "claw")
+                    } else {
+                        workspaceCreateTarget = scopedWorkspace
+                        workspaceCreatePath = scopedWorkspace.scopeKey
+                    }
                 },
                 onOpenWorkspace: { model.selectDirectoryWorkspace(scopedWorkspace) },
                 onOpenSession: { model.selectDirectorySession($0) }, onActions: { session in
@@ -560,7 +565,7 @@ struct SidebarView: View {
             return sources.map { source in
                 MobileWorkspaceGroup(workspaceId: source.workspaceId, path: source.path, name: source.name, selected: source.selected,
                     sessions: section.sessions, deviceKey: normalizedDeviceKey(model.remoteExpectedDeviceKey),
-                    remoteConnectionId: source.remoteConnectionId, remoteSshHost: source.remoteSshHost)
+                    remoteConnectionId: source.remoteConnectionId, remoteSshHost: source.remoteSshHost, kind: source.kind)
             }
         }
         return ForEach(workspaces) { workspace in
@@ -577,7 +582,9 @@ struct SidebarView: View {
                     }
                 },
                 onToggleCreate: {
-                    if HarnessProfilePolicy.shared.supported(capabilities: model.remoteHostCapabilities) {
+                    if workspace.kind == "assistant" {
+                        model.createRemoteSession(in: workspace, agentType: "claw")
+                    } else if HarnessProfilePolicy.shared.supported(capabilities: model.remoteHostCapabilities) {
                         workspaceCreatePath = workspaceCreatePath == workspace.scopeKey ? nil : workspace.scopeKey
                     } else {
                         model.createRemoteSession(in: workspace, agentType: "code")
@@ -806,6 +813,7 @@ struct SidebarView: View {
     }
 
     private func directoryCreateMenu(device: MobileDeviceDirectoryEntry, workspace: MobileWorkspaceGroup) -> AnyView? {
+        if workspace.kind == "assistant" { return nil }
         // Capabilities belong to the connected target, never another directory device.
         guard model.remoteExpectedDeviceKey == "account:\(device.id)",
               HarnessProfilePolicy.shared.supported(capabilities: model.remoteHostCapabilities) else { return nil }

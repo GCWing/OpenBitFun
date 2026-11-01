@@ -1,21 +1,19 @@
 import { useSyncExternalStore } from 'react';
-import { Button, Empty, Icon } from '@openbitfun/ui';
+import { Button, Empty, Icon, OverflowText } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
 import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
-import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { useNavSceneStore } from '@/app/stores/navSceneStore';
 import { useWorkspaceResourceState } from '@/app/scenes/workspace-resources/workspaceResourceState';
 import { useCanvasStore } from '@/app/components/panels/content-canvas';
 import { isCanvasTabVisibleForSession } from '@/app/components/panels/content-canvas/types';
 import type { ContentResourceScope } from '@/shared/types/contentResource';
-import { expandSessionAuxPane, hideSessionAuxPane } from './sessionPanelLayout';
+import { expandSessionAuxPane } from './sessionPanelLayout';
 
 export function AuxPaneEmptyState({ workspacePath, sessionId }: { workspacePath?: string; sessionId: string | null }) {
   const { t } = useI18n('components');
-  const { workspace } = useCurrentWorkspace();
+  const { workspace, workspaceName } = useCurrentWorkspace();
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
-  const peer = usePeerDeviceModeOptional();
   const target = workspace && (!workspacePath || workspace.rootPath === workspacePath) ? workspace : null;
   const canOpen = Boolean(target && (target.workspaceKind !== 'remote' || target.connectionId));
   const lastClosed = useCanvasStore(state => state.closedTabs[0]);
@@ -25,7 +23,6 @@ export function AuxPaneEmptyState({ workspacePath, sessionId }: { workspacePath?
   const canReopen = Boolean(lastClosed && canvasScopeKey === (sessionId || '__none__')
     && isCanvasTabVisibleForSession(lastClosed.tab, sessionId)
     && lastScope?.surfaceId === scope.surfaceId && lastScope.workspaceId === target?.id);
-  const hostLabel = target?.connectionName || (peer?.peerMode.active ? peer.peerMode.deviceName : t('canvas.empty.currentHost'));
   const browseFiles = () => {
     if (!canOpen || !target || !scope.isCurrent()) return;
     useWorkspaceResourceState.getState().updateLayout(scope.key('workspace-resources', target.id), { filesCollapsed: false, fileView: 'tree' });
@@ -39,12 +36,9 @@ export function AuxPaneEmptyState({ workspacePath, sessionId }: { workspacePath?
     } }));
   };
   return <div className="openbitfun-aux-pane__empty-state" data-openbitfun-component="aux-pane" data-openbitfun-part="emptyState">
-    <Empty icon={<Icon name="files" size="lg" />} title={t('canvas.empty.title')}
-      description={<>
-        <p>{t('canvas.empty.description')}</p>
-        {target && <p className="openbitfun-aux-pane__empty-path">{hostLabel} · {target.rootPath}</p>}
-        {!canOpen && <p>{t(target ? 'canvas.empty.workspaceUnavailable' : 'canvas.empty.selectWorkspace')}</p>}
-      </>}
+    <Empty className="openbitfun-aux-pane__empty-content" imageSize="lg" icon={<Icon name="playing-cards-fan" />}
+      title={<OverflowText>{(target && workspaceName) || t('canvas.empty.title')}</OverflowText>}
+      description={canOpen ? undefined : t(target ? 'canvas.empty.workspaceUnavailable' : 'canvas.empty.selectWorkspace')}
       actions={<div className="openbitfun-aux-pane__empty-actions">
         <Button size="sm" variant="outline" disabled={!canOpen} onClick={browseFiles}>{t('canvas.empty.browseFiles')}</Button>
         <Button size="sm" variant="outline" disabled={!canOpen} onClick={createTerminal}>{t('canvas.empty.newTerminal')}</Button>
@@ -53,7 +47,6 @@ export function AuxPaneEmptyState({ workspacePath, sessionId }: { workspacePath?
           reopenClosedTab();
           expandSessionAuxPane();
         }}>{t('canvas.empty.reopen', { title: lastClosed!.tab.title })}</Button>}
-        <Button size="sm" variant="quiet" onClick={hideSessionAuxPane}>{t('canvas.hidePanel')}</Button>
       </div>} />
   </div>;
 }

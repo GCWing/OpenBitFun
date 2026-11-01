@@ -132,6 +132,7 @@ class FakeConnectionManager {
         targetedSessionRollback: true,
         tokenUsageStatistics: true,
         miniAppAgentContextFilesV1: true,
+        miniAppAgentImagesV1: true,
         cancelTool: true,
         toolCatalog: true,
         userQuestionResponse: true,

@@ -672,20 +672,6 @@ fn split_terms(value: &str) -> Vec<String> {
         .collect()
 }
 
-fn is_subsequence(query: &str, candidate: &str) -> bool {
-    let mut query = query.chars();
-    let mut next = query.next();
-    for character in candidate.chars() {
-        if Some(character) == next {
-            next = query.next();
-            if next.is_none() {
-                return true;
-            }
-        }
-    }
-    next.is_none()
-}
-
 fn score_single_term(query: &str, field: &str) -> u32 {
     if field == query {
         return 100;
@@ -704,7 +690,9 @@ fn score_single_term(query: &str, field: &str) -> u32 {
         .iter()
         .filter_map(|word| word.chars().next())
         .collect();
-    if query.chars().count() > 1 && is_subsequence(query, &acronym) {
+    // Initials must be consecutive. Skipping arbitrary words makes long
+    // workflow prose spuriously match unrelated queries such as "pet".
+    if query.chars().count() > 1 && acronym.contains(query) {
         return 66;
     }
     0
@@ -885,10 +873,7 @@ pub fn discover(request: &ProductControlRequest) -> Result<Value, String> {
             // Control coverage is a tie-breaker only after a textual match.
             // Adding it first makes unrelated but highly controllable entries
             // appear for every search query.
-            (text_score > 0).then_some((
-                capability,
-                text_score.saturating_add(control_priority(capability)),
-            ))
+            (text_score > 0).then_some((capability, text_score))
         })
         .collect();
     matches.sort_by(|left, right| {
@@ -1183,6 +1168,25 @@ mod tests {
     }
 
     #[test]
+    fn acronym_matches_require_consecutive_initials_instead_of_scattered_prose() {
+        assert!(score_text_match("gs", &["Global Search"]) > 0);
+        assert_eq!(
+            score_text_match(
+                "pet",
+                &["Publish the example after completing checks and tests"]
+            ),
+            0
+        );
+        assert_eq!(
+            score_text_match(
+                "mascot",
+                &["Move an app; select controls only when observed, then operate them"]
+            ),
+            0
+        );
+    }
+
+    #[test]
     fn generated_catalog_is_loadable_and_curated() {
         let catalog = catalog().unwrap();
         assert_eq!(catalog.capabilities.len(), catalog.counts.user_facing);
@@ -1361,6 +1365,80 @@ mod tests {
             Some(&json!({ "appId": "installed-id", "expectedVersion": 0 }))
         )
         .is_err());
+    }
+
+    #[test]
+    fn mcp_controls_are_direct_with_versioned_edits_and_host_availability() {
+        let registry = ProductControlRegistry::global();
+        let capability = capability("setting.tools.mcp").unwrap();
+        for item in capability.items.iter().filter(|item| {
+            matches!(
+                item.id.as_str(),
+                "json-config" | "server-types" | "lifecycle" | "status"
+            )
+        }) {
+            let control = serde_json::to_value(&item.control).unwrap();
+            assert_eq!(control["kind"], "direct", "{}", item.id);
+        }
+        for id in [
+            "list-servers",
+            "configure-server",
+            "start-server",
+            "stop-server",
+            "restart-server",
+            "delete-server",
+        ] {
+            let definition = registry
+                .definition(&format!("setting.tools.mcp:operation:{id}"))
+                .unwrap();
+            assert!(definition.availability[&ProductControlDeliveryProfile::Desktop].available);
+            assert!(
+                definition.availability[&ProductControlDeliveryProfile::RemoteControl].available
+            );
+            let peer = &definition.availability[&ProductControlDeliveryProfile::Peer];
+            assert!(peer
+                .required_capabilities
+                .iter()
+                .any(|value| value == "product_control_native_v1"));
+            for profile in [
+                ProductControlDeliveryProfile::Cli,
+                ProductControlDeliveryProfile::DetachedDispatch,
+            ] {
+                let availability = &definition.availability[&profile];
+                assert!(!availability.available);
+                assert!(availability.reason.is_some());
+            }
+        }
+        let configure = registry
+            .operation("setting.tools.mcp", "configure-server")
+            .unwrap();
+        let args = json!({"serverId":"docs", "expectedFingerprint":"observed", "config":{"url":"https://example.test/mcp", "autoStart":false}});
+        validate_operation_arguments(&configure.input_schema, Some(&args)).unwrap();
+        validate_operation_argument_scopes(configure, Some(&args), true).unwrap();
+        for invalid in [
+            json!({"serverId":"docs", "config":{"url":"https://example.test/mcp"}}),
+            json!({"serverId":"docs", "expectedFingerprint":"observed", "config":{"env":{"TOKEN":"secret"}}}),
+            json!({"serverId":"docs", "expectedFingerprint":"observed", "config":{"autoStart":"false"}}),
+        ] {
+            assert!(validate_operation_arguments(&configure.input_schema, Some(&invalid)).is_err());
+        }
+        let mut remote_path = args;
+        remote_path["workingDirectory"] = json!("/remote/workspace");
+        assert!(validate_operation_argument_scopes(configure, Some(&remote_path), true).is_err());
+        assert_eq!(
+            registry
+                .operation("setting.tools.mcp", "list-servers")
+                .unwrap()
+                .risk,
+            ProductControlRisk::Read
+        );
+        assert_eq!(
+            registry
+                .operation("setting.tools.mcp", "delete-server")
+                .unwrap()
+                .risk,
+            ProductControlRisk::Destructive
+        );
     }
 
     #[test]

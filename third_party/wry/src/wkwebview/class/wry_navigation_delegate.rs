@@ -4,8 +4,12 @@
 
 use std::sync::{Arc, Mutex};
 
-use objc2::{define_class, msg_send, rc::Retained, runtime::NSObject, MainThreadOnly};
-use objc2_foundation::{MainThreadMarker, NSObjectProtocol};
+use objc2::{
+  define_class, msg_send, rc::Retained, runtime::NSObject, DeclaredClass, MainThreadOnly,
+};
+use objc2_foundation::{
+  MainThreadMarker, NSError, NSObjectProtocol, NSURLErrorCancelled, NSURLErrorDomain,
+};
 use objc2_web_kit::{
   WKDownload, WKNavigation, WKNavigationAction, WKNavigationActionPolicy, WKNavigationDelegate,
   WKNavigationResponse, WKNavigationResponsePolicy,
@@ -25,12 +29,13 @@ use crate::{
       web_content_process_did_terminate,
     },
   },
-  PageLoadEvent, WryWebView,
+  NavigationState, PageLoadEvent, WryWebView,
 };
 
 use super::wry_download_delegate::WryDownloadDelegate;
 
 pub struct WryNavigationDelegateIvars {
+  pub webview: Retained<WryWebView>,
   pub pending_scripts: Arc<Mutex<Option<Vec<String>>>>,
   pub has_download_handler: bool,
   pub navigation_policy_function: Box<dyn Fn(String) -> bool>,
@@ -48,6 +53,34 @@ define_class!(
   unsafe impl NSObjectProtocol for WryNavigationDelegate {}
 
   unsafe impl WKNavigationDelegate for WryNavigationDelegate {
+    #[unsafe(method(webView:didStartProvisionalNavigation:))]
+    fn did_start_navigation(&self, _webview: &WKWebView, navigation: Option<&WKNavigation>) {
+      self
+        .ivars()
+        .webview
+        .navigation_state_changed(navigation, NavigationState::Loading);
+    }
+
+    #[unsafe(method(webView:didFailProvisionalNavigation:withError:))]
+    fn did_fail_provisional_navigation(
+      &self,
+      _webview: &WKWebView,
+      navigation: Option<&WKNavigation>,
+      error: &NSError,
+    ) {
+      self.navigation_failed(navigation, error);
+    }
+
+    #[unsafe(method(webView:didFailNavigation:withError:))]
+    fn did_fail_navigation(
+      &self,
+      _webview: &WKWebView,
+      navigation: Option<&WKNavigation>,
+      error: &NSError,
+    ) {
+      self.navigation_failed(navigation, error);
+    }
+
     #[unsafe(method(webView:decidePolicyForNavigationAction:decisionHandler:))]
     fn navigation_policy(
       &self,
@@ -70,6 +103,10 @@ define_class!(
 
     #[unsafe(method(webView:didFinishNavigation:))]
     fn did_finish_navigation(&self, webview: &WKWebView, navigation: &WKNavigation) {
+      self
+        .ivars()
+        .webview
+        .navigation_state_changed(Some(navigation), NavigationState::Finished);
       did_finish_navigation(self, webview, navigation);
     }
 
@@ -106,6 +143,26 @@ define_class!(
 );
 
 impl WryNavigationDelegate {
+  fn navigation_failed(&self, navigation: Option<&WKNavigation>, error: &NSError) {
+    // Stop settles the current request without displaying a page error. A
+    // cancelled older request is ignored by the navigation identity check.
+    if error.code() == NSURLErrorCancelled && &*error.domain() == unsafe { NSURLErrorDomain } {
+      self
+        .ivars()
+        .webview
+        .navigation_state_changed(navigation, NavigationState::Cancelled);
+      return;
+    }
+    self.ivars().webview.navigation_state_changed(
+      navigation,
+      NavigationState::Failed {
+        domain: error.domain().to_string(),
+        code: error.code(),
+        message: error.localizedDescription().to_string(),
+      },
+    );
+  }
+
   #[allow(clippy::too_many_arguments)]
   pub fn new(
     webview: Retained<WryWebView>,
@@ -123,9 +180,13 @@ impl WryNavigationDelegate {
         .map_or(true, |navigation_handler| (navigation_handler)(url))
     });
 
+    let callback_webview = webview.clone();
     let on_page_load_handler = if let Some(handler) = on_page_load_handler {
       let custom_handler = Box::new(move |event| {
-        handler(event, url_from_webview(&webview).unwrap_or_default());
+        handler(
+          event,
+          url_from_webview(&callback_webview).unwrap_or_default(),
+        );
       }) as Box<dyn Fn(PageLoadEvent)>;
       Some(custom_handler)
     } else {
@@ -145,6 +206,7 @@ impl WryNavigationDelegate {
     let delegate = mtm
       .alloc::<WryNavigationDelegate>()
       .set_ivars(WryNavigationDelegateIvars {
+        webview,
         pending_scripts,
         navigation_policy_function,
         has_download_handler,

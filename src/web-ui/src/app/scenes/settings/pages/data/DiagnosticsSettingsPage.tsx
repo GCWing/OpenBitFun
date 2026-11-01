@@ -193,7 +193,6 @@ function LoggingSection() {
 
         <ConfigPageSection
           title={t('logging.sections.logging')}
-          description={t('logging.sections.loggingHint')}
         >
           <ConfigPageRow
             label={t('logging.sections.level')}

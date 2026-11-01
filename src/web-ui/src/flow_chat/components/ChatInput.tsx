@@ -9,6 +9,8 @@ import { withConversationExcerpts } from '../utils/composerPresentation';
  */
 
 import React, { useRef, useCallback, useEffect, useReducer, useState, useMemo, useSyncExternalStore } from 'react';
+import type { UsageContextBreakdown } from '@/infrastructure/api/service-api/SessionAPI';
+import type { UsageReportUiParams } from '../session-drivers/types';
 import path from 'path-browserify';
 import { useTranslation } from 'react-i18next';
 import { RotateCcw, Loader2, Play, Goal } from 'lucide-react';
@@ -68,7 +70,7 @@ import { notificationService } from '@/shared/notification-system';
 import { useI18n } from '@/infrastructure/i18n';
 import { inputReducer, initialInputState, type InputAction } from '../reducers/inputReducer';
 import { modeReducer, initialModeState } from '../reducers/modeReducer';
-import { CHAT_INPUT_CONFIG } from '../constants/chatInputConfig';
+import { CHAT_INPUT_CONFIG, composerImageLimit } from '../constants/chatInputConfig';
 import { useMessageSender } from '../hooks/useMessageSender';
 import { useChatInputState } from '../store/chatInputStateStore';
 import { ExternalHistoryNotice } from './ExternalHistoryNotice';
@@ -106,6 +108,7 @@ import {
 import { useThreadGoalController } from '../hooks/useThreadGoalController';
 import { useWorkspaceModeCatalog } from '../hooks/useWorkspaceModeCatalog';
 import { useSessionModeSelection } from '../hooks/useSessionModeSelection';
+import { useChatInputModeSync } from '../hooks/useChatInputModeSync';
 import { useComposerDefaultFocus } from '../hooks/useComposerDefaultFocus';
 import { ThreadGoalDialogs } from './thread-goal/ThreadGoalDialogs';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
@@ -145,7 +148,6 @@ import { resolveSessionRelationship } from '../utils/sessionMetadata';
 import {
   canSwitchSessionMainAgent,
   isChatInputActionVisibleForTarget,
-  resolveAvailableChatInputMode,
   resolveChatInputCanUseSkills,
   resolveChatInputCanUseMcp,
   resolveChatInputMainAgentModes,
@@ -552,6 +554,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const richTextInputRef = useRef<RichTextInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const externalFileDropTargetRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
   const [nativeFileDragOver, setNativeFileDragOver] = useState(false);
   const [contextFileDragOver, setContextFileDragOver] = useState(false);
   const inputAreaAnchorRef = useRef<HTMLDivElement>(null);
@@ -790,15 +793,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     () => (effectiveTargetSessionId ? getSessionHistory(effectiveTargetSessionId) : []),
     [effectiveTargetSessionId, getSessionHistory],
   );
+  const imageOnlyMessage = registration?.onSubmit && imageContexts.length > 0
+    ? t('input.imageOnlyPrompt') : '';
   const derivedState = useSessionDerivedState(
     effectiveTargetSessionId,
     inputState.value.trim() || (contexts.some(isConversationExcerpt)
-      ? t('selection.submitAnnotations') : '')
+      ? t('selection.submitAnnotations') : imageOnlyMessage)
   );
   const currentReviewActivity = useSessionReviewActivity(currentSessionId);
   const annotationOnlyMessage = contexts.some(context => isConversationExcerpt(context) && context.comment?.trim())
     ? t('selection.submitAnnotations') : '';
-  const hasSendableInput = Boolean(inputState.value.trim() || annotationOnlyMessage);
+  const hasSendableInput = Boolean(inputState.value.trim() || annotationOnlyMessage || imageOnlyMessage);
   const focusExcerptComposer = useCallback(() => richTextInputRef.current?.focus(), []);
   useExcerptComposerActions({ mainSessionId: currentSessionId, targetSessionId: effectiveTargetSessionId,
     active: isSceneActive && !registration, selectTargetSession, focus: focusExcerptComposer });
@@ -1292,6 +1297,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     status: 'loading',
     canSend: false,
   });
+  const maxImageCount = composerImageLimit(modelAvailability.maxImagesPerRequest);
+  const admitComposerImages = useCallback((submittedContexts: readonly ContextItem[]) => {
+    if (submittedContexts.filter(context => context.type === 'image').length <= maxImageCount) return true;
+    notificationService.warning(t('input.maxImagesWarning', { count: maxImageCount }), { duration: 3000 });
+    return false;
+  }, [maxImageCount, t]);
   const isAssistantWorkspace = useMemo(
     () => resolveSessionAssistantWorkspace({
       currentWorkspace: workspace,
@@ -1360,8 +1371,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     () => resolveChatInputMainAgentModes(modeState.available),
     [modeState.available]
   );
-  const publishModeSelectionRef = useRef<((modeId: string) => void) | null>(null);
-  const suppressNextUserDefaultModeApplicationRef = useRef(false);
 
   const openScene = useSceneStore(s => s.openScene);
   const [subagentToolInfo, setSubagentToolInfo] = useState<SubagentInfo | null>(null);
@@ -3103,7 +3112,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         let imgCount = currentImageCount;
         for (const block of params.content) {
           if (block.type === 'image') {
-            if (imgCount >= CHAT_INPUT_CONFIG.image.maxCount) break;
+            if (imgCount >= maxImageCount) {
+              notificationService.warning(t('input.maxImagesWarning', { count: maxImageCount }), { duration: 3000 });
+              break;
+            }
             try {
               const mimeType = block.mimeType || 'image/png';
               const binaryString = atob(block.data);
@@ -3147,7 +3159,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     return () => {
       globalEventBus.off('mcp-app:message', handleMcpAppMessage);
     };
-  }, [addContext, clearPendingLargePastes, conversationScope, currentImageCount, dispatchInput]);
+  }, [addContext, clearPendingLargePastes, conversationScope, currentImageCount, dispatchInput, maxImageCount, t]);
 
   React.useEffect(() => {
     const handleInsertContextTag = (event: Event) => {
@@ -3217,61 +3229,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     };
   }, []);
 
-  React.useEffect(() => {
-    const handleSessionSwitched = (event: Event) => {
-      const customEvent = event as CustomEvent<{ sessionId: string; mode: string }>;
-      const { sessionId, mode } = customEvent.detail || {};
-      
-      if (sessionId && mode && sessionId === effectiveTargetSessionIdRef.current) {
-        log.debug('Session switched, syncing mode', { sessionId, mode });
-        dispatchMode({ type: 'SET_CURRENT_MODE', payload: mode });
-      }
-    };
-
-    window.addEventListener('openbitfun:session-switched', handleSessionSwitched);
-    
-    return () => {
-      window.removeEventListener('openbitfun:session-switched', handleSessionSwitched);
-    };
-  }, []);
-
-  React.useEffect(() => {
-    const suppressedUserDefaultApplication = suppressNextUserDefaultModeApplicationRef.current;
-    const userDefaultModeForResolution = suppressedUserDefaultApplication
-      ? null
-      : userDefaultModeId;
-    const nextMode = activeSessionMode === 'OpenBitFun' ? 'OpenBitFun' : resolveAvailableChatInputMode({
-      currentMode,
-      isAssistantWorkspace,
-      sessionMode: activeSessionMode,
-      userDefaultModeId: userDefaultModeForResolution,
-      availableModeIds,
-    });
-    suppressNextUserDefaultModeApplicationRef.current = false;
-
-    if (nextMode && nextMode !== currentMode) {
-      log.debug('Syncing mode with workspace, session, and available modes', {
-        sessionId: effectiveTargetSessionId,
-        mode: nextMode,
-        sessionMode: activeSessionMode,
-        isAssistantWorkspace,
-        availableModeCount: availableModeIds.size,
-      });
-      const publishModeSelection = publishModeSelectionRef.current;
-      if (publishModeSelection) {
-        publishModeSelection(nextMode);
-      } else {
-        dispatchMode({ type: 'SET_CURRENT_MODE', payload: nextMode });
-      }
-    }
-  }, [
-    activeSessionMode,
-    availableModeIds,
+  useChatInputModeSync({
+    sessionId: effectiveTargetSessionId,
     currentMode,
-    effectiveTargetSessionId,
     isAssistantWorkspace,
     userDefaultModeId,
-  ]);
+    availableModeIds,
+    dispatchMode,
+  });
 
   React.useEffect(() => {
     const queuedInput = derivedState?.queuedInput;
@@ -3694,6 +3659,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     const messageCharCount = getCharacterCount(message);
     const question = stripSlashCommand(message, '/btw').trim();
     const imagesForBtw = [...imageContexts];
+    if (!admitComposerImages(imagesForBtw)) return;
 
     // Clear input without adding to main history.
     dispatchInput({ type: 'CLEAR_VALUE' });
@@ -3751,7 +3717,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       replacePendingLargePastes(originalPendingLargePastes);
       dispatchInput({ type: 'SET_VALUE', payload: originalMessage });
     }
-  }, [clearPendingLargePastes, currentSessionId, derivedState, dispatchInput, expandComposerSpecialTokens, imageContexts, inputState.value, isBtwSession, removeContext, replacePendingLargePastes, sessionBoundWorkspacePath, selectTargetSession, setQueuedInput, t]);
+  }, [admitComposerImages, clearPendingLargePastes, currentSessionId, derivedState, dispatchInput, expandComposerSpecialTokens, imageContexts, inputState.value, isBtwSession, removeContext, replacePendingLargePastes, sessionBoundWorkspacePath, selectTargetSession, setQueuedInput, t]);
 
   const submitCompactFromInput = useCallback(async () => {
     if (!effectiveTargetSessionId || !effectiveTargetSession) {
@@ -3806,7 +3772,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     t,
   ]);
 
-  const runEffectiveSessionUsageReport = useCallback(async () => {
+  const runEffectiveSessionUsageReport = useCallback(async (presentReport?: UsageReportUiParams['presentReport']) => {
     if (!effectiveTargetSessionId || !effectiveTargetSession) {
       notificationService.error(
         t('chatInput.usageNoSession')
@@ -3819,6 +3785,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         effectiveTargetSessionId,
         {
           isProcessing: !!derivedState?.isProcessing,
+          presentReport,
+          reportTitle: t('usage.panel.report'),
           busyMessage: t('chatInput.usageBusy'),
           noWorkspaceMessage: t('chatInput.usageNoWorkspace'),
           failedTitle: t('chatInput.usageFailed'),
@@ -3878,6 +3846,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     void runEffectiveSessionUsageReport().catch(() => {
       /* errors surfaced by runUsageReportCommand */
     });
+  }, [runEffectiveSessionUsageReport]);
+
+  const loadContextUsageOverview = useCallback(async () => {
+    let context: UsageContextBreakdown | undefined;
+    await runEffectiveSessionUsageReport(report => {
+      context = report.context;
+      return true;
+    });
+    return context;
   }, [runEffectiveSessionUsageReport]);
 
   const submitInitFromInput = useCallback(async () => {
@@ -4211,6 +4188,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     const originalPendingLargePastes = { ...pendingLargePastesRef.current };
     const submittedContexts = [...contexts];
+    if (!admitComposerImages(submittedContexts)) return;
     let clearedRevision: number | undefined;
     let clearedStoredDraft: ReturnType<typeof sessionComposerStore.getState>['drafts'][string] | undefined;
 
@@ -4286,6 +4264,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       );
     }
   }, [
+    admitComposerImages,
     clearPendingLargePastes,
     clearContexts,
     addToHistory,
@@ -4539,6 +4518,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         );
         return true;
       }
+      if (!admitComposerImages(contexts)) return true;
       if (!(await confirmPromptCacheGuardIfNeeded())) {
         return true;
       }
@@ -4611,6 +4591,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
     return true;
   }, [
+    admitComposerImages,
     addToHistory,
     clearPendingLargePastes,
     isTargetCurrent,
@@ -4714,7 +4695,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   }, [t]);
   const {
     isModeChangePending,
-    publishModeSelection,
     requestModeChange: requestSessionModeChange,
   } = useSessionModeSelection(
     sessionModeSelectionTarget,
@@ -4937,7 +4917,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       const imageCount = contextStore.getState().contexts
         .filter(context => context.type === 'image')
         .length;
-      if (imageCount >= CHAT_INPUT_CONFIG.image.maxCount) {
+      if (imageCount >= maxImageCount) {
         limitReached = true;
         continue;
       }
@@ -4948,7 +4928,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         const latestImageCount = contextStore.getState().contexts
           .filter(context => context.type === 'image')
           .length;
-        if (latestImageCount >= CHAT_INPUT_CONFIG.image.maxCount) {
+        if (latestImageCount >= maxImageCount) {
           limitReached = true;
           continue;
         }
@@ -4965,11 +4945,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     if (limitReached && isExternalFileIntakeRequestCurrent(request)) {
       notificationService.warning(
-        t('input.maxImagesWarning', { count: CHAT_INPUT_CONFIG.image.maxCount }),
+        t('input.maxImagesWarning', { count: maxImageCount }),
         { duration: 3000 },
       );
     }
-  }, [addContext, contextStore, isExternalFileIntakeRequestCurrent, t]);
+  }, [addContext, contextStore, isExternalFileIntakeRequestCurrent, maxImageCount, t]);
 
   /**
    * Host-side clipboard image read for engines that deliver paste events with
@@ -5025,7 +5005,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       paths,
       existingContexts: contextStore.getState().contexts,
       workspacePath: sessionBoundWorkspacePath || undefined,
-      maxImageCount: CHAT_INPUT_CONFIG.image.maxCount,
+      maxImageCount,
       loadMetadata: pathToInspect => workspaceAPI.getFileMetadata(pathToInspect),
     });
     if (!isExternalFileIntakeRequestCurrent(request)) return;
@@ -5041,7 +5021,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       const imageLimitCount = result.failures.filter(failure => failure.reason === 'image-limit').length;
       notificationService.warning(
         imageLimitCount === result.failures.length
-          ? t('input.maxImagesWarning', { count: CHAT_INPUT_CONFIG.image.maxCount })
+          ? t('input.maxImagesWarning', { count: maxImageCount })
           : t('input.externalFiles.partialFailure', {
               failed: result.failures.length,
               added: result.contexts.length,
@@ -5054,6 +5034,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     contextStore,
     isExternalFileIntakeRequestCurrent,
     sessionBoundWorkspacePath,
+    maxImageCount,
     t,
   ]);
 
@@ -5303,7 +5284,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     const submissionScope = getActiveSurfaceScope();
     
     const { sendButtonMode } = derivedState;
-    const draftTrimmed = (messageOverride ?? (inputState.value.trim() || annotationOnlyMessage)).trim();
+    const draftTrimmed = (messageOverride ?? (inputState.value.trim() || annotationOnlyMessage || imageOnlyMessage)).trim();
 
     // While generating, an empty control in `cancel` mode means stop. If the user has typed a follow-up,
     // never treat this path as cancel — that would call cancel_dialog_turn and abort the current round early.
@@ -5456,6 +5437,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     // cannot block cancellation or other controls that do not start a turn.
     if (!modelAvailability.canSend) return;
 
+    // A model switch can lower the limit after images have entered the draft.
+    // Preserve that draft so the user can choose which attachments to remove.
+    if (!admitComposerImages(submittedContexts)) return;
+
     if (draftWorkspaceId && !draftTargetWorkspace) {
       notificationService.error(t('workspaceStrip.unavailable'));
       return;
@@ -5550,6 +5535,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   }, [
     draftWorkspaceId,
     draftTargetWorkspace,
+    admitComposerImages,
     isModelSwitching,
     modelAvailability.canSend,
     targetCanSubmit,
@@ -5559,6 +5545,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     isInterruptedTurnRecoveryInFlight,
     inputState.value,
     annotationOnlyMessage,
+    imageOnlyMessage,
     derivedState,
     dispatchInput,
     handleCancelCurrentTask,
@@ -5595,8 +5582,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     canUseThreadGoal,
     composerMutationRevision,
   ]);
-  
-  publishModeSelectionRef.current = publishModeSelection;
 
   const selectSlashCommandAction = useCallback((actionId: SlashActionId) => {
     const raw = inputState.value || '';
@@ -6057,9 +6042,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   }, []);
 
   const handleImageInput = useCallback(() => {
-    const remaining = CHAT_INPUT_CONFIG.image.maxCount - currentImageCount;
+    const remaining = maxImageCount - currentImageCount;
     if (remaining <= 0) {
-      notificationService.warning(t('input.maxImagesWarning', { count: CHAT_INPUT_CONFIG.image.maxCount }), { duration: 3000 });
+      notificationService.warning(t('input.maxImagesWarning', { count: maxImageCount }), { duration: 3000 });
       return;
     }
 
@@ -6096,7 +6081,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
       const fileArray = Array.from(files).slice(0, remaining);
       if (files.length > remaining) {
-        notificationService.warning(t('input.maxImagesWarning', { count: CHAT_INPUT_CONFIG.image.maxCount }), { duration: 3000 });
+        notificationService.warning(t('input.maxImagesWarning', { count: maxImageCount }), { duration: 3000 });
       }
 
       for (const file of fileArray) {
@@ -6115,7 +6100,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     document.body.appendChild(input);
     input.click();
-  }, [addContext, currentImageCount, t]);
+  }, [addContext, currentImageCount, maxImageCount, t]);
   
 
   const focusRichTextInputSoon = useCallback(() => {
@@ -6379,7 +6364,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           } : undefined}
       workspaceId={executionWorkspaceId ?? ''}
       repositoryPath={chatStripRepositoryPath}
-      workspaceLabel={chatStripWorkspaceLabel}
+      workspaceLabel={isAssistantWorkspace || chatInputModePolicy.fixedModeId === 'Claw'
+        ? '' : chatStripWorkspaceLabel}
       executionTarget={effectiveTargetSession?.config.executionTarget}
       dispatchControl={dispatchControl}
       worktreeControl={worktreeControl}
@@ -6438,6 +6424,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               visible: true,
               currentTokens: tokenUsage.current,
               maxTokens: tokenUsage.max,
+              sessionKey: deviceSurfaceScope.key(effectiveTargetSessionId),
+              anchorRef: composerRef,
+              previewSession: {
+                sessionId: effectiveTargetSessionId,
+                workspaceId: effectiveTargetSession.workspaceId ?? effectiveTargetSession.config.workspaceId,
+              },
+              loadContext: loadContextUsageOverview,
               onOpen: handleToolbarUsageReport,
             }
           : undefined
@@ -6472,8 +6465,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             : undefined
         }
         onContextAdded={(context) => {
-          if (context.type === 'image' && currentImageCount >= CHAT_INPUT_CONFIG.image.maxCount) {
-            notificationService.warning(t('input.maxImagesWarning', { count: CHAT_INPUT_CONFIG.image.maxCount }), { duration: 3000 });
+          if (context.type === 'image' && currentImageCount >= maxImageCount) {
+            notificationService.warning(t('input.maxImagesWarning', { count: maxImageCount }), { duration: 3000 });
             return;
           }
           // Images are shown as separate thumbnails outside the editor; they
@@ -6524,6 +6517,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           ) : null}
           <div ref={externalFileDropTargetRef} className="openbitfun-chat-input__box" data-openbitfun-component="chat-input" data-openbitfun-part="box">
             <ChatComposer
+              ref={composerRef}
               className="openbitfun-chat-input__composer"
               contextBar={workspaceStrip}
               layout={isMultiLine ? 'expanded' : 'compact'}

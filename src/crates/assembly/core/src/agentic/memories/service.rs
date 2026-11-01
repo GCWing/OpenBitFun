@@ -1000,6 +1000,7 @@ mod tests {
             format: "openai".to_string(),
             context_window,
             max_tokens,
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,

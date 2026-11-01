@@ -14,6 +14,10 @@ it('keeps one service heading and separate exact-slot rows for identical account
   act(() => root.render(<SubscriptionServiceGroup title="Codex · 2 accounts" actions={<Button onClick={add}>Add account</Button>}>
     <SubscriptionAccountList accounts={accounts} renderAccount={item => <button onClick={() => select(item.accountId)}>{item.account.account}</button>} />
   </SubscriptionServiceGroup>));
+  const service = container.querySelector('[data-openbitfun-part="subscriptionService"]')!;
+  expect(service.querySelector('[data-openbitfun-component="card"]')).toBeNull();
+  expect(service.querySelector('[data-openbitfun-part="header"]')?.parentElement).toBe(service);
+  expect(service.querySelector('[role="list"]')?.parentElement).toBe(service);
   expect(container.querySelectorAll('h3')).toHaveLength(1);
   expect([...container.querySelectorAll('[role="listitem"]')].map(row => row.getAttribute('data-account-id'))).toEqual(['slot-a','slot-b']);
   act(() => (container.querySelector('[data-account-id="slot-b"] button') as HTMLButtonElement).click());

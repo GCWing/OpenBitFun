@@ -69,7 +69,7 @@ vi.mock('../../../shared/utils/tabUtils', () => ({
   createDiffEditorTab: vi.fn(),
 }));
 
-vi.mock('../../../infrastructure/api', () => ({
+vi.mock('../../../infrastructure/api/service-api/SnapshotAPI', () => ({
   snapshotAPI: {
     getSessionFileDiffStats: mocks.getSessionFileDiffStats,
     getOperationDiff: mocks.getOperationDiff,

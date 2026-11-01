@@ -637,6 +637,9 @@ pub struct AIConfig {
     pub format: String,
     pub context_window: u32,
     pub max_tokens: Option<u32>,
+    /// Optional host-side image input ceiling across the complete request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_images_per_request: Option<usize>,
     pub temperature: Option<f64>,
     pub top_p: Option<f64>,
     pub inline_think_in_text: bool,
@@ -896,6 +899,61 @@ pub struct RemoteModelRouting {
     pub format: String,
     pub base_url: String,
     pub request_url: String,
+}
+
+/// Upper bound accepted for a single image generation request. Dialects with a
+/// tighter provider limit clamp further inside the adapter.
+pub const MAX_IMAGES_PER_GENERATION_REQUEST: u32 = 10;
+
+/// Wire protocol used by an image generation provider.
+///
+/// Endpoint path, request body shape, size syntax and response shape all vary
+/// per provider, so this is the single fact that drives request construction
+/// and response parsing. It is never inferred from a base URL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ImageDialect {
+    /// OpenAI Images: `POST {base}/images/generations`, JSON body, `data[]` result.
+    #[default]
+    #[serde(rename = "openai_images")]
+    OpenAiImages,
+    /// Alibaba DashScope native Qwen-Image:
+    /// `POST {base}/services/aigc/multimodal-generation/generation`.
+    #[serde(rename = "dashscope_native")]
+    DashScopeNative,
+    /// ChatGPT subscription images, driven through Codex CLI's ChatGPT backend:
+    /// `POST {base}/responses` with an `image_generation` tool, streamed back as
+    /// SSE `response.output_item.done` items. This is a separate billing and
+    /// protocol path from [`Self::OpenAiImages`]: it takes the OAuth access token
+    /// from a Codex subscription login and never reaches the platform image API.
+    #[serde(rename = "chatgpt_codex")]
+    ChatgptCodex,
+}
+
+impl ImageDialect {
+    /// Endpoint path appended to the service base URL for this dialect.
+    pub fn endpoint_path(self) -> &'static str {
+        match self {
+            Self::OpenAiImages => "/images/generations",
+            Self::DashScopeNative => "/services/aigc/multimodal-generation/generation",
+            Self::ChatgptCodex => "/responses",
+        }
+    }
+
+    /// Provider-specific cap for one request.
+    pub fn max_images_per_request(self) -> u32 {
+        match self {
+            Self::OpenAiImages => MAX_IMAGES_PER_GENERATION_REQUEST,
+            Self::DashScopeNative => 6,
+            // The subscription route returns one image per tool call.
+            Self::ChatgptCodex => 1,
+        }
+    }
+
+    /// Whether this dialect authenticates with a subscription login rather than
+    /// a provider API key.
+    pub fn requires_subscription(self) -> bool {
+        matches!(self, Self::ChatgptCodex)
+    }
 }
 
 #[cfg(test)]

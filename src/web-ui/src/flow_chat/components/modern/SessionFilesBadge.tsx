@@ -10,7 +10,7 @@ import { useI18n } from '@/infrastructure/i18n';
 import { createOverlayPortal, useDismissibleLayer, OverflowText, Icon, IconButton, Menu, MenuItem, MenuSeparator, Tooltip } from '@openbitfun/ui';
 import { useSnapshotState } from '../../../tools/snapshot_system/hooks/useSnapshotState';
 import { createDiffEditorTab } from '../../../shared/utils/tabUtils';
-import { snapshotAPI } from '../../../infrastructure/api';
+import { snapshotAPI } from '../../../infrastructure/api/service-api/SnapshotAPI';
 import { useWorkspaceContext } from '../../../infrastructure/contexts/WorkspaceContext';
 import { notificationService } from '../../../shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';

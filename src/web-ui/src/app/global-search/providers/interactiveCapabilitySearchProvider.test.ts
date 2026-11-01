@@ -52,6 +52,17 @@ describe('interactiveCapabilitySearchProvider', () => {
     }
   });
 
+  it.each(['en-US', 'zh-CN', 'zh-TW'] as const)('discovers image generation with a localized %s label', async locale => {
+    const result = await interactiveCapabilitySearchProvider.search(
+      request('generate_image', locale),
+      new AbortController().signal,
+    );
+    const imageGeneration = result.items.find(item => item.target.kind === 'capability'
+      && item.target.capabilityId === 'feature.ai-assistant');
+    expect(imageGeneration?.target).toMatchObject({ kind: 'capability', itemId: 'image-generation' });
+    expect(imageGeneration?.subtitle).toBe(translate(locale, 'search.capabilities.feature.ai-assistant.items.image-generation'));
+  });
+
   it('restores accelerated search in the settings catalog', () => {
     const capability = INTERACTIVE_CAPABILITY_CATALOG.capabilities.find(
       ({ id }) => id === 'setting.workspace.session',

@@ -1557,36 +1557,6 @@ $_section-header-height: 22px;
   }
 }
 
-.openbitfun-nav-panel__appearance-menu-trigger {
-  &.is-open {
-    background: var(--openbitfun-color-action-neutral-surface);
-  }
-}
-
-.openbitfun-nav-panel__appearance-menu-current {
-  display: block;
-  max-width: 82px;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-/* Positioning and open-state composition only; the design-system Menu owns chrome. */
-.openbitfun-nav-panel__appearance-submenu {
-  position: fixed;
-  max-width: calc(100vw - 16px);
-  max-height: calc(100vh - 16px);
-  z-index: calc(var(--openbitfun-layer-popover) + 1);
-  animation: openbitfun-nav-popover-in 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
-
-  &[data-placement='right'] {
-    transform-origin: top left;
-  }
-
-  &[data-placement='left'] {
-    transform-origin: top right;
-  }
-}
-
 // ──────────────────────────────────────────────
 // Device overview — one compact model, local and connected states
 // ──────────────────────────────────────────────
@@ -2819,8 +2789,7 @@ $_section-header-height: 22px;
     color 120ms ease;
 }
 
-.openbitfun-nav-panel__footer-menu,
-.openbitfun-nav-panel__appearance-submenu {
+.openbitfun-nav-panel__footer-menu {
   animation: openbitfun-nav-popover-in 150ms cubic-bezier(0.23, 1, 0.32, 1) both;
 
   &.is-closing {
@@ -2874,7 +2843,6 @@ $_section-header-height: 22px;
 
 @media (prefers-reduced-motion: reduce) {
   .openbitfun-nav-panel__footer-menu,
-  .openbitfun-nav-panel__appearance-submenu,
   .openbitfun-device-overview {
     animation: none;
   }
@@ -2992,6 +2960,38 @@ $_section-header-height: 22px;
   min-block-size: 0;
   height: 100%;
 
+}
+
+// The shortcut owns one continuous hover/selection surface, including its action.
+.openbitfun-nav-panel__miniapp-shortcut {
+  gap: 0;
+  padding-inline-end: var(--openbitfun-space-1);
+  border-radius: var(--openbitfun-radius-base);
+
+  &:not(.is-active):not([data-disabled='true']):hover {
+    @include shell-surfaces.navigation-hover-feedback;
+  }
+
+  &.is-active {
+    @include shell-surfaces.navigation-selection-feedback;
+  }
+
+  > .openbitfun-nav-panel__top-action-btn,
+  > .openbitfun-nav-panel__top-action-btn:is(:hover, :active, .is-active) {
+    background: transparent;
+    padding-inline-end: var(--openbitfun-space-1);
+  }
+
+  .openbitfun-nav-panel__miniapp-shortcut-remove {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  &:hover .openbitfun-nav-panel__miniapp-shortcut-remove,
+  &:focus-within .openbitfun-nav-panel__miniapp-shortcut-remove {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .openbitfun-nav-panel__main-nav-header {

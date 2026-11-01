@@ -374,6 +374,21 @@ Allowed agent types when creating a session:
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean"},
+                "target_workspace": {"type": "string"},
+                "target_session_id": {"type": "string"},
+                "target_agent_type": {"type": "string"},
+                "created_session_id": {"anyOf": [{"type": "string"}, {"type": "null"}]}
+            },
+            "required": ["success", "target_workspace", "target_session_id", "target_agent_type", "created_session_id"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

@@ -12,6 +12,14 @@ Replacement navigation gates tool evaluation on the next native load lifecycle,
 so a slow response cannot expose the previous completed document as the new page.
 Fragment-only transitions keep their existing document and do not await a load.
 
+On macOS, native main-frame navigation failures are retained and sent to both
+browser tools and the mounted panel. Failed navigation ends pending reads with
+the native reason instead of reporting that it is still loading. A subsequent
+manual navigation replaces that outcome; no automatic reload is added. A page
+whose native URL is temporarily unavailable can still be positioned and shown,
+and its address updates when navigation commits. Attachment after an earlier
+failure shows the retained failure without hiding or recreating the native page.
+
 The frontend commits each open event directly to that session's canvas snapshot
 without activating the session or touching another session's selected tab. Browser
 snapshots survive the ordinary canvas LRU eviction limit. Manually opened session
@@ -104,3 +112,60 @@ native pages and production session controls exercise background opening, delaye
 replacement, concurrent reads, repeated session switches, retained document/input
 state, and native visibility.
 It does not establish remote-host or cross-platform behavior.
+
+## Workspace HTML previews
+
+`HtmlPreviewPanel` opens a controller-owned loopback HTTP gateway. The gateway
+reads the selected workspace through the shared filesystem service: local files,
+SSH/SFTP files, or `html_preview_read_resource` on a Desktop/CLI peer. Peer hosts
+must advertise `workspace_html_preview_v1`; older hosts receive an explicit
+upgrade message. The browser remains on the controller, and a peer read never
+falls back to controller-local files.
+
+Opening `index.html` or `index.htm` treats its directory as the site's public
+root and starts the browser at `/`. Entry-filename and workspace-prefixed entry
+links redirect to that root while preserving their query. Browser document
+navigation to a missing extensionless path serves the selected index, so history
+routes such as `/evaluation` and deep-link reloads reach the site's router.
+Existing files and directory indexes take precedence. Missing assets, explicit
+filenames, non-document fetches, forbidden paths and offline owners retain their
+resource errors; they never receive the index as a substitute.
+
+Other HTML filenames retain their workspace-relative URL so standalone documents
+can keep `./` and `../` references. Index previews use normal site-root URL
+resolution, including the browser's root boundary for parent-relative links.
+Root-relative assets such as `/assets/app.js` first resolve beside the selected
+HTML, then under the workspace root. Workspace-prefixed resource links remain
+available. Resources stay inside the workspace;
+remote symlinks are rejected. The service streams files up to 64 MiB in 256 KiB
+chunks and checks workspace identity and file revision throughout a transfer.
+The controller prefetches up to four chunks per resource, preserves byte order,
+and limits each preview to eight active resources and eight remote reads. Dropped
+responses cancel their pending prefetches. SSH and peer resources use the same
+transfer service without changing the `workspace_html_preview_v1` wire contract.
+Site routing is controller-side and uses the existing v1 entry request, so an
+already capable older Desktop/CLI peer does not need a new routing capability.
+
+Each preview retains at most 64 complete resources / 16 MiB in memory, with a
+4 MiB per-resource limit. Cache hits first revalidate the selected owner's
+source, resolved path, size, revision and MIME type; missing, forbidden or offline
+resources return errors instead of cached content. Cache entries expire five
+seconds after insertion even if revalidated. Keys include URL queries so version
+parameters bust the cache without becoming part of the remote filesystem path.
+The fixed lifetime limits stale reuse on filesystems
+with coarse timestamps. Explicit browser reload directives (`no-cache`,
+`no-store`, `max-age=0`) force new content reads. The HTTP response remains
+`no-store`: no persistent browser cache or cross-preview content store is added.
+Each preview has a distinct authorization cookie and is released when its panel
+closes or its device activation changes. A disconnect returns a resource error;
+reloading after reconnect retries the same workspace.
+
+Focused frontend coverage:
+
+```bash
+pnpm --dir src/web-ui run test:run src/infrastructure/api/htmlPreviewApi.test.ts src/app/scenes/browser/HtmlPreviewPanel.test.tsx
+```
+
+Native resource loading is covered by `node tests/e2e/scripts/run-html-preview.mjs`
+after building Desktop and Web UI. See the E2E guide for isolated storage and
+binary/frontend snapshot overrides.

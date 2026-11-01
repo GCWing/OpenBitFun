@@ -216,6 +216,14 @@ pub fn publish_builtin_browser_page_load(target_id: &str, event: &str, url: &str
     }
 }
 
+/// A native navigation failed, including failures before a document exists.
+pub fn publish_builtin_browser_navigation_failed(target_id: &str, error: &str) {
+    let _ = event_sender(target_id).send(BrowserAutomationEvent {
+        method: "Page.lifecycleEvent".to_string(),
+        params: json!({ "frameId": target_id, "name": "error", "errorText": error }),
+    });
+}
+
 pub async fn connect_builtin_browser(
     requested_target_id: Option<&str>,
 ) -> OpenBitFunResult<BuiltInBrowserClient> {
@@ -345,9 +353,15 @@ impl BrowserAutomationClient for BuiltInBrowserClient {
             })
             .await
             .map_err(|error| {
-                OpenBitFunError::tool(format!(
-                    "Built-in browser adapter failed for {method}: {error}"
-                ))
+                // Retain the navigation outcome code for ControlHub while
+                // preserving operation context for ordinary adapter errors.
+                if error.starts_with("[NOT_AVAILABLE] ") {
+                    OpenBitFunError::tool(error)
+                } else {
+                    OpenBitFunError::tool(format!(
+                        "Built-in browser adapter failed for {method}: {error}"
+                    ))
+                }
             })
     }
 

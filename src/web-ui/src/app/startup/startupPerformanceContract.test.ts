@@ -753,6 +753,7 @@ describe('startup performance contract', () => {
     const relatedPathsDialogSource = readSource(
       '../../app/components/NavPanel/sections/workspaces/WorkspaceRelatedPathsDialog.tsx'
     );
+    const projectResourcesSource = readSource('../../app/scenes/project-resources/ProjectResourcesScene.tsx');
 
     expect(appLayoutSource).not.toMatch(/import\s+\{\s*open\s*\}\s+from\s+['"]@tauri-apps\/plugin-dialog['"]/);
     expect(appLayoutSource).not.toMatch(/import\s+\{\s*NewProjectDialog\s*\}\s+from/);
@@ -762,13 +763,13 @@ describe('startup performance contract', () => {
     expect(mainNavSource).toContain("import('../NewProjectDialog')");
     expect(mainNavSource).toContain('<RetainedMountBoundary present={workspaceDialogOpen}>');
 
-    expect(workspaceItemSource).not.toMatch(/import\s+WorkspaceRelatedPathsDialog\s+from/);
+    expect(workspaceItemSource).not.toContain('WorkspaceRelatedPathsDialog');
     expect(workspaceItemSource).not.toMatch(/import\s+WorkspaceSessionBatchModal\s+from/);
     expect(workspaceItemSource).not.toMatch(/import\s+ScheduledJobsModal\s+from/);
-    expect(workspaceItemSource).toContain("lazyWithRecovery(() => import('./WorkspaceRelatedPathsDialog'))");
+    expect(projectResourcesSource).toContain("lazyWithRecovery(() => import('@/app/components/NavPanel/sections/workspaces/WorkspaceRelatedPathsDialog'))");
     expect(workspaceItemSource).toContain("lazyWithRecovery(() => import('./WorkspaceSessionBatchModal'))");
     expect(workspaceItemSource).toContain("lazyWithRecovery(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'))");
-    expect(workspaceItemSource).toContain('<RetainedMountBoundary present={relatedPathsDialogOpen}>');
+    expect(projectResourcesSource).toContain("isActive && (dialog === 'directories' || dialog === 'addDirectory') && <RelatedPathsDialog");
     expect(workspaceItemSource).toContain('<RetainedMountBoundary present={sessionBatchModalOpen}>');
     expect(workspaceItemSource).toContain('<RetainedMountBoundary present={scheduledJobsModalOpen}>');
 

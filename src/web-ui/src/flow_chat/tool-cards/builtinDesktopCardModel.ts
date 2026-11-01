@@ -26,6 +26,7 @@ function templateLabel(kind: string | undefined, t: BuiltinTranslate): string | 
     case 'note': return t('toolCards.builtin.desktopCard.templates.note');
     case 'progress': return t('toolCards.builtin.desktopCard.templates.progress');
     case 'metrics': return t('toolCards.builtin.desktopCard.templates.metrics');
+    case 'chart': return t('toolCards.builtin.desktopCard.templates.chart');
     case 'cronJob': return t('toolCards.builtin.desktopCard.templates.cronJob');
     case 'custom': return t('toolCards.builtin.desktopCard.templates.custom');
     default: return kind;

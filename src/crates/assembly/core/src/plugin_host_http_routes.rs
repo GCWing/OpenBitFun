@@ -792,6 +792,7 @@ mod tests {
                 provider_id: Some("provider-a".to_string()),
                 model_config_id: Some("model-a".to_string()),
                 effective_model_name: None,
+                routing: None,
                 first_chunk_ms: None,
                 first_visible_output_ms: None,
                 stream_duration_ms: None,

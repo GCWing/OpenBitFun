@@ -531,9 +531,6 @@ const DeviceControlSettingsPage: React.FC = () => {
           {/* ── Computer use (desktop) ─────────────────────────────── */}
           <ConfigPageSection
             title={t('computerUse.sectionTitle')}
-            description={
-              IS_TAURI_DESKTOP ? t('computerUse.sectionDescription') : t('computerUse.desktopOnly')
-            }
             extra={IS_TAURI_DESKTOP && !peerBrowserControlUnsupported ? (
               <ConfigRefreshButton
                 tooltip={t('computerUse.refreshStatus')}
@@ -649,7 +646,11 @@ const DeviceControlSettingsPage: React.FC = () => {
               >
                 <span />
               </ConfigPageRow>
-            ) : null}
+            ) : (
+              <ConfigPageRow label={t('computerUse.desktopOnly')}>
+                {null}
+              </ConfigPageRow>
+            )}
           </ConfigPageSection>
 
           {/* ── Browser control (CDP) ──────────────────────────────── */}
@@ -663,9 +664,6 @@ const DeviceControlSettingsPage: React.FC = () => {
                 onClick={() => void refreshBrowserControlStatus()}
               />
             ) : undefined}
-            description={
-              IS_TAURI_DESKTOP ? t('browserControl.sectionDescription') : t('browserControl.desktopOnly')
-            }
           >
             {IS_TAURI_DESKTOP && !peerBrowserControlUnsupported ? (
               <>
@@ -781,7 +779,11 @@ const DeviceControlSettingsPage: React.FC = () => {
               >
                 <span />
               </ConfigPageRow>
-            ) : null}
+            ) : (
+              <ConfigPageRow label={t('browserControl.desktopOnly')}>
+                {null}
+              </ConfigPageRow>
+            )}
           </ConfigPageSection>
 
           <Dialog

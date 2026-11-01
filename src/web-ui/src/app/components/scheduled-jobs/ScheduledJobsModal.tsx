@@ -24,6 +24,9 @@ interface ScheduledJobsModalProps {
   title?: string;
   targetLabel?: string;
   targetDescription?: string;
+  listPresentation?: 'cards' | 'table';
+  initialCreate?: boolean;
+  listTargetKind?: CronJobTargetKind;
 }
 
 const ScheduledJobsModal: React.FC<ScheduledJobsModalProps> = ({
@@ -37,14 +40,25 @@ const ScheduledJobsModal: React.FC<ScheduledJobsModalProps> = ({
   title,
   targetLabel,
   targetDescription,
+  listPresentation = 'cards',
+  initialCreate = false,
+  listTargetKind,
 }) => {
   const { t } = useI18n('common');
+
+  if (initialCreate && listPresentation === 'table') {
+    return isOpen ? <ScheduledJobsView workspaceId={workspaceId} workspaceKind={workspaceKind}
+      sessionId={sessionId} targetKind={targetKind} lockSessionId={lockSessionId}
+      listPresentation={listPresentation} listTargetKind={listTargetKind}
+      creationOnly onCreationClose={onClose} /> : null;
+  }
 
   return (
     <Dialog
       open={isOpen}
       onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}
       size="xl"
+      className={listPresentation === 'table' ? 'scheduled-jobs-modal__fixed' : undefined}
     >
       <DialogHeader>
         <DialogHeading>
@@ -63,6 +77,9 @@ const ScheduledJobsModal: React.FC<ScheduledJobsModalProps> = ({
           headerTitle={null}
           targetLabel={targetLabel}
           targetDescription={targetDescription}
+          listPresentation={listPresentation}
+          initialCreate={initialCreate}
+          listTargetKind={listTargetKind}
         />
       </div>
           </DialogBody>

@@ -35,6 +35,7 @@ mod macos_window_chrome;
 #[cfg(target_os = "macos")]
 mod macos_window_close;
 mod miniapp_desktop;
+mod miniapp_web_host;
 
 // Keep one macro expansion: on macOS it emits a process-wide Info.plist symbol.
 fn desktop_context() -> tauri::Context<tauri::Wry> {
@@ -51,7 +52,7 @@ mod window_state_support;
 mod window_webview_geometry;
 
 use openbitfun_agent_runtime::sdk::{attach_session_event_cursor, SessionEventJournal};
-use openbitfun_core::agentic::tools::computer_use_capability::set_computer_use_desktop_available;
+use openbitfun_core::agentic::tools::computer_use_capability::set_computer_use_host_available;
 use openbitfun_core::agentic::tools::computer_use_host::ComputerUseHostRef;
 use openbitfun_core::infrastructure::ai::AIClientFactory;
 use openbitfun_core::infrastructure::{get_path_manager_arc, try_get_path_manager_arc};
@@ -1136,6 +1137,7 @@ pub async fn run() {
             openbitfun_webdriver::maybe_start(app_handle.clone());
             builtin_browser_host::install(app_handle.clone());
             openbitfun_control_host::install(app_handle.clone());
+            miniapp_web_host::install(app_handle.clone());
             if !miniapp_background {
                 if let Err(error) = desktop_cards::install(&app_handle) {
                     log::warn!("Desktop cards unavailable: {}", error);
@@ -1374,6 +1376,7 @@ pub async fn run() {
             api::agentic_api::create_session,
             api::agentic_api::update_session_mode,
             api::agentic_api::update_session_model,
+            api::agentic_api::get_model_routing_status,
             api::model_pool_api::get_model_pools,
             api::model_pool_api::retry_model_pool_member,
             api::model_pool_api::save_model_pool,
@@ -1416,6 +1419,7 @@ pub async fn run() {
             api::agentic_api::restore_session_view,
             api::agentic_api::load_session_event_backfill,
             api::agentic_api::load_session_turn_window,
+            api::agentic_api::load_session_trajectory,
             api::agentic_api::restore_session_with_turns,
             api::agentic_api::reset_memory,
             api::agentic_api::get_memory_paths,
@@ -1492,10 +1496,13 @@ pub async fn run() {
             openbitfun_control_host::mark_openbitfun_control_surface_unready,
             openbitfun_control_host::product_control_invoke,
             openbitfun_control_host::report_openbitfun_control_result,
+            miniapp_web_host::mark_miniapp_web_surface_ready,
+            miniapp_web_host::report_miniapp_web_result,
             get_health_status,
             get_statistics,
             test_ai_connection,
             test_ai_config_connection,
+            test_image_generation_service,
             list_ai_models_by_config,
             list_subscription_accounts,
             list_subscription_account_instances,
@@ -1514,6 +1521,8 @@ pub async fn run() {
             get_app_state,
             update_app_status,
             update_workspace_info,
+            get_workspace_icon,
+            set_workspace_icon,
             appearance::show_agent_companion_desktop_pet,
             appearance::hide_agent_companion_desktop_pet,
             appearance::resize_agent_companion_desktop_pet,
@@ -2000,6 +2009,7 @@ pub async fn run() {
             api::browser_api::browser_webview_set_agent_target_state,
             api::browser_api::browser_get_url,
             api::html_preview_api::html_preview_create,
+            api::html_preview_api::html_preview_read_resource,
             api::html_preview_api::html_preview_release,
             // Browser Control API (CDP-based user browser control)
             api::browser_control_api::browser_control_list_browsers,
@@ -2169,9 +2179,17 @@ async fn init_agentic_system() -> anyhow::Result<(
         openbitfun_core::product_runtime::core_permission_request_manager()
             .map_err(anyhow::Error::msg)?;
 
+    if let Ok(paths) = openbitfun_core::infrastructure::try_get_path_manager_arc() {
+        openbitfun_computer_use::set_ocr_debug_directory(
+            paths
+                .default_assistant_workspace_dir(None)
+                .join(openbitfun_core_types::product_identity::hidden_data_directory())
+                .join("computer_use_debug"),
+        );
+    }
     let computer_use_host: ComputerUseHostRef =
         Arc::new(computer_use::DesktopComputerUseHost::new());
-    set_computer_use_desktop_available(true);
+    set_computer_use_host_available(true);
 
     let tool_pipeline = Arc::new(
         tools::pipeline::ToolPipeline::new(
@@ -2191,13 +2209,14 @@ async fn init_agentic_system() -> anyhow::Result<(
 
     let execution_config = execution::execution_engine_config_from_global_config().await;
 
-    let execution_engine = Arc::new(execution::ExecutionEngine::new(
+    let execution_engine = execution::ExecutionEngine::new(
         round_executor,
         event_queue.clone(),
         session_manager.clone(),
         context_compressor,
         execution_config,
-    ));
+    );
+    let execution_engine = Arc::new(execution_engine);
 
     let runtime_ownership = Arc::new(
         openbitfun_core::runtime_ownership::CoreRuntimeOwnership::embedded(
@@ -2352,16 +2371,6 @@ fn setup_panic_hook() {
             thread_id,
         );
 
-        // Known wry bug: WKWebView.URL() returns nil after navigating to an
-        // invalid address, causing url_from_webview to panic on unwrap().
-        // This is non-fatal — the webview is still alive — so we log and
-        // continue instead of killing the process.
-        // See: https://github.com/tauri-apps/wry/pull/1554
-        if location.contains("wry") && location.contains("wkwebview") {
-            log::warn!("Suppressed non-fatal wry/wkwebview panic, application continues");
-            return;
-        }
-
         if message.contains("WSAStartup") || message.contains("10093") || message.contains("hyper")
         {
             log::error!("Network-related crash detected, possible solutions:");
@@ -2370,16 +2379,11 @@ fn setup_panic_hook() {
             log::error!("  3) Run as administrator");
         }
 
-        // ── Recovery strategy ──────────────────────────────────────────
-        // Main-thread panics are unrecoverable — the event loop is gone.
-        // Spawned-thread panics only kill that thread; the rest of the
-        // application can continue.  We log a clear message and skip the
-        // hard exit so the user isn't forced to restart.
+        // Returning from a panic hook does not catch the panic. Leave worker
+        // panics to the runtime and any caller-owned unwind boundary; main-thread
+        // panics follow the application's fatal cleanup and exit path.
         if !is_main_thread {
-            log::warn!(
-                "Non-main thread panicked — application will continue. \
-                 The affected feature may be degraded until the next restart."
-            );
+            log::warn!("Non-main-thread panic recorded; deferring to the panic runtime");
             return;
         }
 

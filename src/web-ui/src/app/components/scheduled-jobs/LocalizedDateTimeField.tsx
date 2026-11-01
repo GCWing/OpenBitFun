@@ -33,6 +33,7 @@ function pad(value: number): string {
 }
 
 export interface LocalizedDateTimeFieldProps {
+  id?: string;
   /** `YYYY-MM-DDTHH:mm`, matching the native datetime-local value. */
   value: string;
   onChange: (value: string) => void;
@@ -40,15 +41,18 @@ export interface LocalizedDateTimeFieldProps {
   disabled?: boolean;
   className?: string;
   'aria-label'?: string;
+  'aria-describedby'?: string;
 }
 
 const LocalizedDateTimeField: React.FC<LocalizedDateTimeFieldProps> = ({
+  id,
   value,
   onChange,
   error = false,
   disabled = false,
   className,
   'aria-label': ariaLabel,
+  'aria-describedby': ariaDescribedBy,
 }) => {
   const { t, currentLanguage } = useI18n('common');
   const anchorRef = useRef<HTMLDivElement | null>(null);
@@ -126,12 +130,14 @@ const LocalizedDateTimeField: React.FC<LocalizedDateTimeFieldProps> = ({
       data-openbitfun-state={error ? 'error' : undefined}
     >
       <Input
+        id={id}
         value={text}
         invalid={error}
         disabled={disabled}
         inputMode="numeric"
         placeholder={dateTimeFormatHint(order)}
         aria-label={ariaLabel ?? t('dateTimeField.label')}
+        aria-describedby={ariaDescribedBy}
         className="openbitfun-datetime-field__input"
         onFocus={() => { editingRef.current = true; }}
         onChange={event => commitText(event.currentTarget.value)}

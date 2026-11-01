@@ -51,6 +51,51 @@ Content action contracts are reserved and their advertised capability list is
 empty. Remote workspace, Peer, mobile, and detached hosts do not acquire local
 presentation as a silent fallback.
 
+The agent bridge is relayed, never reimplemented. A Shell that advertises
+`miniapp_agent_bridge_v1` lets the host push `agentRequest` events into the
+window; the Shell forwards them to its content frame over the same postMessage
+protocol a tab uses and answers with `agentResponse`, so one MiniApp answers
+identically wherever it is presented. `agent_window` routes a call only to a
+ready Window whose Shell advertised the capability, and only when the command is
+bound to that instance; every other presentation stays with the Web UI tab
+runtime. DOM, pixel, click/type/scroll actions are refused on a window;
+key input is delivered through the injected frame runtime. Polls are bounded long polls woken by the
+lease's `notify`, so a relayed request costs one IPC round trip rather than a
+heartbeat; keep that bound and keep `poll` answering `released` when the lease is
+gone.
+
+Agent requests require an authenticated `agentClaim` before the Shell forwards
+input or bridge calls. The host binds each waiter to its view, monotonic deadline
+and single-use claim; completed, timed-out, canceled and replayed requests cannot
+claim execution. The Shell checks the delivery expiry and document generation
+after claiming, and rejects pending requests when replacing content. Keep the
+poll cursor across content reloads of the same host/view; consume a reload event
+before restarting. Host and Shell are upgraded together for this protocol.
+
+The injected runtime accepts Agent requests only from `window.parent` with
+schema `agent.v1`. Tab and Shell key mappings share
+`src/shared/miniapp-agent/keys.json`; their event delivery stays in the owning
+runtime. Automatic observations report animation/input activity, not current
+Canvas text. Keep the legacy `canvasText` array empty and report
+`canvasTextUnavailable: true`; authoritative app state comes from `expose()`.
+Do not restore Canvas drawing interception to approximate a screen model.
+
+A window answers for two different ids, and they are not interchangeable: the
+`view_id` identifies the view lease, the `instance_id` identifies the running
+app and is what `open` reports and what the agent session must bind to. Keep them
+in the named `AgentWindow` struct rather than a positional tuple; swapping them
+made every bridge call miss its window and silently fall through to the tab
+runtime.
+
+Choosing a presentation is Desktop policy and lives in the Desktop Web surface
+adapter, never in the portable contract: a live window of the app first, then a
+tab already showing it, then the app the user published to the desktop — which
+is launched as a normal app and waited for, bounded by `WINDOW_BOOT_TIMEOUT` —
+and only then a new tab. Launch or registration failure is a logged degradation
+to the tab, not an error, because the in-product surface still works. Never
+launch a published app when the app is already on screen; that would hand the
+user a second copy of the state they are looking at.
+
 Focused checks (no browser/computer-use validation):
 
 For custom chrome, also run `pnpm --dir src/web-ui run test:run src/app/scenes/miniapps/MiniAppScene.chrome.test.tsx src/app/scenes/miniapps/components/MiniAppTitlebar.test.tsx src/app/scenes/miniapps/components/MiniAppShell.test.ts`
@@ -59,6 +104,7 @@ and `cargo test --locked -p openbitfun-desktop --lib openbitfun_control_host::mi
 
 ```bash
 cargo test --locked -p openbitfun-desktop --lib miniapp_desktop
+cargo test --locked -p openbitfun-desktop --lib miniapp_web_host
 cargo test --locked -p openbitfun-desktop --lib remote_workspace_policy
 cargo build -p openbitfun-desktop
 pnpm --dir src/web-ui run test:run src/app/scenes/miniapps/miniAppPresentationStore.test.ts src/app/scenes/miniapps/miniAppLifecycle.test.ts src/app/scenes/miniapps/components/MiniAppRunner.test.tsx src/app/scenes/miniapps/hooks/useMiniAppBridge.test.tsx
@@ -67,6 +113,17 @@ pnpm --dir src/web-ui run test:run src/app/scenes/miniapps/hooks/useMiniAppLaunc
 pnpm --dir src/web-ui run test:run src/app/scenes/miniapps/components/MiniAppSystemAppActions.test.tsx
 pnpm --dir src/web-ui run test:run src/app/scenes/miniapps/MiniAppPresence.test.tsx
 ```
+
+For Agent control, document-generation handles, strict-frame readiness, bridge
+payload bounds and Peer activation fences, run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/app/scenes/miniapps/agent src/app/scenes/miniapps/components/MiniAppRunner.test.tsx src/infrastructure/api/service-api/MiniAppAgentSurfaceAPI.test.ts
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,tools-miniapp --lib agentic::tools::miniapp_surface::tests
+```
+
+These fixtures cover local DOM, transport and activation state; they do not
+establish native WebView rendering or live SSH, relay, Peer or dispatch behavior.
 
 Native bundle fixture tests must write only to their temporary directory and
 must not launch UI. macOS fixture evidence does not prove Windows taskbar or

@@ -3,6 +3,7 @@ import {
   type CSSProperties, type HTMLAttributes, type PointerEvent, type ReactNode,
 } from 'react';
 import { classNames } from '../../internal/classNames';
+import { inertProps } from '../../internal/inert';
 import styles from './SplitView.module.css';
 
 export type SplitViewMode = 'split' | 'primary' | 'secondary';
@@ -16,7 +17,7 @@ export function SplitViewSurface({ pane, active = true, className, children, ...
   return <div {...props} tabIndex={-1}
     className={classNames(styles.pane, styles[pane], styles.surface, className)}
     hidden={hidden} aria-hidden={hidden || !active}
-    {...(hidden || !active ? { inert: '' } : {})}
+    {...inertProps(Boolean(hidden || !active))}
     data-split-surface={pane} data-split-active={!hidden && active}>
     {children}
   </div>;

@@ -10,6 +10,13 @@ export interface ProjectDraft {
   remote?: ProjectFolder['remote'];
 }
 
+export class AssistantProjectFolderError extends Error {
+  constructor() {
+    super('The selected folder belongs to an assistant workspace. Select a project folder instead.');
+    this.name = 'AssistantProjectFolderError';
+  }
+}
+
 export class ProjectDirectoryUnavailableError extends Error {
   constructor() {
     super('The target host did not provide an absolute home directory.');

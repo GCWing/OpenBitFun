@@ -134,6 +134,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   );
 
   // Keep host layout controls in the upper-right corner of every split layout.
+  // Only top-row groups share the host header; lower groups keep their tab bars.
   const toolbarGroupId = layout.splitMode === 'horizontal' || layout.splitMode === 'grid'
     ? 'secondary' : 'primary';
 
@@ -163,7 +164,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
       onOpenMissionControl={groupId === 'primary' ? onOpenMissionControl : undefined}
       onCloseAllTabs={handleCloseAllTabs(groupId)}
       onInteraction={onInteraction}
-      externalToolbar={externalToolbar}
+      externalToolbar={externalToolbar && (groupId === 'primary' || groupId === toolbarGroupId)}
       disablePopOut={disablePopOut}
       toolbarActions={toolbarActions === undefined || groupId === toolbarGroupId ? toolbarActions : null}
       terminalResizeSuspended={terminalResizeSuspended}

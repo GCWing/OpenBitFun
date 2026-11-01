@@ -28,6 +28,49 @@
 
   .root:dir(rtl) { --_capsule-inline-direction: -1; }
 
+  .root[data-layout="split"] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    inline-size: 100%;
+  }
+
+  .root[data-layout="split"][data-split-sizing="content"] {
+    grid-template-columns: repeat(2, max-content);
+    inline-size: max-content;
+  }
+
+  .root[data-layout="split"] > [data-openbitfun-component="select"],
+  .root[data-layout="split"] > [data-openbitfun-component="button"] {
+    min-inline-size: 0;
+    inline-size: 100%;
+  }
+
+  .root[data-layout="split"][data-split-sizing="content"] > [data-openbitfun-component="select"],
+  .root[data-layout="split"][data-split-sizing="content"] > [data-openbitfun-component="button"] {
+    inline-size: max-content;
+    max-inline-size: 100%;
+  }
+
+  /* Match the Select fill to Button's inset fill without changing control size. */
+  .root[data-layout="split"] > [data-openbitfun-component="select"] > [data-openbitfun-part="trigger"] {
+    border-color: transparent;
+    background-clip: padding-box;
+  }
+
+  .root[data-layout="split"] > :first-child,
+  .root[data-layout="split"] > :first-child > [data-openbitfun-part="trigger"] {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+    border-inline-end-width: 0;
+  }
+
+  .root[data-layout="split"] > :last-child,
+  .root[data-layout="split"] > :last-child > [data-openbitfun-part="trigger"] {
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+    border-inline-start-width: 0;
+  }
+
   /* Reserve space inside the Button's surface, leaving inter-capsule gaps intact. */
   .root[data-action-placement="reserved"] {
     --_capsule-action-padding: calc(

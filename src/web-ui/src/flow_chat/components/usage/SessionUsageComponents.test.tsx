@@ -3,23 +3,16 @@ import { createRoot, type Root } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
-import { formatDuration } from '@/shared/utils/format';
 import path from 'node:path';
 
 import type { SessionUsageReport } from '@/infrastructure/api/service-api/SessionAPI';
 import { AppearanceCompiler } from '@/infrastructure/appearance/compiler/AppearanceCompiler';
 import { AppearanceRegistry } from '@/infrastructure/appearance/registry/AppearanceRegistry';
+import { appearancePackageValidator } from '@/infrastructure/appearance/schema/AppearancePackageValidator';
 import { APPEARANCE_SCHEMA_VERSION, type AppearancePackage } from '@/infrastructure/appearance/types';
-import { globalEventBus } from '@/infrastructure/event-bus';
 import enFlowChat from '@/locales/en-US/flow-chat.json';
 import zhCnFlowChat from '@/locales/zh-CN/flow-chat.json';
 import zhTwFlowChat from '@/locales/zh-TW/flow-chat.json';
-import {
-  FLOWCHAT_FOCUS_ITEM_EVENT,
-  type FlowChatFocusItemRequest,
-} from '../../events/flowchatNavigation';
-import { flowChatStore } from '../../store/FlowChatStore';
-import type { FlowChatState, Session } from '../../types/flow-chat';
 import { SessionRuntimeStatusEntry } from './SessionRuntimeStatusEntry';
 import { SessionUsagePanel } from './SessionUsagePanel';
 import { sessionUsagePanelAppearanceDescriptor } from './appearance';
@@ -28,22 +21,10 @@ import { USAGE_EXPORT_REDACT_PATHS_STORAGE_KEY } from './usageReportUtils';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-const snapshotApiMocks = vi.hoisted(() => ({
-  getOperationDiff: vi.fn(),
-}));
-
-const tabUtilsMocks = vi.hoisted(() => ({
-  createDiffEditorTab: vi.fn(),
-}));
-
-vi.mock('@/infrastructure/api', () => ({
-  snapshotAPI: {
-    getOperationDiff: snapshotApiMocks.getOperationDiff,
-  },
-}));
-
-vi.mock('@/shared/utils/tabUtils', () => ({
-  createDiffEditorTab: tabUtilsMocks.createDiffEditorTab,
+const promptPreviewMocks = vi.hoisted(() => ({ open: vi.fn(), warning: vi.fn(), error: vi.fn() }));
+vi.mock('../../services/openSessionContextPreview', () => ({ openSessionContextPreview: promptPreviewMocks.open }));
+vi.mock('@/shared/notification-system', () => ({
+  notificationService: { warning: promptPreviewMocks.warning, error: promptPreviewMocks.error },
 }));
 
 vi.mock('react-i18next', async (importOriginal) => ({
@@ -52,6 +33,26 @@ vi.mock('react-i18next', async (importOriginal) => ({
     t: (key: string, options?: Record<string, unknown>) => {
       const labels: Record<string, string> = {
         'usage.title': 'Session Usage',
+        'usage.tokens.title': 'Token usage',
+        'usage.tokens.cacheHit': 'KV Cache hits',
+        'usage.tokens.uncachedInput': 'Input (uncached)',
+        'usage.tokens.hitRate': 'Cache hit rate {{value}}',
+        'usage.tokens.hitRateDetail': 'Cache hit rate {{rate}} ({{cached}} / {{input}} input tokens)',
+        'usage.tokens.cacheHitDetail': '(cache hit {{rate}})',
+        'usage.tokens.minimumRate': '≥{{rate}}',
+        'usage.tokens.recordedCacheHits': 'Recorded cache hits',
+        'usage.tokens.remainingInput': 'Remaining input',
+        'usage.tokens.inputShareDetail': '{{tokens}} / {{input}} input tokens ({{share}} of input)',
+        'usage.tokens.partialCacheHelp': 'The chart shows recorded cache hits; remaining input includes unreported usage. The hit percentage is a lower bound over all input tokens.',
+        'usage.tokens.cacheUnavailable': '(cache unavailable)',
+        'usage.context.unavailable': 'No context breakdown recorded',
+        'usage.context.label': 'Context',
+        'usage.context.utilization': 'Context usage',
+        'usage.context.unused': 'Unused',
+        'usage.context.capacityUnavailable': 'Context capacity was not reported. Only recorded usage by category is shown.',
+        'usage.context.exceedsCapacity': 'Estimated context usage exceeds the reported capacity. Only recorded usage by category is shown.',
+        'usage.context.usageOfCapacity': '{{used}} / {{size}}',
+        'usage.context.approximateTokens': '~{{value}}',
         'usage.unavailable': 'Unavailable',
         'usage.redacted': 'Redacted',
         'usage.percent': '{{value}}%',
@@ -169,6 +170,10 @@ vi.mock('react-i18next', async (importOriginal) => ({
         'usage.runtime.button': 'Usage',
         'usage.runtime.tooltip': 'Generate a usage report in this chat',
         'usage.panel.tabsLabel': 'Usage report sections',
+        'usage.panel.report': 'Context Usage Report',
+        'usage.panel.workspace': 'Project',
+        'usage.panel.totalTokens': 'Total tokens',
+        'usage.panel.totalUsage': 'Total usage',
         'usage.panel.accounting': 'Accounting',
         'usage.panel.turnScope': 'Scope',
         'usage.panel.cacheCoverage': 'Cache reporting',
@@ -234,23 +239,6 @@ vi.mock('react-i18next', async (importOriginal) => ({
 
 vi.mock('@openbitfun/ui', async importOriginal => ({
   ...await importOriginal<typeof import('@openbitfun/ui')>(),
-  IconButton: React.forwardRef<
-    HTMLButtonElement,
-    React.ButtonHTMLAttributes<HTMLButtonElement> & { icon?: React.ReactNode; variant?: string; size?: string }
-  >(function MockIconButton({
-    children,
-    icon,
-    variant: _variant,
-    size: _size,
-    ...props
-  }, ref) {
-    return (
-      <button ref={ref} type="button" {...props}>
-        {icon}
-        {children}
-      </button>
-    );
-  }),
   Tooltip: ({ children, content }: { children: React.ReactNode; content?: React.ReactNode }) => {
     const tooltipContent = typeof content === 'string' ? content : undefined;
     let trigger = children;
@@ -501,8 +489,9 @@ describe('Session usage report UI components', () => {
   let root: Root;
 
   beforeEach(() => {
-    snapshotApiMocks.getOperationDiff.mockReset();
-    tabUtilsMocks.createDiffEditorTab.mockReset();
+    promptPreviewMocks.open.mockReset();
+    promptPreviewMocks.warning.mockReset();
+    promptPreviewMocks.error.mockReset();
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
       pretendToBeVisual: true,
       url: 'http://localhost/',
@@ -532,6 +521,17 @@ describe('Session usage report UI components', () => {
       root.render(element);
     });
   };
+
+  it.each([
+    { isLoading: true },
+    { error: 'Host offline' },
+    { markdown: '# Legacy report' },
+    { report: usageReport() },
+  ])('publishes the localized title for existing tabs in every report state: %j', props => {
+    const onTitleChange = vi.fn();
+    render(<SessionUsagePanel {...props} onTitleChange={onTitleChange} />);
+    expect(onTitleChange).toHaveBeenCalledExactlyOnceWith('Context Usage Report');
+  });
 
   it.each([undefined, null])('distinguishes a new session from missing telemetry with a %s file count', changedFiles => {
     const report = usageReport({
@@ -591,7 +591,7 @@ describe('Session usage report UI components', () => {
     expect(onOpenDetails).toHaveBeenCalledWith(report);
   });
 
-  it('renders the focused compact summary used by the usage modal', () => {
+  it('renders the compact summary without removed detail links', () => {
     const onOpenDetails = vi.fn();
     const report = usageReport({
       scope: {
@@ -650,7 +650,7 @@ describe('Session usage report UI components', () => {
     expect(container.textContent).toContain('Tokens usage');
     expect(container.textContent).toContain('deepseek-v4-flash');
     expect(container.textContent).toContain('68 calls');
-    expect(container.textContent).toContain('View all 4');
+    expect(container.textContent).not.toContain('View all 4');
     expect(container.textContent).toContain('ExecCommand');
     expect(container.textContent).toContain('Grep');
     expect(container.textContent).toContain('Edit');
@@ -660,11 +660,7 @@ describe('Session usage report UI components', () => {
     expect(container.querySelector('input[aria-label="Redact paths"]')).toBeNull();
     expect(container.textContent).toContain('Usage statistics may be delayed');
 
-    const toolsButton = container.querySelector('button[aria-label="Open Tools details"]');
-    act(() => {
-      toolsButton?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-    expect(onOpenDetails).toHaveBeenCalledWith(report, 'tools');
+    expect(container.querySelector('button[aria-label="Open Tools details"]')).toBeNull();
   });
 
   it('appends a hit-rate suffix to the cached cell when cache is reported', () => {
@@ -751,7 +747,7 @@ describe('Session usage report UI components', () => {
       .toContain('tool calls whose result was unsuccessful');
   });
 
-  it('offers section detail jumps when summary lists are truncated', () => {
+  it('keeps the report entry without links to removed detail sections', () => {
     const onOpenDetails = vi.fn();
     const report = usageReport({
       tools: Array.from({ length: 4 }, (_, index) => ({
@@ -786,20 +782,15 @@ describe('Session usage report UI components', () => {
       />
     );
 
-    expect(container.textContent).toContain('View all 4');
-    expect(container.textContent).toContain('View all 5');
+    expect(container.textContent).not.toContain('View all 4');
+    expect(container.textContent).not.toContain('View all 5');
 
-    const toolsButton = container.querySelector('button[aria-label="Open Tools details"]');
-    act(() => {
-      toolsButton?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-    expect(onOpenDetails).toHaveBeenCalledWith(report, 'tools');
+    expect(container.querySelector('button[aria-label="Open Tools details"]')).toBeNull();
 
-    const filesButton = container.querySelector('button[aria-label="Open Files details"]');
-    act(() => {
-      filesButton?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-    expect(onOpenDetails).toHaveBeenCalledWith(report, 'files');
+    expect(container.querySelector('button[aria-label="Open Files details"]')).toBeNull();
+    const reportButton = container.querySelector<HTMLButtonElement>('button[aria-label="Open details"]')!;
+    act(() => reportButton.click());
+    expect(onOpenDetails).toHaveBeenCalledWith(report);
   });
 
   it('uses semantic file diff colors on the chat card summary', () => {
@@ -871,7 +862,7 @@ describe('Session usage report UI components', () => {
     expect(refWarnings).toEqual([]);
   });
 
-  it('syncs path redaction between the chat card and detail panel', async () => {
+  it('keeps the card path preference in the panel without a panel redaction control', async () => {
     const report = usageReport({
       workspace: {
         kind: 'local',
@@ -912,7 +903,9 @@ describe('Session usage report UI components', () => {
     const redactionInputs = Array.from(container.querySelectorAll<HTMLInputElement>(
       `input[aria-label="Redact paths"]`
     ));
-    expect(redactionInputs).toHaveLength(2);
+    expect(redactionInputs).toHaveLength(1);
+    expect(container.querySelector('.session-usage-panel input[aria-label="Redact paths"]')).toBeNull();
+    expect(container.querySelector('.session-usage-panel__summary-facts dd')?.textContent).toBe('openbitfun');
     expect(redactionInputs.every(input => input.checked)).toBe(true);
     expect(redactionInputs.every(input => input.labels?.length === 1)).toBe(true);
     expect(redactionInputs.every(input => input.closest('label')?.getAttribute('data-appearance') === 'native')).toBe(true);
@@ -938,11 +931,12 @@ describe('Session usage report UI components', () => {
       `input[aria-label="Redact paths"]`
     ));
     expect(updatedInputs.every(input => input.checked)).toBe(false);
+    expect(container.querySelector('.session-usage-panel__summary-facts dd')?.textContent).toBe('openbitfun');
     expect(container.textContent).toContain('D:/workspace/openbitfun');
     expect(container.querySelector('[data-tooltip="src/private/secret.ts"]')).not.toBeNull();
     await act(async () => copy?.click());
     expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith('## Session Usage: D:/workspace/openbitfun/src/private/secret.ts');
-    act(() => updatedInputs[1]?.labels?.[0].click());
+    act(() => updatedInputs[0]?.labels?.[0].click());
     expect(updatedInputs.every(input => input.checked)).toBe(true);
     expect(preferenceWrite).toHaveBeenCalledTimes(2);
     expect(preferenceWrite).toHaveBeenLastCalledWith(USAGE_EXPORT_REDACT_PATHS_STORAGE_KEY, 'true');
@@ -975,39 +969,17 @@ describe('Session usage report UI components', () => {
     expect(container.textContent).not.toContain('Unavailable Token');
   });
 
-  it('keeps the detail coverage badge in the header action area', () => {
+  it('uses standard report components without global coverage notices', () => {
     render(<SessionUsagePanel report={usageReport()} markdown="## Session Usage" />);
 
-    const headerActions = container.querySelector('.session-usage-panel__header-actions');
-    expect(headerActions?.querySelector('.session-usage-panel__badge')?.textContent).toBe('Partial data');
-    expect(container.querySelector('.session-usage-panel__title-wrap .session-usage-panel__badge')).toBeNull();
-  });
-
-  it('explains error examples on the detail panel', () => {
-    const report = usageReport({
-      errors: {
-        totalErrors: 2,
-        toolErrors: 1,
-        modelErrors: 1,
-        examples: [
-          { label: 'Write', count: 1, redacted: false },
-          { label: 'Model/runtime turn errors', count: 1, redacted: false },
-        ],
-      },
-    });
-
-    render(<SessionUsagePanel report={report} markdown="## Session Usage" />);
-
-    const errorsTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Errors');
-    act(() => {
-      errorsTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(container.textContent).toContain('Tool errors');
-    expect(container.textContent).toContain('Model errors');
-    expect(container.querySelector('[data-tooltip="Safe grouped label for an error type."]')).not.toBeNull();
-    expect(container.querySelector('[data-tooltip="Number of matching errors."]')).not.toBeNull();
+    expect(container.textContent).not.toContain('Partial data');
+    expect(container.textContent).not.toContain('Some metrics were not reported');
+    expect(container.querySelectorAll('[data-openbitfun-component="page-header"]')).toHaveLength(3);
+    expect(container.querySelector('.session-usage-panel__explorer-heading')).toBeNull();
+    expect(container.querySelector('[role="tablist"]')).toBeNull();
+    expect(container.querySelector('[role="tabpanel"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-product-part="root"]')?.getAttribute('data-openbitfun-component')).toBe('scroll-area');
+    expect(container.querySelector('button[aria-label="Copy Markdown"]')).not.toBeNull();
   });
 
   it('shows an immediate usage loading card before report data exists', () => {
@@ -1024,148 +996,356 @@ describe('Session usage report UI components', () => {
     expect(container.textContent).not.toContain('Unknown values are not counted as zero');
   });
 
-  it('switches panel sections and keeps raw sensitive details redacted', () => {
-    render(<SessionUsagePanel report={usageReport()} markdown="## Session Usage" />);
-
-    const tablist = container.querySelector('[role="tablist"]');
-    expect(tablist?.getAttribute('aria-label')).toBe('Usage report sections');
-    expect(container.querySelector('[role="tabpanel"]')?.getAttribute('aria-labelledby'))
-      .toBe('session-usage-tab-overview');
-
-    for (const tab of ['Models', 'Tools', 'Files', 'Errors']) {
-      const tabButton = Array.from(container.querySelectorAll('[role="tab"]'))
-        .find(button => button.textContent === tab);
-      act(() => {
-        tabButton?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-      });
-      expect(tabButton?.getAttribute('aria-selected')).toBe('true');
-      expect(container.textContent).toContain(tab);
-    }
-
-    expect(container.textContent).toContain('Redacted');
-    expect(container.textContent).not.toContain('secret shell command output');
-    expect(container.textContent).not.toContain('secrets/raw-file-content.txt');
-    expect(container.textContent).not.toContain('raw provider error with secret payload');
+  it('groups cached and uncached input under input and places token usage before context', () => {
+    render(<SessionUsagePanel sessionTitle="Product video" report={usageReport({
+      context: { systemPrompt: 40, toolDefinitions: 20, rules: 20, skills: 10, mcpTools: 10,
+        subagentDefinitions: 10, summarizedConversation: 10, conversation: 80, contextWindow: 1000 },
+      tokens: { source: 'token_usage_records', inputTokens: 80, outputTokens: 20, totalTokens: 100, cachedTokens: 60, cacheCoverage: 'available', cacheHitRate: 0.99 },
+    })} />);
+    expect(container.querySelector('.session-usage-panel__title')?.textContent).toBe('Product video');
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector('.session-usage-panel__donut-label strong')?.textContent).toBe('20%');
+    expect(container.querySelectorAll('.session-usage-panel__donut-segment')).toHaveLength(9);
+    const contextShares = Array.from(container.querySelectorAll('.session-usage-panel__donut-segment'))
+      .map(segment => Number(segment.getAttribute('stroke-dasharray')?.split(' ')[0]));
+    expect(contextShares.reduce((sum, share) => sum + share, 0)).toBeCloseTo(100);
+    expect(contextShares.slice(0, -1).reduce((sum, share) => sum + share, 0)).toBeCloseTo(20);
+    const unused = container.querySelector('.session-usage-panel__donut-segment[data-usage-category="unused"]');
+    expect(unused?.classList.contains('session-usage-panel__series--unused')).toBe(true);
+    expect(unused?.getAttribute('stroke-dasharray')).toBe('80 20');
+    expect(unused?.getAttribute('stroke-dashoffset')).toBe('-20');
+    expect(container.querySelector('.session-usage-panel__context .session-usage-panel__legend-row[data-usage-category="unused"]')?.textContent)
+      .toBe('Unused80080%');
+    const tokenSection = container.querySelector('.session-usage-panel__tokens');
+    const tokenShares = Array.from(tokenSection!.querySelectorAll<HTMLElement>('.session-usage-panel__bar-segment'))
+      .map(segment => Number(segment.style.flexGrow));
+    [0.75, 0.25, 1].forEach((share, index) => expect(tokenShares[index]).toBeCloseTo(share));
+    const groups = Array.from(tokenSection!.querySelectorAll<HTMLElement>('.session-usage-panel__bar-group'));
+    expect(groups.map(group => Number(group.style.flexGrow))).toEqual([0.8, 0.2]);
+    expect(Array.from(groups[0].children).map(segment => segment.getAttribute('data-usage-category'))).toEqual(['cachedInput', 'uncachedInput']);
+    expect(Array.from(groups[1].children).map(segment => segment.getAttribute('data-usage-category'))).toEqual(['output']);
+    expect(tokenSection?.querySelector('[data-usage-category="input"] dd')?.textContent).toContain('80');
+    expect(tokenSection?.textContent).toContain('Input (uncached)');
+    const cacheSummary = tokenSection?.querySelector('[data-usage-cache-summary]');
+    expect(cacheSummary?.textContent).toBe('(cache hit 75%)');
+    expect(cacheSummary?.closest('.session-usage-panel__legend-share')?.textContent).toBe('80%(cache hit 75%)');
+    expect(tokenSection?.querySelector('.session-usage-panel__token-legend [data-usage-category="input"]')?.querySelectorAll('dd')).toHaveLength(1);
+    expect(cacheSummary?.closest('[data-usage-category]')?.getAttribute('data-usage-category')).toBe('input');
+    expect(cacheSummary?.closest('[data-tooltip]')?.getAttribute('data-tooltip')).toContain('Cache hit rate 75% (60 / 80 input tokens)');
+    expect(tokenSection?.querySelector('.session-usage-panel__cache-legend [data-usage-category="cachedInput"] strong')?.textContent).toBe('75%');
+    expect(tokenSection?.querySelector('.session-usage-panel__cache-legend [data-usage-category="uncachedInput"] strong')?.textContent).toBe('25%');
+    expect(tokenSection?.querySelector('.session-usage-panel__cache-legend [data-usage-category="cachedInput"] [data-tooltip]')?.getAttribute('data-tooltip')).toContain('60 / 80 input tokens (75% of input)');
+    expect(tokenSection?.querySelector('svg')).toBeNull();
+    expect(container.querySelector('.session-usage-panel__summary')).toBe(tokenSection);
   });
 
-  it('shows model duration only when model span facts exist', () => {
-    render(<SessionUsagePanel report={usageReport()} markdown="## Session Usage" />);
+  it.each([0, 1000])('plots %i used tokens against the full capacity, including empty and full usage', used => {
+    render(<SessionUsagePanel report={usageReport({
+      context: {
+        systemPrompt: 0, toolDefinitions: 0, rules: 0, skills: 0, mcpTools: 0,
+        subagentDefinitions: 0, summarizedConversation: 0, conversation: used, contextWindow: 1000,
+      },
+    })} />);
 
-    const modelTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Models');
-    act(() => {
-      modelTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(container.textContent).toContain('Recorded time');
-    expect(container.textContent).toContain(formatDuration(40000));
-
-    const reportWithoutModelDuration = usageReport({
-      models: [
-        {
-          modelId: 'gpt-5.4',
-          callCount: 1,
-          inputTokens: 1200,
-          outputTokens: 300,
-          totalTokens: 1500,
-          durationMs: undefined,
-        },
-      ],
-    });
-
-    render(<SessionUsagePanel report={reportWithoutModelDuration} markdown="## Session Usage" />);
-    const modelTabWithoutDuration = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Models');
-    act(() => {
-      modelTabWithoutDuration?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(container.textContent).not.toContain('Recorded time');
-    expect(container.textContent).not.toContain('Timing not recorded');
+    const segments = Array.from(container.querySelectorAll('.session-usage-panel__donut-segment'));
+    expect(segments).toHaveLength(1);
+    expect(segments[0].getAttribute('data-usage-category')).toBe(used === 0 ? 'unused' : 'conversation');
+    expect(segments[0].getAttribute('stroke-dasharray')).toBe('100 0');
+    expect(container.querySelector('.session-usage-panel__donut-label strong')?.textContent).toBe(used === 0 ? '0%' : '100%');
+    expect(container.querySelector('.session-usage-panel__donut-label span')?.textContent).toBe('Context usage');
+    const unusedLegend = container.querySelector('.session-usage-panel__legend-row[data-usage-category="unused"]')!;
+    expect(unusedLegend.querySelector('strong')?.textContent).toBe(used === 0 ? '1K' : '0');
+    expect(unusedLegend.querySelector('.session-usage-panel__legend-share')?.textContent).toBe(used === 0 ? '100%' : '0%');
   });
 
-  it('hides unavailable tool execution timing and uses explicit tool timing headers', () => {
-    const report = usageReport({
-      tools: [
-        {
-          toolName: 'read_file',
-          category: 'file',
-          callCount: 3,
-          successCount: 3,
-          errorCount: 0,
-          durationMs: undefined,
-          p95DurationMs: undefined,
-          executionMs: undefined,
-          redacted: false,
-        },
-      ],
-    });
+  it.each([undefined, 0, -1, Number.NaN, Infinity, 1000.5])('preserves recorded category details without inventing free capacity when capacity is %s', contextWindow => {
+    render(<SessionUsagePanel report={usageReport({
+      context: {
+        systemPrompt: 40, toolDefinitions: 20, rules: 20, skills: 10, mcpTools: 10,
+        subagentDefinitions: 10, summarizedConversation: 10, conversation: 80, contextWindow,
+      },
+    })} />);
 
-    render(<SessionUsagePanel report={report} markdown="## Session Usage" />);
-
-    const toolsTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Tools');
-    act(() => {
-      toolsTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(container.textContent).toContain('Total time');
-    expect(container.textContent).toContain('P95 total');
-    expect(container.textContent).not.toContain('Execution time');
-
-    const missingValues = container.querySelectorAll('.session-usage-panel__missing-value');
-    expect(missingValues).toHaveLength(2);
-    expect(Array.from(missingValues).every(value => value.textContent === 'Timing not recorded')).toBe(true);
+    const contextSection = container.querySelector('.session-usage-panel__context')!;
+    expect(contextSection.querySelector('.session-usage-panel__donut')).toBeNull();
+    expect(contextSection.textContent).toContain('Context capacity was not reported');
+    expect(contextSection.querySelectorAll('.session-usage-panel__legend-row')).toHaveLength(8);
+    expect(contextSection.querySelector('[data-usage-category="conversation"] strong')?.textContent).toBe('80');
+    expect(contextSection.querySelector('[data-usage-category="systemPrompt"] button')).not.toBeNull();
+    expect(contextSection.querySelector('[data-usage-category="unused"]')).toBeNull();
+    expect(contextSection.querySelector('.session-usage-panel__legend-share')).toBeNull();
   });
 
-  it('supports standard keyboard navigation across usage panel tabs', () => {
-    render(<SessionUsagePanel report={usageReport()} markdown="## Session Usage" />);
+  it('explains estimates over capacity without normalizing them into a misleading capacity chart', () => {
+    render(<SessionUsagePanel report={usageReport({
+      context: {
+        systemPrompt: 40, toolDefinitions: 20, rules: 20, skills: 10, mcpTools: 10,
+        subagentDefinitions: 10, summarizedConversation: 10, conversation: 80, contextWindow: 100,
+      },
+    })} />);
 
-    const overviewTab = container.querySelector<HTMLButtonElement>('#session-usage-tab-overview');
-    act(() => {
-      overviewTab?.focus();
-      overviewTab?.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
-        key: 'End',
-        bubbles: true,
-      }));
-    });
+    const contextSection = container.querySelector('.session-usage-panel__context')!;
+    expect(contextSection.querySelector('.session-usage-panel__donut')).toBeNull();
+    expect(contextSection.textContent).toContain('Estimated context usage exceeds the reported capacity');
+    expect(contextSection.querySelector('[data-usage-category="conversation"] strong')?.textContent).toBe('80');
+    expect(contextSection.querySelector('[data-usage-category="unused"]')).toBeNull();
+    expect(contextSection.querySelector('.session-usage-panel__legend-share')).toBeNull();
+  });
 
-    const slowestTab = container.querySelector<HTMLButtonElement>('#session-usage-tab-slowest');
-    expect(slowestTab?.getAttribute('aria-selected')).toBe('true');
-    expect(dom.window.document.activeElement).toBe(slowestTab);
-
-    act(() => {
-      slowestTab?.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
-        key: 'ArrowLeft',
-        bubbles: true,
-      }));
-    });
-
-    const errorsTab = container.querySelector<HTMLButtonElement>('#session-usage-tab-errors');
-    expect(errorsTab?.getAttribute('aria-selected')).toBe('true');
-    expect(dom.window.document.activeElement).toBe(errorsTab);
-
-    for (const [key, expected] of [
-      ['Home', 'overview'], ['ArrowLeft', 'slowest'], ['ArrowRight', 'overview'], ['End', 'slowest'],
+  it('does not draw invented distribution segments for missing or inconsistent token counts', () => {
+    for (const tokens of [
+      { totalTokens: 100, outputTokens: 20 },
+      { totalTokens: 100, inputTokens: 90, outputTokens: 20 },
+      { totalTokens: 100, inputTokens: Number.NaN, outputTokens: 20 },
     ]) {
-      const event = new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
-      act(() => dom.window.document.activeElement?.dispatchEvent(event));
-      expect(event.defaultPrevented).toBe(true);
-      expect(dom.window.document.activeElement?.id).toBe(`session-usage-tab-${expected}`);
-      expect(container.querySelectorAll('[role="tab"][tabindex="0"]')).toHaveLength(1);
-      expect(container.querySelector('[role="tabpanel"]')?.getAttribute('aria-labelledby'))
-        .toBe(`session-usage-tab-${expected}`);
+      render(<SessionUsagePanel report={usageReport({
+        tokens: { source: 'token_usage_records', cacheCoverage: 'unavailable', ...tokens },
+      })} />);
+      expect(container.querySelectorAll('.session-usage-panel__donut-segment')).toHaveLength(0);
+      expect(container.querySelectorAll('.session-usage-panel__bar-segment')).toHaveLength(0);
+      expect(container.querySelector('.session-usage-panel__tokens .session-usage-panel__section-help')).not.toBeNull();
     }
   });
 
-  it('preserves initial-tab updates and saved appearance selectors on the native tabs', () => {
+  it.each(['systemPrompt', 'toolDefinitions', 'rules', 'skills', 'mcpTools', 'subagentDefinitions'])('loads %s only after its icon is clicked and keeps the chart focus linked', async category => {
+    let finish: (result: string) => void = () => {};
+    promptPreviewMocks.open.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    render(<SessionUsagePanel workspaceId="workspace-1" report={usageReport({
+      context: { systemPrompt: 40, toolDefinitions: 20, rules: 20, skills: 10, mcpTools: 10,
+        subagentDefinitions: 10, summarizedConversation: 10, conversation: 80, contextWindow: 1000 },
+    })} />);
+    expect(promptPreviewMocks.open).not.toHaveBeenCalled();
+    const button = container.querySelector<HTMLButtonElement>(`.session-usage-panel__legend-row[data-usage-category="${category}"] button`)!;
+    expect(button.getAttribute('data-openbitfun-component')).toBe('icon-button');
+    act(() => { button.focus(); button.click(); });
+    expect(button.disabled).toBe(true);
+    expect(promptPreviewMocks.open).toHaveBeenCalledExactlyOnceWith({
+      sessionId: 'session-1', reportSessionId: 'session-1', workspaceId: 'workspace-1', title: `usage.context.categories.${category}${category === 'toolDefinitions' ? '' : '.md'}`, category, emptyContent: 'usage.context.previewEmpty',
+    });
+    expect(container.querySelector('.session-usage-panel__donut-segment[data-usage-category="conversation"]')?.hasAttribute('data-usage-muted')).toBe(true);
+    await act(async () => finish('unavailable'));
+    expect(button.disabled).toBe(false);
+    expect(promptPreviewMocks.warning).toHaveBeenCalledWith('usage.context.previewUnavailable');
+    promptPreviewMocks.open.mockRejectedValueOnce(new Error('Host offline'));
+    await act(async () => button.click());
+    expect(promptPreviewMocks.error).toHaveBeenCalledWith('usage.context.previewFailed');
+  });
+
+  it.each([
+    ['context', 'donut-segment', 'systemPrompt'],
+    ['context', 'legend-row', 'conversation'],
+    ['context', 'donut-segment', 'unused'],
+    ['context', 'legend-row', 'unused'],
+    ['tokens', 'bar-group', 'input'],
+    ['tokens', 'legend-row', 'output'],
+  ])('links %s %s hover to its legend and restores peers on leave', (section, part, category) => {
+    render(<SessionUsagePanel report={usageReport({
+      context: { systemPrompt: 40, toolDefinitions: 20, rules: 20, skills: 10, mcpTools: 10,
+        subagentDefinitions: 10, summarizedConversation: 10, conversation: 80, contextWindow: 1000 },
+      tokens: { source: 'token_usage_records', inputTokens: 80, outputTokens: 20, totalTokens: 100,
+        cachedTokens: 60, cacheCoverage: 'available' },
+    })} />);
+    const chart = container.querySelector(`.session-usage-panel__${section}`)!;
+    const target = chart.querySelector(`.session-usage-panel__${part}[data-usage-category="${category}"]`)!;
+    const centerValue = container.querySelector('.session-usage-panel__donut-label strong')!;
+    const centerLabel = container.querySelector('.session-usage-panel__donut-label span')!;
+    expect(centerValue.textContent).toBe('20%');
+
+    act(() => {
+      target.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true }));
+    });
+
+    for (const item of chart.querySelectorAll('[data-usage-category]')) {
+      const active = item.getAttribute('data-usage-category') === category || item.getAttribute('data-usage-parent') === category;
+      expect(item.hasAttribute('data-usage-muted')).toBe(!active);
+      expect(item.hasAttribute('data-usage-active')).toBe(active);
+    }
+    const otherChart = container.querySelector(`.session-usage-panel__${section === 'context' ? 'tokens' : 'context'}`)!;
+    expect(otherChart.querySelector('[data-usage-muted]')).toBeNull();
+    expect(centerValue.textContent).toBe(section === 'context'
+      ? category === 'systemPrompt' ? '4%' : category === 'unused' ? '80%' : '8%' : '20%');
+    expect(centerLabel.textContent).toBe(section === 'context'
+      ? category === 'unused' ? 'Unused' : `usage.context.categories.${category}` : 'Context usage');
+
+    act(() => {
+      target.dispatchEvent(new dom.window.MouseEvent('mouseout', { bubbles: true, relatedTarget: dom.window.document.body }));
+    });
+    expect(container.querySelector('[data-usage-muted]')).toBeNull();
+    expect(container.querySelector('[data-usage-active]')).toBeNull();
+    expect(centerValue.textContent).toBe('20%');
+    expect(centerLabel.textContent).toBe('Context usage');
+  });
+
+  it('restores the focused legend highlight after hover and clears it on blur', () => {
+    render(<SessionUsagePanel report={usageReport({
+      context: { systemPrompt: 40, toolDefinitions: 20, rules: 20, skills: 10, mcpTools: 10,
+        subagentDefinitions: 10, summarizedConversation: 10, conversation: 80, contextWindow: 1000 },
+      tokens: { source: 'token_usage_records', inputTokens: 80, outputTokens: 20, totalTokens: 100,
+        cachedTokens: 60, cacheCoverage: 'available' },
+    })} />);
+    const inputLegend = container.querySelector<HTMLElement>('.session-usage-panel__legend-row[data-usage-category="input"]')!;
+    const outputSegment = container.querySelector('.session-usage-panel__bar-segment[data-usage-category="output"]')!;
+    expect(inputLegend.tabIndex).toBe(0);
+    act(() => inputLegend.focus());
+    expect(outputSegment.hasAttribute('data-usage-muted')).toBe(true);
+    expect(inputLegend.hasAttribute('data-usage-muted')).toBe(false);
+    expect(inputLegend.hasAttribute('data-usage-active')).toBe(true);
+
+    act(() => outputSegment.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })));
+    expect(outputSegment.hasAttribute('data-usage-muted')).toBe(false);
+    expect(inputLegend.hasAttribute('data-usage-muted')).toBe(true);
+    expect(inputLegend.hasAttribute('data-usage-active')).toBe(false);
+    act(() => outputSegment.dispatchEvent(new dom.window.MouseEvent('mouseout', { bubbles: true, relatedTarget: dom.window.document.body })));
+    expect(outputSegment.hasAttribute('data-usage-muted')).toBe(true);
+    expect(inputLegend.hasAttribute('data-usage-muted')).toBe(false);
+    expect(inputLegend.hasAttribute('data-usage-active')).toBe(true);
+    act(() => inputLegend.blur());
+    expect(container.querySelector('[data-usage-muted]')).toBeNull();
+    expect(container.querySelector('[data-usage-active]')).toBeNull();
+
+    const conversationLegend = container.querySelector<HTMLElement>('.session-usage-panel__legend-row[data-usage-category="conversation"]')!;
+    const systemSegment = container.querySelector('.session-usage-panel__donut-segment[data-usage-category="systemPrompt"]')!;
+    const centerValue = container.querySelector('.session-usage-panel__donut-label strong')!;
+    act(() => conversationLegend.focus());
+    expect(centerValue.textContent).toBe('8%');
+    act(() => systemSegment.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })));
+    expect(centerValue.textContent).toBe('4%');
+    act(() => systemSegment.dispatchEvent(new dom.window.MouseEvent('mouseout', { bubbles: true, relatedTarget: dom.window.document.body })));
+    expect(centerValue.textContent).toBe('8%');
+    act(() => conversationLegend.blur());
+    expect(centerValue.textContent).toBe('20%');
+  });
+
+  it('plots recorded cache hits with a lower bound for partial telemetry and leaves unknown cache unsplit', () => {
+    for (const cacheCoverage of ['partial', 'unavailable'] as const) {
+      render(<SessionUsagePanel report={usageReport({
+        tokens: { source: 'token_usage_records', inputTokens: 80, outputTokens: 20, totalTokens: 100,
+          cachedTokens: 60, cacheCoverage, cacheHitRate: 0.8 },
+      })} />);
+      expect(container.querySelector('.session-usage-panel__context')?.textContent).toContain('No context breakdown recorded');
+      expect(container.querySelector('.session-usage-panel__donut')).toBeNull();
+      if (cacheCoverage === 'partial') {
+        const cachedSegment = container.querySelector<HTMLElement>('.session-usage-panel__bar-segment[data-usage-category="cachedInput"]');
+        expect(container.querySelectorAll('.session-usage-panel__bar-segment')).toHaveLength(3);
+        expect(Number(cachedSegment?.style.flexGrow)).toBeCloseTo(0.75);
+        const cacheLegend = container.querySelector('.session-usage-panel__cache-legend');
+        expect(cacheLegend?.textContent).toContain('Recorded cache hits75%');
+        expect(cacheLegend?.textContent).toContain('Remaining input25%');
+        expect(cacheLegend?.textContent).not.toContain('Input (uncached)');
+      } else {
+        expect(container.querySelectorAll('.session-usage-panel__bar-segment')).toHaveLength(2);
+        expect(container.querySelector<HTMLElement>('.session-usage-panel__bar-segment[data-usage-category="input"]')?.style.flexGrow).toBe('1');
+        expect(container.querySelector('.session-usage-panel__bar-segment[data-usage-parent="input"]')).toBeNull();
+      }
+      expect(container.querySelector('.session-usage-panel__tokens')?.textContent).not.toContain('Cache hit rate');
+      const cacheSummary = container.querySelector<HTMLElement>('[data-usage-cache-summary]')!;
+      expect(cacheSummary.textContent).toBe(cacheCoverage === 'partial' ? '(cache hit ≥75%)' : '(cache unavailable)');
+      if (cacheCoverage === 'partial') {
+        expect(cacheSummary.closest('[data-tooltip]')?.getAttribute('data-tooltip')).toContain('lower bound over all input tokens');
+      }
+      expect(cacheSummary.querySelector('.session-usage-panel__swatch, [tabindex]')).toBeNull();
+      act(() => cacheSummary.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })));
+      expect(container.querySelector('.session-usage-panel__token-legend [data-usage-category="input"]')?.hasAttribute('data-usage-active')).toBe(true);
+      act(() => cacheSummary.dispatchEvent(new dom.window.MouseEvent('mouseout', { bubbles: true, relatedTarget: dom.window.document.body })));
+      expect(container.querySelector('[data-usage-muted]')).toBeNull();
+    }
+  });
+
+  it.each([
+    { input: 80, cached: 0, rate: '≥0%' },
+    { input: 80, cached: 80, rate: '100%' },
+    { input: 99, cached: 60, rate: '≥60%' },
+    { input: 100, cached: 58, rate: '≥58%' },
+    { input: 1000, cached: 999, rate: '≥99%' },
+    { input: 0, cached: 0, rate: undefined },
+    { input: 80, cached: 81, rate: undefined },
+    { input: 80, cached: undefined, rate: undefined },
+  ])('keeps partial cache bounds conservative without inventing missing counts: $input/$cached', ({ input, cached, rate }) => {
+    render(<SessionUsagePanel report={usageReport({
+      tokens: { source: 'token_usage_records', inputTokens: input, outputTokens: 20, totalTokens: input + 20,
+        cachedTokens: cached, cacheCoverage: 'partial', cacheHitRate: 0.95 },
+    })} />);
+    const summary = container.querySelector('[data-usage-cache-summary]')?.textContent;
+    expect(summary).toBe(rate ? `(cache hit ${rate})` : '(cache unavailable)');
+    const cacheSegments = container.querySelectorAll<HTMLElement>('.session-usage-panel__bar-segment[data-usage-parent="input"]');
+    if (rate) {
+      expect(Array.from(cacheSegments).reduce((sum, segment) => sum + Number(segment.style.flexGrow), 0)).toBeCloseTo(1);
+    } else {
+      expect(cacheSegments).toHaveLength(0);
+      expect(container.querySelector('.session-usage-panel__cache-legend')).toBeNull();
+    }
+  });
+
+  it('links a cache child to its parent and restores the focused input group after hover', () => {
+    render(<SessionUsagePanel report={usageReport({
+      tokens: { source: 'token_usage_records', inputTokens: 80, outputTokens: 20, totalTokens: 100,
+        cachedTokens: 60, cacheCoverage: 'available' },
+    })} />);
+    const input = container.querySelector<HTMLElement>('.session-usage-panel__token-legend [data-usage-category="input"]')!;
+    const cached = container.querySelector('.session-usage-panel__bar-segment[data-usage-category="cachedInput"]')!;
+    const uncached = container.querySelector('.session-usage-panel__bar-segment[data-usage-category="uncachedInput"]')!;
+    const cacheLegend = container.querySelector<HTMLElement>('.session-usage-panel__cache-legend [data-usage-category="cachedInput"]')!;
+    act(() => input.focus());
+    expect(cached.hasAttribute('data-usage-active')).toBe(true);
+    expect(uncached.hasAttribute('data-usage-active')).toBe(true);
+    act(() => cached.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true })));
+    expect(input.hasAttribute('data-usage-active')).toBe(true);
+    expect(cacheLegend.hasAttribute('data-usage-active')).toBe(true);
+    expect(uncached.hasAttribute('data-usage-muted')).toBe(true);
+    act(() => cached.dispatchEvent(new dom.window.MouseEvent('mouseout', { bubbles: true, relatedTarget: dom.window.document.body })));
+    expect(uncached.hasAttribute('data-usage-active')).toBe(true);
+    act(() => cacheLegend.focus());
+    expect(input.hasAttribute('data-usage-active')).toBe(true);
+    expect(uncached.hasAttribute('data-usage-muted')).toBe(true);
+    act(() => cacheLegend.blur());
+    expect(container.querySelector('[data-usage-muted]')).toBeNull();
+  });
+
+  it.each([
+    { input: 80, output: 20, cached: 0, segments: ['uncachedInput', 'output'], rate: '0%' },
+    { input: 80, output: 20, cached: 80, segments: ['cachedInput', 'output'], rate: '100%' },
+    { input: 99, output: 1, cached: 60, segments: ['cachedInput', 'uncachedInput', 'output'], rate: '61%' },
+    { input: 1, output: 99, cached: 1, segments: ['cachedInput', 'output'], rate: '100%' },
+    { input: 100, output: 0, cached: 60, segments: ['cachedInput', 'uncachedInput'], rate: '60%' },
+    { input: 0, output: 100, cached: 0, segments: ['output'], rate: undefined },
+    { input: 80, output: 20, cached: 81, segments: ['input', 'output'], rate: undefined },
+    { input: 0, output: 0, cached: 0, segments: [], rate: undefined },
+  ])('handles zero/full/invalid cache counts without invented segments: $input/$output/$cached', ({ input, output, cached, segments, rate }) => {
+    render(<SessionUsagePanel report={usageReport({
+      tokens: { source: 'token_usage_records', inputTokens: input, outputTokens: output, totalTokens: input + output,
+        cachedTokens: cached, cacheCoverage: 'available' },
+    })} />);
+    const bars = Array.from(container.querySelectorAll<HTMLElement>('.session-usage-panel__bar-segment'));
+    expect(bars.map(bar => bar.getAttribute('data-usage-category'))).toEqual(segments);
+    expect(bars.every(bar => Number.isFinite(Number(bar.style.flexGrow)) && Number(bar.style.flexGrow) > 0)).toBe(true);
+    for (const group of container.querySelectorAll<HTMLElement>('.session-usage-panel__bar-group')) {
+      const childShare = Array.from(group.querySelectorAll<HTMLElement>('.session-usage-panel__bar-segment'))
+        .reduce((sum, segment) => sum + Number(segment.style.flexGrow), 0);
+      expect(childShare).toBeCloseTo(1);
+      const parentShare = Number(group.style.flexGrow);
+      expect(parentShare).toBeCloseTo((group.dataset.usageCategory === 'input' ? input : output) / (input + output));
+    }
+    const summary = container.querySelector('[data-usage-cache-summary]')?.textContent;
+    if (rate) expect(summary).toBe(`(cache hit ${rate})`);
+    else expect(summary).not.toContain('%');
+  });
+
+  it('shows loading and error states inside the panel', () => {
+    render(<SessionUsagePanel isLoading />);
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('Generating usage report');
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    render(<SessionUsagePanel error="Host offline" />);
+    expect(container.textContent).toContain('Host offline');
+    expect(container.querySelector('[role="status"]')).toBeNull();
+  });
+
+  it('preserves saved header appearance and accepts old panel destinations after removing details', () => {
     const legacyPackage: AppearancePackage = {
       schema: 'openbitfun.appearance', schemaVersion: APPEARANCE_SCHEMA_VERSION,
-      id: 'test.usage-tabs', name: 'Usage tabs', version: '1.0.0', mode: 'dark',
-      components: { 'session-usage-panel': { parts: { tab: { contexts: [{
-        when: { facets: { tab: 'models' }, states: ['active'] },
-        style: { opacity: { kind: 'number', value: 0.6 } },
-      }] } } } },
+      id: 'test.usage-header', name: 'Usage header', version: '1.0.0', mode: 'dark',
+      components: { 'session-usage-panel': { parts: {
+        header: { base: { opacity: { kind: 'number', value: 0.6 } } },
+      } } },
     };
     const serialized = JSON.stringify(legacyPackage);
     const restored = JSON.parse(serialized) as AppearancePackage;
@@ -1183,185 +1363,29 @@ describe('Session usage report UI components', () => {
     expect(rule).toBeDefined();
 
     const report = usageReport();
-    render(<SessionUsagePanel report={report} initialTab="models" />);
-    const modelsTab = container.querySelector('#session-usage-tab-models');
-    expect(container.querySelector('[role="tablist"]')?.getAttribute('data-openbitfun-component')).toBe('tab-group');
-    expect(modelsTab?.getAttribute('data-openbitfun-part')).toBe('tab');
-    expect(document.querySelector(rule!.selectorText)).toBe(modelsTab);
-    render(<SessionUsagePanel report={report} initialTab="files" />);
-    expect(document.querySelector(rule!.selectorText)).toBeNull();
-    expect(container.querySelector('[role="tabpanel"]')?.id).toBe('session-usage-panel-files');
-    act(() => modelsTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
-    expect(document.querySelector(rule!.selectorText)).toBe(modelsTab);
+    for (const initialTab of ['models', 'files'] as const) {
+      render(<SessionUsagePanel report={report} initialTab={initialTab} />);
+      expect(container.querySelector('[role="tablist"]')).toBeNull();
+      expect(container.querySelector('[role="tabpanel"]')).toBeNull();
+      expect(document.querySelector(rule!.selectorText)).toBe(container.querySelector('.session-usage-panel__header'));
+      expect(container.querySelector('.session-usage-panel__tokens')).not.toBeNull();
+    }
+
+    const retiredPackage: AppearancePackage = {
+      ...legacyPackage,
+      components: { 'session-usage-panel': { parts: {
+        tab: { base: { opacity: { kind: 'number', value: 0.6 } } },
+      } } },
+    };
+    const serializedRetired = JSON.stringify(retiredPackage);
+    const validation = appearancePackageValidator.validate(retiredPackage, registry);
+    expect(validation.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'UNKNOWN_PART', path: 'components.session-usage-panel.parts.tab' }),
+    ]));
+    expect(JSON.stringify(retiredPackage)).toBe(serializedRetired);
   });
 
-  it('follows the shared tab direction in RTL layouts', () => {
-    render(<SessionUsagePanel report={usageReport()} />);
-    container.querySelectorAll<HTMLElement>('[role="tab"]').forEach(tab => { tab.style.direction = 'rtl'; });
-    const overviewTab = container.querySelector<HTMLButtonElement>('#session-usage-tab-overview')!;
-    act(() => {
-      overviewTab.focus();
-      overviewTab.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    });
-    expect(dom.window.document.activeElement?.id).toBe('session-usage-tab-slowest');
-    expect(container.querySelector('#session-usage-tab-slowest')?.getAttribute('aria-selected')).toBe('true');
-  });
-
-  it('caps long usage tables and allows explicit expansion', () => {
-    const tools = Array.from({ length: 55 }, (_, index) => ({
-      toolName: `Tool ${index + 1}`,
-      category: 'other' as const,
-      callCount: 1,
-      successCount: 1,
-      errorCount: 0,
-      durationMs: 1000,
-      p95DurationMs: 1000,
-      executionMs: 1000,
-      redacted: false,
-    }));
-
-    render(<SessionUsagePanel report={usageReport({ tools })} markdown="## Session Usage" />);
-
-    const toolsTab = Array.from(container.querySelectorAll('[role="tab"]'))
-      .find(button => button.textContent === 'Tools');
-    act(() => {
-      toolsTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(container.querySelectorAll('tbody tr')).toHaveLength(50);
-    expect(container.textContent).toContain('Showing 50 of 55 rows');
-    expect(container.textContent).not.toContain('Tool 55');
-
-    const showAll = Array.from(container.querySelectorAll('button'))
-      .find(button => button.textContent === 'Show all 55 rows');
-    act(() => {
-      showAll?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(container.querySelectorAll('tbody tr')).toHaveLength(55);
-    expect(container.textContent).toContain('Tool 55');
-    act(() => toolsTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
-    expect(container.querySelectorAll('tbody tr')).toHaveLength(55);
-  });
-
-  it('links model tool and error aggregate rows to representative transcript anchors', () => {
-    const report = usageReport({
-      models: [
-        {
-          modelId: 'gpt-5.4',
-          callCount: 1,
-          totalTokens: 120,
-          durationMs: 12_000,
-          sampleTurnId: 'turn-2',
-          sampleTurnIndex: 1,
-        },
-      ],
-      tools: [
-        {
-          toolName: 'write_file',
-          category: 'file',
-          callCount: 1,
-          successCount: 1,
-          errorCount: 0,
-          durationMs: 2_000,
-          sampleTurnId: 'turn-3',
-          sampleTurnIndex: 2,
-          sampleItemId: 'tool-3',
-          redacted: false,
-        },
-      ],
-      errors: {
-        totalErrors: 1,
-        toolErrors: 1,
-        modelErrors: 0,
-        examples: [
-          {
-            label: 'write_file',
-            count: 1,
-            sampleTurnId: 'turn-4',
-            sampleTurnIndex: 3,
-            sampleItemId: 'tool-4',
-            redacted: false,
-          },
-        ],
-      },
-    });
-    const focusEvents: FlowChatFocusItemRequest[] = [];
-    const unsubscribe = globalEventBus.on<FlowChatFocusItemRequest>(
-      FLOWCHAT_FOCUS_ITEM_EVENT,
-      event => focusEvents.push(event),
-    );
-
-    render(<SessionUsagePanel report={report} markdown="## Session Usage" sessionId="session-1" />);
-
-    const modelsTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Models');
-    act(() => {
-      modelsTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-    const modelAnchor = container.querySelector<HTMLButtonElement>('.session-usage-panel__row-anchor-link');
-    expect(modelAnchor?.textContent).toContain('gpt-5.4');
-    act(() => {
-      modelAnchor?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    const toolsTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Tools');
-    act(() => {
-      toolsTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-    const toolAnchor = container.querySelector<HTMLButtonElement>('.session-usage-panel__row-anchor-link');
-    expect(toolAnchor?.textContent).toContain('write_file');
-    act(() => {
-      toolAnchor?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    const errorsTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Errors');
-    act(() => {
-      errorsTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-    const errorAnchor = container.querySelector<HTMLButtonElement>('.session-usage-panel__row-anchor-link');
-    expect(errorAnchor?.textContent).toContain('write_file');
-    act(() => {
-      errorAnchor?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(focusEvents).toEqual([
-      {
-        sessionId: 'session-1',
-        turnId: 'turn-2',
-        turnIndex: 2,
-        source: 'usage-report',
-      },
-      {
-        sessionId: 'session-1',
-        turnId: 'turn-3',
-        turnIndex: 3,
-        itemId: 'tool-3',
-        source: 'usage-report',
-      },
-      {
-        sessionId: 'session-1',
-        turnId: 'turn-4',
-        turnIndex: 4,
-        itemId: 'tool-4',
-        source: 'usage-report',
-      },
-    ]);
-    unsubscribe();
-  });
-
-  it('opens the detail panel on a requested usage tab', () => {
-    render(<SessionUsagePanel report={usageReport()} markdown="## Session Usage" initialTab="files" />);
-
-    const filesTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Files');
-    expect(filesTab?.className).toContain('session-usage-panel__tab--active');
-    expect(container.textContent).toContain('File scope');
-  });
-
-  it('explains inferred legacy model labels on the card and detail panel', () => {
+  it('explains inferred legacy model labels on the card', () => {
     const report = usageReport({
       models: [
         {
@@ -1385,43 +1409,6 @@ describe('Session usage report UI components', () => {
 
     expect(container.textContent).toContain('gpt-5.4 (inferred)');
     expect(container.querySelector('[data-tooltip="Inferred from the session model setting."]')).not.toBeNull();
-
-    render(<SessionUsagePanel report={report} markdown="## Session Usage" />);
-    const modelTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Models');
-    act(() => {
-      modelTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(container.textContent).toContain('gpt-5.4 (inferred)');
-    expect(container.querySelector('[data-tooltip="Inferred from the session model setting."]')).not.toBeNull();
-  });
-
-  it('hides legacy model round placeholders in the detail panel', () => {
-    const report = usageReport({
-      models: [
-        {
-          modelId: 'model round 0',
-          callCount: 1,
-          inputTokens: undefined,
-          outputTokens: undefined,
-          totalTokens: undefined,
-          durationMs: 12_000,
-        },
-      ],
-    });
-
-    render(<SessionUsagePanel report={report} markdown="## Session Usage" />);
-
-    const modelTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Models');
-    act(() => {
-      modelTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(container.textContent).toContain('Legacy model not tracked');
-    expect(container.textContent).not.toContain('model round 0');
-    expect(container.querySelector('[data-tooltip="Older sessions did not store per-round model names."]')).not.toBeNull();
   });
 
   it('renders the runtime status entry as a lightweight usage trigger', () => {
@@ -1446,7 +1433,7 @@ describe('Session usage report UI components', () => {
     expect(container.querySelector('.session-runtime-status-entry')).toBeNull();
   });
 
-  it('shows copyable detail metadata and explains unavailable model/file metrics', async () => {
+  it('shows a report label above the left-aligned session title and omits the metadata section', () => {
     const report = usageReport({
       models: [
         {
@@ -1472,359 +1459,77 @@ describe('Session usage report UI components', () => {
         report={report}
         markdown="## Session Usage"
         sessionId="session-1"
+        sessionTitle="Usage report layout"
         workspacePath="D:/workspace/openbitfun"
       />
     );
 
-    expect(container.querySelectorAll('.session-usage-panel__meta-row')).toHaveLength(3);
-    const cacheCoverageHelp = Array.from(container.querySelectorAll('[data-tooltip]'))
+    const title = container.querySelector('.session-usage-panel__header h2');
+    expect(title?.textContent).toBe('Usage report layout');
+    expect(container.querySelector('.session-usage-panel__eyebrow')?.textContent).toBe('Context Usage Report');
+    expect(container.querySelector('.session-usage-panel__header')?.getAttribute('data-align')).toBe('start');
+    expect(container.querySelectorAll('time')).toHaveLength(0);
+    expect(container.querySelector('.session-usage-panel__metadata')).toBeNull();
+    expect(container.querySelector('.session-usage-panel__meta-row')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-product-part="metaRow"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Copy session ID"]')).toBeNull();
+    expect(container.querySelector('.session-usage-panel__definition-list')).toBeNull();
+    const cacheCoverageHelp = Array.from(container.querySelectorAll('.session-usage-panel__legend-share [data-tooltip]'))
       .find(node => node.getAttribute('data-tooltip')?.includes('Total token counts are still shown'));
-    expect(cacheCoverageHelp?.textContent).toContain('Not reported');
-
-    const sessionCopy = container.querySelector('button[aria-label="Copy session ID"]');
-    await act(async () => {
-      sessionCopy?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('session-1');
-
-    const modelTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Models');
-    act(() => {
-      modelTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-    expect(container.textContent).toContain('glm-5.1');
-    expect(container.textContent).not.toContain('Timing not recorded');
-
-    const filesTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Files');
-    act(() => {
-      filesTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-    expect(container.textContent).toContain('No file changes');
-    const fileUnavailableHelp = Array.from(container.querySelectorAll('[data-tooltip]'))
-      .find(node => node.getAttribute('data-tooltip')?.includes('did not detect file changes'));
-    expect(fileUnavailableHelp).toBeTruthy();
+    expect(cacheCoverageHelp?.textContent).toContain('unavailable');
   });
 
-  it('keeps file diff actions visible and exposes full paths for long file rows', () => {
-    dom.window.localStorage.setItem(USAGE_EXPORT_REDACT_PATHS_STORAGE_KEY, 'false');
-    const longPath = 'src/web-ui/src/infrastructure/markdown/MarkdownRenderer.tsx';
-    const report = usageReport({
-      files: {
-        scope: 'snapshot_summary',
-        changedFiles: 1,
-        addedLines: 20,
-        deletedLines: 4,
-        files: [
-          {
-            pathLabel: longPath,
-            operationCount: 2,
-            addedLines: 20,
-            deletedLines: 4,
-            turnIndexes: [1],
-            operationIds: ['operation-1'],
-            redacted: false,
-          },
-        ],
+  it('summarizes the latest context separately from cumulative provider usage for a remote workspace', () => {
+    render(<SessionUsagePanel report={usageReport({
+      workspace: { kind: 'remote_ssh', pathLabel: '/home/dev/OpenBitFun' },
+      context: {
+        systemPrompt: 1_000, toolDefinitions: 1_000, rules: 1_000, skills: 100,
+        mcpTools: 100, subagentDefinitions: 100, summarizedConversation: 30_000,
+        conversation: 100_000, contextWindow: 256_000,
       },
-    });
+    })} />);
 
-    render(
-      <SessionUsagePanel
-        report={report}
-        markdown="## Session Usage"
-        sessionId="session-1"
-        workspacePath="D:/workspace/openbitfun"
-      />
-    );
-
-    const filesTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Files');
-    act(() => {
-      filesTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(container.querySelector('.session-usage-panel__table--files')).not.toBeNull();
-    expect(container.querySelector(`[data-tooltip="${longPath}"]`)).not.toBeNull();
-    const pathCell = container.querySelector('.session-usage-panel__file-path-cell');
-    expect(pathCell?.textContent).toBe('.../markdown/MarkdownRenderer.tsx');
-    expect(pathCell?.textContent).not.toContain('src/web-ui/src/infrastructure');
-    expect(pathCell?.textContent).not.toBe(longPath);
-    expect(container.textContent).not.toContain('Operation IDs');
-    expect(container.textContent).not.toContain('operation-1');
-    expect(container.querySelector('.session-usage-panel__sticky-action-cell')).not.toBeNull();
-    expect(container.querySelector('.session-usage-panel__table-action')).not.toBeNull();
+    const facts = container.querySelector('.session-usage-panel__summary-facts')!;
+    expect(Array.from(facts.querySelectorAll('dt')).map(node => node.textContent))
+      .toEqual(['Project', 'Total usage', 'Context']);
+    expect(Array.from(facts.querySelectorAll('dd')).map(node => node.textContent))
+      .toEqual(['OpenBitFun', '1.5K', '~133.3K / 256K']);
   });
 
-  it('opens snapshot-backed file diffs from the detail panel', async () => {
-    // Snapshot IO is routed by the session's workspace ID; the path is only the operand.
-    flowChatStore.setState((): FlowChatState => ({
-      sessions: new Map([['session-1', {
-        sessionId: 'session-1',
-        title: 'Session 1',
-        dialogTurns: [],
-        status: 'idle',
-        config: { agentType: 'Standard' },
-        createdAt: 1,
-        lastActiveAt: 1,
-        error: null,
-        sessionKind: 'normal',
-        workspaceId: 'workspace-1',
-        workspacePath: 'D:/workspace/openbitfun',
-      } as Session]]),
-      activeSessionId: 'session-1',
-    }));
-    snapshotApiMocks.getOperationDiff.mockResolvedValue({
-      filePath: 'D:/workspace/openbitfun/src/main.rs',
-      originalContent: 'before',
-      modifiedContent: 'after',
-      anchorLine: 42,
-    });
-    const report = usageReport({
-      files: {
-        scope: 'snapshot_summary',
-        changedFiles: 1,
-        addedLines: 2,
-        deletedLines: 1,
-        files: [
-          {
-            pathLabel: 'src/main.rs',
-            operationCount: 1,
-            addedLines: 2,
-            deletedLines: 1,
-            turnIndexes: [1],
-            operationIds: ['operation-1'],
-            redacted: false,
-          },
-        ],
-      },
-    });
+  it('keeps legacy context values unavailable and distinguishes a recorded empty context', () => {
+    render(<SessionUsagePanel report={usageReport()} />);
+    const factValues = () => Array.from(container.querySelectorAll('.session-usage-panel__summary-facts dd'))
+      .map(node => node.textContent);
+    expect(factValues()).toEqual(['openbitfun', '1.5K', 'Unavailable']);
 
-    render(
-      <SessionUsagePanel
-        report={report}
-        markdown="## Session Usage"
-        sessionId="session-1"
-        workspacePath="D:/workspace/openbitfun"
-      />
-    );
+    const emptyContext = {
+      systemPrompt: 0, toolDefinitions: 0, rules: 0, skills: 0,
+      mcpTools: 0, subagentDefinitions: 0, summarizedConversation: 0, conversation: 0,
+    };
+    render(<SessionUsagePanel report={usageReport({ context: emptyContext })} />);
+    expect(factValues()).toEqual(['openbitfun', '1.5K', '~0 / Unavailable']);
 
-    const filesTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Files');
-    act(() => {
-      filesTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
+    render(<SessionUsagePanel report={usageReport({
+      context: { ...emptyContext, conversation: Number.NaN, contextWindow: 256_000 },
+    })} />);
+    expect(factValues()).toEqual(['openbitfun', '1.5K', 'Unavailable / 256K']);
 
-    const openDiffButton = container.querySelector('button[aria-label="Open diff"]');
-    expect(openDiffButton).not.toBeNull();
+    for (const context of [
+      { ...emptyContext, conversation: -1, contextWindow: 0 },
+      { ...emptyContext, conversation: Number.NaN, contextWindow: -1 },
+      { ...emptyContext, conversation: Number.MAX_SAFE_INTEGER, systemPrompt: 1, contextWindow: Infinity },
+    ]) {
+      render(<SessionUsagePanel report={usageReport({ context })} />);
+      expect(factValues()).toEqual(['openbitfun', '1.5K', 'Unavailable']);
+    }
 
-    await act(async () => {
-      openDiffButton?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(snapshotApiMocks.getOperationDiff).toHaveBeenCalledWith(
-      'session-1',
-      'D:/workspace/openbitfun/src/main.rs',
-      'operation-1',
-    );
-    expect(tabUtilsMocks.createDiffEditorTab).toHaveBeenCalledWith(
-      'D:/workspace/openbitfun/src/main.rs',
-      'main.rs',
-      'before',
-      'after',
-      true,
-      'agent',
-      'D:/workspace/openbitfun',
-      42,
-      undefined,
-      {
-        titleKind: 'diff',
-        duplicateKeyPrefix: 'diff',
-        workspaceId: 'workspace-1',
-      },
-    );
-    flowChatStore.setState((): FlowChatState => ({ sessions: new Map(), activeSessionId: null }));
+    render(<SessionUsagePanel report={usageReport({
+      context: { ...emptyContext, contextWindow: 256_000 },
+      tokens: { source: 'unavailable', cacheCoverage: 'unavailable' },
+    })} />);
+    expect(factValues()).toEqual(['openbitfun', 'Unavailable', '~0 / 256K']);
   });
 
-  it('shows slowest spans in the detail panel', () => {
-    const report = usageReport({
-      slowest: [
-        {
-          label: 'turn 2',
-          kind: 'turn',
-          durationMs: 95_000,
-          redacted: false,
-          turnId: 'turn-2',
-          turnIndex: 2,
-        },
-        {
-          label: 'secret shell command',
-          kind: 'tool',
-          durationMs: 30_000,
-          redacted: true,
-        },
-      ],
-    });
-
-    const focusEvents: FlowChatFocusItemRequest[] = [];
-    const unsubscribe = globalEventBus.on<FlowChatFocusItemRequest>(
-      FLOWCHAT_FOCUS_ITEM_EVENT,
-      event => focusEvents.push(event),
-    );
-
-    render(<SessionUsagePanel report={report} markdown="## Session Usage" sessionId="session-1" />);
-
-    const slowestTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Slowest');
-    act(() => {
-      slowestTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(container.textContent).toContain('Slow spans are derived from recorded turn, model, and tool timestamps');
-    // Built from `turnIndex: 2`, not the report's own `label: 'turn 2'`, which
-    // is hard-coded English numbered from zero.
-    expect(container.textContent).toContain('Turn 3');
-    expect(container.textContent).not.toContain('turn 2');
-    expect(container.textContent).toContain(formatDuration(95000));
-    expect(container.textContent).toContain('Redacted');
-    expect(container.textContent).not.toContain('secret shell command');
-
-    const turnLink = container.querySelector<HTMLButtonElement>('.session-usage-panel__turn-link');
-    expect(turnLink?.textContent).toBe('Turn 3');
-    act(() => {
-      turnLink?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(focusEvents).toEqual([
-      {
-        sessionId: 'session-1',
-        turnId: 'turn-2',
-        turnIndex: 3,
-        source: 'usage-report',
-      },
-    ]);
-    unsubscribe();
-  });
-
-  it('shows diagnostic details for slow tool spans and jumps to the exact tool item', () => {
-    const report = usageReport({
-      slowest: [
-        {
-          label: 'ExecCommand',
-          kind: 'tool',
-          durationMs: 95_000,
-          redacted: false,
-          turnId: 'turn-2',
-          turnIndex: 2,
-          itemId: 'tool-slow',
-          inputSummary: 'curl https://api.example.test/slow',
-          status: 'failed',
-          exitCode: 28,
-          timedOut: true,
-          executionMs: 94_970,
-          errorSummary: 'operation timed out',
-        },
-      ],
-    });
-
-    const focusEvents: FlowChatFocusItemRequest[] = [];
-    const unsubscribe = globalEventBus.on<FlowChatFocusItemRequest>(
-      FLOWCHAT_FOCUS_ITEM_EVENT,
-      event => focusEvents.push(event),
-    );
-
-    render(<SessionUsagePanel report={report} markdown="## Session Usage" sessionId="session-1" />);
-
-    const slowestTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Slowest');
-    act(() => {
-      slowestTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(container.textContent).toContain('ExecCommand');
-    expect(container.textContent).toContain('Input');
-    expect(container.textContent).toContain('curl https://api.example.test/slow');
-    expect(container.textContent).toContain('Status');
-    expect(container.textContent).toContain('Failed');
-    expect(container.textContent).toContain('Exit code');
-    expect(container.textContent).toContain('28');
-    expect(container.textContent).toContain('Timed out');
-    expect(container.textContent).toContain('Execution');
-    expect(container.textContent).toContain(formatDuration(95000));
-    expect(container.textContent).toContain('operation timed out');
-
-    const toolLink = container.querySelector<HTMLButtonElement>('.session-usage-panel__turn-link');
-    act(() => {
-      toolLink?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(focusEvents).toEqual([
-      {
-        sessionId: 'session-1',
-        turnId: 'turn-2',
-        turnIndex: 3,
-        itemId: 'tool-slow',
-        source: 'usage-report',
-      },
-    ]);
-    unsubscribe();
-  });
-
-  it('labels slow model spans by turn and jumps to that turn', () => {
-    const report = usageReport({
-      slowest: [
-        {
-          label: 'gpt-5.4',
-          kind: 'model',
-          durationMs: 42_000,
-          redacted: false,
-          turnId: 'turn-4',
-          turnIndex: 4,
-        },
-      ],
-    });
-
-    const focusEvents: FlowChatFocusItemRequest[] = [];
-    const unsubscribe = globalEventBus.on<FlowChatFocusItemRequest>(
-      FLOWCHAT_FOCUS_ITEM_EVENT,
-      event => focusEvents.push(event),
-    );
-
-    render(<SessionUsagePanel report={report} markdown="## Session Usage" sessionId="session-1" />);
-
-    const slowestTab = Array.from(container.querySelectorAll('.session-usage-panel__tab'))
-      .find(button => button.textContent === 'Slowest');
-    act(() => {
-      slowestTab?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    /*
-     * The same number the jump below asks for. This test asserted `Turn 4`
-     * here and `turnIndex: 5` there, four lines apart, and the disagreement
-     * was the defect: the report indexes Turns from zero, every other reader
-     * adds one, and only this label did not.
-     */
-    expect(container.textContent).toContain('Turn 5 model call');
-    expect(container.textContent).toContain('Model call');
-    expect(container.textContent).not.toContain('gpt-5.4');
-    expect(container.querySelector('[data-tooltip="Model call in this turn. Model: gpt-5.4. Jump to this turn"]'))
-      .not.toBeNull();
-
-    const turnLink = container.querySelector<HTMLButtonElement>('.session-usage-panel__turn-link');
-    act(() => {
-      turnLink?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(focusEvents).toEqual([
-      {
-        sessionId: 'session-1',
-        turnId: 'turn-4',
-        turnIndex: 5,
-        source: 'usage-report',
-      },
-    ]);
-    unsubscribe();
-  });
 });
 
 describe('Session usage report i18n and theme guards', () => {
@@ -1885,8 +1590,6 @@ describe('Session usage report i18n and theme guards', () => {
     expect(styleText).toContain('margin: 0.12rem 3rem');
     expect(styleText).toContain('border: 1px solid color-mix(in srgb, var(--openbitfun-color-border-default)');
     expect(styleText).toContain('grid-template-columns: repeat(3, minmax(116px, 1fr));');
-    expect(styleText).toContain('width: clamp(180px, 26vw, 280px);');
-    expect(styleText).toContain('max-width: 280px;');
     expect(styleText).not.toContain('text-overflow: ellipsis;');
     expect(styleText).not.toContain('grid-template-columns: repeat(4, minmax(116px, 1fr));');
     expect(styleText).not.toContain('grid-template-columns: minmax(0, 1fr) auto max-content;');

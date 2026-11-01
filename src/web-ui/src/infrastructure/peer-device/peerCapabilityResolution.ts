@@ -1,5 +1,14 @@
 import type { PeerHostCapabilities } from './PeerConnectionManager';
 
+/** Unknown peers use the URL; older Desktop hosts already support PR details. */
+export function canViewPullRequestsOnSurface(
+  peerActive: boolean,
+  capabilities: PeerHostCapabilities | null,
+): boolean {
+  if (!peerActive) return true;
+  return capabilities?.reviewPlatformV1 ?? (capabilities?.hostKind === 'desktop');
+}
+
 /** Older Desktop and CLI peer hosts do not implement the dedicated copy command. */
 export function canCopySessionsOnSurface(
   peerActive: boolean,

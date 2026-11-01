@@ -30,6 +30,7 @@ export const toolPresentationRegistry = {
   ExecCommand: { owner: 'standard', component: 'CommandToolCard' },
   WriteStdin: { owner: 'standard', component: 'CommandToolCard' },
   ExecControl: { owner: 'standard', component: 'CommandToolCard' },
+  PageManage: { owner: 'standard', component: 'PagePublishToolCard' },
   PageDeploy: { owner: 'standard', component: 'PageDeployToolCard' },
   PagePublish: { owner: 'standard', component: 'PagePublishToolCard' },
   view_image: { owner: 'standard', component: 'ViewImageToolCard' },
@@ -39,6 +40,7 @@ export const toolPresentationRegistry = {
   AgentList: { owner: 'standard', component: 'AgentRosterToolCard' },
   SessionHistory: { owner: 'standard', component: 'SessionHistoryToolCard' },
   analyze_image: { owner: 'standard', component: 'ImageAnalysisToolCard' },
+  generate_image: { owner: 'standard', component: 'ImageAnalysisToolCard' },
   GetTime: { owner: 'standard', component: 'TimeToolCard' },
   ListMCPResources: { owner: 'standard', component: 'McpResourceToolCard' },
   ReadMCPResource: { owner: 'standard', component: 'McpResourceToolCard' },
@@ -72,6 +74,24 @@ export type RegisteredToolName = keyof typeof toolPresentationRegistry;
 export type ToolNameForOwner<Owner extends 'standard' | 'product'> = {
   [Name in RegisteredToolName]: typeof toolPresentationRegistry[Name]['owner'] extends Owner ? Name : never
 }[RegisteredToolName];
+
+/** Retained adapters for historical or explicitly configured calls, outside the current Lab catalog. */
+export const compatibilityToolPresentationOwners = {
+  AgentInterrupt: 'standard',
+  AgentDelete: 'standard',
+  Task: 'product',
+} as const;
+
+export type CompatibilityToolNameForOwner<Owner extends 'standard' | 'product'> = {
+  [Name in keyof typeof compatibilityToolPresentationOwners]: typeof compatibilityToolPresentationOwners[Name] extends Owner ? Name : never
+}[keyof typeof compatibilityToolPresentationOwners];
+
+/** Current tools whose request/result records use DefaultToolCard rather than a dedicated view. */
+export const genericToolNames: ReadonlySet<string> = new Set([
+  'AgentControl',
+  'ListWorkspaces',
+  'MiniAppBrowser',
+]);
 
 export const dedicatedToolNames: ReadonlySet<string> = new Set(Object.keys(toolPresentationRegistry));
 

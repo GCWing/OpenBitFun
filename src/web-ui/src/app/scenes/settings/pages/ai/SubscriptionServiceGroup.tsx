@@ -1,24 +1,22 @@
 import styles from './SubscriptionServiceGroup.module.scss';
 import type { ManagedSubscriptionAccount } from './subscriptionServices';
 import type { ReactNode } from 'react';
-import { Card, CardHeader } from '@openbitfun/ui';
+import { CardHeader } from '@openbitfun/ui';
 
 /** One product heading followed by independent account rows. */
 export function SubscriptionServiceGroup({ title, description, actions, children, testId = 'settings-subscription-service' }: {
   title: string; description?: string; actions?: ReactNode; children: ReactNode; testId?: string;
 }) {
   return <div className={styles.group} data-testid={testId} data-openbitfun-component="model-settings" data-openbitfun-part="subscriptionService">
-    <Card appearance="subtle" clip>
-      <CardHeader
-        className={styles.header}
-        align="center"
-        padding="md"
-        title={<h3 className={styles.title}>{title}</h3>}
-        description={description}
-        actions={actions}
-      />
-      {children}
-    </Card>
+    <CardHeader
+      className={styles.header}
+      align="center"
+      padding="md"
+      title={<h3 className={styles.title}>{title}</h3>}
+      description={description}
+      actions={actions}
+    />
+    {children}
   </div>;
 }
 

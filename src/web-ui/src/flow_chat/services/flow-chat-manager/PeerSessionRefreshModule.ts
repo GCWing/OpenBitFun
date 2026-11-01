@@ -37,6 +37,7 @@ import { installLiveSessionInteractionMailbox } from '../liveSessionInteractionS
 import { agenticEventListener } from '../AgenticEventListener';
 import { pendingQueueManager } from './PendingQueueModule';
 import type { FlowChatContext } from './types';
+import { normalizeStreamContent } from './TextChunkModule';
 
 const log = createLogger('PeerSessionRefresh');
 
@@ -119,7 +120,7 @@ function seedActiveTurnBuffers(
       }
       const baseKey = streamKey(round.id, item);
       const key = item.type === 'thinking' ? `thinking_${baseKey}` : baseKey;
-      contentBuffers.set(key, item.content || '');
+      contentBuffers.set(key, normalizeStreamContent(item.content || ''));
       activeTextItems.set(key, item.id);
     }
   }

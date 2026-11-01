@@ -128,6 +128,9 @@ pub(crate) struct DesktopMiniApps {
     endpoint: Mutex<Option<ipc::Endpoint>>,
     socket_dir: Mutex<Option<tempfile::TempDir>>,
     worker_listeners: Mutex<HashSet<String>>,
+    /// Agent bridge calls waiting on a Shell relay. Bounded, and every entry is
+    /// removed by its waiter, so a Shell that never answers leaks nothing.
+    agents: Mutex<HashMap<String, PendingAgentRequest>>,
 }
 
 impl DesktopMiniApps {
@@ -146,6 +149,278 @@ impl DesktopMiniApps {
             .or_default()
             .clone()
     }
+
+    /// The live window presentation of `app_id`, when that window can answer
+    /// agent-bridge requests. Windows the Shell never advertised a bridge for are
+    /// skipped on purpose: routing to them would only produce a timeout.
+    pub(crate) fn agent_window(&self, app_id: &str) -> Option<AgentWindow> {
+        let snapshot = self.instances.snapshot();
+        let shells = self.shells.lock().unwrap_or_else(|p| p.into_inner());
+        snapshot.instances.iter().find_map(|instance| {
+            if instance.app_id != app_id {
+                return None;
+            }
+            let view = instance.primary_view.as_ref()?;
+            if view.kind != MiniAppViewKind::Window {
+                return None;
+            }
+            let lease = shells.get(&view.view_id)?;
+            match lease.agent_bridge {
+                true => Some(AgentWindow {
+                    view_id: view.view_id.clone(),
+                    instance_id: instance.instance_id.clone(),
+                }),
+                false => None,
+            }
+        })
+    }
+
+    /// A live independent window, including older shells that do not advertise
+    /// the Agent bridge. Callers must not silently replace such a window with a
+    /// tab because doing so can reopen the document and discard unsaved state.
+    pub(crate) fn window_presentation_exists(&self, app_id: &str) -> bool {
+        self.instances.snapshot().instances.iter().any(|instance| {
+            instance.app_id == app_id
+                && instance
+                    .primary_view
+                    .iter()
+                    .chain(instance.pending_view.iter())
+                    .any(|view| view.kind == MiniAppViewKind::Window)
+        })
+    }
+
+    /// `true` when this app is already on screen in the product window, so an
+    /// Agent `open` should keep that presentation instead of launching another.
+    pub(crate) fn tab_presentation(&self, app_id: &str) -> Option<String> {
+        self.instances
+            .snapshot()
+            .instances
+            .iter()
+            .find_map(|instance| {
+                if instance.app_id != app_id {
+                    return None;
+                }
+                let view = instance.primary_view.as_ref()?;
+                (view.kind == MiniAppViewKind::Tab).then(|| instance.instance_id.clone())
+            })
+    }
+
+    /// Relay one agent-bridge request into a window and wait for its answer.
+    ///
+    /// The window owns the frame, so the request travels as an event the Shell
+    /// polls for and the answer comes back over the same authenticated IPC call
+    /// that every other Shell operation uses. Nothing here evaluates JavaScript.
+    pub(crate) async fn call_agent_bridge(
+        &self,
+        app_id: &str,
+        method: &str,
+        action: Option<Value>,
+        timeout: std::time::Duration,
+    ) -> Result<BridgeAnswer, String> {
+        let Some(window) = self.agent_window(app_id) else {
+            return Err(format!(
+                "SURFACE_UNAVAILABLE: MiniApp {app_id} has no windowable agent bridge"
+            ));
+        };
+        let expires_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| format!("HOST_ERROR: {error}"))?
+            .as_millis()
+            .saturating_add(timeout.as_millis());
+        let request_id = format!(
+            "agent-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or(0)
+        );
+        // Shape the request exactly as the injected frame runtime reads it, so the
+        // relay stays a relay: only the transport differs from a tab.
+        let mut relayed = json!({
+            "requestId": request_id,
+            "method": method,
+            "expiresAt": expires_at as u64,
+            "schemaVersion": openbitfun_product_domains::miniapp::web_surface::MINIAPP_WEB_SCHEMA_VERSION,
+        });
+        if let Some(action) = action {
+            relayed["action"] = action;
+        }
+        if relayed.to_string().len() > ipc::MINIAPP_AGENT_MESSAGE_MAX_BYTES {
+            return Err("INVALID_PARAMS: the agent request payload is too large".into());
+        }
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        {
+            let mut agents = self.agents.lock().unwrap_or_else(|p| p.into_inner());
+            // Prune canceled callers without dropping other live requests.
+            agents.retain(|_, pending| {
+                !pending.sender.is_closed() && std::time::Instant::now() < pending.deadline
+            });
+            agents.insert(
+                request_id.clone(),
+                PendingAgentRequest {
+                    sender,
+                    view_id: window.view_id.clone(),
+                    deadline: std::time::Instant::now() + timeout,
+                    claimed: false,
+                },
+            );
+        }
+        let pushed = {
+            let mut shells = self.shells.lock().unwrap_or_else(|p| p.into_inner());
+            match shells.get_mut(&window.view_id) {
+                Some(lease) => {
+                    lease.push("agentRequest", relayed);
+                    true
+                }
+                None => false,
+            }
+        };
+        if !pushed {
+            self.agents
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .remove(&request_id);
+            return Err("SURFACE_UNAVAILABLE: the MiniApp window is no longer open".into());
+        }
+        match tokio::time::timeout(timeout, receiver).await {
+            Ok(Ok(answer)) => answer,
+            Ok(Err(_)) => Err("BRIDGE_TIMEOUT: the MiniApp window dropped the request".into()),
+            Err(_) => {
+                self.agents
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .remove(&request_id);
+                Err("BRIDGE_TIMEOUT: the MiniApp window did not answer in time".into())
+            }
+        }
+    }
+
+    /// Claim a live request once, using the authenticated Shell view identity.
+    fn claim_agent_request(&self, view_id: &str, request_id: &str) -> bool {
+        self.agents
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get_mut(request_id)
+            .is_some_and(|pending| pending.claim(view_id))
+    }
+
+    /// Only the view that claimed the request may settle its result.
+    fn settle_agent_bridge(&self, view_id: &str, answer: Value) -> Result<(), String> {
+        let request_id = answer
+            .get("requestId")
+            .and_then(Value::as_str)
+            .ok_or("The agent answer is missing its requestId")?;
+        let pending = {
+            let mut agents = self.agents.lock().unwrap_or_else(|p| p.into_inner());
+            let pending = agents
+                .get(request_id)
+                .ok_or("The agent request is no longer pending")?;
+            if pending.view_id != view_id {
+                return Err("The agent answer belongs to another view".into());
+            }
+            if !pending.claimed {
+                return Err("The agent request has not been claimed".into());
+            }
+            agents.remove(request_id).expect("checked pending request")
+        };
+        let payload = if answer.to_string().len() > ipc::MINIAPP_AGENT_MESSAGE_MAX_BYTES {
+            Err("BRIDGE_REJECTED: the MiniApp bridge response exceeds the 32 KiB limit".to_string())
+        } else {
+            match answer.get("ok").and_then(Value::as_bool) {
+                Some(true) => Ok(BridgeAnswer {
+                    value: answer.get("value").cloned().unwrap_or(Value::Null),
+                    capabilities: declared_names(&answer, "capabilities", 8),
+                    actions: declared_names(&answer, "actions", 32),
+                }),
+                // A bare message comes from the MiniApp itself, so it is a refusal. The
+                // Shell names its own transport failure in `code`, which is why the
+                // failure kind is data here instead of something parsed out of prose.
+                _ => Err({
+                    use openbitfun_product_domains::miniapp::web_surface::MiniAppWebErrorCode;
+                    let message = answer
+                        .get("error")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|message| !message.is_empty())
+                        .unwrap_or("the MiniApp refused the agent request");
+                    let code = match answer.get("code").and_then(Value::as_str) {
+                        Some("BRIDGE_TIMEOUT") => MiniAppWebErrorCode::BridgeTimeout,
+                        Some("SURFACE_UNAVAILABLE") => MiniAppWebErrorCode::SurfaceUnavailable,
+                        Some("INVALID_PARAMS") => MiniAppWebErrorCode::InvalidParams,
+                        _ => MiniAppWebErrorCode::BridgeRejected,
+                    };
+                    format!("{}: {message}", code.as_str())
+                }),
+            }
+        };
+        pending
+            .sender
+            .send(payload)
+            .map_err(|_| "The agent request receiver is gone".to_string())
+    }
+}
+
+/// Test scaffolding for the transport-routing rules that live in the Desktop
+/// adapters: they need a live window without launching one.
+#[cfg(test)]
+impl DesktopMiniApps {
+    pub(crate) fn test_window(&mut self, app_id: &str) -> AgentWindow {
+        let (instance, view) = self
+            .instances
+            .prepare(app_id.to_string(), None, MiniAppViewKind::Window)
+            .expect("window view");
+        self.shells
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(
+                view.view_id.clone(),
+                ShellLease {
+                    instance_id: instance.instance_id.clone(),
+                    nonce: "nonce".to_string(),
+                    streams: HashSet::new(),
+                    events: VecDeque::new(),
+                    sequence: 0,
+                    event_bytes: 0,
+                    agent_bridge: true,
+                    notify: Arc::new(tokio::sync::Notify::new()),
+                },
+            );
+        self.instances
+            .ready(&instance.instance_id, &view.view_id)
+            .expect("view becomes primary");
+        AgentWindow {
+            view_id: view.view_id,
+            instance_id: instance.instance_id,
+        }
+    }
+}
+
+/// A live window presentation of one app.
+///
+/// The two ids answer different questions — a view is where the request is
+/// delivered, an instance is what a session addresses — and they used to travel
+/// as a positional pair. A caller that swapped them looked correct and silently
+/// routed every bridge request to another surface, so they are named here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AgentWindow {
+    pub(crate) view_id: String,
+    pub(crate) instance_id: String,
+}
+
+/// One relayed bridge answer plus what the document declared about itself.
+///
+/// The declaration travels with every answer because the MiniApp can re-declare
+/// at any time (`expose()` replaces the handlers, a restart re-anchors), so a
+/// cached copy anywhere above this line would go stale silently.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct BridgeAnswer {
+    pub(crate) value: Value,
+    /// Capability names the document last announced: `auto-observe`, `observe`, `act`.
+    pub(crate) capabilities: Vec<String>,
+    /// Action types the document listed for `act`. Empty means it listed none,
+    /// which is unknown rather than "accepts nothing".
+    pub(crate) actions: Vec<String>,
 }
 
 struct ShellLease {
@@ -155,6 +430,72 @@ struct ShellLease {
     events: VecDeque<Value>,
     sequence: u64,
     event_bytes: usize,
+    /// The Shell advertised the agent bridge capability, so the host may relay
+    /// observe/act into this window. An older Shell leaves this false.
+    agent_bridge: bool,
+    /// Wakes a waiting `poll` the moment an event is pushed. Polls are otherwise
+    /// long-polled with a bounded wait, which is what keeps an Agent round trip
+    /// fast without a heartbeat.
+    notify: Arc<tokio::sync::Notify>,
+}
+
+/// One relayed agent-bridge answer: the value the MiniApp returned plus the
+/// capabilities it last announced.
+type AgentAnswer = Result<BridgeAnswer, String>;
+
+struct PendingAgentRequest {
+    sender: tokio::sync::oneshot::Sender<AgentAnswer>,
+    view_id: String,
+    deadline: std::time::Instant,
+    claimed: bool,
+}
+
+impl PendingAgentRequest {
+    fn claim(&mut self, view_id: &str) -> bool {
+        if self.view_id != view_id
+            || self.claimed
+            || self.sender.is_closed()
+            || std::time::Instant::now() >= self.deadline
+        {
+            return false;
+        }
+        self.claimed = true;
+        true
+    }
+}
+
+/// A Shell advertises what it can do at `open`; an older Shell simply says less.
+fn shell_advertises_agent_bridge(params: &Value) -> bool {
+    params
+        .get("shellCapabilities")
+        .and_then(Value::as_array)
+        .is_some_and(|capabilities| {
+            capabilities
+                .iter()
+                .any(|value| value.as_str() == Some(ipc::MINIAPP_AGENT_BRIDGE_CAPABILITY))
+        })
+}
+
+/// Read one bounded string list the Shell relayed from the document.
+///
+/// The document is untrusted input here: names are advisory, so they are
+/// trimmed, emptied, and capped instead of being validated against a vocabulary
+/// the host does not own.
+fn declared_names(answer: &Value, field: &str, limit: usize) -> Vec<String> {
+    answer
+        .get(field)
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .take(limit)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 impl ShellLease {
@@ -168,6 +509,7 @@ impl ShellLease {
                 self.event_bytes = self.event_bytes.saturating_sub(item.to_string().len());
             }
         }
+        self.notify.notify_waiters();
     }
 }
 
@@ -368,6 +710,64 @@ async fn open_window(
     });
     changed(app);
     Ok(Ticket { instance, view })
+}
+
+/// The desktop app the user published for one MiniApp, if any.
+///
+/// Publishing is an explicit user action, and the published bundle is the copy
+/// the user double-clicks, so an Agent `open` prefers it over building a second,
+/// parallel window. `None` means the app was only ever run in-product.
+///
+/// Only macOS has a bundle that can be launched this way; the other platforms
+/// keep their menu entry and fall through to the in-product surface.
+pub(crate) async fn exported_desktop_app(
+    app: &tauri::AppHandle,
+    app_id: &str,
+) -> Result<Option<std::path::PathBuf>, String> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, app_id);
+        Ok(None)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let channel = app.state::<DesktopMiniApps>().channel;
+        let data_dir = app
+            .state::<AppState>()
+            .miniapp_manager
+            .path_manager()
+            .user_data_dir();
+        let app_id = app_id.to_string();
+        let paths = tokio::task::spawn_blocking(move || {
+            system_install::status(&data_dir, &app_id, channel)
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        Ok(paths.into_iter().next())
+    }
+}
+
+/// Launch a published desktop app exactly like a double-click does: the bundle
+/// carries its own launch record, so the shell resolves this host from it.
+pub(crate) fn launch_desktop_app(bundle: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut child = create_command("/usr/bin/open")
+            .arg("-n")
+            .arg(bundle)
+            .spawn()
+            .map_err(|error| format!("Could not open the published MiniApp app: {error}"))?;
+        // Reap the launcher without holding a Tokio worker on an independent app.
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = bundle;
+        Err("Published MiniApp apps can only be launched on macOS".into())
+    }
 }
 
 pub(crate) async fn miniapp_presentation(
@@ -608,6 +1008,7 @@ async fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result
                     existing.push("focus", Value::Null);
                     return Ok(json!({"reused":true}));
                 }
+                existing.agent_bridge = shell_advertises_agent_bridge(&params);
             } else {
                 shells.insert(
                     view.view_id.clone(),
@@ -618,6 +1019,8 @@ async fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result
                         events: VecDeque::new(),
                         sequence: 0,
                         event_bytes: 0,
+                        agent_bridge: shell_advertises_agent_bridge(&params),
+                        notify: Arc::new(tokio::sync::Notify::new()),
                     },
                 );
             }
@@ -644,7 +1047,7 @@ async fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result
             .unwrap_or_else(|p| p.into_inner())
             .remove(&view.view_id);
         return Ok(
-            json!({"presentationCapabilities":[ipc::MINIAPP_CUSTOM_CHROME_CAPABILITY,ipc::MINIAPP_CHAT_SNAPSHOT_CAPABILITY],"transferConfirmed":transfer_confirmed,"instance":instance,"view":view,"app":miniapp,"hostEpoch":host.instances.snapshot().host_epoch,"locale":locale,"appearanceMode":crate::appearance::AppearanceConfig::miniapp_mode(),"ui":ui}),
+            json!({"presentationCapabilities":[ipc::MINIAPP_CUSTOM_CHROME_CAPABILITY,ipc::MINIAPP_CHAT_SNAPSHOT_CAPABILITY,ipc::MINIAPP_AGENT_BRIDGE_CAPABILITY],"transferConfirmed":transfer_confirmed,"instance":instance,"view":view,"app":miniapp,"hostEpoch":host.instances.snapshot().host_epoch,"locale":locale,"appearanceMode":crate::appearance::AppearanceConfig::miniapp_mode(),"ui":ui}),
         );
     }
     let instance_id = string(&params, "instanceId")?;
@@ -681,24 +1084,54 @@ async fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result
         }
         host.instances.touch(&instance_id, &view_id)?;
         let after = params.get("after").and_then(Value::as_u64).unwrap_or(0);
-        let mut shells = host.shells.lock().unwrap_or_else(|p| p.into_inner());
-        let lease = shells
-            .get_mut(&view_id)
-            .ok_or("MiniApp shell lease expired")?;
-        let gap = lease
-            .events
-            .front()
-            .and_then(|e| e["sequence"].as_u64())
-            .is_some_and(|first| first > after + 1);
-        let events: Vec<_> = lease
-            .events
-            .iter()
-            .filter(|e| e["sequence"].as_u64().unwrap_or(0) > after)
-            .cloned()
-            .collect();
-        return Ok(
-            json!({"events":events,"cursor":lease.sequence,"resyncRequired":gap,"pendingView":instance.pending_view}),
-        );
+        // Bounded long-poll: a window with nothing to say holds the call briefly
+        // instead of answering empty immediately, so a relayed agent request is
+        // delivered without a heartbeat and without a busy loop.
+        let wait_ms = params
+            .get("waitMs")
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            .min(2_000);
+        let mut waited = false;
+        loop {
+            let notify = {
+                let shells = host.shells.lock().unwrap_or_else(|p| p.into_inner());
+                shells.get(&view_id).map(|lease| lease.notify.clone())
+            };
+            let Some(notify) = notify else {
+                return Ok(json!({"released":true}));
+            };
+            // Register before reading the queue so a push between the two is not
+            // lost to the wait.
+            let notified = notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            let (gap, cursor, events) = {
+                let mut shells = host.shells.lock().unwrap_or_else(|p| p.into_inner());
+                let lease = shells
+                    .get_mut(&view_id)
+                    .ok_or("MiniApp shell lease expired")?;
+                let gap = lease
+                    .events
+                    .front()
+                    .and_then(|e| e["sequence"].as_u64())
+                    .is_some_and(|first| first > after + 1);
+                let events: Vec<_> = lease
+                    .events
+                    .iter()
+                    .filter(|e| e["sequence"].as_u64().unwrap_or(0) > after)
+                    .cloned()
+                    .collect();
+                (gap, lease.sequence, events)
+            };
+            if !events.is_empty() || waited || wait_ms == 0 {
+                return Ok(
+                    json!({"events":events,"cursor":cursor,"resyncRequired":gap,"pendingView":instance.pending_view}),
+                );
+            }
+            waited = true;
+            let _ = tokio::time::timeout(std::time::Duration::from_millis(wait_ms), notified).await;
+        }
     }
     host.instances.touch(&instance_id, &view_id)?;
     match method {
@@ -769,6 +1202,15 @@ async fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result
             )
             .await
         }
+        // The Shell answered a relayed agent-bridge request. Identity was already
+        // checked against this view's lease, so the answer can only settle a
+        // request that was pushed to this window.
+        "agentClaim" => Ok(
+            json!({"accepted": host.claim_agent_request(&view_id, &string(&params, "requestId")?)}),
+        ),
+        "agentResponse" => host
+            .settle_agent_bridge(&view_id, params)
+            .map(|()| Value::Null),
         "contentAction" => {
             Err("MiniApp semantic content actions are not supported by this host".into())
         }
@@ -779,6 +1221,252 @@ async fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn lease(instance_id: &str, agent_bridge: bool) -> ShellLease {
+        ShellLease {
+            instance_id: instance_id.to_string(),
+            nonce: "nonce".to_string(),
+            streams: HashSet::new(),
+            events: VecDeque::new(),
+            sequence: 0,
+            event_bytes: 0,
+            agent_bridge,
+            notify: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    #[test]
+    fn a_shell_only_advertises_the_bridge_when_it_says_so() {
+        assert!(shell_advertises_agent_bridge(&json!({
+            "shellCapabilities": [ipc::MINIAPP_AGENT_BRIDGE_CAPABILITY]
+        })));
+        // An older Shell sends fewer capabilities, and its absence is the answer.
+        assert!(!shell_advertises_agent_bridge(&json!({
+            "shellCapabilities": [ipc::MINIAPP_CUSTOM_CHROME_CAPABILITY]
+        })));
+        assert!(!shell_advertises_agent_bridge(
+            &json!({"shellCapabilities": []})
+        ));
+        assert!(!shell_advertises_agent_bridge(&json!({})));
+        assert!(!shell_advertises_agent_bridge(&Value::Null));
+    }
+
+    #[test]
+    fn the_agent_bridge_attaches_to_a_ready_window_that_advertised_it() {
+        let mut host = DesktopMiniApps::new(ipc::HostChannel::Development);
+        let (instance, view) = host
+            .instances
+            .prepare("demo".into(), None, MiniAppViewKind::Window)
+            .expect("window view");
+        host.shells
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(view.view_id.clone(), lease(&instance.instance_id, true));
+
+        // A prepared view is not the presentation yet: nothing is mounted there.
+        assert!(host.agent_window("demo").is_none());
+        host.instances
+            .ready(&instance.instance_id, &view.view_id)
+            .expect("view becomes primary");
+        assert!(host.window_presentation_exists("demo"));
+        assert_eq!(
+            host.agent_window("demo"),
+            Some(AgentWindow {
+                view_id: view.view_id.clone(),
+                instance_id: instance.instance_id.clone(),
+            })
+        );
+        assert!(host.agent_window("other").is_none());
+
+        // A window whose Shell never advertised the capability is not routable:
+        // relaying into it would only time out.
+        host.shells
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get_mut(&view.view_id)
+            .expect("lease")
+            .agent_bridge = false;
+        assert!(host.agent_window("demo").is_none());
+        assert!(host.window_presentation_exists("demo"));
+    }
+
+    #[test]
+    fn an_app_already_on_screen_in_a_tab_is_reported_as_that_presentation() {
+        let host = DesktopMiniApps::new(ipc::HostChannel::Development);
+        let (instance, view) = host
+            .instances
+            .prepare("demo".into(), None, MiniAppViewKind::Tab)
+            .expect("tab view");
+        // A prepared view is not on screen yet, so it must not block an Agent
+        // `open` from launching the app's own window.
+        assert!(host.tab_presentation("demo").is_none());
+
+        host.instances
+            .ready(&instance.instance_id, &view.view_id)
+            .expect("view becomes primary");
+        assert_eq!(
+            host.tab_presentation("demo"),
+            Some(instance.instance_id.clone())
+        );
+        assert!(host.tab_presentation("other").is_none());
+        // A tab is not a window: nothing here may answer for a window presentation.
+        assert!(host.agent_window("demo").is_none());
+    }
+
+    #[test]
+    fn answers_for_unknown_or_abandoned_requests_are_refused_not_fatal() {
+        let host = DesktopMiniApps::new(ipc::HostChannel::Development);
+        assert!(host
+            .settle_agent_bridge("view", json!({"requestId": "agent-1", "ok": true}))
+            .is_err());
+        assert!(host
+            .settle_agent_bridge("view", json!({"ok": true}))
+            .is_err());
+        // A Shell that answers after our timeout finds no waiter and is dropped.
+        assert!(host
+            .settle_agent_bridge(
+                "view",
+                json!({"requestId": "agent-1", "ok": false, "error": "late"})
+            )
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn oversized_window_bridge_answers_fail_the_waiter_and_release_it() {
+        let host = DesktopMiniApps::new(ipc::HostChannel::Development);
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        host.agents.lock().unwrap().insert(
+            "large".into(),
+            PendingAgentRequest {
+                sender,
+                view_id: "view".into(),
+                deadline: std::time::Instant::now() + std::time::Duration::from_secs(1),
+                claimed: true,
+            },
+        );
+        host.settle_agent_bridge(
+            "view",
+            json!({
+                "requestId": "large", "ok": true, "value": "界".repeat(12 * 1024)
+            }),
+        )
+        .unwrap();
+        assert!(receiver
+            .await
+            .unwrap()
+            .unwrap_err()
+            .starts_with("BRIDGE_REJECTED:"));
+        assert!(host.agents.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn agent_requests_are_claimed_once_by_their_own_view() {
+        let mut host = DesktopMiniApps::new(ipc::HostChannel::Development);
+        let window = host.test_window("demo");
+        let (answer, ()) = tokio::join!(
+            host.call_agent_bridge(
+                "demo",
+                "act",
+                Some(json!({"type":"increment"})),
+                std::time::Duration::from_secs(1)
+            ),
+            async {
+                tokio::task::yield_now().await;
+                let event = host
+                    .shells
+                    .lock()
+                    .unwrap()
+                    .get(&window.view_id)
+                    .unwrap()
+                    .events
+                    .back()
+                    .unwrap()
+                    .clone();
+                let id = event["payload"]["requestId"].as_str().unwrap();
+                assert!(event["payload"]["expiresAt"].as_u64().is_some());
+                assert!(!host.claim_agent_request("other-view", id));
+                assert!(host
+                    .settle_agent_bridge(&window.view_id, json!({"requestId":id,"ok":true}))
+                    .is_err());
+                assert!(host.claim_agent_request(&window.view_id, id));
+                assert!(!host.claim_agent_request(&window.view_id, id));
+                assert!(host
+                    .settle_agent_bridge("other-view", json!({"requestId":id,"ok":true}))
+                    .is_err());
+                host.settle_agent_bridge(
+                    &window.view_id,
+                    json!({"requestId":id,"ok":true,"value":1}),
+                )
+                .unwrap();
+                // Replaying the retained event after content/WebView reload cannot
+                // acquire a second execution, including after the answer settled.
+                assert!(!host.claim_agent_request(&window.view_id, id));
+            }
+        );
+        assert_eq!(answer.unwrap().value, json!(1));
+        assert!(host.agents.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn expired_and_canceled_requests_cannot_execute_from_the_replay_queue() {
+        let mut host = DesktopMiniApps::new(ipc::HostChannel::Development);
+        let window = host.test_window("demo");
+        let error = host
+            .call_agent_bridge("demo", "act", None, std::time::Duration::from_millis(1))
+            .await
+            .unwrap_err();
+        assert!(error.starts_with("BRIDGE_TIMEOUT:"));
+        let event = host
+            .shells
+            .lock()
+            .unwrap()
+            .get(&window.view_id)
+            .unwrap()
+            .events
+            .back()
+            .unwrap()
+            .clone();
+        assert!(!host.claim_agent_request(
+            &window.view_id,
+            event["payload"]["requestId"].as_str().unwrap()
+        ));
+        assert!(host.agents.lock().unwrap().is_empty());
+
+        // Dropping the tool future closes its receiver even before its deadline.
+        assert!(tokio::time::timeout(
+            std::time::Duration::from_millis(1),
+            host.call_agent_bridge("demo", "act", None, std::time::Duration::from_secs(60))
+        )
+        .await
+        .is_err());
+        let event = host
+            .shells
+            .lock()
+            .unwrap()
+            .get(&window.view_id)
+            .unwrap()
+            .events
+            .back()
+            .unwrap()
+            .clone();
+        assert!(!host.claim_agent_request(
+            &window.view_id,
+            event["payload"]["requestId"].as_str().unwrap()
+        ));
+    }
+
+    #[test]
+    fn request_deadlines_are_checked_before_claiming_even_while_the_waiter_is_live() {
+        let (sender, _receiver) = tokio::sync::oneshot::channel();
+        let mut pending = PendingAgentRequest {
+            sender,
+            view_id: "view".into(),
+            deadline: std::time::Instant::now(),
+            claimed: false,
+        };
+        assert!(!pending.claim("view"));
+        assert!(!pending.claimed);
+    }
 
     #[test]
     fn development_and_installed_hosts_share_data_with_independent_host_leases() {

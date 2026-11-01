@@ -32,6 +32,7 @@ members = [
     "src/crates/adapters/webdriver",
     "src/crates/adapters/transport",
     "src/crates/services/services-core",
+    "src/crates/services/computer-use",
     "src/crates/services/services-integrations",
     "src/crates/services/legacy-migration",
     "src/crates/services/legacy-migration-adapters",
@@ -67,7 +68,7 @@ resolver = "2"
 
 # Shared package metadata — single source of truth for version
 [workspace.package]
-version = "1.0.7" # x-release-please-version
+version = "1.0.8" # x-release-please-version
 authors = ["OpenBitFun Team"]
 edition = "2021"
 
@@ -90,6 +91,8 @@ undocumented_unsafe_blocks = "warn"
 
 # Shared dependency versions to keep all crates aligned
 [workspace.dependencies]
+pkg-config = "0.3"
+x11rb = { version = "0.13", default-features = false }
 # Async runtime
 tokio = { version = "1.52", default-features = false }
 tokio-stream = { version = "0.1.18", default-features = false }
@@ -133,6 +136,7 @@ brotli-decompressor = "=5.0.0"
 alloc-no-stdlib = "=2.0.4"
 alloc-stdlib = "=0.2.2"
 regex = "1"
+tokenizers = { version = "0.22.2", default-features = false }
 base64 = "0.22"
 # Keep macOS Tauri's dispatch2/bitflags expansion on the known-good bitflags release.
 bitflags = "=2.11.1"
@@ -216,6 +220,7 @@ rusqlite = { version = "0.32", default-features = false }
 
 # Tauri (desktop only)
 tauri = { version = "2.11" }
+wry = { version = "0.56.0", default-features = false }
 tauri-plugin-opener = "2.5"
 tauri-plugin-dialog = "2.7"
 tauri-plugin-fs = "2.5"
@@ -233,13 +238,10 @@ keepawake = "0.6.0"
 
 # Desktop support
 screenshots = "0.8"
-enigo = "0.2"
+enigo = { version = "0.2", default-features = false }
 resvg = { version = "0.47", default-features = false }
 atspi = "0.29"
-gstreamer = { version = "0.24", default-features = false }
-gstreamer-app = { version = "0.24", default-features = false }
 cc = { version = "1", default-features = false }
-leptess = "0.14"
 core-foundation = "0.9"
 core-graphics = { version = "0.23", features = ["elcapitan", "highsierra"] }
 foreign-types = "0.5"
@@ -341,11 +343,9 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = true
-# NOTE: do not set `panic = "abort"` here. Several production paths rely on
-# `catch_unwind` to contain third-party panics instead of taking down the app:
-# `browser_api::browser_get_url` (known wry bug where WKWebView URL is nil) and
-# the relay client's TLS connector construction. Aborting would turn those
-# recoverable failures into process crashes.
+# Keep unwinding enabled for scoped `catch_unwind` recovery, such as the relay
+# client's TLS connector construction. Aborting would turn those recoverable
+# failures into process crashes.
 
 [profile.release-fast]
 inherits = "release"

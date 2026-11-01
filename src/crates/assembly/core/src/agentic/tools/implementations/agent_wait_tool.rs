@@ -189,6 +189,36 @@ impl Tool for AgentWaitTool {
         })
     }
 
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "status": {"type": "string"},
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "bg_task_id": {"type": "string"},
+                            "agent_id": {"type": "string"},
+                            "outcome": {"type": "string"},
+                            "content": {},
+                            "error": {}
+                        },
+                        "required": ["bg_task_id", "agent_id", "outcome"],
+                        "additionalProperties": false
+                    }
+                },
+                "pending_bg_task_ids": {"type": "array", "items": {"type": "string"}},
+                "already_delivered_bg_task_ids": {"type": "array", "items": {"type": "string"}},
+                "missing_bg_task_ids": {"type": "array", "items": {"type": "string"}},
+                "invalid_bg_task_inputs": {"type": "array", "items": {}}
+            },
+            "required": ["status", "results", "pending_bg_task_ids", "already_delivered_bg_task_ids", "missing_bg_task_ids", "invalid_bg_task_inputs"],
+            "additionalProperties": false
+        })
+    }
+
     fn is_readonly(&self) -> bool {
         false
     }

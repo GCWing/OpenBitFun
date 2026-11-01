@@ -61,7 +61,9 @@ export const interactiveCapabilitySearchProvider: GlobalSearchProvider = {
             : t(`search.capabilities.${capability.id}.summary`),
           context: t(`search.categories.${capability.categoryId}`),
           badge: t(`search.kinds.${capability.kind}`),
-          score: textScore > 0 ? textScore + directControlBonus + delegatedControlBonus : 0,
+          // Control coverage only breaks ties between equal textual matches.
+          // New operations must not outrank a more relevant capability.
+          score: textScore > 0 ? textScore + (directControlBonus + delegatedControlBonus) / 100 : 0,
           target: {
             kind: 'capability' as const,
             capabilityId: capability.id,

@@ -27,8 +27,7 @@ const productIdentityOwner = 'src/crates/contracts/core-types/src/product_identi
 const retiredIdentityDataBoundaryFiles = new Set([
   'OPENBITFUN_LEGACY_DATA_MIGRATION_IMPLEMENTATION_PLAN.md',
   'OPENBITFUN_LEGACY_DATA_MIGRATION_INVENTORY.md',
-  'deploy/openbitfun-host/README.md',
-  'deploy/openbitfun-host/migrate-market-data-v1.py',
+  'deploy/market-data-migration/migrate-market-data-v1.py',
   // Offline recovery must recognize the pre-rename assistant data location.
   'scripts/recovery/repair-session-storage.py',
   'scripts/recovery/repair-session-storage.test.py',
@@ -54,7 +53,7 @@ const retiredIdentityDataBoundaryPrefixes = Object.freeze([
 ]);
 const noncanonicalIdentityDataBoundaryFiles = new Set([
   'OPENBITFUN_LEGACY_DATA_MIGRATION_INVENTORY.md',
-  'deploy/openbitfun-host/migrate-market-data-v1.py',
+  'deploy/market-data-migration/migrate-market-data-v1.py',
 ]);
 
 // Published external GitHub identifiers that embed the retired token. These are

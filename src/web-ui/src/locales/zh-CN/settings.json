@@ -87,6 +87,10 @@
       "workspaceGit": {
         "label": "工作区与 Git",
         "description": "设置文件搜索、Git 提交署名与 Worktree，管理隔离工作目录"
+      },
+      "externalImport": {
+        "label": "外部导入",
+        "description": "导入并管理其他 AI 应用中的内容"
       }
     },
     "views": {
@@ -108,7 +112,8 @@
       "hooks": "事件 Hooks",
       "pet": "宠物",
       "voice-call": "实时语音通话",
-      "desktop-cards": "小卡片"
+      "desktop-cards": "小卡片",
+      "sidebar-navigation": "左侧导航栏"
     }
   },
   "changeGuard": {

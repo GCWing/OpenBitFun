@@ -4,7 +4,7 @@ import { workspaceManager } from '@/infrastructure/services/business/workspaceMa
 import { sshApi } from '@/features/ssh-remote/sshApi';
 import type { WorkspaceInfo } from '@/shared/types';
 
-import { defaultProjectDirectory, projectFolderKey, type ProjectDraft, type ProjectFolder } from '../utils/projectDraft';
+import { AssistantProjectFolderError, defaultProjectDirectory, projectFolderKey, type ProjectDraft, type ProjectFolder } from '../utils/projectDraft';
 export type { ProjectDraft, ProjectFolder } from '../utils/projectDraft';
 
 /** Persist one workspace with a primary root and the remaining associated folders. */
@@ -54,6 +54,9 @@ export async function createProject(
     if (!workspace) return false;
   }
   surface.assertCurrent('configure project');
+  // Opening a reserved assistant root returns the assistant, not a new project.
+  // Do not report success or rename/attach folders to that identity.
+  if (workspace.workspaceKind === 'assistant') throw new AssistantProjectFolderError();
 
   // Keep existing associations when a previously registered primary root is reused.
   const relatedPaths = [...(workspace.relatedPaths ?? [])];

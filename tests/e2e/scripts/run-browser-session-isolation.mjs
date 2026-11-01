@@ -307,6 +307,31 @@ try {
   }, 'only A native resources released on deletion');
   assert.equal((await pageState(bPage)).instance, bState.instance);
   assert.equal(await selected(b), true);
+  if (process.platform === 'darwin') {
+    const unavailable = createServer();
+    unavailable.listen(0, '127.0.0.1');
+    await once(unavailable, 'listening');
+    const failedUrl = `http://127.0.0.1:${unavailable.address().port}/`;
+    await new Promise(resolve => unavailable.close(resolve));
+    for (const [action, params] of [
+      ['navigate', { url: failedUrl }],
+      ['wait', { condition: 'load', timeout_ms: 15000 }],
+    ]) {
+      const failure = await invoke('execute_tool', { request: { toolName: 'ControlHub',
+        input: { domain: 'browser', action, params: { target: 'builtin', session_id: bPage, ...params } } } });
+      assert.equal(failure.result?.ok, false, JSON.stringify(failure));
+      assert.equal(failure.result.error.code, 'NOT_AVAILABLE', JSON.stringify(failure));
+      assert.match(failure.result.error.message, /Navigation failed/);
+    }
+    await until(() => execute(() => document.querySelector('[data-testid=browser-error-message]')
+      ?.textContent.includes('Navigation failed')), 'native navigation error shown in the panel');
+    const recovered = await tool('navigate', { target: 'builtin', session_id: bPage, url: `${fixtureUrl}/pages/b` });
+    assert.equal(recovered.loaded, true);
+    assert.equal(recovered.session_id, bPage);
+    await until(() => execute(() => !document.querySelector('[data-testid=browser-error-message]')),
+      'manual navigation clears the previous native failure');
+    report.checks.push('Native navigation failure reaches tools and UI; explicit navigation recovers the same page');
+  }
   await invoke('delete_session', { request: { sessionId: b, workspaceId: opened.id } });
   await until(async () => (await tool('list_pages', { target: 'builtin' })).pages.length === 0,
     'all native pages released after their conversations are deleted');

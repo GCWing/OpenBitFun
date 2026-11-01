@@ -47,6 +47,11 @@ export function areModelRoundItemPropsEqual(prev: ModelRoundItemProps, next: Mod
   return (
     prev.blockPart === next.blockPart &&
     prev.round.id === next.round.id &&
+    prev.round.modelConfigId === next.round.modelConfigId &&
+    prev.round.effectiveModelName === next.round.effectiveModelName &&
+    prev.round.routing?.route === next.round.routing?.route &&
+    prev.round.routing?.latencyMs === next.round.routing?.latencyMs &&
+    prev.round.routing?.fallbackReason === next.round.routing?.fallbackReason &&
     prev.round.renderHints?.continuedAfterInterruption === next.round.renderHints?.continuedAfterInterruption &&
     isModelRoundGroupingDisabled(prev.round) === isModelRoundGroupingDisabled(next.round) &&
     prev.round.items === next.round.items &&

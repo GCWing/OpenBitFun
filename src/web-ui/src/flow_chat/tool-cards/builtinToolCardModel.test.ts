@@ -161,6 +161,12 @@ describe('built-in historical result presentation', () => {
     expect(JSON.stringify(created.rawResult)).not.toContain('Bearer private');
     expect(getToolItemCardConfig(item('DesktopCard', { action: 'create' })).attention).toBe('prominent');
 
+    const charted = model('DesktopCard', {
+      action: 'create',
+      card: { title: 'Disk', template: { kind: 'chart', chart: 'stacked', items: [{ label: 'Apps', value: 3 }] } },
+    }, {});
+    expect(charted.fields).toContainEqual({ label: 'fields.template', value: 'desktopCard.templates.chart' });
+
     const listed = model('DesktopCard', { action: 'list' }, { enabled: false, cards: [{ ...record, visible: false }] });
     expect(listed.action).toBe('desktopCard.actions.list');
     expect(listed.notice).toBe('desktopCard.disabledNotice');

@@ -10,6 +10,8 @@
     "description": "原生工作階段預設立即向目前任務補充指令；選擇排隊則等待目前輪次結束。ACP 工作階段仍需等待目前輪次結束，遠端派發工作階段維持向目標任務追加訊息。",
     "immediate": "立即傳送（預設）",
     "queue": "排隊傳送",
+    "immediateDescription": "原生工作階段中，新訊息會立即補充到目前任務。",
+    "queueDescription": "原生工作階段中，新訊息會在本輪結束後自動傳送。",
     "loading": "正在載入訊息傳送偏好…",
     "loadFailed": "載入訊息傳送偏好失敗",
     "saveFailed": "儲存訊息傳送偏好失敗"
@@ -53,8 +55,8 @@
         "description": "默認暗色外觀"
       },
       "openbitfun-light": {
-        "name": "亮色",
-        "description": "亮色外觀 - 純白界面、柔和中性灰與深海軍藍操作色"
+        "name": "淺色",
+        "description": "淺色外觀 - 純白界面、柔和中性灰與深海軍藍操作色"
       },
       "openbitfun-monochrome": {
         "name": "黑白撞色",
@@ -122,7 +124,7 @@
       "hint": "OpenBitFun 執行時的電腦睡眠行為"
     },
     "toggleLabel": "防止電腦睡眠",
-    "toggleDescription": "OpenBitFun 執行期間保持電腦喚醒，即使沒有任務。螢幕仍可關閉；手動睡眠及闔蓋行為由系統決定",
+    "toggleDescription": "執行時防止自動睡眠，不影響關閉螢幕、手動睡眠和闔蓋。",
     "messages": {
       "loading": "載入中…",
       "loadFailed": "無法讀取防止睡眠設定",

@@ -612,7 +612,7 @@ const KeyboardShortcutsSection: React.FC = () => {
 
   return (
     <div id={sectionAnchor} data-openbitfun-component="keyboard-shortcuts" data-openbitfun-part="root">
-      <ConfigPageSection title={t('keyboard.title')} description={t('keyboard.description')} bodySurface={false}>
+      <ConfigPageSection title={t('keyboard.title')} bodySurface={false}>
         {/* Search + actions bar */}
         <div className="kb-shortcuts__toolbar" data-openbitfun-component="keyboard-shortcuts" data-openbitfun-part="toolbar">
           <SearchField

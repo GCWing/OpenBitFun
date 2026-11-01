@@ -81,7 +81,9 @@ impl DesktopBuiltInBrowserHost {
             conversation_id.is_none() || target.conversation_id.as_deref() == conversation_id
         });
         for target in &mut targets {
-            if target.title.is_empty() {
+            if target.title.is_empty()
+                && browser_api::browser_navigation_failure(&target.id).is_none()
+            {
                 if let Ok(driver) = self.driver(&target.id).await {
                     if let Ok(result) = driver
                         .execute(
@@ -202,6 +204,25 @@ impl BuiltInBrowserHost for DesktopBuiltInBrowserHost {
     }
 
     async fn execute(&self, command: BuiltInBrowserCommand) -> Result<Value, String> {
+        #[cfg(target_os = "macos")]
+        if command.method == "Page.navigate" {
+            let url = command
+                .params
+                .as_ref()
+                .and_then(|params| params.get("url"))
+                .and_then(Value::as_str)
+                .ok_or("Page.navigate requires url")?;
+            browser_api::browser_webview_navigate(
+                self.app.clone(),
+                browser_api::WebviewNavigateRequest {
+                    label: command.target_id.clone(),
+                    url: url.to_string(),
+                    open_request_id: None,
+                },
+            )
+            .await?;
+            return Ok(json!({ "frameId": command.target_id }));
+        }
         if command.method == "Runtime.evaluate" {
             browser_api::wait_for_browser_navigation(&command.target_id).await?;
         }

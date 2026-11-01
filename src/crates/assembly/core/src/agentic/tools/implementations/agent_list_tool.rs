@@ -52,7 +52,8 @@ impl AgentListTool {
             for agent_id in &reserved_ids {
                 assistant_text.push_str(&format!("\n- {agent_id}"));
             }
-            assistant_text.push_str("\n\nAll reserved IDs listed above are unavailable for AgentSpawn.");
+            assistant_text
+                .push_str("\n\nAll reserved IDs listed above are unavailable for AgentSpawn.");
             data["reserved_agent_ids"] = json!(reserved_ids);
         }
         Ok(vec![ToolResult::Result {
@@ -108,6 +109,29 @@ impl Tool for AgentListTool {
                     "description": "Defaults to false. Set to true to also return reserved historical IDs (which cannot be reused for AgentSpawn)."
                 }
             },
+            "additionalProperties": false
+        })
+    }
+
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "agents": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "agent_id": {"type": "string"},
+                            "status": {"type": "string"}
+                        },
+                        "required": ["agent_id", "status"],
+                        "additionalProperties": false
+                    }
+                },
+                "reserved_agent_ids": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["agents"],
             "additionalProperties": false
         })
     }
@@ -277,6 +301,7 @@ mod tests {
                 "Parent".into(),
                 "Standard".into(),
                 SessionConfig {
+                    tool_presentation_mode: Default::default(),
                     workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
                     ..Default::default()
                 },
@@ -335,7 +360,9 @@ mod tests {
                 assert_eq!(data["reserved_agent_ids"], serde_json::json!([deleted_id]));
                 assert!(text.contains("Reserved IDs without active agents (1):"));
                 assert!(text.contains(&deleted_id));
-                assert!(text.contains("All reserved IDs listed above are unavailable for AgentSpawn."));
+                assert!(
+                    text.contains("All reserved IDs listed above are unavailable for AgentSpawn.")
+                );
             } else {
                 assert!(data.get("reserved_agent_ids").is_none());
                 assert!(!text.contains(&deleted_id));

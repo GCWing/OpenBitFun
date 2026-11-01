@@ -4199,7 +4199,7 @@ export const requiredContentRules = [
         message: 'missing ExecControl input/default wait regression',
       },
       {
-        regex: /\bexec_command_result_builder_preserves_existing_wire_shape\b/,
+        regex: /\bexec_command_result_builder_exposes_only_model_result_fields\b/,
         message: 'missing ExecCommand result shape regression',
       },
       {

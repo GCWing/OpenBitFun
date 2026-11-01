@@ -22,6 +22,7 @@ vi.mock('./DesktopCardTemplates', () => {
     <div data-template={template.kind}>{template.text}</div>
   );
   return {
+    ChartTemplate: Template,
     ChecklistTemplate: Template,
     CountdownTemplate: Template,
     CronJobTemplate: Template,

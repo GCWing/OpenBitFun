@@ -75,7 +75,6 @@ export default function PromptSuggestionSection() {
   return (
     <ConfigPageSection
       title={t('promptSuggestion.title')}
-      description={t('promptSuggestion.subtitle')}
     >
       <ConfigPageRow
         label={t('promptSuggestion.label')}

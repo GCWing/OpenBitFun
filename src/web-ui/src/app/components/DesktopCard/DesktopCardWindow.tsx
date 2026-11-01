@@ -14,6 +14,7 @@ import {
 import { isMacOSDesktopRuntime, supportsNativeWindowControls } from '@/infrastructure/runtime/environment';
 import { createLogger } from '@/shared/utils/logger';
 import {
+  ChartTemplate,
   ChecklistTemplate,
   CountdownTemplate,
   CronJobTemplate,
@@ -93,6 +94,7 @@ function DesktopCardBody({ card, formatters, onOpenLink, onDismiss }: {
     case 'note': return <NoteTemplate template={template} />;
     case 'progress': return <ProgressTemplate template={template} data={data} formatters={formatters} />;
     case 'metrics': return <MetricsTemplate template={template} data={data} formatters={formatters} />;
+    case 'chart': return <ChartTemplate template={template} data={data} formatters={formatters} />;
     case 'cronJob': return <CronJobTemplate template={template} formatters={formatters} />;
     case 'custom': return <CustomTemplate template={template} card={card} data={data} onOpenLink={onOpenLink} />;
   }

@@ -47,6 +47,10 @@ export const agentRuntimeRootPublicModules = [
   'prompt_markup',
   'prompt_suggestion',
   'remote_file_delivery',
+  // Pure Router observation state/budgets consumed by Core, no concrete AI or IO.
+  'router_context',
+  // Pure Router summary admission and coalescing; Core supplies AI and IO.
+  'router_summary_queue',
   'runtime',
   'scheduled_job',
   'scheduler',

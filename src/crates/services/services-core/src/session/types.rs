@@ -766,6 +766,8 @@ pub struct ModelRoundData {
     pub model_config_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_model_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing: Option<openbitfun_events::agentic::ModelRoutingDecision>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

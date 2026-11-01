@@ -7,6 +7,7 @@ import { getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer
 import type { SkillInfo, SkillLevel, SkillValidationResult, SkillScanDiagnostic } from '@/infrastructure/config/types';
 import { canDeleteSkill, isOpenBitFunManagedSkill, getSkillOriginSourceId, getSkillSourceLabel } from '@/infrastructure/config/skillSourcePresentation';
 import { useWorkspaceManagerSync } from '@/infrastructure/hooks/useWorkspaceManagerSync';
+import { isRemoteWorkspace as workspaceIsRemote, type WorkspaceInfo } from '@/shared/types';
 import { useNotification } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import type { InstalledFilter } from '../skillsSceneStore';
@@ -22,6 +23,8 @@ function installedSkillGroup(skill: SkillInfo): InstalledFilter {
 }
 
 interface UseInstalledSkillsOptions {
+  workspace?: WorkspaceInfo;
+  initialLevel?: SkillLevel;
   searchQuery: string;
   activeFilter: InstalledFilter;
   enabled?: boolean;
@@ -31,11 +34,17 @@ export function useInstalledSkills({
   searchQuery,
   activeFilter,
   enabled = true,
+  workspace: targetWorkspace,
+  initialLevel = 'user',
 }: UseInstalledSkillsOptions) {
   const { t } = useTranslation('scenes/skills');
   const notification = useNotification();
   const { warning: notifyScanWarning, info: notifyScanInfo } = notification;
-  const { workspace, workspacePath, hasWorkspace, isRemoteWorkspace } = useWorkspaceManagerSync();
+  const current = useWorkspaceManagerSync();
+  const workspace = targetWorkspace ?? current.workspace;
+  const workspacePath = targetWorkspace ? targetWorkspace.rootPath : current.workspacePath;
+  const hasWorkspace = targetWorkspace ? true : current.hasWorkspace;
+  const isRemoteWorkspace = targetWorkspace ? workspaceIsRemote(targetWorkspace) : current.isRemoteWorkspace;
 
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   const [loadedContextKey, setLoadedContextKey] = useState<string | null>(null);
@@ -48,7 +57,7 @@ export function useInstalledSkills({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [formLevel, setFormLevel] = useState<SkillLevel>('user');
+  const [formLevel, setFormLevel] = useState<SkillLevel>(initialLevel);
   const [formPath, setFormPath] = useState('');
   const [validationResult, setValidationResult] = useState<SkillValidationResult | null>(null);
   const [isValidating, setIsValidating] = useState(false);
@@ -265,9 +274,9 @@ export function useInstalledSkills({
 
   const resetForm = useCallback(() => {
     setFormPath('');
-    setFormLevel('user');
+    setFormLevel(initialLevel);
     setValidationResult(null);
-  }, []);
+  }, [initialLevel]);
 
   const handleAdd = useCallback(async () => {
     const capabilityEpoch = currentCapabilityEpoch();

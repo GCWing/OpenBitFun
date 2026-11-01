@@ -166,6 +166,15 @@ describe('PersistenceModule', () => {
     }
   });
 
+  it('preserves actual routing facts in frontend checkpoints', () => {
+    const turn = createDialogTurn('completed');
+    turn.modelRounds = [{ id: 'r', index: 0, items: [], isStreaming: false, isComplete: true, startTime: 1,
+      modelConfigId: 'economy-id', effectiveModelName: 'economy-name', routing: { route: 'economy', latencyMs: 12 } }];
+    expect(convertDialogTurnToBackendFormat(turn, 0).modelRounds[0]).toMatchObject({
+      modelConfigId: 'economy-id', effectiveModelName: 'economy-name', routing: { route: 'economy', latencyMs: 12 },
+    });
+  });
+
   it('persists dialog turn token usage metadata when available', () => {
     const turn = createDialogTurn('completed');
     turn.tokenUsage = {

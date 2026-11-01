@@ -2238,6 +2238,7 @@ fn external_primary_route_follows_the_session_execution_worktree() {
     );
 
     let config = SessionConfig {
+        tool_presentation_mode: Default::default(),
         workspace_id: Some(worktree.clone()),
         project_workspace_id: Some(project.clone()),
         workspace_path: Some("/same/execution-path".into()),

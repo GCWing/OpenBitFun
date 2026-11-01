@@ -204,6 +204,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       platform: 'Mobile Web',
     },
     workspace: {
+      iconUnavailable: 'Custom icon unavailable; your saved icon is preserved.',
       tools: 'Tools',
       terminal: 'Terminal',
       openTerminal: 'Open terminal',
@@ -575,6 +576,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       platform: '移动网页',
     },
     workspace: {
+      iconUnavailable: '自定义图标暂不可用，原图标设置仍然保留。',
       tools: '工具',
       terminal: '终端',
       openTerminal: '打开终端',
@@ -946,6 +948,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       platform: '行動網頁',
     },
     workspace: {
+      iconUnavailable: '自訂圖示暫時無法使用，原圖示設定仍然保留。',
       tools: '工具',
       terminal: '終端機',
       openTerminal: '開啟終端機',

@@ -85,6 +85,22 @@ pub struct MessageMetadata {
     /// Execution identity for provider-private replay data produced by a pool member.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_pool_replay_fingerprint: Option<String>,
+    /// Deferred tool definitions loaded from inside a PTC RunCode call.
+    /// This is history-scoped: compaction drops it together with the outer
+    /// RunCode message, requiring the model to load the definition again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ptc_loaded_deferred_tool_specs: Vec<openbitfun_agent_tools::LoadedDeferredToolSpec>,
+    /// Execution facts survive headless turns and UI reconnection. Never sent to providers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_execution: Option<ModelExecutionMetadata>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelExecutionMetadata {
+    pub model_config_id: String,
+    pub effective_model_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing: Option<openbitfun_events::agentic::ModelRoutingDecision>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -803,6 +819,42 @@ mod tests {
         ModelResponseReplay, ModelResponseReplayItem, ReasoningContentKind,
     };
     use serde_json::json;
+
+    #[test]
+    fn ptc_specs_and_routed_execution_metadata_round_trip_together_with_legacy_defaults() {
+        let mut message = Message::assistant("Synthetic reply".into());
+        message.metadata.ptc_loaded_deferred_tool_specs =
+            vec![openbitfun_agent_tools::LoadedDeferredToolSpec {
+                tool_name: "Read".into(),
+                catalog_generation: 4,
+            }];
+        message.metadata.model_execution = Some(super::ModelExecutionMetadata {
+            model_config_id: "economy".into(),
+            effective_model_name: "economy-wire-model".into(),
+            routing: Some(openbitfun_events::agentic::ModelRoutingDecision {
+                route: "economy".into(),
+                latency_ms: 10,
+                fallback_reason: None,
+            }),
+        });
+        let value = serde_json::to_value(&message).unwrap();
+        let restored: Message = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(
+            restored.metadata.ptc_loaded_deferred_tool_specs,
+            message.metadata.ptc_loaded_deferred_tool_specs
+        );
+        assert_eq!(
+            restored.metadata.model_execution.unwrap().model_config_id,
+            "economy"
+        );
+        let mut legacy = value;
+        let metadata = legacy["metadata"].as_object_mut().unwrap();
+        metadata.remove("ptc_loaded_deferred_tool_specs");
+        metadata.remove("model_execution");
+        let restored: Message = serde_json::from_value(legacy).unwrap();
+        assert!(restored.metadata.ptc_loaded_deferred_tool_specs.is_empty());
+        assert!(restored.metadata.model_execution.is_none());
+    }
 
     #[test]
     fn preserves_empty_reasoning_content_for_provider_replay() {

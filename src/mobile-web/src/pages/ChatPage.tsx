@@ -110,7 +110,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
   const sendInFlightRef = useRef<symbol | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [optimisticMsg, setOptimisticMsg] = useState<{
-    id: string; text: string; images: { name: string; data_url: string }[];
+    id: string; timestamp: string; text: string; images: { name: string; data_url: string }[];
   } | null>(null);
   const [inputExpanded, setInputExpanded] = useState(!!autoFocus);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1009,6 +1009,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
     if (hasImages) {
       setOptimisticMsg({
         id: `opt_${Date.now()}`,
+        timestamp: new Date().toISOString(),
         text: text || '',
         images: imgs.map(i => ({ name: i.name, data_url: i.dataUrl })),
       });

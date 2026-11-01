@@ -81,6 +81,18 @@ describe('activateInteractiveCapability', () => {
     expect(mocks.openDestination).not.toHaveBeenCalled();
   });
 
+  it('opens the models settings entry for the stable smart-routing item', async () => {
+    await activateInteractiveCapability('setting.ai.models', { itemId: 'smart-routing' });
+    expect(mocks.openScene).toHaveBeenCalledWith('settings');
+    expect(mocks.openDestination).toHaveBeenCalledWith({ kind: 'settings', pageId: 'ai.models' });
+  });
+
+  it('opens external import in Settings using its stable capability ID', async () => {
+    await activateInteractiveCapability('feature.ecosystem-compatibility');
+    expect(mocks.openDestination).toHaveBeenCalledWith({ kind: 'settings', pageId: 'tools.external-import' });
+    expect(mocks.openScene).toHaveBeenCalledWith('settings');
+  });
+
   it('rejects Git panel requests, including documented items, without opening a scene', async () => {
     for (const itemId of [undefined, 'commit', 'status-diff']) {
       await expect(activateInteractiveCapability('feature.git', { itemId }))

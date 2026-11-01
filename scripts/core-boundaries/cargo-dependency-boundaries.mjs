@@ -168,6 +168,7 @@ const SERVICES_INTEGRATIONS_TOKIO_FEATURES = new Map([
   ['speech-realtime', ['fs', 'io-util', 'macros', 'net', 'rt', 'sync', 'time']],
   ['workspace-search', ['io-util', 'rt', 'sync', 'time']],
   ['script-tool-runtime', ['io-util', 'process', 'rt', 'sync', 'time']],
+  ['ptc-runtime', ['io-util', 'process', 'rt', 'sync', 'time']],
 ]);
 
 const SERVICES_CORE_TOKIO_FEATURES = new Map([
@@ -198,6 +199,8 @@ const CORE_TOKIO_FEATURES = new Map([
   ['browser-control', ['net', 'rt', 'time']],
 ]);
 const CORE_TOKIO_AGGREGATES = new Set([
+  // PTC composes the Agent Runtime baseline and the service-owned Node runtime.
+  'ptc-runtime',
   'external-sources',
   'plugin-runtime',
   'product-search',
@@ -549,11 +552,13 @@ const THIRD_PARTY_CAPABILITY_PROFILES = new Map([
   ['image', {
     label: 'Image',
     packages: new Map([
+      ['openbitfun-computer-use', dependencyProfile(['jpeg', 'png'], { useDefaultFeatures: false })],
       ['openbitfun-services-core', dependencyProfile([], {
         optional: true,
         useDefaultFeatures: false,
         ownerFeatureCapabilities: new Map([
           ['pet-packages', ['gif', 'jpeg', 'png', 'webp']],
+          ['workspace-icons', ['jpeg', 'png', 'webp']],
         ]),
       })],
       ['openbitfun-cli', dependencyProfile(['gif', 'jpeg', 'png', 'webp'], {
@@ -1452,11 +1457,13 @@ export function findProductEntrypointCoreFeatureViolations(
     'tools-browser-web',
     'tools-computer-use',
     'tools-image-analysis',
+    'tools-image-generation',
     'tools-agent-control',
   ];
   const CORE_TEST_SUPPORT_FEATURE = 'test-support';
   const reviewedCoreFeatureClosures = new Map([
     ['openbitfun-cli', [
+      'workspace-icons',
       'tools-pages',
       ...coreCompatibilityReviewedFeatures,
       'product-search',
@@ -1464,6 +1471,8 @@ export function findProductEntrypointCoreFeatureViolations(
       'plugin-runtime',
       'opencode-plugin-host',
       'ssh-remote',
+      // Outbound controller for `openbitfun dispatch outbound`.
+      'dispatch-store',
     ]],
     ['openbitfun-acp', [...new Set([...acpClientCoreFeatures, ...acpServerCoreFeatures])]],
     ['openbitfun-app-server', [
@@ -1509,6 +1518,7 @@ export function findProductEntrypointCoreFeatureViolations(
     'tools-creation',
     'tools-git',
     'tools-image-analysis',
+    'tools-image-generation',
     'tools-mcp',
     'tools-miniapp',
     'web-tools',
@@ -1523,6 +1533,7 @@ export function findProductEntrypointCoreFeatureViolations(
   ];
   const reviewedActiveCoreFeatureClosures = new Map([
     ['openbitfun-cli', [
+      'workspace-icons',
       'tools-pages',
       ...acpActiveCoreFeatures,
       'i18n-runtime',
@@ -1530,6 +1541,7 @@ export function findProductEntrypointCoreFeatureViolations(
       'product-search',
       'opencode-plugin-host',
       'remote-connect',
+      'dispatch-store',
     ]],
     ['openbitfun-acp', acpActiveCoreFeatures],
     ['openbitfun-sdk-host-app', coreCompatibilityActiveFeatures],
@@ -1781,9 +1793,10 @@ export function findProductEntrypointCoreFeatureViolations(
 
   const corePackage = packages.find((pkg) => pkg.name === 'openbitfun-core');
   if (corePackage) {
-    const forbiddenCoreFeatures = [
+    const forbiddenCoreFeaturesFor = (rootName) => [
       'product-full',
-      'dispatch-store',
+      // The CLI is a reviewed dispatch controller; other closures are not.
+      ...(rootName === 'openbitfun-cli' ? [] : ['dispatch-store']),
     ];
     const reportedUnexpectedFeatures = new Set();
 
@@ -1924,7 +1937,7 @@ export function findProductEntrypointCoreFeatureViolations(
 
           if (targetPackage.name === 'openbitfun-core') {
             const activeCoreFeatures = targetState.featureState.active;
-            const unexpected = forbiddenCoreFeatures.find((feature) =>
+            const unexpected = forbiddenCoreFeaturesFor(rootName).find((feature) =>
               activeCoreFeatures.has(feature))
               ?? [...activeCoreFeatures]
                 .filter((feature) => !allowedCoreFeatures.has(feature))

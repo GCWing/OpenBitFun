@@ -301,6 +301,7 @@ export interface ModelRoundData {
   providerId?: string;
   modelConfigId?: string;
   effectiveModelName?: string;
+  routing?: ModelRoutingDecision;
   firstChunkMs?: number;
   firstVisibleOutputMs?: number;
   streamDurationMs?: number;
@@ -401,3 +402,9 @@ export interface ToolResultData {
 }
 
 export type TurnStatus = 'inprogress' | 'completed' | 'error' | 'cancelled';
+
+export interface ModelRoutingDecision {
+  route: string;
+  latencyMs: number;
+  fallbackReason?: string;
+}

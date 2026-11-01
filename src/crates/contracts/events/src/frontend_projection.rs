@@ -128,6 +128,7 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
             round_index,
             model_config_id,
             effective_model_name,
+            routing,
         } => Some(AgenticFrontendEvent::new(
             "agentic://model-round-started",
             json!({
@@ -138,6 +139,7 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
                 "roundIndex": round_index,
                 "modelConfigId": model_config_id,
                 "effectiveModelName": effective_model_name,
+                "routing": routing,
             }),
         )),
         AgenticEvent::TextChunk {
@@ -760,6 +762,7 @@ mod tests {
             round_index: 0,
             model_config_id: "model-config".to_string(),
             effective_model_name: "provider-model".to_string(),
+            routing: None,
         })
         .expect("projected");
 

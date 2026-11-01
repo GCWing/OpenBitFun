@@ -586,11 +586,9 @@
     "dropBottom": "下",
     "dropCenter": "放置",
     "empty": {
-      "title": "在工作階段旁開啟工作內容",
-      "description": "檔案、終端機和預覽都會顯示在這裡。",
-      "currentHost": "目前主機",
-      "workspaceUnavailable": "此工作區已中斷連線。重新連線後可瀏覽檔案或新增終端機。",
-      "selectWorkspace": "選擇工作區後可瀏覽檔案或新增終端機。",
+      "title": "尚未開啟內容",
+      "workspaceUnavailable": "工作區已中斷，請重新連線。",
+      "selectWorkspace": "請先選擇工作區。",
       "browseFiles": "瀏覽檔案",
       "newTerminal": "新增終端機",
       "reopen": "重新開啟 {{title}}"
@@ -694,6 +692,14 @@
     },
     "checklist": {
       "empty": "暫無事項"
+    },
+    "chart": {
+      "empty": "暫無可繪製的資料",
+      "other": "其他",
+      "remaining": "剩餘",
+      "ofTotal": "共 {{total}}",
+      "changeSince": "較 {{label}} {{change}}",
+      "range": "{{min}} – {{max}}"
     },
     "cron": {
       "failed": "無法載入定時任務。",

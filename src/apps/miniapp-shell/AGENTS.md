@@ -11,6 +11,11 @@ Build this package in a separate Cargo invocation with the miniapp-shell profile
 Desktop feature unification or debug builds must never inflate exported apps.
 The preparation script stages the executable for both raw builds and Tauri's
 externalBin and enforces a 16 MiB per-architecture artifact regression budget.
+`desktop:dev` runs that script once at startup, so a session that hot-reloads the
+Desktop host after these sources change keeps launching windows with the previous
+shell — a stale shell silently stops advertising capabilities the host relies on.
+Re-run `pnpm run prepare:miniapp-shell` after editing this package, and reopen an
+open window, before trusting a window-level behavior change.
 macOS exported bundles copy this executable, not the Desktop host;
 Windows/Linux shortcuts point to the installed sidecar. No fallback copies the
 host when a sidecar is missing. The original v1 manifest remains compatible.
@@ -38,6 +43,34 @@ on the native macOS window. Native titlebar double-click follows system preferen
 The HTML is the same shell used before extraction. Do not copy the Web UI,
 catalog, backend, or product resources into this package. Keep native heartbeats,
 permissions, transfer acknowledgements and host-bound identity unchanged.
+
+The Shell also relays the MiniApp agent bridge. It advertises
+`miniapp_agent_bridge_v1` at bootstrap, forwards host-pushed `agentRequest`
+events into the content frame over the same postMessage protocol a tab uses
+(`openbitfun:miniapp-agent-request` / `-response`, paired by `requestId`), and
+returns the answer with `agentResponse` plus the capabilities the document last
+announced. It never reads the frame itself: DOM traversal, pixel capture, and
+synthetic input stay with the Web UI tab runtime, and a window presentation
+refuses them rather than approximating them. Polls are bounded long polls with a
+short yield, so a relayed request arrives immediately without a busy loop.
+
+Every Agent request must first acquire a one-time `agentClaim` from its host.
+Never execute a rejected, expired or old-document claim, and never settle a
+rejected replay on behalf of its original delivery. Invalidate in-flight claims
+and pending responses before bootstrapping replacement content. Preserve the
+poll cursor for the same host epoch/view and consume reload events before
+restarting; a new host/view starts a new cursor. Host and Shell upgrade together
+for this protocol.
+
+A running window must survive a host restart, because the host binds a new
+socket directory on every start and the endpoint cached at bootstrap becomes
+stale. After three consecutive poll failures the Shell re-reads discovery and
+reloads itself once to re-bootstrap; keep that retry bounded with the
+`sessionStorage` recovery timestamp so an unavailable host cannot turn into a
+reload loop, and skip recovery while a presentation transfer is in flight. A
+window that keeps polling a dead endpoint stays visually alive with no lease,
+which the host reports as no window at all — the failure looks like "the app is
+not open" from the Agent side.
 
 `miniapp-chat.js` is a Shell-local presentation module; the main window's Hi
 Dock is independent. Only an authorized `chat.claimComposer` reveals the launcher.

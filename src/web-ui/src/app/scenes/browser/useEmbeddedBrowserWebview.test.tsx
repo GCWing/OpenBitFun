@@ -5,7 +5,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useEmbeddedBrowserWebview } from './useEmbeddedBrowserWebview';
 import { BROWSER_WEBVIEW_DOCUMENT_READY_EVENT, createBrowserPageLifecycleScript, type BrowserDocumentReadyPayload } from './browserPageLifecycleScript';
 
-type PageLoadPayload = { label: string; event: 'started' | 'finished'; url: string };
+type PageLoadPayload = { label: string; url: string } &
+  ({ event: 'started' | 'finished' } | { event: 'failed'; error: string });
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => {}),
@@ -84,7 +85,7 @@ async function render(active = true) {
 async function mutate(change: () => void) {
   await act(async () => { change(); });
 }
-function emitPageLoad(event: PageLoadPayload['event'], label = browser.webviewLabel) {
+function emitPageLoad(event: 'started' | 'finished', label = browser.webviewLabel) {
   for (const listener of mocks.pageLoadListeners) {
     listener({ payload: { label, event, url: 'https://example.com/slow' } });
   }
@@ -118,6 +119,31 @@ it('reattaches the exact session page after unmount without closing, recreating 
   expect(mocks.getByLabel).toHaveBeenCalledTimes(2);
   expect(mocks.invoke.mock.calls.some(([command]) => command === 'browser_webview_create' || command === 'browser_webview_navigate')).toBe(false);
   expect(mocks.view.show).toHaveBeenCalledTimes(2);
+});
+
+it('shows a retained page while its native URL is temporarily unavailable', async () => {
+  mocks.invoke.mockImplementation(async command => command === 'browser_get_url' ? '' : undefined);
+  await act(async () => root.render(<Harness active targetId={mocks.view.label} />));
+  expect(mocks.view.show).toHaveBeenCalledOnce();
+  expect(browser.error).toBeNull();
+  expect(browser.currentUrl).toBe('https://example.com');
+  expect(browser.isLoading).toBe(true);
+  expect(createBrowserPageLifecycleScript).not.toHaveBeenCalled();
+  await mutate(() => emitPageLoad('started'));
+  await mutate(() => emitPageLoad('finished'));
+  expect(browser.currentUrl).toBe('https://example.com/slow');
+  expect(browser.isLoading).toBe(false);
+  expect(mocks.invoke.mock.calls.some(([command]) => command === 'browser_webview_navigate'
+    || command === 'browser_webview_reload' || command === 'browser_webview_create')).toBe(false);
+});
+
+it('shows the retained native page and reports a failure that happened before attachment', async () => {
+  mocks.invoke.mockImplementation(async command => {
+    if (command === 'browser_get_url') throw new Error('Navigation failed: Could not connect');
+  });
+  await act(async () => root.render(<Harness active targetId={mocks.view.label} />));
+  expect(mocks.view.show).toHaveBeenCalledOnce();
+  expect(browser.error).toBe('Navigation failed: Could not connect');
 });
 
 it('switches presentation between independent native pages while retaining both', async () => {
@@ -366,6 +392,26 @@ it('clears the loading state and listener when native creation fails', async () 
   expect(browser.isLoading).toBe(false);
   expect(browser.error).toBe('Browser creation unavailable');
   expect(mocks.pageLoadListeners.size).toBe(0);
+});
+
+it('settles a native navigation failure without reloading and clears it on manual navigation', async () => {
+  await render();
+  await mutate(() => emitPageLoad('started'));
+  await mutate(() => {
+    for (const listener of mocks.pageLoadListeners) {
+      listener({ payload: { label: browser.webviewLabel, event: 'failed', url: '', error: 'Could not connect' } });
+    }
+  });
+  expect(browser.isLoading).toBe(false);
+  expect(browser.error).toBe('Could not connect');
+  await mutate(() => emitDocumentReady());
+  expect(browser.error).toBe('Could not connect');
+  expect(mocks.invoke.mock.calls.some(([command]) => command === 'browser_webview_reload')).toBe(false);
+  await act(async () => browser.loadUrl('https://example.com/slow'));
+  await mutate(() => emitPageLoad('started'));
+  await mutate(() => emitPageLoad('finished'));
+  expect(browser.error).toBeNull();
+  expect(browser.isLoading).toBe(false);
 });
 
 it('keeps reload pending until the native page finishes and settles failed reloads', async () => {

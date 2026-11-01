@@ -64,8 +64,8 @@ const ReviewCapacitySection: React.FC = () => {
 
   if (!desktopRuntime) {
     return (
-      <ConfigPageSection title={t('desktopOnly.title')} description={t('desktopOnly.description')}>
-        {null}
+      <ConfigPageSection title={t('desktopOnly.title')}>
+        <p role="status">{t('desktopOnly.description')}</p>
       </ConfigPageSection>
     );
   }
@@ -74,7 +74,8 @@ const ReviewCapacitySection: React.FC = () => {
 
   if (!team) {
     return (
-      <ConfigPageSection title={t('error.title')} description={loadError ?? t('messages.loadFailed')}>
+      <ConfigPageSection title={t('error.title')}>
+        <p role="alert">{loadError ?? t('messages.loadFailed')}</p>
         <Button variant="outline" size="sm" onClick={() => void loadData()} leadingIcon={<RotateCcw size={14} />}>
 
           {t('error.retry')}
@@ -84,7 +85,7 @@ const ReviewCapacitySection: React.FC = () => {
   }
 
   return (
-    <ConfigPageSection title={t('capacity.title')} description={t('capacity.description')}>
+    <ConfigPageSection title={t('capacity.title')}>
       <ConfigPageRow
         label={t('capacity.maxParallelReviewers.label')}
         description={t('capacity.maxParallelReviewers.description')}

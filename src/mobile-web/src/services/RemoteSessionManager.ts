@@ -55,6 +55,7 @@ export function isWorkspaceIdReferencesUnsupportedError(
 }
 
 const RETRYABLE_REMOTE_READ_COMMANDS = new Set([
+  'get_workspace_icon',
   'get_workspace_info',
   'list_recent_workspaces',
   'list_assistants',
@@ -66,6 +67,19 @@ const RETRYABLE_REMOTE_READ_COMMANDS = new Set([
   'get_file_info',
   'read_file_chunk',
 ]);
+
+/** RemoteCommand aliases are not runtime mode IDs. Queue RPCs bypass the
+ * host's create/send alias resolver; harness dialect translation follows below. */
+function remoteQueueAgentType(agentType: string): string {
+  switch (agentType) {
+    case 'code': return 'Standard';
+    case 'cowork': return 'Cowork';
+    case 'claw':
+    case 'assistant':
+    case 'chat': return 'Claw';
+    default: return agentType;
+  }
+}
 
 // Session settings are small writes. Keeping their deadline well
 // below turn execution prevents a lost relay response from making the selector
@@ -84,6 +98,15 @@ export interface RuntimeFileWorkspace {
   /** Root or browsed directory used as the legacy projection / IO operand. */
   path: string;
   remoteConnectionId?: string;
+}
+
+export interface MobileWorkspaceIcon {
+  workspaceId: string;
+  icon: { version: number; revision: number; mode: string; color: string; glyph?: string };
+  imageData?: string;
+  imageUnavailable: boolean;
+  darkImageData?: string;
+  darkImageUnavailable?: boolean;
 }
 
 export interface WorkspaceInfo {
@@ -534,6 +557,25 @@ export class RemoteSessionManager {
     }
   }
 
+  async getWorkspaceIcon(workspaceId: string): Promise<MobileWorkspaceIcon | null> {
+    const target = this.client.getControlTargetSnapshot();
+    await this.ensureHostCapabilitiesKnown(target);
+    if (!this.supportsHostCapability('workspace_icon_read_v1')) return null;
+    const response = await this.request<{ snapshot: MobileWorkspaceIcon }>({ cmd: 'get_workspace_icon', workspace_id: workspaceId }, target);
+    const snapshot = response.snapshot;
+    if (!snapshot || !snapshot.workspaceId || snapshot.icon?.version !== 1
+      || !Number.isSafeInteger(snapshot.icon.revision) || snapshot.icon.revision < 0
+      || !['default', 'image'].includes(snapshot.icon.mode)
+      || (snapshot.icon.glyph !== undefined && typeof snapshot.icon.glyph !== 'string')
+      || !/^(default|blue|cyan|green|yellow|orange|red|purple|pink|#[\da-f]{6})$/i.test(snapshot.icon.color)
+      || (snapshot.darkImageUnavailable !== undefined && typeof snapshot.darkImageUnavailable !== 'boolean')
+      || [snapshot.imageData, snapshot.darkImageData].some(image => image !== undefined
+        && (typeof image !== 'string' || !image.startsWith('data:image/png;base64,') || image.length > 720_000))) {
+      throw new Error('Unsupported workspace icon response');
+    }
+    return snapshot;
+  }
+
   async getWorkspaceInfo(): Promise<WorkspaceInfo> {
     const target = this.client.getControlTargetSnapshot();
     const resp = await this.request<{ resp: string } & WorkspaceInfo>({
@@ -924,7 +966,13 @@ export class RemoteSessionManager {
       queue = new HostDialogQueue(scope, sessionId, async request => {
         if (this.client.accountUserId !== account || this.controlTargetEpoch !== epoch) throw new Error('Queue target changed');
         if (!this.supportsHostCapability('dialog_queue_v1')) throw new Error('Host message queue is unsupported');
-        const response = await this.request<{ snapshot: QueueSnapshot }>({ cmd: 'dialog_queue', request }, target);
+        // Translate at the transport boundary so pre-fix outbox retries are
+        // repaired too, without rewriting stored drafts or their stable IDs.
+        const wireRequest = request.action === 'submit' ? {
+          ...request,
+          message: { ...request.message, agentType: remoteQueueAgentType(request.message.agentType) },
+        } : request;
+        const response = await this.request<{ snapshot: QueueSnapshot }>({ cmd: 'dialog_queue', request: wireRequest }, target);
         if (this.client.accountUserId !== account || this.controlTargetEpoch !== epoch) throw new Error('Queue target changed');
         return response.snapshot;
       });

@@ -247,6 +247,17 @@ async fn configured_model_in_service(
     Ok(model)
 }
 
+/// Apply the supplied draft's model default without resolving a saved model ID
+/// or changing the client's authentication, transport or session preset.
+pub async fn apply_model_default_reasoning(
+    client: AIClient,
+    model_config: &AIModelConfig,
+) -> AIClient {
+    let models_dev = load_models_dev_reasoning_catalog().await;
+    let projection = project_model_reasoning_catalog(model_config, models_dev.catalog.as_deref());
+    apply_default_reasoning_preset(client, &projection)
+}
+
 impl AIClientFactory {
     pub(crate) async fn validate_channel_snapshot(&self, members: &[AIModelConfig]) -> Result<()> {
         let effective = self.config_service.get_effective_ai_config().await?;
@@ -464,7 +475,9 @@ impl AIClientFactory {
             .await
     }
 
-    async fn resolve_model_id(&self, model_id: &str) -> Result<String> {
+    /// Resolve a model selector such as `primary` or `fast` to its canonical
+    /// configured model ID.
+    pub async fn resolve_model_id(&self, model_id: &str) -> Result<String> {
         let ai_config = self.config_service.get_effective_ai_config().await?;
         resolve_required_model_selector(
             model_id,
@@ -584,6 +597,7 @@ impl AIClientFactory {
             })
     }
 
+    #[cfg(test)]
     pub(crate) async fn account_client_source(
         self: &Arc<Self>,
         model_id: &str,
@@ -1084,6 +1098,10 @@ impl AIClientFactory {
         Ok(client)
     }
 }
+
+#[cfg(test)]
+#[path = "client_factory/connection_tests.rs"]
+mod connection_tests;
 
 static GLOBAL_AI_CLIENT_FACTORY: OnceLock<Arc<tokio::sync::RwLock<Option<Arc<AIClientFactory>>>>> =
     OnceLock::new();
@@ -1915,6 +1933,7 @@ mod tests {
             format: "openai".to_string(),
             context_window: 4096,
             max_tokens: None,
+            max_images_per_request: None,
             temperature: None,
             top_p: None,
             inline_think_in_text: false,

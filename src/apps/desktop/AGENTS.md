@@ -154,10 +154,15 @@ After command registration changes, also run the `remote_workspace_policy` filte
 For optional workspace catalog query payload compatibility, run
 `cargo test --locked -p openbitfun-desktop --lib api::session_api::catalog_request_tests`.
 
+For MCP ProductControl provider wiring, run
+`cargo test --locked -p openbitfun-desktop --lib openbitfun_control_host::tests`.
+The shared MCP behavior fixtures are documented in the Core guide.
+
 For model selector request compatibility and configuration effect routing:
 
 ```bash
 cargo test --locked -p openbitfun-desktop --lib update_session_model_distinguishes_omitted_null_and_explicit_reasoning_presets
+cargo test --locked -p openbitfun-desktop --lib model_routing_status_preserves_legacy_requests_and_internal_session_opt_in
 cargo test --locked -p openbitfun-desktop --lib backend_effect_routing_is_owned_by_the_control_transaction
 ```
 
@@ -186,6 +191,12 @@ For shared GitHub sign-in and token redaction, use
 `cargo test -p openbitfun-desktop --lib api::account_identity_api::tests`.
 For the matching cross-entry UI state, run
 `pnpm --dir src/web-ui run test:run src/infrastructure/account-identity/AccountIdentityService.test.ts src/features/market-account/AccountIdentityControls.test.tsx src/app/components/RemoteConnectDialog/ensureAccountSession.test.ts`.
+
+For Pages Agent startup registration and Desktop-owned account execution, run
+`cargo test --locked -p openbitfun-desktop --lib api::remote_connect_api::page_tool_tests`.
+This child-process fixture invokes the actual registered tool against a loopback
+Relay and covers account-switch fencing; it does not launch the native UI or
+exercise a live remote device.
 
 For side-question request compatibility, initial model selection, and optional
 message metadata, use
@@ -221,6 +232,12 @@ For macOS HTML versus native file drag routing, use the focused command in
 and `cargo build -p openbitfun-desktop`. The host keeps the native file receiver
 enabled for Finder paths; the Wry adapter delegates non-file gestures to WebKit.
 Frontend HMR and synthetic DOM drag tests cannot verify that native boundary.
+
+For unavailable macOS browser URLs and native navigation failures, run the `wkwebview_url` native regression in
+[`third_party/wry/OPENBITFUN-PATCH.md`](../../../third_party/wry/OPENBITFUN-PATCH.md)
+and the Desktop build below. The test covers native URL readback and
+page-load callbacks, navigation failure and explicit recovery; it does not exercise remote hosts. Panic hooks must report
+failures without claiming that returning from the hook catches a panic.
 
 The layered receiver requires the compatibility declaration in
 `windows-app.manifest`; keep it wired through `build.rs` for dev and release.
@@ -267,13 +284,14 @@ For the matching startup wiring contract, run
 For native sidebar material and appearance bootstrap, run
 `cargo test -p openbitfun-desktop --no-default-features --lib appearance::startup_appearance_tests`
 and `pnpm --dir src/web-ui run test:run src/infrastructure/appearance/adapters/ThemeTokenAppearanceAdapter.test.ts`.
-For embedded browser preview encoding and target correlation, run
+For embedded browser preview encoding, target correlation and navigation outcomes, run
 `cargo test -p openbitfun-desktop --lib api::browser_api::tests`.
 For conversation-owned browser lifetime, build Desktop and Web UI, then run
 `node tests/e2e/scripts/run-browser-session-isolation.mjs`. Its isolated native
 fixture delays A's model response until B is selected, exercises background
 opening and concurrent reads through real Agent tools, and verifies native
-visibility and retained document state across session switches. It scripts only
+visibility and retained document state across session switches. On macOS it also
+checks navigation failure delivery to tools/UI and recovery by manual navigation. It scripts only
 model HTTP, not browser or session behavior; it does not establish remote coverage.
 After browser command registration changes, also run
 `cargo test -p openbitfun-desktop --lib remote_workspace_policy`.
@@ -308,10 +326,12 @@ For alternate dev-server ports and preview startup URL changes, run
 `cargo test -p openbitfun-desktop --no-default-features --lib appearance::development_frontend_tests`.
 For launcher-only development storage mode changes, run
 `node --test scripts/dev-startup.test.mjs`; no native app launch is required.
-By default (or with `--isolated-data`), both desktop development launchers set `OPENBITFUN_USER_ROOT` and
-`OPENBITFUN_HOME` before spawning children, defaulting to the checkout-local
-`.openbitfun/desktop-dev/{user,home}` directories. `--shared-data` leaves storage
-selection to the app; the two flags are mutually exclusive. Preserve explicit
+By default (or with `--shared-data`), both desktop development launchers leave
+storage selection to the app so existing settings, workspaces and sessions are
+visible. Only `--isolated-data` sets `OPENBITFUN_USER_ROOT` and `OPENBITFUN_HOME`
+before spawning children, defaulting to the checkout-local
+`.openbitfun/desktop-dev/{user,home}` directories. Keep existing isolated data in
+place; switching modes must not move, merge or delete it. The two flags are mutually exclusive. Preserve explicit
 overrides and the legacy E2E aliases in both modes. Development launchers set
 `OPENBITFUN_DESKTOP_HOST_CHANNEL=development`: its MiniApp lease, discovery and
 launch records are separate even when product storage is shared. Keep per-session
@@ -336,3 +356,24 @@ The host resolves the saved model, rejects non-API authentication and custom aut
 and rechecks its authorization binding before publishing the result. Model-scoped
 requests require the separately advertised `subscription_model_quota_v1` capability;
 legacy requests retain the exact account-slot path. These tests do not contact billing.
+
+For workspace HTML gateway authentication, chunking, cancellation, site-root
+entry URLs, document-route fallback, owner-error preservation, peer capability
+negotiation and encrypted loopback Relay transfer, run:
+
+```bash
+cargo test --locked -p openbitfun-desktop --lib html_preview
+```
+
+For encrypted peer resource-load timings, run the same command with
+`--lib html_preview_encrypted_peer_loading_benchmark -- --ignored --nocapture`.
+The isolated Relay fixture adds 40 ms per resource RPC and compares the previous
+serial reader with cold and warm HTTP gateway loads of the same HTML/assets.
+It reports three samples and verifies payload bytes; it does not time native
+rendering or use a physical remote host. Cache and prefetch limits belong to
+`services-integrations::remote_connect::html_preview::transfer`; the Desktop
+adapter owns HTTP authentication, explicit-refresh headers and peer RPC wiring.
+
+Use `node tests/e2e/scripts/run-html-preview.mjs` after building Desktop and Web UI
+to verify CSS, JavaScript modules, images and concurrent preview cookies in native
+browser child views. The fixture uses isolated storage; see `tests/e2e/AGENTS.md`.

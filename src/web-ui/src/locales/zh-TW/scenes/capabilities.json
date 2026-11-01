@@ -42,6 +42,7 @@
             "session-lifecycle": "重命名、歸檔、恢復、刪除、複製、分叉與導出工作階段",
             "model-mode-permissions": "為工作階段選擇模型、工作模式、記憶模式與權限模式",
             "creative-frontend-authoring": "讓創造模式擴展客戶端界面與運行時能力",
+            "image-generation": "透過已設定的預設圖像模型生成圖片",
             "turn-control": "開始、引導、打斷、取消或恢復一次智能體運行",
             "permission-mailbox": "查看並逐個或批量回答等待中的權限請求",
             "history-search": "分頁加載、搜索和回填歷史消息與工作階段內容",
@@ -91,6 +92,7 @@
             "close-switch-reorder": "關閉、切換並重新排序多個已打開工作區",
             "recent-workspaces": "查看、清理和重新打開最近使用的項目",
             "workspace-metadata": "掃描並維護工作區名稱、資訊、關聯目錄和 Persona 檔案",
+            "workspace-icon": "選擇項目圖案和顏色，或使用自訂圖片",
             "file-watch": "監聽項目檔案變化、檢查監聽狀態並在失敗後恢復",
             "workspace-search": "按檔案名、路徑或檔案內容搜索本地工作區",
             "remote-open": "從項目流程打開 SSH 或其他遠程工作區",
@@ -221,6 +223,7 @@
             "customization": "創建定制草稿、實時預覽，並應用、同步或丟棄修改",
             "versions": "查看版本歷史並回滾到舊版本",
             "agent-authoring": "讓智能體初始化、編寫並校驗一個 Mini App",
+            "agent-operate-app": "由智能體結合原始碼控制 Mini App",
             "agent-market-submit": "在用戶明確要求時由智能體提交已完成的 Mini App 到市場審核",
             "publishing": "撤回和審查市場發佈，並可渲染幻燈片頁面"
           }
@@ -314,13 +317,14 @@
           "title": "Detached Dispatch 遠程派發",
           "summary": "把可持續運行的任務派發到另一台 OpenBitFun 主機；控制端可以斷開，目標主機繼續執行並保留記錄。",
           "items": {
-            "targets": "列出可派發目標並探測版本、連接和運行能力",
+            "targets": "列出同帳戶設備與已保存的 SSH 目標",
             "provision": "為目標主機配置運行環境並安裝或更新 OpenBitFun CLI",
             "model-sync": "在提交任務前同步目標所需的模型配置",
-            "submit": "把包含工作區、工作階段、模型和權限策略的持久任務提交到目標",
+            "submit": "從當前 Git 工作區把持久任務提交到同帳戶設備或 SSH 目標",
             "status-list": "列出派發任務並查詢運行狀態、結果和錯誤",
             "transcript": "保存、追加和重新加載可斷線恢復的執行記錄",
-            "permission-continuation": "遠程回答權限請求，並繼續或取消目標端任務",
+            "permission-continuation": "遠程回答權限請求並繼續目標端任務",
+            "cancel": "取消本機派發的任務",
             "result-sync": "將目標端結果同步回控制端，而不把控制端當作遠程檔案系統代理"
           }
         },
@@ -367,7 +371,7 @@
           "title": "桌面小卡片",
           "summary": "讓智能體在主窗口之外放置可拖動的小卡片，顯示倒計時、清單、PR 狀態、天氣、股價等需要偶爾看一眼的資訊，並在重新打開應用後恢復。",
           "items": {
-            "agent-cards": "按需求或在任務過程中創建倒計時、清單、便簽、進度、指標、定時任務和自定義卡片，可定時從 HTTP 接口或本機命令重新整理數據",
+            "agent-cards": "按需求或在任務過程中創建倒計時、清單、便簽、進度、指標、圖表、定時任務和自定義卡片，可定時從 HTTP 接口或本機命令重新整理數據",
             "home-management": "在首頁“小卡片”區查看全部卡片，並顯示、隱藏或刪除單張卡片",
             "card-actions": "在卡片上重新整理數據、勾選清單項、切換置頂、打開鏈接或回到來源工作階段",
             "drag-restore": "拖動卡片到桌面任意位置，拖動卡片邊緣或四角調整大小；關閉 OpenBitFun 時卡片消失，重新打開後按原位置和大小恢復"
@@ -467,8 +471,10 @@
               "available-models": "讓智能體查看當前配置下可用的模型",
               "model-catalog": "查看 models.dev 目錄狀態、手動重新整理並定位本地緩存",
               "advanced-request": "為供應商添加自定義 Header、請求體字段與 SSL 行為",
-              "connection-test": "保存前測試供應商或模型連接並重新整理運行時客戶端",
-              "model-pools": "管理模型池、路由策略與工作階段模型選擇"
+              "smart-routing": "查看智慧模式可用狀態（暫未開放）",
+              "connection-test": "測試模型連線或圖像生成，並重新整理執行階段用戶端",
+              "model-pools": "管理模型池、路由策略與工作階段模型選擇",
+              "smart-routing": "查看智能模式可用狀態（尚未開放）"
             }
           },
           "memory": {
@@ -518,13 +524,14 @@
         "tools": {
           "execution": {
             "title": "執行與權限控制",
-            "summary": "管理智能體工具權限、並行度、超時、延遲加載、Computer Use 與瀏覽器控制。",
+            "summary": "管理智能體工具權限、呈現模式、並行度、超時、延遲加載、Computer Use 與瀏覽器控制。",
             "items": {
               "permission-mode": "選擇詢問、自動批准或完全訪問權限模式，並確認高風險警告",
               "permission-selector": "控制權限模式選擇器是否顯示在聊天輸入框下方",
               "global-project-rules": "創建、排序和保存全局或項目級 Allow、Ask、Deny 規則",
               "remembered-grants": "查看、撤銷或清空項目中記住的權限授權與審計記錄",
               "deferred-tools": "按需延遲加載工具定義以減少智能體初始上下文",
+              "tool-presentation": "選擇模型使用原生模式或 PTC TypeScript 模式",
               "parallelism": "設定子智能體與 Swarm 最大並行及安全、強制並行或串行策略",
               "timeouts": "設定或取消單次工具調用超時",
               "review-capacity": "設定 Deep Review 最大並行評審者和隊列等待時間",

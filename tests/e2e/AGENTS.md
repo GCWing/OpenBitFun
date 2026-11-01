@@ -38,6 +38,23 @@ pnpm --dir tests/e2e exec wdio run ./config/wdio.conf.ts --spec "./specs/<file>.
 
 Prefer the narrowest relevant spec first, then broaden only if needed.
 
+For historical FlowChat scroll continuity, build Desktop and current frontend
+assets, then run:
+
+```bash
+pnpm --dir tests/e2e exec wdio run ./config/wdio.flowchat-scroll-native.ts
+```
+
+This creates an isolated 80-Turn session, copies the completed packaged frontend,
+and checks slow/fast bidirectional scrolling, reading-position restoration,
+draft preservation and search navigation. The printed temporary directory keeps
+`result.json`, per-phase frame data and screenshots. Set
+`OPENBITFUN_E2E_FRONTEND_DIR` to a completed build with `frontend-revision.json`,
+or `OPENBITFUN_E2E_WEBDRIVER_PORT` for a free driver port. Optional
+`OPENBITFUN_SCROLL_DIAGNOSTICS=1` records row geometry and write stacks with
+additional overhead. Wheel actions exercise the real WebView layout, not OS
+trackpad inertia; local results do not establish remote or other-platform behavior.
+
 For embedded WebDriver reveal/focus and shell scroll geometry, build Desktop
 and current frontend assets, then run:
 
@@ -155,3 +172,20 @@ after overlay rendering settles, not from a recreated mock page.
 The runner records the copied binary SHA-256 and frontend revision, then removes
 only its copied binary/frontend after stopping the app. Logs, result and the
 isolated profile remain; set `OPENBITFUN_E2E_KEEP_SNAPSHOT=1` to retain the copies.
+
+For workspace HTML preview resource loading, build Desktop and Web UI, then run:
+
+```bash
+node tests/e2e/scripts/run-html-preview.mjs
+```
+
+The native browser fixture uses isolated product storage and completed binary /
+frontend snapshots. It verifies nested build output with root-relative CSS,
+relative JavaScript modules and dynamic imports, parent-relative styles, images,
+encoded filenames, and reloading one preview after opening another. Inspect its
+`result.json`. It also opens a nested site index at `/`, follows a real page link,
+reloads a history route, loads a deep link with a query, and verifies images/modules
+plus a true 404 for a missing image. Views are shown and an image entrance
+animation must finish, so decoding in a hidden view cannot satisfy the check.
+This is native local browser coverage. The services-integrations
+OpenSSH fixture separately covers the SSH/SFTP resource provider.

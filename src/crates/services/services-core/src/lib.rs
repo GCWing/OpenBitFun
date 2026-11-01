@@ -62,6 +62,8 @@ pub mod routing_state;
 #[cfg(feature = "session-event-format")]
 pub mod session_projection_format;
 pub mod storage_error;
+#[cfg(feature = "workspace-icons")]
+pub mod workspace_icon_assets;
 #[cfg(feature = "workspace-persistence")]
 pub mod workspace_persistence;
 #[cfg(feature = "workspace-persistence")]
@@ -86,6 +88,8 @@ pub mod session_usage;
 pub mod storage_cleanup;
 #[cfg(feature = "process-runtime")]
 pub mod system;
+#[cfg(feature = "system-proxy")]
+pub mod system_proxy;
 #[cfg(feature = "tls-provider")]
 pub mod tls_provider;
 #[cfg(feature = "local-storage")]

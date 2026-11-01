@@ -129,7 +129,7 @@ pub const BUILTIN_APPS: &[BuiltinMiniAppBundle] = &[
     },
     BuiltinMiniAppBundle {
         id: "builtin-regex-playground",
-        version: 16,
+        version: 17,
         meta_json: include_str!("builtin/assets/regex-playground/meta.json"),
         html: include_str!("builtin/assets/regex-playground/index.html"),
         css: include_str!("builtin/assets/regex-playground/style.css"),
@@ -149,7 +149,7 @@ pub const BUILTIN_APPS: &[BuiltinMiniAppBundle] = &[
     },
     BuiltinMiniAppBundle {
         id: "builtin-ppt-live",
-        version: 261,
+        version: 262,
         meta_json: include_str!("builtin/assets/ppt-live/meta.json"),
         html: include_str!("builtin/assets/ppt-live/index.html"),
         css: include_str!("builtin/assets/ppt-live/style.css"),
@@ -589,7 +589,8 @@ mod tests {
         assert!(app.ui_js.contains("generationRetryDisplayText"));
         assert!(app
             .ui_js
-            .contains("return submitInstruction(text2, displayText)"));
+            .contains("return submitInstruction(text2, displayText, payload?.imageContexts)"));
+        assert!(adapter_source.contains("imageContexts: options.imageContexts"));
         assert!(app.ui_js.contains("project.json"));
         assert!(app.ui_js.contains("slides/slide-"));
         let ui_source = include_str!("builtin/assets/ppt-live/ui.js");

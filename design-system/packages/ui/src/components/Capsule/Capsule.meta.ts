@@ -2,11 +2,13 @@ import type { ComponentMeta } from "../../registry.types";
 
 export const capsuleMeta = {
   category: "action",
-  description: "A capsule composition with a circular glass action that overlays the label or occupies reserved space inside its Button surface. Reserved content is centered at rest and shifts aside when the action appears, without changing layout; touch keeps the action available.",
+  description: "A capsule with joined controls or a circular glass action that overlays the label or occupies reserved space inside its Button surface. Split controls support equal widths or a compact composition sized to both controls. Reserved content is centered at rest and shifts aside when the action appears, without changing layout; touch keeps the action available.",
   maturity: "stable",
   name: "Capsule",
   props: [
     { name: "children", type: "ReactNode" },
+    { name: "layout", type: "inline | split", defaultValue: "inline" },
+    { name: "splitSizing", type: "equal | content", defaultValue: "equal" },
     { name: "action", type: "ReactNode" },
     { name: "actionPlacement", type: "overlay | reserved", defaultValue: "overlay" },
     { name: "size", type: "xs | sm | md | lg", defaultValue: "sm" },

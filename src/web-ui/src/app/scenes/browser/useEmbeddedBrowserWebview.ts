@@ -50,9 +50,8 @@ type WebviewBounds = {
 
 type BrowserWebviewPageLoadPayload = {
   label: string;
-  event: 'started' | 'finished';
   url: string;
-};
+} & ({ event: 'started' | 'finished' } | { event: 'failed'; error: string });
 
 export interface UseEmbeddedBrowserWebviewOptions {
   defaultUrl: string;
@@ -377,6 +376,14 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
       ({ payload }) => {
         if (!mountedRef.current || webviewLabelRef.current !== label || !payload || payload.label !== label) return;
         preview.invalidate();
+        if (payload.event === 'failed') {
+          // Readiness from the interrupted document cannot clear a failed load.
+          pageLoadSequenceRef.current += 1;
+          markPageLoadSettled();
+          setError(payload.error);
+          return;
+        }
+        setError(null);
         if (payload.event === 'started') {
           markPageLoadStarted();
         } else {
@@ -577,19 +584,24 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
         if (!handle) throw new Error(`Webview not found: ${targetId}`);
         webviewRef.current = handle;
         preview.setTarget(targetId);
-        // Reattach the live document. Never reload the original URL on a session switch.
-        const url = await api.invoke<string>('browser_get_url', { request: { label: targetId } });
-        if (!mountedRef.current || !presentationRef.current.isCurrent()) return;
-        if (url) {
-          currentUrlRef.current = url;
-          setCurrentUrl(url);
-          setInputValue(url);
-        }
-        await evalWebview(targetId, createBrowserPageLifecycleScript(targetId, pageLoadSequenceRef.current));
-        await injectBrowserPageScripts(targetId);
+        // Presentation does not depend on a committed URL or readable document.
         await syncWebviewBounds(handle);
         await visibility(handle);
         await updateAgentTargetState(targetId);
+        // Reattach the live document. Never reload the original URL on a session switch.
+        const url = await api.invoke<string>('browser_get_url', { request: { label: targetId } });
+        if (!mountedRef.current || !presentationRef.current.isCurrent()) return;
+        if (!url) {
+          // Wait for native commit before probing readiness: the initial blank
+          // document can be complete while the requested page is still pending.
+          markPageLoadStarted();
+          return;
+        }
+        currentUrlRef.current = url;
+        setCurrentUrl(url);
+        setInputValue(url);
+        await evalWebview(targetId, createBrowserPageLifecycleScript(targetId, pageLoadSequenceRef.current));
+        await injectBrowserPageScripts(targetId);
       };
       initializationRef.current = initialize().catch(loadError => {
         log.warn('Restore browser webview failed', loadError);
@@ -606,7 +618,7 @@ export function useEmbeddedBrowserWebview(options: UseEmbeddedBrowserWebviewOpti
         await updateAgentTargetState(handle.label);
       }
     })().catch(syncError => log.warn('Update browser webview visibility failed', syncError));
-  }, [conversationId, isTauri, isVisible, loadUrl, log, openRequestId, preview, startPageLoadListener, syncWebviewBounds, targetId, updateAgentTargetState, visibility]);
+  }, [conversationId, isTauri, isVisible, loadUrl, log, markPageLoadStarted, openRequestId, preview, startPageLoadListener, syncWebviewBounds, targetId, updateAgentTargetState, visibility]);
 
   useEffect(() => {
     if (!isTauri) return;

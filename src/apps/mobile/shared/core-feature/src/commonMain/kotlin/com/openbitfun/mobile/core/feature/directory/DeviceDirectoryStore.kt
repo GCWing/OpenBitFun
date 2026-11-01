@@ -85,6 +85,39 @@ public class DeviceDirectoryStore internal constructor(
     }
 
     /**
+     * Replaces one workspace's directory session snapshot with an
+     * authoritative, unfiltered session-list result from its active store.
+     *
+     * The active session store and this directory intentionally have separate
+     * lifecycles. Keeping this hand-off here makes the directory the owner of
+     * its own projection and prevents a filtered/search result from deleting
+     * sessions that were not part of that result.
+     */
+    public fun reconcileWorkspaceSessions(
+        deviceId: String,
+        identity: RemoteWorkspaceIdentity,
+        sessions: List<RemoteSession>,
+        hasMore: Boolean,
+    ): Boolean {
+        val id = deviceId.trim()
+        val current = devices[id] ?: return false
+        if (!current.online) return false
+        val slot = slotFor(id) ?: return false
+        val incoming = sessions.filter { it.id.isNotBlank() }
+        val next = if (hasMore) {
+            val incomingIds = incoming.mapTo(mutableSetOf()) { it.id }
+            incoming + current.sessions.filterNot { it.id in incomingIds }
+        } else {
+            replaceWorkspaceSessions(current.sessions, identity, incoming)
+        }
+        slot.sessionStore.persistDirectorySessions(next, hasMore)
+        if (current.sessions == next) return true
+        devices[id] = current.copy(sessions = next)
+        publish()
+        return true
+    }
+
+    /**
      * Cancels every running load and releases the underlying stores, while
      * keeping the directory entries themselves: already-loaded data stays on
      * screen and in memory, so a later stop/resume does not need a re-fetch.

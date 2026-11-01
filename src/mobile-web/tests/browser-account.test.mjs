@@ -27,6 +27,86 @@ after(async () => {
   } catch {}
 });
 
+test('assistant workspace plus creates a session whose first message reaches the host queue', { timeout: 60000 }, async () => {
+ const server=await startSourceServer();const browser=await launchBrowser();
+ try {
+  for(const [width,legacyWorkspace,queueSupported] of [[390,false,true],[768,true,true],[1280,true,false]]) {
+   const context=await browser.createIncognitoBrowserContext();
+   try {
+    const page=await context.newPage();await page.setViewport({width,height:844});await page.goto(server.origin);
+    await page.evaluate(async options=>{
+     const {mountAssistantSessionFixture}=await import('/tests/fixtures/assistant-session.tsx');
+     window.assistantFixture=await mountAssistantSessionFixture(options);
+    },{legacyWorkspace,queueSupported});
+    await page.waitForSelector('button[aria-label="Assistant · New Session"]');
+    await page.click('button[aria-label="Assistant · New Session"]');
+    await page.waitForSelector('.chat-page__input');
+    await page.type('.chat-page__input','Who are you?');
+    await page.click('.chat-page__send-btn:not(.is-stop)');
+    await page.waitForFunction(()=>window.assistantFixture.calls.some(call=>call.cmd==='send_message'||call.request?.action==='submit'));
+    const result=await page.evaluate(()=>({
+     create:window.assistantFixture.calls.find(call=>call.cmd==='create_session'),
+     send:window.assistantFixture.calls.find(call=>call.cmd==='send_message'||call.request?.action==='submit'),
+    }));
+    assert.equal(result.create.agent_type,'claw');
+    assert.equal(legacyWorkspace?result.create.workspace_path:result.create.workspace_id,legacyWorkspace?'/fixtures/assistant':'assistant-workspace');
+    assert.equal(result.send.device,'assistant-mode-host');
+    assert.equal(queueSupported?result.send.request.message.agentType:result.send.agent_type,queueSupported?'Claw':'claw');
+    await page.waitForFunction(()=>!document.querySelector('.chat-page__input')?.value);
+    assert.equal(await page.evaluate(async()=>(await import('/src/services/store.ts')).useMobileStore.getState().error),null);
+   } finally {await context.close();}
+  }
+ } finally {await browser.close();await server.close();}
+});
+
+test('pre-fix assistant outbox retries with its original ID, content and attachments after reopening', { timeout: 60000 }, async () => {
+ const server=await startSourceServer();const browser=await launchBrowser();
+ try {
+  const context=await browser.createIncognitoBrowserContext();let page=await context.newPage();await page.goto(server.origin);
+  await page.evaluate(async()=>{
+   const {mountAssistantSessionFixture}=await import('/tests/fixtures/assistant-session.tsx');
+   window.assistantFixture=await mountAssistantSessionFixture({legacyPending:true});
+  });
+  await page.waitForSelector('.host-message-queue__preview');
+  await page.close();page=await context.newPage();await page.goto(server.origin);
+  const result=await page.evaluate(async()=>{
+   const {mountAssistantSessionFixture}=await import('/tests/fixtures/assistant-session.tsx');
+   const fixture=await mountAssistantSessionFixture();
+   const queue=fixture.manager.dialogQueue(fixture.sessionId);
+   await queue.refresh();
+   const record=queue.getSnapshot().pending[0];
+   await queue.retry(record);
+   // A second retry discovers the existing receipt and cannot dispatch twice.
+   await queue.retry(record);
+   return {original:record.request,saved:(await queue.savedDraft('before-upgrade-turn')).request,
+    calls:fixture.calls.filter(call=>call.cmd==='dialog_queue').map(call=>call.request),pending:queue.getSnapshot().pending.length};
+  });
+  const submits=result.calls.filter(call=>call.action==='submit');
+  assert.equal(submits.length,1);
+  assert.deepEqual(submits[0],{...result.original,message:{...result.original.message,agentType:'Claw'}});
+  assert.deepEqual(result.saved,result.original,'the stored draft remains intact');
+  assert.equal(result.pending,0);
+  assert.ok(result.calls.findIndex(call=>call.action==='get')<result.calls.findIndex(call=>call.action==='submit'));
+  await context.close();
+ } finally {await browser.close();await server.close();}
+});
+
+test('queue translation covers mobile built-in aliases and preserves source-qualified modes', { timeout: 60000 }, async () => {
+ const server=await startSourceServer();const browser=await launchBrowser();
+ try {
+  const page=await browser.newPage();await page.goto(server.origin);
+  const result=await page.evaluate(async()=>{
+   const {mountAssistantSessionFixture}=await import('/tests/fixtures/assistant-session.tsx');
+   const fixture=await mountAssistantSessionFixture();
+   for(const mode of ['claw','Claw','assistant','chat','code','cowork','Cowork','Standard','Ultimate','Creative','plugin::claw']) {
+    await fixture.manager.sendMessage(fixture.sessionId,`Message for ${mode}`,mode);
+   }
+   return fixture.calls.filter(call=>call.request?.action==='submit').map(call=>call.request.message.agentType);
+  });
+  assert.deepEqual(result,['Claw','Claw','Claw','Claw','agentic','Cowork','Cowork','agentic','Ultra','Creative','plugin::claw']);
+ } finally {await browser.close();await server.close();}
+});
+
 for (const endpoint of [LAN, OFFICIAL]) {
   test(`one login serves fresh tabs and reloads with one connected browser: ${endpoint}`, { timeout: 40_000 }, async () => {
     const context = await browser.createIncognitoBrowserContext();

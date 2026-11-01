@@ -274,7 +274,10 @@ fn is_app_target(target: &str) -> bool {
 }
 
 fn matches_target_rule(target: &str, rule: &str) -> bool {
-    target == rule || target.starts_with(&format!("{rule}::"))
+    target == rule
+        || target
+            .strip_prefix(rule)
+            .is_some_and(|suffix| suffix.starts_with("::"))
 }
 
 fn level_rank(level: tracing::Level) -> u8 {
@@ -336,6 +339,10 @@ fn allowed_level_rank_for_target(target: &str, default_level: tracing::Level) ->
 }
 
 fn is_enabled_for_target(metadata: &tracing::Metadata<'_>, default_level: tracing::Level) -> bool {
+    // Overrides only reduce verbosity. Reject disabled levels before scanning targets.
+    if level_rank(*metadata.level()) > level_rank(default_level) {
+        return false;
+    }
     let allowed_rank = allowed_level_rank_for_target(metadata.target(), default_level);
 
     allowed_rank != 0 && level_rank(*metadata.level()) <= allowed_rank
@@ -355,9 +362,14 @@ where
         .with_ansi(false)
         .with_target(true)
         .with_thread_ids(true)
-        .with_filter(filter_fn(move |metadata| {
-            target_filter(metadata.target()) && is_enabled_for_target(metadata, default_level)
-        }))
+        .with_filter(
+            filter_fn(move |metadata| {
+                target_filter(metadata.target()) && is_enabled_for_target(metadata, default_level)
+            })
+            // Let the log facade skip disabled TRACE records at their source, including
+            // the tokenizer normalizer's per-character logging on the routing hot path.
+            .with_max_level_hint(default_level),
+        )
 }
 
 pub(crate) fn init_file_logging_at(
@@ -405,6 +417,97 @@ pub(crate) fn init_file_logging(log_level: tracing::Level) -> CliLogPaths {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tracing::Subscriber;
+
+    fn file_subscriber(
+        dir: &Path,
+        level: tracing::Level,
+    ) -> impl tracing::Subscriber + Send + Sync {
+        tracing_subscriber::registry()
+            .with(build_file_layer(
+                create_rotating_writer(dir, "app").expect("app writer"),
+                is_app_target,
+                level,
+            ))
+            .with(build_file_layer(
+                create_rotating_writer(dir, "ai").expect("ai writer"),
+                is_ai_target,
+                level,
+            ))
+            .with(build_file_layer(
+                create_rotating_writer(dir, "flashgrep").expect("flashgrep writer"),
+                is_flashgrep_target,
+                level,
+            ))
+    }
+
+    #[test]
+    fn file_filters_advertise_effective_max_level() {
+        // The log facade uses this hint to skip disabled per-character tokenizer
+        // TRACE records before entering the subscriber's target filters.
+        for level in [
+            tracing::Level::ERROR,
+            tracing::Level::WARN,
+            tracing::Level::INFO,
+            default_log_level(false),
+            default_log_level(true),
+        ] {
+            let temp = tempfile::tempdir().expect("tempdir");
+            let subscriber = file_subscriber(temp.path(), level);
+            assert_eq!(subscriber.max_level_hint(), Some(level.into()));
+        }
+    }
+
+    #[test]
+    fn file_filters_preserve_verbose_levels_and_split_targets() {
+        for verbose in [false, true] {
+            let temp = tempfile::tempdir().expect("tempdir");
+            let subscriber = file_subscriber(temp.path(), default_log_level(verbose));
+            tracing::subscriber::with_default(subscriber, || {
+                tracing::debug!(target: "tokenizers::normalizer", "app-debug");
+                tracing::trace!(target: "tokenizers::normalizer", "app-trace");
+                tracing::debug!(target: "ai::client", "ai-debug");
+                tracing::trace!(target: "ai::client", "ai-trace");
+                tracing::debug!(target: "flashgrep::search", "search-debug");
+                tracing::trace!(target: "flashgrep::search", "search-trace");
+                tracing::debug!(target: "h2::codec", "hidden-h2-debug");
+                tracing::info!(target: "h2::codec", "h2-info");
+                tracing::error!(target: "ignore::walk", "hidden-ignore-error");
+            });
+
+            for (file, prefix) in [("app", "app"), ("ai", "ai"), ("flashgrep", "search")] {
+                let content =
+                    fs::read_to_string(temp.path().join(format!("{file}.log"))).expect("read log");
+                assert!(content.contains(&format!("{prefix}-debug")));
+                assert_eq!(content.contains(&format!("{prefix}-trace")), verbose);
+                assert!(!content.contains("hidden-"));
+                for other in ["app", "ai", "search"] {
+                    if other != prefix {
+                        assert!(!content.contains(&format!("{other}-debug")));
+                    }
+                }
+                assert_eq!(content.contains("h2-info"), file == "app");
+            }
+        }
+    }
+
+    #[test]
+    fn target_rules_require_exact_names_or_module_boundaries() {
+        for (target, rule, expected) in [
+            ("h2", "h2", true),
+            ("h2::codec", "h2", true),
+            ("h2_codec", "h2", false),
+            ("h2:codec", "h2", false),
+            ("h2x::codec", "h2", false),
+            ("h", "h2", false),
+            ("", "h2", false),
+            ("", "", true),
+            ("::child", "", true),
+            ("child", "", false),
+        ] {
+            assert_eq!(matches_target_rule(target, rule), expected, "{target:?}");
+        }
+    }
 
     #[test]
     fn create_session_log_dir_creates_timestamped_subdirectory() {

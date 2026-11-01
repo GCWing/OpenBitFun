@@ -16,7 +16,7 @@ mod util;
 mod ios;
 
 mod class;
-pub use class::wry_web_view::WryWebView;
+pub use class::wry_web_view::{NavigationState, WryWebView};
 #[cfg(target_os = "macos")]
 use class::wry_web_view_parent::WryWebViewParent;
 use class::{
@@ -302,6 +302,9 @@ impl InnerWebView {
       // WebView and manager
       let manager = config.userContentController();
       let webview = WryWebView::alloc(mtm).set_ivars(WryWebViewIvars {
+        navigation: Default::default(),
+        navigation_state: Default::default(),
+        navigation_state_handler: Default::default(),
         is_child,
         #[cfg(target_os = "macos")]
         drag_drop_handler: match attributes.drag_drop_handler {
@@ -1369,8 +1372,8 @@ r#"Object.defineProperty(window, 'ipc', {
 }
 
 pub fn url_from_webview(webview: &WKWebView) -> Result<String> {
-  let url_obj = unsafe { webview.URL().unwrap() };
-  let absolute_url = url_obj.absoluteString().unwrap();
+  let url_obj = unsafe { webview.URL() }.ok_or(Error::UrlUnavailable)?;
+  let absolute_url = url_obj.absoluteString().ok_or(Error::UrlUnavailable)?;
 
   let bytes = {
     let bytes: *const c_char = absolute_url.UTF8String();

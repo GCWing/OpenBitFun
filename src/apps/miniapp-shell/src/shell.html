@@ -48,7 +48,7 @@ const chatLabels = await fetch('/chat-labels.json').then(response => response.js
   const frame = document.getElementById('app');
   const status = document.getElementById('status');
   const statusText = document.getElementById('status-text');
-  let bootstrap, cursor = 0, documentUrl, bridgeGeneration = 0, composerGeneration = 0, bindingGeneration = 0;
+  let bootstrap, cursor = 0, pollIdentity, documentUrl, bridgeGeneration = 0, composerGeneration = 0, bindingGeneration = 0;
   const chat = mountMiniAppChat(document.getElementById('miniapp-chat'), {
     icons,
     onSend: payload => event('chat:userMessage', payload),
@@ -108,6 +108,82 @@ const chatLabels = await fetch('/chat-labels.json').then(response => response.js
   const error = value => { statusText.textContent = String(value); status.hidden = false; document.getElementById('retry').hidden = false; };
   const local = (method, params) => native('local', { method, params });
   const localMethods = new Set(['dialog.open','dialog.save','dialog.message','system.openExternal','system.revealInFolder','notifications.system']);
+
+  // Agent bridge relay: the host asks for state or runs a declared semantic
+  // action, and this window forwards it into the frame it is presenting. The
+  // frame speaks one postMessage protocol, so a window and a tab answer the same
+  // request the same way; only the relay differs.
+  const agentRequests = new Map();
+  let agentCapabilities = [];
+  let agentActions = [];
+  const answerAgent = (requestId, ok, value, error, code) => {
+    void native('agentResponse', {
+      requestId,
+      ok,
+      value: value ?? null,
+      error: error ?? null,
+      code: code ?? null,
+      capabilities: agentCapabilities,
+      actions: agentActions,
+    }).catch(() => {});
+  };
+  const relayAgentRequest = async request => {
+    const requestId = String(request?.requestId ?? '');
+    if (!requestId || agentRequests.has(requestId)) return;
+    const generation = bridgeGeneration;
+    try {
+      // The host owns replay/cancellation state across WebView reloads. A
+      // rejected claim must not settle another delivery's live request.
+      const claim = await native('agentClaim', { requestId });
+      if (claim?.accepted !== true) return;
+      if (generation !== bridgeGeneration || !contentReady || !frame.contentWindow) {
+        answerAgent(requestId, false, null, 'The MiniApp document is not ready', 'SURFACE_UNAVAILABLE');
+        return;
+      }
+      if (typeof request.expiresAt === 'number' && Date.now() >= request.expiresAt) {
+        answerAgent(requestId, false, null, 'The Agent request expired before delivery', 'BRIDGE_TIMEOUT');
+        return;
+      }
+    } catch (cause) {
+      answerAgent(requestId, false, null, String(cause), 'SURFACE_UNAVAILABLE');
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (!agentRequests.delete(requestId)) return;
+      answerAgent(requestId, false, null, 'The MiniApp did not answer in time', 'BRIDGE_TIMEOUT');
+    }, 15000);
+    agentRequests.set(requestId, timer);
+    const payload = {
+      type: 'openbitfun:miniapp-agent-request',
+      schemaVersion: request.schemaVersion,
+      requestId,
+      method: request.method,
+    };
+    if (request.action !== undefined && request.action !== null) payload.action = request.action;
+    try { frame.contentWindow.postMessage(payload, '*'); }
+    catch (cause) {
+      clearTimeout(timer); agentRequests.delete(requestId);
+      answerAgent(requestId, false, null, String(cause), 'SURFACE_UNAVAILABLE');
+    }
+  };
+  window.addEventListener('message', message => {
+    if (message.source !== frame.contentWindow || !message.data) return;
+    if (message.data.type === 'openbitfun:miniapp-agent-ready') {
+      agentCapabilities = Array.isArray(message.data.capabilities) ? message.data.capabilities.slice(0, 8) : [];
+      agentActions = Array.isArray(message.data.actions)
+        ? message.data.actions.filter(name => typeof name === 'string' && name).slice(0, 32)
+        : [];
+      return;
+    }
+    if (message.data.type !== 'openbitfun:miniapp-agent-response') return;
+    const requestId = String(message.data.requestId ?? '');
+    const timer = agentRequests.get(requestId);
+    if (!timer) return;
+    clearTimeout(timer);
+    agentRequests.delete(requestId);
+    answerAgent(requestId, message.data.ok === true, message.data.value, message.data.error);
+  });
+
   window.addEventListener('message', async message => {
     if (message.source !== frame.contentWindow || !message.data || typeof message.data.method !== 'string') return;
     const { id, method, params = {} } = message.data;
@@ -147,6 +223,7 @@ const chatLabels = await fetch('/chat-labels.json').then(response => response.js
     } catch (cause) { frame.contentWindow?.postMessage({ jsonrpc: '2.0', id, error: { code: -32000, message: String(cause) } }, '*'); }
   });
   let permissionKey = '';
+  let permissionTick = 0;
   function renderPermissions(requests) {
     const panel = document.getElementById('permissions');
     const key = JSON.stringify(requests);
@@ -171,11 +248,26 @@ const chatLabels = await fetch('/chat-labels.json').then(response => response.js
       panel.append(row);
     }
   }
+  // A host restart publishes a new IPC endpoint in `host.json` and forgets every
+  // lease it used to know, while `poll` keeps talking to the endpoint this window
+  // resolved at bootstrap. That socket is gone, so retrying can never succeed and
+  // the window turns into a live-looking app the host cannot see. Rebooting the
+  // page is the reconnect: `start` resolves the current host and registers again.
+  function recoverFromHostRestart() {
+    stopped = true;
+    // Keep the current document alive while the host is unavailable. Reloading
+    // here destroys unsaved DOM/JS state; the user can explicitly press Retry
+    // once the host is back, which performs the normal bootstrap path.
+    chat.setConnected(false);
+    error('The MiniApp host is unavailable. The current document is preserved; retry when the host is ready.');
+  }
   async function poll(generation) {
+    let failures = 0;
     while (!stopped && generation === pollGeneration) {
       try {
-        const batch = await native('poll', { after: cursor });
+        const batch = await native('poll', { after: cursor, waitMs: 700 });
         if (generation !== pollGeneration) return;
+        failures = 0;
         chat.setConnected(true);
         if (batch.released) { stopped = true; await native('close'); return; }
         if (transferring && !batch.pendingView) { transferring = false; titlebar?.setTransferring(false); error(bootstrap.ui.transferFailed); }
@@ -188,7 +280,8 @@ const chatLabels = await fetch('/chat-labels.json').then(response => response.js
         for (const item of batch.events ?? []) {
           if (item.sequence <= cursor) continue;
           if (item.event === 'focus') await native('focus');
-          else if (item.event === 'reload' && !transferring) { void start(); return; }
+          else if (item.event === 'reload' && !transferring) { cursor = item.sequence; void start(); return; }
+          else if (item.event === 'agentRequest') void relayAgentRequest(item.payload);
           else {
             event(item.event, item.payload);
             if (item.event === 'agent:event') chat.event(item.payload);
@@ -196,14 +289,38 @@ const chatLabels = await fetch('/chat-labels.json').then(response => response.js
           cursor = item.sequence;
         }
         cursor = Math.max(cursor, batch.cursor ?? 0);
-        renderPermissions(await native('permissions'));
-      } catch (cause) { if (generation !== pollGeneration) return; chat.setConnected(false); error(cause); }
-      await new Promise(resolve => setTimeout(resolve, 750));
+        // An idle poll already takes most of a second, so it can carry the
+        // permission refresh; a busy one only refreshes periodically.
+        if ((batch.events ?? []).length === 0 || permissionTick++ % 8 === 0) renderPermissions(await native('permissions'));
+      } catch (cause) {
+        if (generation !== pollGeneration) return;
+        chat.setConnected(false);
+        error(cause);
+        // Three failures in a row is a host that is gone, not a slow batch. A
+        // handover in progress is left alone: it owns its own restart path.
+        if (++failures >= 3) {
+          if (transferring) stopped = true;
+          else recoverFromHostRestart();
+          return;
+        }
+      }
+      // Events already arrive promptly through the long poll; this only yields.
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
   }
   async function start() {
+    const generation = ++pollGeneration;
+    contentReady = false;
+    bridgeGeneration++;
+    for (const [requestId, timer] of agentRequests) {
+      clearTimeout(timer);
+      answerAgent(requestId, false, null, 'The MiniApp document changed', 'SURFACE_UNAVAILABLE');
+    }
+    agentRequests.clear();
     try {
-      bootstrap = await native('bootstrap');
+      const nextBootstrap = await native('bootstrap');
+      if (generation !== pollGeneration) return;
+      bootstrap = nextBootstrap;
       if (bootstrap.reused) return;
       const ui = bootstrap.ui;
       if (bootstrap.instance.primaryView?.kind === 'tab' && !bootstrap.transferConfirmed && !confirm(ui.transferWarning)) {
@@ -214,9 +331,15 @@ const chatLabels = await fetch('/chat-labels.json').then(response => response.js
       document.documentElement.dataset.openbitfunAppearanceMode = bootstrap.appearanceMode;
       contentReady = false;
       renderTitlebar();
-      bridgeGeneration++;
       composerGeneration++; bindingGeneration++;
-      cursor = 0; permissionKey = '';
+      const nextPollIdentity = JSON.stringify([bootstrap.hostEpoch, bootstrap.view?.viewId]);
+      if (nextPollIdentity !== pollIdentity) cursor = 0;
+      pollIdentity = nextPollIdentity;
+      permissionKey = '';
+      // A reloaded document announces its bridge again; holding the previous
+      // declaration would report a capability the new document may not have.
+      agentCapabilities = [];
+      agentActions = [];
       const locale = bootstrap.locale;
       chat.configure({
         labels: chatLabels[locale] || chatLabels[windowLabels.aliases[locale.toLowerCase()] || windowLabels.fallbackLocale],
@@ -232,14 +355,14 @@ const chatLabels = await fetch('/chat-labels.json').then(response => response.js
       if (documentUrl) URL.revokeObjectURL(documentUrl);
       documentUrl = URL.createObjectURL(new Blob([bootstrap.app.compiled_html], { type: 'text/html;charset=utf-8' }));
       frame.onload = async () => {
-        try { await native('ready'); contentReady = true; titlebar?.setReady(true); status.hidden = true; frame.hidden = false; event('activate', {}); }
+        try { if (generation !== pollGeneration) return; await native('ready'); if (generation !== pollGeneration) return; contentReady = true; titlebar?.setReady(true); status.hidden = true; frame.hidden = false; event('activate', {}); }
         catch (cause) { error(cause); }
       };
       frame.setAttribute('sandbox', bootstrap.app.runtime_profile === 'market_strict' ? 'allow-scripts allow-downloads' : 'allow-scripts allow-forms allow-modals allow-popups allow-downloads');
       frame.src = documentUrl;
       stopped = false;
-      void poll(++pollGeneration);
-    } catch (cause) { error(cause); await native('focus'); }
+      void poll(generation);
+    } catch (cause) { if (generation !== pollGeneration) return; error(cause); await native('focus'); }
   }
   document.getElementById('retry').onclick = start;
   renderTitlebar();

@@ -222,16 +222,20 @@ impl ExecCommandTool {
     }
 
     fn command_env() -> HashMap<String, String> {
-        let mut environment = exec_command_noninteractive_env();
+        let environment = exec_command_noninteractive_env();
         // The terminal executor applies this map on top of the host
         // environment, which a Linux GUI or `.desktop` launch starts without a
         // login shell's PATH. Setting it here is what lets the shell resolve a
         // toolchain-managed `node`/`bun` the way a terminal does.
         // Windows and macOS keep the inherited environment unchanged.
         #[cfg(target_os = "linux")]
-        if let Some(path) = openbitfun_services_core::process_manager::platform_path_env() {
-            environment.insert("PATH".to_string(), path.to_string_lossy().into_owned());
-        }
+        let environment = {
+            let mut environment = environment;
+            if let Some(path) = openbitfun_services_core::process_manager::platform_path_env() {
+                environment.insert("PATH".to_string(), path.to_string_lossy().into_owned());
+            }
+            environment
+        };
         environment
     }
 
@@ -726,6 +730,29 @@ Output:
                 }
             },
             "required": ["cmd"],
+            "additionalProperties": false
+        })
+    }
+
+    fn output_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "wall_time_seconds": {"type": "number"},
+                "output": {"type": "string"},
+                "session_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                "exit_code": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                "completion": {
+                    "anyOf": [
+                        {"type": "null"},
+                        {"type": "object", "properties": {
+                            "source": {"type": "string"},
+                            "status": {"type": "string"}
+                        }, "additionalProperties": false}
+                    ]
+                }
+            },
+            "required": ["wall_time_seconds", "output", "session_id", "exit_code", "completion"],
             "additionalProperties": false
         })
     }

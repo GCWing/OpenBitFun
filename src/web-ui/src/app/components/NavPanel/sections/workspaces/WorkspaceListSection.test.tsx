@@ -12,6 +12,7 @@ const state = vi.hoisted(() => {
   const project = { id: 'project', name: 'Project', workspaceKind: 'normal' };
   return {
     grouping: 'all',
+    collapseAllRequestId: 0,
     activeWorkspaceId: null as string | null,
     workspaces: [assistant, project],
     defaultWorkspaces: [assistant, project],
@@ -35,18 +36,25 @@ vi.mock('../../workspaceSessionView', () => ({
   useWorkspaceSessionViewStore: (selector: (value: typeof state) => unknown) => selector(state),
 }));
 vi.mock('./WorkspaceItem', () => ({
-  default: ({ workspace, isActive, isSelected, draggable }: {
+  default: ({ workspace, isActive, isSelected, draggable, sessionsCollapsed, onSessionsCollapsedChange }: {
     workspace: { id: string };
     isActive: boolean;
     isSelected: boolean;
     draggable?: boolean;
+    sessionsCollapsed?: boolean;
+    onSessionsCollapsedChange?: (collapsed: boolean) => void;
   }) => (
     <div
       data-owner-row={workspace.id}
       data-context-active={isActive}
       data-selected={isSelected}
       data-row-draggable={draggable ? 'true' : 'false'}
-    />
+      data-collapsed={sessionsCollapsed}
+    >
+      {onSessionsCollapsedChange && (
+        <button data-disclosure={workspace.id} onClick={() => onSessionsCollapsedChange(!sessionsCollapsed)}>Toggle</button>
+      )}
+    </div>
   ),
 }));
 vi.mock('../sessions/SessionsSection', () => ({
@@ -65,6 +73,7 @@ function sessionTab(workspaceId: string, surfaceId = 'local'): SceneTab {
 
 afterEach(() => {
   state.grouping = 'all';
+  state.collapseAllRequestId = 0;
   state.activeWorkspaceId = null;
   state.workspaces = [...state.defaultWorkspaces];
   useSceneStore.setState({ activeTabId: null, openTabs: [] });
@@ -180,6 +189,63 @@ describe('assistant pinning', () => {
       expect(list.container.querySelector('[data-testid="nav-workspace-list-empty"]')).not.toBeNull();
     } finally {
       list.unmount();
+    }
+  });
+});
+
+describe('project disclosure across view changes', () => {
+  it('retains folded projects and reopened projects after Collapse All', () => {
+    state.grouping = 'grouped';
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    const render = () => act(() => root.render(<WorkspaceListSection variant="all" />));
+    const toggle = () => act(() => container.querySelector<HTMLButtonElement>('[data-disclosure="project"]')!.click());
+    const collapsed = () => container.querySelector('[data-owner-row="project"]')?.getAttribute('data-collapsed');
+    try {
+      render();
+      toggle();
+      expect(collapsed()).toBe('true');
+      state.grouping = 'all';
+      render();
+      state.grouping = 'grouped';
+      render();
+      expect(collapsed()).toBe('true');
+
+      state.collapseAllRequestId = 1;
+      render();
+      toggle();
+      expect(collapsed()).toBe('false');
+      state.grouping = 'all';
+      render();
+      state.grouping = 'grouped';
+      render();
+      expect(collapsed()).toBe('false');
+
+      state.grouping = 'all';
+      state.collapseAllRequestId = 2;
+      render();
+      state.grouping = 'grouped';
+      render();
+      expect(collapsed()).toBe('true');
+    } finally {
+      act(() => root.unmount());
+    }
+  });
+
+  it('keeps identically named local and peer workspaces independently folded', () => {
+    state.grouping = 'grouped';
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    try {
+      act(() => root.render(<WorkspaceListSection variant="all" />));
+      act(() => container.querySelector<HTMLButtonElement>('[data-disclosure="project"]')!.click());
+      expect(container.querySelector('[data-owner-row="project"]')?.getAttribute('data-collapsed')).toBe('true');
+      act(() => activateSurface('peer:host-b'));
+      expect(container.querySelector('[data-owner-row="project"]')?.getAttribute('data-collapsed')).toBe('false');
+      act(() => activateSurface('local'));
+      expect(container.querySelector('[data-owner-row="project"]')?.getAttribute('data-collapsed')).toBe('true');
+    } finally {
+      act(() => root.unmount());
     }
   });
 });

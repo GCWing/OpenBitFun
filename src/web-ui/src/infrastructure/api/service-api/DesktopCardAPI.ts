@@ -30,6 +30,38 @@ export interface DesktopCardMetricItem {
   emphasis?: boolean;
 }
 
+export type DesktopCardChartStyle = 'bar' | 'column' | 'line' | 'donut' | 'stacked';
+export type DesktopCardChartLabelFormat = 'text' | 'date' | 'time' | 'weekday' | 'datetime';
+
+export interface DesktopCardChartItem {
+  label: string;
+  value: number;
+  tone?: DesktopCardTone | string;
+  hint?: string;
+}
+
+export interface DesktopCardChartTemplate {
+  kind: 'chart';
+  /** Records written by a newer build may carry a style this build does not draw. */
+  chart: DesktopCardChartStyle | string;
+  items?: DesktopCardChartItem[];
+  itemsPath?: string;
+  labelsPath?: string;
+  labelKey?: string;
+  valueKey?: string;
+  hintKey?: string;
+  total?: number;
+  totalPath?: string;
+  remainderLabel?: string;
+  format?: 'number' | 'percent' | 'currency' | string;
+  digits?: number;
+  currency?: string;
+  prefix?: string;
+  suffix?: string;
+  labelFormat?: DesktopCardChartLabelFormat | string;
+  caption?: string;
+}
+
 export type DesktopCardTemplate =
   | {
     kind: 'countdown';
@@ -51,6 +83,7 @@ export type DesktopCardTemplate =
     statusPath?: string;
   }
   | { kind: 'metrics'; items: DesktopCardMetricItem[]; layout?: 'list' | 'grid' | string }
+  | DesktopCardChartTemplate
   | { kind: 'cronJob'; jobId: string }
   | { kind: 'custom'; html: string };
 

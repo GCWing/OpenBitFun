@@ -61,6 +61,11 @@ impl BuiltInBrowserHost for BrowserFixture {
                 Ok(json!({"frameId":page.id}))
             }
             "Runtime.evaluate" => {
+                if *self.navigation_error.lock().unwrap() {
+                    return Err(
+                        "[NOT_AVAILABLE] Navigation failed: net::ERR_NAME_NOT_RESOLVED".into(),
+                    );
+                }
                 let expression = params["expression"].as_str().unwrap_or("");
                 let value = if expression.contains("offscreen_count") {
                     if *self.snapshot_error.lock().unwrap() {
@@ -276,6 +281,7 @@ async fn navigation_observation_and_fetch_failures_keep_partial_evidence() {
     assert_eq!(opened["ok"], true);
     assert!(opened["data"]["observation_error"].is_object());
     assert!(text.contains("observation_error"));
+    assert!(text.contains("Built-in browser adapter failed for Runtime.evaluate"));
     assert_eq!(host.opens.lock().unwrap().len(), 1);
     *host.navigation_error.lock().unwrap() = true;
     let (failed, text) = call("navigate", json!({"url":"https://invalid.example"}), &ctx).await;
@@ -294,6 +300,12 @@ async fn navigation_observation_and_fetch_failures_keep_partial_evidence() {
             .count(),
         1
     );
+
+    let (failed_wait, text) = call("wait", json!({"condition":"load"}), &ctx).await;
+    assert_eq!(failed_wait["ok"], false);
+    assert_eq!(failed_wait["error"]["code"], "NOT_AVAILABLE");
+    assert!(text.contains("Navigation failed"));
+    *host.navigation_error.lock().unwrap() = false;
 
     *host.fetch_response.lock().unwrap() = json!({"error":"CORS blocked"});
     let (cors, text) = call("fetch", json!({"url":"https://other.example"}), &ctx).await;

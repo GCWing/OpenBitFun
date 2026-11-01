@@ -41,9 +41,6 @@ function Probe({
   return (
     <>
       <span data-testid="pending">{String(selection.isModeChangePending)}</span>
-      <button type="button" onClick={() => selection.publishModeSelection('Standard')}>
-        Hydrate
-      </button>
       <button type="button" onClick={() => selection.requestModeChange('Standard')}>
         Select
       </button>
@@ -74,7 +71,7 @@ describe('useSessionModeSelection', () => {
 
   it('keeps an explicit draft selection local until a host session exists', async () => {
     await act(async () => root.render(<Probe draft />));
-    const select = Array.from(container.querySelectorAll('button'))[2];
+    const select = Array.from(container.querySelectorAll('button'))[1];
     act(() => select.click());
     expect(mocks.publish).toHaveBeenCalledWith('ask');
     expect(mocks.committed).toHaveBeenCalledWith('ask');
@@ -82,14 +79,12 @@ describe('useSessionModeSelection', () => {
     expect(container.querySelector('[data-testid="pending"]')?.textContent).toBe('false');
   });
 
-  it('keeps passive hydration local and rebinds an explicit same-id selection', async () => {
+  it('rebinds an explicit same-id selection after Runtime acceptance', async () => {
     await act(async () => {
       root.render(<StrictMode><Probe /></StrictMode>);
     });
-    const [hydrate, select] = Array.from(container.querySelectorAll('button'));
-
-    act(() => hydrate.click());
-    expect(mocks.publish).toHaveBeenCalledWith('Standard');
+    const [select] = Array.from(container.querySelectorAll('button'));
+    expect(mocks.publish).not.toHaveBeenCalled();
     expect(mocks.updateSessionMode).not.toHaveBeenCalled();
     expect(mocks.committed).not.toHaveBeenCalled();
 
@@ -119,7 +114,7 @@ describe('useSessionModeSelection', () => {
     await act(async () => {
       root.render(<Probe sessionId="session-a" publish={publishA} />);
     });
-    const select = Array.from(container.querySelectorAll('button'))[1];
+    const select = Array.from(container.querySelectorAll('button'))[0];
     act(() => select.click());
 
     await act(async () => {
@@ -143,7 +138,7 @@ describe('useSessionModeSelection', () => {
     await act(async () => {
       root.render(<StrictMode><Probe /></StrictMode>);
     });
-    const [, selectAgentic, selectAsk] = Array.from(container.querySelectorAll('button'));
+    const [selectAgentic, selectAsk] = Array.from(container.querySelectorAll('button'));
     act(() => {
       selectAgentic.click();
       selectAsk.click();
@@ -182,7 +177,7 @@ describe('useSessionModeSelection', () => {
     await act(async () => {
       root.render(<Probe />);
     });
-    const [, selectAgentic, selectAsk] = Array.from(container.querySelectorAll('button'));
+    const [selectAgentic, selectAsk] = Array.from(container.querySelectorAll('button'));
     act(() => {
       selectAgentic.click();
       selectAsk.click();
