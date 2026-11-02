@@ -9841,6 +9841,7 @@ Host *
             },
             default_workspace: None,
             proxy_jump: None,
+            proxy_command: None,
             container: None,
             wsl: None,
             options: Default::default(),
