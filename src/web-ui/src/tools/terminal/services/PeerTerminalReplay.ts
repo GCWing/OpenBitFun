@@ -45,7 +45,7 @@ export class PeerTerminalReplay {
   private followEpoch = 0;
   private draining = false;
   private dirty = false;
-  private pendingLifecycle: PeerTerminalRawEvent | null = null;
+  private readonly pendingLifecycle: PeerTerminalRawEvent[] = [];
   private streamFailure: string | null = null;
   private retryDelay = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -156,17 +156,16 @@ export class PeerTerminalReplay {
 
   /** The exit must not overtake output that is already in the replay log. */
   private finishAfterDrain(event: PeerTerminalRawEvent): void {
-    // A close supersedes an exit that is still waiting for its output.
-    this.pendingLifecycle = event;
+    // Queued in order: a close right behind an exit must not lose its exit code.
+    this.pendingLifecycle.push(event);
     if (this.isFollowing() && this.caughtUp) this.requestRead();
     else if (!this.isFollowing()) this.deliverPendingLifecycle();
   }
 
   private deliverPendingLifecycle(): void {
-    const lifecycle = this.pendingLifecycle;
-    if (!lifecycle || !this.isActive()) return;
-    this.pendingLifecycle = null;
-    this.deliver(lifecycle);
+    while (this.pendingLifecycle.length > 0 && this.isActive()) {
+      this.deliver(this.pendingLifecycle.shift()!);
+    }
   }
 
   private requestRead(): void {

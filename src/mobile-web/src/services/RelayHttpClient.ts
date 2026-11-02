@@ -26,11 +26,15 @@ export class AccountIdentityChangedError extends Error {
 export function isAccountIdentityChangedError(value: unknown): value is AccountIdentityChangedError {
   return value instanceof AccountIdentityChangedError;
 }
+/** A decrypted terminal response, not an unknown transport delivery outcome. */
+export class RemoteHostCommandError extends Error {
+  constructor(message: string) { super(message); this.name = 'RemoteHostCommandError'; }
+}
 const RELAY_HTTP_MAX_ATTEMPTS = 5;
 const RELAY_HTTP_RETRY_BASE_DELAY_MS = 300;
 const RELAY_HTTP_RETRY_BUDGET_MS = 120_000;
 const TRANSIENT_RELAY_STATUSES = new Set([408, 425, 500, 502, 503, 504]);
-type RelayRequestOptions = { retryable?: boolean; timeoutMs?: number };
+type RelayRequestOptions = { retryable?: boolean; timeoutMs?: number; onHostSettled?: () => void };
 
 export interface RelayDeviceInfo {
   device_id: string;
@@ -397,17 +401,20 @@ export class RelayHttpClient {
             }
           },
         });
-      if (identity.generation !== this.identityGeneration || targetEpoch !== this.controlTargetEpochValue) {
-        throw new AccountIdentityChangedError();
-      }
       const decrypted = await decrypt(
         messageKey,
         data.encrypted_data,
         data.nonce,
       );
       const parsed = JSON.parse(decrypted);
+      // Retiring the caller suppresses presentation, not the fact that the host
+      // finished. Never expose the decoded response to a replacement owner.
+      options.onHostSettled?.();
+      if (identity.generation !== this.identityGeneration || targetEpoch !== this.controlTargetEpochValue) {
+        throw new AccountIdentityChangedError();
+      }
       if (parsed?.resp === 'error') {
-        throw new Error(parsed.message || 'Remote error');
+        throw new RemoteHostCommandError(parsed.message || 'Remote error');
       }
       return parsed as T;
     }).catch((error) => {
