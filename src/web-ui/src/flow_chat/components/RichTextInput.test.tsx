@@ -140,6 +140,54 @@ describeWithJsdom('RichTextInput external sync', () => {
     return editor as HTMLDivElement;
   }
 
+  it('disables native text correction and smart punctuation in the composer', async () => {
+    const editor = await renderHarness(createRef<HarnessHandle>());
+
+    expect(editor.getAttribute('spellcheck')).toBe('false');
+    expect(editor.getAttribute('autocorrect')).toBe('off');
+    expect(editor.getAttribute('autocapitalize')).toBe('off');
+  });
+
+  it('preserves ASCII apostrophes when a contraction is completed and followed by a space', async () => {
+    const onChange = vi.fn();
+    await act(async () => root.render(<RichTextInput value="" onChange={onChange} contexts={emptyContexts} onRemoveContext={() => {}} />));
+    const editor = container.querySelector('.rich-text-input') as HTMLDivElement;
+
+    for (const text of ["don'", "don't", "don't "]) {
+      editor.textContent = text;
+      setCaret(editor, text.length);
+      await act(async () => editor.dispatchEvent(new window.InputEvent('input', {
+        bubbles: true, inputType: 'insertText', data: text.slice(-1),
+      })));
+
+      expect(editor.textContent).toBe(text);
+      expect(onChange).toHaveBeenLastCalledWith(text.trim(), []);
+    }
+  });
+
+  it.each(['input', 'paste'] as const)('preserves explicitly authored straight and typographic quotes on %s', async (method) => {
+    const onChange = vi.fn();
+    await act(async () => root.render(<RichTextInput value="" onChange={onChange} contexts={emptyContexts} onRemoveContext={() => {}} />));
+    const editor = container.querySelector('.rich-text-input') as HTMLDivElement;
+    const text = `"literal" 'literal' \u2018quoted\u2019 \u201Cquoted\u201D`;
+
+    await act(async () => {
+      if (method === 'paste') {
+        setCaret(editor, 0);
+        paste(editor, { text });
+      } else {
+        editor.textContent = text;
+      }
+      // The execCommand fixture inserts DOM text without the browser's input event.
+      editor.dispatchEvent(new window.InputEvent('input', {
+        bubbles: true, inputType: method === 'paste' ? 'insertFromPaste' : 'insertText', data: text,
+      }));
+    });
+
+    expect(editor.textContent).toBe(text);
+    expect(onChange).toHaveBeenLastCalledWith(text, []);
+  });
+
   it('rejects native arrow/function key text without changing the composer selection', async () => {
     const ref = createRef<HarnessHandle>();
     const editor = await renderHarness(ref);
