@@ -22,10 +22,26 @@ interface RemoteEndpointParts {
 
 const SSH_ID = /^ssh-([^@]*)@([^#:]+)/;
 
-function splitUser(value: string): { user?: string; host: string } {
-  const at = value.lastIndexOf('@');
-  if (at <= 0) return { host: value };
-  return { user: value.slice(0, at), host: value.slice(at + 1) };
+/**
+ * Whether a saved name is the dialog default for this connection: exactly
+ * `user@host` (optionally `:port`) with the connection's own user, host and
+ * port, or the bare host. Any other name was chosen by the user, `@` included.
+ */
+function isGeneratedName(
+  name: string,
+  user: string | undefined,
+  hosts: readonly (string | undefined)[],
+  portScope: string | undefined,
+): boolean {
+  if (!name) return true;
+  const port = portScope?.split('~')[0];
+  return hosts.some(host => {
+    if (!host) return false;
+    if (name === host) return true;
+    if (!user) return false;
+    const base = `${user}@${host}`;
+    return name === base || (port !== undefined && name === `${base}:${port}`);
+  });
 }
 
 function endpointParts(workspace: RemoteWorkspaceFacts): RemoteEndpointParts {
@@ -35,19 +51,18 @@ function endpointParts(workspace: RemoteWorkspaceFacts): RemoteEndpointParts {
   // Port-scoped workspace identities spell the host as `host#port` (#3670).
   const hashIndex = rawHost.indexOf('#');
   const hostScope = hashIndex >= 0 ? rawHost.slice(hashIndex + 1) : undefined;
-  const sshHost = splitUser(hashIndex >= 0 ? rawHost.slice(0, hashIndex) : rawHost).host;
+  const sshHost = hashIndex >= 0 ? rawHost.slice(0, hashIndex) : rawHost;
   const idMatch = SSH_ID.exec(connectionId);
-  const fromName = splitUser(name);
-  const host = sshHost || idMatch?.[2] || (fromName.user ? fromName.host : '') || name || connectionId;
-  const user = fromName.user || idMatch?.[1] || undefined;
-  // Generated names are `user@host`; anything else is a saved alias or name chosen by the user.
-  const alias = name && !fromName.user && name !== host ? name : undefined;
+  const user = idMatch?.[1] || undefined;
+  const idHost = idMatch?.[2];
+  const host = sshHost || idHost || name || connectionId;
+  const portScope = sshConnectionIdPortScope(connectionId) ?? (hostScope || undefined);
   return {
     connectionKey: connectionId || `${user ?? ''}@${host}`,
-    alias,
+    alias: isGeneratedName(name, user, [host, idHost], portScope) ? undefined : name,
     user,
     host,
-    portScope: sshConnectionIdPortScope(connectionId) ?? (hostScope || undefined),
+    portScope,
   };
 }
 

@@ -29,6 +29,19 @@ describe('remoteWorkspaceBadges (#3517)', () => {
     expect(badge?.host).toBe('root@10.0.0.8');
   });
 
+  it('shows a custom name containing @ as is', () => {
+    expect(remoteWorkspaceBadge(remote('w1', 'ssh-root@10.0.0.8', 'team@gpu', '10.0.0.8'))?.label)
+      .toBe('team@gpu');
+    // Another user on the same host is not this connection's default shape.
+    expect(remoteWorkspaceBadge(remote('w2', 'ssh-root@10.0.0.8', 'alice@10.0.0.8', '10.0.0.8'))?.label)
+      .toBe('alice@10.0.0.8');
+    // Neither is a different port.
+    expect(remoteWorkspaceBadge(remote('w3', 'ssh-root@10.0.0.8#2202', 'root@10.0.0.8:2203', '10.0.0.8#2202'))?.label)
+      .toBe('root@10.0.0.8:2203');
+    expect(remoteWorkspaceBadge(remote('w4', 'ssh-root@10.0.0.8#2202', 'root@10.0.0.8:2202', '10.0.0.8#2202'))?.label)
+      .toBe('10.0.0.8:2202');
+  });
+
   it('keeps port-scoped connections on one address distinct', () => {
     const badges = remoteWorkspaceBadges([
       remote('a', 'ssh-root@node.example.com', 'root@node.example.com', 'node.example.com'),
