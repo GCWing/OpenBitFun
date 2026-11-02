@@ -11,9 +11,9 @@
 //!   replaces the shell. The process is supervised by
 //!   [`ProcessTreeChild`]: it leads its own process group and the whole group
 //!   (including any grandchildren the proxy forks) is killed on shutdown.
-//! - Windows runs the command through `cmd.exe /C` with the raw string (no
-//!   extra MS quoting), matching how OpenSSH's Windows build passes
-//!   `ProxyCommand` along. [`ProcessTreeChild`] assigns it to a Job object with
+//! - Windows runs the command through `cmd.exe /d /v:off /s /c "<command>"`
+//!   with the raw string (no extra MS quoting), so quoted executable paths
+//!   and quoted arguments survive. [`ProcessTreeChild`] assigns it to a Job object with
 //!   `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, so closing the Job ends the tree.
 //! - `%h`, `%p`, `%r`, and `%%` are expanded before the shell sees the string.
 //!   Hosts and users containing shell metacharacters are rejected first
@@ -259,12 +259,11 @@ fn proxy_shell_program() -> &'static str {
 fn configure_shell_args(cmd: &mut tokio::process::Command, command: &str) {
     #[cfg(windows)]
     {
-        // cmd.exe parses everything after /C itself, so the command must reach
+        // cmd.exe parses everything after /c itself, so the command must reach
         // it raw: the standard Windows argument quoting would wrap it in extra
         // quotes and mangle the quoting conventions ProxyCommand authors
-        // already rely on.
-        cmd.raw_arg("/C");
-        cmd.raw_arg(command);
+        // already rely on. See `windows_cmd_arguments` for the flags.
+        cmd.raw_arg(windows_cmd_arguments(command));
     }
     #[cfg(not(windows))]
     {
@@ -272,6 +271,20 @@ fn configure_shell_args(cmd: &mut tokio::process::Command, command: &str) {
         // shell, so signals and exit status belong to the proxy itself.
         cmd.arg("-c").arg(format!("exec {command}"));
     }
+}
+
+/// Raw `cmd.exe` argument string for a ProxyCommand.
+///
+/// - `/d` skips AutoRun registry commands, whose output would otherwise land
+///   on stdout and corrupt the SSH stream.
+/// - `/v:off` keeps `!` literal (no delayed expansion).
+/// - `/s /c "<command>"`: with `/s`, cmd strips exactly the outer quote pair we
+///   add and keeps the command verbatim. Without it, a command with more than
+///   two quotes, such as `"C:\x\coder.exe" --global-config "C:\cfg" ssh`,
+///   loses its first and last quote and no longer runs.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn windows_cmd_arguments(command: &str) -> String {
+    format!("/d /v:off /s /c \"{command}\"")
 }
 
 /// Drain the proxy's stderr forever: one line at a time into the log, with the
@@ -374,6 +387,33 @@ mod tests {
             expand_tokens("nc %h", "user@host-1.example_x:22", 22, "u").unwrap(),
             "nc user@host-1.example_x:22"
         );
+    }
+
+    #[test]
+    fn windows_cmd_arguments_wrap_the_command_in_one_outer_quote_pair() {
+        let command = r#""C:\x\coder.exe" --global-config "C:\Users\me\coderv2" ssh --stdio host"#;
+        assert_eq!(
+            windows_cmd_arguments(command),
+            format!("/d /v:off /s /c \"{command}\"")
+        );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn quoted_program_with_two_quoted_arguments_runs_verbatim() {
+        // Four quotes, starting with a quoted program: without `/s` and the
+        // outer pair, cmd.exe strips the first and last quote and fails.
+        let mut child = ProxyCommandChild::spawn(
+            r#""%ComSpec%" /d /c echo "quoted-one" "quoted-two" 1>&2 & exit 7"#,
+            "test-connection",
+        )
+        .await
+        .unwrap();
+        let _stream = child.take_stream().unwrap();
+        let (exit_code, tail) = child.finish().await;
+        assert_eq!(exit_code, Some(7));
+        assert!(tail.contains("quoted-one"), "stderr tail was: {tail}");
+        assert!(tail.contains("quoted-two"), "stderr tail was: {tail}");
     }
 
     #[cfg(windows)]

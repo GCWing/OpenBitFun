@@ -7,6 +7,7 @@ use super::sftp_file::ManagedSftpSession;
 #[cfg(feature = "ssh_config")]
 use super::ssh_config_loader::{
     is_host_pattern, load_merged_config_async, resolve_host_settings, split_directive,
+    strip_trailing_comment, ResolvedHostSettings,
 };
 use crate::remote_ssh::password_vault::SSHPasswordVault;
 use crate::remote_ssh::types::{
@@ -428,48 +429,59 @@ fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
 /// Single-argument value of a resolved directive (see
 /// [`resolve_host_settings`], which keys by lowercase keyword).
 #[cfg(feature = "ssh_config")]
-fn resolved_value<'a>(
-    settings: &'a std::collections::HashMap<String, String>,
-    key: &str,
-) -> Option<&'a str> {
+fn resolved_value<'a>(settings: &'a ResolvedHostSettings, key: &str) -> Option<&'a str> {
     settings
         .get(key)
         .and_then(|value| parse_ssh_config_value(value))
 }
 
-/// Resolved `ProxyCommand`, or `None` when absent or explicitly `none`.
+/// Resolve the competing `ProxyJump` / `ProxyCommand` pair the way OpenSSH
+/// does: whichever is obtained first wins and the later one is dropped
+/// (`none` counts as obtained). Returns `(proxy_jump, proxy_command)`.
 #[cfg(feature = "ssh_config")]
-fn resolved_proxy_command(settings: &std::collections::HashMap<String, String>) -> Option<String> {
-    settings
-        .get("proxycommand")
-        .and_then(|value| parse_ssh_config_command_value(value))
-        .filter(|command| !command.eq_ignore_ascii_case("none"))
+fn resolved_proxy_pair(settings: &ResolvedHostSettings) -> (Option<String>, Option<String>) {
+    let jump = settings.first("proxyjump");
+    let command = settings.first("proxycommand");
+    let (jump, command) = match (jump, command) {
+        (Some(jump), Some(command)) if jump.order < command.order => (Some(jump), None),
+        (Some(_), Some(command)) => (None, Some(command)),
+        pair => pair,
+    };
+    let jump = jump
+        .and_then(|jump| parse_ssh_config_value(&jump.value))
+        .filter(|jump| !jump.eq_ignore_ascii_case("none"))
+        .map(ToOwned::to_owned);
+    let command = command
+        .and_then(|command| parse_ssh_config_command_value(&command.value))
+        .filter(|command| !command.eq_ignore_ascii_case("none"));
+    (jump, command)
 }
 
 /// Build an [`SSHConfigEntry`] from resolved settings for `host`.
 #[cfg(feature = "ssh_config")]
-fn ssh_config_entry_from_settings(
-    host: &str,
-    settings: &std::collections::HashMap<String, String>,
-) -> SSHConfigEntry {
-    let proxy_command = resolved_proxy_command(settings);
+fn ssh_config_entry_from_settings(host: &str, settings: &ResolvedHostSettings) -> SSHConfigEntry {
+    let (proxy_jump, proxy_command) = resolved_proxy_pair(settings);
+    // IdentityFile/CertificateFile accumulate in OpenSSH; the entry carries
+    // one, so prefer the block that names this host over `Host *` defaults.
+    let preferred_file = |key: &str| {
+        settings
+            .preferred(key)
+            .and_then(|value| parse_ssh_config_value(value))
+            .map(|file| shellexpand::tilde(file).to_string())
+    };
     SSHConfigEntry {
         host: host.to_string(),
         hostname: resolved_value(settings, "hostname").map(ToOwned::to_owned),
         port: resolved_value(settings, "port").and_then(|port| port.parse::<u16>().ok()),
         user: resolved_value(settings, "user").map(ToOwned::to_owned),
-        identity_file: resolved_value(settings, "identityfile")
-            .map(|file| shellexpand::tilde(file).to_string()),
+        identity_file: preferred_file("identityfile"),
         agent: if proxy_command.is_some() {
             None
         } else {
             Some(true)
         },
-        certificate_file: resolved_value(settings, "certificatefile")
-            .map(|file| shellexpand::tilde(file).to_string()),
-        proxy_jump: resolved_value(settings, "proxyjump")
-            .filter(|jump| !jump.eq_ignore_ascii_case("none"))
-            .map(ToOwned::to_owned),
+        certificate_file: preferred_file("certificatefile"),
+        proxy_jump,
         proxy_command,
     }
 }
@@ -493,18 +505,20 @@ fn parse_ssh_config_value(value: &str) -> Option<&str> {
 /// Extract a whole-line command value such as `ProxyCommand`'s.
 ///
 /// Unlike [`parse_ssh_config_value`], the value spans every remaining token of
-/// the line. A single pair of surrounding double quotes is stripped so
-/// `ProxyCommand "coder ssh --stdio %h"` keeps its inner quoting intact.
+/// the line and is kept verbatim, quotes included, as OpenSSH does: stripping
+/// an outer quote pair would corrupt `"a b" ssh "%h"`. POSIX `sh` treats an
+/// inline ` # comment` as a comment itself; `cmd.exe` does not, so it is
+/// removed on Windows.
 #[cfg(feature = "ssh_config")]
 fn parse_ssh_config_command_value(value: &str) -> Option<String> {
+    let value = if cfg!(windows) {
+        super::ssh_config_loader::strip_trailing_comment(value)
+    } else {
+        value
+    };
     let value = value.trim();
     if value.is_empty() {
         return None;
-    }
-    if let Some(inner) = value.strip_prefix('"') {
-        if let Some(stripped) = inner.strip_suffix('"') {
-            return Some(stripped.to_string());
-        }
     }
     Some(value.to_string())
 }
@@ -558,7 +572,7 @@ fn parse_ssh_config_manually(content: &str) -> Vec<SSHConfigEntry> {
             // pattern blocks (`Host *`, `Host !x *.corp`) and `Match` blocks
             // name no host, so their settings are not attributed to anyone.
             current_host = if keyword.eq_ignore_ascii_case("Host") {
-                value
+                strip_trailing_comment(value)
                     .split(|c: char| c.is_whitespace() || c == ',')
                     .map(|alias| alias.trim_matches('"'))
                     .find(|alias| !alias.is_empty() && !is_host_pattern(alias))
@@ -2511,14 +2525,9 @@ impl SSHConnectionManager {
     fn lookup_ssh_config_in(config_content: &str, host: &str) -> SSHConfigLookupResult {
         let settings = resolve_host_settings(config_content, host);
         let entry = ssh_config_entry_from_settings(host, &settings);
-        let found = entry.hostname.is_some()
-            || entry.port.is_some()
-            || entry.user.is_some()
-            || entry.identity_file.is_some()
-            || entry.certificate_file.is_some()
-            || entry.proxy_jump.is_some()
-            || entry.proxy_command.is_some();
-        if found {
+        // Any matched setting counts, even only `Host *` defaults such as
+        // `AddKeysToAgent`: callers use `found` to pick agent authentication.
+        if !settings.is_empty() {
             log::debug!(
                 "Found SSH config for host: {} with {} settings",
                 host,
@@ -3231,9 +3240,18 @@ impl SSHConnectionManager {
             .await
             .map_err(|error| tag_failed_stage("configuration", error))?;
         if jumps.is_empty() {
+            let ignored_proxy_command = self.ssh_config_proxy_command_ignored(config).await;
             let (handle, alive, mut server_info) = self
                 .establish_direct_session(config, timeout_secs, &mut unpublished)
                 .await
+                .map_err(|error| match &ignored_proxy_command {
+                    Some(alias) => anyhow!(
+                        "{error} (~/.ssh/config defines a ProxyCommand for '{alias}', but this \
+                         connection dials the host directly; this connection profile does not \
+                         carry the ProxyCommand)"
+                    ),
+                    None => error,
+                })
                 .map_err(|error| tag_failed_stage("target", error))?;
             if config
                 .container
@@ -3766,6 +3784,32 @@ impl SSHConnectionManager {
             unpublished,
         )
         .await
+    }
+
+    /// When a connection without `proxy_command` targets a `~/.ssh/config`
+    /// alias that resolves to a ProxyCommand, warn loudly: the profile dials
+    /// directly, which is not what `ssh <alias>` would do. Returns the alias
+    /// so a dial failure can say why. The command text is never logged.
+    async fn ssh_config_proxy_command_ignored(
+        &self,
+        config: &SSHConnectionConfig,
+    ) -> Option<String> {
+        if config
+            .proxy_command
+            .as_deref()
+            .is_some_and(|command| !command.trim().is_empty())
+        {
+            return None;
+        }
+        let lookup = self.get_ssh_config(&config.host).await;
+        lookup.config.as_ref()?.proxy_command.as_ref()?;
+        log::warn!(
+            "SSH connection {} targets host '{}', which has a ProxyCommand in ~/.ssh/config; \
+             the connection profile carries no ProxyCommand, so the host is dialed directly",
+            config.id,
+            config.host
+        );
+        Some(config.host.clone())
     }
 
     /// Build a fresh SSH session whose transport is the stdin/stdout of a
@@ -8641,6 +8685,79 @@ Host *
 
     #[test]
     #[cfg(feature = "ssh_config")]
+    fn identity_file_prefers_the_block_naming_the_host() {
+        let content = "Host *\n  IdentityFile ~/.ssh/default\nHost foo # work box\n  IdentityFile /keys/foo-1\n  IdentityFile /keys/foo-2\n  CertificateFile /keys/foo-cert.pub\n";
+        let entry = SSHConnectionManager::lookup_ssh_config_in(content, "foo")
+            .config
+            .unwrap();
+        assert_eq!(entry.identity_file.as_deref(), Some("/keys/foo-1"));
+        assert_eq!(
+            entry.certificate_file.as_deref(),
+            Some("/keys/foo-cert.pub")
+        );
+        let settings = resolve_host_settings(content, "foo");
+        let files: Vec<_> = settings
+            .all("identityfile")
+            .iter()
+            .map(|value| value.value.as_str())
+            .collect();
+        assert_eq!(files, vec!["~/.ssh/default", "/keys/foo-1", "/keys/foo-2"]);
+        // Hosts without a specific block still get the default.
+        let other = SSHConnectionManager::lookup_ssh_config_in(content, "bar")
+            .config
+            .unwrap();
+        assert!(other
+            .identity_file
+            .as_deref()
+            .is_some_and(|file| file.ends_with(".ssh/default")));
+        // The trailing comment on the Host line is not a pattern.
+        let hosts = SSHConnectionManager::list_ssh_config_hosts_in(content);
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].host, "foo");
+    }
+
+    #[test]
+    #[cfg(feature = "ssh_config")]
+    fn proxy_jump_and_proxy_command_first_obtained_wins() {
+        let content = "Host target\n  ProxyJump bastion\nHost *\n  ProxyCommand nc %h %p\n";
+        let entry = SSHConnectionManager::lookup_ssh_config_in(content, "target")
+            .config
+            .unwrap();
+        assert_eq!(entry.proxy_jump.as_deref(), Some("bastion"));
+        assert_eq!(entry.proxy_command, None);
+
+        let content = "Host target\n  ProxyCommand nc %h %p\nHost *\n  ProxyJump bastion\n";
+        let entry = SSHConnectionManager::lookup_ssh_config_in(content, "target")
+            .config
+            .unwrap();
+        assert_eq!(entry.proxy_jump, None);
+        assert_eq!(entry.proxy_command.as_deref(), Some("nc %h %p"));
+
+        // `ProxyCommand none` first still suppresses a later ProxyJump.
+        let content = "Host target\n  ProxyCommand none\nHost *\n  ProxyJump bastion\n";
+        let entry = SSHConnectionManager::lookup_ssh_config_in(content, "target")
+            .config
+            .unwrap();
+        assert_eq!(entry.proxy_jump, None);
+        assert_eq!(entry.proxy_command, None);
+    }
+
+    #[test]
+    #[cfg(feature = "ssh_config")]
+    fn wildcard_only_settings_still_count_as_found() {
+        let result = SSHConnectionManager::lookup_ssh_config_in(
+            "Host *\n  AddKeysToAgent yes\n",
+            "anything",
+        );
+        assert!(result.found);
+        assert_eq!(result.config.unwrap().agent, Some(true));
+        assert!(
+            !SSHConnectionManager::lookup_ssh_config_in("Host other\n  User x\n", "anything").found
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "ssh_config")]
     fn list_ssh_config_hosts_deduplicates_repeated_aliases() {
         let hosts = SSHConnectionManager::list_ssh_config_hosts_in(
             "Host a\n  User first\nHost a\n  User second\nMatch host a\n  Port 1\n",
@@ -8662,11 +8779,12 @@ Host *
             Some("\"C:\\tools\\coder.exe\" ssh --stdio %h")
         );
 
-        let hosts =
-            parse_ssh_config_manually("Host quoted\n  ProxyCommand \"coder ssh --stdio %h\"\n");
+        // Kept verbatim like OpenSSH: stripping the outer quotes of
+        // `"a b" ssh "%h"` would corrupt it.
+        let hosts = parse_ssh_config_manually("Host quoted\n  ProxyCommand \"a b\" ssh \"%h\"\n");
         assert_eq!(
             hosts[0].proxy_command.as_deref(),
-            Some("coder ssh --stdio %h")
+            Some("\"a b\" ssh \"%h\"")
         );
 
         let hosts = parse_ssh_config_manually("Host plain\n  HostName plain.example\n");

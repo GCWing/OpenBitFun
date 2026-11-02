@@ -35,6 +35,7 @@ pub(crate) fn load_merged_config(config_path: &Path) -> Option<String> {
     expand_file(
         config_path,
         0,
+        None,
         config_path.parent(),
         &mut stack,
         &mut merged,
@@ -70,6 +71,7 @@ pub(crate) fn strip_utf8_bom(content: String) -> String {
 fn expand_file(
     path: &Path,
     depth: usize,
+    inherited_context: Option<&str>,
     base_dir: Option<&Path>,
     stack: &mut Vec<PathBuf>,
     merged: &mut String,
@@ -123,7 +125,9 @@ fn expand_file(
     // The `Host`/`Match` line currently in effect in *this* file; restored
     // after each include so the included file's own blocks do not swallow the
     // parent's following settings.
-    let mut current_context: Option<String> = None;
+    // An included file starts inside the includer's block, so an Include
+    // nested in it must restore that block too — not a global `Host *`.
+    let mut current_context: Option<String> = inherited_context.map(ToOwned::to_owned);
     for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -134,7 +138,14 @@ fn expand_file(
         if let Some((keyword, value)) = split_directive(trimmed) {
             if keyword.eq_ignore_ascii_case("include") {
                 for target in resolve_include_targets(value, base_dir) {
-                    expand_file(&target, depth + 1, base_dir, stack, merged);
+                    expand_file(
+                        &target,
+                        depth + 1,
+                        current_context.as_deref(),
+                        base_dir,
+                        stack,
+                        merged,
+                    );
                 }
                 merged.push_str(current_context.as_deref().unwrap_or("Host *"));
                 merged.push('\n');
@@ -164,18 +175,83 @@ pub(crate) fn split_directive(line: &str) -> Option<(&str, &str)> {
     Some((keyword, rest))
 }
 
-/// Settings OpenSSH would apply to `host`, keyed by lowercase keyword.
+/// One obtained directive value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedValue {
+    /// Raw remainder of the directive line, trimmed.
+    pub value: String,
+    /// Whether the value came from a `Host` block that names this host
+    /// exactly (no wildcard), as opposed to `Host *`-style or global lines.
+    pub specific: bool,
+    /// Directive line order within the merged text; lets callers apply
+    /// OpenSSH's "whichever is specified first" rule across keywords.
+    pub order: usize,
+}
+
+/// Settings OpenSSH would apply to one host, keyed by lowercase keyword.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ResolvedHostSettings {
+    values: HashMap<String, Vec<ResolvedValue>>,
+}
+
+impl ResolvedHostSettings {
+    /// The effective value: the first one obtained, as OpenSSH applies it.
+    pub(crate) fn get(&self, key: &str) -> Option<&String> {
+        self.first(key).map(|value| &value.value)
+    }
+
+    pub(crate) fn first(&self, key: &str) -> Option<&ResolvedValue> {
+        self.values.get(key).and_then(|values| values.first())
+    }
+
+    /// Every value obtained for `key`, in order. Only accumulating keywords
+    /// (see [`is_accumulating_keyword`]) can hold more than one.
+    pub(crate) fn all(&self, key: &str) -> &[ResolvedValue] {
+        self.values.get(key).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// For accumulating keywords consumed as a single value: the first value
+    /// from a block naming the host exactly, else the first value overall.
+    pub(crate) fn preferred(&self, key: &str) -> Option<&String> {
+        let all = self.all(key);
+        all.iter()
+            .find(|value| value.specific)
+            .or_else(|| all.first())
+            .map(|value| &value.value)
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.values.len()
+    }
+}
+
+/// Keywords OpenSSH accumulates instead of applying first-value-wins.
+fn is_accumulating_keyword(keyword: &str) -> bool {
+    matches!(
+        keyword,
+        "identityfile" | "certificatefile" | "localforward" | "remoteforward" | "dynamicforward"
+    )
+}
+
+/// Settings OpenSSH would apply to `host`.
 ///
 /// Values are the raw remainder of the directive line (trimmed), so
 /// multi-word values such as `ProxyCommand` survive intact; callers pick the
 /// first token where a directive takes a single argument. The first value
-/// obtained for a keyword wins, exactly like OpenSSH. Lines before the first
-/// `Host`/`Match` apply to every host. `Match all` applies; any other `Match`
-/// criteria cannot be evaluated here and are treated as not matching.
-pub(crate) fn resolve_host_settings(content: &str, host: &str) -> HashMap<String, String> {
-    let mut settings = HashMap::new();
+/// obtained for a keyword wins, exactly like OpenSSH, except for accumulating
+/// keywords such as `IdentityFile`, which keep every value in order. Lines
+/// before the first `Host`/`Match` apply to every host. `Match all` applies;
+/// any other `Match` criteria cannot be evaluated here and are treated as not
+/// matching.
+pub(crate) fn resolve_host_settings(content: &str, host: &str) -> ResolvedHostSettings {
+    let mut settings = ResolvedHostSettings::default();
     let mut active = true;
-    for line in content.lines() {
+    let mut specific = false;
+    for (order, line) in content.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
@@ -184,7 +260,9 @@ pub(crate) fn resolve_host_settings(content: &str, host: &str) -> HashMap<String
             continue;
         };
         if keyword.eq_ignore_ascii_case("host") {
-            active = host_patterns_match(value, host);
+            let patterns = strip_trailing_comment(value);
+            active = host_patterns_match(patterns, host);
+            specific = active && host_named_exactly(patterns, host);
             continue;
         }
         if keyword.eq_ignore_ascii_case("match") {
@@ -192,15 +270,51 @@ pub(crate) fn resolve_host_settings(content: &str, host: &str) -> HashMap<String
                 .split_whitespace()
                 .next()
                 .is_some_and(|criterion| criterion.eq_ignore_ascii_case("all"));
+            specific = false;
             continue;
         }
         if active && !value.is_empty() {
-            settings
-                .entry(keyword.to_ascii_lowercase())
-                .or_insert_with(|| value.to_string());
+            let keyword = keyword.to_ascii_lowercase();
+            let accumulating = is_accumulating_keyword(&keyword);
+            let values = settings.values.entry(keyword).or_default();
+            if accumulating || values.is_empty() {
+                values.push(ResolvedValue {
+                    value: value.to_string(),
+                    specific,
+                    order,
+                });
+            }
         }
     }
     settings
+}
+
+/// Strip an inline `# comment` that starts at a whitespace-preceded `#`
+/// outside double quotes.
+pub(crate) fn strip_trailing_comment(value: &str) -> &str {
+    let mut in_quotes = false;
+    let mut previous_is_space = true;
+    for (index, ch) in value.char_indices() {
+        match ch {
+            '"' => in_quotes = !in_quotes,
+            '#' if !in_quotes && previous_is_space => return value[..index].trim_end(),
+            _ => {}
+        }
+        previous_is_space = ch.is_whitespace();
+    }
+    value.trim_end()
+}
+
+fn host_pattern_tokens(patterns: &str) -> impl Iterator<Item = &str> {
+    patterns
+        .split(|c: char| c.is_whitespace() || c == ',')
+        .map(|pattern| pattern.trim_matches('"'))
+        .filter(|pattern| !pattern.is_empty())
+}
+
+fn host_named_exactly(patterns: &str, host: &str) -> bool {
+    host_pattern_tokens(patterns)
+        .any(|pattern| !is_host_pattern(pattern) && pattern.eq_ignore_ascii_case(host))
 }
 
 /// OpenSSH `Host` matching: the line matches when any positive pattern
@@ -209,11 +323,7 @@ pub(crate) fn resolve_host_settings(content: &str, host: &str) -> HashMap<String
 pub(crate) fn host_patterns_match(patterns: &str, host: &str) -> bool {
     let host = host.to_ascii_lowercase();
     let mut matched = false;
-    for pattern in patterns
-        .split(|c: char| c.is_whitespace() || c == ',')
-        .map(|pattern| pattern.trim_matches('"'))
-        .filter(|pattern| !pattern.is_empty())
-    {
+    for pattern in host_pattern_tokens(strip_trailing_comment(patterns)) {
         let (negated, pattern) = match pattern.strip_prefix('!') {
             Some(rest) => (true, rest),
             None => (false, pattern),
@@ -534,6 +644,40 @@ mod tests {
         );
 
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn nested_includes_restore_the_includers_block_not_global() {
+        let dir = unique_temp_dir("nested-context");
+        let ssh_dir = dir.join(".ssh");
+        write(
+            &ssh_dir.join("config"),
+            "Host parent\n  Include middle.conf\n",
+        );
+        write(
+            &ssh_dir.join("middle.conf"),
+            "Include leaf.conf\nUser parent-only\n",
+        );
+        write(&ssh_dir.join("leaf.conf"), "Port 2201\n");
+
+        let merged = load_merged_config(&ssh_dir.join("config")).unwrap();
+        let parent = resolve_host_settings(&merged, "parent");
+        assert_eq!(parent.get("user").map(String::as_str), Some("parent-only"));
+        assert_eq!(parent.get("port").map(String::as_str), Some("2201"));
+        // A re-emitted `Host *` would have made these global.
+        let other = resolve_host_settings(&merged, "other");
+        assert!(other.is_empty(), "settings leaked globally: {other:?}");
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn strips_inline_comments_outside_quotes() {
+        assert_eq!(strip_trailing_comment("foo bar # note"), "foo bar");
+        assert_eq!(strip_trailing_comment("\"a # b\" c"), "\"a # b\" c");
+        assert_eq!(strip_trailing_comment("url#frag"), "url#frag");
+        assert!(host_patterns_match("foo # comment", "foo"));
+        assert!(!host_patterns_match("foo # comment", "comment"));
     }
 
     #[test]
