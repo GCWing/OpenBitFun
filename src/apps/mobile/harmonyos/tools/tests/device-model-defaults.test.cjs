@@ -110,8 +110,8 @@ test('set_model_defaults sends every slot in one object and null is a value', ()
     fast: null,
     image_understanding: null
   });
-  // An absent key would be ambiguous between "clear" and "leave unchanged", so
-  // the whole object is always on the wire.
+  // The host treats an absent key as unchanged, so clearing needs an explicit
+  // null: the phone always puts all three slots on the wire.
   assert.deepEqual(Object.keys(cleared).sort(), ['cmd', 'fast', 'image_understanding', 'primary']);
 });
 

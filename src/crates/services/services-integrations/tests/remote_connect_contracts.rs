@@ -3762,9 +3762,8 @@ fn dialog_queue_wire_keeps_legacy_send_messages_readable() {
 }
 
 #[test]
-fn device_model_defaults_command_is_a_whole_object_write_of_three_slots() {
-    // Absent fields and explicit nulls both clear a slot, so the command has no
-    // tri-state ambiguity; the host-only slots are not part of the request.
+fn device_model_defaults_command_patches_slots_and_only_null_clears() {
+    // An absent field keeps its slot, so an empty request changes nothing.
     let empty: RemoteCommand =
         serde_json::from_value(serde_json::json!({ "cmd": "set_model_defaults" }))
             .expect("deserialize empty device defaults command");
@@ -3776,6 +3775,10 @@ fn device_model_defaults_command_is_a_whole_object_write_of_three_slots() {
             image_understanding: None,
         }
     );
+    assert_eq!(
+        serde_json::to_value(&empty).expect("serialize empty device defaults command"),
+        serde_json::json!({ "cmd": "set_model_defaults" })
+    );
     let explicit_nulls: RemoteCommand = serde_json::from_value(serde_json::json!({
         "cmd": "set_model_defaults",
         "primary": null,
@@ -3786,9 +3789,9 @@ fn device_model_defaults_command_is_a_whole_object_write_of_three_slots() {
     assert_eq!(
         explicit_nulls,
         RemoteCommand::SetModelDefaults {
-            primary: None,
-            fast: Some("fast-model".to_string()),
-            image_understanding: None,
+            primary: Some(None),
+            fast: Some(Some("fast-model".to_string())),
+            image_understanding: Some(None),
         }
     );
     let host_slots_are_ignored: RemoteCommand = serde_json::from_value(serde_json::json!({
@@ -3801,16 +3804,16 @@ fn device_model_defaults_command_is_a_whole_object_write_of_three_slots() {
     assert_eq!(
         host_slots_are_ignored,
         RemoteCommand::SetModelDefaults {
-            primary: Some("model-1".to_string()),
+            primary: Some(Some("model-1".to_string())),
             fast: None,
             image_understanding: None,
         }
     );
 
     let serialized = serde_json::to_value(RemoteCommand::SetModelDefaults {
-        primary: Some("model-1".to_string()),
-        fast: None,
-        image_understanding: Some("vision-1".to_string()),
+        primary: Some(Some("model-1".to_string())),
+        fast: Some(None),
+        image_understanding: None,
     })
     .expect("serialize device defaults command");
     assert_eq!(
@@ -3818,8 +3821,7 @@ fn device_model_defaults_command_is_a_whole_object_write_of_three_slots() {
         serde_json::json!({
             "cmd": "set_model_defaults",
             "primary": "model-1",
-            "fast": null,
-            "image_understanding": "vision-1"
+            "fast": null
         })
     );
 }

@@ -1492,10 +1492,10 @@ pub trait RemoteSessionRuntimeHost: Send + Sync {
         model_id: &str,
         reasoning_preset: Option<Option<&str>>,
     ) -> Result<RemoteSessionModelSelection, String>;
-    /// Replace the three device role defaults a controller configures for this
+    /// Patch the three device role defaults a controller configures for this
     /// host (`primary`, `fast`, `image_understanding`); host-only slots such as
-    /// `search` and `image_generation` always keep their device values. A slot
-    /// sent as `None` is written as unset: `fast` then follows primary, and
+    /// `search` and `image_generation` always keep their device values. `None`
+    /// keeps a slot. `Some(None)` clears it: `fast` then follows primary, and
     /// `image_understanding` is unconfigured. A cleared `primary` does not stay
     /// unset — the device reconcile re-fills it with the first enabled
     /// text-capable model. The returned mapping is the host's reconciled truth
@@ -1505,9 +1505,9 @@ pub trait RemoteSessionRuntimeHost: Send + Sync {
     /// error here instead of answering with an unchanged-looking success.
     async fn set_model_defaults(
         &self,
-        _primary: Option<&str>,
-        _fast: Option<&str>,
-        _image_understanding: Option<&str>,
+        _primary: Option<Option<&str>>,
+        _fast: Option<Option<&str>>,
+        _image_understanding: Option<Option<&str>>,
     ) -> Result<RemoteDefaultModelsConfig, String> {
         Err("Host does not support device model defaults".to_string())
     }
@@ -1749,14 +1749,13 @@ where
             fast,
             image_understanding,
         } => {
-            // Device-level: the command names no session or workspace. The
-            // three fields are a whole-object write, so an absent field is
-            // already a cleared slot by deserialization.
+            // Device-level: the command names no session or workspace. An absent
+            // field keeps its slot; only an explicit null clears it.
             match host
                 .set_model_defaults(
-                    primary.as_deref(),
-                    fast.as_deref(),
-                    image_understanding.as_deref(),
+                    primary.as_ref().map(|slot| slot.as_deref()),
+                    fast.as_ref().map(|slot| slot.as_deref()),
+                    image_understanding.as_ref().map(|slot| slot.as_deref()),
                 )
                 .await
             {
@@ -2841,27 +2840,38 @@ pub enum RemoteCommand {
         #[serde(default, deserialize_with = "deserialize_present_nullable")]
         reasoning_preset: Option<Option<String>>,
     },
-    /// Replace the device-level role defaults (`ai.default_models.primary` /
+    /// Patch the device-level role defaults (`ai.default_models.primary` /
     /// `.fast` / `.image_understanding`) of the receiving host.
     ///
-    /// This is a whole-object write of the three managed slots: an absent field
-    /// and an explicit `null` both leave that slot unset, so the command has no
-    /// tri-state ambiguity — a caller that wants to keep a slot must send its
-    /// current catalog value. Clearing is not uniform: unset `fast` follows
-    /// primary and unset `image_understanding` stays unconfigured, while unset
-    /// `primary` falls back to the device's first enabled text-capable model
-    /// once the host reconciles, so the echoed mapping stays authoritative.
-    /// Host-only slots (`search`, `image_generation`, `speech_recognition`) are
-    /// never part of the request and keep their device values. Values must be
-    /// concrete catalog model ids; a semantic selector is rejected. Requires the
-    /// `device_model_defaults_v1` capability.
+    /// An absent field leaves that slot unchanged, so an empty request changes
+    /// nothing; only an explicit `null` clears a slot. Clearing is not uniform:
+    /// unset `fast` follows primary and unset `image_understanding` stays
+    /// unconfigured, while unset `primary` falls back to the device's first
+    /// enabled text-capable model once the host reconciles, so the echoed
+    /// mapping stays authoritative. Host-only slots (`search`,
+    /// `image_generation`, `speech_recognition`) are never part of the request
+    /// and keep their device values. Values must be concrete catalog model ids;
+    /// a semantic selector is rejected. Requires the `device_model_defaults_v1`
+    /// capability.
     SetModelDefaults {
-        #[serde(default)]
-        primary: Option<String>,
-        #[serde(default)]
-        fast: Option<String>,
-        #[serde(default)]
-        image_understanding: Option<String>,
+        #[serde(
+            default,
+            deserialize_with = "deserialize_present_nullable",
+            skip_serializing_if = "Option::is_none"
+        )]
+        primary: Option<Option<String>>,
+        #[serde(
+            default,
+            deserialize_with = "deserialize_present_nullable",
+            skip_serializing_if = "Option::is_none"
+        )]
+        fast: Option<Option<String>>,
+        #[serde(
+            default,
+            deserialize_with = "deserialize_present_nullable",
+            skip_serializing_if = "Option::is_none"
+        )]
+        image_understanding: Option<Option<String>>,
     },
     UpdateSessionTitle {
         session_id: String,
@@ -5037,7 +5047,13 @@ mod tests {
         created_requests: Mutex<Vec<AgentSessionCreateRequest>>,
         list_identities: Mutex<Vec<RemoteSessionWorkspaceIdentity>>,
         model_updates: Mutex<Vec<(String, String, Option<Option<String>>)>>,
-        model_default_updates: Mutex<Vec<(Option<String>, Option<String>, Option<String>)>>,
+        model_default_updates: Mutex<
+            Vec<(
+                Option<Option<String>>,
+                Option<Option<String>>,
+                Option<Option<String>>,
+            )>,
+        >,
         model_defaults_error: Option<String>,
         removed_trackers: Mutex<Vec<String>>,
         history_error: Option<String>,
@@ -5204,14 +5220,15 @@ mod tests {
 
         async fn set_model_defaults(
             &self,
-            primary: Option<&str>,
-            fast: Option<&str>,
-            image_understanding: Option<&str>,
+            primary: Option<Option<&str>>,
+            fast: Option<Option<&str>>,
+            image_understanding: Option<Option<&str>>,
         ) -> Result<RemoteDefaultModelsConfig, String> {
+            let owned = |slot: Option<Option<&str>>| slot.map(|slot| slot.map(str::to_string));
             self.model_default_updates.lock().unwrap().push((
-                primary.map(str::to_string),
-                fast.map(str::to_string),
-                image_understanding.map(str::to_string),
+                owned(primary),
+                owned(fast),
+                owned(image_understanding),
             ));
             if let Some(error) = self.model_defaults_error.as_ref() {
                 return Err(error.clone());
@@ -5220,11 +5237,12 @@ mod tests {
             // request, mirroring a config service that repaired a slot.
             Ok(RemoteDefaultModelsConfig {
                 primary: primary
+                    .flatten()
                     .map(str::to_string)
                     .or(Some("primary-fallback".into())),
-                fast: fast.map(str::to_string),
+                fast: fast.flatten().map(str::to_string),
                 search: Some("device-search".to_string()),
-                image_understanding: image_understanding.map(str::to_string),
+                image_understanding: image_understanding.flatten().map(str::to_string),
                 image_generation: Some("device-image-generation".to_string()),
                 speech_recognition: Some("device-speech".to_string()),
             })
@@ -5579,9 +5597,9 @@ mod tests {
         let response = handle_remote_session_command(
             &host,
             &RemoteCommand::SetModelDefaults {
-                primary: Some("model-primary".to_string()),
-                fast: None,
-                image_understanding: Some("model-vision".to_string()),
+                primary: Some(Some("model-primary".to_string())),
+                fast: Some(None),
+                image_understanding: Some(Some("model-vision".to_string())),
             },
         )
         .await;
@@ -5604,9 +5622,9 @@ mod tests {
         assert_eq!(
             host.model_default_updates.lock().unwrap().as_slice(),
             [(
-                Some("model-primary".to_string()),
-                None,
-                Some("model-vision".to_string()),
+                Some(Some("model-primary".to_string())),
+                Some(None),
+                Some(Some("model-vision".to_string())),
             )]
         );
     }
@@ -5621,7 +5639,7 @@ mod tests {
         let response = handle_remote_session_command(
             &host,
             &RemoteCommand::SetModelDefaults {
-                primary: Some("model-gone".to_string()),
+                primary: Some(Some("model-gone".to_string())),
                 fast: None,
                 image_understanding: None,
             },

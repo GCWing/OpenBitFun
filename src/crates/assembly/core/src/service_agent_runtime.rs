@@ -919,26 +919,33 @@ fn remote_default_models_config(defaults: &DefaultModelsConfig) -> RemoteDefault
 /// Merge a controller's three managed role defaults over the device's current
 /// `ai` section, taken from the config write lock that will store the result.
 ///
-/// The managed slots are replaced as a whole object, so `None` leaves a slot
-/// unset, and every provided id must name a model this device already
-/// configures. The other three slots are carried over untouched. Enablement and
+/// Each managed slot is a patch: `None` keeps the stored value without
+/// validating it, `Some(None)` clears the slot, and `Some(Some(id))` must name a
+/// model this device already configures. The other slots are carried over
+/// untouched. Enablement and
 /// capability validity are deliberately not decided here: the config reconcile
 /// owns that repair and the caller reports its result.
 #[cfg(feature = "remote-connect")]
 fn merge_remote_model_defaults(
     ai_config: &AIConfig,
-    primary: Option<&str>,
-    fast: Option<&str>,
-    image_understanding: Option<&str>,
+    primary: Option<Option<&str>>,
+    fast: Option<Option<&str>>,
+    image_understanding: Option<Option<&str>>,
 ) -> Result<DefaultModelsConfig, String> {
     let is_known_model = |model_id: &str| ai_config.models.iter().any(|model| model.id == model_id);
+    let patched =
+        |slot: &str, requested: Option<Option<&str>>, current: &Option<String>| match requested {
+            Some(model_id) => resolve_remote_model_default_slot(slot, model_id, &is_known_model),
+            None => Ok(current.clone()),
+        };
+    let current = &ai_config.default_models;
     Ok(DefaultModelsConfig {
-        primary: resolve_remote_model_default_slot("primary", primary, &is_known_model)?,
-        fast: resolve_remote_model_default_slot("fast", fast, &is_known_model)?,
-        image_understanding: resolve_remote_model_default_slot(
+        primary: patched("primary", primary, &current.primary)?,
+        fast: patched("fast", fast, &current.fast)?,
+        image_understanding: patched(
             "image_understanding",
             image_understanding,
-            &is_known_model,
+            &current.image_understanding,
         )?,
         economy: ai_config.default_models.economy.clone(),
         search: ai_config.default_models.search.clone(),
@@ -957,9 +964,9 @@ fn merge_remote_model_defaults(
 #[cfg(feature = "remote-connect")]
 async fn persist_remote_model_defaults(
     config_service: &crate::service::config::ConfigService,
-    primary: Option<&str>,
-    fast: Option<&str>,
-    image_understanding: Option<&str>,
+    primary: Option<Option<&str>>,
+    fast: Option<Option<&str>>,
+    image_understanding: Option<Option<&str>>,
 ) -> Result<(), String> {
     let rejection = config_service
         .update_config("ai", |ai: &mut AIConfig| {
@@ -2586,9 +2593,9 @@ impl CoreServiceAgentRuntime {
     /// its role needs reports the repaired value rather than what was requested.
     #[cfg(feature = "remote-connect")]
     pub(crate) async fn update_remote_model_defaults(
-        primary: Option<&str>,
-        fast: Option<&str>,
-        image_understanding: Option<&str>,
+        primary: Option<Option<&str>>,
+        fast: Option<Option<&str>>,
+        image_understanding: Option<Option<&str>>,
     ) -> Result<RemoteDefaultModelsConfig, String> {
         let config_service = crate::service::config::get_global_config_service()
             .await
@@ -3759,9 +3766,9 @@ impl RemoteSessionRuntimeHost for CoreRemoteSessionRuntimeHost {
     /// reply is the device's reconciled mapping rather than the request.
     async fn set_model_defaults(
         &self,
-        primary: Option<&str>,
-        fast: Option<&str>,
-        image_understanding: Option<&str>,
+        primary: Option<Option<&str>>,
+        fast: Option<Option<&str>>,
+        image_understanding: Option<Option<&str>>,
     ) -> Result<RemoteDefaultModelsConfig, String> {
         CoreServiceAgentRuntime::update_remote_model_defaults(primary, fast, image_understanding)
             .await
@@ -4641,8 +4648,18 @@ mod tests {
         config.ai.default_models.image_understanding = Some("vision-1".to_string());
         config.ai.default_models.economy = Some("text-1".to_string());
 
-        // A cleared slot (absent field or explicit null) is a real write.
-        let cleared = merge_remote_model_defaults(&config.ai, None, None, None).unwrap();
+        // An absent slot keeps its stored value, even one a write would reject.
+        config.ai.default_models.primary = Some("model-gone".to_string());
+        let unchanged = merge_remote_model_defaults(&config.ai, None, None, None).unwrap();
+        assert_eq!(
+            serde_json::to_value(&unchanged).unwrap(),
+            serde_json::to_value(&config.ai.default_models).unwrap()
+        );
+        config.ai.default_models.primary = Some("text-1".to_string());
+
+        // Only an explicit null clears a slot.
+        let cleared =
+            merge_remote_model_defaults(&config.ai, Some(None), Some(None), Some(None)).unwrap();
         assert_eq!(cleared.economy.as_deref(), Some("text-1"));
         assert_eq!(cleared.primary, None);
         assert_eq!(cleared.fast, None);
@@ -4652,11 +4669,15 @@ mod tests {
         assert_eq!(cleared.image_generation.as_deref(), Some("image-1"));
         assert_eq!(cleared.speech_recognition.as_deref(), Some("speech-1"));
 
-        let assigned =
-            merge_remote_model_defaults(&config.ai, Some("text-1"), None, Some("vision-1"))
-                .unwrap();
+        let assigned = merge_remote_model_defaults(
+            &config.ai,
+            Some(Some("text-1")),
+            None,
+            Some(Some("vision-1")),
+        )
+        .unwrap();
         assert_eq!(assigned.primary.as_deref(), Some("text-1"));
-        assert_eq!(assigned.fast, None);
+        assert_eq!(assigned.fast.as_deref(), Some("retired-fast"));
         assert_eq!(assigned.image_understanding.as_deref(), Some("vision-1"));
         assert_eq!(assigned.search.as_deref(), Some("search-1"));
         assert_eq!(assigned.image_generation.as_deref(), Some("image-1"));
@@ -4665,11 +4686,12 @@ mod tests {
         // A model this device does not configure, a semantic session selector,
         // and an empty value are all rejected before anything is persisted.
         assert_eq!(
-            merge_remote_model_defaults(&config.ai, Some("model-gone"), None, None).unwrap_err(),
+            merge_remote_model_defaults(&config.ai, Some(Some("model-gone")), None, None)
+                .unwrap_err(),
             "Unknown model selection: model-gone"
         );
-        assert!(merge_remote_model_defaults(&config.ai, None, Some("fast"), None).is_err());
-        assert!(merge_remote_model_defaults(&config.ai, None, None, Some("  ")).is_err());
+        assert!(merge_remote_model_defaults(&config.ai, None, Some(Some("fast")), None).is_err());
+        assert!(merge_remote_model_defaults(&config.ai, None, None, Some(Some("  "))).is_err());
     }
 
     #[test]
@@ -4682,9 +4704,9 @@ mod tests {
         // write and only the reconcile can repair it.
         let requested = merge_remote_model_defaults(
             &config.ai,
-            Some("text-1"),
-            Some("retired-fast"),
-            Some("text-1"),
+            Some(Some("text-1")),
+            Some(Some("retired-fast")),
+            Some(Some("text-1")),
         )
         .unwrap();
         assert_eq!(requested.fast.as_deref(), Some("retired-fast"));
@@ -4741,9 +4763,14 @@ mod tests {
             .await
             .expect("seed device role defaults");
 
-        persist_remote_model_defaults(&service, Some("text-1"), None, Some("vision-1"))
-            .await
-            .expect("remote device defaults write");
+        persist_remote_model_defaults(
+            &service,
+            Some(Some("text-1")),
+            Some(None),
+            Some(Some("vision-1")),
+        )
+        .await
+        .expect("remote device defaults write");
 
         let ai: AIConfig = service.get_config(Some("ai")).await.expect("ai config");
         assert_eq!(ai.default_models.primary.as_deref(), Some("text-1"));
@@ -4778,10 +4805,24 @@ mod tests {
             Some("search-1")
         );
 
+        // An empty request changes nothing and writes nothing.
+        let file_before = tokio::fs::read(path_manager.app_config_file())
+            .await
+            .expect("persisted config");
+        persist_remote_model_defaults(&service, None, None, None)
+            .await
+            .expect("empty device defaults request");
+        assert_eq!(
+            tokio::fs::read(path_manager.app_config_file())
+                .await
+                .expect("persisted config"),
+            file_before
+        );
+
         // A cleared primary does not stay unset: the reconcile re-fills it with
         // the first enabled text-capable model, while the optional slots stay
         // unconfigured.
-        persist_remote_model_defaults(&service, None, None, None)
+        persist_remote_model_defaults(&service, Some(None), Some(None), Some(None))
             .await
             .expect("clear device roles");
         let ai: AIConfig = service.get_config(Some("ai")).await.expect("ai config");
@@ -4792,7 +4833,7 @@ mod tests {
         // A rejected id is reported before anything is stored.
         let before: AIConfig = service.get_config(Some("ai")).await.expect("ai config");
         assert_eq!(
-            persist_remote_model_defaults(&service, Some("model-gone"), None, None)
+            persist_remote_model_defaults(&service, Some(Some("model-gone")), None, None)
                 .await
                 .expect_err("unknown model ids are rejected"),
             "Unknown model selection: model-gone"

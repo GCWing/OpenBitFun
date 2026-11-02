@@ -156,9 +156,9 @@ export interface RemoteCommand {
   tool_id?: string;
   updated_input?: Object;
   model_id?: string;
-  // set_model_defaults carries the whole object in one write, so all three
-  // managed slots are always present. A missing key means the same thing as an
-  // explicit null: no model configured (and, for `fast`, follow the primary).
+  // set_model_defaults: the phone always sends all three managed slots. The host
+  // keeps a slot whose key is missing; an explicit null clears it (no model
+  // configured and, for `fast`, follow the primary).
   primary?: string | null;
   fast?: string | null;
   image_understanding?: string | null;
