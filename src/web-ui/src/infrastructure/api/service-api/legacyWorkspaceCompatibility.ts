@@ -6,6 +6,7 @@
  */
 import { normalizePath, normalizeRemoteWorkspacePath } from '@/shared/utils/pathUtils';
 import { getActiveSurfaceScope, isLocalSurface } from '@/infrastructure/peer-device/deviceSurface';
+import { sshConnectionIdPortScope } from '@/shared/utils/sshConnectionIdentity';
 
 export async function legacyWorkspacePayload(workspaceId: string, assertCurrent: () => void) {
   const { api } = await import('./ApiClient');
@@ -43,6 +44,10 @@ export function resolveLegacySessionWorkspace<T extends {
   if (!root) return undefined;
   const uniqueRecords = [...new Map(records.map(record => [record.id, record])).values()];
   const candidates = uniqueRecords.filter(record => {
+    // A reference without a connection id predates port-scoped SSH profiles and
+    // can never name one; keeping them would make old (sshHost, root) references
+    // ambiguous once another port of the same host opens the same root.
+    if (!session.remoteConnectionId && sshConnectionIdPortScope(record.connectionId) !== undefined) return false;
     const normalize = record.workspaceKind === 'remote' ? normalizeRemoteWorkspacePath : normalizePath;
     const matchesPath = normalize(root).replace(/\/$/, '') === normalize(record.rootPath).replace(/\/$/, '');
     return matchesPath

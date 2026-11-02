@@ -33,7 +33,7 @@ use log::{info, warn};
 use openbitfun_core_types::product_identity::product_id;
 use openbitfun_services_core::workspace_identity::{
     canonicalize_local_workspace_root, local_workspace_roots_equal,
-    normalize_remote_workspace_path, remote_workspace_stable_id,
+    normalize_remote_workspace_path, remote_workspace_stable_id_for_connection,
 };
 
 use serde::{Deserialize, Serialize};
@@ -234,9 +234,15 @@ impl WorkspaceService {
                     return;
                 };
 
+                let identity_host =
+                    openbitfun_services_core::workspace_identity::ssh_workspace_identity_host(
+                        ssh_host,
+                        workspace.remote_ssh_connection_id(),
+                        &workspace.root_path.to_string_lossy(),
+                    );
                 self.runtime_service
                     .ensure_remote_workspace_runtime(
-                        ssh_host,
+                        &identity_host,
                         &workspace.root_path.to_string_lossy(),
                     )
                     .await
@@ -543,7 +549,11 @@ impl WorkspaceService {
                 display_name,
                 remote_connection_id: Some(connection_id.to_string()),
                 remote_ssh_host: Some(host.clone()),
-                stable_workspace_id: Some(remote_workspace_stable_id(&host, &path)),
+                stable_workspace_id: Some(remote_workspace_stable_id_for_connection(
+                    &host,
+                    Some(connection_id),
+                    &path,
+                )),
                 ..Default::default()
             };
             return WorkspaceInfo::new_without_worktree(PathBuf::from(path), options).await;
@@ -1922,6 +1932,7 @@ impl WorkspaceService {
             warnings: Vec::new(),
         };
 
+        super::legacy_compat::pin_legacy_port_scoped_identities(&export.workspaces);
         let mut manager = self.manager.write().await;
 
         for workspace in export.workspaces {
@@ -2059,6 +2070,7 @@ impl WorkspaceService {
                     || !self.is_miniapp_owned_path(&workspace.root_path)
             });
 
+            super::legacy_compat::pin_legacy_port_scoped_identities(data.workspaces.values());
             let mut manager = self.manager.write().await;
             *manager.get_workspaces_mut() = data.workspaces;
             manager.restore_assistant_name_sequence(data.assistant_name_sequence);
@@ -2187,8 +2199,9 @@ impl WorkspaceService {
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
                 {
-                    options.stable_workspace_id = Some(remote_workspace_stable_id(
+                    options.stable_workspace_id = Some(remote_workspace_stable_id_for_connection(
                         ssh_host,
+                        options.remote_connection_id.as_deref(),
                         &normalize_remote_workspace_path(&path.to_string_lossy()),
                     ));
                 }
@@ -3546,7 +3559,10 @@ mod tests {
 
         assert_eq!(
             tracked.id,
-            remote_workspace_stable_id("example-host", "/srv/openbitfun/project")
+            openbitfun_services_core::workspace_identity::remote_workspace_stable_id(
+                "example-host",
+                "/srv/openbitfun/project"
+            )
         );
         assert_eq!(tracked.root_path, remote_workspace_root);
         assert!(service.get_opened_workspaces().await.is_empty());

@@ -113,6 +113,7 @@ const managerUrl = await moduleUrl('../src/services/RemoteSessionManager.ts', {
   '../../../shared/dialog-queue/HostDialogQueue': 'data:text/javascript,export class HostDialogQueue {}',
   '../../../shared/relay-transport/HostStream': hostStream,
   './controlClientIdentity': controlIdentity,
+  './RelayHttpClient': 'data:text/javascript,export class RemoteHostCommandError extends Error {}',
   './SessionSynchronizer': 'data:text/javascript,export class SessionSynchronizer {}',
   './workspaceIdentity': `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`,
 });
@@ -433,6 +434,15 @@ test('workspace icons reject future formats and external image URLs without loca
     await assert.rejects(manager.getWorkspaceIcon('project'), /Unsupported workspace icon/);
     assert.equal(calls, 1);
   }
+});
+
+test('connection-less legacy references never resolve to port-scoped SSH workspaces', () => {
+  const legacy = { workspace_id: 'ws-legacy', path: '/srv/app', remote_connection_id: 'ssh-root@cluster', remote_ssh_host: 'cluster' };
+  const node = { workspace_id: 'ws-node', path: '/srv/app', remote_connection_id: 'ssh-root@cluster#2201', remote_ssh_host: 'cluster' };
+  // Old cached reference: host and root without a connection id.
+  assert.equal(resolveLegacyWorkspaceReference({ path: '/srv/app', remote_ssh_host: 'cluster' }, [legacy, node]), legacy);
+  assert.equal(resolveLegacyWorkspaceReference(
+    { path: '/srv/app', remote_connection_id: 'ssh-root@cluster#2201', remote_ssh_host: 'cluster' }, [legacy, node]), node);
 });
 
 const home = {

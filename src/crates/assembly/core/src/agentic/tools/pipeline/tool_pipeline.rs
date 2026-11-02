@@ -644,7 +644,7 @@ pub fn permission_project_id_for_workspace_identity(
 
     Ok(
         openbitfun_services_core::workspace_identity::remote_workspace_stable_id(
-            &identity.hostname,
+            &identity.identity_host(),
             identity.logical_workspace_path(),
         ),
     )

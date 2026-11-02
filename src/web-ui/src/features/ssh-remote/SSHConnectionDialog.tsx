@@ -55,6 +55,7 @@ import { canRepairSshCredentials, sshConnectionErrorKey, workspaceSourceErrorKey
 import { savedConnectionConfig } from './savedConnectionConfig';
 import type { WorkspaceConnectionPreset } from './useWorkspaceSourceOptions';
 import { sameWorkspaceSource, savedConnectionTarget } from './workspaceSource';
+import { resolveNewSshConnectionId } from './resolveSshConnectionId';
 import {
   pickSshCertificatePath,
   pickSshPrivateKeyPath,
@@ -364,12 +365,6 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     if (path) setFormData((prev) => ({ ...prev, certificatePath: path }));
   }, [isConnecting, status, t]);
 
-  // Port is intentionally excluded so that the ID stays stable when the user
-  // changes the SSH port.
-  const generateConnectionId = (host: string, _port: number, username: string) => {
-    return `ssh-${username}@${host}`;
-  };
-
   const buildAuthMethod = (): SSHAuthMethod => {
     switch (formData.authType) {
       case 'password':
@@ -399,6 +394,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
 
   const buildConnectionConfig = async (
     requireContainer: boolean,
+    persistsProfile = true,
   ): Promise<SSHConnectionConfig | null> => {
     if (formData.targetType === 'wsl') {
       if (!editOnly && !wslDistributions?.supported) {
@@ -524,11 +520,29 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     // Direct SSH already identifies the container. Keep legacy metadata when editing;
     // new profiles derive it from the endpoint instead of asking for a Docker ID.
     const containerName = formData.containerName.trim() || (formData.targetType === 'containerSshd' ? connectHost : 'discovery');
-    const id = isLocalDocker
-      ? `docker-local-${containerName}`
-      : `${generateConnectionId(connectHost, port, username)}${usesContainer ? `-container-${containerName}` : ''}`;
+    // Editing keeps the saved id (so a port change never moves sessions);
+    // new profiles get a port-aware id that cannot overwrite another endpoint.
+    let id = editingProfile?.id ?? `docker-local-${containerName}`;
+    if (!editingProfile && !isLocalDocker) {
+      const resolved = await resolveNewSshConnectionId(
+        { host: connectHost, port, username, suffix: usesContainer ? `-container-${containerName}` : '' },
+        connection => !connection.wsl && (usesContainer
+          ? !connection.container?.local && connection.container?.name === containerName
+          : !connection.container),
+      );
+      if (!('error' in resolved)) {
+        id = resolved.id;
+      } else if (!persistsProfile) {
+        id = resolved.transientId;
+      } else {
+        setLocalError(resolved.error === 'portScopedIdentityUnsupported'
+          ? t('ssh.remote.portScopedIdentityUnsupported', { connection: resolved.conflict.name || resolved.conflict.id })
+          : t('workspaceSource.hostDiscoveryFailed'));
+        return null;
+      }
+    }
     return {
-      id: editingProfile?.id ?? id,
+      id,
       name: formData.name || (isLocalDocker ? containerName : `${username}@${hostInput}`),
       host: connectHost,
       port,
@@ -602,7 +616,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     setConnectionTest(null);
     setLocalError(null);
     try {
-      const config = await buildConnectionConfig(true);
+      const config = await buildConnectionConfig(true, false);
       if (!config) return;
       setConnectionTest(await sshApi.testConnection(config));
     } catch (_error) {
@@ -617,7 +631,7 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     setIsListingContainers(true);
     setLocalError(null);
     try {
-      const config = await buildConnectionConfig(false);
+      const config = await buildConnectionConfig(false, false);
       if (!config || requestId !== containerRequestId.current || !scope.isCurrent()) return;
       const containers = await sshApi.listDockerContainers(config);
       if (requestId !== containerRequestId.current || !scope.isCurrent()) return;

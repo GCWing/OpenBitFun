@@ -62,6 +62,24 @@ export interface WorkspaceReference {
   remote_ssh_host?: string;
 }
 
+/**
+ * Port-scoped SSH connection ids (`ssh-user@host#port`, also wrapped as
+ * `workspace-host-<encoded id>...`) name a distinct connection per port.
+ * Mirrors `ssh_connection_id_port_scope` in the Rust workspace identity owner.
+ */
+export function isPortScopedSshConnectionId(connectionId: string | null | undefined): boolean {
+  let id = (connectionId ?? '').trim();
+  if (id.startsWith('workspace-host-')) {
+    try {
+      id = decodeURIComponent(id.slice('workspace-host-'.length));
+    } catch {
+      return false;
+    }
+  }
+  const match = /^ssh-[^@]*@[^#]*#(\d+)(?:~\d+)?(?:-.*)?$/.exec(id);
+  return match !== null && Number(match[1]) <= 65535;
+}
+
 function trimmedText(value: string | null | undefined): string | undefined {
   const text = value?.trim();
   return text ? text : undefined;
@@ -123,6 +141,8 @@ export function resolveLegacyWorkspaceReference<T extends WorkspaceReference>(
   const connection = trimmedText(reference.remote_connection_id);
   const host = trimmedText(reference.remote_ssh_host);
   const matches = catalog.filter((candidate) => normalizedLegacyRoot(candidate.path) === root
+    // A reference without a connection id predates port-scoped SSH profiles.
+    && (connection || !isPortScopedSshConnectionId(candidate.remote_connection_id))
     && (!connection || candidate.remote_connection_id === connection)
     && (!host
       || (!connection && host === 'localhost')

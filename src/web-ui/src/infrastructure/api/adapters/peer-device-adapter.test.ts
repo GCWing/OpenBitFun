@@ -656,6 +656,27 @@ describe('PeerDeviceTransportAdapter queue', () => {
     },
   );
 
+  it.each(['ssh_connect', 'ssh_save_connection', 'ssh_test_connection'])(
+    'rejects %s with a port-scoped id before an older peer can treat it as unscoped', async (command) => {
+      const deviceRpc = vi.fn();
+      const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc);
+      await expect(adapter.request(command, { config: { id: 'ssh-root@cluster#2201', host: 'cluster', port: 2201 } }))
+        .rejects.toThrow('ssh_port_scoped_identity_v1_unsupported');
+      expect(deviceRpc).not.toHaveBeenCalled();
+    },
+  );
+
+  it('forwards legacy ids to any peer and port-scoped ids to a negotiated peer', async () => {
+    const ok = JSON.stringify({ resp: 'host_invoke_result', ok: true, value: { success: true } });
+    const legacyRpc = vi.fn().mockResolvedValue(ok);
+    await expect(new PeerDeviceTransportAdapter('peer-1', legacyRpc)
+      .request('ssh_connect', { config: { id: 'ssh-root@cluster', host: 'cluster', port: 2201 } })).resolves.toEqual({ success: true });
+    const scopedRpc = vi.fn().mockResolvedValue(ok);
+    await expect(new PeerDeviceTransportAdapter('peer-1', scopedRpc, { supportsSshPortScopedIdentityV1: true })
+      .request('ssh_connect', { config: { id: 'ssh-root@cluster#2201', host: 'cluster', port: 2201 } })).resolves.toEqual({ success: true });
+    expect(JSON.stringify(scopedRpc.mock.calls[0])).toContain('ssh-root@cluster#2201');
+  });
+
   it('forwards a WSL profile to the negotiated host with its target intact', async () => {
     const deviceRpc = vi.fn().mockResolvedValue(JSON.stringify({ resp: 'host_invoke_result', ok: true, value: { success: true } }));
     const adapter = new PeerDeviceTransportAdapter('peer-1', deviceRpc, { supportsWslWorkspacesV1: true });
