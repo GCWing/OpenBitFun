@@ -2971,6 +2971,25 @@ impl SessionManager {
             .map(|session| session.state.clone())
     }
 
+    /// Workspace binding announced on turn events; reads only config fields.
+    pub fn get_session_workspace_facts(
+        &self,
+        session_id: &str,
+    ) -> Option<openbitfun_events::SessionWorkspaceFacts> {
+        self.sessions.get(session_id).map(|session| {
+            let config = &session.config;
+            openbitfun_events::SessionWorkspaceFacts {
+                workspace_path: config.workspace_path.clone(),
+                project_workspace_path: config.project_workspace_path.clone(),
+                execution_target: config.execution_target.clone(),
+                workspace_id: config.workspace_id.clone(),
+                project_workspace_id: config.project_workspace_id.clone(),
+                remote_connection_id: config.remote_connection_id.clone(),
+                remote_ssh_host: config.remote_ssh_host.clone(),
+            }
+        })
+    }
+
     pub async fn cached_system_prompt(
         &self,
         session_id: &str,
