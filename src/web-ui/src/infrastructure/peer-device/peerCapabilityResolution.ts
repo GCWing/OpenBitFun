@@ -1,5 +1,14 @@
 import type { PeerHostCapabilities } from './PeerConnectionManager';
 
+/**
+ * Whether terminal output must be read from replay pages. A missing key means
+ * an older host, and every CLI host already publishes cursor hints while no
+ * Desktop host does, so older hosts of both kinds stay on their working path.
+ */
+export function usesTerminalCursorReplay(capabilities: PeerHostCapabilities | null | undefined): boolean {
+  return capabilities?.terminalCursorReplayV1 === true || capabilities?.hostKind === 'cli';
+}
+
 /** Unknown peers use the URL; older Desktop hosts already support PR details. */
 export function canViewPullRequestsOnSurface(
   peerActive: boolean,

@@ -1,7 +1,7 @@
 import { InteractionMailboxAction } from '../../model/InteractionMailbox';
 import { RemoteQuestionAnswerPayload, RemoteSession } from '../../model/RemoteModels';
 import { AppRoute, AppRouteContract } from '../navigation/AppRouteContract';
-import { ConversationIntent, ConversationIntentType, MessageCopyScope, SessionRollbackRequest } from './ConversationIntent';
+import { ConversationIntent, ConversationIntentType, CommandPaletteRequest, MessageCopyScope, SessionRollbackRequest } from './ConversationIntent';
 import { toRemoteQuestionAnswer } from '../state/ConversationUiModels';
 import { FilePreviewRequest } from '../../model/FilePreviewTarget';
 
@@ -26,6 +26,8 @@ export interface ConversationIntentDispatcherHooks {
   readonly openFilePreview: (route: AppRoute, request: FilePreviewRequest) => void;
   readonly downloadFile: (path: string) => void;
   readonly buildPlan: (path: string, name: string) => Promise<void>;
+  readonly branchExpanded: (branchId: string) => void;
+  readonly commandPalette: (request: CommandPaletteRequest) => Promise<void>;
   /**
    * Run one staged rollback against the host.
    *
@@ -81,6 +83,7 @@ export class ConversationIntentDispatcher {
           void this.hooks.buildPlan(intent.planBuildRequest.path, intent.planBuildRequest.name);
         }
         return;
+      case ConversationIntentType.BranchExpanded: this.hooks.branchExpanded(intent.toolId); return;
       case ConversationIntentType.RollbackSession:
         if (intent.rollbackRequest) void this.hooks.rollback(intent.rollbackRequest); return;
       case ConversationIntentType.RollbackResync: void this.hooks.rollbackResync(); return;
@@ -88,6 +91,13 @@ export class ConversationIntentDispatcher {
       case ConversationIntentType.Send: void this.hooks.send(); return;
       case ConversationIntentType.VoiceInput: void this.hooks.voiceInput(); return;
       case ConversationIntentType.ChatInputChanged: this.hooks.inputChanged(route, intent.value); return;
+      case ConversationIntentType.CommandPalette:
+        // Command palette verbs ride the same remote conversation as everything
+        // else, so a general-chat route must not reach the remote host with one.
+        if (route === AppRoute.RemoteChat && intent.commandPaletteRequest) {
+          void this.hooks.commandPalette(intent.commandPaletteRequest);
+        }
+        return;
     }
   }
 

@@ -386,7 +386,12 @@ FS) and must not be mixed with Peer Device Mode.
   lose its subscription. SSH notification consumers tolerate broadcast lag and
   read the retained cursor. Controllers fetch bounded replay pages and render
   them in their terminal surface. Account retirement stops that publisher's
-  notification observers without terminating the PTY.
+  notification observers without terminating the PTY. `terminal-exit` and
+  `terminal-closed` on the same stream report the PTY lifecycle; an older CLI
+  host omits them and the controller learns of a removed session from the
+  session list. Hosts advertise this path as `terminal_cursor_replay_v1`; the
+  Desktop controller (`PeerTerminalReplay`) falls back to `host_type` for older
+  CLI hosts. Desktop hosts keep fanning out `terminal_event`.
 - During Peer Mode, controller-local SSH maintenance and selected background
   editor/Git/search refreshes retain their existing noise-reduction policy.
   These UI refresh policies are separate from durable session synchronization.

@@ -1,4 +1,5 @@
 import { canonicalAgentId } from '../../../shared/agent-harness/contract.generated';
+import type { SessionWorkspaceContext } from './workspaceIdentity';
 const STORAGE_KEY = 'openbitfun.mobile.navigation.v1';
 
 export interface MobileNavigationScope {
@@ -11,7 +12,7 @@ export interface MobileNavigationScope {
 export interface MobileNavigation {
   deviceId: string;
   disconnected?: boolean;
-  session?: { id: string; name: string; agentType: string };
+  session?: { id: string; name: string; agentType: string; workspace?: SessionWorkspaceContext };
 }
 
 export interface PairedNavigation {
@@ -20,6 +21,23 @@ export interface PairedNavigation {
 }
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+/** Additive session field: records from older builds omit it, and bad values are dropped. */
+function readSessionWorkspace(value: unknown): SessionWorkspaceContext | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  const text = (field: string) => (typeof record[field] === 'string' ? record[field] as string : undefined);
+  const kind = text('workspace_kind');
+  const workspace: SessionWorkspaceContext = {
+    workspace_id: text('workspace_id'),
+    path: text('path'),
+    remote_connection_id: text('remote_connection_id'),
+    remote_ssh_host: text('remote_ssh_host'),
+    name: text('name'),
+    workspace_kind: kind === 'normal' || kind === 'assistant' || kind === 'remote' ? kind : undefined,
+  };
+  return workspace.workspace_id || workspace.path || workspace.name ? workspace : undefined;
+}
 
 function browserStorage(): StorageLike | null {
   try { return typeof window === 'undefined' ? null : window.sessionStorage; }
@@ -42,12 +60,18 @@ export function loadMobileNavigation(
       || typeof record.deviceId !== 'string'
       || !record.deviceId.trim()) return null;
     const session = record.session;
+    const workspace = readSessionWorkspace(session?.workspace);
     return {
       deviceId: record.deviceId,
       ...(record.disconnected === true ? { disconnected: true } : {}),
       session: session && typeof session.id === 'string' && session.id.trim()
         && typeof session.name === 'string' && typeof session.agentType === 'string'
-        ? { id: session.id, name: session.name, agentType: canonicalAgentId(session.agentType) }
+        ? {
+          id: session.id,
+          name: session.name,
+          agentType: canonicalAgentId(session.agentType),
+          ...(workspace ? { workspace } : {}),
+        }
         : undefined,
     };
   } catch {

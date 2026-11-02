@@ -45,6 +45,8 @@ export interface PeerHostCapabilities {
   readonly inlineImageAttachmentsV1?: boolean;
   readonly btwInitialModelSelectionV1?: boolean;
   readonly btwModelPoolSelectionV1?: boolean;
+  /** Terminal output arrives as replay pages announced on the host stream. */
+  readonly terminalCursorReplayV1?: boolean;
   readonly controlConversationV1?: boolean;
   readonly controlConversationResetV1?: boolean;
   readonly targetedSessionRollback: boolean;
@@ -53,6 +55,8 @@ export interface PeerHostCapabilities {
   readonly miniAppAgentContextFilesV1: boolean;
   readonly miniAppAgentImagesV1: boolean;
   readonly wslWorkspacesV1?: boolean;
+  /** Host keeps `ssh-user@host#port` profiles distinct; older hosts get legacy ids only. */
+  readonly sshPortScopedIdentityV1?: boolean;
   /** Host stores ordered subscription account pools on model configs. */
   readonly subscriptionAccountPoolsV1?: boolean;
   /** Host-owned read-only subscription allowance query. */
@@ -190,6 +194,7 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   inlineImageAttachmentsV1: false,
   btwInitialModelSelectionV1: false,
   btwModelPoolSelectionV1: false,
+  terminalCursorReplayV1: false,
   controlConversationV1: false,
   controlConversationResetV1: false,
   targetedSessionRollback: false,
@@ -197,6 +202,7 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   miniAppAgentContextFilesV1: false,
   miniAppAgentImagesV1: false,
   wslWorkspacesV1: false,
+  sshPortScopedIdentityV1: false,
   subscriptionAccountPoolsV1: false,
   subscriptionQuotaV1: false,
   grokQuotaV1: false,
@@ -464,6 +470,7 @@ export class PeerConnectionManager {
       supportsMiniAppAgentContextFilesV1: entry.capabilities.miniAppAgentContextFilesV1,
       supportsMiniAppAgentImagesV1: entry.capabilities.miniAppAgentImagesV1,
       supportsWslWorkspacesV1: entry.capabilities.wslWorkspacesV1,
+      supportsSshPortScopedIdentityV1: entry.capabilities.sshPortScopedIdentityV1,
       supportsWholeSessionCopyV1: entry.capabilities.wholeSessionCopyV1,
       supportsModelRoutingV1: entry.capabilities.modelRoutingV1,
       supportsModelPoolSelectionV1: entry.capabilities.modelPoolSelectionV1,
@@ -551,6 +558,7 @@ export class PeerConnectionManager {
       inlineImageAttachmentsV1: caps?.inline_image_attachments_v1 === true,
       btwInitialModelSelectionV1: caps?.btw_initial_model_selection_v1 === true,
       btwModelPoolSelectionV1: caps?.btw_model_pool_selection_v1 === true,
+      terminalCursorReplayV1: caps?.terminal_cursor_replay_v1 === true,
       controlConversationV1: caps?.control_conversation_v1 === true,
       controlConversationResetV1: caps?.control_conversation_reset_v1 === true,
       targetedSessionRollback: caps?.targeted_session_rollback === true,
@@ -558,6 +566,7 @@ export class PeerConnectionManager {
       miniAppAgentContextFilesV1: caps?.miniapp_agent_context_files_v1 === true,
       miniAppAgentImagesV1: caps?.miniapp_agent_images_v1 === true,
       wslWorkspacesV1: caps?.wsl_workspaces_v1 === true,
+      sshPortScopedIdentityV1: caps?.ssh_port_scoped_identity_v1 === true,
       subscriptionAccountPoolsV1: caps?.subscription_account_pools_v1 === true,
       subscriptionQuotaV1: caps?.subscription_quota_v1 === true,
       grokQuotaV1: caps?.grok_quota_v1 === true,
@@ -667,6 +676,7 @@ export class PeerConnectionManager {
         supportsMiniAppAgentContextFilesV1: capabilities.miniAppAgentContextFilesV1,
         supportsMiniAppAgentImagesV1: capabilities.miniAppAgentImagesV1,
         supportsWslWorkspacesV1: capabilities.wslWorkspacesV1,
+        supportsSshPortScopedIdentityV1: capabilities.sshPortScopedIdentityV1,
         supportsWholeSessionCopyV1: capabilities.wholeSessionCopyV1,
         supportsModelRoutingV1: capabilities.modelRoutingV1,
         supportsModelPoolSelectionV1: capabilities.modelPoolSelectionV1,
@@ -819,6 +829,7 @@ function capabilitiesEqual(
     a.miniAppAgentContextFilesV1 === b.miniAppAgentContextFilesV1 &&
     a.miniAppAgentImagesV1 === b.miniAppAgentImagesV1 &&
     a.wslWorkspacesV1 === b.wslWorkspacesV1 &&
+    a.sshPortScopedIdentityV1 === b.sshPortScopedIdentityV1 &&
     a.subscriptionAccountPoolsV1 === b.subscriptionAccountPoolsV1 &&
     a.subscriptionQuotaV1 === b.subscriptionQuotaV1 &&
     a.grokQuotaV1 === b.grokQuotaV1 &&

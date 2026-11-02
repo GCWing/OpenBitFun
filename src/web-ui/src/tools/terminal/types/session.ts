@@ -124,6 +124,8 @@ export interface GetHistoryResponse {
   cols: number;
   /** PTY row count when history was captured. */
   rows: number;
+  /** Replay offset following `data`; CLI peer hosts report it for live replay. */
+  nextOffset?: number;
 }
 
 export type TerminalEventType = 

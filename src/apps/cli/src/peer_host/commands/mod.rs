@@ -1,5 +1,6 @@
 //! Product HostInvoke command handlers for CLI Peer Host.
 
+mod btw;
 mod config;
 mod dialog;
 mod external_sources;
@@ -10,6 +11,7 @@ mod models;
 mod permission;
 mod product_control;
 mod session;
+mod skills;
 mod snapshot;
 mod soft;
 mod system;
@@ -187,6 +189,8 @@ pub(crate) fn dispatch<'a>(
         // coordinator via the compatibility surface both CLI and Desktop Peer
         // Hosts share.
         "cancel_tool" => Box::pin(dialog::cancel_tool(state, args)),
+        "btw_ask_stream" => Box::pin(btw::btw_ask_stream(state, args)),
+        "btw_cancel" => Box::pin(btw::btw_cancel(args)),
         "get_session_interaction_mailbox" => Box::pin(std::future::ready(permission::get_session_interaction_mailbox(state, args))),
         "list_pending_permission_requests" => Box::pin(std::future::ready(permission::list_pending_permission_requests(state))),
         "subscribe_permission_requests" => Box::pin(std::future::ready(permission::subscribe_permission_requests())),
@@ -216,8 +220,14 @@ pub(crate) fn dispatch<'a>(
         "get_acp_clients" => Box::pin(soft::get_acp_clients()),
         "list_background_command_activities" => Box::pin(soft::list_background_command_activities()),
 
+        // Skills
+        "get_skill_configs" => Box::pin(skills::get_skill_configs(args)),
+        "get_mode_skill_configs" => Box::pin(skills::get_mode_skill_configs(args)),
+        "get_global_skill_settings" => Box::pin(skills::get_global_skill_settings(args)),
+
         // System
         "get_system_info" => Box::pin(system::get_system_info()),
+        "get_runtime_logging_info" => Box::pin(system::get_runtime_logging_info()),
         "get_token_usage_statistics" => Box::pin(system::get_token_usage_statistics(state, args)),
 
         // Only reachable if the registry marks a command Handled without a
@@ -234,6 +244,12 @@ pub(crate) fn dispatch<'a>(
 /// cannot be advertised as runnable here without a handler (or vice versa).
 #[cfg(test)]
 pub(crate) const HANDLED_COMMANDS: &[&str] = &[
+    "btw_ask_stream",
+    "btw_cancel",
+    "get_skill_configs",
+    "get_mode_skill_configs",
+    "get_global_skill_settings",
+    "get_runtime_logging_info",
     "terminal_execute",
     "terminal_get",
     "terminal_get_shells",

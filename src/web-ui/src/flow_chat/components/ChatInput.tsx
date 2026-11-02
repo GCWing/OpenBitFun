@@ -95,6 +95,7 @@ import {
   successfulRetryCleanupTarget,
 } from './chatInputDraftRecovery';
 import { startBtwThread } from '../services/BtwThreadService';
+import { peerHostRefusalMessage } from '@/infrastructure/peer-device/peerHostRefusal';
 import { buildImagePayload } from '../utils/imagePayload';
 import {
   canRestoreQueuedMessageToComposer,
@@ -3714,6 +3715,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       selectTargetSession(childSessionId);
     } catch (e) {
       log.error('Failed to start /btw thread', { e });
+      const refusal = peerHostRefusalMessage(e, t);
+      if (refusal) notificationService.error(refusal);
       replacePendingLargePastes(originalPendingLargePastes);
       dispatchInput({ type: 'SET_VALUE', payload: originalMessage });
     }

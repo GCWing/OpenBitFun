@@ -1,4 +1,4 @@
-import type { AssistantEntry, RecentWorkspaceEntry, SessionInfo } from './RemoteSessionManager';
+import type { AssistantEntry, RecentWorkspaceEntry, SessionInfo, WorkspaceInfo } from './RemoteSessionManager';
 
 export interface WorkspaceCatalog {
   workspaces: RecentWorkspaceEntry[];
@@ -62,6 +62,24 @@ export interface WorkspaceReference {
   remote_ssh_host?: string;
 }
 
+/**
+ * Port-scoped SSH connection ids (`ssh-user@host#port`, also wrapped as
+ * `workspace-host-<encoded id>...`) name a distinct connection per port.
+ * Mirrors `ssh_connection_id_port_scope` in the Rust workspace identity owner.
+ */
+export function isPortScopedSshConnectionId(connectionId: string | null | undefined): boolean {
+  let id = (connectionId ?? '').trim();
+  if (id.startsWith('workspace-host-')) {
+    try {
+      id = decodeURIComponent(id.slice('workspace-host-'.length));
+    } catch {
+      return false;
+    }
+  }
+  const match = /^ssh-[^@]*@[^#]*#(\d+)(?:~\d+)?(?:-.*)?$/.exec(id);
+  return match !== null && Number(match[1]) <= 65535;
+}
+
 function trimmedText(value: string | null | undefined): string | undefined {
   const text = value?.trim();
   return text ? text : undefined;
@@ -123,6 +141,8 @@ export function resolveLegacyWorkspaceReference<T extends WorkspaceReference>(
   const connection = trimmedText(reference.remote_connection_id);
   const host = trimmedText(reference.remote_ssh_host);
   const matches = catalog.filter((candidate) => normalizedLegacyRoot(candidate.path) === root
+    // A reference without a connection id predates port-scoped SSH profiles.
+    && (connection || !isPortScopedSshConnectionId(candidate.remote_connection_id))
     && (!connection || candidate.remote_connection_id === connection)
     && (!host
       || (!connection && host === 'localhost')
@@ -130,8 +150,13 @@ export function resolveLegacyWorkspaceReference<T extends WorkspaceReference>(
   return matches.length === 1 ? matches[0] : undefined;
 }
 
+/** The workspace facts a session row or a `session_created` reply can carry. */
+export type SessionWorkspaceFacts = Partial<
+  Pick<SessionInfo, 'workspace_id' | 'workspace_path' | 'workspace_name' | 'workspace_identity'>
+>;
+
 /** The workspace a session claims, merged from host facts and cache provenance. */
-function sessionWorkspaceReference(session: SessionInfo): WorkspaceReference | undefined {
+function sessionWorkspaceReference(session: SessionWorkspaceFacts): WorkspaceReference | undefined {
   const provenance = session.workspace_identity;
   const workspaceId = session.workspace_id ?? provenance?.workspace_id;
   if (!provenance && !workspaceId) return undefined;
@@ -153,7 +178,7 @@ function sessionWorkspaceReference(session: SessionInfo): WorkspaceReference | u
  * local workspace being asked about.
  */
 export function sessionMatchesWorkspace(
-  session: SessionInfo,
+  session: SessionWorkspaceFacts,
   workspace: WorkspaceIdentity,
   catalog: readonly WorkspaceIdentity[] = [],
 ): boolean {
@@ -233,4 +258,148 @@ export function workspaceDisplayName(
   const basename = root.split('/').pop()?.trim() ?? '';
   if (basename) return basename;
   return remoteSshHost?.trim() || remoteConnectionId?.trim() || 'Workspace';
+}
+
+/** Claw sessions run in an assistant workspace, which is never a project checkout. */
+export function isClawAgent(agentType: string): boolean {
+  return agentType === 'claw' || agentType === 'Claw';
+}
+
+/**
+ * The workspace a session belongs to, captured when the session is opened. Every
+ * field is optional because pre-ID hosts and old navigation records omit them.
+ */
+export interface SessionWorkspaceContext extends WorkspaceReference {
+  name?: string;
+  workspace_kind?: RecentWorkspaceEntry['workspace_kind'];
+}
+
+export function workspaceContext(workspace: WorkspaceReference & {
+  name?: string;
+  project_name?: string;
+  workspace_kind?: RecentWorkspaceEntry['workspace_kind'];
+}): SessionWorkspaceContext {
+  return {
+    workspace_id: workspace.workspace_id,
+    path: workspace.path,
+    remote_connection_id: workspace.remote_connection_id,
+    remote_ssh_host: workspace.remote_ssh_host,
+    name: workspace.name ?? workspace.project_name,
+    workspace_kind: workspace.workspace_kind,
+  };
+}
+
+/**
+ * Merge a session's own facts with the workspace row that owns it. The session
+ * decides identity because the host pinned it; the owner supplies the display
+ * name and kind, since `workspace_name` is only the workspace's root label.
+ */
+export function sessionWorkspaceContext(
+  session: SessionWorkspaceFacts,
+  owner?: SessionWorkspaceContext,
+): SessionWorkspaceContext | undefined {
+  const provenance = session.workspace_identity;
+  const context: SessionWorkspaceContext = {
+    workspace_id: session.workspace_id ?? provenance?.workspace_id ?? owner?.workspace_id,
+    path: provenance?.path || session.workspace_path || owner?.path,
+    remote_connection_id: provenance?.remote_connection_id ?? owner?.remote_connection_id,
+    remote_ssh_host: provenance?.remote_ssh_host ?? owner?.remote_ssh_host,
+    name: owner?.name ?? session.workspace_name,
+    workspace_kind: owner?.workspace_kind,
+  };
+  return context.workspace_id || context.path || context.name ? context : undefined;
+}
+
+/** For a selection that may have moved on: its display facts apply only if it owns the session. */
+export function selectedSessionWorkspaceContext(
+  session: SessionWorkspaceFacts,
+  selection?: SessionWorkspaceContext,
+): SessionWorkspaceContext | undefined {
+  return sessionWorkspaceContext(
+    session,
+    selection?.path && sessionMatchesWorkspace(session, { ...selection, path: selection.path })
+      ? selection
+      : undefined,
+  );
+}
+
+export interface ChatHeaderContext {
+  workspaceName: string;
+  gitBranch?: string;
+}
+
+/**
+ * Header facts for one session. The store's current workspace and assistant are
+ * selections, not the session's owner: they only contribute when they are the
+ * same workspace. A branch is known only for the current workspace, and an
+ * unattributed non-assistant session shows nothing rather than a guess.
+ */
+export function resolveChatHeaderContext({
+  agentType,
+  session: sessionContext,
+  currentWorkspace,
+  currentAssistant,
+  assistantLabel,
+}: {
+  agentType: string;
+  session?: SessionWorkspaceContext;
+  currentWorkspace?: WorkspaceInfo | null;
+  currentAssistant?: AssistantEntry | null;
+  assistantLabel: string;
+}): ChatHeaderContext {
+  // Older hosts mark local records with sshHost=localhost, so compare both sides routed.
+  const session = sessionContext && normalizeWorkspaceRouting(sessionContext);
+  const sessionIsCurrentAssistant = sameWorkspace(session, currentAssistant);
+  if (isClawAgent(agentType) || session?.workspace_kind === 'assistant' || sessionIsCurrentAssistant) {
+    const selectedAssistant = !session || sessionIsCurrentAssistant ? currentAssistant : undefined;
+    return { workspaceName: selectedAssistant?.name.trim() || session?.name?.trim() || assistantLabel };
+  }
+  if (!session) return { workspaceName: '' };
+  const current = currentWorkspace && sameWorkspace(session, normalizeWorkspaceRouting(currentWorkspace))
+    ? currentWorkspace
+    : undefined;
+  return {
+    workspaceName: workspaceDisplayName(
+      current?.project_name || session.name,
+      session.path,
+      session.remote_ssh_host,
+      session.remote_connection_id,
+    ),
+    gitBranch: current?.git_branch,
+  };
+}
+
+function hasRemoteRouting(workspace: {
+  workspace_kind?: string; remote_connection_id?: string; remote_ssh_host?: string;
+}): boolean {
+  const routed = normalizeWorkspaceRouting(workspace);
+  return routed.workspace_kind === 'remote'
+    || Boolean(routed.remote_connection_id)
+    || Boolean(routed.remote_ssh_host);
+}
+
+/**
+ * Whether the open session may run on an SSH workspace, which keeps rollback off.
+ * Only Claw/assistant or explicit routing facts on the session can decide alone.
+ * A path-only context (for example an old cached row) is unknown, so it stays
+ * remote if the selected workspace is remote or a known workspace with the same
+ * ID or root is remote.
+ */
+export function isRemoteSessionWorkspace(
+  agentType: string,
+  session: SessionWorkspaceContext | undefined,
+  currentWorkspace: WorkspaceInfo | null | undefined,
+  knownWorkspaces: readonly RecentWorkspaceEntry[] = [],
+): boolean {
+  if (isClawAgent(agentType) || session?.workspace_kind === 'assistant') return false;
+  if (session && (session.workspace_kind || session.remote_connection_id || session.remote_ssh_host)) {
+    return hasRemoteRouting(session);
+  }
+  if (currentWorkspace && hasRemoteRouting(currentWorkspace)) return true;
+  if (!session) return false;
+  const root = normalizedLegacyRoot(session.path);
+  return knownWorkspaces.some((workspace) => hasRemoteRouting(workspace) && (
+    (Boolean(session.workspace_id) && workspace.workspace_id === session.workspace_id)
+    || (Boolean(root) && normalizedLegacyRoot(workspace.path) === root)
+  ));
 }

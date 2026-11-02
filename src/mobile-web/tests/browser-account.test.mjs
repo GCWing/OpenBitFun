@@ -59,6 +59,64 @@ test('assistant workspace plus creates a session whose first message reaches the
  } finally {await browser.close();await server.close();}
 });
 
+test('chat header follows the session workspace, not the selected project and branch', { timeout: 60000 }, async () => {
+ const server=await startSourceServer();const browser=await launchBrowser();
+ try {
+  for(const width of [390,1280]) {
+   const context=await browser.createIncognitoBrowserContext();
+   try {
+    const page=await context.newPage();await page.setViewport({width,height:844});await page.goto(server.origin);
+    await page.evaluate(async()=>{
+     const {mountAssistantSessionFixture}=await import('/tests/fixtures/assistant-session.tsx');
+     window.assistantFixture=await mountAssistantSessionFixture({selectedProject:true});
+    });
+    const headerText=async()=>{
+     await page.waitForSelector('.chat-page__input');
+     await page.waitForFunction(()=>Boolean(document.querySelector('.chat-page__workspace-name')?.textContent));
+     return page.evaluate(()=>({
+      workspace:document.querySelector('.chat-page__workspace-name').textContent,
+      branch:document.querySelector('.chat-page__workspace-branch')?.textContent??null,
+     }));
+    };
+    const backToList=async()=>{
+     await page.evaluate(()=>document.querySelector('.chat-page__back').click());
+     await page.waitForSelector('.harmony-sidebar__workspace-group');
+    };
+    const openSession=async(workspace,sessionName)=>{
+     await page.waitForFunction(workspace=>[...document.querySelectorAll('.harmony-sidebar__workspace-main')]
+      .some(node=>node.textContent.includes(workspace)),{},workspace);
+     await page.evaluate((workspace,sessionName)=>{
+      const group=[...document.querySelectorAll('.harmony-sidebar__workspace-group')]
+       .find(node=>node.querySelector('.harmony-sidebar__workspace-main').textContent.includes(workspace));
+      const open=[...group.querySelectorAll('.harmony-sidebar__session-main')].some(node=>node.textContent.includes(sessionName));
+      if(!open)group.querySelector('.harmony-sidebar__workspace-main').click();
+     },workspace,sessionName);
+     await page.waitForFunction(sessionName=>[...document.querySelectorAll('.harmony-sidebar__session-main')]
+      .some(node=>node.textContent.includes(sessionName)),{},sessionName);
+     await page.evaluate(sessionName=>[...document.querySelectorAll('.harmony-sidebar__session-main')]
+      .find(node=>node.textContent.includes(sessionName)).click(),sessionName);
+    };
+    // New assistant session while the host has `home / master` selected.
+    await page.waitForSelector('button[aria-label="Assistant · New Session"]');
+    await page.click('button[aria-label="Assistant · New Session"]');
+    assert.deepEqual(await headerText(),{workspace:'Assistant',branch:null});
+    await backToList();
+    // Existing assistant session opened from its catalog row.
+    await openSession('Assistant','New Session');
+    assert.deepEqual(await headerText(),{workspace:'Assistant',branch:null});
+    await backToList();
+    // The selected project keeps its branch.
+    await openSession('home','home session');
+    assert.deepEqual(await headerText(),{workspace:'home',branch:'master'});
+    await backToList();
+    // Another project shows its own name and no unknown branch.
+    await openSession('api','api session');
+    assert.deepEqual(await headerText(),{workspace:'api',branch:null});
+   } finally {await context.close();}
+  }
+ } finally {await browser.close();await server.close();}
+});
+
 test('pre-fix assistant outbox retries with its original ID, content and attachments after reopening', { timeout: 60000 }, async () => {
  const server=await startSourceServer();const browser=await launchBrowser();
  try {
