@@ -459,11 +459,18 @@
     text-overflow: clip;
   }
 
+  /**
+   * The folder name owns the row; the remote chip is secondary metadata. It may
+   * shrink to an ellipsis (full details stay in its tooltip) and never takes
+   * more than a bounded share of the row.
+   */
   &__workspace-item-remote {
     display: inline-flex;
     align-items: center;
     gap: var(--openbitfun-space-2);
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 45%;
     margin-left: auto;
     min-height: 24px;
     padding: 0 var(--openbitfun-space-2);
@@ -476,11 +483,6 @@
     transition:
       background var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
       color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
-    &.is-connected {
-      background: var(--openbitfun-color-status-success-surface);
-      color: var(--openbitfun-color-status-success-content);
-    }
 
     &.is-error,
     &.is-disconnected {
@@ -495,8 +497,11 @@
   }
 
   &__workspace-item-remote-host {
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
     white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   &__workspace-item-remote-status {

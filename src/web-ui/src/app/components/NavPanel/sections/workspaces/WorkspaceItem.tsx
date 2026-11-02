@@ -55,6 +55,7 @@ import type { AcpClientInfo } from '@/infrastructure/api/service-api/ACPClientAP
 import { loadWorkspaceAcpMenuClients } from './workspaceAcpMenuClients';
 import WorkspaceAcpSessionSubmenu from './WorkspaceAcpSessionSubmenu';
 import SessionsSection from '../sessions/SessionsSection';
+import { remoteWorkspaceBadge, type RemoteWorkspaceBadge } from './remoteWorkspaceBadge';
 import { useWorkspaceSessionViewStore } from '../../workspaceSessionView';
 import {
   WorkspaceKind,
@@ -93,6 +94,8 @@ function containsWorkspaceNameControlCharacter(value: string): boolean {
 
 interface WorkspaceItemProps {
   workspace: WorkspaceInfo;
+  /** Compact remote badge computed across opened workspaces; derived locally when absent. */
+  remoteBadge?: RemoteWorkspaceBadge;
   isActive: boolean;
   isSelected: boolean;
   isSingle?: boolean;
@@ -106,6 +109,7 @@ interface WorkspaceItemProps {
 
 const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
   workspace,
+  remoteBadge,
   isActive,
   isSelected,
   isSingle = false,
@@ -271,17 +275,14 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
     const statusLabel = t(`nav.workspaces.remote.status.${status}`, {
       defaultValue: t('nav.workspaces.remote.status.unknown'),
     });
-    const connectionLabel =
-      workspace.connectionName?.trim()
-      || workspace.sshHost?.trim()
-      || workspace.connectionId?.trim()
-      || '';
-    const hostLabel = workspace.sshHost?.trim() || connectionLabel;
+    const badge = remoteBadge ?? remoteWorkspaceBadge(workspace);
+    const connectionLabel = badge?.connection ?? '';
+    const hostLabel = badge?.host || connectionLabel;
 
     return {
       status,
       statusLabel,
-      connectionLabel,
+      badgeLabel: badge?.label ?? connectionLabel,
       /** A green dot already reads as "fine"; spell out only the states that need attention. */
       showStatusText: status !== 'connected',
       tooltip: t('nav.workspaces.remote.tooltip', {
@@ -295,11 +296,10 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
       }),
     };
   }, [
+    remoteBadge,
     remoteConnStatus,
     t,
-    workspace.connectionId,
-    workspace.connectionName,
-    workspace.sshHost,
+    workspace,
     workspaceIsRemote,
   ]);
 
@@ -1318,7 +1318,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                       aria-hidden="true"
                     />
                     <span className="openbitfun-nav-panel__workspace-item-remote-host">
-                      {remoteMeta.connectionLabel}
+                      {remoteMeta.badgeLabel}
                     </span>
                     {remoteMeta.showStatusText ? (
                       <span className="openbitfun-nav-panel__workspace-item-remote-status">

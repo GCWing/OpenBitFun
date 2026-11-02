@@ -6,6 +6,7 @@ import { useContentResourceStore } from '@/app/workbench/contentResourceStore';
 import { getActiveSurfaceId, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { notificationService } from '@/shared/notification-system';
 import WorkspaceItem from './WorkspaceItem';
+import { remoteWorkspaceBadges } from './remoteWorkspaceBadge';
 import SessionViewTransition from './SessionViewTransition';
 import SessionsSection, { type WorkspaceSessionScope } from '../sessions/SessionsSection';
 import { useWorkspaceSessionViewStore } from '../../workspaceSessionView';
@@ -51,6 +52,8 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
     activeWorkspaceId,
     reorderOpenedWorkspacesInSection,
   } = useWorkspaceContext();
+  // Remote badges are compared across every opened workspace so equal compact labels expand.
+  const remoteBadges = useMemo(() => remoteWorkspaceBadges(openedWorkspacesList), [openedWorkspacesList]);
   const [draggedWorkspaceId, setDraggedWorkspaceId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{
     workspaceId: string;
@@ -320,6 +323,7 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant, sc
       >
         <WorkspaceItem
           workspace={workspace}
+          remoteBadge={remoteBadges.get(workspace.id)}
           isActive={isActive}
           isSelected={isSelected}
           isSingle={!draggable}
