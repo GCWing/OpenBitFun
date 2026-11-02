@@ -26,6 +26,7 @@ export interface ConversationIntentDispatcherHooks {
   readonly openFilePreview: (route: AppRoute, request: FilePreviewRequest) => void;
   readonly downloadFile: (path: string) => void;
   readonly buildPlan: (path: string, name: string) => Promise<void>;
+  readonly branchExpanded: (branchId: string) => void;
   /**
    * Run one staged rollback against the host.
    *
@@ -81,6 +82,7 @@ export class ConversationIntentDispatcher {
           void this.hooks.buildPlan(intent.planBuildRequest.path, intent.planBuildRequest.name);
         }
         return;
+      case ConversationIntentType.BranchExpanded: this.hooks.branchExpanded(intent.toolId); return;
       case ConversationIntentType.RollbackSession:
         if (intent.rollbackRequest) void this.hooks.rollback(intent.rollbackRequest); return;
       case ConversationIntentType.RollbackResync: void this.hooks.rollbackResync(); return;

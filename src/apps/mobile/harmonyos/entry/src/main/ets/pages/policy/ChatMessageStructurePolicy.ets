@@ -188,19 +188,22 @@ export class ChatMessageStructurePolicy {
    * Rebuilds the branch hierarchy carried by the remote wire format.
    *
    * Live snapshots are intentionally flat and mark child-agent records with
-   * `is_subagent`. The parent UI must attach those records to the Task that
-   * owns them before grouping ordinary transcript activity. Older desktop
-   * builds did not emit the marker, so while a Task is running we use the same
-   * conservative fallback as mobile web and scope its following process items.
+   * `is_subagent`. The parent UI must attach those records to the tool entry
+   * that launched the child before grouping ordinary transcript activity.
+   * Older desktop builds did not emit the marker, so while a legacy `Task` is
+   * running we use the same conservative fallback as mobile web and scope its
+   * following process items.
    *
-   * A Task's children can arrive nested in its own items and again flat behind
-   * it, so folding the restatement would draw every child twice. A counted
-   * restatement is skipped, and a child that legitimately repeats survives.
+   * A branch owner can arrive with its children nested in its own items —
+   * which is how this client hands a child stream's records to the card — and
+   * the same child can be restated flat behind it, so folding the restatement
+   * would draw every child twice. A counted restatement is skipped, and a child
+   * that legitimately repeats survives.
    *
-   * A marked record with no owning Task in this list — a partial snapshot, or a
-   * child that arrived before its Task — keeps its own collapsed branch rather
-   * than being dropped, because the process it carries is exactly what the
-   * reader opened the branch to see.
+   * A marked record with no owning owner entry in this list — a partial
+   * snapshot, or a child that arrived before its launch — keeps its own
+   * collapsed branch rather than being dropped, because the process it carries
+   * is exactly what the reader opened the branch to see.
    */
   static scopeSubagentItems(items: ConversationUiMessageItem[]): ConversationUiMessageItem[] {
     const result: ConversationUiMessageItem[] = [];
@@ -225,6 +228,7 @@ export class ChatMessageStructurePolicy {
         return;
       }
       if (!hasSubagentMarkers && currentTask &&
+        ChatMessageStructurePolicy.isLegacyUnmarkedTaskOwner(currentTask) &&
         ChatMessageStructurePolicy.isRunningTaskEntry(currentTask) &&
         ChatMessageStructurePolicy.isLegacySubagentProcessEntry(entry)) {
         ChatMessageStructurePolicy.appendScopedChild(currentTask, carried, entry);
@@ -464,15 +468,44 @@ export class ChatMessageStructurePolicy {
   }
 
   /**
-   * The Task tool entry that owns a subagent branch.
+   * Normalized names of the tool calls that launch a child agent.
    *
-   * A Task entry may carry the subagent marker as well: the host records the
-   * child Session id on the Task tool item, and the remote wire maps that field
-   * onto `is_subagent`. The marker therefore means "this Task owns a subagent",
-   * not "this entry is subagent output", so it must not disqualify the owner —
-   * otherwise no Task ever opens a branch and every flat child record is lost.
+   * `Task` is the delegation tool older desktops used; the current delegation
+   * tool is `AgentSpawn`. Both own a branch, and mobile web accepts both names
+   * for the same reason. A plain tool row must never be mistaken for one of
+   * these, so the list stays explicit instead of matching a prefix or a
+   * contains-rule.
+   */
+  private static isOwnerTool(tool: ConversationUiToolStatus): boolean {
+    const name = ToolStatusPresentationPolicy.normalizedName(tool);
+    return name === 'task' || name === 'agentspawn';
+  }
+
+  /**
+   * The tool entry that owns a subagent branch.
+   *
+   * An owner entry may carry the subagent marker as well: the host records the
+   * child Session id on the launching tool item, and the remote wire maps that
+   * field onto `is_subagent`. The marker therefore means "this item owns a
+   * subagent", not "this entry is subagent output", so it must not disqualify
+   * the owner — otherwise no launch ever opens a branch and every record of its
+   * child is lost or drawn as an orphan branch beside it.
    */
   private static isParentTaskEntry(entry: ConversationUiMessageItem): boolean {
+    return !!entry.tool && ChatMessageStructurePolicy.isOwnerTool(entry.tool);
+  }
+
+  /**
+   * Whether an unmarked owner may claim the process records that follow it.
+   *
+   * This is the compatibility path for older desktops, which ran a `Task`
+   * subagent inside the parent's own stream and published its process records
+   * flat and unmarked. Only `Task` ever used it. `AgentSpawn` was introduced
+   * with hidden child sessions, so the records that follow a launch are the
+   * parent's own work; folding them into the launch item would indent the
+   * parent's transcript under it.
+   */
+  private static isLegacyUnmarkedTaskOwner(entry: ConversationUiMessageItem): boolean {
     return !!entry.tool && ToolStatusPresentationPolicy.normalizedName(entry.tool) === 'task';
   }
 
@@ -542,12 +575,15 @@ export class ChatMessageStructurePolicy {
     // A marked record that already carries children is a branch of its own, not
     // an internal tool of some other branch.
     if (!!entry.subItems && entry.subItems.length > 0) return false;
-    return entry.is_subagent === true && !!entry.tool &&
-      ToolStatusPresentationPolicy.normalizedName(entry.tool) !== 'task';
+    // A launch item is a branch too, even before its child has published
+    // anything. Dropping it while its branch is empty would make the card the
+    // reader just opened disappear and reappear as the child's first step lands.
+    if (!!entry.tool && ChatMessageStructurePolicy.isOwnerTool(entry.tool)) return false;
+    return entry.is_subagent === true && !!entry.tool;
   }
 
   static subagentTitle(entry: ConversationUiMessageItem): string {
-    const taskTool = !!entry.tool && ToolStatusPresentationPolicy.normalizedName(entry.tool) === 'task';
+    const taskTool = !!entry.tool && ChatMessageStructurePolicy.isOwnerTool(entry.tool);
     if (entry.tool && taskTool) {
       const title = ChatMessageStructurePolicy.subagentTaskTitle(entry.tool);
       if (title.length > 0) return title;
@@ -561,7 +597,7 @@ export class ChatMessageStructurePolicy {
   }
 
   static subagentBody(entry: ConversationUiMessageItem): string {
-    if (entry.tool && ToolStatusPresentationPolicy.normalizedName(entry.tool) === 'task') return '';
+    if (entry.tool && ChatMessageStructurePolicy.isOwnerTool(entry.tool)) return '';
     const content = ChatMessageStructurePolicy.plainSubagentLabel(entry.content || '');
     if (content.length === 0 || content === ChatMessageStructurePolicy.subagentTitle(entry)) return '';
     return content;

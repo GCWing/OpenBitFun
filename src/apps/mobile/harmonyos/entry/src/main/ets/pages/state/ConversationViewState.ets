@@ -22,6 +22,7 @@ import { AppRoute } from '../navigation/AppRouteContract';
 import { ConversationCoreState } from './ConversationCoreState';
 import { GeneralChatPageState } from './GeneralChatPageState';
 import { RemotePageState } from './RemotePageState';
+import { SubagentBranchExpansionState } from './SubagentBranchExpansionState';
 import { RollbackEntryFacts } from '../policy/RollbackPresentationPolicy';
 
 /** Immutable presentation state consumed by ConversationView. */
@@ -54,6 +55,11 @@ export class ConversationViewState {
   selectedImages: ConversationUiSelectedImage[] = [];
   isVoiceListening: boolean = false;
   chatInput: string = '';
+  /**
+   * Disclosure of the conversation's delegation cards; the projection carries the
+   * owner's instance so a card the reader opened stays open across repaints.
+   */
+  subagentBranches: SubagentBranchExpansionState = new SubagentBranchExpansionState();
   promptSuggestion: string = '';
   /**
    * The facts a tap on the rollback entry is judged with.
@@ -146,6 +152,7 @@ export class ConversationViewState {
     state.selectedImages = core.selectedImages.map((image) => toConversationUiSelectedImage(image));
     state.isVoiceListening = core.isVoiceListening;
     state.chatInput = core.chatInput;
+    state.subagentBranches = core.subagentBranches;
     state.promptSuggestion = core.promptSuggestion;
     return state;
   }
