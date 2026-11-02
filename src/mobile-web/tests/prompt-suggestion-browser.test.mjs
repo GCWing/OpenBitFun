@@ -10,14 +10,17 @@ async function assertSuggestionFits(page, selector) {
     const label = node.querySelector('[data-openbitfun-part="label"]').getBoundingClientRect();
     const icon = node.querySelector('[data-openbitfun-part="trailing"]').getBoundingClientRect();
     const composer = document.querySelector('.chat-page__composer').getBoundingClientRect();
+    const send = document.querySelector('[data-testid="chat-prompt-suggestion-send"]').getBoundingClientRect();
     return {
-      button: button.toJSON(), label: label.toJSON(), icon: icon.toJSON(), composer: composer.toJSON(),
+      button: button.toJSON(), label: label.toJSON(), icon: icon.toJSON(), composer: composer.toJSON(), send: send.toJSON(),
       scrollWidth: node.scrollWidth, clientWidth: node.clientWidth,
     };
   });
   assert.ok(bounds.label.width > 0, 'the suggestion label needs its own constrained layout box');
   assert.ok(bounds.button.left >= bounds.composer.left - 1);
   assert.ok(bounds.button.right <= bounds.composer.right + 1);
+  assert.ok(bounds.send.width > 0 && bounds.send.left >= bounds.button.right, 'send must stay separate from accept');
+  assert.ok(bounds.send.right <= bounds.composer.right + 1, 'the send control must also fit the composer');
   assert.ok(bounds.label.left >= bounds.button.left);
   assert.ok(bounds.label.right <= bounds.icon.left);
   assert.ok(bounds.icon.right < bounds.button.right, 'the acceptance icon must remain inside the button');
@@ -128,5 +131,65 @@ test('the trailing control sends a suggestion without touching the draft', { tim
       '',
       'a one-tap send must not fill the draft',
     );
+  } finally { await browser.close(); await server.close(); }
+});
+
+test('one-tap suggestions use the real chat queue and preserve drafts across acknowledgements and errors', { timeout: 60_000 }, async () => {
+  const server = await startSourceServer();
+  const browser = await launchBrowser();
+  try {
+    for (const fails of [false, true]) {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 390, height: 844 });
+      await page.goto(server.origin);
+      await page.evaluate(async () => {
+        const { mountAssistantSessionFixture } = await import('/tests/fixtures/assistant-session.tsx');
+        window.chat = await mountAssistantSessionFixture({ openChat: true, holdSubmissions: true });
+      });
+      await page.waitForFunction(() => window.chat.ready());
+      await page.evaluate(() => {
+        const { sessionId } = window.chat;
+        window.chat.event({ event: 'session-record', session_id: sessionId, payload: {
+          sessionId, id: 'turn/first', revision: 1,
+          turn: { turnId: 'first', sessionId, turnIndex: 0, status: 'completed', timestamp: 1,
+            userMessage: { id: 'user-1', content: 'Review', timestamp: 1 } },
+        } });
+        window.chat.event({ event: 'agentic://prompt-suggestion', session_id: sessionId,
+          payload: { sessionId, sourceTurnId: 'first', suggestion: 'Run the tests' } });
+      });
+      const send = '[data-testid="chat-prompt-suggestion-send"]';
+      await page.waitForSelector(send);
+      assert.equal(await page.evaluate(() => window.chat.calls.filter(call => call.request?.action === 'submit').length), 0);
+      await page.click(send);
+      await page.waitForFunction(() => window.chat.calls.some(call => call.request?.action === 'submit'));
+      const submissions = await page.evaluate(() => window.chat.calls.filter(call => call.request?.action === 'submit'));
+      assert.equal(submissions.length, 1);
+      assert.equal(submissions[0].request.message.content, 'Run the tests');
+      assert.equal(submissions[0].request.message.agentType, 'Claw');
+      assert.equal(submissions[0].device, 'assistant-mode-host');
+      assert.equal(await page.$eval('textarea', node => node.value), '');
+      await page.waitForSelector(send, { hidden: true });
+      if (!fails) await page.type('textarea', 'Keep this newer draft');
+      await page.evaluate(fails => window.chat.completeSubmission(fails ? 'Suggestion submission failed' : undefined), fails);
+      if (fails) {
+        await page.waitForFunction(() => document.body.textContent.includes('Suggestion submission failed'));
+        await page.waitForSelector(send);
+        assert.equal(await page.evaluate(() => window.chat.receipts.size), 0);
+        assert.equal(await page.$eval('textarea', node => node.value), '');
+      } else {
+        await page.waitForFunction(() => window.chat.receipts.size === 1);
+        assert.equal(await page.$eval('textarea', node => node.value), 'Keep this newer draft');
+        // Clear the newer draft: an acknowledged suggestion must not return.
+        await page.$eval('textarea', node => {
+          Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(node, '');
+          node.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        assert.equal(await page.$(send), null);
+      }
+      assert.equal(await page.evaluate(() => window.chat.calls.filter(call => call.request?.action === 'submit').length), 1);
+      await page.evaluate(() => window.chat.dispose());
+      await page.close();
+    }
   } finally { await browser.close(); await server.close(); }
 });
