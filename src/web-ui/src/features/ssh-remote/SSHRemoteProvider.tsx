@@ -385,6 +385,9 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
           };
         } else if (savedConn.authType.type === 'KeyboardInteractive') {
           return false;
+        } else if (savedConn.authType.type === 'None') {
+          // Nothing to supply: the endpoint authenticates the transport for us.
+          authMethod = { type: 'None' };
         } else {
           // Caller must only invoke password reconnect when vault has a password (see checkRemoteWorkspace).
           authMethod = { type: 'Password', password: '' };
@@ -399,6 +402,7 @@ export const SSHRemoteProvider: React.FC<SSHRemoteProviderProps> = ({ children }
           auth: authMethod,
           defaultWorkspace: savedConn.defaultWorkspace,
           proxyJump: savedConn.proxyJump,
+          proxyCommand: savedConn.proxyCommand,
           container: savedConn.container,
           wsl: savedConn.wsl,
           options: savedConn.options,

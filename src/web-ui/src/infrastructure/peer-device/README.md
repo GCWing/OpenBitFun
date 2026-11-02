@@ -276,6 +276,9 @@ listener alone recovers an interaction emitted before attachment.
     before RPC. Missing capability means unsupported, including older Desktop
     and CLI peers. Discovery reports the host's OS availability; it must never
     inspect or execute the controller's WSL installation as a fallback.
+    `ssh_none_auth_v1` gates SSH profile requests with `auth.type === 'None'`
+    the same way; an older host cannot parse that method, so controllers reject
+    the request before RPC and keep the record unchanged.
 
 19. **Session copying needs an explicitly negotiated request contract.**
     `whole_session_copy_v1` enables the dedicated `copy_session` command.
