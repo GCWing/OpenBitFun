@@ -129,7 +129,7 @@ const WorkspaceSessionFilterMenu: React.FC = () => {
       kind: 'single', value: view.ordering, options: ['updated', 'status', 'created', 'name'] as WorkspaceSessionOrdering[], choose: value => view.setOrdering(value as WorkspaceSessionOrdering),
     },
     show: {
-      kind: 'single', value: view.show, options: ['all', 'unread', 'attention'] as WorkspaceSessionShow[], choose: value => view.setShow(value as WorkspaceSessionShow),
+      kind: 'single', value: view.show, options: ['all', 'unread', 'attention', 'archived'] as WorkspaceSessionShow[], choose: value => view.setShow(value as WorkspaceSessionShow),
     },
     status: {
       filter: 'hiddenStatuses',
