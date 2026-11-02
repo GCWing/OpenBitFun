@@ -219,7 +219,10 @@ const AppContent: React.FC = () => {
   // Pop navigation handlers that can be called from both UI buttons and popstate
   const doPopFromChat = useCallback(() => {
     navigateTo('sessions', 'pop');
-    setTimeout(() => setActiveSessionId(null), NAV_DURATION);
+    setTimeout(() => {
+      setActiveSessionId(null);
+      setActiveSessionWorkspace(undefined);
+    }, NAV_DURATION);
   }, [navigateTo]);
 
   const doPopFromWorkspace = useCallback(() => {
@@ -307,7 +310,10 @@ const AppContent: React.FC = () => {
 
   const handleBackToSessions = useCallback(() => {
     navigateTo('sessions', 'pop');
-    setTimeout(() => setActiveSessionId(null), NAV_DURATION);
+    setTimeout(() => {
+      setActiveSessionId(null);
+      setActiveSessionWorkspace(undefined);
+    }, NAV_DURATION);
   }, [navigateTo]);
 
   const handleControlTargetChanged = useCallback(() => {

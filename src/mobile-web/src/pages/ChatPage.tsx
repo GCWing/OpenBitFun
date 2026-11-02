@@ -23,6 +23,7 @@ import {
 } from '../services/chatImageAttachments';
 import { useMobileStore } from '../services/store';
 import {
+  isRemoteSessionWorkspace,
   resolveChatHeaderContext,
   sessionWorkspaceContext,
   type SessionWorkspaceContext,
@@ -1163,17 +1164,16 @@ const ChatPage: React.FC<ChatPageProps> = ({
 
   // Restored navigation from an older build has no workspace; the loaded session row may.
   const listedSession = sessionWorkspace ? undefined : sessions.find((session) => session.session_id === sessionId);
+  const sessionContext = sessionWorkspace ?? (listedSession && sessionWorkspaceContext(listedSession));
   const { workspaceName, gitBranch } = resolveChatHeaderContext({
     agentType: sessionAgentType,
-    session: sessionWorkspace ?? (listedSession && sessionWorkspaceContext(listedSession)),
+    session: sessionContext,
     currentWorkspace,
     currentAssistant,
     assistantLabel: t('shared.agents.Claw'),
   });
   const displayName = liveTitle || sessionName || t('chat.session');
-  const isRemoteWorkspace = currentWorkspace?.workspace_kind === 'remote'
-    || Boolean(currentWorkspace?.remote_connection_id)
-    || Boolean(currentWorkspace?.remote_ssh_host);
+  const isRemoteWorkspace = isRemoteSessionWorkspace(sessionAgentType, sessionContext, currentWorkspace);
 
   return (
     <div className={`chat-page${wideLayout ? ' chat-page--wide' : ''}`} style={{ '--chat-composer-height': `${composerHeight}px` } as React.CSSProperties}>

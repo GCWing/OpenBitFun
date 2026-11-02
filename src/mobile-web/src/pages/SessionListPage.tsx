@@ -65,11 +65,13 @@ import { deviceFailurePresentation } from '../services/deviceFailureCopy';
 import {
   isClawAgent,
   sameWorkspace,
+  selectedSessionWorkspaceContext,
   sessionMatchesWorkspace,
   sessionWorkspaceContext,
   workspaceContext,
   workspaceIdentityKey,
   type SessionWorkspaceContext,
+  type SessionWorkspaceFacts,
   type WorkspaceReference,
 } from '../services/workspaceIdentity';
 import { useTheme } from '../theme';
@@ -144,19 +146,15 @@ function commandIdentity(
   };
 }
 
-function createdSessionWorkspace(
-  path: string,
-  identity: RemoteWorkspaceIdentity,
-  owner?: SessionWorkspaceContext,
-): SessionWorkspaceContext | undefined {
-  return sessionWorkspaceContext({
+function createdSessionFacts(path: string, identity: RemoteWorkspaceIdentity): SessionWorkspaceFacts {
+  return {
     workspace_id: identity.workspaceId,
     workspace_path: path,
     workspace_identity: {
       remote_connection_id: identity.remoteConnectionId,
       remote_ssh_host: identity.remoteSshHost,
     },
-  }, owner);
+  };
 }
 
 function assistantIdentity(assistant: AssistantEntry | null | undefined): RemoteWorkspaceIdentity {
@@ -458,13 +456,9 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     return currentWorkspace ? workspaceContext(currentWorkspace) : undefined;
   }, [currentAssistant, currentWorkspace, displayMode]);
 
-  const listedSessionWorkspace = useCallback((session: SessionInfo) => {
-    const owner = listWorkspaceOwner;
-    return sessionWorkspaceContext(
-      session,
-      owner?.path && sessionMatchesWorkspace(session, { ...owner, path: owner.path }) ? owner : undefined,
-    );
-  }, [listWorkspaceOwner]);
+  const listedSessionWorkspace = useCallback((session: SessionInfo) => (
+    selectedSessionWorkspaceContext(session, listWorkspaceOwner)
+  ), [listWorkspaceOwner]);
 
   const handleSessionClick = useCallback((s: SessionInfo, e: React.MouseEvent, owner?: RecentWorkspaceEntry) => {
     if (longPressTriggeredRef.current) {
@@ -1069,7 +1063,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
         workspaceIdentity: createdIdentity,
         replaceWorkspace: true,
       });
-      onSelectSession(created.session_id, t(isClawAgent(agentType) ? 'sessions.remoteClawSession' : isCoworkAgent(agentType) ? 'sessions.remoteCoworkSession' : 'sessions.remoteCodeSession'), true, agentType, createdSessionWorkspace(createdPath, createdIdentity, workspaceContext(workspace)));
+      onSelectSession(created.session_id, t(isClawAgent(agentType) ? 'sessions.remoteClawSession' : isCoworkAgent(agentType) ? 'sessions.remoteCoworkSession' : 'sessions.remoteCodeSession'), true, agentType, sessionWorkspaceContext(createdSessionFacts(createdPath, createdIdentity), workspaceContext(workspace)));
     } catch (error: unknown) {
       if (isSessionListCurrent(targetEpoch) && !isRemoteControlTargetChangedError(error)) {
         setError(describeRemoteError(error, t));
@@ -1476,7 +1470,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
         : isCoworkAgent(agentType)
           ? t('sessions.remoteCoworkSession')
           : t('sessions.remoteCodeSession');
-      onSelectSession(created.session_id, label, true, agentType, createdSessionWorkspace(createdPath, createdIdentity, listWorkspaceOwner));
+      onSelectSession(created.session_id, label, true, agentType, selectedSessionWorkspaceContext(createdSessionFacts(createdPath, createdIdentity), listWorkspaceOwner));
     } catch (e: any) {
       if (isSessionListCurrent(targetEpoch) && !isRemoteControlTargetChangedError(e)) {
         setError(describeRemoteError(e, t));

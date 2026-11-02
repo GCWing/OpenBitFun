@@ -10,7 +10,8 @@ const code = ts.transpileModule(source, {
 const {
   mergeWorkspaceSessions, sessionMatchesWorkspace, workspaceIdentityKey,
   resolveLegacyWorkspaceReference, sameWorkspace,
-  isClawAgent, resolveChatHeaderContext, sessionWorkspaceContext, workspaceContext,
+  isClawAgent, isRemoteSessionWorkspace, resolveChatHeaderContext, selectedSessionWorkspaceContext,
+  sessionWorkspaceContext, workspaceContext,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 );
@@ -533,4 +534,64 @@ test('session workspace context keeps host identity and takes only display facts
   assert.equal(isClawAgent('claw'), true);
   assert.equal(isClawAgent('Claw'), true);
   assert.equal(isClawAgent('Cowork'), false);
+});
+
+test('localhost markers from older hosts on either side keep the branch for the selected workspace', () => {
+  const legacyCurrent = { ...home, workspace_id: undefined };
+  const legacyMarker = { workspace_kind: 'normal', remote_ssh_host: 'localhost' };
+  // A new session in the selected workspace: the created reply carries the marker.
+  assert.deepEqual(
+    header({ currentWorkspace: legacyCurrent, session: { path: home.path, ...legacyMarker } }),
+    { workspaceName: 'home', gitBranch: 'master' },
+  );
+  assert.deepEqual(
+    header({
+      currentWorkspace: { ...legacyCurrent, remote_ssh_host: 'localhost' },
+      session: { path: home.path, ...legacyMarker },
+    }),
+    { workspaceName: 'home', gitBranch: 'master' },
+  );
+});
+
+test('the rollback gate follows the open session, not the selected workspace', () => {
+  const ssh = { ...a, name: 'herdr', workspace_kind: 'remote' };
+  const selectedSsh = {
+    has_workspace: true, path: a.path, workspace_kind: 'remote',
+    remote_connection_id: 'ssh-a', remote_ssh_host: 'host-a',
+  };
+  // Local project selected while the open session is SSH.
+  assert.equal(isRemoteSessionWorkspace('Standard', ssh, home), true);
+  assert.equal(isRemoteSessionWorkspace('Standard', { path: a.path, remote_ssh_host: 'host-a' }, home), true);
+  // SSH project selected while a Claw or local session is open.
+  assert.equal(isRemoteSessionWorkspace('Claw', undefined, selectedSsh), false);
+  assert.equal(isRemoteSessionWorkspace('Claw', { path: claw.path }, selectedSsh), false);
+  assert.equal(isRemoteSessionWorkspace('Cowork', { path: claw.path, workspace_kind: 'assistant' }, selectedSsh), false);
+  assert.equal(isRemoteSessionWorkspace('Standard', { path: home.path, workspace_kind: 'normal' }, selectedSsh), false);
+  // Without session facts the selection still gates, as it did before.
+  assert.equal(isRemoteSessionWorkspace('Standard', undefined, selectedSsh), true);
+  assert.equal(isRemoteSessionWorkspace('Standard', undefined, home), false);
+  assert.equal(isRemoteSessionWorkspace('Standard', undefined, null), false);
+  // A normal record's localhost marker is not SSH; an unknown kind keeps its selector.
+  assert.equal(isRemoteSessionWorkspace('Standard', { path: home.path, workspace_kind: 'normal', remote_ssh_host: 'localhost' }, null), false);
+  assert.equal(isRemoteSessionWorkspace('Standard', { path: home.path, remote_ssh_host: 'localhost' }, null), true);
+});
+
+test('a selection that no longer owns the created session lends it no name or kind', () => {
+  const selection = workspaceContext({ ...claw, workspace_kind: 'assistant' });
+  const facts = (workspace_id, workspace_path, remote = {}) => ({
+    workspace_id, workspace_path, workspace_identity: remote,
+  });
+  assert.equal(selectedSessionWorkspaceContext(facts('ws-claw', claw.path), selection).name, 'Nova');
+  const moved = selectedSessionWorkspaceContext(facts('ws-api', '/Users/me/api'), selection);
+  assert.equal(moved.name, undefined);
+  assert.equal(moved.workspace_kind, undefined);
+  assert.equal(moved.workspace_id, 'ws-api');
+  // ID-less SSH facts on the same path are a different workspace from a local selection.
+  const local = workspaceContext({ path: a.path, name: 'local', workspace_kind: 'normal' });
+  const onHost = selectedSessionWorkspaceContext(
+    facts(undefined, a.path, { remote_connection_id: 'ssh-a', remote_ssh_host: 'host-a' }),
+    local,
+  );
+  assert.equal(onHost.name, undefined);
+  assert.equal(onHost.remote_ssh_host, 'host-a');
 });

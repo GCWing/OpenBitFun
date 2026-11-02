@@ -130,8 +130,13 @@ export function resolveLegacyWorkspaceReference<T extends WorkspaceReference>(
   return matches.length === 1 ? matches[0] : undefined;
 }
 
+/** The workspace facts a session row or a `session_created` reply can carry. */
+export type SessionWorkspaceFacts = Partial<
+  Pick<SessionInfo, 'workspace_id' | 'workspace_path' | 'workspace_name' | 'workspace_identity'>
+>;
+
 /** The workspace a session claims, merged from host facts and cache provenance. */
-function sessionWorkspaceReference(session: SessionInfo): WorkspaceReference | undefined {
+function sessionWorkspaceReference(session: SessionWorkspaceFacts): WorkspaceReference | undefined {
   const provenance = session.workspace_identity;
   const workspaceId = session.workspace_id ?? provenance?.workspace_id;
   if (!provenance && !workspaceId) return undefined;
@@ -153,7 +158,7 @@ function sessionWorkspaceReference(session: SessionInfo): WorkspaceReference | u
  * local workspace being asked about.
  */
 export function sessionMatchesWorkspace(
-  session: SessionInfo,
+  session: SessionWorkspaceFacts,
   workspace: WorkspaceIdentity,
   catalog: readonly WorkspaceIdentity[] = [],
 ): boolean {
@@ -270,7 +275,7 @@ export function workspaceContext(workspace: WorkspaceReference & {
  * name and kind, since `workspace_name` is only the workspace's root label.
  */
 export function sessionWorkspaceContext(
-  session: Partial<Pick<SessionInfo, 'workspace_id' | 'workspace_path' | 'workspace_name' | 'workspace_identity'>>,
+  session: SessionWorkspaceFacts,
   owner?: SessionWorkspaceContext,
 ): SessionWorkspaceContext | undefined {
   const provenance = session.workspace_identity;
@@ -283,6 +288,19 @@ export function sessionWorkspaceContext(
     workspace_kind: owner?.workspace_kind,
   };
   return context.workspace_id || context.path || context.name ? context : undefined;
+}
+
+/** For a selection that may have moved on: its display facts apply only if it owns the session. */
+export function selectedSessionWorkspaceContext(
+  session: SessionWorkspaceFacts,
+  selection?: SessionWorkspaceContext,
+): SessionWorkspaceContext | undefined {
+  return sessionWorkspaceContext(
+    session,
+    selection?.path && sessionMatchesWorkspace(session, { ...selection, path: selection.path })
+      ? selection
+      : undefined,
+  );
 }
 
 export interface ChatHeaderContext {
@@ -298,7 +316,7 @@ export interface ChatHeaderContext {
  */
 export function resolveChatHeaderContext({
   agentType,
-  session,
+  session: sessionContext,
   currentWorkspace,
   currentAssistant,
   assistantLabel,
@@ -309,6 +327,8 @@ export function resolveChatHeaderContext({
   currentAssistant?: AssistantEntry | null;
   assistantLabel: string;
 }): ChatHeaderContext {
+  // Older hosts mark local records with sshHost=localhost, so compare both sides routed.
+  const session = sessionContext && normalizeWorkspaceRouting(sessionContext);
   const sessionIsCurrentAssistant = sameWorkspace(session, currentAssistant);
   if (isClawAgent(agentType) || session?.workspace_kind === 'assistant' || sessionIsCurrentAssistant) {
     const selectedAssistant = !session || sessionIsCurrentAssistant ? currentAssistant : undefined;
@@ -327,4 +347,22 @@ export function resolveChatHeaderContext({
     ),
     gitBranch: current?.git_branch,
   };
+}
+
+/**
+ * Whether the open session runs on an SSH workspace, which keeps rollback off.
+ * The selected workspace only decides when the session has no workspace facts.
+ */
+export function isRemoteSessionWorkspace(
+  agentType: string,
+  session: SessionWorkspaceContext | undefined,
+  currentWorkspace: WorkspaceInfo | null | undefined,
+): boolean {
+  if (isClawAgent(agentType) || session?.workspace_kind === 'assistant') return false;
+  const owner = session ?? currentWorkspace;
+  if (!owner) return false;
+  const routed = normalizeWorkspaceRouting(owner);
+  return routed.workspace_kind === 'remote'
+    || Boolean(routed.remote_connection_id)
+    || Boolean(routed.remote_ssh_host);
 }
