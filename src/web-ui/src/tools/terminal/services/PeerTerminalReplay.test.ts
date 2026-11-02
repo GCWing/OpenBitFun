@@ -141,6 +141,17 @@ describe('PeerTerminalReplay', () => {
     expect(events[1].payload.exit_code).toBe(3);
   });
 
+  it('delivers an exit and the close right behind it, after the output', async () => {
+    mocks.invoke.mockResolvedValueOnce(page('bye\r\n', 15));
+    replay.start();
+    emit('terminal-exit', { terminal_id: 't1', exit_code: 7 });
+    emit('terminal-closed', { terminal_id: 't1' });
+    ready();
+    await flush();
+    expect(events.map(event => event.type)).toEqual(['Data', 'Exit', 'SessionDestroyed']);
+    expect(events[1].payload.exit_code).toBe(7);
+  });
+
   it('maps a closed session to the destroyed event', async () => {
     mocks.invoke.mockResolvedValue(page('', 10));
     replay.start();

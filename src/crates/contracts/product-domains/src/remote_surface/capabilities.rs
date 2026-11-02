@@ -149,7 +149,6 @@ impl PeerHostCapability {
         Self::SessionTrajectoryV1,
         Self::UserQuestionResponse,
         Self::UserQuestionInteractionV1,
-        // Keep last: Desktop publishes every capability before it.
         Self::TerminalCursorReplayV1,
     ];
 
@@ -206,11 +205,50 @@ impl PeerHostCapability {
     }
 }
 
-/// Desktop fans out `terminal_event`, so it has everything except the cursor
-/// replay path, which `ALL` keeps last.
-const DESKTOP_CAPABILITIES: &[PeerHostCapability] = PeerHostCapability::ALL
-    .split_at(PeerHostCapability::ALL.len() - 1)
-    .0;
+/// Desktop publishes everything except `TerminalCursorReplayV1`: it fans out
+/// `terminal_event`, and that key selects the other delivery path.
+const DESKTOP_CAPABILITIES: &[PeerHostCapability] = &[
+    PeerHostCapability::ModelRoutingV1,
+    PeerHostCapability::ModelPoolSelectionV1,
+    PeerHostCapability::BackgroundResultDeliveryV1,
+    PeerHostCapability::DialogQueueV1,
+    PeerHostCapability::IdempotentDialogSubmit,
+    PeerHostCapability::InlineImageAttachmentsV1,
+    PeerHostCapability::BtwInitialModelSelectionV1,
+    PeerHostCapability::BtwModelPoolSelectionV1,
+    PeerHostCapability::ControlConversationV1,
+    PeerHostCapability::ControlConversationResetV1,
+    PeerHostCapability::TargetedSessionRollback,
+    PeerHostCapability::TokenUsageStatistics,
+    PeerHostCapability::SubscriptionAccountsV1,
+    PeerHostCapability::SubscriptionProviderAccountsV1,
+    PeerHostCapability::SubscriptionQuotaV1,
+    PeerHostCapability::GrokQuotaV1,
+    PeerHostCapability::SubscriptionModelQuotaV1,
+    PeerHostCapability::SubscriptionAccountPoolsV1,
+    PeerHostCapability::SubscriptionAccountFailoverV1,
+    PeerHostCapability::ModelChannelRoutingV1,
+    PeerHostCapability::SubscriptionAccountManagementV1,
+    PeerHostCapability::MiniappAgentContextFilesV1,
+    PeerHostCapability::MiniappAgentImagesV1,
+    PeerHostCapability::WslWorkspacesV1,
+    PeerHostCapability::ComputerUseSharingV1,
+    PeerHostCapability::ProductControlV1,
+    PeerHostCapability::RemoteConnectControlV1,
+    PeerHostCapability::ProductControlNativeV1,
+    PeerHostCapability::ProductControlPresentationV1,
+    PeerHostCapability::CancelTool,
+    PeerHostCapability::ToolCatalog,
+    PeerHostCapability::ReviewPlatformV1,
+    PeerHostCapability::ChatMcpCatalogV1,
+    PeerHostCapability::WorkspaceIconV1,
+    PeerHostCapability::WorkspaceIdReferencesV1,
+    PeerHostCapability::WorkspaceHtmlPreviewV1,
+    PeerHostCapability::WholeSessionCopyV1,
+    PeerHostCapability::SessionTrajectoryV1,
+    PeerHostCapability::UserQuestionResponse,
+    PeerHostCapability::UserQuestionInteractionV1,
+];
 
 /// The CLI peer host has no MiniApp runtime, WSL connection setup, host-native
 /// ProductControl providers, or presentation surface.
@@ -293,6 +331,14 @@ mod tests {
             assert!(
                 advertises(PeerHostKind::Desktop, *capability),
                 "desktop must advertise every CLI capability: {}",
+                capability.key()
+            );
+        }
+        for capability in PeerHostCapability::ALL {
+            assert_eq!(
+                advertises(PeerHostKind::Desktop, *capability),
+                *capability != PeerHostCapability::TerminalCursorReplayV1,
+                "Desktop advertises everything but the cursor replay path: {}",
                 capability.key()
             );
         }

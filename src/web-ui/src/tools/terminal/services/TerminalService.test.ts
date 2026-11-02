@@ -162,16 +162,44 @@ describe('TerminalService device surface switching', () => {
       expect(replayMock.created[0].follow).toHaveBeenCalledWith(3);
     });
 
-    it('starts lifecycle tracking when a tab list subscribes after sessions were loaded', async () => {
+    it('starts lifecycle tracking when a tab list subscribes after declaring its sessions', async () => {
       const service = await connectToHost();
-      invokeMock.mockResolvedValueOnce([{ id: 't1', workspaceId: 'w', name: 'Shell' }]);
-      await service.listSessions();
+      service.setTrackedSessions({}, ['t1']);
       expect(replayMock.created).toHaveLength(0);
 
       service.onEvent(vi.fn());
       await Promise.resolve();
       expect(replayMock.created).toHaveLength(1);
       expect(replayMock.created[0].follow).not.toHaveBeenCalled();
+    });
+
+    it('does not subscribe to every host terminal just because they were listed', async () => {
+      const service = await connectToHost();
+      service.onEvent(vi.fn());
+      invokeMock.mockResolvedValueOnce([
+        { id: 'mine', workspaceId: 'w1', name: 'Shell' },
+        { id: 'other-workspace', workspaceId: 'w2', name: 'Shell' },
+      ]);
+      await service.listSessions();
+      expect(replayMock.created).toHaveLength(0);
+
+      service.setTrackedSessions({}, ['mine']);
+      expect(replayMock.created.map(replay => replay.sessionId)).toEqual(['mine']);
+    });
+
+    it('keeps a session tracked until the last tab list showing it leaves', async () => {
+      const service = await connectToHost();
+      service.onEvent(vi.fn());
+      const shell = {};
+      const panel = {};
+      service.setTrackedSessions(shell, ['t1']);
+      service.setTrackedSessions(panel, ['t1']);
+      expect(replayMock.created).toHaveLength(1);
+
+      service.clearTrackedSessions(shell);
+      expect(replayMock.created[0].close).not.toHaveBeenCalled();
+      service.clearTrackedSessions(panel);
+      expect(replayMock.created[0].close).toHaveBeenCalledTimes(1);
     });
 
     it('falls back to host kind for a CLI host that predates the capability', async () => {
@@ -243,8 +271,7 @@ describe('TerminalService device surface switching', () => {
       const service = await connectToHost();
       const events = vi.fn();
       service.onEvent(events);
-      invokeMock.mockResolvedValueOnce([{ id: 't1', workspaceId: 'w', name: 'Shell' }]);
-      await service.listSessions();
+      service.setTrackedSessions({}, ['t1']);
 
       expect(replayMock.created).toHaveLength(1);
       expect(replayMock.created[0].follow).not.toHaveBeenCalled();
@@ -255,8 +282,7 @@ describe('TerminalService device surface switching', () => {
     it('returns a tab to lifecycle tracking when its view unmounts', async () => {
       const service = await connectToHost();
       service.onEvent(vi.fn());
-      invokeMock.mockResolvedValueOnce([{ id: 't1', workspaceId: 'w', name: 'Shell' }]);
-      await service.listSessions();
+      service.setTrackedSessions({}, ['t1']);
       const view = service.onSessionEvent('t1', vi.fn());
       view();
 
