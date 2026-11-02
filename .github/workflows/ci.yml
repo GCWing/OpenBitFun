@@ -717,6 +717,7 @@ jobs:
         run: |
           pnpm --dir src/mobile-web run test:prompt-suggestion-browser
           pnpm --dir src/mobile-web run test:rollback-browser
+          pnpm --dir src/mobile-web run test:session-model-browser
           pnpm --dir src/mobile-web run test:chat-transcript-browser
 
       - name: Upload mobile input layout screenshots

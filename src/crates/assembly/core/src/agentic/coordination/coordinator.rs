@@ -134,7 +134,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::sync::{mpsc, oneshot, watch, OwnedSemaphorePermit, RwLock, Semaphore};
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{sleep, timeout, Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
 const MANUAL_COMPACTION_COMMAND: &str = "/compact";
@@ -144,6 +144,10 @@ const DEFAULT_SUBAGENT_MAX_CONCURRENCY: usize = 5;
 const DEFAULT_SWARM_MAX_CONCURRENCY: usize = 16;
 const MAX_SUBAGENT_MAX_CONCURRENCY: usize = 64;
 const SUBAGENT_TIMEOUT_GRACE_PERIOD: Duration = Duration::from_secs(10);
+/// How long an observer read waits for the Session's mutation lease before it
+/// projects persisted records without one. Kept small: the lease owner may be a
+/// Turn that is itself waiting for the reader's answer.
+const RELAY_HISTORY_OBSERVER_LEASE_WAIT: Duration = Duration::from_millis(1500);
 const SESSION_REFERENCES_METADATA_KEY: &str = "sessionReferences";
 const MAX_SESSION_REFERENCES_PER_TURN: usize = 5;
 const SESSION_REFERENCE_ARTIFACT_STEM_LENGTH: usize = 8;
@@ -9633,6 +9637,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .await
     }
 
+    fn relay_history_writer_busy(session_id: &str) -> OpenBitFunError {
+        OpenBitFunError::OutcomeUnknown(format!(
+            "Session history is unavailable while its writer changes the undo state: session_id={session_id}"
+        ))
+    }
+
     async fn load_relay_session_selection(
         &self,
         storage: &Path,
@@ -9645,12 +9655,48 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .persistence_manager()
             .assert_relay_history_supported(storage, session_id)
             .await?;
-        let _mutation = self
-            .session_manager
-            .acquire_session_mutation(session_id)
-            .await?;
-        self.prepare_persisted_session_read_locked(storage, session_id)
-            .await?;
+        // A reader here observes persisted history; it is not the Session's
+        // writer. Its owning Turn holds the mutation lease for the Turn's whole
+        // life, so an unbounded acquire would make a controller's first read
+        // depend on that Turn finishing. A Turn blocked on an unanswered
+        // question would then block the very read that lets a controller answer
+        // it. Wait briefly for the consistent window, then fall back to the
+        // persisted records so a reader is never parked behind live execution.
+        let mutation = match timeout(
+            RELAY_HISTORY_OBSERVER_LEASE_WAIT,
+            self.session_manager.acquire_session_mutation(session_id),
+        )
+        .await
+        {
+            Ok(lease) => Some(lease?),
+            Err(_) => None,
+        };
+        let revert_fence = if mutation.is_some() {
+            self.prepare_persisted_session_read_locked(storage, session_id)
+                .await?;
+            None
+        } else {
+            openbitfun_core_types::validate_session_id(session_id)
+                .map_err(OpenBitFunError::Validation)?;
+            self.session_manager
+                .validate_session_storage_path_binding(session_id, storage)?;
+            let state = self
+                .session_manager
+                .persistence_manager()
+                .load_session_revert_state(storage, session_id)
+                .await?;
+            // Without the lease an unfinished undo transition cannot be
+            // reconciled. Report that instead of projecting records that the
+            // transition is about to replace.
+            if state
+                .as_ref()
+                .is_some_and(|state| state.phase != SessionRevertPhase::Staged)
+            {
+                return Err(Self::relay_history_writer_busy(session_id));
+            }
+            Some(state)
+        };
+        let _mutation = mutation;
 
         // Persisted InProgress is not proof of a live executor after restart.
         // A loaded owner supplies runtime state; for an unloaded session an
@@ -9711,6 +9757,18 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 "full",
             )
         };
+        // A lease-less read is only consistent if no undo transition started
+        // or finished while it ran; otherwise it may mix both versions.
+        if let Some(before) = revert_fence {
+            let after = self
+                .session_manager
+                .persistence_manager()
+                .load_session_revert_state(storage, session_id)
+                .await?;
+            if after != before {
+                return Err(Self::relay_history_writer_busy(session_id));
+            }
+        }
         debug!(
             "Loaded relay session turns: session_id={} requested_turn_id={} read_mode={} turn_count={}",
             session_id,
@@ -13865,6 +13923,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 subagent_session_id.clone(),
                 BackgroundSubagentCancelTarget::Scheduler(cancel_handle.clone()),
             );
+            self.stamp_subagent_link_on_parent_tool_item(
+                &subagent_parent_info,
+                &subagent_session_id,
+                &subagent_dialog_turn_id,
+            )
+            .await;
             let background_subagent_tasks = self.background_subagent_tasks.clone();
             let background_subagent_outcomes = self.background_subagent_outcomes.clone();
 
@@ -13973,6 +14037,12 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             subagent_session_id.clone(),
             BackgroundSubagentCancelTarget::Direct(background_cancel_token),
         );
+        self.stamp_subagent_link_on_parent_tool_item(
+            &subagent_parent_info,
+            &subagent_session_id,
+            &subagent_dialog_turn_id,
+        )
+        .await;
         let background_subagent_tasks = self.background_subagent_tasks.clone();
         let background_subagent_outcomes = self.background_subagent_outcomes.clone();
 
@@ -14004,6 +14074,51 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             bg_task_id,
             agent_id,
         })
+    }
+
+    /// Persist the child-Session link of a spawned subagent on the parent Turn's
+    /// tool item.
+    ///
+    /// A synchronous delegated command is stamped in memory before its synthetic
+    /// Turn is written. An asynchronous spawn instead returns a `started` result
+    /// while the child Session runs on, so the parent Turn needs the link on its
+    /// persisted tool item. It is written before this start returns, which is
+    /// before the spawning tool completion republishes the parent Turn, so
+    /// record-stream consumers see the link in the same resync they already get.
+    ///
+    /// The link is an annotation: a host that cannot resolve the parent Turn
+    /// keeps the spawn result rather than failing the tool call.
+    async fn stamp_subagent_link_on_parent_tool_item(
+        &self,
+        parent_info: &SubagentParentInfo,
+        subagent_session_id: &str,
+        subagent_dialog_turn_id: &str,
+    ) {
+        let subagent_model_id = self
+            .session_manager
+            .get_session(subagent_session_id)
+            .and_then(|session| session.config.model_id);
+        if let Err(error) = self
+            .session_manager
+            .link_subagent_session_on_parent_tool_item(
+                &parent_info.session_id,
+                &parent_info.dialog_turn_id,
+                &parent_info.tool_call_id,
+                subagent_session_id,
+                subagent_dialog_turn_id,
+                subagent_model_id,
+            )
+            .await
+        {
+            warn!(
+                "Failed to link spawned subagent Session on the parent tool item: parent_session_id={}, parent_dialog_turn_id={}, parent_tool_call_id={}, subagent_session_id={}, error={}",
+                parent_info.session_id,
+                parent_info.dialog_turn_id,
+                parent_info.tool_call_id,
+                subagent_session_id,
+                error
+            );
+        }
     }
 
     /// Clean up runtime-only subagent resources.
@@ -19444,6 +19559,389 @@ pub(crate) mod tests {
             .delete_session_by_id(&session.session_id)
             .await
             .expect("clean up persisted test session");
+    }
+
+    async fn relay_observer_fixture(
+        label: &str,
+    ) -> (
+        tempfile::TempDir,
+        ConversationCoordinator,
+        Arc<SessionManager>,
+        String,
+        PathBuf,
+        String,
+    ) {
+        let workspace = tempfile::tempdir().expect("workspace");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let (coordinator, session_manager) = test_persistent_coordinator();
+        let session = session_manager
+            .create_session(
+                label.to_string(),
+                "Standard".to_string(),
+                SessionConfig {
+                    tool_presentation_mode: Default::default(),
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create session");
+        let storage = session_manager
+            .effective_session_storage_path(&session.session_id)
+            .await
+            .expect("session storage path");
+        let turn_id = session_manager
+            .start_dialog_turn(
+                &session.session_id,
+                "Standard".to_string(),
+                "observe".to_string(),
+                Some(format!("turn-{label}")),
+                None,
+                None,
+            )
+            .await
+            .expect("start turn");
+        let message = Message::assistant("observer history".to_string())
+            .with_turn_id(turn_id.clone())
+            .with_round_id("round-observer".to_string());
+        ConversationCoordinator::persist_completed_dialog_turn(
+            coordinator.event_queue.as_ref(),
+            session_manager.as_ref(),
+            None,
+            &session.session_id,
+            &turn_id,
+            &ExecutionResult {
+                final_message: message.clone(),
+                total_rounds: 1,
+                success: true,
+                new_messages: vec![message],
+                finish_reason: FinishReason::Complete,
+                total_tools: 0,
+                duration_ms: 1,
+                partial_recovery_reason: None,
+                effective_finish_reason: "complete".to_string(),
+                has_final_response: true,
+            },
+            None,
+        )
+        .await;
+        (
+            workspace,
+            coordinator,
+            session_manager,
+            session.session_id,
+            storage,
+            turn_id,
+        )
+    }
+
+    #[tokio::test]
+    async fn load_relay_session_turns_projects_history_while_a_turn_holds_the_mutation_lease() {
+        let (_workspace, coordinator, session_manager, session_id, storage, turn_id) =
+            relay_observer_fixture("lease-held-observer").await;
+        // A Turn waiting on an unanswered question keeps this lease for its
+        // whole life; the observer read must not wait for it to finish.
+        let _turn_lease = session_manager
+            .acquire_session_mutation(&session_id)
+            .await
+            .expect("turn lease");
+        let turns = tokio::time::timeout(
+            super::RELAY_HISTORY_OBSERVER_LEASE_WAIT + Duration::from_secs(10),
+            coordinator.load_relay_session_turns(&storage, &session_id, None),
+        )
+        .await
+        .expect("observer read must not wait for the lease owner")
+        .expect("observer read projects persisted history");
+        assert_eq!(
+            turns
+                .iter()
+                .map(|turn| turn.turn_id.as_str())
+                .collect::<Vec<_>>(),
+            vec![turn_id.as_str()]
+        );
+
+        // A staged undo is a stable visible projection and stays readable.
+        session_manager
+            .persistence_manager()
+            .save_session_revert_state(
+                &storage,
+                &session_id,
+                &crate::agentic::session::revert::SessionRevertState {
+                    schema_version: crate::agentic::session::revert::SESSION_REVERT_SCHEMA_VERSION,
+                    boundary_turn: 0,
+                    original_turn_end: 1,
+                    phase: crate::agentic::session::revert::SessionRevertPhase::Staged,
+                    workspace_checkpoint: Vec::new(),
+                },
+            )
+            .await
+            .expect("stage revert");
+        let staged = coordinator
+            .load_relay_session_turns(&storage, &session_id, None)
+            .await
+            .expect("staged undo remains readable without the lease");
+        assert!(staged.is_empty(), "staged undo hides the reverted suffix");
+    }
+
+    #[tokio::test]
+    async fn load_relay_session_turns_keep_owner_restart_reclamation_without_the_mutation_lease() {
+        let (_workspace, coordinator, session_manager, session_id, storage, _turn_id) =
+            relay_observer_fixture("restart-reclamation").await;
+        session_manager
+            .unload_session_from_memory(&session_id)
+            .await
+            .expect("unload the previous owner");
+        let mut live = crate::service::session::DialogTurnData::new(
+            "turn-left-running".to_string(),
+            1,
+            session_id.clone(),
+            crate::service::session::UserMessageData {
+                id: "user-left-running".to_string(),
+                content: "left running".to_string(),
+                timestamp: 0,
+                metadata: None,
+            },
+        );
+        live.status = TurnStatus::InProgress;
+        session_manager
+            .persistence_manager()
+            .save_dialog_turn(&storage, &live)
+            .await
+            .expect("persist a turn left running by a stopped owner");
+
+        async fn read(
+            coordinator: &ConversationCoordinator,
+            storage: &Path,
+            session_id: &str,
+        ) -> crate::service::session::DialogTurnData {
+            coordinator
+                .load_relay_session_turns(storage, session_id, None)
+                .await
+                .expect("observer read")
+                .into_iter()
+                .find(|turn| turn.turn_id == "turn-left-running")
+                .expect("running turn is visible")
+        }
+
+        // No owner holds the writer: both read paths project the interruption.
+        let leased = read(&coordinator, &storage, &session_id).await;
+        let mutation = session_manager
+            .acquire_session_mutation(&session_id)
+            .await
+            .expect("in-process mutation lease");
+        let lease_free = read(&coordinator, &storage, &session_id).await;
+        for turn in [&leased, &lease_free] {
+            assert_eq!(turn.status, TurnStatus::Cancelled);
+            assert_eq!(turn.finish_reason.as_deref(), Some("interrupted"));
+        }
+
+        // Another owner holds the writer: absence from memory is not proof of
+        // interruption on either path.
+        let writer = session_manager
+            .persistence_manager()
+            .lock_session_writes(&storage, &session_id)
+            .expect("simulated live owner");
+        let lease_free = read(&coordinator, &storage, &session_id).await;
+        drop(mutation);
+        let leased = read(&coordinator, &storage, &session_id).await;
+        for turn in [&leased, &lease_free] {
+            assert_eq!(turn.status, TurnStatus::InProgress);
+            assert_eq!(turn.finish_reason, None);
+        }
+        drop(writer);
+
+        // Observer projection never rewrites the persisted record.
+        let persisted = session_manager
+            .persistence_manager()
+            .load_visible_session_turns(&storage, &session_id)
+            .await
+            .expect("persisted turns");
+        assert!(persisted.iter().any(
+            |turn| turn.turn_id == "turn-left-running" && turn.status == TurnStatus::InProgress
+        ));
+    }
+
+    #[tokio::test]
+    async fn load_relay_session_turns_refuses_unfinished_undo_without_the_mutation_lease() {
+        let (_workspace, coordinator, session_manager, session_id, storage, _turn_id) =
+            relay_observer_fixture("lease-held-undo").await;
+        for phase in [
+            crate::agentic::session::revert::SessionRevertPhase::Applying,
+            crate::agentic::session::revert::SessionRevertPhase::Clearing,
+            crate::agentic::session::revert::SessionRevertPhase::Committing,
+        ] {
+            session_manager
+                .persistence_manager()
+                .save_session_revert_state(
+                    &storage,
+                    &session_id,
+                    &crate::agentic::session::revert::SessionRevertState {
+                        schema_version:
+                            crate::agentic::session::revert::SESSION_REVERT_SCHEMA_VERSION,
+                        boundary_turn: 0,
+                        original_turn_end: 1,
+                        phase,
+                        workspace_checkpoint: Vec::new(),
+                    },
+                )
+                .await
+                .expect("persist unfinished undo");
+            let _writer = session_manager
+                .acquire_session_mutation(&session_id)
+                .await
+                .expect("undo writer lease");
+            let error = coordinator
+                .load_relay_session_turns(&storage, &session_id, None)
+                .await
+                .expect_err("an unfinished undo must not be projected without the lease");
+            assert!(
+                matches!(error, OpenBitFunError::OutcomeUnknown(_)),
+                "unexpected error for {phase:?}: {error:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn async_agent_spawn_links_the_child_session_on_the_parent_tool_item() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let (coordinator, session_manager) = test_persistent_coordinator();
+        let parent = session_manager
+            .create_session(
+                "Async delegation parent".to_string(),
+                "Ultimate".to_string(),
+                SessionConfig {
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create parent session");
+        let child = session_manager
+            .create_session(
+                "Async delegation child".to_string(),
+                "GeneralPurpose".to_string(),
+                SessionConfig {
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    model_id: Some("child-subagent-model".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create spawned child session");
+        let parent_turn_id = session_manager
+            .start_dialog_turn(
+                &parent.session_id,
+                "Ultimate".to_string(),
+                "delegate the audit".to_string(),
+                Some("turn-async-agent-spawn".to_string()),
+                None,
+                None,
+            )
+            .await
+            .expect("start parent turn");
+        let tool_call_id = "tool-call-agent-spawn".to_string();
+        let spawning_round = Message::assistant_with_tools(
+            String::new(),
+            vec![ToolCall {
+                tool_id: tool_call_id.clone(),
+                tool_name: "AgentSpawn".to_string(),
+                arguments: serde_json::json!({
+                    "prompt": "audit the widget",
+                    "agent_type": "GeneralPurpose",
+                    "run_in_background": true,
+                }),
+                raw_arguments: None,
+                is_error: false,
+                parse_error: None,
+                recovered_from_truncation: false,
+                repair_kind: Default::default(),
+            }],
+        )
+        .with_turn_id(parent_turn_id.clone())
+        .with_round_id("round-async-agent-spawn".to_string());
+        let started_result = Message::tool_result(crate::agentic::core::ToolResult {
+            tool_id: tool_call_id.clone(),
+            tool_name: "AgentSpawn".to_string(),
+            effective_tool_name: None,
+            result: serde_json::json!({
+                "context_mode": "isolated",
+                "status": "started",
+                "run_in_background": true,
+                "bg_task_id": "bg-task-1",
+                "agent_id": "agent-1",
+            }),
+            result_for_assistant: Some("Background agent started".to_string()),
+            is_error: false,
+            duration_ms: Some(4),
+            image_attachments: None,
+        })
+        .with_turn_id(parent_turn_id.clone())
+        .with_round_id("round-async-agent-spawn".to_string());
+        session_manager
+            .add_messages(&parent.session_id, vec![spawning_round, started_result])
+            .await
+            .expect("record the spawning round and its started result");
+
+        // An asynchronous spawn returns while the parent Turn is still running,
+        // so the link has to reach the parent Turn's persisted tool item.
+        coordinator
+            .stamp_subagent_link_on_parent_tool_item(
+                &SubagentParentInfo {
+                    tool_call_id: tool_call_id.clone(),
+                    session_id: parent.session_id.clone(),
+                    dialog_turn_id: parent_turn_id.clone(),
+                },
+                &child.session_id,
+                "turn-child-subagent",
+            )
+            .await;
+
+        let storage = session_manager
+            .effective_session_storage_path(&parent.session_id)
+            .await
+            .expect("parent session storage path");
+        let turns = coordinator
+            .load_relay_session_turns(&storage, &parent.session_id, Some(&parent_turn_id))
+            .await
+            .expect("relay read of the running parent turn");
+        let item = turns
+            .iter()
+            .flat_map(|turn| turn.model_rounds.iter())
+            .flat_map(|round| round.tool_items.iter())
+            .find(|item| item.id == tool_call_id)
+            .expect("the spawning tool item survives the relay read");
+        assert_eq!(
+            item.tool_name, "AgentSpawn",
+            "the link belongs to the spawning tool item"
+        );
+        assert_eq!(
+            item.subagent_session_id.as_deref(),
+            Some(child.session_id.as_str())
+        );
+        assert_eq!(
+            item.subagent_dialog_turn_id.as_deref(),
+            Some("turn-child-subagent")
+        );
+        assert_eq!(
+            item.subagent_model_id.as_deref(),
+            Some("child-subagent-model")
+        );
+        // The record stream serializes the persisted item as it is, so a remote
+        // consumer reads the link under its camelCase wire name.
+        assert_eq!(
+            serde_json::to_value(item).expect("item serializes")["subagentSessionId"],
+            serde_json::json!(child.session_id)
+        );
+
+        session_manager
+            .delete_session_by_id(&parent.session_id)
+            .await
+            .expect("clean up persisted parent session");
+        session_manager
+            .delete_session_by_id(&child.session_id)
+            .await
+            .expect("clean up persisted child session");
     }
 
     #[tokio::test]

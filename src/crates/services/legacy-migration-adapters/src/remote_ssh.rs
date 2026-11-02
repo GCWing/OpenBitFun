@@ -1201,6 +1201,7 @@ mod tests {
             default_workspace: Some("/srv/project".to_string()),
             last_connected: Some(1),
             proxy_jump: Some("jump.example.invalid".to_string()),
+            proxy_command: None,
             container: None,
             options: owner::SshConnectionOptionsRecord::default(),
         }

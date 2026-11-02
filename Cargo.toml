@@ -309,7 +309,6 @@ russh = "0.45"
 russh-sftp = "2.1"
 russh-keys = "0.45"
 shellexpand = "3"
-ssh_config = "0.1"
 rustls = { version = "0.23", default-features = false }
 
 [patch.crates-io]

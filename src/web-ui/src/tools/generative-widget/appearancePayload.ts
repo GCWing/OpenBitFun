@@ -36,17 +36,11 @@ const WIDGET_SYSTEM_FALLBACK_VARS = Object.freeze(Object.fromEntries(
   WIDGET_SYSTEM_TOKEN_NAMES.map(name => [systemCssVariables[name], String(systemTokens[name])]),
 ));
 
-const WIDGET_TYPOGRAPHY_TOKEN_NAMES = Object.freeze(
-  WIDGET_SYSTEM_TOKEN_NAMES.filter(name => (
-    name.startsWith('font.')
-    || name.startsWith('lineHeight.')
-    || name.startsWith('letterSpacing.')
-    || name.startsWith('type.')
-  )),
-);
-
-export const WIDGET_TYPOGRAPHY_VARIABLE_NAMES = Object.freeze(
-  WIDGET_TYPOGRAPHY_TOKEN_NAMES.map(name => systemCssVariables[name]),
+// The host design-system root carries the complete resolved system token set
+// (density, font preferences, control sizing included), so every system token
+// is projected instead of staying a frozen iframe scaffold value.
+export const WIDGET_SYSTEM_VARIABLE_NAMES = Object.freeze(
+  WIDGET_SYSTEM_TOKEN_NAMES.map(name => systemCssVariables[name]),
 );
 
 export function createWidgetAppearanceFallbackCss(): string {
@@ -71,7 +65,7 @@ export function readWidgetAppearancePayload(): WidgetAppearancePayload | null {
   const computedStyle = typeof document !== 'undefined' && typeof getComputedStyle === 'function'
     ? getComputedStyle(document.documentElement)
     : null;
-  for (const name of WIDGET_TYPOGRAPHY_VARIABLE_NAMES) {
+  for (const name of WIDGET_SYSTEM_VARIABLE_NAMES) {
     vars[name] = computedStyle?.getPropertyValue(name).trim()
       || WIDGET_SYSTEM_FALLBACK_VARS[name];
   }
