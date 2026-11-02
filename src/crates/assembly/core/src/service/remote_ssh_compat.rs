@@ -31,8 +31,9 @@ pub mod workspace_state {
         local_workspace_stable_storage_id, normalize_local_workspace_root_for_stable_id,
         normalize_remote_workspace_path, remote_root_to_mirror_subpath,
         remote_workspace_session_mirror_dir as remote_workspace_session_mirror_dir_at,
-        remote_workspace_stable_id, sanitize_remote_mirror_path_component,
-        sanitize_ssh_connection_id_for_local_dir, sanitize_ssh_hostname_for_mirror,
+        remote_workspace_stable_id, remote_workspace_stable_id_for_connection,
+        sanitize_remote_mirror_path_component, sanitize_ssh_connection_id_for_local_dir,
+        sanitize_ssh_hostname_for_mirror, ssh_workspace_identity_host,
         unresolved_remote_session_storage_key, workspace_logical_key, workspace_session_identity,
         WorkspaceSessionIdentity, LOCAL_WORKSPACE_SSH_HOST,
     };

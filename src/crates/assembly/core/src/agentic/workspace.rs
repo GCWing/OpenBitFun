@@ -206,7 +206,7 @@ impl WorkspaceBinding {
             }
             return runtime_service
                 .context_for_remote_workspace(
-                    &self.session_identity.hostname,
+                    &self.session_identity.identity_host(),
                     self.session_identity.logical_workspace_path(),
                 )
                 .sessions_dir;

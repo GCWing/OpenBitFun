@@ -377,8 +377,10 @@ pub(crate) async fn register_remote_fixture_with_id(
             remote_connection_id: Some(connection.to_owned()),
             remote_ssh_host: Some(host.to_owned()),
             stable_workspace_id: Some(
-                openbitfun_services_core::workspace_identity::remote_workspace_stable_id(
-                    host, path,
+                openbitfun_services_core::workspace_identity::remote_workspace_stable_id_for_connection(
+                    host,
+                    Some(connection),
+                    path,
                 ),
             ),
             ..Default::default()

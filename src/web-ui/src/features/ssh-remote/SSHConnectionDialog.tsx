@@ -54,6 +54,7 @@ import { workspaceSourceErrorKey, isSshAuthenticationError } from './workspaceSo
 import { savedConnectionConfig } from './savedConnectionConfig';
 import type { WorkspaceConnectionPreset } from './useWorkspaceSourceOptions';
 import { sameWorkspaceSource, savedConnectionTarget } from './workspaceSource';
+import { sshConnectionIdForEndpoint } from './sshConnectionId';
 import {
   pickSshCertificatePath,
   pickSshPrivateKeyPath,
@@ -362,12 +363,6 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     if (path) setFormData((prev) => ({ ...prev, certificatePath: path }));
   }, [isConnecting, status, t]);
 
-  // Port is intentionally excluded so that the ID stays stable when the user
-  // changes the SSH port.
-  const generateConnectionId = (host: string, _port: number, username: string) => {
-    return `ssh-${username}@${host}`;
-  };
-
   const buildAuthMethod = (): SSHAuthMethod => {
     switch (formData.authType) {
       case 'password':
@@ -516,9 +511,20 @@ export const SSHConnectionDialog: React.FC<SSHConnectionDialogProps> = ({
     // Direct SSH already identifies the container. Keep legacy metadata when editing;
     // new profiles derive it from the endpoint instead of asking for a Docker ID.
     const containerName = formData.containerName.trim() || (formData.targetType === 'containerSshd' ? connectHost : 'discovery');
+    // Editing keeps the saved id (so a port change never moves sessions);
+    // new profiles get a port-aware id that cannot overwrite another endpoint.
+    const knownConnections = editingProfile || isLocalDocker
+      ? savedConnections
+      : await sshApi.listSavedConnections().catch(() => savedConnections);
     const id = isLocalDocker
       ? `docker-local-${containerName}`
-      : `${generateConnectionId(connectHost, port, username)}${usesContainer ? `-container-${containerName}` : ''}`;
+      : sshConnectionIdForEndpoint(
+        { host: connectHost, port, username, suffix: usesContainer ? `-container-${containerName}` : '' },
+        knownConnections,
+        connection => !connection.wsl && (usesContainer
+          ? !connection.container?.local && connection.container?.name === containerName
+          : !connection.container),
+      );
     return {
       id: editingProfile?.id ?? id,
       name: formData.name || (isLocalDocker ? containerName : `${username}@${hostInput}`),

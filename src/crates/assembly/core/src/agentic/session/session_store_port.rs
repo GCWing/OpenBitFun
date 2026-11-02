@@ -264,7 +264,13 @@ impl SessionStorePort for CoreSessionStorePort {
                     })?;
                 (
                     runtime
-                        .context_for_remote_workspace(host, &workspace.root_path.to_string_lossy())
+                        .context_for_remote_workspace(
+                            &openbitfun_services_core::workspace_identity::ssh_workspace_identity_host(
+                                host,
+                                Some(connection_id),
+                            ),
+                            &workspace.root_path.to_string_lossy(),
+                        )
                         .sessions_dir,
                     SessionStorageKind::Remote,
                     Some(connection_id.to_owned()),

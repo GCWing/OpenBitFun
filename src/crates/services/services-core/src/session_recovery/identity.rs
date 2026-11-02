@@ -85,8 +85,12 @@ fn host(record: &Value) -> Result<String> {
 pub(super) fn runtime_key(record: &Value) -> Result<String> {
     let root = record_root(record)?;
     if string(record, "workspaceKind") == Some("remote") {
-        Ok(wi::remote_workspace_runtime_key(
+        let identity_host = wi::ssh_workspace_identity_host(
             &host(record)?,
+            string(&record["metadata"], "connectionId"),
+        );
+        Ok(wi::remote_workspace_runtime_key(
+            &identity_host,
             &remote_path(&root)?,
         ))
     } else {
