@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -15,6 +16,48 @@ pub struct SideQuestionRuntime {
 pub struct ActiveBtwTurn {
     pub session_id: String,
     pub turn_id: String,
+}
+
+/// How often a host re-reads whether a registered `/btw` turn still runs.
+pub const BTW_TURN_POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// How long a turn that has not been seen running yet may keep its registration.
+const BTW_TURN_START_GRACE: Duration = Duration::from_secs(5);
+
+/// Decides when a host may drop a `/btw` registration, which only serves
+/// `btw_cancel`. A turn accepted a moment ago may not be running yet, and
+/// dropping it then would make it uncancellable for its whole run.
+#[derive(Debug)]
+pub struct BtwTurnWatch {
+    started_at: Instant,
+    seen_processing: bool,
+}
+
+impl Default for BtwTurnWatch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BtwTurnWatch {
+    pub fn new() -> Self {
+        Self {
+            started_at: Instant::now(),
+            seen_processing: false,
+        }
+    }
+
+    /// Record one observation; `true` means the turn has settled.
+    pub fn should_release(&mut self, processing: bool) -> bool {
+        self.should_release_at(processing, Instant::now())
+    }
+
+    fn should_release_at(&mut self, processing: bool, now: Instant) -> bool {
+        if processing {
+            self.seen_processing = true;
+            return false;
+        }
+        self.seen_processing || now.duration_since(self.started_at) >= BTW_TURN_START_GRACE
+    }
 }
 
 impl Default for SideQuestionRuntime {
@@ -83,7 +126,33 @@ impl SideQuestionRuntime {
 
 #[cfg(test)]
 mod tests {
-    use super::{ActiveBtwTurn, SideQuestionRuntime};
+    use super::{ActiveBtwTurn, BtwTurnWatch, SideQuestionRuntime, BTW_TURN_START_GRACE};
+    use std::time::Duration;
+
+    #[test]
+    fn a_turn_not_running_yet_keeps_its_registration_during_the_grace_period() {
+        let mut watch = BtwTurnWatch::new();
+        let start = watch.started_at;
+        assert!(!watch.should_release_at(false, start));
+        assert!(!watch.should_release_at(false, start + Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn a_turn_that_never_runs_is_released_after_the_grace_period() {
+        let mut watch = BtwTurnWatch::new();
+        let start = watch.started_at;
+        assert!(watch.should_release_at(false, start + BTW_TURN_START_GRACE));
+    }
+
+    #[test]
+    fn a_running_turn_is_released_as_soon_as_it_settles() {
+        let mut watch = BtwTurnWatch::new();
+        let start = watch.started_at;
+        assert!(!watch.should_release_at(false, start));
+        let long_after = start + BTW_TURN_START_GRACE * 10;
+        assert!(!watch.should_release_at(true, long_after));
+        assert!(watch.should_release_at(false, start + Duration::from_millis(1)));
+    }
 
     #[tokio::test]
     async fn registering_same_request_cancels_previous_token() {

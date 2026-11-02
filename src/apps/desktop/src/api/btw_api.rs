@@ -16,6 +16,7 @@ use openbitfun_core::agentic::coordination::{
     ConversationCoordinator, DialogSubmissionPolicy, DialogTriggerSource,
 };
 use openbitfun_core::agentic::image_analysis::ImageContextData;
+use openbitfun_core::agentic::side_question::{BtwTurnWatch, BTW_TURN_POLL_INTERVAL};
 
 fn desktop_btw_submission_policy() -> DialogSubmissionPolicy {
     DialogSubmissionPolicy::for_source(DialogTriggerSource::DesktopUi)
@@ -143,27 +144,20 @@ pub async fn btw_ask_stream(
     let request_id = request.request_id.clone();
     let coordinator = coordinator.inner().clone();
     tokio::spawn(async move {
+        let mut watch = BtwTurnWatch::new();
         loop {
-            let Some(session) = coordinator
-                .get_session_manager()
-                .get_session(&child_session_id)
-            else {
-                runtime.remove(&request_id).await;
-                break;
-            };
-
-            match session.state {
-                openbitfun_core::agentic::core::SessionState::Processing {
+            let processing = matches!(
+                coordinator.get_session_manager().get_session_state(&child_session_id),
+                Some(openbitfun_core::agentic::core::SessionState::Processing {
                     current_turn_id,
                     ..
-                } if current_turn_id == turn_id => {
-                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                }
-                _ => {
-                    runtime.remove(&request_id).await;
-                    break;
-                }
+                }) if current_turn_id == turn_id
+            );
+            if watch.should_release(processing) {
+                runtime.remove(&request_id).await;
+                break;
             }
+            tokio::time::sleep(BTW_TURN_POLL_INTERVAL).await;
         }
     });
 

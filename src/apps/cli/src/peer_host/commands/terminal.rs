@@ -40,6 +40,13 @@ fn exited_code(status: Option<&SessionStatus>) -> Option<Option<i32>> {
     }
 }
 
+fn unpublished_exit(status: Option<&SessionStatus>, exit_published: bool) -> Option<Value> {
+    if exit_published {
+        return None;
+    }
+    exited_code(status).map(|exit_code| json!({"exit_code":exit_code}))
+}
+
 fn api() -> Result<TerminalApi, String> {
     TerminalApi::from_singleton().map_err(|e| e.to_string())
 }
@@ -269,6 +276,11 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
             tokio::select! {
                 changed = rx.changed() => {
                     if changed.is_err() {
+                        // The close can land between exit checks; keep the exit code.
+                        let status = manager.session_status(&id).await;
+                        if let Some(payload) = unpublished_exit(status.as_ref(), exit_published) {
+                            publish_lifecycle(&hub, &id, TERMINAL_EXIT_EVENT, payload).await;
+                        }
                         publish_lifecycle(&hub, &id, TERMINAL_CLOSED_EVENT, json!({})).await;
                         break;
                     }
@@ -499,6 +511,18 @@ pub(crate) async fn execute(args: &Value) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_close_reports_an_exit_the_periodic_check_has_not_published() {
+        let exited = SessionStatus::Exited { exit_code: Some(7) };
+        assert_eq!(
+            unpublished_exit(Some(&exited), false),
+            Some(json!({"exit_code":7}))
+        );
+        assert_eq!(unpublished_exit(Some(&exited), true), None);
+        assert_eq!(unpublished_exit(Some(&SessionStatus::Active), false), None);
+        assert_eq!(unpublished_exit(None, false), None);
+    }
 
     #[test]
     fn exit_is_reported_only_for_an_exited_session() {
