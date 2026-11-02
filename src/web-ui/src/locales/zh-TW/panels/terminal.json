@@ -1,7 +1,10 @@
 {
   "title": "終端",
   "emptyState": "目前沒有開啟的終端",
-  "actions": { "closeView": "關閉終端機檢視", "stopTerminal": "停止終端機" },
+  "actions": {
+    "closeView": "關閉終端機檢視",
+    "stopTerminal": "停止終端機"
+  },
   "dialog": {
     "editTerminal": {
       "title": "編輯終端",
@@ -16,5 +19,12 @@
       "cancel": "取消",
       "save": "儲存"
     }
+  },
+  "linkForward": {
+    "label": "終端機連結",
+    "created": "已將遠端連接埠 {{remotePort}} 對應到 {{localAddress}}。",
+    "failed": "無法對應遠端連接埠 {{port}}：{{error}}",
+    "peerUnsupported": "控制其他裝置時無法對應遠端連接埠 {{port}}。此連結指向遠端主機，而非本機。",
+    "openAnyway": "仍要開啟連結"
   }
 }

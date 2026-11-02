@@ -1,7 +1,10 @@
 {
   "title": "Terminal",
   "emptyState": "No terminal is open",
-  "actions": { "closeView": "Close terminal view", "stopTerminal": "Stop terminal" },
+  "actions": {
+    "closeView": "Close terminal view",
+    "stopTerminal": "Stop terminal"
+  },
   "dialog": {
     "editTerminal": {
       "title": "Edit Terminal",
@@ -16,5 +19,12 @@
       "cancel": "Cancel",
       "save": "Save"
     }
+  },
+  "linkForward": {
+    "label": "Terminal link",
+    "created": "Forwarded remote port {{remotePort}} to {{localAddress}}.",
+    "failed": "Could not forward remote port {{port}}: {{error}}",
+    "peerUnsupported": "Remote port {{port}} cannot be forwarded while controlling another device. The link points at the remote host, not this machine.",
+    "openAnyway": "Open link anyway"
   }
 }
