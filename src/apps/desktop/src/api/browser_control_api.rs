@@ -1,7 +1,7 @@
 //! Browser control API — Tauri commands for CDP-based browser control.
 
 use openbitfun_core::agentic::tools::browser_control::browser_launcher::{
-    BrowserKind, BrowserLauncher, LaunchResult, DEFAULT_CDP_PORT,
+    BrowserKind, BrowserLauncher, CdpPortProbe, LaunchResult, DEFAULT_CDP_PORT,
 };
 use openbitfun_core::agentic::tools::browser_control::cdp_client::CdpClient;
 use openbitfun_core::agentic::tools::implementations::control_hub_tool::disconnect_external_browser;
@@ -43,7 +43,10 @@ pub fn init_on_startup() {
         let Ok(kind) = selected_browser_kind().await else {
             return;
         };
-        let Some(endpoint) = BrowserLauncher::user_profile_debug_endpoint(&kind) else {
+        let Some(endpoint) =
+            BrowserLauncher::user_profile_debug_endpoint_or_guarded_port(&kind, DEFAULT_CDP_PORT)
+                .await
+        else {
             return;
         };
         if CdpClient::browser_connection_for_kind(DEFAULT_CDP_PORT, &kind)
@@ -183,21 +186,27 @@ pub async fn browser_control_get_status(
     let default_cdp_supported = BrowserLauncher::supports_default_cdp(&configured_kind);
     // Probe the live endpoint once and answer both questions from it: whether
     // the persistent setting is on, and whether there is something to attach to
-    // right now. The probe is a file read plus a short local TCP connect, so it
-    // never prompts the browser the way attaching does.
-    let user_profile_endpoint = BrowserLauncher::user_profile_debug_endpoint(&configured_kind);
+    // right now. The probe is a file read, a short local TCP connect and, when
+    // no DevToolsActivePort file is published, one HTTP request to the port;
+    // none of these opens a WebSocket, so it never prompts the browser the way
+    // attaching does.
+    let user_profile_endpoint =
+        BrowserLauncher::user_profile_debug_endpoint_or_guarded_port(&configured_kind, port).await;
     let default_cdp_enabled = default_cdp_supported
         && (user_profile_endpoint.is_some()
             || BrowserLauncher::is_default_cdp_enabled(&configured_kind));
     let user_profile_connection =
         CdpClient::browser_connection_for_kind(port, &configured_kind).await;
     let browser_connection_suppressed = CdpClient::browser_connection_suppressed(port).await;
-    let legacy_version =
-        if user_profile_connection.is_none() && BrowserLauncher::is_cdp_available(port).await {
-            CdpClient::get_version(port).await.ok()
-        } else {
-            None
-        };
+    // Guarded remote debugging answers 404 on /json*, so only a legacy
+    // HTTP endpoint is read through the HTTP discovery API.
+    let legacy_version = if user_profile_connection.is_none()
+        && BrowserLauncher::probe_cdp_port(port).await == CdpPortProbe::Http
+    {
+        CdpClient::get_version(port).await.ok()
+    } else {
+        None
+    };
     // Chrome and Edge share the logical 9222 slot in Settings. Do not report
     // the selected browser as connected merely because the other one owns a
     // legacy fixed-port endpoint left from an earlier selection.

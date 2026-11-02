@@ -13,7 +13,7 @@ use crate::agentic::tools::browser_control::automation_client::{
     BrowserAutomationClient, EXTERNAL_CDP_EXTENSIONS, SHARED_BROWSER_ACTIONS,
 };
 use crate::agentic::tools::browser_control::browser_launcher::{
-    BrowserKind, BrowserLauncher, DEFAULT_CDP_PORT,
+    BrowserKind, BrowserLauncher, CdpPortProbe, DEFAULT_CDP_PORT,
 };
 use crate::agentic::tools::browser_control::builtin_browser::{
     builtin_browser_host_available, connect_builtin_browser_for_session,
@@ -1780,19 +1780,41 @@ Results: `{ok, domain, action, data? , error?: {code, message, hints}}`. Check o
                 }
                 let mode = if headless { "headless" } else { "default" };
 
-                if mode == "headless" && !BrowserLauncher::is_cdp_available(port).await {
-                    return Ok(err_response(
-                        "browser",
-                        "connect",
-                        ControlHubError::new(
-                            ErrorCode::NotAvailable,
-                            format!(
-                                "Headless browser test port {} is not available. Start the dedicated headless browser first, then connect via ControlHub browser actions.",
-                                port
-                            ),
-                        )
-                        .with_hints(Self::headless_browser_connect_hints(port)),
-                    ));
+                if mode == "headless" {
+                    match BrowserLauncher::probe_cdp_port(port).await {
+                        CdpPortProbe::Http => {}
+                        CdpPortProbe::GuardedNoHttp => {
+                            // Guarded remote debugging belongs to a user's
+                            // real browser profile, never a disposable test
+                            // browser, and it serves no /json endpoints.
+                            return Ok(err_response(
+                                "browser",
+                                "connect",
+                                ControlHubError::new(
+                                    ErrorCode::NotAvailable,
+                                    format!(
+                                        "Port {} is served by a browser with guarded remote debugging (no /json HTTP endpoints). That is a user's real browser profile, not a headless test browser; the user can connect it from Settings > Browser control.",
+                                        port
+                                    ),
+                                )
+                                .with_hints(Self::headless_browser_connect_hints(port)),
+                            ));
+                        }
+                        CdpPortProbe::Unreachable => {
+                            return Ok(err_response(
+                                "browser",
+                                "connect",
+                                ControlHubError::new(
+                                    ErrorCode::NotAvailable,
+                                    format!(
+                                        "Headless browser test port {} is not available. Start the dedicated headless browser first, then connect via ControlHub browser actions.",
+                                        port
+                                    ),
+                                )
+                                .with_hints(Self::headless_browser_connect_hints(port)),
+                            ));
+                        }
+                    }
                 }
 
                 let kind = if headless {

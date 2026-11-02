@@ -16,7 +16,7 @@ use tokio::sync::{broadcast, Mutex, RwLock};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
-use super::browser_launcher::BrowserKind;
+use super::browser_launcher::{BrowserKind, BrowserLauncher};
 use super::{BrowserAutomationCapabilities, BrowserAutomationClient, BrowserAutomationEvent};
 
 type WsSink = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
@@ -27,6 +27,25 @@ type SessionStatuses = Arc<RwLock<HashMap<String, Weak<AtomicBool>>>>;
 
 const PAGE_CDP_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const USER_PROFILE_APPROVAL_TIMEOUT: Duration = Duration::from_secs(90);
+/// Backoff between guarded WebSocket attempts that failed before the upgrade.
+/// All attempts share [`USER_PROFILE_APPROVAL_TIMEOUT`].
+const USER_PROFILE_CONNECT_RETRY_BACKOFF: [Duration; 4] = [
+    Duration::from_millis(250),
+    Duration::from_millis(500),
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+];
+/// A reset faster than this cannot follow a user's answer to the approval
+/// prompt, so it is treated as the endpoint not being ready yet.
+const USER_PROFILE_FAST_RESET_WINDOW: Duration = Duration::from_secs(1);
+
+/// Why a WebSocket connection could not be opened.
+enum WsConnectError {
+    /// The TCP connect or HTTP upgrade did not finish in time. For a guarded
+    /// endpoint this usually means the approval prompt is still pending.
+    Timeout,
+    Failed(tokio_tungstenite::tungstenite::Error),
+}
 
 /// Backward-compatible name for events recorded by CDP-only diagnostics.
 pub type CdpEvent = BrowserAutomationEvent;
@@ -179,18 +198,38 @@ impl CdpClient {
             actual_port
         );
         let client = Arc::new(
-            Self::connect_with_timeout(ws_url, USER_PROFILE_APPROVAL_TIMEOUT)
-                .await
-                .map_err(|error| {
-                    OpenBitFunError::tool(format!(
-                        "Could not connect to the current browser profile. Approve OpenBitFun's remote debugging request in the browser, then try again: {}",
-                        error
-                    ))
-                })?,
+            Self::connect_user_profile_websocket(
+                ws_url,
+                USER_PROFILE_APPROVAL_TIMEOUT,
+                &USER_PROFILE_CONNECT_RETRY_BACKOFF,
+            )
+            .await
+            .map_err(|error| {
+                OpenBitFunError::tool(format!(
+                    "Could not connect to the current browser profile. Approve OpenBitFun's remote debugging request in the browser, then try again: {}",
+                    error
+                ))
+            })?,
         );
         // Validate that this is a browser-level CDP endpoint before retaining
         // it. This also fails quickly if the DevToolsActivePort file was stale.
-        client.browser_version().await?;
+        let version = match client.browser_version().await {
+            Ok(version) => version,
+            Err(error) => {
+                client.disconnect().await;
+                return Err(error);
+            }
+        };
+        // A guarded port found without DevToolsActivePort carries no product
+        // identity, and Chrome and Edge both default to 9222. Never retain a
+        // connection to the other browser's profile under this selection.
+        if let Some(detected) = Self::guarded_product_mismatch(browser_kind, &version) {
+            client.disconnect().await;
+            return Err(OpenBitFunError::tool(format!(
+                "The browser on port {} is {}, not the selected {}. Select {} in Settings > Browser control, or turn off remote debugging in it and connect {} instead.",
+                actual_port, detected, browser_kind, detected, browser_kind
+            )));
+        }
         if Self::browser_connection_suppressed(logical_port).await {
             client.disconnect().await;
             return Err(OpenBitFunError::tool(
@@ -324,17 +363,119 @@ impl CdpClient {
             .contains(&logical_port)
     }
 
+    /// Detect a retained-connection candidate whose product is the other
+    /// guarded browser (Chrome vs Edge). Edge may report a Chrome-like
+    /// `product`, so its `Edg/` user-agent token is checked first.
+    fn guarded_product_mismatch(
+        expected: &BrowserKind,
+        version: &CdpVersionInfo,
+    ) -> Option<BrowserKind> {
+        let detected = if version
+            .user_agent
+            .as_deref()
+            .is_some_and(|agent| agent.contains("Edg/"))
+        {
+            Some(BrowserKind::Edge)
+        } else {
+            version
+                .browser
+                .as_deref()
+                .and_then(BrowserLauncher::browser_kind_from_cdp_version)
+        }?;
+        match (expected, &detected) {
+            (BrowserKind::Chrome, BrowserKind::Edge) | (BrowserKind::Edge, BrowserKind::Chrome) => {
+                Some(detected)
+            }
+            _ => None,
+        }
+    }
+
+    /// Open the guarded browser WebSocket within one overall budget.
+    ///
+    /// Guarded remote debugging sometimes refuses or resets a connection
+    /// before the upgrade while the browser is still bringing its endpoint up,
+    /// so those outright failures are retried with backoff. A handshake that
+    /// stalls is different: the browser is showing its approval prompt, and
+    /// every new socket would raise another prompt, so it is never retried.
+    async fn connect_user_profile_websocket(
+        ws_url: &str,
+        budget: Duration,
+        backoff: &[Duration],
+    ) -> OpenBitFunResult<Self> {
+        let deadline = tokio::time::Instant::now() + budget;
+        let mut delays = backoff.iter();
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return Err(Self::websocket_timeout_error());
+            }
+            let attempt_started = tokio::time::Instant::now();
+            let error = match Self::open_websocket(ws_url, remaining).await {
+                Ok(client) => return Ok(client),
+                Err(WsConnectError::Timeout) => return Err(Self::websocket_timeout_error()),
+                Err(WsConnectError::Failed(error)) => error,
+            };
+            let retryable = Self::is_retryable_before_upgrade(&error, attempt_started.elapsed());
+            let delay = delays.next().copied();
+            match delay {
+                Some(delay)
+                    if retryable
+                        && deadline.saturating_duration_since(tokio::time::Instant::now())
+                            > delay =>
+                {
+                    debug!(
+                        "Guarded browser WebSocket connect failed before upgrade, retrying in {:?}: {}",
+                        delay, error
+                    );
+                    tokio::time::sleep(delay).await;
+                }
+                _ => return Err(Self::websocket_failed_error(&error)),
+            }
+        }
+    }
+
+    /// A refused connection never reached the browser. A reset or abort is
+    /// retried only when it arrives faster than any user decision could, so a
+    /// browser that drops the socket after its prompt is not asked again.
+    fn is_retryable_before_upgrade(
+        error: &tokio_tungstenite::tungstenite::Error,
+        elapsed: Duration,
+    ) -> bool {
+        use std::io::ErrorKind;
+        let tokio_tungstenite::tungstenite::Error::Io(io_error) = error else {
+            return false;
+        };
+        match io_error.kind() {
+            ErrorKind::ConnectionRefused => true,
+            ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted => {
+                elapsed < USER_PROFILE_FAST_RESET_WINDOW
+            }
+            _ => false,
+        }
+    }
+
+    fn websocket_timeout_error() -> OpenBitFunError {
+        OpenBitFunError::tool("Timed out waiting for the CDP WebSocket connection".to_string())
+    }
+
+    fn websocket_failed_error(error: &tokio_tungstenite::tungstenite::Error) -> OpenBitFunError {
+        OpenBitFunError::tool(format!("CDP WebSocket connect failed: {}", error))
+    }
+
     async fn connect_with_timeout(ws_url: &str, timeout: Duration) -> OpenBitFunResult<Self> {
+        Self::open_websocket(ws_url, timeout)
+            .await
+            .map_err(|error| match error {
+                WsConnectError::Timeout => Self::websocket_timeout_error(),
+                WsConnectError::Failed(error) => Self::websocket_failed_error(&error),
+            })
+    }
+
+    async fn open_websocket(ws_url: &str, timeout: Duration) -> Result<Self, WsConnectError> {
         let (ws_stream, _) = tokio::time::timeout(timeout, connect_async(ws_url))
             .await
-            .map_err(|_| {
-                OpenBitFunError::tool(
-                    "Timed out waiting for the CDP WebSocket connection".to_string(),
-                )
-            })?
-            .map_err(|error| {
-                OpenBitFunError::tool(format!("CDP WebSocket connect failed: {}", error))
-            })?;
+            .map_err(|_| WsConnectError::Timeout)?
+            .map_err(WsConnectError::Failed)?;
 
         let (sink, stream) = ws_stream.split();
         let sink = Arc::new(Mutex::new(sink));
@@ -1040,5 +1181,242 @@ mod tests {
             .expect_err("disconnected page must reject new commands");
         assert!(error.to_string().contains("response channel closed"));
         server.await.expect("mock CDP server");
+    }
+
+    /// Mock of Chromium's guarded remote debugging: every `/json*` HTTP
+    /// request answers an empty 404, and only `/devtools/browser` upgrades to
+    /// a browser-level CDP WebSocket that reports `product`.
+    async fn spawn_guarded_browser(
+        product: &'static str,
+        user_agent: &'static str,
+    ) -> (u16, Arc<std::sync::Mutex<Vec<String>>>) {
+        use tokio::io::AsyncWriteExt;
+        use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind guarded browser");
+        let port = listener.local_addr().expect("address").port();
+        let upgraded_paths = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let paths = upgraded_paths.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                let paths = paths.clone();
+                tokio::spawn(async move {
+                    let mut head = [0_u8; 2048];
+                    let read = stream.peek(&mut head).await.unwrap_or(0);
+                    let request = String::from_utf8_lossy(&head[..read]).to_ascii_lowercase();
+                    if !request.contains("upgrade: websocket") {
+                        let _ = stream
+                            .write_all(
+                                b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                            )
+                            .await;
+                        return;
+                    }
+                    let callback = |request: &Request, response: Response| {
+                        paths.lock().unwrap().push(request.uri().path().to_string());
+                        Ok(response)
+                    };
+                    let Ok(mut socket) =
+                        tokio_tungstenite::accept_hdr_async(stream, callback).await
+                    else {
+                        return;
+                    };
+                    while let Some(Ok(message)) = socket.next().await {
+                        let Message::Text(text) = message else {
+                            continue;
+                        };
+                        let command: Value = serde_json::from_str(&text).expect("command");
+                        let result = match command["method"].as_str() {
+                            Some("Browser.getVersion") => json!({
+                                "product": product,
+                                "userAgent": user_agent,
+                                "protocolVersion": "1.3"
+                            }),
+                            Some("Target.getTargets") => json!({
+                                "targetInfos": [{
+                                    "targetId": "page-1",
+                                    "type": "page",
+                                    "title": "Signed-in page",
+                                    "url": "https://example.test/"
+                                }]
+                            }),
+                            _ => json!({}),
+                        };
+                        let _ = socket
+                            .send(Message::Text(
+                                json!({ "id": command["id"], "result": result })
+                                    .to_string()
+                                    .into(),
+                            ))
+                            .await;
+                    }
+                });
+            }
+        });
+        (port, upgraded_paths)
+    }
+
+    #[tokio::test]
+    async fn guarded_port_without_json_endpoints_connects_over_browser_websocket() {
+        use openbitfun_services_integrations::browser_control::BrowserLauncher as Provider;
+
+        let (port, upgraded_paths) = spawn_guarded_browser(
+            "Chrome/156.0.8078.74",
+            "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        )
+        .await;
+        // The legacy HTTP discovery path reports actionable guidance instead
+        // of a JSON parse error.
+        let http_error = CdpClient::get_version(port).await.unwrap_err();
+        assert!(http_error
+            .to_string()
+            .contains("Settings > Browser control"));
+
+        let endpoint = Provider::guarded_port_debug_endpoint(&BrowserKind::Chrome, port)
+            .await
+            .expect("guarded endpoint fallback");
+        let logical_port = port;
+        let connection = CdpClient::connect_user_profile_browser(
+            logical_port,
+            endpoint.port,
+            &BrowserKind::Chrome,
+            &endpoint.web_socket_url,
+        )
+        .await
+        .expect("connect guarded browser");
+        assert_eq!(connection.browser_kind, BrowserKind::Chrome);
+        assert_eq!(
+            upgraded_paths.lock().unwrap().as_slice(),
+            ["/devtools/browser".to_string()]
+        );
+        let pages = connection.client.browser_pages().await.expect("targets");
+        assert_eq!(pages.len(), 1);
+        assert!(CdpClient::browser_connection(logical_port).await.is_some());
+        assert!(CdpClient::disconnect_browser_connection(logical_port).await);
+    }
+
+    #[tokio::test]
+    async fn guarded_port_owned_by_the_other_browser_is_not_retained() {
+        let (port, _) = spawn_guarded_browser(
+            "Chrome/156.0.0.0",
+            "Mozilla/5.0 AppleWebKit/537.36 Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
+        )
+        .await;
+        let error = CdpClient::connect_user_profile_browser(
+            port,
+            port,
+            &BrowserKind::Chrome,
+            &format!("ws://127.0.0.1:{port}/devtools/browser"),
+        )
+        .await
+        .err()
+        .expect("Edge must not be retained as Chrome");
+        assert!(error.to_string().contains("Microsoft Edge"));
+        assert!(CdpClient::browser_connection(port).await.is_none());
+    }
+
+    #[test]
+    fn product_mismatch_only_rejects_the_other_guarded_browser() {
+        let version = |product: &str, agent: &str| CdpVersionInfo {
+            user_agent: Some(agent.to_string()),
+            browser: Some(product.to_string()),
+            protocol_version: None,
+            web_socket_debugger_url: None,
+        };
+        let chrome = version("Chrome/156.0", "Mozilla/5.0 Chrome/156.0 Safari/537.36");
+        let edge = version("Chrome/156.0", "Mozilla/5.0 Chrome/156.0 Edg/156.0");
+        assert_eq!(
+            CdpClient::guarded_product_mismatch(&BrowserKind::Chrome, &chrome),
+            None
+        );
+        assert_eq!(
+            CdpClient::guarded_product_mismatch(&BrowserKind::Edge, &chrome),
+            Some(BrowserKind::Chrome)
+        );
+        assert_eq!(
+            CdpClient::guarded_product_mismatch(&BrowserKind::Chrome, &edge),
+            Some(BrowserKind::Edge)
+        );
+        assert_eq!(
+            CdpClient::guarded_product_mismatch(&BrowserKind::Brave, &chrome),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn guarded_websocket_retries_refused_connections_within_budget() {
+        let reserved = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve port");
+        let port = reserved.local_addr().expect("address").port();
+        drop(reserved);
+
+        let server = tokio::spawn(async move {
+            // Refuse the first attempts, then come up like a browser that is
+            // still starting its guarded endpoint.
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+                .await
+                .expect("rebind port");
+            let (stream, _) = listener.accept().await.expect("accept");
+            let mut socket = tokio_tungstenite::accept_async(stream)
+                .await
+                .expect("upgrade");
+            while let Some(Ok(message)) = socket.next().await {
+                if matches!(message, Message::Close(_)) {
+                    break;
+                }
+            }
+        });
+
+        let backoff = [
+            Duration::from_millis(100),
+            Duration::from_millis(200),
+            Duration::from_millis(400),
+            Duration::from_millis(800),
+        ];
+        let client = CdpClient::connect_user_profile_websocket(
+            &format!("ws://127.0.0.1:{port}/devtools/browser"),
+            Duration::from_secs(10),
+            &backoff,
+        )
+        .await
+        .expect("retry until the endpoint accepts");
+        client.disconnect().await;
+        server.await.expect("server");
+    }
+
+    #[tokio::test]
+    async fn guarded_websocket_never_retries_a_stalled_handshake() {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind");
+        let port = listener.local_addr().expect("address").port();
+        let accepted = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = accepted.clone();
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                // Hold the socket open without answering, like a browser
+                // waiting on its approval prompt.
+                counter.fetch_add(1, Ordering::SeqCst);
+                held.push(stream);
+            }
+        });
+
+        let error = CdpClient::connect_user_profile_websocket(
+            &format!("ws://127.0.0.1:{port}/devtools/browser"),
+            Duration::from_millis(300),
+            &USER_PROFILE_CONNECT_RETRY_BACKOFF,
+        )
+        .await
+        .err()
+        .expect("stalled handshake must time out");
+        assert!(error.to_string().contains("Timed out"));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(accepted.load(Ordering::SeqCst), 1);
     }
 }

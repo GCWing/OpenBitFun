@@ -7,8 +7,8 @@
 
 use openbitfun_services_integrations::browser_control::launcher as provider;
 pub use provider::{
-    BrowserDebugEndpoint, BrowserInfo, BrowserKind, BrowserLaunchOptions, LaunchResult,
-    DEFAULT_CDP_PORT,
+    BrowserDebugEndpoint, BrowserInfo, BrowserKind, BrowserLaunchOptions, CdpPortProbe,
+    LaunchResult, DEFAULT_CDP_PORT,
 };
 use std::path::PathBuf;
 
@@ -20,6 +20,21 @@ pub struct BrowserLauncher;
 impl BrowserLauncher {
     pub async fn is_cdp_available(port: u16) -> bool {
         provider::BrowserLauncher::is_cdp_available(port).await
+    }
+
+    /// Classify a local debug port without opening a WebSocket, so a guarded
+    /// endpoint (404 on `/json*`) is distinguished from nothing listening.
+    pub async fn probe_cdp_port(port: u16) -> CdpPortProbe {
+        provider::BrowserLauncher::probe_cdp_port(port).await
+    }
+
+    /// Like [`Self::user_profile_debug_endpoint`], but also accepts a guarded
+    /// remote-debugging port that serves only the browser WebSocket.
+    pub async fn user_profile_debug_endpoint_or_guarded_port(
+        kind: &BrowserKind,
+        port: u16,
+    ) -> Option<BrowserDebugEndpoint> {
+        provider::BrowserLauncher::user_profile_debug_endpoint_or_guarded_port(kind, port).await
     }
 
     pub fn detect_default_browser() -> OpenBitFunResult<BrowserKind> {

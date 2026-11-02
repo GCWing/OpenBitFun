@@ -40,6 +40,10 @@ pub struct CdpVersionInfo {
 
 #[derive(Debug, Error)]
 pub enum CdpEndpointError {
+    /// Chromium's user-approved remote debugging serves no `/json*` HTTP
+    /// discovery API; only the approved browser WebSocket works.
+    #[error("The browser on port {port} uses guarded remote debugging, which has no /json HTTP endpoints. Connect it from Settings > Browser control so OpenBitFun can use the approved browser WebSocket connection.")]
+    GuardedNoHttp { port: u16 },
     #[error("Cannot reach browser CDP on port {port}: {message}")]
     VersionRequest { port: u16, message: String },
     #[error("Invalid CDP version response: {0}")]
@@ -56,6 +60,18 @@ pub enum CdpEndpointError {
 
 pub struct CdpEndpointProvider;
 
+/// Reject a guarded endpoint's 404 before the body is parsed, so callers see
+/// actionable guidance instead of a JSON decode error on an empty body.
+fn reject_guarded_endpoint(
+    response: reqwest::Response,
+    port: u16,
+) -> Result<reqwest::Response, CdpEndpointError> {
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(CdpEndpointError::GuardedNoHttp { port });
+    }
+    Ok(response)
+}
+
 impl CdpEndpointProvider {
     /// Discover browser version on the given debug port.
     pub async fn get_version(port: u16) -> Result<CdpVersionInfo, CdpEndpointError> {
@@ -68,7 +84,8 @@ impl CdpEndpointProvider {
                 port,
                 message: source.to_string(),
             })?;
-        resp.json()
+        reject_guarded_endpoint(resp, port)?
+            .json()
             .await
             .map_err(|source| CdpEndpointError::VersionResponse(source.to_string()))
     }
@@ -84,7 +101,8 @@ impl CdpEndpointProvider {
                 port,
                 message: source.to_string(),
             })?;
-        resp.json()
+        reject_guarded_endpoint(resp, port)?
+            .json()
             .await
             .map_err(|source| CdpEndpointError::ListPagesResponse(source.to_string()))
     }
@@ -108,7 +126,8 @@ impl CdpEndpointProvider {
                 port,
                 message: source.to_string(),
             })?;
-        resp.json()
+        reject_guarded_endpoint(resp, port)?
+            .json()
             .await
             .map_err(|source| CdpEndpointError::CreatePageResponse(source.to_string()))
     }
@@ -117,6 +136,25 @@ impl CdpEndpointProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn guarded_endpoint_404_returns_actionable_error_for_every_http_call() {
+        let port =
+            crate::browser_control::test_support::serve_fixed_http("404 Not Found", "").await;
+
+        let version = CdpEndpointProvider::get_version(port).await.unwrap_err();
+        let pages = CdpEndpointProvider::list_pages(port).await.unwrap_err();
+        let created = CdpEndpointProvider::create_page(port, Some("https://example.com"))
+            .await
+            .unwrap_err();
+        for error in [version, pages, created] {
+            assert!(
+                matches!(error, CdpEndpointError::GuardedNoHttp { port: p } if p == port),
+                "unexpected error: {error}"
+            );
+            assert!(error.to_string().contains("Settings > Browser control"));
+        }
+    }
 
     #[test]
     fn cdp_page_info_preserves_websocket_debugger_field() {

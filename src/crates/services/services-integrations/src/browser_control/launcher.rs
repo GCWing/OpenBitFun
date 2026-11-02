@@ -86,17 +86,112 @@ pub struct BrowserLaunchOptions {
     pub activate: bool,
 }
 
+/// What a local CDP debug port answers on its HTTP discovery endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CdpPortProbe {
+    /// `/json/version` answered successfully: a legacy fixed-port endpoint
+    /// with the `/json*` HTTP discovery API.
+    Http,
+    /// The port speaks HTTP but `/json/version` returns 404. Chromium's
+    /// user-approved remote debugging (`chrome://inspect/#remote-debugging`,
+    /// Chrome 144+) deliberately serves no `/json*` endpoints; only the
+    /// browser-level WebSocket at `/devtools/browser` is available.
+    GuardedNoHttp,
+    /// Nothing usable is listening on the port.
+    Unreachable,
+}
+
+/// Path of the browser-level WebSocket served by guarded remote debugging.
+pub const GUARDED_BROWSER_WEBSOCKET_PATH: &str = "/devtools/browser";
+
+const CDP_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+
 impl BrowserLauncher {
-    /// Check if a CDP debug port is already listening.
-    pub async fn is_cdp_available(port: u16) -> bool {
+    /// Classify what a local CDP debug port answers. This only performs an
+    /// HTTP request; it never opens a WebSocket, so it cannot raise a
+    /// browser-owned approval prompt.
+    pub async fn probe_cdp_port(port: u16) -> CdpPortProbe {
         let url = format!("http://127.0.0.1:{}/json/version", port);
-        crate::reqwest_client()
+        match crate::reqwest_client()
             .get(&url)
-            .timeout(std::time::Duration::from_secs(2))
+            .timeout(CDP_PROBE_TIMEOUT)
             .send()
             .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false)
+        {
+            Ok(response) if response.status().is_success() => CdpPortProbe::Http,
+            Ok(response) if response.status() == reqwest::StatusCode::NOT_FOUND => {
+                CdpPortProbe::GuardedNoHttp
+            }
+            Ok(response) => {
+                debug!(
+                    "CDP port {} answered /json/version with unexpected status {}",
+                    port,
+                    response.status()
+                );
+                CdpPortProbe::Unreachable
+            }
+            Err(_) => CdpPortProbe::Unreachable,
+        }
+    }
+
+    /// Check if a legacy CDP debug port with the `/json*` HTTP API is
+    /// listening. A guarded endpoint that only serves the browser WebSocket
+    /// is reported by [`Self::probe_cdp_port`] instead.
+    pub async fn is_cdp_available(port: u16) -> bool {
+        Self::probe_cdp_port(port).await == CdpPortProbe::Http
+    }
+
+    /// Browser-level endpoint for a guarded remote-debugging port whose
+    /// `DevToolsActivePort` file is not where OpenBitFun looks for it. Only
+    /// browsers with the guarded flow qualify, and a port that another
+    /// supported browser's `DevToolsActivePort` already claims is skipped
+    /// because Chrome and Edge share the default 9222 slot. The caller must
+    /// still verify the product through `Browser.getVersion` after the
+    /// approved WebSocket connects.
+    pub async fn guarded_port_debug_endpoint(
+        kind: &BrowserKind,
+        port: u16,
+    ) -> Option<BrowserDebugEndpoint> {
+        if !Self::supports_default_cdp(kind) || port == 0 {
+            return None;
+        }
+        if Self::port_claimed_by_other_guarded_browser(kind, port) {
+            return None;
+        }
+        if Self::probe_cdp_port(port).await != CdpPortProbe::GuardedNoHttp {
+            return None;
+        }
+        Some(Self::guarded_port_endpoint(port))
+    }
+
+    fn guarded_port_endpoint(port: u16) -> BrowserDebugEndpoint {
+        BrowserDebugEndpoint {
+            port,
+            web_socket_url: format!("ws://127.0.0.1:{port}{GUARDED_BROWSER_WEBSOCKET_PATH}"),
+        }
+    }
+
+    fn port_claimed_by_other_guarded_browser(kind: &BrowserKind, port: u16) -> bool {
+        [BrowserKind::Chrome, BrowserKind::Edge]
+            .iter()
+            .filter(|other| *other != kind)
+            .any(|other| {
+                Self::user_profile_debug_endpoint(other)
+                    .is_some_and(|endpoint| endpoint.port == port)
+            })
+    }
+
+    /// Endpoint for the selected browser's real profile: the published
+    /// `DevToolsActivePort` file first, then a guarded port that answers 404
+    /// on `/json/version`.
+    pub async fn user_profile_debug_endpoint_or_guarded_port(
+        kind: &BrowserKind,
+        port: u16,
+    ) -> Option<BrowserDebugEndpoint> {
+        if let Some(endpoint) = Self::user_profile_debug_endpoint(kind) {
+            return Some(endpoint);
+        }
+        Self::guarded_port_debug_endpoint(kind, port).await
     }
 
     /// Detect the user's default browser on the current platform.
@@ -346,52 +441,45 @@ impl BrowserLauncher {
     }
 
     /// Return the browser's normal user-data directory. Browsers that expose
-    /// approval-based remote debugging write `DevToolsActivePort` here.
+    /// approval-based remote debugging write `DevToolsActivePort` here. This is
+    /// the stable-channel directory; see [`Self::user_profile_data_dirs`] for
+    /// every candidate that is probed.
     pub fn user_profile_data_dir(kind: &BrowserKind) -> Option<PathBuf> {
+        Self::user_profile_data_dirs(kind).into_iter().next()
+    }
+
+    /// Every user-data directory that may hold the selected browser's
+    /// `DevToolsActivePort`, stable channel first, followed by Beta / Dev /
+    /// Canary channels and sandboxed (Snap / Flatpak) installs. The first
+    /// directory that publishes a live endpoint wins.
+    pub fn user_profile_data_dirs(kind: &BrowserKind) -> Vec<PathBuf> {
         #[cfg(target_os = "macos")]
         {
-            let home = dirs::home_dir()?;
-            let application_support = home.join("Library").join("Application Support");
-            let relative = match kind {
-                BrowserKind::Chrome => Path::new("Google/Chrome"),
-                BrowserKind::Edge => Path::new("Microsoft Edge"),
-                BrowserKind::Chromium => Path::new("Chromium"),
-                BrowserKind::Brave => Path::new("BraveSoftware/Brave-Browser"),
-                BrowserKind::Arc => Path::new("Arc/User Data"),
-                BrowserKind::Unknown(_) => return None,
+            let Some(home) = dirs::home_dir() else {
+                return Vec::new();
             };
-            return Some(application_support.join(relative));
+            macos_profile_dir_candidates(kind, &home.join("Library").join("Application Support"))
         }
 
         #[cfg(target_os = "windows")]
         {
-            let local_app_data = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?;
-            let relative = match kind {
-                BrowserKind::Chrome => Path::new("Google/Chrome/User Data"),
-                BrowserKind::Edge => Path::new("Microsoft/Edge/User Data"),
-                BrowserKind::Chromium => Path::new("Chromium/User Data"),
-                BrowserKind::Brave => Path::new("BraveSoftware/Brave-Browser/User Data"),
-                BrowserKind::Arc => Path::new("Arc/User Data"),
-                BrowserKind::Unknown(_) => return None,
+            let Some(local_app_data) = std::env::var_os("LOCALAPPDATA").map(PathBuf::from) else {
+                return Vec::new();
             };
-            return Some(local_app_data.join(relative));
+            windows_profile_dir_candidates(kind, &local_app_data)
         }
 
         #[cfg(target_os = "linux")]
         {
-            let config_root = std::env::var_os("CHROME_CONFIG_HOME")
+            let home = dirs::home_dir();
+            let Some(config_root) = std::env::var_os("CHROME_CONFIG_HOME")
                 .or_else(|| std::env::var_os("XDG_CONFIG_HOME"))
                 .map(PathBuf::from)
-                .or_else(|| dirs::home_dir().map(|home| home.join(".config")))?;
-            let relative = match kind {
-                BrowserKind::Chrome => Path::new("google-chrome"),
-                BrowserKind::Edge => Path::new("microsoft-edge"),
-                BrowserKind::Chromium => Path::new("chromium"),
-                BrowserKind::Brave => Path::new("BraveSoftware/Brave-Browser"),
-                BrowserKind::Arc => Path::new("arc"),
-                BrowserKind::Unknown(_) => return None,
+                .or_else(|| home.as_ref().map(|home| home.join(".config")))
+            else {
+                return Vec::new();
             };
-            return Some(config_root.join(relative));
+            linux_profile_dir_candidates(kind, &config_root, home.as_deref())
         }
     }
 
@@ -431,7 +519,13 @@ impl BrowserLauncher {
     /// in its normal user-data directory. Malformed or stale files are treated
     /// as unavailable; the subsequent WebSocket connection is the source of truth.
     pub fn user_profile_debug_endpoint(kind: &BrowserKind) -> Option<BrowserDebugEndpoint> {
-        let path = Self::user_profile_data_dir(kind)?.join("DevToolsActivePort");
+        Self::user_profile_data_dirs(kind)
+            .iter()
+            .find_map(|directory| Self::debug_endpoint_in_dir(directory))
+    }
+
+    fn debug_endpoint_in_dir(directory: &Path) -> Option<BrowserDebugEndpoint> {
+        let path = directory.join("DevToolsActivePort");
         let contents = std::fs::read_to_string(&path).ok()?;
         match Self::parse_devtools_active_port(&contents) {
             Ok(endpoint) => {
@@ -494,14 +588,11 @@ impl BrowserLauncher {
         if Self::user_profile_debug_endpoint(kind).is_some() {
             return true;
         }
-        let Some(path) =
-            Self::user_profile_data_dir(kind).map(|directory| directory.join("Local State"))
-        else {
-            return false;
-        };
-        std::fs::read_to_string(path)
-            .ok()
-            .is_some_and(|contents| Self::default_cdp_preference_enabled(&contents))
+        Self::user_profile_data_dirs(kind).iter().any(|directory| {
+            std::fs::read_to_string(directory.join("Local State"))
+                .ok()
+                .is_some_and(|contents| Self::default_cdp_preference_enabled(&contents))
+        })
     }
 
     /// Open the browser's Remote debugging settings page.
@@ -588,9 +679,11 @@ impl BrowserLauncher {
 
     async fn prepare_user_profile_connection(
         kind: &BrowserKind,
+        port: u16,
         wait_for_user_setup: bool,
     ) -> Result<LaunchResult> {
-        if let Some(endpoint) = Self::user_profile_debug_endpoint(kind) {
+        if let Some(endpoint) = Self::user_profile_debug_endpoint_or_guarded_port(kind, port).await
+        {
             return Ok(LaunchResult::UserProfileReady { endpoint });
         }
 
@@ -604,7 +697,9 @@ impl BrowserLauncher {
         let attempts = if wait_for_user_setup { 240 } else { 8 };
         for _ in 0..attempts {
             tokio::time::sleep(Duration::from_millis(250)).await;
-            if let Some(endpoint) = Self::user_profile_debug_endpoint(kind) {
+            if let Some(endpoint) =
+                Self::user_profile_debug_endpoint_or_guarded_port(kind, port).await
+            {
                 return Ok(LaunchResult::UserProfileReady { endpoint });
             }
         }
@@ -893,15 +988,29 @@ impl BrowserLauncher {
             if Self::supports_default_cdp(kind) {
                 return Self::prepare_user_profile_connection(
                     kind,
+                    port,
                     options.wait_for_user_profile_setup,
                 )
                 .await;
             }
         }
 
-        if Self::is_cdp_available(port).await {
-            info!("CDP already available on port {} for {}", port, kind);
-            return Ok(LaunchResult::AlreadyConnected);
+        match Self::probe_cdp_port(port).await {
+            CdpPortProbe::Http => {
+                info!("CDP already available on port {} for {}", port, kind);
+                return Ok(LaunchResult::AlreadyConnected);
+            }
+            CdpPortProbe::GuardedNoHttp => {
+                // A guarded user-profile endpoint owns this port. A managed
+                // instance cannot bind it, and the legacy HTTP attach path
+                // cannot use it, so fail with guidance instead of a launch
+                // that never becomes ready.
+                return Err(anyhow!(
+                    "Port {} is served by a browser with guarded remote debugging, which has no /json HTTP endpoints. Connect it from Settings > Browser control instead.",
+                    port
+                ));
+            }
+            CdpPortProbe::Unreachable => {}
         }
 
         let exe = Self::browser_executable(kind);
@@ -1141,6 +1250,94 @@ impl BrowserLauncher {
     }
 }
 
+fn join_candidates(root: &Path, relatives: &[&str]) -> Vec<PathBuf> {
+    relatives
+        .iter()
+        .map(|relative| root.join(relative))
+        .collect()
+}
+
+#[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
+fn macos_profile_dir_candidates(kind: &BrowserKind, application_support: &Path) -> Vec<PathBuf> {
+    let relatives: &[&str] = match kind {
+        BrowserKind::Chrome => &[
+            "Google/Chrome",
+            "Google/Chrome Beta",
+            "Google/Chrome Dev",
+            "Google/Chrome Canary",
+        ],
+        BrowserKind::Edge => &[
+            "Microsoft Edge",
+            "Microsoft Edge Beta",
+            "Microsoft Edge Dev",
+            "Microsoft Edge Canary",
+        ],
+        BrowserKind::Chromium => &["Chromium"],
+        BrowserKind::Brave => &["BraveSoftware/Brave-Browser"],
+        BrowserKind::Arc => &["Arc/User Data"],
+        BrowserKind::Unknown(_) => &[],
+    };
+    join_candidates(application_support, relatives)
+}
+
+#[cfg_attr(not(any(test, target_os = "windows")), allow(dead_code))]
+fn windows_profile_dir_candidates(kind: &BrowserKind, local_app_data: &Path) -> Vec<PathBuf> {
+    let relatives: &[&str] = match kind {
+        BrowserKind::Chrome => &[
+            "Google/Chrome/User Data",
+            "Google/Chrome Beta/User Data",
+            "Google/Chrome Dev/User Data",
+            "Google/Chrome SxS/User Data",
+        ],
+        BrowserKind::Edge => &[
+            "Microsoft/Edge/User Data",
+            "Microsoft/Edge Beta/User Data",
+            "Microsoft/Edge Dev/User Data",
+            "Microsoft/Edge SxS/User Data",
+        ],
+        BrowserKind::Chromium => &["Chromium/User Data"],
+        BrowserKind::Brave => &["BraveSoftware/Brave-Browser/User Data"],
+        BrowserKind::Arc => &["Arc/User Data"],
+        BrowserKind::Unknown(_) => &[],
+    };
+    join_candidates(local_app_data, relatives)
+}
+
+#[cfg_attr(not(any(test, target_os = "linux")), allow(dead_code))]
+fn linux_profile_dir_candidates(
+    kind: &BrowserKind,
+    config_root: &Path,
+    home: Option<&Path>,
+) -> Vec<PathBuf> {
+    let (relatives, home_relatives): (&[&str], &[&str]) = match kind {
+        BrowserKind::Chrome => (
+            &[
+                "google-chrome",
+                "google-chrome-beta",
+                "google-chrome-unstable",
+            ],
+            &[".var/app/com.google.Chrome/config/google-chrome"],
+        ),
+        BrowserKind::Edge => (
+            &[
+                "microsoft-edge",
+                "microsoft-edge-beta",
+                "microsoft-edge-dev",
+            ],
+            &[],
+        ),
+        BrowserKind::Chromium => (&["chromium"], &["snap/chromium/common/chromium"]),
+        BrowserKind::Brave => (&["BraveSoftware/Brave-Browser"], &[]),
+        BrowserKind::Arc => (&["arc"], &[]),
+        BrowserKind::Unknown(_) => (&[], &[]),
+    };
+    let mut candidates = join_candidates(config_root, relatives);
+    if let Some(home) = home {
+        candidates.extend(join_candidates(home, home_relatives));
+    }
+    candidates
+}
+
 /// Result of a browser launch attempt.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LaunchResult {
@@ -1254,6 +1451,203 @@ mod tests {
             r#"{"devtools":{"remote_debugging":{"user-enabled":false}}}"#
         ));
         assert!(!BrowserLauncher::default_cdp_preference_enabled("{}"));
+    }
+
+    #[tokio::test]
+    async fn probe_classifies_guarded_http_and_unreachable_ports() {
+        use crate::browser_control::test_support::{closed_port, serve_fixed_http};
+
+        let guarded = serve_fixed_http("404 Not Found", "").await;
+        assert_eq!(
+            BrowserLauncher::probe_cdp_port(guarded).await,
+            CdpPortProbe::GuardedNoHttp
+        );
+        assert!(!BrowserLauncher::is_cdp_available(guarded).await);
+
+        let legacy = serve_fixed_http(
+            "200 OK",
+            r#"{"Browser":"Chrome/156.0","webSocketDebuggerUrl":"ws://127.0.0.1/devtools/browser/x"}"#,
+        )
+        .await;
+        assert_eq!(
+            BrowserLauncher::probe_cdp_port(legacy).await,
+            CdpPortProbe::Http
+        );
+        assert!(BrowserLauncher::is_cdp_available(legacy).await);
+
+        assert_eq!(
+            BrowserLauncher::probe_cdp_port(closed_port()).await,
+            CdpPortProbe::Unreachable
+        );
+    }
+
+    #[tokio::test]
+    async fn guarded_port_falls_back_to_browser_websocket_for_chrome_and_edge_only() {
+        use crate::browser_control::test_support::serve_fixed_http;
+
+        let guarded = serve_fixed_http("404 Not Found", "").await;
+        let expected = format!("ws://127.0.0.1:{guarded}/devtools/browser");
+        for kind in [BrowserKind::Chrome, BrowserKind::Edge] {
+            let endpoint = BrowserLauncher::guarded_port_debug_endpoint(&kind, guarded)
+                .await
+                .expect("guarded endpoint");
+            assert_eq!(endpoint.port, guarded);
+            assert_eq!(endpoint.web_socket_url, expected);
+        }
+        // Browsers without the guarded flow never guess a WebSocket.
+        assert!(
+            BrowserLauncher::guarded_port_debug_endpoint(&BrowserKind::Brave, guarded)
+                .await
+                .is_none()
+        );
+
+        // A legacy fixed port keeps the HTTP discovery path.
+        let legacy = serve_fixed_http("200 OK", "{}").await;
+        assert!(
+            BrowserLauncher::guarded_port_debug_endpoint(&BrowserKind::Chrome, legacy)
+                .await
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn non_guarded_launch_refuses_a_port_owned_by_guarded_debugging() {
+        use crate::browser_control::test_support::serve_fixed_http;
+
+        let guarded = serve_fixed_http("404 Not Found", "").await;
+        let error = BrowserLauncher::launch_with_cdp_options(
+            &BrowserKind::Brave,
+            guarded,
+            BrowserLaunchOptions {
+                user_data_dir: Some(std::env::temp_dir().join("openbitfun-guarded-port-test")),
+                ..BrowserLaunchOptions::default()
+            },
+        )
+        .await
+        .expect_err("guarded port must not be treated as a launch target");
+        assert!(error.to_string().contains("Settings > Browser control"));
+    }
+
+    #[test]
+    fn macos_profile_candidates_cover_release_channels() {
+        let root = PathBuf::from("/Users/u/Library/Application Support");
+        assert_eq!(
+            macos_profile_dir_candidates(&BrowserKind::Chrome, &root),
+            vec![
+                root.join("Google/Chrome"),
+                root.join("Google/Chrome Beta"),
+                root.join("Google/Chrome Dev"),
+                root.join("Google/Chrome Canary"),
+            ]
+        );
+        assert_eq!(
+            macos_profile_dir_candidates(&BrowserKind::Edge, &root),
+            vec![
+                root.join("Microsoft Edge"),
+                root.join("Microsoft Edge Beta"),
+                root.join("Microsoft Edge Dev"),
+                root.join("Microsoft Edge Canary"),
+            ]
+        );
+        assert!(macos_profile_dir_candidates(&BrowserKind::Unknown("x".into()), &root).is_empty());
+    }
+
+    #[test]
+    fn windows_profile_candidates_cover_release_channels() {
+        let root = PathBuf::from("/LocalAppData");
+        assert_eq!(
+            windows_profile_dir_candidates(&BrowserKind::Chrome, &root),
+            vec![
+                root.join("Google/Chrome/User Data"),
+                root.join("Google/Chrome Beta/User Data"),
+                root.join("Google/Chrome Dev/User Data"),
+                root.join("Google/Chrome SxS/User Data"),
+            ]
+        );
+        assert_eq!(
+            windows_profile_dir_candidates(&BrowserKind::Edge, &root),
+            vec![
+                root.join("Microsoft/Edge/User Data"),
+                root.join("Microsoft/Edge Beta/User Data"),
+                root.join("Microsoft/Edge Dev/User Data"),
+                root.join("Microsoft/Edge SxS/User Data"),
+            ]
+        );
+    }
+
+    #[test]
+    fn linux_profile_candidates_cover_channels_and_sandboxed_installs() {
+        let config = PathBuf::from("/home/u/.config");
+        let home = PathBuf::from("/home/u");
+        assert_eq!(
+            linux_profile_dir_candidates(&BrowserKind::Chrome, &config, Some(&home)),
+            vec![
+                config.join("google-chrome"),
+                config.join("google-chrome-beta"),
+                config.join("google-chrome-unstable"),
+                home.join(".var/app/com.google.Chrome/config/google-chrome"),
+            ]
+        );
+        assert_eq!(
+            linux_profile_dir_candidates(&BrowserKind::Edge, &config, Some(&home)),
+            vec![
+                config.join("microsoft-edge"),
+                config.join("microsoft-edge-beta"),
+                config.join("microsoft-edge-dev"),
+            ]
+        );
+        assert_eq!(
+            linux_profile_dir_candidates(&BrowserKind::Chromium, &config, Some(&home)),
+            vec![
+                config.join("chromium"),
+                home.join("snap/chromium/common/chromium"),
+            ]
+        );
+        assert_eq!(
+            linux_profile_dir_candidates(&BrowserKind::Chromium, &config, None),
+            vec![config.join("chromium")]
+        );
+    }
+
+    #[test]
+    fn stable_profile_dir_stays_the_first_candidate() {
+        for kind in [BrowserKind::Chrome, BrowserKind::Edge, BrowserKind::Brave] {
+            assert_eq!(
+                BrowserLauncher::user_profile_data_dir(&kind),
+                BrowserLauncher::user_profile_data_dirs(&kind)
+                    .into_iter()
+                    .next()
+            );
+        }
+    }
+
+    #[test]
+    fn first_live_devtools_active_port_candidate_wins() {
+        let stale = tempfile::tempdir().expect("tempdir");
+        let live = tempfile::tempdir().expect("tempdir");
+        let closed = crate::browser_control::test_support::closed_port();
+        std::fs::write(
+            stale.path().join("DevToolsActivePort"),
+            format!("{closed}\n/devtools/browser/stale\n"),
+        )
+        .unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let live_port = listener.local_addr().unwrap().port();
+        std::fs::write(
+            live.path().join("DevToolsActivePort"),
+            format!("{live_port}\n/devtools/browser/live\n"),
+        )
+        .unwrap();
+
+        let found = [stale.path(), live.path()]
+            .iter()
+            .find_map(|directory| BrowserLauncher::debug_endpoint_in_dir(directory))
+            .expect("live candidate");
+        assert_eq!(found.port, live_port);
+        assert_eq!(
+            found.web_socket_url,
+            format!("ws://127.0.0.1:{live_port}/devtools/browser/live")
+        );
     }
 
     #[test]
