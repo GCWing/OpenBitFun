@@ -443,6 +443,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn local_create_metadata_and_sync_hash_answer_the_desktop_shape() {
+        let temp = tempfile::tempdir().unwrap();
+        let service = super::FileSystemService::default();
+        let path = temp
+            .path()
+            .join("created.txt")
+            .to_string_lossy()
+            .to_string();
+        std::fs::write(&path, "stale bytes").unwrap();
+        // Desktop `create_file` truncates an existing path.
+        super::create_empty_file(&service, &path, Some(""))
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
+
+        let file = super::metadata(&service, &path, Some("")).await.unwrap();
+        assert!(file.is_file && !file.is_dir && !file.is_remote);
+        assert_eq!(file.size, 0);
+        let value = serde_json::to_value(&file).unwrap();
+        for field in [
+            "path",
+            "modified",
+            "size",
+            "isFile",
+            "isDir",
+            "isSymlink",
+            "isRemote",
+        ] {
+            assert!(value.get(field).is_some(), "missing {field}");
+        }
+        let directory = temp.path().to_string_lossy().to_string();
+        let directory = super::metadata(&service, &directory, Some(""))
+            .await
+            .unwrap();
+        assert!(directory.is_dir && !directory.is_file);
+        assert!(
+            super::metadata(&service, &format!("{path}.missing"), Some(""))
+                .await
+                .is_err()
+        );
+
+        std::fs::write(&path, "synced").unwrap();
+        let (hash, is_remote) = super::editor_sync_hash(&service, &path, Some(""))
+            .await
+            .unwrap();
+        assert!(!is_remote);
+        assert_eq!(
+            hash,
+            service.editor_sync_content_sha256_hex(&path).await.unwrap()
+        );
+    }
+
+    #[tokio::test]
     async fn explicit_local_scope_bypasses_same_path_remote_routing() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().to_string_lossy().to_string();
