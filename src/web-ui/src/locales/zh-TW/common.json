@@ -218,7 +218,7 @@
       "files": "檔案",
       "terminals": "終端機",
       "local": "本機",
-      "remote": "遠端工作區",
+      "remote": "連線環境",
       "peer": "對端裝置",
       "switchWorkspace": "切換工作區",
       "chooseShell": "選擇 Shell",
@@ -355,7 +355,7 @@
         "environment": {
           "label": "環境",
           "local": "本機",
-          "remote": "遠端工作區",
+          "remote": "連線環境",
           "detached": "分離執行"
         },
         "source": {
@@ -1937,7 +1937,7 @@
   "ssh": {
     "remote": {
       "title": "遠程 SSH",
-      "connect": "連接遠程項目",
+      "connect": "連線",
       "connecting": "連接中...",
       "connected": "已連接",
       "disconnect": "斷開連接",
@@ -2067,7 +2067,7 @@
     "portForward": {
       "menuEntry": "連接埠對應",
       "title": "連接埠對應",
-      "intro": "把遠端主機上正在監聽的連接埠對應到本機存取。對應不會自動建立，只有你在這裡新增的才會生效。",
+      "intro": "把遠端主機上正在監聽的連接埠對應到本機存取。只有你在這裡新增，或在遠端終端機中開啟 localhost 連結時，才會建立對應。",
       "detectedTitle": "遠端正在監聽",
       "detecting": "正在偵測遠端連接埠…",
       "detect": "重新偵測",

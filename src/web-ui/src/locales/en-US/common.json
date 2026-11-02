@@ -218,7 +218,7 @@
       "files": "Files",
       "terminals": "Terminals",
       "local": "Local",
-      "remote": "Remote workspace",
+      "remote": "Connected environment",
       "peer": "Peer device",
       "switchWorkspace": "Switch workspace",
       "chooseShell": "Choose a shell",
@@ -355,7 +355,7 @@
         "environment": {
           "label": "Environment",
           "local": "Local",
-          "remote": "Remote workspace",
+          "remote": "Connected environment",
           "detached": "Detached execution"
         },
         "source": {
@@ -1937,7 +1937,7 @@
   "ssh": {
     "remote": {
       "title": "Remote SSH",
-      "connect": "Connect Remote Project",
+      "connect": "Connect",
       "connecting": "Connecting...",
       "connected": "Connected",
       "disconnect": "Disconnect",
@@ -2067,7 +2067,7 @@
     "portForward": {
       "menuEntry": "Forward a Port",
       "title": "Port Forwarding",
-      "intro": "Reach a port listening on the remote host from this machine. Nothing is forwarded automatically — only the mappings you add here.",
+      "intro": "Reach a port listening on the remote host from this machine. Forwards are created only when you add one here or open a localhost link from a remote terminal.",
       "detectedTitle": "Listening on the remote",
       "detecting": "Detecting remote ports…",
       "detect": "Detect again",

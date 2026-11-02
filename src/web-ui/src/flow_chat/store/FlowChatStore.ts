@@ -50,6 +50,7 @@ import { stateMachineManager } from '../state-machine';
 import { estimateRetainedBytes, resourceBudget } from '@/shared/utils/resourceBudget';
 import { ProcessingPhase, SessionExecutionState } from '../state-machine/types';
 import { isTurnAwaitingRecovery } from '../utils/interruptedTurnRecovery';
+import { isUnmaterializedSessionDraft } from '../utils/sessionDraft';
 import { sessionActivityStore } from './sessionActivityStore';
 import {
   getActiveSurfaceId,
@@ -6057,6 +6058,9 @@ export class FlowChatStore {
     const surface = this.activeSurface;
     if (surface.surfaceId === 'local') throw new Error('Local history is owned by the local runtime');
     if (!surface.state.sessions.has(sessionId)) throw new Error('Relay session shell is not loaded');
+    // The host rejects a reserved ID, and that rejection would falsely mark an
+    // empty composer session as a failed history restore. It has no history yet.
+    if (isUnmaterializedSessionDraft(surface.state.sessions.get(sessionId))) return;
     let history = surface.relaySessionHistory.get(sessionId);
     if (!history) {
       history = new RelaySessionHistory(sessionId,
@@ -6132,6 +6136,7 @@ export class FlowChatStore {
   }
 
   public async loadOlderRelaySessionHistory(sessionId: string): Promise<boolean> {
+    if (isUnmaterializedSessionDraft(this.state.sessions.get(sessionId))) return false;
     await this.loadRelaySessionHistory(sessionId);
     const history = this.activeSurface.relaySessionHistory.get(sessionId);
     if (!history) throw new Error('Relay session history is no longer active');
@@ -8595,6 +8600,7 @@ export class FlowChatStore {
       return;
     }
     if (scope.surfaceId !== 'local') {
+      if (isUnmaterializedSessionDraft(initialSession)) return;
       if (initialSession?.externalHistory?.mode === 'follow') {
         // Relay history has its own cursor/version contract. Until it can pin
         // immutable source snapshots, do not silently project a stale source.
