@@ -51,7 +51,8 @@ export const fileSearchProvider: GlobalSearchProvider = {
   search: async (request, signal) => {
     if (request.scope === 'actions' || request.query.length < 2) return { items: [] };
 
-    // Remote content search remains an explicit unsupported capability.
+    // Global search stays local-only: the file panel searches a remote workspace, but here
+    // every keystroke would hold local file results behind a remote scan of each workspace.
     const remoteWorkspaces = request.workspaces.filter(isRemoteWorkspace);
     const searchableWorkspaces = request.workspaces.filter(workspace => !isRemoteWorkspace(workspace));
     const results = await Promise.allSettled(searchableWorkspaces.map(async (workspace) => {

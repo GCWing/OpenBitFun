@@ -53,18 +53,48 @@ pub(crate) struct WorkspaceFileWalker<'a> {
     hide_hidden: bool,
     apply_ignore: bool,
     include_symlink_entries: bool,
+    excluded_directories: Vec<String>,
+    skip_unreadable_directories: bool,
+    skipped_directories: usize,
+}
+
+/// Rules from the repository-level exclude file. They rank below every `.gitignore`
+/// because ignores apply in order. Only a workspace rooted at its repository has one
+/// here: linked worktrees, parent repositories and global excludes are not consulted.
+pub(crate) async fn git_info_exclude_ignores(
+    fs: &dyn WorkspaceFileSystem,
+    root: &str,
+) -> Vec<DirectoryIgnore> {
+    let path = format!("{}/.git/info/exclude", root.trim_end_matches('/'));
+    match fs.read_file_text_bounded(&path, 1024 * 1024).await {
+        Ok(Some(text)) => super::workspace_ignore::WorkspaceIgnoreRules::parse(&text)
+            .map(|rules| {
+                vec![DirectoryIgnore {
+                    depth: 0,
+                    override_gitignore: false,
+                    rules,
+                }]
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+/// True for a per-path refusal from the target. Anything else, such as a lost
+/// connection, says nothing about the path and has to stay fatal to the search.
+pub(crate) fn is_per_path_read_failure(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    [
+        "permission denied",
+        "access denied",
+        "no such file",
+        "not a readable regular file",
+    ]
+    .iter()
+    .any(|refusal| message.contains(refusal))
 }
 
 impl<'a> WorkspaceFileWalker<'a> {
-    pub(crate) fn new(
-        fs: &'a dyn WorkspaceFileSystem,
-        root: String,
-        hide_hidden: bool,
-        apply_ignore: bool,
-    ) -> Self {
-        Self::with_scope(fs, root, Vec::new(), Vec::new(), hide_hidden, apply_ignore)
-    }
-
     pub(crate) fn with_scope(
         fs: &'a dyn WorkspaceFileSystem,
         root: String,
@@ -84,7 +114,21 @@ impl<'a> WorkspaceFileWalker<'a> {
             hide_hidden,
             apply_ignore,
             include_symlink_entries: false,
+            excluded_directories: Vec::new(),
+            skip_unreadable_directories: false,
+            skipped_directories: 0,
         }
+    }
+
+    /// Prune directories by name and pass over those the target refuses to list.
+    pub(crate) fn with_interactive_policy(mut self, excluded_directories: Vec<String>) -> Self {
+        self.excluded_directories = excluded_directories;
+        self.skip_unreadable_directories = true;
+        self
+    }
+
+    pub(crate) fn skipped_directories(&self) -> usize {
+        self.skipped_directories
     }
 
     /// Let consumers inspect final symlink targets without ever following a
@@ -125,6 +169,9 @@ impl<'a> WorkspaceFileWalker<'a> {
                     continue;
                 }
                 if entry.is_dir && !entry.is_symlink {
+                    if self.excluded_directories.contains(&entry.name) {
+                        continue;
+                    }
                     self.pending
                         .push_back((entry.path, components, self.ignores.clone()));
                     continue;
@@ -137,13 +184,27 @@ impl<'a> WorkspaceFileWalker<'a> {
             let Some((path, components, mut ignores)) = self.pending.pop_front() else {
                 return Ok(None);
             };
-            let entries = self
-                .fs
-                .read_dir(&path)
-                .await
-                .map_err(|error| format!("Failed to list {path}: {error}"))?;
+            let entries = match self.fs.read_dir(&path).await {
+                Ok(entries) => entries,
+                Err(error)
+                    if self.skip_unreadable_directories
+                        && is_per_path_read_failure(&format!("{error:#}")) =>
+                {
+                    log::warn!("Workspace search skipped unreadable directory {path}: {error:#}");
+                    self.skipped_directories += 1;
+                    continue;
+                }
+                Err(error) => return Err(format!("Failed to list {path}: {error}")),
+            };
             if self.apply_ignore {
-                add_directory_ignores(self.fs, &entries, components.len(), &mut ignores).await?;
+                if let Err(error) =
+                    add_directory_ignores(self.fs, &entries, components.len(), &mut ignores).await
+                {
+                    if !(self.skip_unreadable_directories && is_per_path_read_failure(&error)) {
+                        return Err(error);
+                    }
+                    log::warn!("Workspace search ignored an unreadable ignore file: {error}");
+                }
             }
             self.entries = entries.into_iter();
             self.components = components;

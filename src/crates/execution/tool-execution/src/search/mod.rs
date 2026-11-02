@@ -10,6 +10,7 @@ pub use glob_search::{
     LocalGlobRequest, LocalGlobResult,
 };
 pub use grep_search::{
-    apply_offset_and_limit, grep_search, grep_search_workspace, relativize_result_text,
-    GrepOptions, OutputMode, ProgressCallback, SearchCancellation,
+    apply_offset_and_limit, content_search_candidate_literal, grep_search, grep_search_workspace,
+    relativize_result_text, GrepOptions, InteractiveSearchPolicy, OutputMode, ProgressCallback,
+    SearchCancellation, WorkspaceGrepLineMatch,
 };
