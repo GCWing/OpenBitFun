@@ -44,6 +44,11 @@ ssh-agent identity. Explicit password and keyboard-interactive challenge
 responses are also supported, with configurable connection/authentication
 timeouts, whole-chain retries, and challenge-round limits.
 
+Choose **No authentication** only for endpoints that accept the SSH `none`
+method because the tunnel is already authenticated, such as a Coder workspace
+agent. OpenBitFun never falls back to it, and it never falls back from it to a
+password or key.
+
 ## Docker targets
 
 For **Remote host → Container → Through the Docker host**, OpenBitFun first establishes the SSH connection (and

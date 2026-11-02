@@ -303,6 +303,7 @@ export interface PeerDeviceTransportHooks {
   /** Enables MiniApp Agent turns carrying inline image attachments. */
   supportsMiniAppAgentImagesV1?: boolean;
   supportsWslWorkspacesV1?: boolean;
+  supportsSshNoneAuthV1?: boolean;
   supportsWholeSessionCopyV1?: boolean;
   supportsModelRoutingV1?: boolean;
   supportsModelPoolSelectionV1?: boolean;
@@ -445,6 +446,7 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       | 'supportsMiniAppAgentContextFilesV1'
       | 'supportsMiniAppAgentImagesV1'
       | 'supportsWslWorkspacesV1'
+      | 'supportsSshNoneAuthV1'
       | 'supportsWholeSessionCopyV1'
       | 'supportsModelRoutingV1'
       | 'supportsModelPoolSelectionV1'
@@ -567,6 +569,13 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     ) {
       throw new PeerProductCommandError(
         'wsl_workspaces_v1_unsupported: The connected Peer host does not support native WSL workspaces',
+      );
+    }
+
+    const sshAuthType = (params as { config?: { auth?: { type?: unknown } } } | undefined)?.config?.auth?.type;
+    if (action.startsWith('ssh_') && sshAuthType === 'None' && this.hooks.supportsSshNoneAuthV1 !== true) {
+      throw new PeerProductCommandError(
+        'ssh_none_auth_v1_unsupported: The connected Peer host does not support SSH connections without authentication; update the executing Desktop host',
       );
     }
 

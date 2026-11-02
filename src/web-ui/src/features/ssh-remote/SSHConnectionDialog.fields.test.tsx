@@ -11,7 +11,8 @@ vi.mock('@/infrastructure/api/service-api/RemoteConnectAPI', async importOrigina
   ...await importOriginal<typeof import('@/infrastructure/api/service-api/RemoteConnectAPI')>(),
   remoteConnectAPI: { getDeviceInfo: async () => ({ device_id: 'local', device_name: 'Workstation' }) },
 }));
-const { sshApi, remote } = vi.hoisted(() => ({
+const { sshApi, remote, peerDevice } = vi.hoisted(() => ({
+  peerDevice: { value: null as null | { peerMode: { active: boolean; deviceName: string }; capabilities: object | null } },
   sshApi: {
     listSavedConnections: vi.fn(), listSSHConfigHosts: vi.fn(), getSSHConfig: vi.fn(),
     listWslDistributions: vi.fn(), listDockerContainers: vi.fn(), saveConnection: vi.fn(),
@@ -23,6 +24,10 @@ vi.mock('@/infrastructure/i18n', () => {
   return { useI18n: () => ({ t }) };
 });
 vi.mock('./SSHRemoteContext', () => ({ useSSHRemoteContext: () => remote }));
+vi.mock('@/infrastructure/peer-device/peerDeviceContextState', async importOriginal => ({
+  ...await importOriginal<typeof import('@/infrastructure/peer-device/peerDeviceContextState')>(),
+  usePeerDeviceModeOptional: () => peerDevice.value,
+}));
 vi.mock('./sshApi', () => ({ sshApi }));
 vi.mock('./pickSshPrivateKeyPath', () => ({ pickSshPrivateKeyPath: vi.fn(), pickSshCertificatePath: vi.fn() }));
 
@@ -60,6 +65,7 @@ describe('remote workspace form composition', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    peerDevice.value = null;
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
     sshApi.listSavedConnections.mockResolvedValue([]);
     sshApi.listSSHConfigHosts.mockResolvedValue([]);
@@ -287,6 +293,44 @@ describe('remote workspace form composition', () => {
       }),
       { browseAfterConnect: true },
     );
+  });
+
+  it('offers none authentication on a peer surface only after the host negotiated it', async () => {
+    const authOptionLabels = async () => {
+      await renderConnection('ssh', true);
+      await act(async () => fieldControl('ssh.remote.authMethod').click());
+      const labels = [...document.querySelectorAll('[data-openbitfun-listbox-option]')].map(item => item.textContent);
+      await act(async () => fieldControl('ssh.remote.authMethod').click());
+      return labels;
+    };
+    peerDevice.value = { peerMode: { active: true, deviceName: 'Older peer' }, capabilities: { sshNoneAuthV1: false } };
+    expect(await authOptionLabels()).not.toContain('ssh.remote.noAuth');
+    peerDevice.value = { peerMode: { active: true, deviceName: 'Peer' }, capabilities: { sshNoneAuthV1: true } };
+    expect(await authOptionLabels()).toContain('ssh.remote.noAuth');
+  });
+
+  it('reports a rejected none profile without falling back to a credentials prompt', async () => {
+    sshApi.listSavedConnections.mockResolvedValue([{
+      id: 'coder', name: 'Coder', host: 'coder.test', port: 22, username: 'coder', authType: { type: 'None' },
+    }]);
+    remote.connect.mockRejectedValue(new Error('SSH authentication was rejected for user coder'));
+    await renderConnection('ssh', true);
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-openbitfun-part="connectionList"] button[aria-pressed]')!.click());
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('footer button')].find(item => item.textContent === 'ssh.remote.connect')!.click());
+    expect(remote.connect).toHaveBeenCalledWith('coder', expect.objectContaining({ auth: { type: 'None' } }), expect.anything());
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+    expect(document.body.textContent).toContain('workspaceSource.connectionFailed');
+  });
+
+  it('asks to update an older host instead of showing a generic failure for a none profile', async () => {
+    sshApi.listSavedConnections.mockResolvedValue([{
+      id: 'coder', name: 'Coder', host: 'coder.test', port: 22, username: 'coder', authType: { type: 'None' },
+    }]);
+    remote.connect.mockRejectedValue(new Error('ssh_none_auth_v1_unsupported: The connected Peer host does not support it'));
+    await renderConnection('ssh', true);
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-openbitfun-part="connectionList"] button[aria-pressed]')!.click());
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('footer button')].find(item => item.textContent === 'ssh.remote.connect')!.click());
+    expect(document.body.textContent).toContain('ssh.remote.noAuthUnsupported');
   });
 
   it('requires an existing SSH host before configuring a remote container', async () => {

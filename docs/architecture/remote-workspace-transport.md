@@ -246,7 +246,11 @@ to searching the controller filesystem.
 ## Authentication and secrets
 
 Supported target methods are password, private key, private key plus OpenSSH
-certificate, OpenSSH agent, and keyboard-interactive responses.
+certificate, OpenSSH agent, keyboard-interactive responses, and the SSH `none`
+method for endpoints whose transport is already authenticated (a Coder
+workspace agent, for example). `none` is an explicit profile choice: it is
+never tried as a fallback, and a rejected `none` profile never turns into a
+credential prompt.
 
 - Passwords use the existing encrypted password vault.
 - Private-key paths, certificate paths, and auth method metadata may be saved.
@@ -464,6 +468,15 @@ password-vault and workspace references.
 Local Docker profiles may legitimately retain an empty legacy password
 placeholder. Connection, testing, and local container discovery do not require
 a password-vault entry for those profiles.
+
+`SavedAuthType::None` is unknown to earlier builds, which parse
+`ssh_connections.json` as one list and rewrite it from memory. Those profiles
+therefore live in `ssh_connections_extended.json`, which earlier builds neither
+read nor write; the primary file keeps the shape they understand. Loading merges
+both files, and the primary entry wins when an earlier build recreated the same
+ID. An earlier build does not list these profiles until the user upgrades again.
+Peer controllers reject `None` before RPC unless the host advertises
+`ssh_none_auth_v1`.
 
 Startup recovery never deletes a profile or workspace merely because a
 credential is unavailable, a connection times out, or a remote host is

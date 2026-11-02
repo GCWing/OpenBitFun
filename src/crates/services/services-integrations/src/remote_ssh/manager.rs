@@ -2151,6 +2151,7 @@ pub struct SSHConnectionManager {
     reconnect_locks: Arc<tokio::sync::RwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
     saved_connections: Arc<tokio::sync::RwLock<Vec<SavedConnection>>>,
     config_path: std::path::PathBuf,
+    extended_config_path: std::path::PathBuf,
     /// Known hosts storage
     known_hosts: Arc<tokio::sync::RwLock<HashMap<String, KnownHostEntry>>>,
     known_hosts_path: std::path::PathBuf,
@@ -2160,10 +2161,18 @@ pub struct SSHConnectionManager {
     password_vault: std::sync::Arc<SSHPasswordVault>,
 }
 
+/// Saved profiles that released builds cannot read; see `save_connections`.
+const EXTENDED_SAVED_CONNECTIONS_FILE: &str = "ssh_connections_extended.json";
+
+fn requires_extended_store(auth_type: &crate::remote_ssh::types::SavedAuthType) -> bool {
+    matches!(auth_type, crate::remote_ssh::types::SavedAuthType::None)
+}
+
 impl SSHConnectionManager {
     /// Create a new SSH connection manager
     pub fn new(data_dir: std::path::PathBuf) -> Self {
         let config_path = data_dir.join("ssh_connections.json");
+        let extended_config_path = data_dir.join(EXTENDED_SAVED_CONNECTIONS_FILE);
         let known_hosts_path = data_dir.join("known_hosts");
         let remote_workspace_path = data_dir.join("remote_workspace.json");
         let password_vault = std::sync::Arc::new(SSHPasswordVault::new(data_dir));
@@ -2172,6 +2181,7 @@ impl SSHConnectionManager {
             reconnect_locks: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             saved_connections: Arc::new(tokio::sync::RwLock::new(Vec::new())),
             config_path,
+            extended_config_path,
             known_hosts: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             known_hosts_path,
             remote_workspaces: Arc::new(tokio::sync::RwLock::new(Vec::new())),
@@ -2792,17 +2802,33 @@ impl SSHConnectionManager {
             self.config_path.exists()
         );
 
-        if !self.config_path.exists() {
-            return Ok(());
+        // Read the extended store first: a damaged primary file must not leave
+        // an empty list behind that the next save writes over these profiles.
+        let extended = self.read_extended_saved_connections().await;
+        let saved = match self.read_primary_saved_connections().await {
+            Ok(saved) => saved,
+            Err(error) => {
+                *self.saved_connections.write().await = extended;
+                return Err(error);
+            }
+        };
+
+        // An older build may have recreated an id while it could not see the
+        // extended store; that later explicit save wins.
+        let mut merged = saved;
+        for connection in extended {
+            if merged.iter().any(|existing| existing.id == connection.id) {
+                log::warn!(
+                    "Ignoring extended SSH profile shadowed by the primary store: id={}",
+                    connection.id
+                );
+            } else {
+                merged.push(connection);
+            }
         }
 
-        let content = tokio::fs::read_to_string(&self.config_path).await?;
-        log::info!("load_saved_connections: content={}", content);
-        let saved: Vec<SavedConnection> =
-            serde_json::from_str(&content).context("Failed to parse saved SSH connections")?;
-
         let mut guard = self.saved_connections.write().await;
-        *guard = saved;
+        *guard = merged;
         drop(guard);
 
         let unavailable = self.saved_connections_without_credentials().await;
@@ -2818,11 +2844,57 @@ impl SSHConnectionManager {
         Ok(())
     }
 
+    async fn read_primary_saved_connections(&self) -> anyhow::Result<Vec<SavedConnection>> {
+        if !self.config_path.exists() {
+            return Ok(Vec::new());
+        }
+        let content = tokio::fs::read_to_string(&self.config_path).await?;
+        log::info!("load_saved_connections: content={}", content);
+        serde_json::from_str(&content).context("Failed to parse saved SSH connections")
+    }
+
+    /// Read the extended store, setting an unreadable file aside so it stays
+    /// recoverable and a later save cannot overwrite it.
+    async fn read_extended_saved_connections(&self) -> Vec<SavedConnection> {
+        let path = &self.extended_config_path;
+        if !path.exists() {
+            return Vec::new();
+        }
+        let parsed = tokio::fs::read_to_string(path)
+            .await
+            .map_err(anyhow::Error::from)
+            .and_then(|content| serde_json::from_str(&content).map_err(anyhow::Error::from));
+        let error = match parsed {
+            Ok(saved) => return saved,
+            Err(error) => error,
+        };
+        let backup = path.with_extension("json.unreadable");
+        log::warn!(
+            "Failed to read extended SSH connections; keeping the file at {:?}: error={}",
+            backup,
+            error
+        );
+        if let Err(error) = tokio::fs::rename(path, &backup).await {
+            log::warn!(
+                "Failed to set aside extended SSH connections: error={}",
+                error
+            );
+        }
+        Vec::new()
+    }
+
     /// Save connections to disk
+    ///
+    /// Released builds parse the primary file as one list and rewrite it from
+    /// memory, so a profile they cannot deserialize would cost them every
+    /// profile. Such profiles go to the extended store, which they never touch.
     async fn save_connections(&self) -> anyhow::Result<()> {
         log::info!("save_connections: saving to {:?}", self.config_path);
         let guard = self.saved_connections.read().await;
-        let content = serde_json::to_string_pretty(&*guard)?;
+        let (extended, primary): (Vec<&SavedConnection>, Vec<&SavedConnection>) = guard
+            .iter()
+            .partition(|connection| requires_extended_store(&connection.auth_type));
+        let content = serde_json::to_string_pretty(&primary)?;
         log::info!("save_connections: content={}", content);
 
         // Ensure parent directory exists
@@ -2830,6 +2902,10 @@ impl SSHConnectionManager {
             tokio::fs::create_dir_all(parent).await?;
         }
 
+        if !extended.is_empty() || self.extended_config_path.exists() {
+            let extended_content = serde_json::to_string_pretty(&extended)?;
+            tokio::fs::write(&self.extended_config_path, extended_content).await?;
+        }
         tokio::fs::write(&self.config_path, content).await?;
         log::info!(
             "save_connections: saved {} connections to {:?}",
@@ -9310,7 +9386,7 @@ mod tests {
             .await
             .unwrap();
 
-        let persisted = tokio::fs::read_to_string(dir.join("ssh_connections.json"))
+        let persisted = tokio::fs::read_to_string(dir.join(EXTENDED_SAVED_CONNECTIONS_FILE))
             .await
             .unwrap();
         assert!(
@@ -9341,6 +9417,246 @@ mod tests {
         }))
         .unwrap();
         assert!(matches!(from_wire.auth, SSHAuthMethod::None));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    /// `authType` exactly as released builds parse it: no `None` variant.
+    #[derive(Debug, serde::Deserialize, serde::Serialize)]
+    #[serde(tag = "type")]
+    enum ReleasedSavedAuthType {
+        Password,
+        PrivateKey {
+            #[serde(rename = "keyPath")]
+            key_path: String,
+        },
+        Agent,
+        KeyboardInteractive,
+    }
+
+    #[derive(Debug, serde::Deserialize, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ReleasedSavedConnection {
+        id: String,
+        name: String,
+        host: String,
+        port: u16,
+        username: String,
+        auth_type: ReleasedSavedAuthType,
+    }
+
+    fn released_profile(id: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "name": id,
+            "host": format!("{id}.test"),
+            "port": 22,
+            "username": "dev",
+            "authType": { "type": "PrivateKey", "keyPath": "~/.ssh/id_rsa" },
+        })
+    }
+
+    fn none_auth_config(id: &str, host: &str) -> SSHConnectionConfig {
+        SSHConnectionConfig {
+            id: id.to_string(),
+            name: "coder agent".to_string(),
+            host: host.to_string(),
+            port: 2222,
+            username: "coder".to_string(),
+            auth: SSHAuthMethod::None,
+            default_workspace: Some("/root".to_string()),
+            proxy_jump: None,
+            container: None,
+            wsl: None,
+            options: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn none_auth_profile_survives_a_released_reader_save_and_upgrade() {
+        let dir = test_data_dir("none-auth-downgrade");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let primary_path = dir.join("ssh_connections.json");
+        tokio::fs::write(
+            &primary_path,
+            serde_json::to_vec(&vec![released_profile("old-a")]).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let upgraded = SSHConnectionManager::new(dir.clone());
+        upgraded.load_saved_connections().await.unwrap();
+        upgraded
+            .save_connection(&none_auth_config("coder", "coder.test"))
+            .await
+            .unwrap();
+
+        // Downgrade: a released build parses the whole list, then rewrites it
+        // from memory after the user adds a profile.
+        let content = tokio::fs::read_to_string(&primary_path).await.unwrap();
+        let mut released: Vec<ReleasedSavedConnection> = serde_json::from_str(&content)
+            .expect("released builds must keep parsing the primary file");
+        assert_eq!(released.len(), 1);
+        released.push(serde_json::from_value(released_profile("old-b")).unwrap());
+        tokio::fs::write(&primary_path, serde_json::to_vec(&released).unwrap())
+            .await
+            .unwrap();
+
+        // Upgrade again: nothing either side wrote is lost.
+        let reupgraded = SSHConnectionManager::new(dir.clone());
+        reupgraded.load_saved_connections().await.unwrap();
+        let mut ids: Vec<String> = reupgraded
+            .get_saved_connections()
+            .await
+            .into_iter()
+            .map(|connection| connection.id)
+            .collect();
+        ids.sort();
+        assert_eq!(ids, ["coder", "old-a", "old-b"]);
+        let restored = reupgraded
+            .load_connection_config_from_saved("coder")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(restored.auth, SSHAuthMethod::None));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn none_profile_in_the_primary_file_moves_to_the_extended_store() {
+        let dir = test_data_dir("none-auth-relocate");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let primary_path = dir.join("ssh_connections.json");
+        let mut none_profile = released_profile("coder");
+        none_profile["authType"] = serde_json::json!({ "type": "None" });
+        tokio::fs::write(
+            &primary_path,
+            serde_json::to_vec(&vec![released_profile("old-a"), none_profile]).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let manager = SSHConnectionManager::new(dir.clone());
+        manager.load_saved_connections().await.unwrap();
+        assert_eq!(manager.get_saved_connections().await.len(), 2);
+        manager.delete_saved_connection("old-a").await.unwrap();
+
+        let content = tokio::fs::read_to_string(&primary_path).await.unwrap();
+        serde_json::from_str::<Vec<ReleasedSavedConnection>>(&content)
+            .expect("a saved primary file must stay readable by released builds");
+        let extended = tokio::fs::read_to_string(dir.join(EXTENDED_SAVED_CONNECTIONS_FILE))
+            .await
+            .unwrap();
+        assert!(extended.contains("\"coder\""));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn changing_auth_moves_a_profile_between_stores_and_delete_clears_it() {
+        let dir = test_data_dir("none-auth-switch");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+        manager
+            .save_connection(&none_auth_config("coder", "coder.test"))
+            .await
+            .unwrap();
+        let mut with_key = none_auth_config("coder", "coder.test");
+        with_key.auth = SSHAuthMethod::Agent {
+            key_fingerprint: None,
+            fallback_key_path: None,
+        };
+        manager.save_connection(&with_key).await.unwrap();
+
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        let saved = reloaded.get_saved_connections().await;
+        assert_eq!(saved.len(), 1);
+        assert!(!matches!(
+            saved[0].auth_type,
+            crate::remote_ssh::types::SavedAuthType::None
+        ));
+
+        reloaded
+            .save_connection(&none_auth_config("coder", "coder.test"))
+            .await
+            .unwrap();
+        reloaded.delete_saved_connection("coder").await.unwrap();
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        assert!(reloaded.get_saved_connections().await.is_empty());
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn primary_profile_recreated_by_an_older_build_shadows_the_extended_one() {
+        let dir = test_data_dir("none-auth-shadow");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+        manager
+            .save_connection(&none_auth_config("coder", "coder.test"))
+            .await
+            .unwrap();
+        tokio::fs::write(
+            dir.join("ssh_connections.json"),
+            serde_json::to_vec(&vec![released_profile("coder")]).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        let saved = reloaded.get_saved_connections().await;
+        assert_eq!(saved.len(), 1);
+        assert!(matches!(
+            saved[0].auth_type,
+            crate::remote_ssh::types::SavedAuthType::PrivateKey { .. }
+        ));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn unreadable_extended_store_is_kept_aside_and_never_blocks_primary_profiles() {
+        let dir = test_data_dir("none-auth-unreadable");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        tokio::fs::write(
+            dir.join("ssh_connections.json"),
+            serde_json::to_vec(&vec![released_profile("old-a")]).unwrap(),
+        )
+        .await
+        .unwrap();
+        let extended_path = dir.join(EXTENDED_SAVED_CONNECTIONS_FILE);
+        tokio::fs::write(&extended_path, "not json").await.unwrap();
+
+        let manager = SSHConnectionManager::new(dir.clone());
+        manager.load_saved_connections().await.unwrap();
+        assert_eq!(manager.get_saved_connections().await.len(), 1);
+        manager
+            .save_connection(&none_auth_config("coder", "coder.test"))
+            .await
+            .unwrap();
+
+        let backup = tokio::fs::read_to_string(extended_path.with_extension("json.unreadable"))
+            .await
+            .unwrap();
+        assert_eq!(backup, "not json");
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn unreadable_primary_file_keeps_extended_profiles_for_the_next_save() {
+        let dir = test_data_dir("none-auth-primary-corrupt");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+        manager
+            .save_connection(&none_auth_config("coder", "coder.test"))
+            .await
+            .unwrap();
+        tokio::fs::write(dir.join("ssh_connections.json"), "not json")
+            .await
+            .unwrap();
+
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        assert!(reloaded.load_saved_connections().await.is_err());
+        assert_eq!(reloaded.get_saved_connections().await.len(), 1);
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 

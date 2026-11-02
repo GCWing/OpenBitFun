@@ -1993,6 +1993,7 @@
       "keyboardInteractive": "键盘交互认证",
       "noAuth": "无认证",
       "noAuthHint": "服务器不校验凭据，适用于已完成认证的隧道，例如 Coder 工作区 agent。",
+      "noAuthUnsupported": "此主机需要更新后才能使用无认证连接。",
       "privateKeyPath": "私钥文件路径",
       "certificatePath": "OpenSSH 证书",
       "certificatePathOptional": "可选证书文件",

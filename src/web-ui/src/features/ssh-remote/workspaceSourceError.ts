@@ -18,3 +18,15 @@ export function workspaceSourceErrorKey(source: WorkspaceSource, error: unknown)
 export function isSshAuthenticationError(error: unknown) {
   return /credentials required|authenticat|password|passphrase|private key|publickey|keyboard.interactive|challenge response|ssh agent/i.test(String(error));
 }
+
+/** `None` profiles have no credentials to repair; never turn a rejection into a password prompt. */
+export function canRepairSshCredentials(authType: { type: string }, error: unknown) {
+  return authType.type !== 'None' && isSshAuthenticationError(error);
+}
+
+/** Generic connection failure, except an older host that must be updated to use the profile. */
+export function sshConnectionErrorKey(error: unknown) {
+  return String(error).includes('ssh_none_auth_v1_unsupported')
+    ? 'ssh.remote.noAuthUnsupported'
+    : 'workspaceSource.connectionFailed';
+}

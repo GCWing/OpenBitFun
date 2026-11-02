@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:6af8cd66ba85f89e",
+  "digest": "fnv1a64:35c2ea807a4b1ebe",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -49,6 +49,7 @@
       "session_trajectory_v1",
       "user_question_response",
       "user_question_interaction_v1",
+      "ssh_none_auth_v1",
       "terminal_cursor_replay_v1"
     ],
     "desktop": [
@@ -91,7 +92,8 @@
       "whole_session_copy_v1",
       "session_trajectory_v1",
       "user_question_response",
-      "user_question_interaction_v1"
+      "user_question_interaction_v1",
+      "ssh_none_auth_v1"
     ],
     "cli": [
       "model_routing_v1",

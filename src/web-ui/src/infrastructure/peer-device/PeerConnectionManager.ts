@@ -55,6 +55,7 @@ export interface PeerHostCapabilities {
   readonly miniAppAgentContextFilesV1: boolean;
   readonly miniAppAgentImagesV1: boolean;
   readonly wslWorkspacesV1?: boolean;
+  readonly sshNoneAuthV1?: boolean;
   /** Host stores ordered subscription account pools on model configs. */
   readonly subscriptionAccountPoolsV1?: boolean;
   /** Host-owned read-only subscription allowance query. */
@@ -200,6 +201,7 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   miniAppAgentContextFilesV1: false,
   miniAppAgentImagesV1: false,
   wslWorkspacesV1: false,
+  sshNoneAuthV1: false,
   subscriptionAccountPoolsV1: false,
   subscriptionQuotaV1: false,
   grokQuotaV1: false,
@@ -467,6 +469,7 @@ export class PeerConnectionManager {
       supportsMiniAppAgentContextFilesV1: entry.capabilities.miniAppAgentContextFilesV1,
       supportsMiniAppAgentImagesV1: entry.capabilities.miniAppAgentImagesV1,
       supportsWslWorkspacesV1: entry.capabilities.wslWorkspacesV1,
+      supportsSshNoneAuthV1: entry.capabilities.sshNoneAuthV1,
       supportsWholeSessionCopyV1: entry.capabilities.wholeSessionCopyV1,
       supportsModelRoutingV1: entry.capabilities.modelRoutingV1,
       supportsModelPoolSelectionV1: entry.capabilities.modelPoolSelectionV1,
@@ -562,6 +565,7 @@ export class PeerConnectionManager {
       miniAppAgentContextFilesV1: caps?.miniapp_agent_context_files_v1 === true,
       miniAppAgentImagesV1: caps?.miniapp_agent_images_v1 === true,
       wslWorkspacesV1: caps?.wsl_workspaces_v1 === true,
+      sshNoneAuthV1: caps?.ssh_none_auth_v1 === true,
       subscriptionAccountPoolsV1: caps?.subscription_account_pools_v1 === true,
       subscriptionQuotaV1: caps?.subscription_quota_v1 === true,
       grokQuotaV1: caps?.grok_quota_v1 === true,
@@ -671,6 +675,7 @@ export class PeerConnectionManager {
         supportsMiniAppAgentContextFilesV1: capabilities.miniAppAgentContextFilesV1,
         supportsMiniAppAgentImagesV1: capabilities.miniAppAgentImagesV1,
         supportsWslWorkspacesV1: capabilities.wslWorkspacesV1,
+        supportsSshNoneAuthV1: capabilities.sshNoneAuthV1,
         supportsWholeSessionCopyV1: capabilities.wholeSessionCopyV1,
         supportsModelRoutingV1: capabilities.modelRoutingV1,
         supportsModelPoolSelectionV1: capabilities.modelPoolSelectionV1,
@@ -823,6 +828,7 @@ function capabilitiesEqual(
     a.miniAppAgentContextFilesV1 === b.miniAppAgentContextFilesV1 &&
     a.miniAppAgentImagesV1 === b.miniAppAgentImagesV1 &&
     a.wslWorkspacesV1 === b.wslWorkspacesV1 &&
+    a.sshNoneAuthV1 === b.sshNoneAuthV1 &&
     a.subscriptionAccountPoolsV1 === b.subscriptionAccountPoolsV1 &&
     a.subscriptionQuotaV1 === b.subscriptionQuotaV1 &&
     a.grokQuotaV1 === b.grokQuotaV1 &&

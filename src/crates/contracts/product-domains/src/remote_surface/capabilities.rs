@@ -100,6 +100,9 @@ pub enum PeerHostCapability {
     UserQuestionResponse,
     /// First human interaction disables the unattended question timeout.
     UserQuestionInteractionV1,
+    /// SSH profiles may use the `None` authentication method. A host without
+    /// this key cannot parse such a profile.
+    SshNoneAuthV1,
     /// Terminal output is read as bounded `terminal_get_history` pages announced
     /// on the `terminal-<id>` host stream instead of `terminal_event` fan-out.
     /// This selects a delivery path, so only a host using that path advertises it.
@@ -149,6 +152,7 @@ impl PeerHostCapability {
         Self::SessionTrajectoryV1,
         Self::UserQuestionResponse,
         Self::UserQuestionInteractionV1,
+        Self::SshNoneAuthV1,
         // Keep last: Desktop publishes every capability before it.
         Self::TerminalCursorReplayV1,
     ];
@@ -196,6 +200,7 @@ impl PeerHostCapability {
             Self::WholeSessionCopyV1 => "whole_session_copy_v1",
             Self::UserQuestionResponse => "user_question_response",
             Self::UserQuestionInteractionV1 => "user_question_interaction_v1",
+            Self::SshNoneAuthV1 => "ssh_none_auth_v1",
             Self::TerminalCursorReplayV1 => "terminal_cursor_replay_v1",
         }
     }
@@ -212,7 +217,7 @@ const DESKTOP_CAPABILITIES: &[PeerHostCapability] = PeerHostCapability::ALL
     .split_at(PeerHostCapability::ALL.len() - 1)
     .0;
 
-/// The CLI peer host has no MiniApp runtime, WSL connection setup, host-native
+/// The CLI peer host has no MiniApp runtime, WSL or SSH connection setup, host-native
 /// ProductControl providers, or presentation surface.
 const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::ModelRoutingV1,
