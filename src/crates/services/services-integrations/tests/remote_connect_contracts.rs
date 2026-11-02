@@ -2991,6 +2991,8 @@ fn sample_remote_model_catalog(version: u64) -> RemoteModelCatalog {
             ..RemoteDefaultModelsConfig::default()
         },
         reasoning_preset_selection_supported: true,
+        session_model_write_fence_supported: false,
+        session_model_write_token: None,
         session_model_id: Some("model-1".to_string()),
         session_reasoning_preset: None,
     }

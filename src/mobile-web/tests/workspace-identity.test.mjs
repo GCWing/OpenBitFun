@@ -113,6 +113,7 @@ const managerUrl = await moduleUrl('../src/services/RemoteSessionManager.ts', {
   '../../../shared/dialog-queue/HostDialogQueue': 'data:text/javascript,export class HostDialogQueue {}',
   '../../../shared/relay-transport/HostStream': hostStream,
   './controlClientIdentity': controlIdentity,
+  './RelayHttpClient': 'data:text/javascript,export class RemoteHostCommandError extends Error {}',
   './SessionSynchronizer': 'data:text/javascript,export class SessionSynchronizer {}',
   './workspaceIdentity': `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`,
 });
