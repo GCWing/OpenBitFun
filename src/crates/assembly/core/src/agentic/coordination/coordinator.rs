@@ -204,6 +204,67 @@ pub(super) fn session_storage_workspace_locator(
     }
 }
 
+/// The workspace ID of a loaded session when `requested_workspace_path` only
+/// re-states that session's own execution or project root and the request does
+/// not select a different SSH connection. Returns `None` when the request must
+/// still go through legacy path resolution.
+fn loaded_session_workspace_id_for_locator<'a>(
+    config: &'a SessionConfig,
+    requested_workspace_path: &str,
+    requested_connection_id: Option<&str>,
+    requested_ssh_host: Option<&str>,
+) -> Option<&'a str> {
+    let workspace_id = config
+        .workspace_id
+        .as_deref()
+        .or(config.project_workspace_id.as_deref())
+        .map(str::trim)
+        .filter(|id| !id.is_empty())?;
+    let requested_connection_id = requested_connection_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    let session_connection_id = config
+        .remote_connection_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    if requested_connection_id.is_some() && requested_connection_id != session_connection_id {
+        return None;
+    }
+    // A non-loopback host selector names a specific SSH owner; only adopt the
+    // session's ID when it is that same owner. "localhost" without a connection
+    // is the historical local-session marker and carries no remote selection.
+    let requested_ssh_host = requested_ssh_host
+        .map(str::trim)
+        .filter(|host| !host.is_empty() && *host != "localhost");
+    if requested_ssh_host.is_some()
+        && requested_connection_id.is_none()
+        && requested_ssh_host
+            != config
+                .remote_ssh_host
+                .as_deref()
+                .map(str::trim)
+                .filter(|host| !host.is_empty())
+    {
+        return None;
+    }
+    let requested = requested_workspace_path.trim();
+    if requested.is_empty() {
+        return None;
+    }
+    let requested = comparable_workspace_path(requested);
+    let names_session_root = [
+        config.workspace_path.as_deref(),
+        config.project_workspace_path.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .filter(|path| !path.is_empty())
+    .any(|path| comparable_workspace_path(path) == requested);
+    names_session_root.then_some(workspace_id)
+}
+
 fn trimmed_model_id(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
@@ -5045,15 +5106,47 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .map_err(|error| OpenBitFunError::Session(error.to_string()))
     }
 
-    async fn resolve_session_restore_path(
+    /// Storage scope for a request that targets an already loaded session.
+    ///
+    /// A loaded session carries the workspace ID it was admitted with, so a
+    /// locator that merely re-states that session's own execution or project
+    /// root is resolved by ID. Re-resolving the bare path would hit the legacy
+    /// path adapter, which correctly refuses to choose between a local record
+    /// and an (inactive) SSH record that share the same root string.
+    ///
+    /// The legacy path adapter remains the fallback when the session has no
+    /// workspace ID, when the locator names some other root, or when the
+    /// request explicitly selects a different SSH connection, so mismatched
+    /// requests keep failing the storage-binding check instead of silently
+    /// adopting the session's binding.
+    async fn resolve_loaded_session_restore_scope(
         &self,
+        session_config: &SessionConfig,
         workspace_path: &str,
         remote_connection_id: Option<&str>,
         remote_ssh_host: Option<&str>,
-    ) -> OpenBitFunResult<PathBuf> {
+    ) -> OpenBitFunResult<SessionStoragePathResolution> {
+        if let Some(workspace_id) = loaded_session_workspace_id_for_locator(
+            session_config,
+            workspace_path,
+            remote_connection_id,
+            remote_ssh_host,
+        ) {
+            let mut resolution =
+                CoreSessionStorePort::with_path_manager(self.session_manager.path_manager())
+                    .resolve_storage_for_reference(
+                        Some(workspace_id),
+                        workspace_path,
+                        remote_connection_id.map(ToOwned::to_owned),
+                        remote_ssh_host.map(ToOwned::to_owned),
+                    )
+                    .await
+                    .map_err(|error| OpenBitFunError::Session(error.to_string()))?;
+            resolution.requested_workspace_path = PathBuf::from(workspace_path);
+            return Ok(resolution);
+        }
         self.resolve_session_restore_scope(workspace_path, remote_connection_id, remote_ssh_host)
             .await
-            .map(|resolution| resolution.effective_storage_path)
     }
 
     fn require_main_session_workspace(&self, session_id: &str) -> OpenBitFunResult<PathBuf> {
@@ -6500,8 +6593,17 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 .as_ref()
                 .and_then(|session| session.config.project_workspace_path.as_deref()),
         );
-        let requested_restore = match storage_workspace_path.as_deref() {
-            Some(workspace_path) => Some(
+        let requested_restore = match (storage_workspace_path.as_deref(), loaded_session.as_ref()) {
+            (Some(workspace_path), Some(session)) => Some(
+                self.resolve_loaded_session_restore_scope(
+                    &session.config,
+                    workspace_path,
+                    remote_connection_id.as_deref(),
+                    remote_ssh_host.as_deref(),
+                )
+                .await?,
+            ),
+            (Some(workspace_path), None) => Some(
                 self.resolve_session_restore_scope(
                     workspace_path,
                     remote_connection_id.as_deref(),
@@ -6509,7 +6611,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 )
                 .await?,
             ),
-            None => None,
+            (None, _) => None,
         };
 
         #[cfg(feature = "external-sources")]
@@ -15796,27 +15898,40 @@ impl openbitfun_runtime_ports::AgentThreadGoalManagementPort for ConversationCoo
         let uses_default_workspace = request.workspace_path == "."
             && request.remote_connection_id.is_none()
             && request.remote_ssh_host.is_none();
-        let session_is_loaded = self
-            .get_session_manager()
-            .get_session(&request.session_id)
-            .is_some();
+        let loaded_session = self.get_session_manager().get_session(&request.session_id);
+        let session_is_loaded = loaded_session.is_some();
         let effective_storage_path = if uses_default_workspace && session_is_loaded {
             self.require_main_session_storage_path(&request.session_id)
                 .await
                 .map_err(runtime_port_error_preserving_message)?
         } else {
-            self.resolve_session_restore_path(
-                &request.workspace_path,
-                request.remote_connection_id.as_deref(),
-                request.remote_ssh_host.as_deref(),
-            )
-            .await
-            .map_err(|error| {
-                let message = format!("Failed to resolve session storage path: {error}");
-                let mut port_error = runtime_port_error_preserving_message(error);
-                port_error.message = message;
-                port_error
-            })?
+            let resolution = match loaded_session.as_ref() {
+                Some(session) => {
+                    self.resolve_loaded_session_restore_scope(
+                        &session.config,
+                        &request.workspace_path,
+                        request.remote_connection_id.as_deref(),
+                        request.remote_ssh_host.as_deref(),
+                    )
+                    .await
+                }
+                None => {
+                    self.resolve_session_restore_scope(
+                        &request.workspace_path,
+                        request.remote_connection_id.as_deref(),
+                        request.remote_ssh_host.as_deref(),
+                    )
+                    .await
+                }
+            };
+            resolution
+                .map(|resolution| resolution.effective_storage_path)
+                .map_err(|error| {
+                    let message = format!("Failed to resolve session storage path: {error}");
+                    let mut port_error = runtime_port_error_preserving_message(error);
+                    port_error.message = message;
+                    port_error
+                })?
         };
         if !uses_default_workspace || session_is_loaded {
             self.get_session_manager()
@@ -16483,18 +16598,19 @@ pub(crate) mod tests {
         commit_interrupted_turn_intent, delegation_policy_for_agent_turn,
         external_delegation_agent_id, lineage_active_turn_after_transcript,
         lineage_post_admission_cancellation_error,
-        lineage_session_is_settling_without_active_state, logical_subagent_type_or_runtime,
-        merge_prepended_messages_for_turn, normalize_model_selection,
-        normalize_subagent_max_concurrency, permission_mode_from_metadata,
-        plan_skill_agent_listing_update, resolve_agent_session_create_created_by,
-        resolve_agent_submission_turn_id, resolve_subagent_model_selection,
-        resolve_submission_permission_mode, revoke_interrupted_turn_intent_or_observe_commit,
-        runtime_port_error_preserving_message, runtime_session_summary,
-        runtime_tool_restrictions_for_session_lifetime, runtime_transcript_messages_from_turns,
-        session_storage_workspace_locator, snapshot_normal_session_model,
-        turn_review_manifest_for_agent, validate_required_lineage_turns_settled,
-        ActiveSubagentExecution, BackgroundSubagentWaitMode, ContextCompactionOutcome,
-        ConversationCoordinator, DialogSubmissionPolicy, DialogTriggerSource,
+        lineage_session_is_settling_without_active_state, loaded_session_workspace_id_for_locator,
+        logical_subagent_type_or_runtime, merge_prepended_messages_for_turn,
+        normalize_model_selection, normalize_subagent_max_concurrency,
+        permission_mode_from_metadata, plan_skill_agent_listing_update,
+        resolve_agent_session_create_created_by, resolve_agent_submission_turn_id,
+        resolve_subagent_model_selection, resolve_submission_permission_mode,
+        revoke_interrupted_turn_intent_or_observe_commit, runtime_port_error_preserving_message,
+        runtime_session_summary, runtime_tool_restrictions_for_session_lifetime,
+        runtime_transcript_messages_from_turns, session_storage_workspace_locator,
+        snapshot_normal_session_model, turn_review_manifest_for_agent,
+        validate_required_lineage_turns_settled, ActiveSubagentExecution,
+        BackgroundSubagentWaitMode, ContextCompactionOutcome, ConversationCoordinator,
+        CoreSessionStorePort, DialogSubmissionPolicy, DialogTriggerSource,
         InterruptedTurnIntentState, ManualCompactionCommitGate, SessionMemoryMode,
         SessionReferenceLocator, SessionRelationshipKind, SubagentExecutionRequest,
         TEST_AGENT_MODEL_DEFAULTS,
@@ -22216,6 +22332,255 @@ pub(crate) mod tests {
         assert_eq!(error.kind, openbitfun_runtime_ports::PortErrorKind::Backend);
     }
 
+    /// Registers a remote SSH record whose root string equals `root`, the
+    /// shape from issue #3275 (inactive SSH workspace sharing a local path).
+    async fn register_same_path_remote(root: &Path) -> crate::service::workspace::WorkspaceInfo {
+        // Workspace records store canonical local roots; mirror that string.
+        let root = dunce::canonicalize(root).expect("canonical root");
+        crate::service::workspace::legacy_compat::register_remote_fixture(
+            &root.to_string_lossy(),
+            &format!("ssh-collision-{}@remote.example", uuid::Uuid::new_v4()),
+            "remote.example",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn loaded_local_session_resolves_storage_by_id_despite_same_path_remote_record() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let (coordinator, session_manager) = test_persistent_coordinator();
+        let session = session_manager
+            .create_session(
+                "Local collision".to_string(),
+                "Standard".to_string(),
+                SessionConfig {
+                    tool_presentation_mode: Default::default(),
+                    workspace_path: Some(workspace.path().to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create local session before the SSH record exists");
+        let local_storage = session_manager
+            .require_session_storage_path(&session.session_id)
+            .await
+            .expect("local storage");
+        let remote = register_same_path_remote(workspace.path()).await;
+        let locator = session
+            .config
+            .workspace_path
+            .clone()
+            .expect("normalized workspace path");
+
+        // The legacy path adapter keeps refusing to guess between owners.
+        let legacy = coordinator
+            .resolve_session_restore_scope(&locator, None, Some("localhost"))
+            .await
+            .expect_err("bare path must stay ambiguous at the legacy boundary");
+        assert!(legacy.to_string().contains("ambiguous"), "{legacy}");
+
+        // A send for the loaded local session resolves through its workspace ID.
+        let resolution = coordinator
+            .resolve_loaded_session_restore_scope(
+                &session.config,
+                &locator,
+                None,
+                Some("localhost"),
+            )
+            .await
+            .expect("loaded local session must resolve by workspace ID");
+        assert_eq!(resolution.effective_storage_path, local_storage);
+        assert!(!resolution.is_remote_storage());
+        assert_eq!(resolution.requested_workspace_path, PathBuf::from(&locator));
+        session_manager
+            .ensure_session_storage_path(&session.session_id, &resolution.effective_storage_path)
+            .expect("storage binding must stay on the local owner");
+
+        // A loaded-session thread goal read carries the same path-only locator.
+        let goal = AgentThreadGoalManagementPort::get_thread_goal(
+            &coordinator,
+            AgentThreadGoalGetRequest {
+                session_id: session.session_id.clone(),
+                workspace_path: locator.clone(),
+                remote_connection_id: None,
+                remote_ssh_host: Some("localhost".to_string()),
+            },
+        )
+        .await
+        .expect("thread goal read must resolve the loaded session by workspace ID");
+        assert_eq!(goal, None);
+
+        // A request that explicitly selects the SSH connection does not adopt
+        // the local binding; it resolves the remote owner and fails the binding check.
+        let remote_connection = remote.remote_ssh_connection_id().map(ToOwned::to_owned);
+        let explicit_remote = coordinator
+            .resolve_loaded_session_restore_scope(
+                &session.config,
+                &locator,
+                remote_connection.as_deref(),
+                Some("remote.example"),
+            )
+            .await
+            .expect("explicit SSH selector resolves the remote record");
+        assert!(explicit_remote.is_remote_storage());
+        assert_ne!(explicit_remote.effective_storage_path, local_storage);
+        assert!(session_manager
+            .validate_session_storage_path_binding(
+                &session.session_id,
+                &explicit_remote.effective_storage_path,
+            )
+            .is_err());
+
+        // Unloaded then restored: the restored config keeps its workspace ID,
+        // so the next send still resolves to the local owner.
+        assert!(session_manager
+            .unload_session_from_memory(&session.session_id)
+            .await
+            .expect("unload session"));
+        let restored = coordinator
+            .restore_session_from_storage_path(&local_storage, &session.session_id)
+            .await
+            .expect("restore local session by its storage binding");
+        assert_eq!(restored.config.workspace_id, session.config.workspace_id);
+        let restored_resolution = coordinator
+            .resolve_loaded_session_restore_scope(&restored.config, &locator, None, None)
+            .await
+            .expect("restored local session must resolve by workspace ID");
+        assert_eq!(restored_resolution.effective_storage_path, local_storage);
+
+        session_manager
+            .delete_session_by_id(&session.session_id)
+            .await
+            .expect("clean up persisted test session");
+    }
+
+    #[tokio::test]
+    async fn loaded_remote_session_resolves_its_remote_record_despite_same_path_local_record() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(workspace.path());
+        let local = crate::service::workspace::legacy_compat::register_local_fixture(
+            workspace.path(),
+            None,
+        )
+        .await;
+        let remote = register_same_path_remote(workspace.path()).await;
+        let (coordinator, _) = test_coordinator();
+        let locator = workspace.path().to_string_lossy().into_owned();
+        let remote_config = SessionConfig {
+            tool_presentation_mode: Default::default(),
+            workspace_id: Some(remote.id.clone()),
+            workspace_path: Some(locator.clone()),
+            remote_connection_id: remote.remote_ssh_connection_id().map(ToOwned::to_owned),
+            remote_ssh_host: Some("remote.example".to_string()),
+            ..Default::default()
+        };
+        let resolution = coordinator
+            .resolve_loaded_session_restore_scope(&remote_config, &locator, None, None)
+            .await
+            .expect("remote session resolves by its workspace ID");
+        assert!(resolution.is_remote_storage());
+        assert_eq!(
+            resolution.remote_connection_id.as_deref(),
+            remote.remote_ssh_connection_id()
+        );
+        let local_storage =
+            CoreSessionStorePort::with_path_manager(coordinator.session_manager.path_manager())
+                .resolve_storage_for_reference(Some(&local.id), &locator, None, None)
+                .await
+                .expect("local storage");
+        assert_ne!(
+            resolution.effective_storage_path,
+            local_storage.effective_storage_path
+        );
+
+        // A locator that names some other root, or an explicit different SSH
+        // connection, keeps the legacy path behavior instead of silently
+        // adopting the loaded session's binding.
+        let other = tempfile::tempdir().expect("other root");
+        assert!(loaded_session_workspace_id_for_locator(
+            &remote_config,
+            &other.path().to_string_lossy(),
+            None,
+            None,
+        )
+        .is_none());
+        assert!(loaded_session_workspace_id_for_locator(
+            &remote_config,
+            &locator,
+            Some("another-connection"),
+            None,
+        )
+        .is_none());
+        assert!(loaded_session_workspace_id_for_locator(
+            &remote_config,
+            &locator,
+            None,
+            Some("another.example"),
+        )
+        .is_none());
+        assert_eq!(
+            loaded_session_workspace_id_for_locator(
+                &remote_config,
+                &locator,
+                None,
+                Some("remote.example"),
+            ),
+            Some(remote.id.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn loaded_worktree_session_resolves_project_storage_despite_same_path_remote_record() {
+        let project_dir = tempfile::tempdir().expect("project");
+        let project = dunce::canonicalize(project_dir.path()).expect("canonical project");
+        let worktree = project.join("worktree");
+        std::fs::create_dir_all(&worktree).expect("worktree dir");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(
+            project.as_path(),
+        );
+        let record = crate::service::workspace::legacy_compat::register_local_fixture(
+            &worktree,
+            Some(project.as_path()),
+        )
+        .await;
+        register_same_path_remote(&worktree).await;
+        register_same_path_remote(project.as_path()).await;
+        let (coordinator, _) = test_coordinator();
+        let port =
+            CoreSessionStorePort::with_path_manager(coordinator.session_manager.path_manager());
+        let expected = port
+            .resolve_storage_for_reference(Some(&record.id), "", None, None)
+            .await
+            .expect("worktree storage by ID");
+        let config = SessionConfig {
+            tool_presentation_mode: Default::default(),
+            workspace_id: Some(record.id.clone()),
+            workspace_path: Some(worktree.to_string_lossy().into_owned()),
+            project_workspace_path: Some(project.as_path().to_string_lossy().into_owned()),
+            ..Default::default()
+        };
+        for locator in [
+            worktree.to_string_lossy().into_owned(),
+            project.as_path().to_string_lossy().into_owned(),
+        ] {
+            let legacy = coordinator
+                .resolve_session_restore_scope(&locator, None, None)
+                .await
+                .expect_err("bare path must stay ambiguous at the legacy boundary");
+            assert!(legacy.to_string().contains("ambiguous"), "{legacy}");
+            let resolution = coordinator
+                .resolve_loaded_session_restore_scope(&config, &locator, None, None)
+                .await
+                .expect("worktree session resolves by workspace ID");
+            assert_eq!(
+                resolution.effective_storage_path,
+                expected.effective_storage_path
+            );
+            assert!(!resolution.is_remote_storage());
+        }
+    }
+
     #[tokio::test]
     async fn agent_submission_create_session_preserves_requested_session_id() {
         let (coordinator, session_manager) = test_coordinator();
@@ -22371,12 +22736,13 @@ pub(crate) mod tests {
             )
             .await;
             let storage_path = coordinator
-                .resolve_session_restore_path(
+                .resolve_session_restore_scope(
                     logical_workspace_path,
                     Some(connection_id),
                     Some(ssh_host),
                 )
                 .await
+                .map(|resolution| resolution.effective_storage_path)
                 .expect("remote storage path should resolve");
             let goal = ThreadGoal {
                 goal_id: format!("goal-{index}"),
