@@ -11,8 +11,9 @@ use crate::service::workspace_runtime::WorkspaceRuntimeService;
 pub use openbitfun_services_integrations::remote_ssh::{
     local_workspace_stable_storage_id, normalize_remote_workspace_path,
     remote_root_to_mirror_subpath, remote_workspace_stable_id,
-    sanitize_remote_mirror_path_component, sanitize_ssh_connection_id_for_local_dir,
-    sanitize_ssh_hostname_for_mirror, unresolved_remote_session_storage_key, workspace_logical_key,
+    remote_workspace_stable_id_for_connection, sanitize_remote_mirror_path_component,
+    sanitize_ssh_connection_id_for_local_dir, sanitize_ssh_hostname_for_mirror,
+    ssh_workspace_identity_host, unresolved_remote_session_storage_key, workspace_logical_key,
     workspace_session_identity, RemoteWorkspaceEntry, RemoteWorkspaceRegistry,
     RemoteWorkspaceState, WorkspaceSessionIdentity, LOCAL_WORKSPACE_SSH_HOST,
 };
@@ -319,13 +320,19 @@ impl RemoteWorkspaceStateManager {
         let path_norm = normalize_remote_workspace_path(workspace_path);
         if let Some(host) = remote_ssh_host.map(str::trim).filter(|s| !s.is_empty()) {
             return runtime_service
-                .context_for_remote_workspace(host, &path_norm)
+                .context_for_remote_workspace(
+                    &ssh_workspace_identity_host(host, remote_id),
+                    &path_norm,
+                )
                 .sessions_dir;
         }
         if let Some(entry) = self.lookup_connection(workspace_path, remote_id).await {
             if !entry.ssh_host.trim().is_empty() {
                 return runtime_service
-                    .context_for_remote_workspace(&entry.ssh_host, &entry.remote_root)
+                    .context_for_remote_workspace(
+                        &ssh_workspace_identity_host(&entry.ssh_host, Some(&entry.connection_id)),
+                        &entry.remote_root,
+                    )
                     .sessions_dir;
             }
             return unresolved_remote_session_storage_dir(remote_id.unwrap(), &path_norm);
@@ -381,7 +388,10 @@ pub async fn get_effective_session_path(
                 .sessions_dir;
         }
         return runtime_service
-            .context_for_remote_workspace(&identity.hostname, identity.logical_workspace_path())
+            .context_for_remote_workspace(
+                &identity.identity_host(),
+                identity.logical_workspace_path(),
+            )
             .sessions_dir;
     }
 
@@ -609,6 +619,53 @@ mod tests {
         assert_eq!(
             actual,
             remote_workspace_session_mirror_dir("example-host", "/home/wsp/projects/test")
+        );
+    }
+
+    #[tokio::test]
+    async fn effective_session_path_is_port_scoped_only_for_port_scoped_connections() {
+        let root = "/home/wsp/projects/port-scope";
+        let legacy = remote_workspace_session_mirror_dir("cluster", root);
+        // Ids written by released builds keep the legacy session directory.
+        for connection_id in ["ssh-root@cluster", "ssh-root@cluster:2201"] {
+            let actual =
+                super::get_effective_session_path(root, Some(connection_id), Some("cluster")).await;
+            assert_eq!(actual, legacy, "{connection_id}");
+        }
+        let port_a =
+            super::get_effective_session_path(root, Some("ssh-root@cluster#2201"), Some("cluster"))
+                .await;
+        let port_b =
+            super::get_effective_session_path(root, Some("ssh-root@cluster#2202"), Some("cluster"))
+                .await;
+        assert_ne!(port_a, legacy);
+        assert_ne!(port_b, legacy);
+        assert_ne!(port_a, port_b);
+        assert_eq!(
+            port_a,
+            remote_workspace_session_mirror_dir("cluster#2201", root)
+        );
+
+        let manager = super::RemoteWorkspaceStateManager::new();
+        manager
+            .register_remote_workspace(
+                root.to_string(),
+                "ssh-root@cluster#2201".to_string(),
+                "Node 1".to_string(),
+                "cluster".to_string(),
+            )
+            .await;
+        assert_eq!(
+            manager
+                .get_effective_session_path(root, Some("ssh-root@cluster#2201"), None)
+                .await,
+            port_a
+        );
+        assert_eq!(
+            manager
+                .get_effective_session_path(root, Some("ssh-root@cluster#2201"), Some("cluster"))
+                .await,
+            port_a
         );
     }
 

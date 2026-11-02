@@ -113,7 +113,7 @@ impl WorkspaceRuntimeService {
     ) -> OpenBitFunResult<WorkspaceRuntimeEnsureResult> {
         if workspace.is_remote() {
             self.ensure_remote_workspace_runtime(
-                &workspace.session_identity.hostname,
+                &workspace.session_identity.identity_host(),
                 workspace.session_identity.logical_workspace_path(),
             )
             .await

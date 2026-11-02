@@ -242,6 +242,17 @@ Existing remote-workspace records keep their paths and connection metadata.
 Legacy connection IDs that included the SSH port are migrated together with
 their password-vault and workspace references.
 
+The SSH port is part of a connection's identity. Servers behind one address that
+differ only by port (for example cluster nodes mapped to ports 2201 and 2202)
+are separate profiles, workspaces, and session stores. Default-port (22)
+profiles keep the `ssh-user@host` id, workspace id, and on-disk runtime and
+session paths unchanged. New profiles on other ports use `ssh-user@host#port`;
+`#` was never produced by an earlier build, so older peers treat these ids as
+opaque instead of folding them into the legacy `ssh-user@host:port` alias.
+Profiles saved by earlier builds keep their id when the port is edited, and
+their workspaces and sessions stay where they are; saving a profile for another
+port never overwrites them.
+
 Legacy local-Docker profiles do not need an SSH password-vault entry, even if
 their old serialized auth placeholder is an empty password.
 

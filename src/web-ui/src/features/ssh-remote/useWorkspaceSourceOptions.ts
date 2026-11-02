@@ -7,6 +7,7 @@ import { createLogger } from '@/shared/utils/logger';
 const log = createLogger('WorkspaceSourceOptions');
 import { sameWorkspaceSource, savedConnectionTarget, type WorkspaceSource } from './workspaceSource';
 import type { SavedConnection, SSHConfigEntry, SSHConnectionConfig } from './types';
+import { DEFAULT_SSH_PORT, sshConnectionIdForEndpoint } from './sshConnectionId';
 
 export type WorkspaceConnectionPreset = (
   | { kind: 'new'; host?: SavedConnection }
@@ -25,7 +26,7 @@ export function workspacePresetHost(preset?: WorkspaceConnectionPreset): SavedCo
   if (preset?.kind !== 'sshConfig') return undefined;
   const { entry } = preset;
   return {
-    id: `ssh-${entry.user || ''}@${entry.hostname || entry.host}`,
+    id: sshConnectionIdForEndpoint({ host: entry.hostname || entry.host, port: entry.port || DEFAULT_SSH_PORT, username: entry.user || '' }),
     name: entry.host, host: entry.hostname || entry.host, port: entry.port || 22, username: entry.user || '',
     authType: entry.identityFile ? { type: 'PrivateKey', keyPath: entry.identityFile, certificatePath: entry.certificateFile }
       : entry.agent ? { type: 'Agent' } : { type: 'Password' },

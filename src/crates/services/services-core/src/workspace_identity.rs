@@ -24,6 +24,11 @@ impl WorkspaceSessionIdentity {
     pub fn logical_workspace_path(&self) -> &str {
         &self.logical_workspace_path
     }
+
+    /// Host string for runtime and session paths; see [`ssh_workspace_identity_host`].
+    pub fn identity_host(&self) -> String {
+        ssh_workspace_identity_host(&self.hostname, self.remote_connection_id.as_deref())
+    }
 }
 
 /// Normalize a remote POSIX workspace path for registry lookup on any client OS.
@@ -40,9 +45,12 @@ pub fn normalize_remote_workspace_path(path: &str) -> String {
 
 /// Canonical form of an SSH connection id.
 ///
-/// Older builds generated `ssh-user@host:port`; current profiles use
-/// `ssh-user@host`. Both spellings name the same saved connection, so persisted
-/// workspace records written by either build compare equal after this mapping.
+/// Older builds generated `ssh-user@host:port`; current default-port profiles
+/// use `ssh-user@host`. Both spellings name the same saved connection, so
+/// persisted workspace records written by either build compare equal after this
+/// mapping. Port-scoped ids (`ssh-user@host#port`, see
+/// [`ssh_connection_id_for_endpoint`]) are distinct connections and are never
+/// collapsed.
 pub fn canonical_ssh_connection_id(id: &str) -> String {
     if let Some(rest) = id.strip_prefix("ssh-") {
         if let (Some(at), Some(colon)) = (rest.find('@'), rest.rfind(':')) {
@@ -52,6 +60,92 @@ pub fn canonical_ssh_connection_id(id: &str) -> String {
         }
     }
     id.to_string()
+}
+
+/// SSH port that keeps the legacy, port-less connection and workspace identity.
+pub const DEFAULT_SSH_PORT: u16 = 22;
+
+/// Separator between the host and the port scope of a port-scoped SSH
+/// connection id (`ssh-{user}@{host}#{port}`).
+///
+/// Builds before #710 generated `ssh-{user}@{host}:{port}` for every port and
+/// [`canonical_ssh_connection_id`] treats that spelling as an alias of
+/// `ssh-{user}@{host}`. Port-scoped ids therefore use a separator no released
+/// build ever produced or collapses, so older peers keep treating them as
+/// opaque, distinct ids.
+pub const SSH_CONNECTION_ID_PORT_SEPARATOR: char = '#';
+
+/// Connection id for a new SSH profile.
+///
+/// The default port keeps the historical `ssh-{user}@{host}` id byte-for-byte;
+/// any other port appends `#{port}` so servers behind one address stay
+/// distinct.
+pub fn ssh_connection_id_for_endpoint(username: &str, host: &str, port: u16) -> String {
+    if port == DEFAULT_SSH_PORT {
+        format!("ssh-{username}@{host}")
+    } else {
+        format!("ssh-{username}@{host}{SSH_CONNECTION_ID_PORT_SEPARATOR}{port}")
+    }
+}
+
+/// Port scope carried by a port-scoped SSH connection id.
+///
+/// Returns the text after `#` (a port, optionally followed by a `~{n}`
+/// disambiguator) for ids shaped `ssh-{user}@{host}#{scope}` and for container
+/// ids derived from them (`...#{scope}-container-{name}`). Legacy ids, including
+/// pre-#710 `ssh-{user}@{host}:{port}` ids, return `None`.
+pub fn ssh_connection_id_port_scope(connection_id: &str) -> Option<&str> {
+    let rest = connection_id.trim().strip_prefix("ssh-")?;
+    let at = rest.find('@')?;
+    let after_at = &rest[at + 1..];
+    let separator = after_at.find(SSH_CONNECTION_ID_PORT_SEPARATOR)?;
+    let scope_and_suffix = &after_at[separator + 1..];
+    let scope = scope_and_suffix
+        .split_once('-')
+        .map_or(scope_and_suffix, |(scope, _)| scope);
+    let (port, disambiguator) = match scope.split_once('~') {
+        Some((port, n)) => (port, Some(n)),
+        None => (scope, None),
+    };
+    if port.is_empty() || !port.bytes().all(|b| b.is_ascii_digit()) || port.parse::<u16>().is_err()
+    {
+        return None;
+    }
+    if disambiguator.is_some_and(|n| n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit())) {
+        return None;
+    }
+    Some(scope)
+}
+
+/// SSH host string used for workspace identity (stable id, runtime key, and
+/// session mirror path).
+///
+/// Connections whose id carries no port scope (every id written by released
+/// builds, including all default-port profiles) return `ssh_host` unchanged,
+/// so their workspace identity and on-disk layout stay byte-for-byte the same.
+/// Port-scoped connections return `{ssh_host}#{scope}`; `#` never appears in a
+/// real SSH host, so these identities cannot collide with legacy ones and are
+/// a safe path component on every client OS.
+pub fn ssh_workspace_identity_host(ssh_host: &str, connection_id: Option<&str>) -> String {
+    match connection_id.and_then(ssh_connection_id_port_scope) {
+        Some(scope) => format!(
+            "{}{SSH_CONNECTION_ID_PORT_SEPARATOR}{scope}",
+            ssh_host.trim()
+        ),
+        None => ssh_host.to_string(),
+    }
+}
+
+/// Stable workspace id for a remote workspace owned by `connection_id`.
+pub fn remote_workspace_stable_id_for_connection(
+    ssh_host: &str,
+    connection_id: Option<&str>,
+    remote_root_norm: &str,
+) -> String {
+    remote_workspace_stable_id(
+        &ssh_workspace_identity_host(ssh_host, connection_id),
+        remote_root_norm,
+    )
 }
 
 /// Connection id as one safe local path component.
@@ -393,7 +487,134 @@ pub fn build_project_runtime_slug(canonical: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::canonical_ssh_connection_id;
+    use super::{
+        canonical_ssh_connection_id, remote_workspace_runtime_key,
+        remote_workspace_session_mirror_dir, remote_workspace_stable_id,
+        remote_workspace_stable_id_for_connection, ssh_connection_id_for_endpoint,
+        ssh_connection_id_port_scope, ssh_workspace_identity_host,
+    };
+    use std::path::Path;
+
+    #[test]
+    fn default_port_connection_ids_keep_the_legacy_spelling() {
+        assert_eq!(
+            ssh_connection_id_for_endpoint("root", "example.com", 22),
+            "ssh-root@example.com"
+        );
+        assert_eq!(
+            ssh_connection_id_for_endpoint("root", "example.com", 2222),
+            "ssh-root@example.com#2222"
+        );
+    }
+
+    #[test]
+    fn port_scope_is_parsed_only_from_port_scoped_ids() {
+        assert_eq!(
+            ssh_connection_id_port_scope("ssh-root@example.com#2222"),
+            Some("2222")
+        );
+        assert_eq!(
+            ssh_connection_id_port_scope("ssh-root@example.com#2222~2"),
+            Some("2222~2")
+        );
+        assert_eq!(
+            ssh_connection_id_port_scope("ssh-root@example.com#2222-container-web"),
+            Some("2222")
+        );
+        assert_eq!(
+            ssh_connection_id_port_scope("ssh-root@fe80::1#2201"),
+            Some("2201")
+        );
+        // Every id shape written by released builds stays legacy.
+        for legacy in [
+            "ssh-root@example.com",
+            "ssh-root@example.com:2222",
+            "ssh-root@example.com:22",
+            "ssh-root@example.com-container-web",
+            "wsl-Ubuntu@root",
+            "0c9f6c1e-profile",
+            "ssh-root@example.com#",
+            "ssh-root@example.com#99999",
+            "ssh-root@example.com#22x",
+            "ssh-root@example.com#22~",
+        ] {
+            assert_eq!(ssh_connection_id_port_scope(legacy), None, "{legacy}");
+        }
+    }
+
+    #[test]
+    fn legacy_connection_ids_keep_workspace_identity_byte_for_byte() {
+        let root = "/home/user/repo";
+        let legacy_id = remote_workspace_stable_id("example.com", root);
+        for connection_id in [
+            None,
+            Some("ssh-root@example.com"),
+            Some("ssh-root@example.com:2222"),
+            Some("ssh-root@example.com-container-web"),
+        ] {
+            assert_eq!(
+                ssh_workspace_identity_host("example.com", connection_id),
+                "example.com"
+            );
+            assert_eq!(
+                remote_workspace_stable_id_for_connection("example.com", connection_id, root),
+                legacy_id
+            );
+        }
+    }
+
+    #[test]
+    fn port_scoped_connections_get_distinct_workspace_identity() {
+        let root = "/home/user/repo";
+        let legacy = remote_workspace_stable_id("example.com", root);
+        let port_a = remote_workspace_stable_id_for_connection(
+            "example.com",
+            Some("ssh-u@example.com#2201"),
+            root,
+        );
+        let port_b = remote_workspace_stable_id_for_connection(
+            "example.com",
+            Some("ssh-u@example.com#2202"),
+            root,
+        );
+        assert_ne!(port_a, legacy);
+        assert_ne!(port_b, legacy);
+        assert_ne!(port_a, port_b);
+        assert_eq!(
+            ssh_workspace_identity_host(" Example.com ", Some("ssh-u@example.com#2201")),
+            "Example.com#2201"
+        );
+        assert_ne!(
+            remote_workspace_runtime_key("example.com#2201", root),
+            remote_workspace_runtime_key("example.com", root)
+        );
+        let mirror = remote_workspace_session_mirror_dir(
+            Path::new("/mirror"),
+            &ssh_workspace_identity_host("example.com", Some("ssh-u@example.com#2201")),
+            root,
+        );
+        assert_eq!(
+            mirror,
+            Path::new("/mirror")
+                .join("example.com#2201")
+                .join("home")
+                .join("user")
+                .join("repo")
+                .join("sessions")
+        );
+    }
+
+    #[test]
+    fn canonical_ssh_connection_id_never_collapses_port_scoped_ids() {
+        assert_eq!(
+            canonical_ssh_connection_id("ssh-root@example.com#2222"),
+            "ssh-root@example.com#2222"
+        );
+        assert_eq!(
+            canonical_ssh_connection_id("ssh-root@fe80::1#2222"),
+            "ssh-root@fe80::1#2222"
+        );
+    }
 
     #[test]
     fn canonical_ssh_connection_id_strips_only_legacy_port_suffixes() {

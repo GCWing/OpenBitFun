@@ -2917,15 +2917,22 @@ impl SSHConnectionManager {
 
         let mut guard = self.saved_connections.write().await;
 
-        // Remove existing entry with same id OR same host+username (dedup).
-        // Using host+username (without port) so that changing the port replaces
-        // the old entry instead of creating a duplicate.
+        // Remove the existing entry with the same id (an edit keeps its id, so
+        // changing the port of a saved profile still replaces it in place) OR a
+        // legacy alias of it (`ssh-user@host:port`, which workspace records
+        // already treat as the same connection) for the exact same endpoint.
+        // The port is part of the endpoint: servers behind one address that
+        // differ only by port are distinct profiles and never overwrite each
+        // other. A different, non-alias id for the same endpoint is kept, since
+        // workspace and session records may still reference it.
         guard.retain(|c| {
             c.id != config.id
                 && !(c.host == config.host
+                    && c.port == config.port
                     && c.username == config.username
                     && c.container == config.container
-                    && c.wsl == config.wsl)
+                    && c.wsl == config.wsl
+                    && Self::connection_ids_are_aliases(&c.id, &config.id))
         });
 
         // Add new entry
@@ -2967,6 +2974,15 @@ impl SSHConnectionManager {
         drop(guard);
 
         self.save_connections().await
+    }
+
+    /// Whether two saved-profile ids name the same connection through the
+    /// legacy `ssh-user@host:port` spelling.
+    fn connection_ids_are_aliases(left: &str, right: &str) -> bool {
+        use openbitfun_services_core::workspace_identity::canonical_ssh_connection_id;
+        left == right
+            || canonical_ssh_connection_id(left) == right
+            || canonical_ssh_connection_id(right) == left
     }
 
     /// Decrypt stored password for password-based saved connections (auto-reconnect).
@@ -9270,6 +9286,204 @@ mod tests {
             } if key_fingerprint.as_deref() == Some("SHA256:test-fingerprint")
                 && fallback_key_path.as_deref() == Some("~/.ssh/custom-fallback")
         ));
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    fn key_profile(id: &str, host: &str, port: u16, username: &str) -> SSHConnectionConfig {
+        SSHConnectionConfig {
+            id: id.to_string(),
+            name: format!("{username}@{host}:{port}"),
+            host: host.to_string(),
+            port,
+            username: username.to_string(),
+            auth: SSHAuthMethod::PrivateKey {
+                key_path: "~/.ssh/id_ed25519".to_string(),
+                passphrase: None,
+                certificate_path: None,
+            },
+            default_workspace: None,
+            proxy_jump: None,
+            container: None,
+            wsl: None,
+            options: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn saving_a_second_port_on_the_same_host_keeps_both_profiles() {
+        let dir = test_data_dir("port-scoped-profiles");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+
+        manager
+            .save_connection(&key_profile("ssh-root@cluster", "cluster", 22, "root"))
+            .await
+            .unwrap();
+        manager
+            .save_connection(&key_profile(
+                "ssh-root@cluster#2201",
+                "cluster",
+                2201,
+                "root",
+            ))
+            .await
+            .unwrap();
+        manager
+            .save_connection(&key_profile(
+                "ssh-root@cluster#2202",
+                "cluster",
+                2202,
+                "root",
+            ))
+            .await
+            .unwrap();
+
+        let mut saved: Vec<(String, u16)> = manager
+            .get_saved_connections()
+            .await
+            .into_iter()
+            .map(|c| (c.id, c.port))
+            .collect();
+        saved.sort();
+        assert_eq!(
+            saved,
+            vec![
+                ("ssh-root@cluster".to_string(), 22),
+                ("ssh-root@cluster#2201".to_string(), 2201),
+                ("ssh-root@cluster#2202".to_string(), 2202),
+            ]
+        );
+
+        // A legacy `:port` alias of the same endpoint is replaced; a distinct
+        // id for the same endpoint is kept because records may reference it.
+        manager
+            .save_connection(&key_profile("ssh-root@cluster:22", "cluster", 22, "root"))
+            .await
+            .unwrap();
+        manager
+            .save_connection(&key_profile("ssh-root@cluster", "cluster", 22, "root"))
+            .await
+            .unwrap();
+        manager
+            .save_connection(&key_profile(
+                "ssh-root@cluster#2202~2",
+                "cluster",
+                2202,
+                "root",
+            ))
+            .await
+            .unwrap();
+        let mut ids: Vec<String> = manager
+            .get_saved_connections()
+            .await
+            .into_iter()
+            .map(|c| c.id)
+            .collect();
+        ids.sort();
+        assert_eq!(
+            ids,
+            vec![
+                "ssh-root@cluster".to_string(),
+                "ssh-root@cluster#2201".to_string(),
+                "ssh-root@cluster#2202".to_string(),
+                "ssh-root@cluster#2202~2".to_string(),
+            ]
+        );
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn editing_the_port_of_a_saved_profile_keeps_its_id() {
+        let dir = test_data_dir("port-edit-keeps-id");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let manager = SSHConnectionManager::new(dir.clone());
+
+        manager
+            .save_connection(&key_profile(
+                "ssh-root@cluster#2201",
+                "cluster",
+                2201,
+                "root",
+            ))
+            .await
+            .unwrap();
+        manager
+            .save_connection(&key_profile(
+                "ssh-root@cluster#2201",
+                "cluster",
+                2299,
+                "root",
+            ))
+            .await
+            .unwrap();
+
+        let saved = manager.get_saved_connections().await;
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].id, "ssh-root@cluster#2201");
+        assert_eq!(saved[0].port, 2299);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[tokio::test]
+    async fn legacy_port_profiles_round_trip_unchanged_next_to_port_scoped_ones() {
+        let dir = test_data_dir("legacy-port-profiles");
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        // Shapes written by released builds: a post-#710 port-less id that
+        // points at a non-default port, and a pre-#710 `:port` id.
+        tokio::fs::write(
+            dir.join("ssh_connections.json"),
+            serde_json::to_string_pretty(&serde_json::json!([
+                {
+                    "id": "ssh-root@cluster",
+                    "name": "cluster node",
+                    "host": "cluster",
+                    "port": 2201,
+                    "username": "root",
+                    "authType": { "type": "PrivateKey", "keyPath": "~/.ssh/id_ed25519" },
+                    "lastConnected": 1
+                },
+                {
+                    "id": "ssh-alice@legacy.example:2222",
+                    "name": "legacy",
+                    "host": "legacy.example",
+                    "port": 2222,
+                    "username": "alice",
+                    "authType": { "type": "PrivateKey", "keyPath": "~/.ssh/id_ed25519" },
+                    "lastConnected": 1
+                }
+            ]))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let manager = SSHConnectionManager::new(dir.clone());
+        manager.load_saved_connections().await.unwrap();
+        // A new default-port profile on the same host must not overwrite the
+        // legacy profile; the dialog gives it a port-scoped id because the
+        // port-less id is already taken by another port.
+        manager
+            .save_connection(&key_profile("ssh-root@cluster#22", "cluster", 22, "root"))
+            .await
+            .unwrap();
+
+        let reloaded = SSHConnectionManager::new(dir.clone());
+        reloaded.load_saved_connections().await.unwrap();
+        let mut saved: Vec<(String, u16)> = reloaded
+            .get_saved_connections()
+            .await
+            .into_iter()
+            .map(|c| (c.id, c.port))
+            .collect();
+        saved.sort();
+        assert_eq!(
+            saved,
+            vec![
+                ("ssh-alice@legacy.example:2222".to_string(), 2222),
+                ("ssh-root@cluster".to_string(), 2201),
+                ("ssh-root@cluster#22".to_string(), 22),
+            ]
+        );
         let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 

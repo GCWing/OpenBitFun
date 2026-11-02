@@ -76,7 +76,12 @@ fn runtime_root_for_workspace_info(workspace: &WorkspaceInfo) -> Result<PathBuf,
             })?;
 
         let remote_root = normalize_remote_workspace_path(&workspace.root_path.to_string_lossy());
-        return Ok(remote_workspace_runtime_root(ssh_host, &remote_root));
+        let identity_host =
+            openbitfun_core::service::remote_ssh::workspace_state::ssh_workspace_identity_host(
+                ssh_host,
+                workspace.remote_ssh_connection_id(),
+            );
+        return Ok(remote_workspace_runtime_root(&identity_host, &remote_root));
     }
 
     Ok(get_path_manager_arc().project_runtime_root(&workspace.root_path))

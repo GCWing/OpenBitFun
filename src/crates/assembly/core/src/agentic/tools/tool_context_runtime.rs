@@ -746,7 +746,7 @@ impl ToolUseContext {
         if workspace.is_remote() {
             let identity = &workspace.session_identity;
             Ok(remote_workspace_runtime_root(
-                &identity.hostname,
+                &identity.identity_host(),
                 identity.logical_workspace_path(),
             ))
         } else {
